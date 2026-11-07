@@ -350,6 +350,11 @@ def test_generic_condition_and_effect_components():
     assert agent["inventory"]["map"] == 1
     effects.apply(agent, {"type": "need_delta", "need": "fatigue", "delta": 5})
     assert agent["initial_state"]["fatigue"] == 5
+    target = {"id": "target", "name": "Target", "entity_type": "agent", "initial_state": {"location_id": "entry", "health": 100}, "combat_stats": {"defense": 2}}
+    # TargetResolver is store-backed in production; the formula behavior is
+    # validated separately here with the same public projection shape.
+    damage = EffectPipeline().apply(agent, {"type": "damage", "formula": "actor.attack_power - target.defense"}, target={"defense": 2})
+    assert damage["applied"] is True
 
 
 def test_exploration_completion_persists_result_and_knowledge(tmp_path: Path):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import operator
 from typing import Any
 
 
@@ -52,7 +54,7 @@ class EffectPipeline:
             state["conditions"] = [item for item in state.get("conditions", []) if item != status]
             result.update({"applied": True, "status": status})
         elif effect_type in {"damage", "health_delta"}:
-            amount = float(effect.get("amount", effect.get("delta", 0)))
+            amount = self._formula(effect.get("formula"), agent, target) if effect.get("formula") else float(effect.get("amount", effect.get("delta", 0)))
             state["health"] = max(0.0, min(100.0, float(state.get("health", 100)) - amount if effect_type == "damage" else float(state.get("health", 100)) + amount))
             result.update({"applied": True, "health": state["health"]})
         elif effect_type in {"heal", "health_restore"}:
@@ -65,3 +67,32 @@ class EffectPipeline:
         agent["needs"] = needs
         agent["inventory"] = inventory
         return result
+
+    @staticmethod
+    def _formula(formula: str, agent: dict[str, Any], target: dict[str, Any]) -> float:
+        values = {
+            "actor": {**agent.get("combat_stats", {}), **agent.get("initial_state", {})},
+            "target": target,
+            "weapon": target.get("weapon", {}) if isinstance(target, dict) else {},
+        }
+
+        def evaluate(node: ast.AST) -> float:
+            if isinstance(node, ast.Expression):
+                return evaluate(node.body)
+            if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+                return float(node.value)
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                return float(values.get(node.value.id, {}).get(node.attr, 0))
+            if isinstance(node, ast.BinOp) and type(node.op) in {ast.Add, ast.Sub, ast.Mult, ast.Div}:
+                left = evaluate(node.left)
+                right = evaluate(node.right)
+                return {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv}[type(node.op)](left, right) if not (isinstance(node.op, ast.Div) and right == 0) else 0.0
+            if isinstance(node, ast.UnaryOp) and type(node.op) in {ast.UAdd, ast.USub}:
+                value = evaluate(node.operand)
+                return value if isinstance(node.op, ast.UAdd) else -value
+            raise ValueError("unsupported effect formula")
+
+        try:
+            return max(0.0, evaluate(ast.parse(str(formula), mode="eval")))
+        except (SyntaxError, ValueError, TypeError, ZeroDivisionError):
+            return 0.0

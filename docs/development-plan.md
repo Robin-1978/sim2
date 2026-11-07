@@ -71,7 +71,7 @@ LLM Agent 不直接依赖 SQLite。所有 Agent 输出经过 Intent 网关；所
 
 实现 `target_resolver`、`condition_engine`、`effect_pipeline`、成本结算、ActionInstance、BTInstance、长时执行、成功/失败、暂停/取消和硬中断。Platform 不实现剧情专用 Action 分支。
 
-验收：采集、制作、攻击、治疗、探索和沟通使用同一套通用执行器；1,000 分钟 Action 期间 Agent 不重复决策；非法目标和资源不足事务回滚。当前已完成通用 `ConditionEngine`（布尔组合、比较、`in/not_in`、角色能力和可见路线）、`EffectPipeline`、动作参数解析、前置条件检查、每分钟效果、配方输出与能力经验入口；并行节点、完整目标解析和全部资源类型仍需继续补齐。
+验收：采集、制作、攻击、治疗、探索和沟通使用同一套通用执行器；1,000 分钟 Action 期间 Agent 不重复决策；非法目标和资源不足事务回滚。当前已完成通用 `ConditionEngine`（布尔组合、比较、`in/not_in`、角色能力和可见路线）、`EffectPipeline`（安全公式）、`TargetResolver`、动作参数解析、前置条件检查、每分钟效果、配方输出与能力经验入口；并行节点和完整资源类型仍需继续补齐。
 
 ### M5：感知、知识和记忆驱动
 

@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from ..actions.conditions import ConditionEngine
 from ..actions.effects import EffectPipeline
+from ..actions.targets import TargetResolver
 from ..agent_view.compiler import AgentViewCompiler
 from ..intents.models import BehaviorIntent
 from ..memory.service import MemoryService
@@ -30,6 +31,7 @@ class Platform:
         self.memory = MemoryService(self.store)
         self.conditions = ConditionEngine()
         self.effects = EffectPipeline()
+        self.targets = TargetResolver(self.store)
 
     def close(self) -> None:
         self.store.close()
@@ -571,6 +573,9 @@ class Platform:
             return False, f"action is not registered: {action_id}"
         state = dict(agent.get("initial_state") or {})
         parameters = self._resolve_parameters(dict(action_info.get("parameters") or {}), state)
+        resolved_target, target_error = self.targets.resolve(agent, parameters)
+        if target_error:
+            return False, target_error
         current_location = {}
         location_id = state.get("location_id")
         if location_id:
@@ -583,9 +588,13 @@ class Platform:
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "area_id": parameters.get("area_id"),
             "current_location": current_location,
+            "target": resolved_target or {},
+            "target.visible": (resolved_target or {}).get("visible", True),
+            "target.available": (resolved_target or {}).get("available", True),
         }
         for predicate in action.get("preconditions", []) or []:
-            if not self.conditions.evaluate(str(predicate), agent=agent, target=parameters, context=condition_context, world=self.store.get_meta("world_properties", {}) or {}):
+            condition_target = {**parameters, **(resolved_target or {})}
+            if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=condition_context, world=self.store.get_meta("world_properties", {}) or {}):
                 return False, f"precondition failed: {predicate}"
         allowed, reason = self._reserve_action_costs(agent, action, parameters)
         if not allowed:
@@ -599,7 +608,7 @@ class Platform:
         state["remaining_minutes"] = duration
         state["active_action_parameters"] = parameters
         agent["initial_state"] = state
-        self.store.put_action_instance(action_instance_id, execution_id, agent["id"], action_id, "running", 0, duration, {"parameters": parameters}, minute, minute)
+        self.store.put_action_instance(action_instance_id, execution_id, agent["id"], action_id, "running", 0, duration, {"parameters": parameters, "target": resolved_target}, minute, minute)
         self.store.append_event("action.started", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "duration_minutes": duration})
         return True, ""
 
@@ -649,7 +658,8 @@ class Platform:
             self.store.update_bt_instance(execution_id, status="executing", current_node=index, data=bt_data, updated_minute=minute)
             self.store.update_agent(agent["id"], agent)
             return
-        self._apply_success_effects(agent, action, state.get("active_action_parameters", {}), minute)
+        action_parameters = state.get("active_action_parameters", {})
+        self._apply_success_effects(agent, action, action_parameters, minute, target=self.targets.resolve(agent, action_parameters)[0])
         self._record_information_result(agent, action, state.get("active_action_parameters", {}), minute)
         self.store.append_event("action.completed", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "result": action.get("success", {}).get("result", "completed")})
         state["active_action_index"] = index + 1
@@ -670,10 +680,10 @@ class Platform:
         agent.setdefault("capabilities", {})[capability] = min(1.0, float(agent["capabilities"].get(capability, 0)) + float(delta))
         self.store.put_capability_progress(agent["id"], capability, float(delta), source, minute)
 
-    def _apply_success_effects(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> None:
+    def _apply_success_effects(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int, *, target: dict[str, Any] | None = None) -> None:
         effects = list(action.get("effects", []) or [])
         for effect in effects:
-            self.effects.apply(agent, effect, target=parameters)
+            self.effects.apply(agent, effect, target=target or parameters)
             if effect.get("type") in {"capability_xp", "capability.add_xp"} or effect.get("op") == "capability.add_xp":
                 capability = effect.get("capability")
                 if capability:
