@@ -64,6 +64,8 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     lines.extend(["", "# KNOWLEDGE AND MEMORY"])
     facts = context.get("known_facts") or []
     lines.extend([f"- {f if isinstance(f, str) else f.get('fact', 'unknown fact')}" for f in facts[:8]] or ["- No relevant retained fact."])
+    memories = context.get("memories") or []
+    lines.extend([f"- Recent {m.get('type', 'memory')}: {m.get('summary') or m.get('fact') or m.get('topic', 'unlabeled experience')}" for m in memories[:5]] or ["- No recent retained experience."])
     lines.extend(["", "# ACTIVE TASK"])
     active = context.get("active_task") or {}
     lines.append(f"Behavior: {_line(active.get('bt'))}; Action: {_line(active.get('action'))}; Remaining: {_line(active.get('remaining_minutes'))} minutes.")

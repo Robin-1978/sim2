@@ -131,6 +131,7 @@ def test_reflection_intent_is_committed_by_platform(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "reflection-world", tmp_path / "runtime")
     platform = Platform(db_path)
+    platform.submit_experience("lu_xingzhou", "event:prior", "A prior route report was recorded.", 0.8)
     provider = SequenceProvider([
         {
             "intent_type": "record_experience",
@@ -144,6 +145,7 @@ def test_reflection_intent_is_committed_by_platform(tmp_path: Path):
         assert turn.result["status"] == "accepted"
         memories = platform.store.list_memories("lu_xingzhou")
         assert memories[0]["summary"].startswith("The first observation")
+        assert "Recent experience" in provider.calls[0]["context"]
     finally:
         platform.close()
 
