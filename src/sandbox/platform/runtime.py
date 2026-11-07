@@ -390,6 +390,15 @@ class Platform:
             self.store.finish_intent(intent_id, "accepted", result)
         return result
 
+    def bootstrap_world_from_template(self, template: dict[str, Any], instance_id: str, runtime_root: Path | None = None) -> dict[str, Any]:
+        from ..bootstrap.service import create_instance_from_template
+
+        validation = self.validate_world_template(template)
+        if not validation["valid"]:
+            return {"status": "rejected", "message": "World template failed validation.", "errors": validation["errors"], "retryable": True}
+        db_path = create_instance_from_template(template, instance_id, runtime_root)
+        return {"status": "accepted", "instance_id": instance_id, "db_path": str(db_path)}
+
     # ------------------------------------------------------------------
     # Deterministic Platform execution.  This code knows only generic
     # Action/BT fields; story packages provide the definitions.

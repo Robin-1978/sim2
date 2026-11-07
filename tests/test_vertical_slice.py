@@ -387,6 +387,30 @@ def test_world_builder_validates_then_submits_template(tmp_path: Path):
         platform.close()
 
 
+def test_validated_template_creates_a_separate_instance(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    source_db = create_instance(config, "template-source", tmp_path / "runtime")
+    platform = Platform(source_db)
+    template = {
+        "template_version": "test-template-1",
+        "world": {"id": "generated_world", "title": "Generated World", "premise": "A small test world."},
+        "locations": [{"id": "entry", "name": "Entry", "routes": []}],
+        "actions": [], "behavior_trees": [], "agents": [], "factions": [],
+    }
+    try:
+        result = platform.bootstrap_world_from_template(template, "generated-instance", tmp_path / "generated")
+        assert result["status"] == "accepted"
+        generated = Platform(Path(result["db_path"]))
+        try:
+            assert generated.store.get_meta("world_id") == "generated_world"
+            assert generated.store.get_meta("config_version") == "test-template-1"
+            assert generated.store.get_entity("entry")["entity_type"] == "location"
+        finally:
+            generated.close()
+    finally:
+        platform.close()
+
+
 def test_control_service_pause_step_snapshot_and_audit(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "control-world", tmp_path / "runtime")

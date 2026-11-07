@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -221,3 +222,55 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
             store.close()
         except Exception:
             pass
+
+
+def create_instance_from_template(template: dict[str, Any], instance_id: str, runtime_root: Path | None = None) -> Path:
+    """Normalize a WorldBuilder draft into a temporary package and bootstrap it."""
+
+    if not isinstance(template, dict):
+        raise ValueError("world template must be an object")
+    world = template.get("world", {}) if isinstance(template.get("world", {}), dict) else {}
+    with tempfile.TemporaryDirectory(prefix="sim2-template-") as directory:
+        config_dir = Path(directory)
+        collections: dict[str, list[dict[str, Any]]] = {}
+
+        def values(key: str) -> list[dict[str, Any]]:
+            raw = template.get(key, [])
+            return list(raw) if isinstance(raw, list) else []
+
+        entities = values("entities")
+        collections["locations"] = values("locations") or [item for item in entities if item.get("type") == "location"]
+        collections["objects"] = values("objects") or [item for item in entities if item.get("type") not in {"location", "agent", "faction"}]
+        collections["agents"] = values("agents") or [item for item in entities if item.get("type") == "agent"]
+        collections["factions"] = values("factions") or [item for item in entities if item.get("type") == "faction"]
+        collections["actions"] = values("actions")
+        collections["behavior_trees"] = values("behavior_trees")
+        collections["recipes"] = values("recipes")
+        collections["capabilities"] = values("capabilities")
+        files: list[str] = []
+
+        def write(name: str, payload: dict[str, Any]) -> None:
+            (config_dir / name).write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8")
+            files.append(name)
+
+        write("setting.yaml", {"name": world.get("title", world.get("id", instance_id)), "premise": world.get("premise", "")})
+        write("world_state.yaml", {"world_state": {"properties": world.get("properties", {})}})
+        for filename, key in CONFIG_COLLECTIONS.items():
+            if key in collections:
+                write(filename, {key: collections[key]})
+        faction_payload = {"factions": collections["factions"], "relationships": template.get("relationships", [])}
+        write("factions.yaml", faction_payload)
+        rules = template.get("rules", {})
+        write("rules.yaml", rules if isinstance(rules, dict) else {"world_rules": rules})
+        write("opening_events.yaml", {"opening_events": template.get("initial_events", template.get("opening_events", []))})
+        write("evolution.yaml", template.get("evolution", {}))
+        write("player_template.yaml", template.get("player_template", {}))
+        manifest = {
+            "config_version": str(template.get("template_version", "template-1")),
+            "world_id": str(world.get("id", instance_id)),
+            "time_unit": world.get("time_unit", "minute"),
+            "start_world_minute": int(world.get("start_world_minute", 0)),
+            "files": sorted(set(files)),
+        }
+        (config_dir / "manifest.yaml").write_text(yaml.safe_dump(manifest, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        return create_instance(config_dir, instance_id, runtime_root)
