@@ -312,6 +312,13 @@ class AgentToolExecutor:
 
     def _inspect_entity(self, entity_id: str, question: str = "") -> dict[str, Any]:
         entity = self.platform.store.get_entity(entity_id)
+        if self.role not in {"god", "world_builder"}:
+            agent = self._agent()
+            state = agent.get("initial_state", {})
+            nearby_ids = {row["id"] for row in self.platform.store.entities_at_location(state.get("location_id"))}
+            seeded = {str(value).split(":", 1)[-1] for value in agent.get("knowledge_seed", []) if isinstance(value, str)}
+            if entity_id != self.actor_id and entity_id not in nearby_ids and entity_id not in seeded:
+                return {"status": "rejected", "failed_check": "visibility", "retryable": True, "message": "This entity is not visible or known to the agent."}
         data = {
             key: value
             for key, value in entity.items()

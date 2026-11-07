@@ -2,6 +2,7 @@ from pathlib import Path
 from sandbox.intents.models import BehaviorIntent
 
 from sandbox.agents.engine import AgentEngine
+from sandbox.agents.tools import AgentToolExecutor
 from sandbox.bootstrap.service import create_instance
 from sandbox.platform.runtime import Platform
 from sandbox.prompting.renderer import render_context
@@ -174,5 +175,18 @@ def test_behavior_intent_is_idempotent(tmp_path: Path):
         second = platform.submit_behavior(intent)
         assert first["status"] == "accepted"
         assert second == first
+    finally:
+        platform.close()
+
+
+def test_read_tool_respects_agent_visibility(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "visibility-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        executor = AgentToolExecutor(platform, role="agent_decision", actor_id="lu_xingzhou")
+        result = executor.execute("inspect_entity", {"entity_id": "old_pact_tablet"})
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "visibility"
     finally:
         platform.close()
