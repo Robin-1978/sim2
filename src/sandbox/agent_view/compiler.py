@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..actions.conditions import ConditionEngine
 from ..agents.tools import tools_for_role
 from ..persistence.store import WorldStore
 from ..world.drives import DriveCalculator
@@ -9,6 +10,32 @@ from ..world.drives import DriveCalculator
 
 def _label(value: str) -> str:
     return value.replace("_", " ").strip().title()
+
+
+def _predicate_text(predicate: str) -> str:
+    """Turn a configured predicate into one short sentence for the model."""
+
+    text = str(predicate).replace("_", " ").replace(".", " ").strip()
+    replacements = {
+        "actor can explore": "You have exploration capability",
+        "actor can gather": "You have gathering capability",
+        "actor can craft": "You have crafting capability",
+        "actor can communicate": "You can communicate",
+        "actor can research": "You have research capability",
+        "actor is guard": "You are a guard",
+        "actor is healer": "You are a healer",
+        "actor alive": "You are alive",
+        "actor mobile": "You can move",
+        "area unknown": "The area is not known yet",
+        "area not fully mapped": "The area is not fully mapped",
+        "threat detected": "A threat has been detected",
+        "threat at village": "A threat is at the settlement",
+        "threat overwhelming": "The threat is overwhelming",
+        "patient available": "A patient is available",
+        "inputs available": "Required inputs are available",
+        "recipe available": "A recipe is available",
+    }
+    return replacements.get(text, text[:1].upper() + text[1:] + ".")
 
 
 def _cost_text(action: dict[str, Any]) -> list[str]:
@@ -31,8 +58,9 @@ def _action_view(action: dict[str, Any]) -> dict[str, Any]:
     failure = action.get("failure", {})
     return {
         "name": _label(action.get("id", "action")),
-        "when": ["Platform confirms the configured requirements."],
-        "requires": ["The actor, target, route, resources and capabilities must be valid."],
+        "summary": action.get("summary") or action.get("description") or _label(action.get("id", "action")),
+        "when": action.get("when") or action.get("precondition_text") or [_predicate_text(item) for item in action.get("preconditions", [])] or ["Platform confirms the configured requirements."],
+        "requires": action.get("requirements") or action.get("requirement_text") or [_predicate_text(item) for item in action.get("preconditions", [])] or ["Platform confirms the configured requirements."],
         "target": "Platform selects a permitted target from the current view.",
         "time": f"{action.get('duration', {}).get('minutes', 'variable')} minutes",
         "cost": _cost_text(action),
@@ -48,6 +76,7 @@ class AgentViewCompiler:
 
     def __init__(self, store: WorldStore):
         self.store = store
+        self.conditions = ConditionEngine()
 
     def build_decision_view(self, agent_id: str, role: str = "agent_decision") -> dict[str, Any]:
         try:
@@ -59,9 +88,20 @@ class AgentViewCompiler:
         bt_defs = {x["id"]: x for x in self.store.get_definitions("bt_def")}
         action_defs = {x["id"]: x for x in self.store.get_definitions("action_def")}
         available = []
+        state = agent.get("initial_state", {})
+        location_id = state.get("location_id")
+        current_location = {}
+        if location_id:
+            try:
+                current_location = self.store.get_entity(location_id)
+            except KeyError:
+                pass
         for bt_id in agent.get("initial_bt_ids", []):
             bt = bt_defs.get(bt_id)
             if not bt:
+                continue
+            condition_context = {"current_location": current_location, "location_id": location_id}
+            if any(not self.conditions.evaluate(str(predicate), agent=agent, target={}, context=condition_context, world=self.store.get_meta("world_properties", {}) or {}) for predicate in bt.get("entry_conditions", []) or []):
                 continue
             steps = []
             costs = []
@@ -74,41 +114,46 @@ class AgentViewCompiler:
                     continue
                 view = _action_view(action)
                 steps.append(view["name"])
-                costs.extend(view["cost"][:2])
+                costs.extend(view["cost"])
                 impacts.extend(view["impact"][:1])
             available.append({
                 "ref": f"behavior:{bt_id}",
                 "name": bt.get("summary") or _label(bt_id),
-                "purpose": f"Execute the {_label(bt_id)} plan.",
-                "when": ["The current goal and configured entry conditions are relevant."],
-                "requires": ["Platform confirms all step requirements."],
+                "summary": bt.get("description") or bt.get("summary") or _label(bt_id),
+                "purpose": bt.get("purpose") or bt.get("description") or bt.get("summary") or _label(bt_id),
+                "when": bt.get("when") or bt.get("entry_descriptions") or [_predicate_text(item) for item in bt.get("entry_conditions", [])] or ["The current goal makes this useful."],
+                "requires": bt.get("requirements") or bt.get("requirement_descriptions") or [_predicate_text(item) for item in bt.get("entry_conditions", [])] or ["Platform confirms all step requirements."],
                 "target": "Platform resolves permitted targets from the current view.",
                 "steps": steps[:5],
                 "time": f"{bt.get('estimated_minutes', 'variable')} minutes",
-                "cost": list(dict.fromkeys(costs))[:4] or ["Costs are defined by the selected steps."],
+                "cost": list(dict.fromkeys(costs))[:6] or ["Costs are defined by the selected steps."],
                 "impact": list(dict.fromkeys(impacts))[:3] or ["Platform applies configured effects and records events."],
-                "success": ["Platform reports the configured success result."],
-                "failure": ["Platform reports a failed or interrupted step."],
+                "success": [str(item).replace("_", " ") for item in bt.get("success_results", [])] or ["Platform reports the configured success result."],
+                "failure": [str(item).replace("_", " ") for item in bt.get("failure_results", [])] or ["Platform reports a failed or interrupted step."],
                 "interrupt": bt.get("interrupt_policy", "cancel"),
+                "tags": bt.get("tags", []),
+                "goal_tags": bt.get("goal_tags", []),
+                "drive_tags": bt.get("drive_tags", []),
             })
-        state = agent.get("initial_state", {})
-        location_id = state.get("location_id")
-        nearby = self.store.entities_at_location(location_id) if location_id else []
+        nearby = [item for item in (self.store.entities_at_location(location_id) if location_id else []) if item.get("id") != agent_id]
         needs = agent.get("needs", {})
         drives = DriveCalculator(self.store.get_meta("rules", {})).calculate(agent)
+        drive_model = (self.store.get_meta("rules", {}) or {}).get("motivation_model", {})
         known_facts = self.store.list_knowledge_facts(agent_id, limit=8)
         if not known_facts:
             known_facts = [{"fact": fact, "source_type": "config_seed", "confidence": 1.0} for fact in agent.get("knowledge_seed", [])[:8]]
-        relationships = self.store.get_relationships(agent_id, limit=5)
+        relationships = self.store.get_related_relationships(agent_id, limit=5)
         memories = self.store.list_memories(agent_id, limit=5)
+        recent_actions = self.store.recent_events_for_actor(agent_id, limit=2)
         return {
             "context_version": "1", "role": role,
             "world_time": {"minute": self.store.get_meta("world_minute", 0), "label": f"World minute {self.store.get_meta('world_minute', 0)}"},
             "self": {"id": agent_id, "name": agent.get("name", agent_id), "role": agent.get("role", "agent"), "status": state.get("status", "idle"), "location": location_id, "health": state.get("health"), "stamina": state.get("stamina"), "fatigue": state.get("fatigue"), "goal": agent.get("ultimate_goal")},
             "identity": {"traits": agent.get("traits", {}), "beliefs": agent.get("beliefs", []), "capabilities": agent.get("capabilities", {})},
+            "goal_tags": agent.get("goal_tags", []),
             "capability_history": self.store.list_capability_progress(agent_id, limit=5),
             "needs": needs, "inventory": agent.get("inventory", {}), "injuries": state.get("injuries", []),
-            "drives": drives[:5], "observation": {"facts": [], "source": "platform_snapshot"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "memories": memories, "direct_relationships": relationships,
+            "drives": drives[:5], "drive_model": drive_model, "observation": {"facts": [], "source": "platform_snapshot"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "memories": memories, "recent_actions": recent_actions, "direct_relationships": relationships,
             "active_task": {"bt": state.get("active_bt_instance"), "action": state.get("active_action"), "remaining_minutes": state.get("remaining_minutes", 0)},
             "available_behaviors": available[:5], "last_platform_result": state.get("last_platform_result"), "tools": tools_for_role(role),
         }

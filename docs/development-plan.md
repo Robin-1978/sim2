@@ -2,7 +2,7 @@
 
 ## 实施状态（2026-11-07）
 
-`M0`–`M8` 的计划内容已经落地并分阶段提交：统一 ReAct、通用配置创世、SQLite BT/Action 执行、条件/目标/资源/效果、探索与沟通知识、低频演化、God/WorldBuilder、玩家入口、控制/回放和规模基准均有代码与测试。当前 ReAct 会话默认最多 6 次模型调用，长时 BT 不在会话内推进；每个阶段的验收证据记录在下方并由测试和基准命令复核。
+`M0`–`M8` 的计划内容已经落地并分阶段提交：统一 ReAct、JSON Schema 工具调用、原生 assistant/tool/result 消息、通用配置创世、SQLite BT/Action 执行、条件/目标/资源/效果、探索与沟通知识、低频演化、God/WorldBuilder、玩家入口、控制/回放和规模基准均有代码与测试。当前 ReAct 会话默认最多 6 次模型调用，长时 BT 不在会话内推进；每个 Agent 唤醒都重新构建 AgentView，只有当前会话保留互动消息。
 
 ## 开发目标
 
@@ -53,7 +53,7 @@ LLM Agent 不直接依赖 SQLite。所有 Agent 输出经过 Intent 网关；所
 
 实现 LLM Gateway、Decision Agent、AgentViewCompiler、工具调用、Intent Gateway 和最小 Platform Effect Pipeline。先支持观察、记忆查询、规则预览、选择 BT 和提交 Intent。
 
-验收：一个 Agent 可以读取局部世界、选择 BT、提交 Intent、收到 Platform 结果，并根据拒绝原因继续 ReAct。已完成：`AgentToolExecutor`、原生/文本工具调用归一化、Schema 子集校验、重复调用保护、Intent 角色路由、Platform 拒绝反馈和 `llm_call` 审计；测试覆盖工具后决策、拒绝后重试和反思记忆提交。
+验收：一个 Agent 可以读取局部世界、选择 BT、提交 Intent、收到 Platform 结果，并根据拒绝原因继续 ReAct。已完成：`AgentToolExecutor`、角色 JSON Schema、原生/文本工具调用归一化、原生消息历史、Schema 校验、重复调用保护、Intent 角色路由、Platform 拒绝反馈、AgentView 契约验证和 `llm_call` 审计；测试覆盖工具后决策、原生 tool result 消息、拒绝后重试和反思记忆提交。
 
 ### M2：SQLite 与配置创世
 
@@ -118,6 +118,11 @@ LLM Agent 不直接依赖 SQLite。所有 Agent 输出经过 Intent 网关；所
 pytest -q
 PYTHONPATH=src python -m compileall -q src scripts
 PYTHONPATH=src python scripts/benchmark_platform.py --agents 1000 --runs 5
+PYTHONPATH=src python scripts/verify_agent_models.py
 ```
 
 最近一次结果为 `30 passed`；1000 个 Agent、5 次非 LLM 模拟分钟的 p95 为约 `148 ms`。测试覆盖 ReAct 工具反馈与拒绝重试、SQLite 创世与回滚、长 Action/并行 BT/共享资源、中断恢复、探索沟通知识、记忆 FTS5、反思目标和能力历史、God/WorldBuilder、玩家入口、HTTP 控制、快照恢复、确定性回放以及 Starter Village 端到端场景。
+
+`verify_agent_models.py` 是真实模型验收入口：它不打印原始 reasoning 或密钥，只报告 Decision/Reflection/God 的会话步骤、最终 Intent、Platform 校验结果和质量布尔值；远程 Provider 使用 `~/.sim2/llm.json` 中的显式代理和环境变量引用。
+
+2026-11-08 的真实本地验证使用 llama.cpp 模型 `Huihui-Qwen3.5-4B-abliterated.Q4_K_M`：Decision 选择了配置中可执行的 `behavior:explore_greywood`，目标/驱动标签对齐，未填充 duration/cost 参数；Reflection 提交了具体且不超过 500 字符的经验摘要。两者质量检查通过；Decision 因当前角色只有一个可执行 BT，质量等级标为 `grounded_forced_choice`。beam-free 的 `/models` 通过配置代理可达，但本次进程没有可用的 API key 环境变量，chat 返回 403，因此远程模型尚未被冒充为已通过；设置环境变量后运行 `verify_agent_models.py` 即可完成同样的 God Agent 检查。

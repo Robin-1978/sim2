@@ -18,7 +18,7 @@
       "type": "openai_compatible",
       "base_url": "https://opencode.ai/inference/go/openai/v1",
       "model": "beam-free",
-      "api_key_env": "MY_MY_API",
+      "api_key_env": "BEAM_API_KEY",
       "timeout_seconds": 120
     }
   }

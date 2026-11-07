@@ -12,7 +12,7 @@ from .config import LLMConfig, ProviderConfig
 
 
 class LLMProvider(Protocol):
-    def complete_json(self, *, system: str, context: str, tools: list[dict[str, Any]] | None = None) -> dict[str, Any]: ...
+    def complete_json(self, *, system: str, context: str, tools: list[dict[str, Any]] | None = None, messages: list[dict[str, Any]] | None = None) -> dict[str, Any]: ...
 
 
 def _json_from_text(text: str) -> dict[str, Any]:
@@ -30,7 +30,7 @@ def _json_from_text(text: str) -> dict[str, Any]:
 class OpenAICompatibleProvider:
     config: ProviderConfig
 
-    def complete_json(self, *, system: str, context: str, tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    def complete_json(self, *, system: str, context: str, tools: list[dict[str, Any]] | None = None, messages: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         headers = {"content-type": "application/json"}
         api_key = None
         if self.config.api_key_env:
@@ -41,7 +41,7 @@ class OpenAICompatibleProvider:
             headers["authorization"] = f"Bearer {api_key}"
         payload = {
             "model": self.config.model,
-            "messages": [
+            "messages": messages or [
                 {"role": "system", "content": system},
                 {"role": "user", "content": context},
             ],
@@ -52,7 +52,7 @@ class OpenAICompatibleProvider:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
         url = f"{self.config.base_url}/chat/completions"
-        response = httpx.post(url, headers=headers, json=payload, timeout=self.config.timeout_seconds)
+        response = httpx.post(url, headers=headers, json=payload, timeout=self.config.timeout_seconds, proxy=self.config.proxy, trust_env=False)
         # Some local OpenAI-compatible servers accept JSON mode but reject the
         # optional native tools fields.  Retry the same read-only completion
         # without those hints; the prompt-level tool envelope remains usable.
@@ -60,13 +60,13 @@ class OpenAICompatibleProvider:
             fallback = dict(payload)
             fallback.pop("tools", None)
             fallback.pop("tool_choice", None)
-            response = httpx.post(url, headers=headers, json=fallback, timeout=self.config.timeout_seconds)
+            response = httpx.post(url, headers=headers, json=fallback, timeout=self.config.timeout_seconds, proxy=self.config.proxy, trust_env=False)
         if response.status_code in {400, 422} and "response_format" in payload:
             fallback = dict(payload)
             fallback.pop("response_format", None)
             fallback.pop("tools", None)
             fallback.pop("tool_choice", None)
-            response = httpx.post(url, headers=headers, json=fallback, timeout=self.config.timeout_seconds)
+            response = httpx.post(url, headers=headers, json=fallback, timeout=self.config.timeout_seconds, proxy=self.config.proxy, trust_env=False)
         response.raise_for_status()
         data = response.json()
         message = data["choices"][0]["message"]
@@ -95,5 +95,5 @@ class LLMRouter:
     def provider_for_role(self, role: str) -> LLMProvider:
         return self.providers[self.config.provider_name_for(role)]
 
-    def complete_json(self, *, role: str, system: str, context: str, tools: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-        return self.provider_for_role(role).complete_json(system=system, context=context, tools=tools)
+    def complete_json(self, *, role: str, system: str, context: str, tools: list[dict[str, Any]] | None = None, messages: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        return self.provider_for_role(role).complete_json(system=system, context=context, tools=tools, messages=messages)

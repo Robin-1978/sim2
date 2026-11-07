@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..agent_view.compiler import AgentViewCompiler
+from ..agent_view.validator import validate_agent_view
 from ..intents.models import BehaviorIntent
 from ..platform.runtime import Platform
 from ..prompting.renderer import render_context
@@ -60,7 +61,7 @@ class AgentEngine:
         self.max_repeated_tool_calls = max(1, max_repeated_tool_calls)
         self.view = AgentViewCompiler(platform.store)
 
-    def _complete(self, *, role: str, system: str, context: str) -> dict[str, Any]:
+    def _complete(self, *, role: str, system: str, context: str, messages: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """Call old test providers and native tool-capable providers alike."""
 
         method = self.provider.complete_json
@@ -73,6 +74,8 @@ class AgentEngine:
             kwargs["tools"] = tool_schemas_for_role(role)
         if "role" in parameters:
             kwargs["role"] = role
+        if "messages" in parameters:
+            kwargs["messages"] = messages
         return method(**kwargs)
 
     def run(self, *, role: str, actor_id: str, task_type: str = "decision") -> AgentTurn:
@@ -88,23 +91,31 @@ class AgentEngine:
                 return AgentTurn(role, task_type, {}, result, 0, [{"step": "skipped", "result": result}])
         context = self.view.build_decision_view(actor_id, role=role)
         context["role"] = role
+        view_errors = validate_agent_view(context, role=role)
+        if view_errors:
+            raise ValueError("invalid AgentView: " + "; ".join(view_errors))
         task = self._task_text(role, task_type)
         executor = AgentToolExecutor(self.platform, role=role, actor_id=actor_id)
         last_response: dict[str, Any] = {}
         last_result: dict[str, Any] = {"status": "no_result"}
         transcript: list[dict[str, Any]] = []
         repeated: dict[str, int] = {}
+        conversation_messages: list[dict[str, Any]] = [
+            {"role": "system", "content": ROLE_POLICIES[role]},
+            {"role": "user", "content": render_context(context, task)},
+        ]
 
         for iteration in range(1, self.max_iterations + 1):
             prompt = render_context(context, task)
             try:
-                response = self._complete(role=role, system=ROLE_POLICIES[role], context=prompt)
+                response = self._complete(role=role, system=ROLE_POLICIES[role], context=prompt, messages=conversation_messages)
                 if not isinstance(response, dict):
                     raise ValueError("LLM response must be a JSON object")
             except Exception as exc:
                 last_result = {"status": "rejected", "failed_check": "llm_response", "message": str(exc)}
                 context["last_platform_result"] = last_result
                 transcript.append({"step": "llm_error", "error": str(exc)})
+                context.setdefault("interaction_history", []).append({"kind": "llm_error", "error": str(exc)})
                 self._audit(actor_id, role, task_type, iteration, prompt, {"error": str(exc)}, "llm_error")
                 continue
             last_response = response
@@ -122,6 +133,8 @@ class AgentEngine:
 
             if call is not None:
                 tool_name, arguments = call
+                if response.get("tool_calls"):
+                    conversation_messages.append({"role": "assistant", "tool_calls": response["tool_calls"]})
                 signature_key = f"{tool_name}:{repr(sorted(arguments.items()))}"
                 repeated[signature_key] = repeated.get(signature_key, 0) + 1
                 if repeated[signature_key] > self.max_repeated_tool_calls:
@@ -134,15 +147,31 @@ class AgentEngine:
                 else:
                     tool_result = executor.execute(tool_name, arguments)
                 transcript.append({"step": "tool", "name": tool_name, "arguments": arguments, "result": tool_result})
+                context.setdefault("interaction_history", []).extend([
+                    {"kind": "assistant_tool_call", "name": tool_name, "arguments": arguments},
+                    {"kind": "tool_result", "name": tool_name, "result": tool_result},
+                ])
                 context.setdefault("tool_results", []).append({"tool": tool_name, "result": tool_result})
                 context["last_platform_result"] = tool_result
                 last_result = tool_result
+                if response.get("tool_calls"):
+                    native_call = response["tool_calls"][0]
+                    conversation_messages.append({"role": "tool", "tool_call_id": native_call.get("id", "tool_call"), "name": tool_name, "content": json.dumps(tool_result, ensure_ascii=False)})
+                else:
+                    conversation_messages.append({"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
+                    conversation_messages.append({"role": "user", "content": f"Tool result ({tool_name}): {json.dumps(tool_result, ensure_ascii=False)}"})
                 if TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "intent" and tool_result.get("status") in {"accepted", "wait"}:
                     return AgentTurn(role, task_type, last_response, tool_result, iteration, transcript)
                 continue
 
             result = self._submit_response(role, actor_id, response)
-            transcript.append({"step": "intent", "result": result})
+            transcript.append({"step": "intent", "response": response, "result": result})
+            conversation_messages.append({"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
+            conversation_messages.append({"role": "user", "content": f"Platform result: {json.dumps(result, ensure_ascii=False)}"})
+            context.setdefault("interaction_history", []).extend([
+                {"kind": "assistant_intent", "intent": response},
+                {"kind": "platform_result", "result": result},
+            ])
             context["last_platform_result"] = result
             last_result = result
             if result.get("status") in {"accepted", "wait"}:
@@ -166,7 +195,7 @@ class AgentEngine:
             return {"status": "rejected", "failed_check": "intent_schema", "retryable": True, "message": "Intent must be an object."}
         if data.get("type") == "intent":
             data.pop("type", None)
-        intent_type = str(data.get("intent_type") or data.get("kind") or ("select_behavior" if data.get("behavior_ref") or data.get("behavior_id") else ""))
+        intent_type = str(data.get("intent_type") or data.get("kind") or ("select_behavior" if data.get("behavior_ref") or data.get("behavior_id") or data.get("behavior") else ""))
         if data.get("wait") is True:
             intent_type = "wait"
         if intent_type not in ROLE_INTENTS.get(role, set()):

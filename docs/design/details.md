@@ -205,6 +205,8 @@ God Agent 输出 `CreateEntityIntent`、`UpdateWorldRuleIntent`、`CreateWorldEv
 
 上下文编译器根据 `agent_role` 生成不同视图：Decision 只看角色视角和可执行 BT；Reflection 只看个体历史和长期趋势；God 看世界全局投影。上下文包含系统约束、当前状态、驱动、观察、记忆、候选目录、函数 Schema、最近一次 Platform 结果和输出协议。LLM 只产生意图或只读查询，Platform 结果作为下一轮输入。隐藏思维链不持久化，只记录决策摘要、意图、Platform 结果和审计信息。
 
+Prompt 使用半结构化标签标出局部边界，而不是把整个上下文伪装成可解析 XML。稳定的角色策略和原生 JSON Schema 工具定义位于消息前缀；每次唤醒的世界快照、Agent 基本信息、驱动、记忆和可执行 BT 位于动态消息；当前 ReAct 的 assistant/tool/result 消息按原生消息角色追加。工具 Schema 不重复塞入世界状态 JSON，BT AST、内部 predicate 和 handler 永远不传给 Agent。
+
 一次 ReAct 会话不等待世界分钟，也不把每个工具调用写成模拟事件。`AgentEngine` 维护有限的会话 transcript，并按以下状态转换运行：
 
 ```text

@@ -22,6 +22,18 @@ minute_effects:
   every_minutes: 144
   effect:
     fog_level: 0.05
+motivation_model:
+  family: hybrid_need_utility_appraisal
+  no_fixed_hierarchy: true
+  dimensions:
+  - physiological_homeostasis
+  - safety_and_uncertainty
+  - relatedness
+  - competence
+  - autonomy
+  - meaning_and_goal_progress
+  - novelty
+  - social_norms_and_external_pressure
 needs:
 - id: hunger
   target: 80

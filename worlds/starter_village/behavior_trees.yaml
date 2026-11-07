@@ -67,6 +67,8 @@ behavior_trees:
   - marks_classified
   failure_results:
   - emergency
+  goal_tags: [safety, warning, patrol]
+  drive_tags: [safety, esteem]
   nodes:
   - type: action
     action_id: travel_to
@@ -104,6 +106,8 @@ behavior_trees:
   - patient.available
   estimated_minutes: 72
   interrupt_policy: pause
+  goal_tags: [health, care]
+  drive_tags: [belonging, safety]
   nodes:
   - type: action
     action_id: heal_target
@@ -126,6 +130,8 @@ behavior_trees:
   - lost
   - injured
   - emergency
+  goal_tags: [exploration, map, knowledge, missing_person]
+  drive_tags: [self_actualization, esteem]
   nodes:
   - type: action
     action_id: travel_to
@@ -192,6 +198,8 @@ behavior_trees:
   failure_results:
   - defense_broken
   - retreat_required
+  goal_tags: [safety, defense, civilians]
+  drive_tags: [safety, belonging]
   nodes:
   - type: action
     action_id: sound_alarm

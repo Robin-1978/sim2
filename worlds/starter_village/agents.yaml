@@ -308,6 +308,7 @@ agents:
     restless: 0.78
     honest: 0.68
   ultimate_goal: 完成灰林地图并找到失踪的妹妹陆素
+  goal_tags: [exploration, map, knowledge, missing_person]
   beliefs:
   - id: forest_punishes_lies
     statement: 森林会惩罚谎言

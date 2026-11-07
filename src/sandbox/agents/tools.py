@@ -115,7 +115,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "type": "object",
             "properties": {
                 "event_ref": {"type": "string"},
-                "summary": {"type": "string"},
+                "summary": {"type": "string", "maxLength": 500},
                 "confidence": {"type": "number", "minimum": 0, "maximum": 1},
             },
             "required": ["summary"],
@@ -302,6 +302,8 @@ def validate_tool_arguments(name: str, arguments: dict[str, Any]) -> list[str]:
             errors.append(f"{key} is below the minimum")
         if isinstance(value, (int, float)) and "maximum" in properties[key] and value > properties[key]["maximum"]:
             errors.append(f"{key} is above the maximum")
+        if isinstance(value, str) and "maxLength" in properties[key] and len(value) > properties[key]["maxLength"]:
+            errors.append(f"{key} is too long")
     return errors
 
 

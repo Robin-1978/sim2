@@ -18,6 +18,7 @@ class ProviderConfig:
     base_url: str
     model: str
     api_key_env: str | None = None
+    proxy: str | None = None
     timeout_seconds: float = 120.0
 
 
@@ -44,6 +45,7 @@ class LLMConfig:
                 base_url=str(value["base_url"]).rstrip("/"),
                 model=str(value["model"]),
                 api_key_env=value.get("api_key_env"),
+                proxy=value.get("proxy"),
                 timeout_seconds=float(value.get("timeout_seconds", 120)),
             )
         if not providers:

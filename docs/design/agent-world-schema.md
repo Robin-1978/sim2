@@ -89,6 +89,8 @@ Agent 需要更远或更详细的信息时，通过 `observe_nearby`、`recall_m
 
 ## ActionView 与 BTView
 
+LLM 永远不接收 BT JSON/AST、节点类型、内部 predicate 或 Action handler。Bootstrap 将 BT 定义存入 SQLite；AgentViewCompiler 只把当前可执行 BT 翻译成简短自然语言：目的、何时适用、需要满足的条件、步骤名称、预计时间、成本、影响、成功/失败结果和中断方式。Agent 只回传稳定的 `behavior_ref`，Platform 再用 SQLite 中的原始 BT 执行。
+
 每个元动作和 BT 都必须生成以下英文视图字段：
 
 | 字段 | 含义 |
@@ -145,6 +147,8 @@ AgentView + task
 ```
 
 工具错误和 Platform 拒绝都必须返回 `status`、`failed_check`、简短 `message` 和 `retryable`（适用时）。相同工具参数超过会话预算后停止重复调用。Intent 只有在 Platform 返回 `accepted` 或 `wait` 时结束会话；会话达到调用上限后返回 `budget_exhausted`，不产生副作用。原生 OpenAI-compatible `tool_calls` 与本地模型输出的 JSON `tool_call` 使用同一内部信封。决策 Agent 若已经有活动 BT，Engine 直接跳过 LLM，会话只在完成、失败或中断边界重新开启。
+
+上下文生命周期是一次唤醒一次快照：每次 Decision、Reflection 或 God Agent 被唤醒时，Platform 从 SQLite 当前投影、记忆和相关事件重新编译 AgentView。只有当前 ReAct 会话保留 assistant/tool/result 消息并追加交互结果；会话结束后丢弃消息历史，下一次唤醒不会继承上一会话的完整 Prompt，只会重新获得当前世界状态和持久化摘要。
 
 ## LLM 创建新世界模板
 

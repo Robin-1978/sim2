@@ -119,6 +119,22 @@ class Platform:
             self.store.finish_intent(intent_id, "rejected", result)
         return result
 
+    def _validate_behavior_parameters(self, behavior_id: str, parameters: dict[str, Any]) -> list[str]:
+        if not parameters:
+            return []
+        bt = next((item for item in self.store.get_definitions("bt_def") if item.get("id") == behavior_id), None)
+        if not bt:
+            return ["behavior is not registered"]
+        action_defs = {item["id"]: item for item in self.store.get_definitions("action_def")}
+        allowed: set[str] = set()
+        for node in bt.get("nodes", []) or []:
+            if node.get("type") != "action":
+                continue
+            action = action_defs.get(node.get("action_id"), {})
+            allowed.update((action.get("parameters") or {}).keys())
+            allowed.update((node.get("parameters") or {}).keys())
+        return [f"unknown behavior parameter: {key}" for key in parameters if key not in allowed]
+
     def submit_behavior(self, intent: BehaviorIntent) -> dict[str, Any]:
         previous = self.store.get_intent(intent.intent_id)
         if previous is not None:
@@ -145,6 +161,11 @@ class Platform:
         if behavior_id not in allowed:
             return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                 "status": "rejected", "message": "This behavior is not available to this character.", "failed_check": "capability", "retryable": True,
+            })
+        parameter_errors = self._validate_behavior_parameters(behavior_id, intent.parameters)
+        if parameter_errors:
+            return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+                "status": "rejected", "message": "Behavior parameters must match the registered Action schema.", "failed_check": "parameters", "errors": parameter_errors, "retryable": True,
             })
         state = dict(agent.get("initial_state", {}))
         if state.get("status") in {"executing", "paused"}:
@@ -198,6 +219,8 @@ class Platform:
         intent_id = str(uuid4())
         if not summary.strip():
             return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Experience summary is required.", "failed_check": "summary", "retryable": True})
+        if len(summary) > 500:
+            return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Experience summary must be at most 500 characters.", "failed_check": "summary_length", "retryable": True})
         if not 0 <= confidence <= 1:
             return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Confidence must be between 0 and 1.", "failed_check": "confidence", "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))

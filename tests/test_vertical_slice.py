@@ -7,8 +7,11 @@ from sandbox.intents.models import BehaviorIntent
 
 from sandbox.agents.engine import AgentEngine
 from sandbox.agents.tools import AgentToolExecutor
+from sandbox.agents.quality import evaluate_turn
+from sandbox.agent_view.validator import validate_agent_view
 from sandbox.actions.conditions import ConditionEngine
 from sandbox.actions.effects import EffectPipeline
+from sandbox.world.drives import DriveCalculator
 from sandbox.api.service import ControlService
 from sandbox.api.http import ControlHTTPServer
 from sandbox.bootstrap.service import create_instance, validate_config
@@ -36,6 +39,16 @@ class SequenceProvider:
         return dict(self.responses.pop(0))
 
 
+class MessageProvider:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.messages = []
+
+    def complete_json(self, *, system, context, tools=None, messages=None):
+        self.messages.append(list(messages or []))
+        return dict(self.responses.pop(0))
+
+
 def test_bootstrap_and_agent_intent(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "test-world", tmp_path / "runtime")
@@ -57,9 +70,11 @@ def test_bootstrap_and_agent_intent(tmp_path: Path):
         assert turn.iterations == 1
         assert provider.calls
         prompt = provider.calls[0][1]
-        assert "# OPTIONS" in prompt
+        assert "<executable_behaviors dynamic=\"true\">" in prompt
         assert "collect" not in prompt.lower()
         assert "actor.can" not in prompt
+        assert "nodes" not in prompt.lower()
+        assert "preconditions" not in prompt.lower()
     finally:
         platform.close()
 
@@ -79,9 +94,45 @@ def test_context_uses_role_tools_and_plain_sections():
         "tools": [{"name": "request_behavior", "purpose": "Ask Platform to start one offered behavior."}],
     }
     prompt = render_context(context, "Choose a behavior.")
-    assert "# TOOLS" in prompt
+    assert "<tools stable=\"true\">" in prompt
     assert "request_behavior" in prompt
+    assert "arguments: none" in prompt
     assert "A fresh mark is visible." in prompt
+
+
+def test_agent_view_contract_and_native_react_messages(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "message-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    provider = MessageProvider([
+        {"tool_calls": [{"id": "call-1", "type": "function", "function": {"name": "observe_nearby", "arguments": "{\"question\":\"What is here?\"}"}}]},
+        {"behavior_ref": "behavior:explore_greywood", "target": {}, "parameters": {}, "reason": "The goal requires mapping.", "confidence": 0.8},
+    ])
+    try:
+        view = platform.decision_view("lu_xingzhou")
+        assert validate_agent_view(view, role="agent_decision") == []
+        turn = AgentEngine(platform, provider).run(role="agent_decision", actor_id="lu_xingzhou")
+        assert turn.result["status"] == "accepted"
+        assert len(provider.messages) == 2
+        assert any(message.get("role") == "assistant" and message.get("tool_calls") for message in provider.messages[1])
+        assert any(message.get("role") == "tool" and message.get("tool_call_id") == "call-1" for message in provider.messages[1])
+    finally:
+        platform.close()
+
+
+def test_decision_quality_checks_grounding_against_drive_and_goal(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "quality-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    provider = SequenceProvider([{"behavior_ref": "behavior:explore_greywood", "reason": "Exploration capability and the map goal support this behavior.", "confidence": 0.9}])
+    try:
+        view = platform.decision_view("lu_xingzhou")
+        turn = AgentEngine(platform, provider).run(role="agent_decision", actor_id="lu_xingzhou")
+        quality = evaluate_turn(turn, view)
+        assert quality["passed"] is True
+        assert quality["grade"] == "grounded_forced_choice"
+    finally:
+        platform.close()
 
 
 def test_react_session_reads_tool_result_before_selecting_behavior(tmp_path: Path):
@@ -102,7 +153,7 @@ def test_react_session_reads_tool_result_before_selecting_behavior(tmp_path: Pat
         turn = AgentEngine(platform, provider).run(role="agent_decision", actor_id="lu_xingzhou")
         assert turn.result["status"] == "accepted"
         assert turn.iterations == 2
-        assert "TOOL RESULTS" in provider.calls[1]["context"]
+        assert "<interaction_history append_only=\"true\">" in provider.calls[1]["context"]
         assert provider.calls[0]["tools"]
         assert provider.calls[0]["tools"][0]["function"]["name"] == "observe_nearby"
         assert any(step["step"] == "tool" for step in turn.transcript)
@@ -145,7 +196,7 @@ def test_reflection_intent_is_committed_by_platform(tmp_path: Path):
         assert turn.result["status"] == "accepted"
         memories = platform.store.list_memories("lu_xingzhou")
         assert memories[0]["summary"].startswith("The first observation")
-        assert "Recent experience" in provider.calls[0]["context"]
+        assert "memory (experience)" in provider.calls[0]["context"]
     finally:
         platform.close()
 
@@ -395,6 +446,15 @@ def test_generic_condition_and_effect_components():
     # validated separately here with the same public projection shape.
     damage = EffectPipeline().apply(agent, {"type": "damage", "formula": "actor.attack_power - target.defense"}, target={"defense": 2})
     assert damage["applied"] is True
+
+
+def test_hybrid_drive_model_has_zero_baseline_and_separate_components():
+    calculator = DriveCalculator({"needs": [{"id": "safety", "target": 100, "gamma": 2, "critical_threshold": 0.8, "critical_gain": 2}]})
+    calm = calculator.calculate({"needs": {"safety": 100}})[0]
+    pressured = calculator.calculate({"needs": {"safety": 20}, "external_pressure": {"safety": 0.4}, "relation_pressure": {"safety": 0.2}})[0]
+    assert calm["urgency"] < 0.01
+    assert pressured["urgency"] > calm["urgency"]
+    assert set(pressured["components"]) >= {"internal", "external", "social", "novelty", "inhibition"}
 
 
 def test_exploration_completion_persists_result_and_knowledge(tmp_path: Path):

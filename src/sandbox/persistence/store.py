@@ -232,6 +232,18 @@ class WorldStore:
         ).fetchall()
         return [{"person": row["to_id"], "relation": row["relation_type"], **json.loads(row["data_json"])} for row in rows]
 
+    def get_related_relationships(self, entity_id: str, *, limit: int = 8) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT from_id,to_id,relation_type,data_json FROM relationship WHERE from_id=? OR to_id=? ORDER BY from_id,to_id LIMIT ?",
+            (entity_id, entity_id, max(1, min(int(limit), 50))),
+        ).fetchall()
+        result = []
+        for row in rows:
+            other = row["to_id"] if row["from_id"] == entity_id else row["from_id"]
+            relation = json.loads(row["data_json"])
+            result.append({"person": other, "relation": row["relation_type"], "direction": "outgoing" if row["from_id"] == entity_id else "incoming", **relation})
+        return result
+
     def list_relationships(self) -> list[dict[str, Any]]:
         rows = self.connection.execute("SELECT from_id,to_id,relation_type,data_json FROM relationship ORDER BY from_id,to_id").fetchall()
         return [{"from": row["from_id"], "to": row["to_id"], "type": row["relation_type"], **json.loads(row["data_json"])} for row in rows]
@@ -418,6 +430,13 @@ class WorldStore:
             (max(1, min(int(limit), 100)),),
         ).fetchall()
         return [{"event_id": row["event_id"], "event_type": row["event_type"], "actor_id": row["actor_id"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
+
+    def recent_events_for_actor(self, actor_id: str, *, limit: int = 2) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT event_id,event_type,world_minute,data_json FROM event_log WHERE actor_id=? ORDER BY event_id DESC LIMIT ?",
+            (actor_id, max(1, min(int(limit), 10))),
+        ).fetchall()
+        return [{"event_id": row["event_id"], "event_type": row["event_type"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
 
     def create_intent(self, intent_id: str, actor_id: str, intent_type: str, data: dict[str, Any], world_minute: int) -> None:
         self.connection.execute(

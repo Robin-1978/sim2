@@ -12,6 +12,11 @@
 - [Building effective agents](https://www.anthropic.com/research/building-effective-agents)，Anthropic，2024。结论：先使用简单、可组合的 Workflow，只有需要动态决策时才引入 Agent；工具接口应清晰且易于调试。本项目采用模块化单体、确定性分钟推进 和长时 BT，把 LLM 限制在计划边界、反思窗口和世界创新窗口。
 - [Function calling guide](https://platform.openai.com/docs/guides/function-calling)，OpenAI Platform 文档（通过项目网络代理核查，2026-11-07）。结论：工具定义使用结构化参数 Schema；模型请求工具后，应用执行工具并把结果作为下一条消息返回；应用必须决定工具是否真正执行。本项目把工具分成只读查询和 Intent 提交两类，统一由 `AgentToolExecutor` 校验参数并调用 Platform。
 - [Implement tool use](https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/implement-tool-use)，Anthropic API 文档（通过项目网络代理核查，2026-11-07）。结论：工具调用、工具结果和错误应保持明确的消息边界；工具错误要作为可恢复反馈返回模型，不能把异常当成成功结果。本项目保留每轮 ReAct transcript，使用 `retryable`、`failed_check` 和短错误消息继续会话。
+- [Using tools](https://developers.openai.com/api/docs/guides/tools)，OpenAI API 文档（通过项目网络代理核查，2026-11-08）。结论：工具使用独立的 JSON Schema/`tools` 契约，应用执行工具后必须把结果作为后续消息提供给模型；工具定义不应依赖自然语言猜测。本项目用 `tool_schemas_for_role` 生成 JSON Schema，Prompt 只显示简短参数说明。
+- [Conversation state](https://developers.openai.com/api/docs/guides/conversation-state)，OpenAI API 文档（通过项目网络代理核查，2026-11-08）。结论：一次交互要保留完整的 assistant/tool/result 消息序列；会话外的状态应通过持久化摘要或新的上下文重新构建。本项目 `AgentEngine` 每次唤醒新建消息列表，只有当前 ReAct 循环追加原生消息。
+- [A generalist AI agent for 3D virtual environments (SIMA)](https://deepmind.google/discover/blog/sima-generalist-ai-agent-for-3d-virtual-environments/)，Google DeepMind，2024。结论：游戏 Agent 需要把高层语言目标映射为可执行环境动作，并通过环境反馈闭环；本项目让 LLM 选择已注册 BT，Platform 执行原子 Action 并回传结果。
+- [Scaling Instructable Agents Across Many Simulated Worlds](https://arxiv.org/abs/2404.10179)，2024。结论：跨世界 Agent 需要环境接口、可迁移技能和明确反馈，不能把世界规则写进单个角色 Prompt；本项目把世界规则和 BT 保存在实例 SQLite/配置定义中。
+- [Behavior Tree in Unreal Engine 5.8](https://dev.epicgames.com/documentation/en-us/unreal-engine/behavior-tree-in-unreal-engine---overview)，Epic Games 文档（2026-11-08）。结论：Blackboard、行为树和事件中断分层，长任务由执行器推进；本项目把 BT 实例/Action 实例持久化，只有边界或中断才重新唤醒 Agent。
 
 ## 游戏 Agent 与行为执行
 
