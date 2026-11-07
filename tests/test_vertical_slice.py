@@ -6,6 +6,7 @@ from sandbox.agents.engine import AgentEngine
 from sandbox.agents.tools import AgentToolExecutor
 from sandbox.actions.conditions import ConditionEngine
 from sandbox.actions.effects import EffectPipeline
+from sandbox.api.service import ControlService
 from sandbox.bootstrap.service import create_instance, validate_config
 from sandbox.platform.runtime import Platform
 from sandbox.prompting.renderer import render_context
@@ -367,3 +368,26 @@ def test_world_builder_validates_then_submits_template(tmp_path: Path):
         assert turn.iterations == 2
     finally:
         platform.close()
+
+
+def test_control_service_pause_step_snapshot_and_audit(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "control-world", tmp_path / "runtime")
+    service = ControlService(db_path)
+    snapshot = tmp_path / "snapshot.sqlite3"
+    try:
+        assert service.status()["status"] == "running"
+        service.pause("test")
+        assert service.advance(2)["status"] == "paused"
+        assert service.step()["to_minute"] == 1
+        service.resume("test")
+        injected = service.inject("operator.signal", {"kind": "test"})
+        assert injected["status"] == "accepted"
+        metrics = service.metrics()
+        assert metrics["world_minute"] == 1
+        service.snapshot(snapshot)
+        assert snapshot.exists()
+        audit = service.audit()
+        assert any(event["event_type"] == "operator.signal" for event in audit["events"])
+    finally:
+        service.close()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -28,6 +29,35 @@ class Platform:
 
     def close(self) -> None:
         self.store.close()
+
+    def status(self) -> dict[str, Any]:
+        return {
+            "status": self.store.get_meta("runtime_status", "running"),
+            "world_minute": int(self.store.get_meta("world_minute", 0)),
+            "instance_id": self.store.get_meta("instance_id"),
+        }
+
+    def pause(self, reason: str = "operator") -> dict[str, Any]:
+        with self.store.transaction():
+            self.store.set_meta("runtime_status", "paused")
+            minute = int(self.store.get_meta("world_minute", 0))
+            self.store.append_event("runtime.paused", None, minute, {"reason": reason})
+        return self.status()
+
+    def resume(self, reason: str = "operator") -> dict[str, Any]:
+        with self.store.transaction():
+            self.store.set_meta("runtime_status", "running")
+            minute = int(self.store.get_meta("world_minute", 0))
+            self.store.append_event("runtime.resumed", None, minute, {"reason": reason})
+        return self.status()
+
+    def inject_event(self, event_type: str, payload: dict[str, Any], actor_id: str | None = None) -> dict[str, Any]:
+        if not event_type.strip():
+            raise ValueError("event_type is required")
+        minute = int(self.store.get_meta("world_minute", 0))
+        with self.store.transaction():
+            event_id = self.store.append_event(event_type, actor_id, minute, payload)
+        return {"status": "accepted", "event_id": event_id, "world_minute": minute}
 
     def decision_view(self, agent_id: str, role: str = "agent_decision") -> dict[str, Any]:
         return self.view.build_decision_view(agent_id, role=role)
@@ -649,12 +679,14 @@ class Platform:
         with self.store.transaction():
             self.store.complete_evolution_task(task_id, minute)
 
-    def advance(self, minutes: int = 1) -> dict[str, Any]:
+    def advance(self, minutes: int = 1, *, force: bool = False) -> dict[str, Any]:
         """Advance world time and active Action/BT instances deterministically."""
 
         minutes = int(minutes)
         if minutes < 1:
             raise ValueError("minutes must be at least 1")
+        if not force and self.store.get_meta("runtime_status", "running") != "running":
+            return {"status": "paused", "world_minute": int(self.store.get_meta("world_minute", 0))}
         start = int(self.store.get_meta("world_minute", 0))
         completed: list[str] = []
         failed: list[str] = []
@@ -675,6 +707,38 @@ class Platform:
                 self.store.append_event("world_minute.advanced", None, minute, {"minute": minute})
                 self._emit_due_evolution_tasks(minute)
         return {"status": "advanced", "from_minute": start, "to_minute": start + minutes, "completed_agents": sorted(set(completed)), "failed_agents": sorted(set(failed))}
+
+    def step(self) -> dict[str, Any]:
+        return self.advance(1, force=True)
+
+    def metrics(self) -> dict[str, Any]:
+        active = self.store.connection.execute("SELECT COUNT(*) AS n FROM agent_state WHERE json_extract(data_json,'$.initial_state.status') IN ('executing','paused')").fetchone()["n"]
+        events = self.store.connection.execute("SELECT COUNT(*) AS n FROM event_log").fetchone()["n"]
+        intents = self.store.connection.execute("SELECT COUNT(*) AS n FROM intent").fetchone()["n"]
+        llm_calls = self.store.connection.execute("SELECT COUNT(*) AS n FROM llm_call").fetchone()["n"]
+        return {"world_minute": int(self.store.get_meta("world_minute", 0)), "active_behaviors": int(active), "events": int(events), "intents": int(intents), "llm_calls": int(llm_calls)}
+
+    def export_audit(self) -> dict[str, Any]:
+        def rows(query: str) -> list[dict[str, Any]]:
+            result = []
+            for row in self.store.connection.execute(query).fetchall():
+                result.append(dict(row))
+                if "data_json" in result[-1]:
+                    result[-1]["data"] = json.loads(result[-1].pop("data_json"))
+                if "result_json" in result[-1] and result[-1]["result_json"]:
+                    result[-1]["result"] = json.loads(result[-1].pop("result_json"))
+            return result
+        return {"status": "ok", "world_minute": int(self.store.get_meta("world_minute", 0)), "events": rows("SELECT * FROM event_log ORDER BY event_id"), "intents": rows("SELECT * FROM intent ORDER BY created_minute,intent_id"), "llm_calls": rows("SELECT * FROM llm_call ORDER BY call_id")}
+
+    def snapshot(self, destination: Path) -> Path:
+        destination = Path(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        backup = sqlite3.connect(destination)
+        try:
+            self.store.connection.backup(backup)
+        finally:
+            backup.close()
+        return destination
 
     def interrupt_behavior(self, actor_id: str, reason: str, *, hard: bool = True) -> dict[str, Any]:
         agent = self.store.get_agent(actor_id)

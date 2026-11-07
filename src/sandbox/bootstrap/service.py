@@ -146,6 +146,7 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
             store.set_meta("config_hash", config_hash(config_dir))
             store.set_meta("world_minute", manifest.get("start_world_minute", 0))
             store.set_meta("time_unit", manifest.get("time_unit", "minute"))
+            store.set_meta("runtime_status", "running")
             store.set_meta("random_seed", manifest.get("random_seed"))
 
             setting = load_yaml(config_dir, "setting.yaml", {})

@@ -24,6 +24,21 @@ def main() -> None:
     decide.add_argument("--agent-id", required=True)
     decide.add_argument("--role", default="agent_decision")
 
+    for name, help_text in [("status", "show instance status"), ("pause", "pause world advancement"), ("resume", "resume world advancement"), ("step", "advance one world minute"), ("metrics", "show runtime metrics"), ("audit", "export event and Agent audit")]:
+        command = sub.add_parser(name, help=help_text)
+        command.add_argument("--db", type=Path, required=True)
+    advance = sub.add_parser("advance", help="advance world minutes")
+    advance.add_argument("--db", type=Path, required=True)
+    advance.add_argument("--minutes", type=int, required=True)
+    snapshot = sub.add_parser("snapshot", help="copy a consistent SQLite snapshot")
+    snapshot.add_argument("--db", type=Path, required=True)
+    snapshot.add_argument("--destination", type=Path, required=True)
+    inject = sub.add_parser("inject", help="append an external world event")
+    inject.add_argument("--db", type=Path, required=True)
+    inject.add_argument("--event-type", required=True)
+    inject.add_argument("--payload", default="{}", help="JSON object")
+    inject.add_argument("--actor-id")
+
     args = parser.parse_args()
     if args.command == "init":
         db = create_instance(args.config, args.instance_id, args.runtime_root)
@@ -37,5 +52,32 @@ def main() -> None:
             engine = AgentEngine(platform, provider)
             turn = engine.run(role=args.role, actor_id=args.agent_id)
             print(json.dumps({"response": turn.response, "result": turn.result, "iterations": turn.iterations}, ensure_ascii=False))
+        finally:
+            platform.close()
+    if args.command in {"status", "pause", "resume", "step", "advance", "metrics", "audit", "snapshot", "inject"}:
+        platform = Platform(args.db)
+        try:
+            if args.command == "status":
+                result = platform.status()
+            elif args.command == "pause":
+                result = platform.pause()
+            elif args.command == "resume":
+                result = platform.resume()
+            elif args.command == "step":
+                result = platform.step()
+            elif args.command == "advance":
+                result = platform.advance(args.minutes)
+            elif args.command == "metrics":
+                result = platform.metrics()
+            elif args.command == "audit":
+                result = platform.export_audit()
+            elif args.command == "snapshot":
+                result = {"snapshot": str(platform.snapshot(args.destination))}
+            else:
+                payload = json.loads(args.payload)
+                if not isinstance(payload, dict):
+                    raise ValueError("--payload must be a JSON object")
+                result = platform.inject_event(args.event_type, payload, args.actor_id)
+            print(json.dumps(result, ensure_ascii=False))
         finally:
             platform.close()
