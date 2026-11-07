@@ -4,6 +4,8 @@ from sandbox.intents.models import BehaviorIntent
 
 from sandbox.agents.engine import AgentEngine
 from sandbox.agents.tools import AgentToolExecutor
+from sandbox.actions.conditions import ConditionEngine
+from sandbox.actions.effects import EffectPipeline
 from sandbox.bootstrap.service import create_instance, validate_config
 from sandbox.platform.runtime import Platform
 from sandbox.prompting.renderer import render_context
@@ -277,3 +279,16 @@ def test_platform_interrupt_updates_bt_and_action_instances(tmp_path: Path):
         assert platform.store.get_agent("lu_xingzhou")["initial_state"]["status"] == "idle"
     finally:
         platform.close()
+
+
+def test_generic_condition_and_effect_components():
+    agent = {"role": "pathfinder", "capabilities": {"exploration": 0.8}, "initial_state": {"health": 100, "stamina": 20, "conditions": []}, "inventory": {}}
+    conditions = ConditionEngine()
+    assert conditions.evaluate("actor.alive and actor.can_explore", agent=agent)
+    assert not conditions.evaluate("actor.can_fly", agent=agent)
+    effects = EffectPipeline()
+    result = effects.apply(agent, {"type": "inventory_add", "item": "map", "quantity": 1})
+    assert result["applied"] is True
+    assert agent["inventory"]["map"] == 1
+    effects.apply(agent, {"type": "need_delta", "need": "fatigue", "delta": 5})
+    assert agent["initial_state"]["fatigue"] == 5

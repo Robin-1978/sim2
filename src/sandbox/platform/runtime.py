@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from ..actions.conditions import ConditionEngine
+from ..actions.effects import EffectPipeline
 from ..agent_view.compiler import AgentViewCompiler
 from ..intents.models import BehaviorIntent
 from ..persistence.store import WorldStore
@@ -21,6 +23,8 @@ class Platform:
     def __init__(self, db_path: Path):
         self.store = WorldStore(db_path)
         self.view = AgentViewCompiler(self.store)
+        self.conditions = ConditionEngine()
+        self.effects = EffectPipeline()
 
     def close(self) -> None:
         self.store.close()
@@ -380,8 +384,7 @@ class Platform:
         agent["inventory"] = inventory
         return True, ""
 
-    @staticmethod
-    def _apply_action_progress(agent: dict[str, Any], action: dict[str, Any]) -> None:
+    def _apply_action_progress(self, agent: dict[str, Any], action: dict[str, Any]) -> None:
         state = dict(agent.get("initial_state") or {})
         needs = dict(agent.get("needs") or {})
         for key, value in (action.get("costs", {}).get("per_minute", {}) or {}).items():
@@ -398,21 +401,10 @@ class Platform:
                 needs[key] = max(0.0, float(needs.get(key, 0)) - numeric)
             else:
                 state[key] = float(state.get(key, 0)) + numeric
-        for effect in action.get("progress_effects", []) or []:
-            if effect.get("type") == "need_delta":
-                key = str(effect.get("need"))
-                delta = float(effect.get("delta", 0))
-                if key == "fatigue":
-                    state[key] = max(0.0, min(100.0, float(state.get(key, 0)) + delta))
-                else:
-                    needs[key] = max(0.0, min(100.0, float(needs.get(key, 0)) + delta))
-            elif effect.get("type") == "status_add":
-                conditions = list(state.get("conditions") or [])
-                if effect.get("status") not in conditions:
-                    conditions.append(effect.get("status"))
-                state["conditions"] = conditions
         agent["needs"] = needs
         agent["initial_state"] = state
+        for effect in action.get("progress_effects", []) or []:
+            self.effects.apply(agent, effect)
 
     def _apply_minute_effects(self, minute: int) -> None:
         rules = self.store.get_meta("rules", {}) or {}
@@ -463,6 +455,22 @@ class Platform:
             return False, f"action is not registered: {action_id}"
         state = dict(agent.get("initial_state") or {})
         parameters = self._resolve_parameters(dict(action_info.get("parameters") or {}), state)
+        current_location = {}
+        location_id = state.get("location_id")
+        if location_id:
+            try:
+                current_location = self.store.get_entity(location_id)
+            except KeyError:
+                current_location = {}
+        condition_context = {
+            "location_id": location_id,
+            "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
+            "area_id": parameters.get("area_id"),
+            "current_location": current_location,
+        }
+        for predicate in action.get("preconditions", []) or []:
+            if not self.conditions.evaluate(str(predicate), agent=agent, target=parameters, context=condition_context, world=self.store.get_meta("world_properties", {}) or {}):
+                return False, f"precondition failed: {predicate}"
         allowed, reason = self._reserve_action_costs(agent, action, parameters)
         if not allowed:
             return False, reason
@@ -525,6 +533,7 @@ class Platform:
             self.store.update_bt_instance(execution_id, status="executing", current_node=index, data=bt_data, updated_minute=minute)
             self.store.update_agent(agent["id"], agent)
             return
+        self._apply_success_effects(agent, action, state.get("active_action_parameters", {}))
         self.store.append_event("action.completed", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "result": action.get("success", {}).get("result", "completed")})
         state["active_action_index"] = index + 1
         state["active_action"] = None
@@ -539,6 +548,25 @@ class Platform:
             self._finish_behavior(agent, execution_id, behavior_id, "completed", "behavior_completed", minute)
         else:
             self.store.update_agent(agent["id"], agent)
+
+    def _apply_success_effects(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any]) -> None:
+        effects = list(action.get("effects", []) or [])
+        for effect in effects:
+            self.effects.apply(agent, effect, target=parameters)
+        recipe_id = parameters.get("recipe_id")
+        if not recipe_id:
+            return
+        recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == recipe_id), None)
+        if not recipe:
+            return
+        for output in recipe.get("outputs", []) or []:
+            item = str(output.get("item"))
+            agent.setdefault("inventory", {})[item] = agent["inventory"].get(item, 0) + output.get("quantity", 0)
+        for effect in recipe.get("effects", []) or []:
+            if effect.get("op") == "capability.add_xp":
+                capability = effect.get("capability")
+                if capability:
+                    agent.setdefault("capabilities", {})[capability] = min(1.0, float(agent["capabilities"].get(capability, 0)) + float(effect.get("value", 0)))
 
     def _finish_behavior(self, agent: dict[str, Any], execution_id: str, behavior_id: str, status: str, result: str, minute: int) -> None:
         state = dict(agent.get("initial_state") or {})

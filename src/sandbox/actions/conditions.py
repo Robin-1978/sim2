@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+import re
+from typing import Any
+
+
+class ConditionEngine:
+    """Evaluate the small declarative predicate language used by definitions.
+
+    Package authors write readable predicates such as ``actor.can_explore`` or
+    ``destination.reachable``.  The engine never evaluates Python or SQL; an
+    unknown predicate is false and is returned to Platform as a failed check.
+    """
+
+    _comparison = re.compile(r"^\s*([\w.]+)\s*(==|!=|>=|<=|>|<)\s*(.+?)\s*$")
+
+    def evaluate(self, expression: str, *, agent: dict[str, Any], target: dict[str, Any] | None = None, world: dict[str, Any] | None = None, context: dict[str, Any] | None = None) -> bool:
+        expression = str(expression or "").strip()
+        if not expression:
+            return True
+        for operator in (" or ", " and "):
+            if operator in expression:
+                parts = [part.strip() for part in expression.split(operator)]
+                values = [self.evaluate(part, agent=agent, target=target, world=world, context=context) for part in parts]
+                return any(values) if operator.strip() == "or" else all(values)
+        if expression.startswith("not "):
+            return not self.evaluate(expression[4:], agent=agent, target=target, world=world, context=context)
+        comparison = self._comparison.match(expression)
+        if comparison:
+            left = self._value(comparison.group(1), agent, target, world, context)
+            right = self._literal(comparison.group(3))
+            if left is None:
+                return False
+            try:
+                return {"==": left == right, "!=": left != right, ">=": left >= right, "<=": left <= right, ">": left > right, "<": left < right}[comparison.group(2)]
+            except TypeError:
+                return False
+        return bool(self._value(expression, agent, target, world, context))
+
+    def _value(self, path: str, agent: dict[str, Any], target: dict[str, Any] | None, world: dict[str, Any] | None, context: dict[str, Any] | None) -> Any:
+        target = target or {}
+        world = world or {}
+        context = context or {}
+        state = agent.get("initial_state", {})
+        if path == "actor.alive":
+            return float(state.get("health", 100)) > 0
+        if path == "actor.incapacitated":
+            return float(state.get("health", 100)) <= 0 or "incapacitated" in state.get("conditions", [])
+        if path == "actor.mobile":
+            return self._value("actor.alive", agent, target, world, context)
+        if path.startswith("actor.can_"):
+            capability = path.removeprefix("actor.can_")
+            aliases = {"explore": "exploration", "speak": "conversation", "communicate": "conversation", "craft": "cooking", "attack": "combat", "defend": "defense", "gather": "gather", "research": "research", "inspect": "investigation", "negotiate": "conversation", "sound_alarm": "alarm", "mediate": "mediation"}
+            value = agent.get("capabilities", {}).get(aliases.get(capability, capability), 0)
+            return float(value or 0) > 0
+        if path.startswith("actor.is_"):
+            role = str(agent.get("role", "")).lower()
+            expected = path.removeprefix("actor.is_").replace("_", " ")
+            return expected in role or any(expected in str(key).lower() and float(value or 0) > 0 for key, value in agent.get("capabilities", {}).items())
+        if path == "actor.at_location":
+            return bool(state.get("location_id"))
+        if path == "route.known":
+            destination = target.get("location_id") or context.get("location_id") or context.get("destination_id")
+            if not destination:
+                return True
+            location = context.get("current_location", {})
+            return destination in (location.get("routes", []) if isinstance(location, dict) else []) or destination == state.get("location_id")
+        if path == "destination.reachable":
+            return self._value("route.known", agent, target, world, context)
+        if path in {"area.unknown", "area.not_fully_mapped"}:
+            mapped = set(context.get("mapped_areas", []))
+            area_id = target.get("area_id") or context.get("area_id")
+            return not area_id or area_id not in mapped
+        if path in {"actor.exhausted", "actor.stunned"}:
+            return float(state.get("stamina", 100)) <= 0 or path.removeprefix("actor.") in state.get("conditions", [])
+        if path.startswith("target."):
+            return self._path_value(target, path.removeprefix("target."))
+        if path.startswith("world."):
+            return self._path_value(world, path.removeprefix("world."))
+        if path in {"location.safe", "destination.safe_or_defensible", "target.available", "patient.available", "patient.in_clinic", "source.accessible", "resource.available", "inputs.available", "recipe.available", "station.available", "counterparty.available", "communication.channel_open", "location.reachable"}:
+            return bool(context.get(path, True))
+        return self._path_value(context, path)
+
+    @staticmethod
+    def _path_value(value: Any, path: str) -> Any:
+        current = value
+        for part in path.split("."):
+            if not isinstance(current, dict) or part not in current:
+                return None
+            current = current[part]
+        return current
+
+    @staticmethod
+    def _literal(value: str) -> Any:
+        value = value.strip().strip("\"")
+        if value.lower() in {"true", "false"}:
+            return value.lower() == "true"
+        try:
+            return float(value) if "." in value else int(value)
+        except ValueError:
+            return value
