@@ -34,6 +34,7 @@ motivation_model:
   - meaning_and_goal_progress
   - novelty
   - social_norms_and_external_pressure
+fallback_behavior_ids: [rest_and_recover]
 needs:
 - id: hunger
   target: 80

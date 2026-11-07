@@ -363,7 +363,7 @@ class AgentToolExecutor:
 
     def _preview_behavior(self, behavior_ref: str, target: dict[str, Any] | None = None) -> dict[str, Any]:
         view = self.platform.view.build_decision_view(self.actor_id, role=self.role)
-        for behavior in view.get("available_behaviors", []):
+        for behavior in view.get("executable_behaviors", []):
             if behavior.get("ref") == behavior_ref:
                 return {"status": "ok", "behavior": behavior, "target": target or {}}
         return {"status": "rejected", "message": "The behavior is not offered to this agent."}

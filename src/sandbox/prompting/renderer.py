@@ -139,7 +139,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         "  </active_execution>",
         "  <executable_behaviors dynamic=\"true\">",
     ])
-    behaviors = context.get("available_behaviors") or []
+    behaviors = context.get("executable_behaviors") or context.get("available_behaviors") or []
     for behavior in behaviors[:5]:
         lines.append(f"    <behavior ref=\"{behavior.get('ref')}\">")
         for label in ("name", "summary", "purpose", "when", "requires", "target", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "tags"):

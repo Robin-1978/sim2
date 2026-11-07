@@ -157,7 +157,7 @@ class Platform:
             return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                 "status": "rejected", "message": "The selected behavior is not registered.", "failed_check": "behavior_ref", "retryable": True,
             })
-        allowed = set(agent.get("initial_bt_ids", []))
+        allowed = set(agent.get("initial_bt_ids", [])) | set((self.store.get_meta("rules", {}) or {}).get("fallback_behavior_ids", []))
         if behavior_id not in allowed:
             return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                 "status": "rejected", "message": "This behavior is not available to this character.", "failed_check": "capability", "retryable": True,
@@ -319,7 +319,7 @@ class Platform:
             "id": behavior_id, "version": 1, "scope": "personal", "summary": proposal.get("summary") or proposal["goal"],
             "entry_conditions": proposal.get("entry_conditions", []), "estimated_minutes": estimated,
             "success_results": proposal.get("success_results", []), "failure_results": proposal.get("failure_results", []),
-            "nodes": nodes, "definition_source": "agent_proposal", "kind": "proposed",
+            "nodes": nodes, "definition_source": "agent_proposal", "kind": "proposed", "validation_status": "validated",
         }
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():

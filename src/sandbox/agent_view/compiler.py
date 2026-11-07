@@ -88,6 +88,8 @@ class AgentViewCompiler:
         bt_defs = {x["id"]: x for x in self.store.get_definitions("bt_def")}
         action_defs = {x["id"]: x for x in self.store.get_definitions("action_def")}
         available = []
+        fallback_ids = (self.store.get_meta("rules", {}) or {}).get("fallback_behavior_ids", [])
+        catalog_ids = list(dict.fromkeys(list(agent.get("initial_bt_ids", [])) + list(fallback_ids)))
         state = agent.get("initial_state", {})
         location_id = state.get("location_id")
         current_location = {}
@@ -96,7 +98,7 @@ class AgentViewCompiler:
                 current_location = self.store.get_entity(location_id)
             except KeyError:
                 pass
-        for bt_id in agent.get("initial_bt_ids", []):
+        for bt_id in catalog_ids:
             bt = bt_defs.get(bt_id)
             if not bt:
                 continue
@@ -118,6 +120,8 @@ class AgentViewCompiler:
                 impacts.extend(view["impact"][:1])
             available.append({
                 "ref": f"behavior:{bt_id}",
+                "registration": "platform_validated",
+                "catalog_source": bt.get("kind", "configured"),
                 "name": bt.get("summary") or _label(bt_id),
                 "summary": bt.get("description") or bt.get("summary") or _label(bt_id),
                 "purpose": bt.get("purpose") or bt.get("description") or bt.get("summary") or _label(bt_id),
@@ -155,7 +159,7 @@ class AgentViewCompiler:
             "needs": needs, "inventory": agent.get("inventory", {}), "injuries": state.get("injuries", []),
             "drives": drives[:5], "drive_model": drive_model, "observation": {"facts": [], "source": "platform_snapshot"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "memories": memories, "recent_actions": recent_actions, "direct_relationships": relationships,
             "active_task": {"bt": state.get("active_bt_instance"), "action": state.get("active_action"), "remaining_minutes": state.get("remaining_minutes", 0)},
-            "available_behaviors": available[:5], "last_platform_result": state.get("last_platform_result"), "tools": tools_for_role(role),
+            "executable_behaviors": available[:5], "last_platform_result": state.get("last_platform_result"), "tools": tools_for_role(role),
         }
 
     def _build_world_view(self, actor_id: str, role: str) -> dict[str, Any]:
@@ -175,7 +179,7 @@ class AgentViewCompiler:
             "known_facts": [],
             "direct_relationships": [],
             "active_task": {"bt": None, "action": None, "remaining_minutes": 0},
-            "available_behaviors": [],
+            "executable_behaviors": [],
             "last_platform_result": None,
             "tools": tools_for_role(role),
         }

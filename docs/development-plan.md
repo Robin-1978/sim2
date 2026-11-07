@@ -53,7 +53,7 @@ LLM Agent 不直接依赖 SQLite。所有 Agent 输出经过 Intent 网关；所
 
 实现 LLM Gateway、Decision Agent、AgentViewCompiler、工具调用、Intent Gateway 和最小 Platform Effect Pipeline。先支持观察、记忆查询、规则预览、选择 BT 和提交 Intent。
 
-验收：一个 Agent 可以读取局部世界、选择 BT、提交 Intent、收到 Platform 结果，并根据拒绝原因继续 ReAct。已完成：`AgentToolExecutor`、角色 JSON Schema、原生/文本工具调用归一化、原生消息历史、Schema 校验、重复调用保护、Intent 角色路由、Platform 拒绝反馈、AgentView 契约验证和 `llm_call` 审计；测试覆盖工具后决策、原生 tool result 消息、拒绝后重试和反思记忆提交。
+验收：一个 Agent 可以读取局部世界、选择 BT、提交 Intent、收到 Platform 结果，并根据拒绝原因继续 ReAct。已完成：`AgentToolExecutor`、角色 JSON Schema、原生/文本工具调用归一化、原生消息历史、Schema 校验、重复调用保护、Intent 角色路由、Platform 拒绝反馈、AgentView 契约验证和 `llm_call` 审计；测试覆盖工具后决策、原生 tool result 消息、拒绝后重试和反思记忆提交。Decision 只接受已验证的 `executable_behaviors`，无可执行工作时使用已验证的 fallback BT 或 `wait`。
 
 ### M2：SQLite 与配置创世
 
@@ -126,3 +126,5 @@ PYTHONPATH=src python scripts/verify_agent_models.py
 `verify_agent_models.py` 是真实模型验收入口：它不打印原始 reasoning 或密钥，只报告 Decision/Reflection/God 的会话步骤、最终 Intent、Platform 校验结果和质量布尔值；远程 Provider 使用 `~/.sim2/llm.json` 中的显式代理和环境变量引用。
 
 2026-11-08 的真实本地验证使用 llama.cpp 模型 `Huihui-Qwen3.5-4B-abliterated.Q4_K_M`：Decision 选择了配置中可执行的 `behavior:explore_greywood`，目标/驱动标签对齐，未填充 duration/cost 参数；Reflection 提交了具体且不超过 500 字符的经验摘要。两者质量检查通过；Decision 因当前角色只有一个可执行 BT，质量等级标为 `grounded_forced_choice`。beam-free 的 `/models` 通过配置代理可达，但本次进程没有可用的 API key 环境变量，chat 返回 403，因此远程模型尚未被冒充为已通过；设置环境变量后运行 `verify_agent_models.py` 即可完成同样的 God Agent 检查。
+
+多 Agent 审查脚本还验证了 `liang_he` 的 3 个候选：本地模型选择 `behavior:craft_meal`，理由与 food/winter 目标及 safety/belonging 驱动标签一致，质量等级为 `comparative_grounded_choice`；`lin_bo` 的唯一治理候选为 `grounded_forced_choice`。完整 Prompt、原生 tool call、Platform 结果和质量检查保存在被 `.gitignore` 排除的 `artifacts/agent-session-review.json`。

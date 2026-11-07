@@ -7,11 +7,13 @@ locations:
   - id: village_square
     name: 村广场
     public: true
+    safe: true
     tags: [public, meeting]
     routes: [river_bridge, inn, granary, old_well, watchtower]
   - id: inn
     name: 余歌旅店
     public: true
+    safe: true
     tags: [public, social, information]
     routes: [village_square]
   - id: granary
@@ -27,6 +29,7 @@ locations:
   - id: clinic
     name: 草药诊所
     public: restricted
+    safe: true
     tags: [health, research]
     routes: [village_square, river_bank]
   - id: smithy

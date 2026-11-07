@@ -1,10 +1,32 @@
 behavior_trees:
+- id: rest_and_recover
+  version: 1
+  scope: universal
+  summary: Recover fatigue at the current safe location.
+  description: Recover fatigue and regain readiness before choosing another task.
+  entry_conditions:
+  - actor.alive
+  estimated_minutes: 48
+  interrupt_policy: pause
+  goal_tags: [recovery, readiness]
+  drive_tags: [safety]
+  success_results: [fatigue_reduced, readiness_restored]
+  failure_results: [unsafe_location, interrupted]
+  nodes:
+  - type: action
+    action_id: rest
+    parameters:
+      location_id: context.location_id
+  definition_source: config
+  kind: fallback
 - id: govern_village
   version: 1
   scope: village_council
   entry_conditions:
   - actor.is_steward
   estimated_minutes: 144
+  goal_tags: [autonomy, stability, population]
+  drive_tags: [safety, belonging, esteem]
   interrupt_policy: interruptible
   success_results:
   - rations_reviewed
@@ -44,6 +66,8 @@ behavior_trees:
   entry_conditions:
   - actor.can_inspect_granary
   estimated_minutes: 24
+  goal_tags: [food, reserve, winter]
+  drive_tags: [safety]
   nodes:
   - type: action
     action_id: travel_to
@@ -86,6 +110,8 @@ behavior_trees:
   entry_conditions:
   - actor.is_granary_keeper
   estimated_minutes: 48
+  goal_tags: [food, ration, winter]
+  drive_tags: [safety, belonging]
   nodes:
   - type: action
     action_id: inspect_object
@@ -261,6 +287,8 @@ behavior_trees:
   - recipe.available
   - inputs.available
   estimated_minutes: 60
+  goal_tags: [food, cooking, winter]
+  drive_tags: [safety, belonging]
   interrupt_policy: pause
   success_results:
   - food_created

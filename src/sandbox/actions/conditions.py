@@ -66,8 +66,10 @@ class ConditionEngine:
             return self._value("actor.alive", agent, target, world, context)
         if path.startswith("actor.can_"):
             capability = path.removeprefix("actor.can_")
-            aliases = {"explore": "exploration", "speak": "conversation", "communicate": "conversation", "craft": "cooking", "attack": "combat", "defend": "defense", "gather": "gather", "research": "research", "inspect": "investigation", "negotiate": "conversation", "sound_alarm": "alarm", "mediate": "mediation"}
+            aliases = {"explore": "exploration", "speak": "conversation", "communicate": "conversation", "craft": "cooking", "attack": "combat", "defend": "defense", "gather": "gather", "research": "research", "inspect": "investigation", "inspect_granary": "accounting", "negotiate": "conversation", "sound_alarm": "alarm", "mediate": "conversation"}
             value = agent.get("capabilities", {}).get(aliases.get(capability, capability), 0)
+            if not value and capability == "inspect":
+                value = max((agent.get("capabilities", {}).get(item, 0) for item in ("investigation", "lore", "accounting")), default=0)
             return float(value or 0) > 0
         if path == "actor.faction_id":
             factions = agent.get("faction_ids", [])
@@ -78,7 +80,15 @@ class ConditionEngine:
         if path.startswith("actor.is_"):
             role = str(agent.get("role", "")).lower()
             expected = path.removeprefix("actor.is_").replace("_", " ")
-            return expected in role or any(expected in str(key).lower() and float(value or 0) > 0 for key, value in agent.get("capabilities", {}).items())
+            role_aliases = {
+                "guard": ("guard", "watch", "patrol"),
+                "healer": ("healer", "healing", "herbalist"),
+                "steward": ("steward", "council", "leader"),
+                "granary keeper": ("granary_keeper", "granary", "ration"),
+                "blacksmith": ("blacksmith", "smith"),
+            }
+            aliases = role_aliases.get(expected, (expected,))
+            return any(alias in role for alias in aliases) or any(any(alias in str(key).lower() for alias in aliases) and float(value or 0) > 0 for key, value in agent.get("capabilities", {}).items())
         if path == "actor.at_location":
             return bool(state.get("location_id"))
         if path == "route.known":
@@ -93,6 +103,8 @@ class ConditionEngine:
             mapped = set(context.get("mapped_areas", []))
             area_id = target.get("area_id") or context.get("area_id")
             return not area_id or area_id not in mapped
+        if path == "secret.source_available":
+            return any(str(item).startswith("secret:") for item in agent.get("knowledge_seed", []))
         if path in {"actor.exhausted", "actor.stunned"}:
             return float(state.get("stamina", 100)) <= 0 or path.removeprefix("actor.") in state.get("conditions", [])
         if path.startswith("target."):
@@ -100,6 +112,9 @@ class ConditionEngine:
         if path.startswith("world."):
             return self._path_value(world, path.removeprefix("world."))
         if path in {"location.safe", "destination.safe_or_defensible", "target.available", "patient.available", "patient.in_clinic", "source.accessible", "resource.available", "inputs.available", "recipe.available", "station.available", "counterparty.available", "communication.channel_open", "location.reachable"}:
+            if path == "location.safe":
+                location = context.get("current_location", {})
+                return bool(location.get("safe", False) or location.get("public", False) is True or "safe" in location.get("tags", []))
             return bool(context.get(path, True))
         return self._path_value(context, path)
 

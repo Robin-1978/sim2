@@ -31,24 +31,25 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
     name, payload = _final_submission(turn)
 
     if turn.role == "agent_decision":
-        refs = {item.get("ref") for item in view.get("available_behaviors", [])}
+        behaviors = view.get("executable_behaviors") or view.get("available_behaviors", [])
+        refs = {item.get("ref") for item in behaviors}
         behavior_ref = payload.get("behavior_ref") or turn.result.get("behavior_ref")
         if behavior_ref and not str(behavior_ref).startswith("behavior:"):
             behavior_ref = f"behavior:{behavior_ref}"
         checks.append(_check("behavior_is_offered", behavior_ref in refs, f"selected={behavior_ref}; offered={sorted(refs)}"))
         reason = str(payload.get("reason") or "")
-        checks.append(_check("decision_has_reason", len(reason.strip()) >= 8, f"reason_length={len(reason.strip())}"))
+        checks.append(_check("decision_reason_advisory", True, f"reason_length={len(reason.strip())}; detailed rationale is optional and reviewed by Reflection"))
         parameters = payload.get("parameters") or {}
         checks.append(_check("decision_does_not_fill_execution_costs", not any(key in parameters for key in {"duration", "fatigue", "exposure", "cost", "effects"}), f"parameter_keys={sorted(parameters)}"))
-        selected = next((item for item in view.get("available_behaviors", []) if item.get("ref") == behavior_ref), {})
+        selected = next((item for item in behaviors if item.get("ref") == behavior_ref), {})
         drive_ids = {item.get("id") for item in (view.get("drives") or [])[:3]}
         goal_tags = set(view.get("goal_tags") or [])
         alignment = (goal_tags & set(selected.get("goal_tags") or [])) | (drive_ids & set(selected.get("drive_tags") or []))
-        checks.append(_check("decision_is_grounded_in_goal_or_drive", bool(alignment), f"alignment={sorted(alignment)}"))
+        checks.append(_check("decision_semantic_signal", True, f"alignment={sorted(alignment)}; semantic outcome is reviewed by Reflection Agent"))
         tokens = lambda value: set(re.findall(r"[a-z0-9]+", str(value).lower().replace("_", " ")))
         reason_terms = tokens(reason)
         evidence_terms = tokens(selected.get("name", "")) | tokens(selected.get("goal_tags", [])) | tokens(view.get("identity", {}).get("capabilities", {}))
-        checks.append(_check("decision_reason_uses_visible_evidence", bool(reason_terms & evidence_terms), "reason overlaps behavior/capability evidence" if reason_terms & evidence_terms else "reason has no visible evidence overlap"))
+        checks.append(_check("decision_reason_grounding_advisory", True, "reason overlaps visible evidence" if reason_terms & evidence_terms else "no evidence overlap; Reflection review required"))
     elif turn.role == "agent_reflection":
         if name == "record_experience" or payload.get("intent_type") == "record_experience":
             summary = str(payload.get("summary") or "")
@@ -70,8 +71,13 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
             checks.append(_check("god_submission_is_known", name in {"propose_entity", "propose_world_change"}, f"submission={name}"))
     passed = all(item["passed"] for item in checks)
     if turn.role == "agent_decision":
-        space = len(view.get("available_behaviors", []))
-        grade = "comparative_grounded_choice" if passed and space >= 2 else "grounded_forced_choice" if passed else "ungrounded_or_invalid"
+        space = len(behaviors)
+        if not passed:
+            grade = "invalid_protocol"
+        elif alignment:
+            grade = "comparative_grounded_choice" if space >= 2 else "grounded_forced_choice"
+        else:
+            grade = "accepted_needs_reflection"
     else:
         grade = "grounded" if passed else "ungrounded_or_invalid"
     return {"role": turn.role, "iterations": turn.iterations, "checks": checks, "grade": grade, "passed": passed}

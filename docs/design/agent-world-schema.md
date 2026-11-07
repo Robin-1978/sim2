@@ -20,6 +20,10 @@ Platform 根据当前 Agent 角色和权限生成精简 JSON。视图只包含�
 
 Decision Agent 只选择 Platform 已经注册、校验并过滤过的行为。它不编写 BT、不填写效果、不计算成本，也不直接选择底层 Action。BT 创新由 Reflection/Evolution、God 或 WorldBuilder Agent 通过单独的 Proposal Function 提出，Platform 校验成功后才会进入后续候选目录。
 
+每个 Agent 的 BT 目录不是永久固定值：配置创世时导入并校验初始目录；运行中新的 BT 先进入 Platform 验证流程，验证节点、Action 引用、参数、循环、资源和权限成功后注册，并按提案作用域加入发起 Agent 或授权群体的目录。未注册、未验证、当前条件/资源不满足的 BT 不会出现在 `executable_behaviors`，因此 Agent 永远不会从“未验证选项”中选择。
+
+世界配置可以声明 `fallback_behavior_ids`，例如安全地点的恢复 BT。它们和角色专属 BT 一样先经过 Bootstrap/Platform 校验；当角色没有其他可执行工作时，Agent 可以选择恢复行为。只有恢复行为也不满足条件时，Decision Agent 才返回 `wait`，而不是把“没有选择”当成正常的长期策略。
+
 ```json
 {
   "context_version": "1",

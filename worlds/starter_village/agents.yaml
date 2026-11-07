@@ -11,6 +11,7 @@ agents:
     secretive: 0.78
     empathetic: 0.55
   ultimate_goal: 让雾溪村在下一次深雾周期后保持自治和人口完整
+  goal_tags: [autonomy, stability, population]
   beliefs:
   - id: stability_first
     statement: 稳定先于真相，真相必须在能被承受时公开
@@ -132,6 +133,7 @@ agents:
     stubborn: 0.64
     protective: 0.78
   ultimate_goal: 让村庄安全度过冬季且不发生饥荒
+  goal_tags: [food, reserve, winter]
   beliefs:
   - id: food_before_honor
     statement: 人人先有食物，规则才有意义

@@ -130,7 +130,7 @@ def test_decision_quality_checks_grounding_against_drive_and_goal(tmp_path: Path
         turn = AgentEngine(platform, provider).run(role="agent_decision", actor_id="lu_xingzhou")
         quality = evaluate_turn(turn, view)
         assert quality["passed"] is True
-        assert quality["grade"] == "grounded_forced_choice"
+        assert quality["grade"] == "comparative_grounded_choice"
     finally:
         platform.close()
 
@@ -210,6 +210,20 @@ def test_reflection_can_update_goal_through_platform(tmp_path: Path):
         turn = AgentEngine(platform, provider).run(role="agent_reflection", actor_id="lu_xingzhou", task_type="goal_review")
         assert turn.result["status"] == "accepted"
         assert platform.store.get_agent("lu_xingzhou")["ultimate_goal"].startswith("Confirm the safest route")
+    finally:
+        platform.close()
+
+
+def test_validated_behavior_proposal_enters_agent_executable_catalog(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "evolving-bt-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        result = platform.submit_behavior_proposal("lu_xingzhou", {"behavior_id": "survey_then_explore", "goal": "Survey and explore the known boundary.", "action_ids": ["explore_area"], "entry_conditions": ["actor.can_explore"], "success_results": ["knowledge_updated"], "failure_results": ["interrupted"]})
+        assert result["status"] == "accepted"
+        view = platform.decision_view("lu_xingzhou")
+        proposed = next(item for item in view["executable_behaviors"] if item["ref"] == "behavior:survey_then_explore")
+        assert proposed["registration"] == "platform_validated"
     finally:
         platform.close()
 
@@ -413,6 +427,7 @@ def test_parallel_bt_runs_action_instances_concurrently(tmp_path: Path):
         with platform.store.transaction():
             platform.store.put_definition("bt_def", "parallel_test", {"id": "parallel_test", "version": 1, "summary": "Run two independent tasks", "estimated_minutes": 48, "nodes": [{"type": "parallel", "children": [{"type": "action", "action_id": "rest", "parameters": {"location_id": "context.location_id"}}, {"type": "action", "action_id": "travel_to", "parameters": {"location_id": "context.location_id"}}]}]})
             agent = platform.store.get_agent("lu_xingzhou")
+            agent["initial_state"]["location_id"] = "village_square"
             agent["initial_bt_ids"].append("parallel_test")
             platform.store.update_agent("lu_xingzhou", agent)
         intent = BehaviorIntent("lu_xingzhou", "behavior:parallel_test", {}, {}, "Run parallel work", 0.8, "parallel-intent")

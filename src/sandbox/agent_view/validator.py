@@ -10,7 +10,7 @@ REQUIRED_VIEW_FIELDS = {
     "identity",
     "needs",
     "drives",
-    "available_behaviors",
+    "executable_behaviors",
     "tools",
 }
 
@@ -27,9 +27,9 @@ def validate_agent_view(view: dict[str, Any], *, role: str | None = None) -> lis
         errors.append("world_time must be an object")
     if not isinstance(view.get("self"), dict):
         errors.append("self must be an object")
-    behaviors = view.get("available_behaviors")
+    behaviors = view.get("executable_behaviors")
     if not isinstance(behaviors, list):
-        errors.append("available_behaviors must be a list")
+        errors.append("executable_behaviors must be a list")
     else:
         refs: set[str] = set()
         for behavior in behaviors:
