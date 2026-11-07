@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 
 def _line(value: Any) -> str:
     if value is None or value == "":
         return "unknown"
-    return str(value)
+    if isinstance(value, (dict, list, tuple)):
+        value = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    value = str(value)
+    return value if len(value) <= 1200 else value[:1197] + "..."
 
 
-def render_context(context: dict[str, Any], task: str) -> str:
+def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000) -> str:
     """Render a compact, human-readable prompt context.
 
     Stable instructions remain in the system message. This function renders only
@@ -83,4 +87,12 @@ def render_context(context: dict[str, Any], task: str) -> str:
     lines.extend(["", "# LAST PLATFORM RESULT"])
     last = context.get("last_platform_result")
     lines.append(_line(last) if last else "No previous result.")
-    return "\n".join(lines)
+    rendered = "\n".join(lines)
+    if len(rendered) <= max_chars:
+        return rendered
+    # Preserve the beginning (identity, state and drives) and the end (the
+    # current options and Platform result); middle history is the lowest-value
+    # material when the configured context budget is exceeded.
+    head_size = max_chars * 2 // 3
+    tail_size = max_chars - head_size
+    return rendered[:head_size] + "\n\n# CONTEXT LIMIT\nEarlier low-priority details were omitted; use a read tool if needed.\n\n" + rendered[-tail_size:]

@@ -53,6 +53,20 @@ class OpenAICompatibleProvider:
             payload["tool_choice"] = "auto"
         url = f"{self.config.base_url}/chat/completions"
         response = httpx.post(url, headers=headers, json=payload, timeout=self.config.timeout_seconds)
+        # Some local OpenAI-compatible servers accept JSON mode but reject the
+        # optional native tools fields.  Retry the same read-only completion
+        # without those hints; the prompt-level tool envelope remains usable.
+        if response.status_code in {400, 422} and tools:
+            fallback = dict(payload)
+            fallback.pop("tools", None)
+            fallback.pop("tool_choice", None)
+            response = httpx.post(url, headers=headers, json=fallback, timeout=self.config.timeout_seconds)
+        if response.status_code in {400, 422} and "response_format" in payload:
+            fallback = dict(payload)
+            fallback.pop("response_format", None)
+            fallback.pop("tools", None)
+            fallback.pop("tool_choice", None)
+            response = httpx.post(url, headers=headers, json=fallback, timeout=self.config.timeout_seconds)
         response.raise_for_status()
         data = response.json()
         message = data["choices"][0]["message"]
