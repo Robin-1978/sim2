@@ -111,6 +111,21 @@ CREATE TABLE IF NOT EXISTS action_instance (
   started_minute INTEGER NOT NULL,
   updated_minute INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS exploration_result (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id TEXT NOT NULL,
+  area_id TEXT NOT NULL,
+  world_minute INTEGER NOT NULL,
+  data_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS dialogue_exchange (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  speaker_id TEXT NOT NULL,
+  listener_id TEXT,
+  topic TEXT NOT NULL,
+  world_minute INTEGER NOT NULL,
+  data_json TEXT NOT NULL
+);
 """
 
 
@@ -232,6 +247,20 @@ class WorldStore:
             "UPDATE action_instance SET status=?,elapsed_minutes=?,remaining_minutes=?,data_json=?,updated_minute=? WHERE action_instance_id=?",
             (status, int(elapsed_minutes), int(remaining_minutes), json_dumps(data), int(updated_minute), action_instance_id),
         )
+
+    def put_exploration_result(self, agent_id: str, area_id: str, world_minute: int, data: dict[str, Any]) -> int:
+        cur = self.connection.execute(
+            "INSERT INTO exploration_result(agent_id,area_id,world_minute,data_json) VALUES (?,?,?,?)",
+            (agent_id, area_id, int(world_minute), json_dumps(data)),
+        )
+        return int(cur.lastrowid)
+
+    def put_dialogue_exchange(self, speaker_id: str, listener_id: str | None, topic: str, world_minute: int, data: dict[str, Any]) -> int:
+        cur = self.connection.execute(
+            "INSERT INTO dialogue_exchange(speaker_id,listener_id,topic,world_minute,data_json) VALUES (?,?,?,?,?)",
+            (speaker_id, listener_id, topic, int(world_minute), json_dumps(data)),
+        )
+        return int(cur.lastrowid)
 
     def get_agent(self, agent_id: str) -> dict[str, Any]:
         row = self.connection.execute("SELECT data_json FROM agent_state WHERE id=?", (agent_id,)).fetchone()

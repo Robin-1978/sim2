@@ -292,3 +292,22 @@ def test_generic_condition_and_effect_components():
     assert agent["inventory"]["map"] == 1
     effects.apply(agent, {"type": "need_delta", "need": "fatigue", "delta": 5})
     assert agent["initial_state"]["fatigue"] == 5
+
+
+def test_exploration_completion_persists_result_and_knowledge(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "knowledge-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    intent = BehaviorIntent(
+        actor_id="lu_xingzhou", behavior_ref="behavior:explore_greywood", target={}, parameters={},
+        reason="Survey the area", confidence=0.9, intent_id="knowledge-intent",
+    )
+    try:
+        platform.submit_behavior(intent)
+        report = platform.advance(241)
+        assert report["to_minute"] == 241
+        fact = platform.store.connection.execute("SELECT area_id FROM exploration_result WHERE agent_id=?", ("lu_xingzhou",)).fetchone()
+        assert fact["area_id"] == "greywood_edge"
+        assert any(item["fact_key"] == "explored:greywood_edge" for item in platform.store.list_knowledge_facts("lu_xingzhou"))
+    finally:
+        platform.close()

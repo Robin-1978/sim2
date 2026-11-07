@@ -534,6 +534,7 @@ class Platform:
             self.store.update_agent(agent["id"], agent)
             return
         self._apply_success_effects(agent, action, state.get("active_action_parameters", {}))
+        self._record_information_result(agent, action, state.get("active_action_parameters", {}), minute)
         self.store.append_event("action.completed", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "result": action.get("success", {}).get("result", "completed")})
         state["active_action_index"] = index + 1
         state["active_action"] = None
@@ -567,6 +568,35 @@ class Platform:
                 capability = effect.get("capability")
                 if capability:
                     agent.setdefault("capabilities", {})[capability] = min(1.0, float(agent["capabilities"].get(capability, 0)) + float(effect.get("value", 0)))
+
+    def _record_information_result(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> None:
+        """Persist information produced by configured information channels."""
+
+        information = action.get("information", {}) or {}
+        area_id = parameters.get("area_id") or information.get("area_parameter") and parameters.get(information["area_parameter"])
+        source_id = parameters.get("source_id") or information.get("source_parameter") and parameters.get(information["source_parameter"])
+        target_id = parameters.get("target_id")
+        topic = parameters.get("topic")
+        if area_id:
+            area_id = str(area_id)
+            result_id = self.store.put_exploration_result(agent["id"], area_id, minute, {"source": action.get("id"), "parameters": parameters})
+            self.store.put_knowledge_fact(agent["id"], f"explored:{area_id}", {"fact": f"Area {area_id} was explored.", "source_type": "exploration", "source_id": result_id, "confidence": 0.8, "observed_at": minute})
+            self.store.append_event("exploration.completed", agent["id"], minute, {"area_id": area_id, "result_id": result_id})
+        if source_id:
+            source_id = str(source_id)
+            self.store.put_knowledge_fact(agent["id"], f"researched:{source_id}", {"fact": f"Source {source_id} was researched.", "source_type": "research", "confidence": 0.8, "observed_at": minute})
+            self.store.append_event("research.completed", agent["id"], minute, {"source_id": source_id})
+        if target_id and topic:
+            target_id = str(target_id)
+            try:
+                listener = self.store.get_agent(target_id)
+            except KeyError:
+                listener = None
+            dialogue_id = self.store.put_dialogue_exchange(agent["id"], target_id if listener else None, str(topic), minute, {"source": action.get("id"), "parameters": parameters})
+            self.store.put_memory(agent["id"], "dialogue", {"topic": str(topic), "target_id": target_id, "world_minute": minute, "dialogue_id": dialogue_id})
+            if listener:
+                self.store.put_memory(target_id, "testimony", {"topic": str(topic), "speaker_id": agent["id"], "world_minute": minute, "dialogue_id": dialogue_id})
+            self.store.append_event("dialogue.completed", agent["id"], minute, {"target_id": target_id, "topic": str(topic), "dialogue_id": dialogue_id})
 
     def _finish_behavior(self, agent: dict[str, Any], execution_id: str, behavior_id: str, status: str, result: str, minute: int) -> None:
         state = dict(agent.get("initial_state") or {})
