@@ -62,6 +62,11 @@ CREATE TABLE IF NOT EXISTS memory_item (
   memory_type TEXT NOT NULL,
   data_json TEXT NOT NULL
 );
+CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+  agent_id UNINDEXED,
+  content,
+  memory_id UNINDEXED
+);
 CREATE TABLE IF NOT EXISTS knowledge_fact (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   agent_id TEXT NOT NULL,
@@ -403,11 +408,14 @@ class WorldStore:
         self.connection.execute("UPDATE entity SET data_json=? WHERE id=?", (json_dumps(data), agent_id))
 
     def put_memory(self, agent_id: str, memory_type: str, data: dict[str, Any]) -> int:
+        encoded = json_dumps(data)
         cur = self.connection.execute(
             "INSERT INTO memory_item(agent_id,memory_type,data_json) VALUES (?,?,?)",
-            (agent_id, memory_type, json_dumps(data)),
+            (agent_id, memory_type, encoded),
         )
-        return int(cur.lastrowid)
+        memory_id = int(cur.lastrowid)
+        self.connection.execute("INSERT INTO memory_fts(agent_id,content,memory_id) VALUES (?,?,?)", (agent_id, encoded, str(memory_id)))
+        return memory_id
 
     def append_llm_call(
         self,
@@ -445,17 +453,44 @@ class WorldStore:
         """
 
         limit = max(1, min(int(limit), 50))
-        rows = self.connection.execute(
-            "SELECT id,memory_type,data_json FROM memory_item "
-            "WHERE agent_id=? AND (?='' OR data_json LIKE ?) "
-            "ORDER BY id DESC LIMIT ?",
-            (agent_id, query, f"%{query}%", limit),
-        ).fetchall()
+        if query.strip():
+            try:
+                fts_rows = self.connection.execute(
+                    "SELECT memory_id FROM memory_fts WHERE agent_id=? AND memory_fts MATCH ? LIMIT ?",
+                    (agent_id, query.replace('"', ' '), limit),
+                ).fetchall()
+                ids = [int(row["memory_id"]) for row in fts_rows]
+                if ids:
+                    placeholders = ",".join("?" for _ in ids)
+                    rows = self.connection.execute(
+                        f"SELECT id,memory_type,data_json FROM memory_item WHERE agent_id=? AND id IN ({placeholders}) ORDER BY id DESC LIMIT ?",
+                        (agent_id, *ids, limit),
+                    ).fetchall()
+                else:
+                    rows = []
+            except sqlite3.OperationalError:
+                rows = self.connection.execute(
+                    "SELECT id,memory_type,data_json FROM memory_item WHERE agent_id=? AND data_json LIKE ? ORDER BY id DESC LIMIT ?",
+                    (agent_id, f"%{query}%", limit),
+                ).fetchall()
+        else:
+            rows = self.connection.execute(
+                "SELECT id,memory_type,data_json FROM memory_item WHERE agent_id=? ORDER BY id DESC LIMIT ?",
+                (agent_id, limit),
+            ).fetchall()
         result = []
         for row in rows:
             value = json.loads(row["data_json"])
             result.append({"id": row["id"], "type": row["memory_type"], **value})
         return result
+
+    def delete_memories(self, agent_id: str, memory_ids: list[int]) -> int:
+        if not memory_ids:
+            return 0
+        placeholders = ",".join("?" for _ in memory_ids)
+        self.connection.execute(f"DELETE FROM memory_fts WHERE agent_id=? AND memory_id IN ({','.join('?' for _ in memory_ids)})", (agent_id, *(str(item) for item in memory_ids)))
+        cur = self.connection.execute(f"DELETE FROM memory_item WHERE agent_id=? AND id IN ({placeholders})", (agent_id, *memory_ids))
+        return int(cur.rowcount)
 
 
 def config_hash(config_dir: Path) -> str:

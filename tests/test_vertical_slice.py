@@ -161,6 +161,24 @@ def test_reflection_can_update_goal_through_platform(tmp_path: Path):
         platform.close()
 
 
+def test_memory_fts_and_bounded_compaction(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "memory-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        for index in range(30):
+            platform.submit_experience("lu_xingzhou", f"event:{index}", f"The river clue {index} was recorded.", 0.8)
+        recalled = platform.memory.recall("lu_xingzhou", "river clue", limit=8)
+        assert recalled["memories"]
+        compacted = platform.memory.compact("lu_xingzhou", keep=10)
+        assert compacted["status"] == "compacted"
+        assert any(item["type"] == "summary" for item in platform.store.list_memories("lu_xingzhou", limit=50))
+        forgotten = platform.memory.forget("lu_xingzhou", maximum=12)
+        assert forgotten["status"] in {"unchanged", "forgotten"}
+    finally:
+        platform.close()
+
+
 def test_decision_session_does_not_call_llm_while_behavior_is_active(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "active-world", tmp_path / "runtime")
