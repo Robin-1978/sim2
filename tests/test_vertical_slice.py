@@ -391,3 +391,22 @@ def test_control_service_pause_step_snapshot_and_audit(tmp_path: Path):
         assert any(event["event_type"] == "operator.signal" for event in audit["events"])
     finally:
         service.close()
+
+
+def test_player_entry_and_snapshot_restore_use_platform(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "player-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    snapshot = tmp_path / "player-snapshot.sqlite3"
+    try:
+        entered = platform.enter_player("player_one", "courier", name="Ari")
+        assert entered["status"] == "accepted"
+        assert platform.store.get_agent("player_one")["initial_state"]["location_id"] == "river_bridge"
+        platform.snapshot(snapshot)
+        platform.advance(3)
+        assert platform.status()["world_minute"] == 3
+        restored = platform.restore_snapshot(snapshot)
+        assert restored["world_minute"] == 0
+        assert platform.store.get_agent("player_one")["name"] == "Ari"
+    finally:
+        platform.close()

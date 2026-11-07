@@ -59,6 +59,47 @@ class Platform:
             event_id = self.store.append_event(event_type, actor_id, minute, payload)
         return {"status": "accepted", "event_id": event_id, "world_minute": minute}
 
+    def enter_player(self, player_id: str, origin_id: str, *, name: str | None = None) -> dict[str, Any]:
+        """Instantiate a player from the package's generic entry template."""
+
+        if not player_id.strip() or not origin_id.strip():
+            raise ValueError("player_id and origin_id are required")
+        try:
+            self.store.get_entity(player_id)
+            return {"status": "rejected", "message": "The player id already exists.", "failed_check": "player_id"}
+        except KeyError:
+            pass
+        template = self.store.get_meta("player_template", {}).get("player", {})
+        origin = next((item for item in template.get("origin_choices", []) if item.get("id") == origin_id), None)
+        if origin is None:
+            return {"status": "rejected", "message": "The selected origin is not configured.", "failed_check": "origin_id", "retryable": True}
+        location_id = template.get("entry_location_id")
+        try:
+            self.store.get_entity(location_id)
+        except KeyError:
+            return {"status": "rejected", "message": "The configured player entry location does not exist.", "failed_check": "entry_location_id", "retryable": False}
+        agent = {
+            "id": player_id,
+            "name": name or player_id,
+            "role": "player",
+            "traits": dict(origin.get("traits") or {}),
+            "ultimate_goal": origin.get("starting_goal", "Find a meaningful place in this world."),
+            "beliefs": [],
+            "needs": {},
+            "knowledge_seed": list(template.get("knowledge_seed") or []),
+            "initial_bt_ids": [],
+            "capabilities": {},
+            "initial_state": {"location_id": location_id, "health": 100, "stamina": 100, "fatigue": 0, "status": "idle", "injuries": [], "conditions": [], "active_bt_instance": None, "active_action": None, "remaining_minutes": 0},
+            "inventory": {},
+        }
+        minute = int(self.store.get_meta("world_minute", 0))
+        with self.store.transaction():
+            self.store.put_agent(player_id, agent, agent["name"])
+            for fact in agent["knowledge_seed"]:
+                self.store.put_knowledge_fact(player_id, str(fact), {"fact": str(fact), "source_type": "player_template", "confidence": 1.0})
+            self.store.append_event("player.entered", player_id, minute, {"origin_id": origin_id, "location_id": location_id})
+        return {"status": "accepted", "player_id": player_id, "origin_id": origin_id, "location_id": location_id}
+
     def decision_view(self, agent_id: str, role: str = "agent_decision") -> dict[str, Any]:
         return self.view.build_decision_view(agent_id, role=role)
 
@@ -739,6 +780,18 @@ class Platform:
         finally:
             backup.close()
         return destination
+
+    def restore_snapshot(self, source: Path) -> dict[str, Any]:
+        source = Path(source)
+        if not source.is_file():
+            raise FileNotFoundError(source)
+        backup = sqlite3.connect(source)
+        try:
+            backup.backup(self.store.connection)
+            self.store.connection.commit()
+        finally:
+            backup.close()
+        return self.status()
 
     def interrupt_behavior(self, actor_id: str, reason: str, *, hard: bool = True) -> dict[str, Any]:
         agent = self.store.get_agent(actor_id)

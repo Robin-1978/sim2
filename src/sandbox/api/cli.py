@@ -33,6 +33,14 @@ def main() -> None:
     snapshot = sub.add_parser("snapshot", help="copy a consistent SQLite snapshot")
     snapshot.add_argument("--db", type=Path, required=True)
     snapshot.add_argument("--destination", type=Path, required=True)
+    restore = sub.add_parser("restore", help="restore a SQLite snapshot")
+    restore.add_argument("--db", type=Path, required=True)
+    restore.add_argument("--source", type=Path, required=True)
+    enter = sub.add_parser("enter-player", help="enter a player from the configured template")
+    enter.add_argument("--db", type=Path, required=True)
+    enter.add_argument("--player-id", required=True)
+    enter.add_argument("--origin", required=True)
+    enter.add_argument("--name")
     inject = sub.add_parser("inject", help="append an external world event")
     inject.add_argument("--db", type=Path, required=True)
     inject.add_argument("--event-type", required=True)
@@ -54,7 +62,7 @@ def main() -> None:
             print(json.dumps({"response": turn.response, "result": turn.result, "iterations": turn.iterations}, ensure_ascii=False))
         finally:
             platform.close()
-    if args.command in {"status", "pause", "resume", "step", "advance", "metrics", "audit", "snapshot", "inject"}:
+    if args.command in {"status", "pause", "resume", "step", "advance", "metrics", "audit", "snapshot", "restore", "enter-player", "inject"}:
         platform = Platform(args.db)
         try:
             if args.command == "status":
@@ -73,6 +81,10 @@ def main() -> None:
                 result = platform.export_audit()
             elif args.command == "snapshot":
                 result = {"snapshot": str(platform.snapshot(args.destination))}
+            elif args.command == "restore":
+                result = platform.restore_snapshot(args.source)
+            elif args.command == "enter-player":
+                result = platform.enter_player(args.player_id, args.origin, name=args.name)
             else:
                 payload = json.loads(args.payload)
                 if not isinstance(payload, dict):

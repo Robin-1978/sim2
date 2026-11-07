@@ -156,6 +156,7 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
             store.set_meta("rules", load_yaml(config_dir, "rules.yaml", {}))
             evolution = load_yaml(config_dir, "evolution.yaml", {})
             store.set_meta("evolution", evolution)
+            store.set_meta("player_template", load_yaml(config_dir, "player_template.yaml", {}))
 
             for location in load_yaml(config_dir, "locations.yaml", {}).get("locations", []):
                 store.put_entity(location["id"], "location", location.get("name", location["id"]), location)

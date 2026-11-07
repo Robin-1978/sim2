@@ -33,6 +33,9 @@ class ControlService:
     def inject(self, event_type: str, payload: dict[str, Any], actor_id: str | None = None) -> dict[str, Any]:
         return self.platform.inject_event(event_type, payload, actor_id)
 
+    def enter_player(self, player_id: str, origin_id: str, name: str | None = None) -> dict[str, Any]:
+        return self.platform.enter_player(player_id, origin_id, name=name)
+
     def metrics(self) -> dict[str, Any]:
         return self.platform.metrics()
 
@@ -41,3 +44,6 @@ class ControlService:
 
     def snapshot(self, destination: Path) -> str:
         return str(self.platform.snapshot(destination))
+
+    def restore(self, source: Path) -> dict[str, Any]:
+        return self.platform.restore_snapshot(source)
