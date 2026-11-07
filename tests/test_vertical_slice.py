@@ -337,6 +337,29 @@ def test_platform_interrupt_updates_bt_and_action_instances(tmp_path: Path):
         platform.close()
 
 
+def test_parallel_bt_runs_action_instances_concurrently(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "parallel-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        with platform.store.transaction():
+            platform.store.put_definition("bt_def", "parallel_test", {"id": "parallel_test", "version": 1, "summary": "Run two independent tasks", "estimated_minutes": 48, "nodes": [{"type": "parallel", "children": [{"type": "action", "action_id": "rest", "parameters": {"location_id": "context.location_id"}}, {"type": "action", "action_id": "travel_to", "parameters": {"location_id": "context.location_id"}}]}]})
+            agent = platform.store.get_agent("lu_xingzhou")
+            agent["initial_bt_ids"].append("parallel_test")
+            platform.store.update_agent("lu_xingzhou", agent)
+        intent = BehaviorIntent("lu_xingzhou", "behavior:parallel_test", {}, {}, "Run parallel work", 0.8, "parallel-intent")
+        assert platform.submit_behavior(intent)["status"] == "accepted"
+        platform.advance(1)
+        rows = platform.store.connection.execute("SELECT action_id,status,remaining_minutes FROM action_instance WHERE execution_id=? ORDER BY action_id", ("parallel-intent",)).fetchall()
+        assert len(rows) == 2
+        assert rows[0]["status"] == "running" or rows[1]["status"] == "running"
+        assert platform.store.get_agent("lu_xingzhou")["initial_state"]["active_action"] == "parallel"
+        platform.advance(47)
+        assert platform.store.get_agent("lu_xingzhou")["initial_state"]["status"] == "idle"
+    finally:
+        platform.close()
+
+
 def test_generic_condition_and_effect_components():
     agent = {"role": "pathfinder", "capabilities": {"exploration": 0.8}, "initial_state": {"health": 100, "stamina": 20, "conditions": []}, "inventory": {}}
     conditions = ConditionEngine()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import copy
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -424,17 +425,24 @@ class Platform:
         if not behavior:
             return []
 
-        def visit(nodes: list[Any]) -> list[dict[str, Any]]:
+        def visit(nodes: list[Any], parallel_group: str | None = None) -> list[dict[str, Any]]:
             result: list[dict[str, Any]] = []
             for raw in nodes or []:
                 node = raw if isinstance(raw, dict) else {"type": "behavior", "behavior_id": raw}
                 node_type = node.get("type")
                 if node_type == "action" and node.get("action_id"):
-                    result.append({"action_id": node["action_id"], "parameters": dict(node.get("parameters") or {})})
+                    result.append({"action_id": node["action_id"], "parameters": dict(node.get("parameters") or {}), "parallel_group": parallel_group})
                 elif node_type in {"behavior", "subtree"} and node.get("behavior_id"):
-                    result.extend(self._compile_behavior_actions(str(node["behavior_id"]), seen))
+                    nested = self._compile_behavior_actions(str(node["behavior_id"]), seen)
+                    if parallel_group:
+                        for item in nested:
+                            item["parallel_group"] = parallel_group
+                    result.extend(nested)
                 elif node_type in {"sequence", "parallel"}:
-                    result.extend(visit(node.get("children", [])))
+                    group = parallel_group
+                    if node_type == "parallel":
+                        group = f"parallel:{behavior_id}:{len(result)}"
+                    result.extend(visit(node.get("children", []), group))
                 elif node_type == "selector":
                     # Selector branch conditions are evaluated by the fuller
                     # condition engine in M4.  Until then, choose the first
@@ -442,7 +450,7 @@ class Platform:
                     # choice in the BT instance.
                     children = node.get("children", [])
                     if children:
-                        result.extend(visit([children[0]]))
+                        result.extend(visit([children[0]], parallel_group))
                 # condition/wait nodes do not consume an Action minute.
             return result
 
@@ -612,6 +620,120 @@ class Platform:
         self.store.append_event("action.started", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "duration_minutes": duration})
         return True, ""
 
+    def _prepare_parallel_action(self, agent: dict[str, Any], action_info: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+        action_defs = {item["id"]: item for item in self.store.get_definitions("action_def")}
+        action = action_defs.get(action_info.get("action_id"))
+        if not action:
+            return None, f"action is not registered: {action_info.get('action_id')}"
+        state = dict(agent.get("initial_state") or {})
+        parameters = self._resolve_parameters(dict(action_info.get("parameters") or {}), state)
+        target, target_error = self.targets.resolve(agent, parameters)
+        if target_error:
+            return None, target_error
+        current_location = {}
+        if state.get("location_id"):
+            try:
+                current_location = self.store.get_entity(state["location_id"])
+            except KeyError:
+                pass
+        context = {
+            "location_id": state.get("location_id"),
+            "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
+            "area_id": parameters.get("area_id"),
+            "current_location": current_location,
+            "target": target or {},
+            "target.visible": (target or {}).get("visible", True),
+            "target.available": (target or {}).get("available", True),
+        }
+        condition_target = {**parameters, **(target or {})}
+        for predicate in action.get("preconditions", []) or []:
+            if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=context, world=self.store.get_meta("world_properties", {}) or {}):
+                return None, f"precondition failed: {predicate}"
+        probe = copy.deepcopy(agent)
+        allowed, reason = self._reserve_action_costs(probe, action, parameters)
+        if not allowed:
+            return None, reason
+        return {"action": action, "parameters": parameters, "target": target, "duration": self._action_duration(action, parameters)}, ""
+
+    def _progress_parallel_group(self, agent: dict[str, Any], execution_id: str, behavior_id: str, actions: list[dict[str, Any]], index: int, minute: int) -> None:
+        state = dict(agent.get("initial_state") or {})
+        group = actions[index].get("parallel_group")
+        group_items: list[tuple[int, dict[str, Any]]] = []
+        for item_index in range(index, len(actions)):
+            if actions[item_index].get("parallel_group") != group:
+                break
+            group_items.append((item_index, actions[item_index]))
+        active = state.get("active_parallel_actions")
+        if not active:
+            prepared: list[tuple[int, dict[str, Any], dict[str, Any]]] = []
+            for item_index, item in group_items:
+                info, error = self._prepare_parallel_action(agent, item)
+                if error:
+                    self._finish_behavior(agent, execution_id, behavior_id, "failed", error, minute)
+                    return
+                prepared.append((item_index, item, info or {}))
+            for item_index, item, info in prepared:
+                action = info["action"]
+                self._reserve_action_costs(agent, action, info["parameters"])
+            active = {}
+            for item_index, item, info in prepared:
+                action_id = item["action_id"]
+                action_instance_id = f"{execution_id}:parallel:{item_index}"
+                active[str(item_index)] = {
+                    "action_id": action_id,
+                    "parameters": info["parameters"],
+                    "target": info["target"],
+                    "duration": info["duration"],
+                    "remaining": info["duration"],
+                    "action_instance_id": action_instance_id,
+                }
+                self.store.put_action_instance(action_instance_id, execution_id, agent["id"], action_id, "running", 0, info["duration"], {"parameters": info["parameters"], "target": info["target"], "parallel_group": group}, minute, minute)
+                self.store.append_event("action.started", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "duration_minutes": info["duration"], "parallel_group": group})
+            state["active_parallel_actions"] = active
+            state["active_action"] = "parallel"
+            state["active_action_index"] = index
+            agent["initial_state"] = state
+        action_defs = {item["id"]: item for item in self.store.get_definitions("action_def")}
+        completed_count = 0
+        for item_index, entry in list(active.items()):
+            if int(entry["remaining"]) == 0:
+                completed_count += 1
+                continue
+            action = action_defs.get(entry["action_id"])
+            if not action:
+                self._finish_behavior(agent, execution_id, behavior_id, "failed", f"action is not registered: {entry['action_id']}", minute)
+                return
+            self._apply_action_progress(agent, action)
+            entry["remaining"] = max(0, int(entry["remaining"]) - 1)
+            elapsed = int(entry["duration"]) - int(entry["remaining"])
+            self.store.update_action_instance(entry["action_instance_id"], status="succeeded" if entry["remaining"] == 0 else "running", elapsed_minutes=elapsed, remaining_minutes=entry["remaining"], data={"parameters": entry["parameters"], "target": entry["target"], "parallel_group": group}, updated_minute=minute)
+            if entry["remaining"] == 0:
+                self._apply_success_effects(agent, action, entry["parameters"], minute, target=entry.get("target"))
+                self._record_information_result(agent, action, entry["parameters"], minute)
+                self.store.append_event("action.completed", agent["id"], minute, {"execution_id": execution_id, "action_id": entry["action_id"], "parallel_group": group, "result": action.get("success", {}).get("result", "completed")})
+                completed_count += 1
+        remaining_values = [int(entry["remaining"]) for entry in active.values()]
+        state = dict(agent.get("initial_state") or {})
+        state["active_parallel_actions"] = active
+        state["remaining_minutes"] = max(remaining_values or [0])
+        state["action_progress"] = round(min(1 - int(entry["remaining"]) / max(1, int(entry["duration"])) for entry in active.values()), 4) if active else 1.0
+        if completed_count == len(active):
+            state["active_parallel_actions"] = {}
+            state["active_action"] = None
+            state["active_action_index"] = index + len(group_items)
+            state["remaining_minutes"] = 0
+            state["action_progress"] = 1.0
+            agent["initial_state"] = state
+            bt_data = json.loads(self.store.connection.execute("SELECT data_json FROM bt_instance WHERE execution_id=?", (execution_id,)).fetchone()["data_json"])
+            self.store.update_bt_instance(execution_id, status="executing", current_node=index + len(group_items), data=bt_data, updated_minute=minute)
+            if index + len(group_items) >= len(actions):
+                self._finish_behavior(agent, execution_id, behavior_id, "completed", "behavior_completed", minute)
+            else:
+                self.store.update_agent(agent["id"], agent)
+        else:
+            agent["initial_state"] = state
+            self.store.update_agent(agent["id"], agent)
+
     def _progress_agent(self, agent: dict[str, Any], minute: int) -> None:
         state = dict(agent.get("initial_state") or {})
         if state.get("status") not in {"executing", "paused"} or state.get("status") == "paused":
@@ -632,6 +754,9 @@ class Platform:
         index = int(state.get("active_action_index", bt_rows["current_node"] or 0))
         if index >= len(actions):
             self._finish_behavior(agent, execution_id, behavior_id, "completed", "behavior_completed", minute)
+            return
+        if actions[index].get("parallel_group"):
+            self._progress_parallel_group(agent, execution_id, behavior_id, actions, index, minute)
             return
         if not state.get("active_action"):
             started, reason = self._start_action(agent, execution_id, actions[index], minute)
@@ -750,11 +875,17 @@ class Platform:
                     data=json.loads(action_row["data_json"]),
                     updated_minute=minute,
                 )
+        if status != "completed":
+            for entry in (state.get("active_parallel_actions") or {}).values():
+                action_row = self.store.connection.execute("SELECT elapsed_minutes,remaining_minutes,data_json FROM action_instance WHERE action_instance_id=?", (entry.get("action_instance_id"),)).fetchone()
+                if action_row is not None and action_row["remaining_minutes"] > 0:
+                    self.store.update_action_instance(entry["action_instance_id"], status="failed", elapsed_minutes=action_row["elapsed_minutes"], remaining_minutes=action_row["remaining_minutes"], data=json.loads(action_row["data_json"]), updated_minute=minute)
         state["status"] = "idle" if status == "completed" else "failed"
         state["active_bt_instance"] = None
         state["active_behavior_id"] = None
         state["active_action"] = None
         state["active_action_instance"] = None
+        state["active_parallel_actions"] = {}
         state["remaining_minutes"] = 0
         state["last_platform_result"] = {"status": status, "behavior_ref": f"behavior:{behavior_id}", "result": result}
         agent["initial_state"] = state
@@ -881,6 +1012,10 @@ class Platform:
                         data=json.loads(action_row["data_json"]),
                         updated_minute=minute,
                     )
+            for entry in (state.get("active_parallel_actions") or {}).values():
+                action_row = self.store.connection.execute("SELECT elapsed_minutes,remaining_minutes,data_json FROM action_instance WHERE action_instance_id=?", (entry.get("action_instance_id"),)).fetchone()
+                if action_row is not None and action_row["remaining_minutes"] > 0:
+                    self.store.update_action_instance(entry["action_instance_id"], status="cancelled" if hard else "paused", elapsed_minutes=action_row["elapsed_minutes"], remaining_minutes=action_row["remaining_minutes"], data=json.loads(action_row["data_json"]), updated_minute=minute)
             state["status"] = "idle" if hard else "paused"
             state["last_platform_result"] = {"status": status, "reason": reason}
             if hard:
@@ -888,9 +1023,26 @@ class Platform:
                 state["active_behavior_id"] = None
                 state["active_action"] = None
                 state["active_action_instance"] = None
+                state["active_parallel_actions"] = {}
                 state["remaining_minutes"] = 0
             agent["initial_state"] = state
             self.store.update_agent(actor_id, agent)
             self.store.update_bt_instance(execution_id, status=status, current_node=int(state.get("active_action_index", 0)), data={"reason": reason}, updated_minute=minute)
             self.store.append_event("behavior.interrupted", actor_id, minute, {"execution_id": execution_id, "reason": reason, "hard": hard})
         return {"status": status, "execution_id": execution_id, "reason": reason}
+
+    def resume_behavior(self, actor_id: str) -> dict[str, Any]:
+        agent = self.store.get_agent(actor_id)
+        state = dict(agent.get("initial_state") or {})
+        execution_id = state.get("active_bt_instance")
+        if not execution_id or state.get("status") != "paused":
+            return {"status": "ignored", "message": "The actor has no paused behavior."}
+        minute = int(self.store.get_meta("world_minute", 0))
+        with self.store.transaction():
+            state["status"] = "executing"
+            agent["initial_state"] = state
+            self.store.update_agent(actor_id, agent)
+            self.store.connection.execute("UPDATE action_instance SET status='running' WHERE execution_id=? AND status='paused'", (execution_id,))
+            self.store.connection.execute("UPDATE bt_instance SET status='executing',updated_minute=? WHERE execution_id=?", (minute, execution_id))
+            self.store.append_event("behavior.resumed", actor_id, minute, {"execution_id": execution_id})
+        return {"status": "resumed", "execution_id": execution_id}
