@@ -307,44 +307,13 @@ class AgentToolExecutor:
         return self.platform.store.get_agent(self.actor_id)
 
     def _observe_nearby(self, question: str = "") -> dict[str, Any]:
-        try:
-            agent = self._agent()
-            location_id = agent.get("initial_state", {}).get("location_id")
-            entities = [x for x in self.platform.store.entities_at_location(location_id) if x["id"] != self.actor_id]
-        except KeyError:
-            location_id = "world"
-            entities = []
-            for entity_type in ("location", "faction"):
-                rows = self.platform.store.entities_of_type(entity_type)
-                entities.extend({"id": row["id"], "type": row["entity_type"], "name": row["name"], "summary": row.get("summary", entity_type)} for row in rows[:8])
-        return {
-            "status": "ok",
-            "location": location_id,
-            "question": question,
-            "facts": [f"{item['name']} is here ({item.get('summary', item.get('type', 'entity'))})." for item in entities[:8]],
-            "entities": entities[:8],
-        }
+        return self.platform.perception.observe_nearby(self.actor_id, question)
 
     def _inspect_entity(self, entity_id: str, question: str = "") -> dict[str, Any]:
-        entity = self.platform.store.get_entity(entity_id)
-        if self.role not in {"god", "world_builder"}:
-            agent = self._agent()
-            state = agent.get("initial_state", {})
-            nearby_ids = {row["id"] for row in self.platform.store.entities_at_location(state.get("location_id"))}
-            seeded = {str(value).split(":", 1)[-1] for value in agent.get("knowledge_seed", []) if isinstance(value, str)}
-            if entity_id != self.actor_id and entity_id not in nearby_ids and entity_id not in seeded:
-                return {"status": "rejected", "failed_check": "visibility", "retryable": True, "message": "This entity is not visible or known to the agent."}
-        data = {
-            key: value
-            for key, value in entity.items()
-            if key not in {"beliefs", "knowledge_seed", "inventory", "combat_stats", "initial_bt_ids", "external_pressure", "relation_pressure"}
-            and not key.startswith("_")
-        }
-        return {"status": "ok", "entity": data, "question": question}
+        return self.platform.perception.inspect_entity(self.actor_id, entity_id, question, global_scope=self.role in {"god", "world_builder"})
 
     def _recall_memory(self, question: str = "", limit: int = 8) -> dict[str, Any]:
-        memories = self.platform.store.list_memories(self.actor_id, limit=max(1, min(int(limit), 8)), query=question)
-        return {"status": "ok", "question": question, "memories": memories}
+        return self.platform.memory.recall(self.actor_id, question, limit)
 
     def _preview_behavior(self, behavior_ref: str, target: dict[str, Any] | None = None) -> dict[str, Any]:
         view = self.platform.view.build_decision_view(self.actor_id, role=self.role)

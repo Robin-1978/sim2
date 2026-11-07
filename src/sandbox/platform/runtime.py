@@ -10,6 +10,8 @@ from ..actions.conditions import ConditionEngine
 from ..actions.effects import EffectPipeline
 from ..agent_view.compiler import AgentViewCompiler
 from ..intents.models import BehaviorIntent
+from ..memory.service import MemoryService
+from ..perception.service import PerceptionService
 from ..persistence.store import WorldStore
 
 
@@ -24,6 +26,8 @@ class Platform:
     def __init__(self, db_path: Path):
         self.store = WorldStore(db_path)
         self.view = AgentViewCompiler(self.store)
+        self.perception = PerceptionService(self.store)
+        self.memory = MemoryService(self.store)
         self.conditions = ConditionEngine()
         self.effects = EffectPipeline()
 
