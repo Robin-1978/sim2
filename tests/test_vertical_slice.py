@@ -331,3 +331,39 @@ def test_evolution_windows_are_scheduled_without_llm_calls(tmp_path: Path):
         assert all(item["task_id"] != task["task_id"] for item in platform.ready_evolution_tasks())
     finally:
         platform.close()
+
+
+def test_god_proposal_creates_entity_only_through_platform(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "god-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    provider = SequenceProvider([
+        {"tool_call": {"name": "propose_entity", "arguments": {"entity_type": "resource_node", "name": "New Spring", "location_id": "river_bank", "description": "A newly revealed water source."}}}
+    ])
+    try:
+        turn = AgentEngine(platform, provider).run(role="god", actor_id="god")
+        assert turn.result["status"] == "accepted"
+        entity = platform.store.get_entity(turn.result["entity_id"])
+        assert entity["entity_type"] == "resource_node"
+    finally:
+        platform.close()
+
+
+def test_world_builder_validates_then_submits_template(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "builder-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    template = {
+        "world": {"id": "small_world", "title": "Small World"},
+        "actions": [], "behavior_trees": [], "agents": [],
+    }
+    provider = SequenceProvider([
+        {"tool_call": {"name": "validate_world_template", "arguments": {"template": template}}},
+        {"tool_call": {"name": "submit_world_template", "arguments": {"template": template}}},
+    ])
+    try:
+        turn = AgentEngine(platform, provider).run(role="world_builder", actor_id="world_builder")
+        assert turn.result["status"] == "accepted"
+        assert turn.iterations == 2
+    finally:
+        platform.close()
