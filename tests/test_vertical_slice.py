@@ -187,7 +187,7 @@ def test_successful_recipe_records_capability_history(tmp_path: Path):
     platform = Platform(db_path)
     try:
         agent = platform.store.get_agent("liang_he")
-        agent["inventory"].update({"grain": 1, "clean_water": 1})
+        agent["inventory"].update({"grain": 1})
         with platform.store.transaction():
             platform.store.update_agent("liang_he", agent)
         intent = BehaviorIntent("liang_he", "behavior:craft_meal", {}, {}, "Prepare food", 0.8, "capability-intent")
@@ -195,6 +195,7 @@ def test_successful_recipe_records_capability_history(tmp_path: Path):
         platform.advance(60)
         history = platform.store.list_capability_progress("liang_he")
         assert any(item["capability"] == "cooking" and item["delta"] > 0 for item in history)
+        assert platform.store.get_entity("clean_water")["amount"] == 99
     finally:
         platform.close()
 

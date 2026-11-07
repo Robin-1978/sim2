@@ -10,6 +10,7 @@ from uuid import uuid4
 from ..actions.conditions import ConditionEngine
 from ..actions.effects import EffectPipeline
 from ..actions.targets import TargetResolver
+from ..actions.resources import ResourceLedger
 from ..agent_view.compiler import AgentViewCompiler
 from ..intents.models import BehaviorIntent
 from ..memory.service import MemoryService
@@ -33,6 +34,7 @@ class Platform:
         self.conditions = ConditionEngine()
         self.effects = EffectPipeline()
         self.targets = TargetResolver(self.store)
+        self.resources = ResourceLedger(self.store)
 
     def close(self) -> None:
         self.store.close()
@@ -489,26 +491,8 @@ class Platform:
         except (TypeError, ValueError):
             return 1
 
-    def _reserve_action_costs(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any]) -> tuple[bool, str]:
-        inventory = dict(agent.get("inventory") or {})
-        reserve = action.get("costs", {}).get("reserve", {}) or {}
-        required: dict[str, float] = {}
-        for key, value in reserve.items():
-            if key == "recipe_inputs":
-                recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
-                for item in (recipe or {}).get("inputs", []):
-                    required[str(item.get("item"))] = required.get(str(item.get("item")), 0) + float(item.get("quantity", 0))
-            elif isinstance(value, (int, float)):
-                required[key] = required.get(key, 0) + float(value)
-        for key, amount in required.items():
-            available = float(inventory.get(key, 0))
-            if available < amount:
-                return False, f"required resource {key} is unavailable"
-        for key, amount in required.items():
-            remaining = inventory.get(key, 0) - amount
-            inventory[key] = int(remaining) if float(remaining).is_integer() else remaining
-        agent["inventory"] = inventory
-        return True, ""
+    def _reserve_action_costs(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], *, commit: bool = True) -> tuple[bool, str, list[dict[str, Any]]]:
+        return self.resources.reserve(agent, action, parameters, commit=commit)
 
     def _apply_action_progress(self, agent: dict[str, Any], action: dict[str, Any]) -> None:
         state = dict(agent.get("initial_state") or {})
@@ -604,7 +588,7 @@ class Platform:
             condition_target = {**parameters, **(resolved_target or {})}
             if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=condition_context, world=self.store.get_meta("world_properties", {}) or {}):
                 return False, f"precondition failed: {predicate}"
-        allowed, reason = self._reserve_action_costs(agent, action, parameters)
+        allowed, reason, reservation = self._reserve_action_costs(agent, action, parameters)
         if not allowed:
             return False, reason
         duration = self._action_duration(action, parameters)
@@ -615,8 +599,9 @@ class Platform:
         state["active_action_duration"] = duration
         state["remaining_minutes"] = duration
         state["active_action_parameters"] = parameters
+        state["active_action_reservation"] = reservation
         agent["initial_state"] = state
-        self.store.put_action_instance(action_instance_id, execution_id, agent["id"], action_id, "running", 0, duration, {"parameters": parameters, "target": resolved_target}, minute, minute)
+        self.store.put_action_instance(action_instance_id, execution_id, agent["id"], action_id, "running", 0, duration, {"parameters": parameters, "target": resolved_target, "reservation": reservation}, minute, minute)
         self.store.append_event("action.started", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "duration_minutes": duration})
         return True, ""
 
@@ -650,10 +635,10 @@ class Platform:
             if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=context, world=self.store.get_meta("world_properties", {}) or {}):
                 return None, f"precondition failed: {predicate}"
         probe = copy.deepcopy(agent)
-        allowed, reason = self._reserve_action_costs(probe, action, parameters)
+        allowed, reason, reservation = self._reserve_action_costs(probe, action, parameters, commit=False)
         if not allowed:
             return None, reason
-        return {"action": action, "parameters": parameters, "target": target, "duration": self._action_duration(action, parameters)}, ""
+        return {"action": action, "parameters": parameters, "target": target, "duration": self._action_duration(action, parameters), "reservation": reservation}, ""
 
     def _progress_parallel_group(self, agent: dict[str, Any], execution_id: str, behavior_id: str, actions: list[dict[str, Any]], index: int, minute: int) -> None:
         state = dict(agent.get("initial_state") or {})
@@ -686,8 +671,9 @@ class Platform:
                     "duration": info["duration"],
                     "remaining": info["duration"],
                     "action_instance_id": action_instance_id,
+                    "reservation": info.get("reservation", []),
                 }
-                self.store.put_action_instance(action_instance_id, execution_id, agent["id"], action_id, "running", 0, info["duration"], {"parameters": info["parameters"], "target": info["target"], "parallel_group": group}, minute, minute)
+                self.store.put_action_instance(action_instance_id, execution_id, agent["id"], action_id, "running", 0, info["duration"], {"parameters": info["parameters"], "target": info["target"], "reservation": info.get("reservation", []), "parallel_group": group}, minute, minute)
                 self.store.append_event("action.started", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "duration_minutes": info["duration"], "parallel_group": group})
             state["active_parallel_actions"] = active
             state["active_action"] = "parallel"
@@ -706,7 +692,7 @@ class Platform:
             self._apply_action_progress(agent, action)
             entry["remaining"] = max(0, int(entry["remaining"]) - 1)
             elapsed = int(entry["duration"]) - int(entry["remaining"])
-            self.store.update_action_instance(entry["action_instance_id"], status="succeeded" if entry["remaining"] == 0 else "running", elapsed_minutes=elapsed, remaining_minutes=entry["remaining"], data={"parameters": entry["parameters"], "target": entry["target"], "parallel_group": group}, updated_minute=minute)
+            self.store.update_action_instance(entry["action_instance_id"], status="succeeded" if entry["remaining"] == 0 else "running", elapsed_minutes=elapsed, remaining_minutes=entry["remaining"], data={"parameters": entry["parameters"], "target": entry["target"], "reservation": entry.get("reservation", []), "parallel_group": group}, updated_minute=minute)
             if entry["remaining"] == 0:
                 self._apply_success_effects(agent, action, entry["parameters"], minute, target=entry.get("target"))
                 self._record_information_result(agent, action, entry["parameters"], minute)
@@ -778,7 +764,7 @@ class Platform:
         agent["initial_state"] = state
         action_instance_id = state.get("active_action_instance")
         if action_instance_id:
-            self.store.update_action_instance(action_instance_id, status="succeeded" if remaining == 0 else "running", elapsed_minutes=duration - remaining, remaining_minutes=remaining, data={"parameters": state.get("active_action_parameters", {})}, updated_minute=minute)
+            self.store.update_action_instance(action_instance_id, status="succeeded" if remaining == 0 else "running", elapsed_minutes=duration - remaining, remaining_minutes=remaining, data={"parameters": state.get("active_action_parameters", {}), "reservation": state.get("active_action_reservation", [])}, updated_minute=minute)
         if remaining > 0:
             self.store.update_bt_instance(execution_id, status="executing", current_node=index, data=bt_data, updated_minute=minute)
             self.store.update_agent(agent["id"], agent)
@@ -792,6 +778,7 @@ class Platform:
         state["active_action_instance"] = None
         state["active_action_duration"] = 0
         state["active_action_parameters"] = {}
+        state["active_action_reservation"] = []
         state["active_action_duration"] = 0
         state["action_progress"] = 1.0
         agent["initial_state"] = state
