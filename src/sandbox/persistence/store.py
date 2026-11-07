@@ -142,6 +142,15 @@ CREATE TABLE IF NOT EXISTS evolution_task (
   status TEXT NOT NULL,
   data_json TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS capability_progress (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id TEXT NOT NULL,
+  capability TEXT NOT NULL,
+  delta REAL NOT NULL,
+  source TEXT NOT NULL,
+  world_minute INTEGER NOT NULL,
+  data_json TEXT NOT NULL
+);
 """
 
 
@@ -322,6 +331,20 @@ class WorldStore:
             "UPDATE evolution_task SET due_minute=?,status='scheduled' WHERE task_id=?",
             (int(completed_minute) + int(row["cadence_minutes"]), task_id),
         )
+
+    def put_capability_progress(self, agent_id: str, capability: str, delta: float, source: str, world_minute: int, data: dict[str, Any] | None = None) -> int:
+        cur = self.connection.execute(
+            "INSERT INTO capability_progress(agent_id,capability,delta,source,world_minute,data_json) VALUES (?,?,?,?,?,?)",
+            (agent_id, capability, float(delta), source, int(world_minute), json_dumps(data or {})),
+        )
+        return int(cur.lastrowid)
+
+    def list_capability_progress(self, agent_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT id,capability,delta,source,world_minute,data_json FROM capability_progress WHERE agent_id=? ORDER BY id DESC LIMIT ?",
+            (agent_id, max(1, min(int(limit), 100))),
+        ).fetchall()
+        return [{"id": row["id"], "capability": row["capability"], "delta": row["delta"], "source": row["source"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
 
     def get_agent(self, agent_id: str) -> dict[str, Any]:
         row = self.connection.execute("SELECT data_json FROM agent_state WHERE id=?", (agent_id,)).fetchone()

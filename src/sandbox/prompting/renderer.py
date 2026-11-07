@@ -37,6 +37,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         f"Traits: {_line(context.get('identity', {}).get('traits'))}",
         f"Beliefs: {_line(context.get('identity', {}).get('beliefs'))}",
         f"Capabilities: {_line(context.get('identity', {}).get('capabilities'))}",
+        f"Recent capability changes: {_line(context.get('capability_history'))}",
         "",
         "# STATE",
         f"Needs: {_line(context.get('needs'))}",

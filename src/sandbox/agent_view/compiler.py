@@ -106,6 +106,7 @@ class AgentViewCompiler:
             "world_time": {"minute": self.store.get_meta("world_minute", 0), "label": f"World minute {self.store.get_meta('world_minute', 0)}"},
             "self": {"id": agent_id, "name": agent.get("name", agent_id), "role": agent.get("role", "agent"), "status": state.get("status", "idle"), "location": location_id, "health": state.get("health"), "stamina": state.get("stamina"), "fatigue": state.get("fatigue"), "goal": agent.get("ultimate_goal")},
             "identity": {"traits": agent.get("traits", {}), "beliefs": agent.get("beliefs", []), "capabilities": agent.get("capabilities", {})},
+            "capability_history": self.store.list_capability_progress(agent_id, limit=5),
             "needs": needs, "inventory": agent.get("inventory", {}), "injuries": state.get("injuries", []),
             "drives": drives[:5], "observation": {"facts": [], "source": "platform_snapshot"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "memories": memories, "direct_relationships": relationships,
             "active_task": {"bt": state.get("active_bt_instance"), "action": state.get("active_action"), "remaining_minutes": state.get("remaining_minutes", 0)},

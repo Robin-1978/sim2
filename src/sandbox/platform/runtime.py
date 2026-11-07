@@ -649,7 +649,7 @@ class Platform:
             self.store.update_bt_instance(execution_id, status="executing", current_node=index, data=bt_data, updated_minute=minute)
             self.store.update_agent(agent["id"], agent)
             return
-        self._apply_success_effects(agent, action, state.get("active_action_parameters", {}))
+        self._apply_success_effects(agent, action, state.get("active_action_parameters", {}), minute)
         self._record_information_result(agent, action, state.get("active_action_parameters", {}), minute)
         self.store.append_event("action.completed", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "result": action.get("success", {}).get("result", "completed")})
         state["active_action_index"] = index + 1
@@ -666,18 +666,22 @@ class Platform:
         else:
             self.store.update_agent(agent["id"], agent)
 
-    def _apply_success_effects(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any]) -> None:
+    def _add_capability_progress(self, agent: dict[str, Any], capability: str, delta: float, source: str, minute: int) -> None:
+        agent.setdefault("capabilities", {})[capability] = min(1.0, float(agent["capabilities"].get(capability, 0)) + float(delta))
+        self.store.put_capability_progress(agent["id"], capability, float(delta), source, minute)
+
+    def _apply_success_effects(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> None:
         effects = list(action.get("effects", []) or [])
         for effect in effects:
             self.effects.apply(agent, effect, target=parameters)
             if effect.get("type") in {"capability_xp", "capability.add_xp"} or effect.get("op") == "capability.add_xp":
                 capability = effect.get("capability")
                 if capability:
-                    agent.setdefault("capabilities", {})[capability] = min(1.0, float(agent["capabilities"].get(capability, 0)) + float(effect.get("value", effect.get("delta", 0))))
+                    self._add_capability_progress(agent, capability, float(effect.get("value", effect.get("delta", 0))), str(action.get("id", "action")), minute)
         for effect in action.get("capability_effects", []) or []:
             capability = effect.get("capability")
             if capability:
-                agent.setdefault("capabilities", {})[capability] = min(1.0, float(agent["capabilities"].get(capability, 0)) + float(effect.get("value", 0)))
+                self._add_capability_progress(agent, capability, float(effect.get("value", 0)), str(action.get("id", "action")), minute)
         recipe_id = parameters.get("recipe_id")
         if not recipe_id:
             return
@@ -691,7 +695,7 @@ class Platform:
             if effect.get("op") == "capability.add_xp":
                 capability = effect.get("capability")
                 if capability:
-                    agent.setdefault("capabilities", {})[capability] = min(1.0, float(agent["capabilities"].get(capability, 0)) + float(effect.get("value", 0)))
+                    self._add_capability_progress(agent, capability, float(effect.get("value", 0)), f"recipe:{recipe_id}", minute)
 
     def _record_information_result(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> None:
         """Persist information produced by configured information channels."""

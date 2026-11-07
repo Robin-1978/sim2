@@ -181,6 +181,24 @@ def test_memory_fts_and_bounded_compaction(tmp_path: Path):
         platform.close()
 
 
+def test_successful_recipe_records_capability_history(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "capability-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        agent = platform.store.get_agent("liang_he")
+        agent["inventory"].update({"grain": 1, "clean_water": 1})
+        with platform.store.transaction():
+            platform.store.update_agent("liang_he", agent)
+        intent = BehaviorIntent("liang_he", "behavior:craft_meal", {}, {}, "Prepare food", 0.8, "capability-intent")
+        assert platform.submit_behavior(intent)["status"] == "accepted"
+        platform.advance(60)
+        history = platform.store.list_capability_progress("liang_he")
+        assert any(item["capability"] == "cooking" and item["delta"] > 0 for item in history)
+    finally:
+        platform.close()
+
+
 def test_decision_session_does_not_call_llm_while_behavior_is_active(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "active-world", tmp_path / "runtime")
