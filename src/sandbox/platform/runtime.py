@@ -357,6 +357,11 @@ class Platform:
         errors: list[str] = []
         if not isinstance(template, dict):
             return {"status": "ok", "valid": False, "errors": ["template must be an object"], "failed_check": "template", "message": "Template must be an object.", "retryable": True}
+        world = template.get("world")
+        if not isinstance(world, dict) or not world.get("id"):
+            errors.append("world.id is required")
+        if template.get("template_version") is not None and not isinstance(template.get("template_version"), str):
+            errors.append("template_version must be a string")
         collections = {key: value for key, value in template.items() if isinstance(value, list)}
         for key, values in collections.items():
             ids = [value.get("id") for value in values if isinstance(value, dict)]
