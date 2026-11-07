@@ -153,7 +153,8 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
             world_state = load_yaml(config_dir, "world_state.yaml", {}).get("world_state", {})
             store.set_meta("world_properties", world_state.get("properties", {}))
             store.set_meta("rules", load_yaml(config_dir, "rules.yaml", {}))
-            store.set_meta("evolution", load_yaml(config_dir, "evolution.yaml", {}))
+            evolution = load_yaml(config_dir, "evolution.yaml", {})
+            store.set_meta("evolution", evolution)
 
             for location in load_yaml(config_dir, "locations.yaml", {}).get("locations", []):
                 store.put_entity(location["id"], "location", location.get("name", location["id"]), location)
@@ -170,6 +171,22 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                 for knowledge in agent.get("knowledge_seed", []):
                     fact_key = str(knowledge)
                     store.put_knowledge_fact(agent["id"], fact_key, {"fact": fact_key, "source_type": "config_seed", "confidence": 1.0})
+            schedule = evolution.get("evolution", {}).get("schedule", {}) if isinstance(evolution, dict) else {}
+            for agent in load_yaml(config_dir, "agents.yaml", {}).get("agents", []):
+                agent_id = agent["id"]
+                reflection_cadence = int(schedule.get("agent_reflection_minutes", 0) or 0)
+                innovation_cadence = int(schedule.get("agent_innovation_minutes", 0) or 0)
+                if reflection_cadence > 0:
+                    store.put_evolution_task(f"reflection:{agent_id}", "agent_reflection", agent_id, "daily_reflection", reflection_cadence, reflection_cadence)
+                if innovation_cadence > 0:
+                    store.put_evolution_task(f"innovation:{agent_id}", "agent_reflection", agent_id, "weekly_innovation", innovation_cadence, innovation_cadence)
+            for task_type, role, key in [
+                ("god_local", "god", "god_local_minutes"),
+                ("god_structural", "god", "god_structural_minutes"),
+            ]:
+                cadence = int(schedule.get(key, 0) or 0)
+                if cadence > 0:
+                    store.put_evolution_task(task_type, role, None, task_type, cadence, cadence)
             for relation in load_yaml(config_dir, "factions.yaml", {}).get("relationships", []):
                 relation_data = dict(relation)
                 from_id = str(relation_data.pop("from"))

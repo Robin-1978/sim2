@@ -624,6 +624,31 @@ class Platform:
         self.store.update_bt_instance(execution_id, status=status, current_node=int(state.get("active_action_index", 0)), data={"result": result}, updated_minute=minute)
         self.store.append_event(f"behavior.{status}", agent["id"], minute, {"execution_id": execution_id, "behavior_id": behavior_id, "result": result})
 
+    def _emit_due_evolution_tasks(self, minute: int) -> None:
+        for task in self.store.due_evolution_tasks(minute):
+            self.store.mark_evolution_task_ready(task["task_id"])
+            self.store.append_event(
+                "evolution.task_due",
+                task.get("actor_id"),
+                minute,
+                {"task_id": task["task_id"], "role": task["role"], "task_type": task["task_type"]},
+            )
+
+    def ready_evolution_tasks(self) -> list[dict[str, Any]]:
+        """Return low-frequency Agent tasks without invoking an LLM."""
+
+        return self.store.ready_evolution_tasks()
+
+    def claim_evolution_task(self, task_id: str) -> dict[str, Any] | None:
+        minute = int(self.store.get_meta("world_minute", 0))
+        with self.store.transaction():
+            return self.store.claim_evolution_task(task_id, minute)
+
+    def complete_evolution_task(self, task_id: str) -> None:
+        minute = int(self.store.get_meta("world_minute", 0))
+        with self.store.transaction():
+            self.store.complete_evolution_task(task_id, minute)
+
     def advance(self, minutes: int = 1) -> dict[str, Any]:
         """Advance world time and active Action/BT instances deterministically."""
 
@@ -648,6 +673,7 @@ class Platform:
                         failed.append(agent["id"])
                 self.store.set_meta("world_minute", minute)
                 self.store.append_event("world_minute.advanced", None, minute, {"minute": minute})
+                self._emit_due_evolution_tasks(minute)
         return {"status": "advanced", "from_minute": start, "to_minute": start + minutes, "completed_agents": sorted(set(completed)), "failed_agents": sorted(set(failed))}
 
     def interrupt_behavior(self, actor_id: str, reason: str, *, hard: bool = True) -> dict[str, Any]:

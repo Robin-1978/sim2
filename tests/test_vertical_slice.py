@@ -311,3 +311,23 @@ def test_exploration_completion_persists_result_and_knowledge(tmp_path: Path):
         assert any(item["fact_key"] == "explored:greywood_edge" for item in platform.store.list_knowledge_facts("lu_xingzhou"))
     finally:
         platform.close()
+
+
+def test_evolution_windows_are_scheduled_without_llm_calls(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "evolution-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        platform.store.connection.execute("UPDATE evolution_task SET due_minute=2 WHERE task_id='reflection:lu_xingzhou'")
+        platform.store.connection.commit()
+        assert platform.ready_evolution_tasks() == []
+        platform.advance(2)
+        tasks = platform.ready_evolution_tasks()
+        task = next(item for item in tasks if item["task_id"] == "reflection:lu_xingzhou")
+        assert task["task_type"] == "daily_reflection"
+        claimed = platform.claim_evolution_task(task["task_id"])
+        assert claimed["task_id"] == task["task_id"]
+        platform.complete_evolution_task(task["task_id"])
+        assert all(item["task_id"] != task["task_id"] for item in platform.ready_evolution_tasks())
+    finally:
+        platform.close()

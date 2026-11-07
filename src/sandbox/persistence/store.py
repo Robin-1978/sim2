@@ -126,6 +126,16 @@ CREATE TABLE IF NOT EXISTS dialogue_exchange (
   world_minute INTEGER NOT NULL,
   data_json TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS evolution_task (
+  task_id TEXT PRIMARY KEY,
+  role TEXT NOT NULL,
+  actor_id TEXT,
+  task_type TEXT NOT NULL,
+  due_minute INTEGER NOT NULL,
+  cadence_minutes INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  data_json TEXT NOT NULL
+);
 """
 
 
@@ -261,6 +271,47 @@ class WorldStore:
             (speaker_id, listener_id, topic, int(world_minute), json_dumps(data)),
         )
         return int(cur.lastrowid)
+
+    def put_evolution_task(self, task_id: str, role: str, actor_id: str | None, task_type: str, due_minute: int, cadence_minutes: int, status: str = "scheduled", data: dict[str, Any] | None = None) -> None:
+        self.connection.execute(
+            "INSERT OR REPLACE INTO evolution_task(task_id,role,actor_id,task_type,due_minute,cadence_minutes,status,data_json) VALUES (?,?,?,?,?,?,?,?)",
+            (task_id, role, actor_id, task_type, int(due_minute), int(cadence_minutes), status, json_dumps(data or {})),
+        )
+
+    def due_evolution_tasks(self, world_minute: int) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT task_id,role,actor_id,task_type,due_minute,cadence_minutes,status,data_json FROM evolution_task WHERE due_minute<=? AND status='scheduled' ORDER BY due_minute,task_id",
+            (int(world_minute),),
+        ).fetchall()
+        return [{"task_id": row["task_id"], "role": row["role"], "actor_id": row["actor_id"], "task_type": row["task_type"], "due_minute": row["due_minute"], "cadence_minutes": row["cadence_minutes"], "status": row["status"], **json.loads(row["data_json"])} for row in rows]
+
+    def ready_evolution_tasks(self) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT task_id,role,actor_id,task_type,due_minute,cadence_minutes,status,data_json FROM evolution_task WHERE status='ready' ORDER BY due_minute,task_id",
+        ).fetchall()
+        return [{"task_id": row["task_id"], "role": row["role"], "actor_id": row["actor_id"], "task_type": row["task_type"], "due_minute": row["due_minute"], "cadence_minutes": row["cadence_minutes"], "status": row["status"], **json.loads(row["data_json"])} for row in rows]
+
+    def mark_evolution_task_ready(self, task_id: str) -> None:
+        self.connection.execute("UPDATE evolution_task SET status='ready' WHERE task_id=? AND status='scheduled'", (task_id,))
+
+    def claim_evolution_task(self, task_id: str, world_minute: int) -> dict[str, Any] | None:
+        row = self.connection.execute("SELECT task_id,role,actor_id,task_type,due_minute,cadence_minutes,status,data_json FROM evolution_task WHERE task_id=?", (task_id,)).fetchone()
+        if row is None or row["status"] not in {"scheduled", "ready"} or row["due_minute"] > world_minute:
+            return None
+        self.connection.execute("UPDATE evolution_task SET status='claimed' WHERE task_id=?", (task_id,))
+        return {"task_id": row["task_id"], "role": row["role"], "actor_id": row["actor_id"], "task_type": row["task_type"], "due_minute": row["due_minute"], "cadence_minutes": row["cadence_minutes"], **json.loads(row["data_json"])}
+
+    def reschedule_evolution_task(self, task_id: str, due_minute: int) -> None:
+        self.connection.execute("UPDATE evolution_task SET due_minute=?,status='scheduled' WHERE task_id=?", (int(due_minute), task_id))
+
+    def complete_evolution_task(self, task_id: str, completed_minute: int) -> None:
+        row = self.connection.execute("SELECT cadence_minutes FROM evolution_task WHERE task_id=?", (task_id,)).fetchone()
+        if row is None:
+            return
+        self.connection.execute(
+            "UPDATE evolution_task SET due_minute=?,status='scheduled' WHERE task_id=?",
+            (int(completed_minute) + int(row["cadence_minutes"]), task_id),
+        )
 
     def get_agent(self, agent_id: str) -> dict[str, Any]:
         row = self.connection.execute("SELECT data_json FROM agent_state WHERE id=?", (agent_id,)).fetchone()
