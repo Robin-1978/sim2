@@ -60,9 +60,9 @@ class PerceptionService:
                 break
         return {"status": "ok", "question": question, "events": events, "source": "audible_local_events"}
 
-    def read_public_record(self, agent_id: str, entity_id: str, question: str = "") -> dict[str, Any]:
+    def read_public_record(self, agent_id: str, entity_id: str, question: str = "", *, global_scope: bool = False) -> dict[str, Any]:
         entity = self.store.get_entity(entity_id)
-        if not entity.get("public", False) and entity.get("entity_type") not in {"location", "faction", "document"}:
+        if not global_scope and not entity.get("public", False):
             return {"status": "rejected", "failed_check": "publicity", "retryable": True, "message": "This record is not public."}
         return {"status": "ok", "question": question, "record": {key: value for key, value in entity.items() if not key.startswith("_")}, "source": "public_record"}
 

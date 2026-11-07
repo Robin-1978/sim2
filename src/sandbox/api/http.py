@@ -4,7 +4,7 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from .service import ControlService
 
@@ -37,6 +37,10 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._write(200, self.server.control.status())
             if path == "/metrics":
                 return self._write(200, self.server.control.metrics())
+            if path == "/observer":
+                query = parse_qs(urlparse(self.path).query)
+                limit = int(query.get("limit", [20])[0])
+                return self._write(200, self.server.control.observer(limit))
             if path == "/audit":
                 return self._write(200, self.server.control.audit())
             if path == "/evolution/tasks":
@@ -61,6 +65,12 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._write(200, self.server.control.inject(str(body["event_type"]), dict(body.get("payload", {})), body.get("actor_id")))
             if path == "/players":
                 return self._write(200, self.server.control.enter_player(str(body["player_id"]), str(body["origin_id"]), body.get("name")))
+            if path == "/dialogue":
+                return self._write(200, self.server.control.dialogue(str(body["speaker_id"]), str(body["listener_id"]), str(body.get("topic", "general")), str(body["message"])))
+            if path == "/trade/offers":
+                return self._write(200, self.server.control.trade_offer(str(body["offerer_id"]), str(body["recipient_id"]), dict(body.get("give", {})), dict(body.get("want", {}))))
+            if path == "/trade/accept":
+                return self._write(200, self.server.control.trade_accept(str(body["recipient_id"]), str(body["offer_id"])))
             return self._write(404, {"status": "not_found"})
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return self._write(400, {"status": "bad_request", "message": str(exc)})

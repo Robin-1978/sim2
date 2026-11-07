@@ -1,4 +1,24 @@
 behavior_trees:
+- id: travel
+  version: 1
+  scope: universal
+  summary: Travel to a known connected location.
+  description: Move along a known route to the selected destination.
+  entry_conditions:
+  - actor.mobile
+  estimated_minutes: 1
+  interrupt_policy: cancel
+  goal_tags: [movement, access]
+  drive_tags: [autonomy, novelty]
+  success_results: [arrived]
+  failure_results: [route_unknown, blocked]
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: context.location_id
+  definition_source: config
+  kind: base
 - id: rest_and_recover
   version: 1
   scope: universal

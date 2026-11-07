@@ -15,7 +15,7 @@
 
 ## 需求
 
-本需求交付一个“故事即配置”的沙盘游戏内核。用户提供世界观、地点、势力、角色、规则和开局事件后，系统完成结构化导入，创建可运行的世界。每个角色拥有状态、关系、记忆、需求、目标和行为树，并挂载两个逻辑 LLM Agent：Agent 决策 Agent 负责所有需要选择的行为决策，Agent 反思演化 Agent 负责反思、学习和个体创新。每个世界拥有一个上帝 Agent，负责世界事件、规则、势力和长期内容的演化。Agent 只能表达意图，所有状态变化都必须经过 Platform 处理并由 Platform 生成事件；LLM 不直接写数据库或调用具有副作用的实现函数。
+本需求交付一个“故事即配置”的沙盘游戏内核。用户提供世界观、地点、势力、角色、规则和开局事件后，系统完成结构化导入，创建可运行的世界。每个角色拥有状态、关系、记忆、需求、目标和行为树，由一个统一的个体 Agent 在“决策”和“反思/演化”两个阶段工作：决策只选择已验证 BT，反思比较执行结果并决定是否留下可复用经验或提出演化提案。每个世界拥有一个上帝 Agent，负责世界事件、规则、势力和长期内容的演化，并读取提案执行后的结果继续优化。Agent 只能表达意图，所有状态变化都必须经过 Platform 处理并由 Platform 生成事件；LLM 不直接写数据库或调用具有副作用的实现函数。
 
 核心使用场景包括：暂停、继续和按步推进世界；查看角色当前需求、行为、记忆和关系；注入事件或修改规则；回放同一时间线；导出故事状态。首版包含单世界、多角色、回合制或离散时间推进、文本型 LLM 交互和结构化函数调用。不包含实时多人联网、复杂图形渲染、训练专用模型、完全自动生成不可审计的规则，以及让 LLM 直接执行宿主机命令。
 
@@ -73,7 +73,7 @@ flowchart LR
 
 ### 模块划分
 
-首版采用一个进程内的模块化单体，划分 12 个业务模块。三个 LLM Agent 是 `agents` 模块中的逻辑角色，不拆成独立服务；横向观测和审计作为基础设施包贯穿各模块。感知模块单独承担信息过滤和授权，防止 Agent 直接读取世界数据库。
+首版采用一个进程内的模块化单体，划分 12 个业务模块。个体 Agent 的决策/反思阶段与 God Agent 是 `agents` 模块中的两类运行时参与者，不拆成独立服务；WorldBuilder 只在创建期使用。横向观测和审计作为基础设施包贯穿各模块。感知模块单独承担信息过滤和授权，防止 Agent 直接读取世界数据库。
 
 | 模块 | 目录 | 单一职责 |
 |---|---|---|
@@ -84,7 +84,7 @@ flowchart LR
 | 元动作 | `src/sandbox/actions` | 声明和执行长时 Action，维护进度、资源锁、完成和失败结果 |
 | 行为树 | `src/sandbox/behavior` | BT Schema、版本注册、候选过滤、实例推进和条件结果 |
 | 意图网关 | `src/sandbox/intents` | 接收 `IntentEnvelope`、权限校验、幂等、ReAct 错误反馈和提交状态 |
-| Agent 运行时 | `src/sandbox/agents` | Decision、Reflection/Evolution、God 三类 Agent 的上下文和任务调度 |
+| Agent 运行时 | `src/sandbox/agents` | 个体 Agent 的决策/反思阶段与 God Agent 的上下文和任务调度 |
 | 记忆与社会认知 | `src/sandbox/memory` | 记忆、信念、关系证据、摘要、遗忘和 FTS5 检索 |
 | LLM 网关 | `src/sandbox/llm` | 模型适配、提示词编译、结构化输出、预算、超时和调用审计 |
 | SQLite 持久化 | `src/sandbox/persistence` | 连接、事务、Repository、事件日志、投影、快照和备份 |
@@ -175,13 +175,13 @@ interrupt_policy: pause
 
 #### 7. Intent 意图网关模块
 
-`intents` 接收三个 Agent 的 `IntentEnvelope`，统一执行身份、作用域、Schema、可见性、能力、前置条件、资源、版本、并发、预算和幂等校验。它同时提供无副作用的 `preview_intent`、`check_preconditions` 和 `estimate_cost` 查询，让 Agent 在提交前看到当前规则契约、资源需求、预计消耗、成功条件和可能失败原因。它维护 `received → validated → accepted → executing → committed` 和 `rejected` 状态，并将 `IntentResult` 返回给调用 Agent。被拒绝的意图必须包含错误码、字段路径、当前状态摘要和修正上下文；ReAct 根据该结果继续迭代。
+`intents` 接收个体 Agent（决策或反思阶段）、God Agent 以及创建期 WorldBuilder Agent 的 `IntentEnvelope`，统一执行身份、作用域、Schema、可见性、能力、前置条件、资源、版本、并发、预算和幂等校验。它同时提供无副作用的 `preview_intent`、`check_preconditions` 和 `estimate_cost` 查询，让 Agent 在提交前看到当前规则契约、资源需求、预计消耗、成功条件和可能失败原因。它维护 `received → validated → accepted → executing → committed` 和 `rejected` 状态，并将 `IntentResult` 返回给调用 Agent。被拒绝的意图必须包含错误码、字段路径、当前状态摘要和修正上下文；ReAct 根据该结果继续迭代。
 
 该模块统一处理 `SelectBehaviorIntent`、`BehaviorTreeProposalIntent`、`MemoryUpdateIntent`、`CreateEntityIntent`、`WorldRuleProposalIntent` 和 `ActionIntent`。Intent Gateway 是所有副作用的单一入口，其他模块不能绕过它写入实体、关系、记忆、BT 或事件。
 
 #### 8. Agent 运行时模块
 
-`agents` 只负责构造上下文、调用 LLM、解析结构化输出和提交意图，不直接读取 SQLite 或修改领域对象。每个 Agent 固定挂载两个逻辑 Agent，每个世界固定挂载一个 God Agent。三类 Agent 共用基础运行框架，但拥有独立的身份、可见范围、提示词、函数白名单、触发器和预算。
+`agents` 只负责构造上下文、调用 LLM、解析结构化输出和提交意图，不直接读取 SQLite 或修改领域对象。每个角色挂载一个统一 Agent，按任务进入决策或反思/演化阶段；每个世界固定挂载一个 God Agent。两类参与者共用基础运行框架，但拥有独立的身份、可见范围、提示词、函数白名单、触发器和预算。
 
 **Agent Decision Agent**
 
@@ -189,15 +189,15 @@ Decision Agent 在没有活动 BT、BT 完成或失败、进入语义决策节�
 
 Decision Agent 只能调用只读感知函数、只读记忆函数、规则预览函数和意图提交函数。正常输出是 `SelectBehaviorIntent` 或 `WaitIntent`；需要新方案时输出 `BehaviorTreeProposalIntent`。Platform 接受后创建 BT 实例，执行阶段不再重复调用 LLM。Platform 拒绝意图时，错误结果进入同一会话的下一轮 ReAct；默认最多 6 次模型调用，并限制相同工具参数的重复次数，达到预算后进入安全待机或事件绑定的安全树。Agent 看到的是当前决策所需的规则契约，Platform 内部的安全规则和不可披露规则只通过校验结果约束执行。
 
-**Agent Reflection/Evolution Agent**
+**Agent Reflection/Evolution phase**
 
-Reflection/Evolution Agent 每个游戏日执行一次反思，每个游戏周执行一次个体创新，也可以由重大经历、连续失败、目标完成或记忆冲突触发。它读取本 Agent 的事件摘要、动作结果、需求曲线、关系变化、记忆、信念、目标、能力和行为树使用统计。它输出 `MemoryUpdateIntent`、`BeliefUpdateIntent`、`GoalUpdateIntent`、技能候选和 `BehaviorTreeProposalIntent`。
+反思/演化阶段每个游戏日最多唤醒一次，每个游戏周最多执行一次个体创新。重大经历、连续失败、目标完成或记忆冲突只记录为下一次窗口的待复盘信号，不在行为完成后立即启动新会话。它读取本 Agent 的 expected/actual/delta outcome、需求曲线、关系变化、记忆、信念、目标、能力和行为树使用统计。没有新的、持久且对未来决策有帮助的结论时返回 `wait`，不写重复经验；有结论时输出 `MemoryUpdateIntent`、`BeliefUpdateIntent`、`GoalUpdateIntent`、技能候选和 `BehaviorTreeProposalIntent`。
 
 它不能直接改变当前资源、关系或世界实体。Platform 验证通过后才写入记忆、信念、目标或 BT 注册表；BT 校验失败时把结构化错误和失败节点返回给该 Agent，Agent 在同一 ReAct 任务中修正版。个体创新默认作用域为该 Agent，扩展到势力或世界需要 Platform 授权。
 
 **God Agent**
 
-God Agent 每个游戏周产生局部世界创新，每个游戏月产生结构世界创新，也可以由全局指标、重大事件或用户干预触发。它读取世界全局投影、势力、历史事件摘要、长期指标、配置规则和可用的世界实体类型，但只能通过 `perception` 的 God 专用全局读模型读取。
+God Agent 每个游戏周产生局部世界创新，每个游戏月产生结构世界创新，也可以由全局指标、重大事件或用户干预触发。它读取世界全局投影、最近提案的 expected/effect 前后值、各角色行为 outcome、势力、历史事件摘要、长期指标、配置规则和可用的世界实体类型，但只能通过 `perception` 的 God 专用全局读模型读取。已接受的世界提案结果写入事件日志，God 在下一次周/月窗口比较实际结果并决定是否优化，不为每个提案立即启动一次会话。
 
 God Agent 输出 `CreateEntityIntent`、`UpdateWorldRuleIntent`、`CreateWorldEventIntent`、势力策略和内容候选。它可以提出地点、势力、Agent、物品、资源节点、任务、制度、规则实例和传闻的创建，但 Platform 负责唯一标识、引用、位置、初始状态、容量、因果、可见性和权限校验。合法意图提交 `entity.created` 或对应领域事件；非法意图不产生状态变化，并由 ReAct 继续修正。
 
@@ -205,7 +205,7 @@ God Agent 输出 `CreateEntityIntent`、`UpdateWorldRuleIntent`、`CreateWorldEv
 
 上下文编译器根据 `agent_role` 生成不同视图：Decision 只看角色视角和可执行 BT；Reflection 只看个体历史和长期趋势；God 看世界全局投影。上下文包含系统约束、当前状态、驱动、观察、记忆、候选目录、函数 Schema、最近一次 Platform 结果和输出协议。LLM 只产生意图或只读查询，Platform 结果作为下一轮输入。隐藏思维链不持久化，只记录决策摘要、意图、Platform 结果和审计信息。
 
-Prompt 使用半结构化标签标出局部边界，而不是把整个上下文伪装成可解析 XML。稳定的角色策略和原生 JSON Schema 工具定义位于消息前缀；每次唤醒的世界快照、Agent 基本信息、驱动、记忆和可执行 BT 位于动态消息；当前 ReAct 的 assistant/tool/result 消息按原生消息角色追加。工具 Schema 不重复塞入世界状态 JSON，BT AST、内部 predicate 和 handler 永远不传给 Agent。
+Prompt 使用半结构化标签标出局部边界，而不是把整个上下文伪装成可解析 XML。稳定的角色策略位于 system 消息；原生 JSON Schema 工具定义通过 API 的 `tools` 通道传递，不复制进 Prompt。每次唤醒的世界快照、Agent 基本信息、驱动、记忆和可执行 BT 位于动态消息；当前 ReAct 的 assistant/tool/result 消息按原生消息角色追加。BT AST、内部 predicate 和 handler 永远不传给 Agent。
 
 一次 ReAct 会话不等待世界分钟，也不把每个工具调用写成模拟事件。`AgentEngine` 维护有限的会话 transcript，并按以下状态转换运行：
 
@@ -248,7 +248,7 @@ sequenceDiagram
 
 探索完成后 Platform 先写入 `exploration_result` 和 `exploration.completed` 事件，再按发现范围给执行者写入 `knowledge_fact`；沟通完成后 Platform 写入 `dialogue_exchange`，把说话者提供的内容作为带来源的 testimony 写入听者知识面。听者可以在反思阶段通过 `BeliefUpdateIntent` 调整置信度、标记事实为错误或合并重复知识。Knowledge Fact 不代表世界真相，世界真相只来自 `world` 的实体和事件状态。
 
-情节记忆写入、知识更新、摘要和遗忘都通过 Intent Gateway；检索使用 Agent 权限过滤、时间衰减、实体和地点过滤以及 SQLite FTS5。关系模型属于世界领域的权威状态，记忆模块只保存关系证据和 Agent 的主观认知，不直接决定真实关系数值。Decision Agent 查询的是与当前目标相关的知识和记忆子集，不获得完整知识库。
+情节记忆写入、知识更新、摘要和遗忘都通过 Intent Gateway；检索使用 Agent 权限过滤、任务相关性、实体和地点过滤、重要性、来源可信度和激活次数，并使用 SQLite FTS5。反思阶段在提交经验前先做重复性检查：默认使用确定性的词项相似度，配置本地 embedding 模型（例如 BGE）后才启用惰性语义相似度。相似度只返回“可能重复”的质量提示，最终由 Agent 选择写入还是 `wait`，Platform 不自动把不同经历合并。长期记忆不会因为时间单独衰减；显式 recall 会增加激活次数，常用记忆更容易被检索，只有显式 compact/forget 策略才会清理。关系模型属于世界领域的权威状态，记忆模块只保存关系证据和 Agent 的主观认知，不直接决定真实关系数值。决策阶段查询的是与当前目标相关的知识和记忆子集，不获得完整知识库。
 
 #### 10. LLM 网关模块
 
@@ -261,6 +261,8 @@ sequenceDiagram
 #### 12. 控制接口模块
 
 `api` 提供创建实例、导入配置、启动、暂停、继续、单步推进、查询实体、查看 Agent 上下文、注入外部事件、导出快照、执行备份和恢复等接口。接口只调用 Platform 命令，不直接访问 Repository。调试接口可以查看意图和审计链，但必须沿用同一感知权限规则，不把 God Agent 视图返回给普通 Agent。
+
+文本入口提供一个 MUD 风格适配器：玩家可以进入配置世界、查看自身视角、移动、发消息、提出/还价/接受/拒绝交易和等待世界推进；每条命令都调用 Platform，不直接写状态。旁观者使用独立的 public observer projection 查看世界时间、角色公开状态、实体统计和公共事件流，但不会看到角色私有记忆、私聊内容或 God 专用上下文。HTTP 也提供同样的观察、对话和交易入口，后续可以替换为 Web 或 TUI 客户端。
 
 ## 详细设计
 
@@ -329,7 +331,7 @@ Agent 配置可以声明 `knowledge_seed`、初始信念和已知实体范围。
 
 ### 2. Agent 状态、行为树与调度
 
-每个 Agent 由 `identity`、`traits`、`needs`、`drives`、`beliefs`、`relations`、`memories`、`goals`、`behavior_tree_catalog`、`active_tree_instance`、`inventory` 和 `runtime` 组成，并挂载两个逻辑 LLM Agent。`Decision Agent` 负责所有需要选择的语义决策；`Reflection/Evolution Agent` 负责反思、学习和个体演化。它们可以复用同一个 LLM 网关和模型，但使用不同的系统提示词、上下文、工具白名单和预算。行为树定义与行为树执行实例分离：定义描述可复用的行为，实例保存当前执行到的节点、动作进度和中间状态。
+每个 Agent 由 `identity`、`traits`、`needs`、`drives`、`beliefs`、`relations`、`memories`、`goals`、`behavior_tree_catalog`、`active_tree_instance`、`inventory` 和 `runtime` 组成，并挂载一个统一 LLM Agent。该 Agent 在决策阶段做快速 BT 选择，在反思/演化阶段读取 expected/actual/delta outcome，判断是否写入新经验并提出改进；两个阶段可以复用同一个 LLM 网关和模型，但使用不同的系统提示词、上下文、工具白名单和预算。行为树定义与行为树执行实例分离：定义描述可复用的行为，实例保存当前执行到的节点、动作进度和中间状态。
 
 每棵行为树都注册以下元数据：`bt_id`、版本、用途描述、适用角色、前置条件、所需能力、预计时长、可中断策略、成功条件、失败条件、结果摘要模板和可触发的副作用。运行时先依据 Agent 能力、当前地点、资源、可见事件和前置条件过滤出 `eligible_bt_catalog`，上下文只把这份可执行目录提供给 Agent。LLM 不能选择目录外的行为树，也不能直接构造未注册的动作；创新产生的新行为必须先经过验证并注册为新版本。
 
@@ -350,6 +352,14 @@ Agent 配置可以声明 `knowledge_seed`、初始信念和已知实体范围。
 5. 对没有活动行为树、行为树已结束、行为树失败、进入需要选择的分支节点或被紧急事件取消的 Agent，生成可执行行为树目录，并在计划边界调用一次 `Decision Agent`。上下文包括每棵候选树的前置条件、预计时长、成功和失败结果、资源成本、中断策略以及当前 Agent 的状态。
 6. 启动 LLM 选中的行为树或进入安全待机。`Decision Agent` 的 ReAct 函数调用只用于补充感知、查询记忆、检查候选树和确认计划，最多进行 4 次调用；LLM 不逐 模拟分钟 调用 Action。
 7. 提交 Action 进度、完成结果、关系变化和记忆事件，写入 模拟分钟 摘要、指标和可回放记录。
+
+### 3. 即时互动与遭遇回合
+
+互动与长时 Action 分开建模。聊天、问答、报价、还价、接受、拒绝、威胁和投降属于 `InstantInteraction`：它们不推进世界分钟，只在当前 world minute 创建一个有序互动批次。每个参与者最多提交一个明确意图，Platform 校验可见性、位置、权限和会话轮数；普通互动不打断活动 BT，接收者在下一次决策边界或反思窗口读取事件。玩家和角色使用同一组 Platform 函数，区别只在权限和入口。
+
+交易使用两阶段报价状态机：`open → countered/accepted/rejected/expired`。报价不扣库存；还价关闭旧报价并创建带 `parent_offer_id` 和 `round` 的新报价；接受时 Platform 再次检查双方位置、库存和规则，并在一个事务中完成双向转移，写入 `trade.completed`。任何失败都关闭报价或返回可修正错误，不产生半笔转移。
+
+攻击、防御、闪避、反击和逃跑属于 `EncounterRound`，不是普通聊天。攻击事件创建遭遇并冻结本回合双方公开状态；双方 Agent 分别提交响应意图，Platform 按固定顺序在同一事务中结算命中、伤害、体力、耐久、关系和中断结果。每回合的时间和资源消耗由配置声明；高优先级遭遇可以暂停或取消允许中断的 BT，普通遭遇排队到安全边界。Encounter 结果进入事件日志、角色下一次决策上下文和夜间反思输入。
 
 紧急事件携带优先级、影响范围和中断级别。`soft` 事件只进入感知队列，`interruptible` 事件暂停允许暂停的 Action，`hard` 事件取消当前 Action 并进入事件预先绑定的应急行为树；绑定的应急树属于安全控制，不代表 Agent 的叙事决策。暂停保留执行实例和资源锁，取消生成取消结果并释放资源；事件处理结束后，运行时在可选的安全边界唤起 `Decision Agent`，由它决定继续原树、选择新树或进入安全待机。Agent 并行推进不直接并发修改世界，运行时按 `world_minute`、事件优先级和 Agent ID 排序提交，冲突动作重新校验。
 
@@ -420,7 +430,7 @@ Prompt 采用“共享前缀优先”的排列，最大化跨 Agent 和跨 模�
 不要输出隐藏思维链；decision_summary 只说明依据、前置条件和预期结果。
 ```
 
-三个逻辑 Agent 使用不同的提示词和权限边界：
+个体 Agent 的两个阶段与 God Agent 使用不同的提示词和权限边界：
 
 | Agent | 可见上下文 | 主要输出 | 禁止事项 |
 |---|---|---|---|
@@ -428,7 +438,7 @@ Prompt 采用“共享前缀优先”的排列，最大化跨 Agent 和跨 模�
 | Agent Reflection/Evolution Agent | 当前 Agent 的经历、结果、记忆、信念、目标、能力和长期趋势 | 记忆摘要、信念更新、目标调整、能力或行为树候选 | 直接改变资源、关系或其他 Agent |
 | God Agent | 世界全局快照、势力、历史事件、规则版本和长期指标 | 世界事件、势力策略、规则、技术和内容候选 | 绕过规则校验、直接执行角色动作、修改历史事件 |
 
-三个角色是逻辑隔离，不要求首版拆成三个进程。LLM 网关根据 `agent_role`、`world_id`、`agent_id`、`task_type` 和预算选择模型与提示词版本，并把调用结果归档到对应审计链。
+这些阶段和角色是逻辑隔离，不要求首版拆成多个进程。LLM 网关根据 `agent_role`、`world_id`、`agent_id`、`task_type` 和预算选择模型与提示词版本，并把调用结果归档到对应审计链。
 
 ReAct 在本系统中表示“观察、比较候选行为树、读取工具结果、确认计划”的有限循环。LLM 输出不保存隐藏思维链，只保存 `decision_summary`、函数调用、函数结果摘要和最终行为树选择。行为树内部的 Action 由运行时函数注册表执行，LLM 不逐 模拟分钟 调用 Action 函数。函数调用使用 JSON Schema，示例如下：
 
@@ -461,7 +471,7 @@ Platform 对每次意图返回 `IntentResult`。成功结果包含 `intent_id`�
 
 感知函数由 `perception` 模块提供，返回经过可见性、距离、时间和信息渠道过滤的事实，不返回 Agent 无权知道的全局状态。首版函数包括 `observe_area`、`inspect_entity`、`listen`、`read_public_record` 和 `check_route`。
 
-记忆函数由记忆服务提供：`remember_episode` 写入带来源的情节记忆，`recall` 检索相关记忆，`update_belief` 更新带置信度的信念，`summarize_memory` 压缩旧记忆，`forget` 按遗忘规则降低可检索性。LLM 只能提交记忆提案；记忆服务负责去重、权限、置信度和衰减。
+记忆函数由记忆服务提供：`remember_episode` 写入带来源的情节记忆，`recall` 检索相关记忆并记录一次激活，`update_belief` 更新带置信度的信念，`summarize_memory` 按激活与重要性压缩低价值内容，`forget` 只在显式策略下清理。LLM 只能提交记忆提案；记忆服务负责去重、权限、置信度、重要性和激活记录。
 
 创新函数只生成候选意图，不直接将创意变成事实：`propose_plan` 生成计划意图，`invent_recipe` 生成配方意图，`draft_dialogue` 生成交流意图，`create_artifact_proposal` 生成物品提案意图。候选结果必须以 `IntentEnvelope` 进入 Platform，经世界规则、资源、权限、版本和副作用校验后才可提交；失败候选会返回结构化错误并写入审计记录，不能污染世界状态。创新结果保存来源 Agent、使用的记忆、规则版本和模型版本，便于回放和解释。
 
@@ -471,13 +481,13 @@ Agent 的新行为不是直接返回一个已经生效的 BT，而是返回 `Beh
 
 Platform 对新 BT 执行静态和运行时验证：节点类型和 Schema 必须有效，树不能有环，节点数、深度和预计时长必须受限；每个条件必须引用已知状态，每个 Action 必须来自函数白名单，资源和副作用必须显式声明，结果必须能映射到状态或事件。验证成功后 Platform 为 BT 分配版本、写入 BT 注册表并刷新相关 Agent 的 `eligible_bt_catalog`；验证失败时返回 `IntentValidationError`，包含错误路径、错误码和修正上下文，且不产生任何状态变化。Agent 将错误作为下一轮 ReAct 输入，继续修改和提交，直到成功或达到迭代上限。
 
-God Agent 可以创造世界实体，但也只能提交 `CreateEntityIntent`，不能直接写入实体表。允许的实体类型由故事包声明，首版包括地点、势力、Agent、物品、资源节点、任务、制度、规则实例和传闻。意图包含 `entity_type`、蓝图、父实体、位置、初始状态、可见性、来源、有效期和预期影响。Platform 校验实体 Schema、唯一标识、引用完整性、出生位置、初始资源、世界容量、权限、因果约束和可见性规则；成功后生成 `entity.created` 事件并使实体进入世界，失败则返回结构化错误并让 God Agent 继续 ReAct。新 Agent 的身份、能力、记忆初始值和两个逻辑 Agent 配置也必须由 Platform 生成，实体不会自动被所有 Agent 感知。
+God Agent 可以创造世界实体，但也只能提交 `CreateEntityIntent`，不能直接写入实体表。允许的实体类型由故事包声明，首版包括地点、势力、Agent、物品、资源节点、任务、制度、规则实例和传闻。意图包含 `entity_type`、蓝图、父实体、位置、初始状态、可见性、来源、有效期和预期影响。Platform 校验实体 Schema、唯一标识、引用完整性、出生位置、初始资源、世界容量、权限、因果约束和可见性规则；成功后生成 `entity.created` 事件并使实体进入世界，失败则返回结构化错误并让 God Agent 继续 ReAct。新 Agent 的身份、能力、记忆初始值和统一 Agent 配置也必须由 Platform 生成，实体不会自动被所有 Agent 感知。
 
 ### 5.2 反思与创新调度
 
 反思和创新属于低频计划任务，不属于每个 模拟分钟 的默认流程。首版以世界日历为准，采用以下固定节奏，并为每个 Agent 计算不同的时间偏移，避免所有 Agent 在同一 模拟分钟 集中调用 LLM：
 
-每个 Agent 固定挂载一个 `Decision Agent` 和一个 `Reflection/Evolution Agent`；每个世界固定挂载一个 `God Agent`。`Decision Agent` 由计划边界和事件中断唤起，`Reflection/Evolution Agent` 由个人日历和重大经历唤起，`God Agent` 由世界日历和全局触发器唤起。它们都生成 `IntentEnvelope`，统一经过 Platform 校验、执行和提交。
+每个角色固定挂载一个统一 Agent；每个世界固定挂载一个 `God Agent`。统一 Agent 在计划边界和事件中断时进入决策阶段，在固定的日/周窗口进入反思/演化阶段；God Agent 由固定的周/月窗口读取世界提案结果和全局触发器。两类参与者都生成 `IntentEnvelope`，统一经过 Platform 校验、执行和提交。行为完成、失败或中断会生成 outcome 事件，世界提案和实体创建会生成可复盘事件，形成“选择/提案→Platform 执行→结果→周期反思/优化→下一次选择/提案”的闭环。
 
 | 任务 | 默认节奏 | 执行时机 | 输出 |
 |---|---|---|---|
@@ -547,7 +557,7 @@ SQLite 使用 WAL 模式、外键约束、忙等待超时和单写入队列；�
 
 ## 影响评估
 
-本设计新增配置导入、每实例 SQLite、世界事件、Agent 决策、记忆和 LLM 适配边界，不改变现有空仓库中的代码行为。首版发布顺序为：固定 SQLite Schema 与新实例初始化、配置包导入和来源版本记录、确定性世界 模拟分钟、行为树与内外驱、意图校验与 BT 注册、记忆服务、三类 LLM Agent、控制接口和回放工具。事件协议一旦发布只增不改，快照可由同一 SQLite 文件中的事件重建。
+本设计新增配置导入、每实例 SQLite、世界事件、Agent 决策、记忆和 LLM 适配边界，不改变现有空仓库中的代码行为。首版发布顺序为：固定 SQLite Schema 与新实例初始化、配置包导入和来源版本记录、确定性世界 模拟分钟、行为树与内外驱、意图校验与 BT 注册、记忆服务、个体 Agent 与 God Agent、控制接口和回放工具。事件协议一旦发布只增不改，快照可由同一 SQLite 文件中的事件重建。
 
 最高风险是模型输出成本、延迟和不可预测性。通过计划边界和周期任务预算、最大工具轮数、模型超时、缓存、确定性回退、函数白名单和人工暂停开关降低风险。LLM 不可用时，已有行为树继续运行，只有新的计划选择和低频任务延迟或回退；规则校验失败时，事件不提交。回滚以恢复上一快照并停止后续 模拟分钟 为准，已提交事件不删除，使用新的补偿事件修正用户可见状态。
 

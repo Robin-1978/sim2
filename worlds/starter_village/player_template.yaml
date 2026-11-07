@@ -4,6 +4,7 @@ player:
   initial_faction_ids: []
   initial_reputation: 0
   knowledge_seed: [public:river_bridge, public:village_square, public:inn, public:village_rules]
+  initial_bt_ids: [travel]
   origin_choices:
     - id: courier
       traits: {mobility: 0.7, negotiation: 0.5}

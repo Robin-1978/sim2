@@ -113,6 +113,10 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
         for faction_id in agent.get("faction_ids", []):
             if faction_id not in faction_ids:
                 errors.append(f"agent {agent.get('id')} references unknown faction {faction_id}")
+    player_template = load_yaml(config_dir, "player_template.yaml", {}).get("player", {})
+    for behavior_id in player_template.get("initial_bt_ids", []) or []:
+        if behavior_id not in behavior_ids:
+            errors.append(f"player template references unknown behavior {behavior_id}")
     for faction in data["factions"]:
         leader_id = faction.get("leader_id")
         if leader_id and leader_id not in agent_ids:

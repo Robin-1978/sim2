@@ -20,7 +20,7 @@ SQLite 世界状态
   → 下一次 Agent 上下文
 ```
 
-Platform 不替 Agent 规划剧情，也不替 Agent 决定目标；它只执行世界规则、资源约束、时间推进、事务和安全边界。首个可运行切片必须包含一个 Agent、一个 LLM Decision Agent、一个 SQLite 世界、一个通用 Action、一个 BT、一次 Intent 校验和一次结果反馈。
+Platform 不替 Agent 规划剧情，也不替 Agent 决定目标；它只执行世界规则、资源约束、时间推进、事务和安全边界。首个可运行切片必须包含一个个体 Agent 的决策阶段、一个 SQLite 世界、一个通用 Action、一个 BT、一次 Intent 校验和一次结果反馈。
 
 ## 模块清单
 
@@ -121,10 +121,14 @@ PYTHONPATH=src python scripts/benchmark_platform.py --agents 1000 --runs 5
 PYTHONPATH=src python scripts/verify_agent_models.py
 ```
 
-最近一次结果为 `30 passed`；1000 个 Agent、5 次非 LLM 模拟分钟的 p95 为约 `148 ms`。测试覆盖 ReAct 工具反馈与拒绝重试、SQLite 创世与回滚、长 Action/并行 BT/共享资源、中断恢复、探索沟通知识、记忆 FTS5、反思目标和能力历史、God/WorldBuilder、玩家入口、HTTP 控制、快照恢复、确定性回放以及 Starter Village 端到端场景。
+最近一次结果为 `42 passed`；1000 个 Agent、5 次非 LLM 模拟分钟的 p95 为约 `148 ms`。测试覆盖 ReAct 工具反馈与拒绝重试、SQLite 创世与回滚、长 Action/并行 BT/共享资源、中断恢复、探索沟通知识、聊天与两阶段交易、文本玩家/旁观者入口、记忆 FTS5 与激活、反思目标和能力历史、执行 outcome 复盘上下文、God 世界前后值复盘、HTTP 控制、快照恢复、确定性回放以及 Starter Village 端到端场景。
 
 `verify_agent_models.py` 是真实模型验收入口：它不打印原始 reasoning 或密钥，只报告 Decision/Reflection/God 的会话步骤、最终 Intent、Platform 校验结果和质量布尔值；远程 Provider 使用 `~/.sim2/llm.json` 中的显式代理和环境变量引用。
 
-2026-11-08 的真实本地验证使用 llama.cpp 模型 `Huihui-Qwen3.5-4B-abliterated.Q4_K_M`：Decision 选择了配置中可执行的 `behavior:explore_greywood`，目标/驱动标签对齐，未填充 duration/cost 参数；Reflection 提交了具体且不超过 500 字符的经验摘要。两者质量检查通过；Decision 因当前角色只有一个可执行 BT，质量等级标为 `grounded_forced_choice`。beam-free 的 `/models` 通过配置代理可达，但本次进程没有可用的 API key 环境变量，chat 返回 403，因此远程模型尚未被冒充为已通过；设置环境变量后运行 `verify_agent_models.py` 即可完成同样的 God Agent 检查。
+上下文缓存指标同时记录 Provider 返回的 `cached_tokens/prompt_tokens` 和结构化 Prompt 的稳定前缀复用率。最近一次 beam-free God 会话为 3 次模型调用，Provider 报告 `2560/4824` prompt tokens 命中，约 `53.07%`；稳定前缀复用率为 `66.67%`。本地确定性长跑没有 Provider token usage，但 1,585 次调用的稳定前缀复用率为 `99.81%`，说明动态内容已被放在稳定协议之后。
+
+`PYTHONPATH=src python scripts/run_long_simulation.py --minutes 10080` 的一周确定性闭环 smoke test 完成 1,512 次决策、72 次日/周反思、1 次 God 周期会话；选出 5 种行为、产生 9 种事件类型、8 个不同位置，未触发单一行为支配、健康耗尽或无限重规划标记。该 smoke provider 的反思固定返回 `wait`，所以不会伪造记忆增长；真实模型验收仍由 `verify_agent_models.py` 完成。
+
+2026-11-08 的真实本地验证使用 llama.cpp 模型 `Huihui-Qwen3.5-4B-abliterated.Q4_K_M`：Decision 选择了配置中可执行的 `behavior:explore_greywood`，目标/驱动标签对齐，未填充 duration/cost 参数；Reflection 提交了具体且不超过 500 字符的经验摘要。两者质量检查通过；Decision 因当前角色只有一个可执行 BT，质量等级标为 `grounded_forced_choice`。随后通过配置代理运行 beam-free 的 God Agent 检查，模型完成了 4 轮 ReAct、读取受限的世界信号，并提交了一个被 Platform 接受的世界事件提案；质量检查为 `grounded`，未输出密钥或原始推理。
 
 多 Agent 审查脚本还验证了 `liang_he` 的 3 个候选：本地模型选择 `behavior:craft_meal`，理由与 food/winter 目标及 safety/belonging 驱动标签一致，质量等级为 `comparative_grounded_choice`；`lin_bo` 的唯一治理候选为 `grounded_forced_choice`。完整 Prompt、原生 tool call、Platform 结果和质量检查保存在被 `.gitignore` 排除的 `artifacts/agent-session-review.json`。

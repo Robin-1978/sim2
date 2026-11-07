@@ -148,7 +148,9 @@ class AgentViewCompiler:
             known_facts = [{"fact": fact, "source_type": "config_seed", "confidence": 1.0} for fact in agent.get("knowledge_seed", [])[:8]]
         relationships = self.store.get_related_relationships(agent_id, limit=5)
         memories = self.store.list_memories(agent_id, limit=5)
-        recent_actions = self.store.recent_events_for_actor(agent_id, limit=2)
+        actor_events = self.store.recent_events_for_actor(agent_id, limit=8)
+        recent_actions = actor_events[:2]
+        recent_outcomes = self.store.recent_outcomes_for_actor(agent_id, limit=3)
         return {
             "context_version": "1", "role": role,
             "world_time": {"minute": self.store.get_meta("world_minute", 0), "label": f"World minute {self.store.get_meta('world_minute', 0)}"},
@@ -157,13 +159,23 @@ class AgentViewCompiler:
             "goal_tags": agent.get("goal_tags", []),
             "capability_history": self.store.list_capability_progress(agent_id, limit=5),
             "needs": needs, "inventory": agent.get("inventory", {}), "injuries": state.get("injuries", []),
-            "drives": drives[:5], "drive_model": drive_model, "observation": {"facts": [], "source": "platform_snapshot"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "memories": memories, "recent_actions": recent_actions, "direct_relationships": relationships,
+            "drives": drives[:5], "drive_model": drive_model, "observation": {"facts": [], "source": "platform_snapshot"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "memories": memories, "recent_actions": recent_actions, "recent_outcomes": recent_outcomes, "direct_relationships": relationships,
             "active_task": {"bt": state.get("active_bt_instance"), "action": state.get("active_action"), "remaining_minutes": state.get("remaining_minutes", 0)},
             "executable_behaviors": available[:5], "last_platform_result": state.get("last_platform_result"), "tools": tools_for_role(role),
         }
 
     def _build_world_view(self, actor_id: str, role: str) -> dict[str, Any]:
         minute = self.store.get_meta("world_minute", 0)
+        all_events = self.store.recent_events(limit=20)
+        recent_world_changes = self.store.recent_world_change_events(limit=6)
+        recent_agent_outcomes = self.store.recent_behavior_outcomes(limit=6)
+        recent_world_events = (recent_world_changes + [item for item in all_events if item.get("actor_id") == actor_id])[:6]
+        active_count = sum(
+            1 for agent in self.store.list_agents()
+            if (agent.get("initial_state") or {}).get("status") in {"executing", "paused"}
+        )
+        world_properties = self.store.get_meta("world_properties", {}) or {}
+        world_summary = "; ".join(f"{key}={value}" for key, value in world_properties.items()) or "none"
         return {
             "context_version": "1",
             "role": role,
@@ -174,12 +186,15 @@ class AgentViewCompiler:
             "inventory": {},
             "injuries": [],
             "drives": [],
-            "observation": {"facts": [f"World properties: {self.store.get_meta('world_properties', {})}"], "source": "platform_world_summary"},
+            "observation": {"facts": [f"World properties: {world_summary}", f"Active behaviors: {active_count}"], "source": "platform_world_summary"},
             "nearby_entities": [],
             "known_facts": [],
+            "recent_actions": recent_world_events,
+            "recent_world_changes": recent_world_changes,
+            "recent_agent_outcomes": recent_agent_outcomes,
             "direct_relationships": [],
             "active_task": {"bt": None, "action": None, "remaining_minutes": 0},
             "executable_behaviors": [],
-            "last_platform_result": None,
+            "last_platform_result": recent_world_events[0] if recent_world_events else None,
             "tools": tools_for_role(role),
         }

@@ -61,6 +61,13 @@ class EffectPipeline:
             amount = float(effect.get("amount", effect.get("value", 0)))
             state["health"] = max(0.0, min(100.0, float(state.get("health", 100)) + amount))
             result.update({"applied": True, "health": state["health"]})
+        elif effect_type in {"location_set", "move_to"}:
+            location_id = effect.get("location_id") or target.get("location_id") or target.get("destination_id")
+            if location_id:
+                state["location_id"] = str(location_id)
+                result.update({"applied": True, "location_id": state["location_id"]})
+            else:
+                result["error"] = "location_id is required"
         else:
             result["error"] = f"unsupported effect type: {effect_type}"
         agent["initial_state"] = state

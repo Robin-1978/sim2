@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 
+from .similarity import ExperienceSimilarity
+
 if TYPE_CHECKING:  # pragma: no cover
     from ..persistence.store import WorldStore
 
@@ -9,11 +11,21 @@ if TYPE_CHECKING:  # pragma: no cover
 class MemoryService:
     """Small role-scoped memory projection; writes remain Platform Intents."""
 
-    def __init__(self, store: "WorldStore"):
+    def __init__(self, store: "WorldStore", similarity: ExperienceSimilarity | None = None):
         self.store = store
+        rules = store.get_meta("rules", {}) or {}
+        config = rules.get("memory_quality", {}).get("semantic_similarity", {}) if isinstance(rules, dict) else {}
+        self.similarity = similarity or ExperienceSimilarity(config)
 
     def recall(self, agent_id: str, question: str = "", limit: int = 8) -> dict[str, Any]:
-        return {"status": "ok", "question": question, "memories": self.store.list_memories(agent_id, limit=max(1, min(int(limit), 8)), query=question), "knowledge": self.store.list_knowledge_facts(agent_id, limit=8), "source": "agent_memory"}
+        return {"status": "ok", "question": question, "memories": self.store.list_memories(agent_id, limit=max(1, min(int(limit), 8)), query=question, touch=True), "knowledge": self.store.list_knowledge_facts(agent_id, limit=8), "source": "agent_memory"}
+
+    def experience_match(self, agent_id: str, summary: str) -> dict[str, Any]:
+        """Return a quality hint; the Reflection Agent still decides what to retain."""
+
+        memories = self.store.list_memories(agent_id, limit=200)
+        match = self.similarity.find_match(summary, memories)
+        return {"duplicate": match.score >= self.similarity.threshold, "score": round(match.score, 4), "method": match.method, "memory_id": match.matched_memory_id}
 
     def compact(self, agent_id: str, *, keep: int = 24) -> dict[str, Any]:
         """Create a bounded deterministic summary and forget old raw items."""

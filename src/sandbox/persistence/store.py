@@ -60,7 +60,11 @@ CREATE TABLE IF NOT EXISTS memory_item (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   agent_id TEXT NOT NULL,
   memory_type TEXT NOT NULL,
-  data_json TEXT NOT NULL
+  data_json TEXT NOT NULL,
+  importance REAL NOT NULL DEFAULT 0.5,
+  salience REAL NOT NULL DEFAULT 0.5,
+  access_count INTEGER NOT NULL DEFAULT 0,
+  last_access_minute INTEGER
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
   agent_id UNINDEXED,
@@ -93,7 +97,13 @@ CREATE TABLE IF NOT EXISTS llm_call (
   context_hash TEXT NOT NULL,
   response_json TEXT NOT NULL,
   status TEXT NOT NULL,
-  world_minute INTEGER NOT NULL
+  world_minute INTEGER NOT NULL,
+  prompt_tokens INTEGER,
+  cached_tokens INTEGER,
+  completion_tokens INTEGER,
+  static_prefix_hash TEXT,
+  static_prefix_chars INTEGER NOT NULL DEFAULT 0,
+  dynamic_chars INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS bt_instance (
   execution_id TEXT PRIMARY KEY,
@@ -131,6 +141,19 @@ CREATE TABLE IF NOT EXISTS dialogue_exchange (
   topic TEXT NOT NULL,
   world_minute INTEGER NOT NULL,
   data_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS trade_offer (
+  offer_id TEXT PRIMARY KEY,
+  parent_offer_id TEXT,
+  round INTEGER NOT NULL DEFAULT 1,
+  offerer_id TEXT NOT NULL,
+  recipient_id TEXT NOT NULL,
+  give_json TEXT NOT NULL,
+  want_json TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_minute INTEGER NOT NULL,
+  resolved_minute INTEGER,
+  result_json TEXT
 );
 CREATE TABLE IF NOT EXISTS evolution_task (
   task_id TEXT PRIMARY KEY,
@@ -314,6 +337,47 @@ class WorldStore:
         )
         return int(cur.lastrowid)
 
+    def put_trade_offer(self, offer_id: str, offerer_id: str, recipient_id: str, give: dict[str, Any], want: dict[str, Any], world_minute: int, *, parent_offer_id: str | None = None, round_number: int = 1) -> None:
+        self.connection.execute(
+            "INSERT INTO trade_offer(offer_id,parent_offer_id,round,offerer_id,recipient_id,give_json,want_json,status,created_minute) VALUES (?,?,?,?,?,?,?,?,?)",
+            (offer_id, parent_offer_id, int(round_number), offerer_id, recipient_id, json_dumps(give), json_dumps(want), "open", int(world_minute)),
+        )
+
+    def get_trade_offer(self, offer_id: str) -> dict[str, Any] | None:
+        row = self.connection.execute(
+            "SELECT offer_id,parent_offer_id,round,offerer_id,recipient_id,give_json,want_json,status,created_minute,resolved_minute,result_json FROM trade_offer WHERE offer_id=?",
+            (offer_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "offer_id": row["offer_id"], "parent_offer_id": row["parent_offer_id"], "round": row["round"], "offerer_id": row["offerer_id"], "recipient_id": row["recipient_id"],
+            "give": json.loads(row["give_json"]), "want": json.loads(row["want_json"]), "status": row["status"],
+            "created_minute": row["created_minute"], "resolved_minute": row["resolved_minute"],
+            "result": json.loads(row["result_json"]) if row["result_json"] else None,
+        }
+
+    def finish_trade_offer(self, offer_id: str, status: str, world_minute: int, result: dict[str, Any]) -> None:
+        self.connection.execute(
+            "UPDATE trade_offer SET status=?,resolved_minute=?,result_json=? WHERE offer_id=?",
+            (status, int(world_minute), json_dumps(result), offer_id),
+        )
+
+    def list_trade_offers(self, agent_id: str, *, include_closed: bool = False, limit: int = 20) -> list[dict[str, Any]]:
+        query = "SELECT offer_id FROM trade_offer WHERE (offerer_id=? OR recipient_id=?)"
+        params: list[Any] = [agent_id, agent_id]
+        if not include_closed:
+            query += " AND status='open'"
+        query += " ORDER BY created_minute DESC, offer_id DESC LIMIT ?"
+        params.append(max(1, min(int(limit), 100)))
+        ids = [row["offer_id"] for row in self.connection.execute(query, params).fetchall()]
+        offers = []
+        for offer_id in ids:
+            offer = self.get_trade_offer(offer_id)
+            if offer is not None:
+                offers.append(offer)
+        return offers
+
     def put_evolution_task(self, task_id: str, role: str, actor_id: str | None, task_type: str, due_minute: int, cadence_minutes: int, status: str = "scheduled", data: dict[str, Any] | None = None) -> None:
         self.connection.execute(
             "INSERT OR REPLACE INTO evolution_task(task_id,role,actor_id,task_type,due_minute,cadence_minutes,status,data_json) VALUES (?,?,?,?,?,?,?,?)",
@@ -438,6 +502,37 @@ class WorldStore:
         ).fetchall()
         return [{"event_id": row["event_id"], "event_type": row["event_type"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
 
+    def recent_outcomes_for_actor(self, actor_id: str, *, limit: int = 5) -> list[dict[str, Any]]:
+        """Return behavior outcomes even when later action events are numerous."""
+
+        rows = self.connection.execute(
+            "SELECT event_id,event_type,world_minute,data_json FROM event_log "
+            "WHERE actor_id=? AND event_type IN ('behavior.completed','behavior.failed','behavior.interrupted') "
+            "ORDER BY event_id DESC LIMIT ?",
+            (actor_id, max(1, min(int(limit), 20))),
+        ).fetchall()
+        return [{"event_id": row["event_id"], "event_type": row["event_type"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
+
+    def recent_world_change_events(self, *, limit: int = 8) -> list[dict[str, Any]]:
+        """Return durable world proposal results for the God view."""
+
+        rows = self.connection.execute(
+            "SELECT event_id,event_type,actor_id,world_minute,data_json FROM event_log "
+            "WHERE event_type LIKE 'world.change.%' OR event_type='entity.created' "
+            "ORDER BY event_id DESC LIMIT ?",
+            (max(1, min(int(limit), 30)),),
+        ).fetchall()
+        return [{"event_id": row["event_id"], "event_type": row["event_type"], "actor_id": row["actor_id"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
+
+    def recent_behavior_outcomes(self, *, limit: int = 8) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT event_id,event_type,actor_id,world_minute,data_json FROM event_log "
+            "WHERE event_type IN ('behavior.completed','behavior.failed','behavior.interrupted') "
+            "ORDER BY event_id DESC LIMIT ?",
+            (max(1, min(int(limit), 30)),),
+        ).fetchall()
+        return [{"event_id": row["event_id"], "event_type": row["event_type"], "actor_id": row["actor_id"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
+
     def create_intent(self, intent_id: str, actor_id: str, intent_type: str, data: dict[str, Any], world_minute: int) -> None:
         self.connection.execute(
             "INSERT INTO intent(intent_id,actor_id,intent_type,status,data_json,created_minute) VALUES (?,?,?,?,?,?)",
@@ -477,9 +572,12 @@ class WorldStore:
 
     def put_memory(self, agent_id: str, memory_type: str, data: dict[str, Any]) -> int:
         encoded = json_dumps(data)
+        importance = max(0.0, min(1.0, float(data.get("importance", 0.5))))
+        salience = max(0.0, min(1.0, float(data.get("salience", 0.5))))
+        world_minute = int(self.get_meta("world_minute", 0))
         cur = self.connection.execute(
-            "INSERT INTO memory_item(agent_id,memory_type,data_json) VALUES (?,?,?)",
-            (agent_id, memory_type, encoded),
+            "INSERT INTO memory_item(agent_id,memory_type,data_json,importance,salience,access_count,last_access_minute) VALUES (?,?,?,?,?,?,?)",
+            (agent_id, memory_type, encoded, importance, salience, 1, world_minute),
         )
         memory_id = int(cur.lastrowid)
         self.connection.execute("INSERT INTO memory_fts(agent_id,content,memory_id) VALUES (?,?,?)", (agent_id, encoded, str(memory_id)))
@@ -494,11 +592,21 @@ class WorldStore:
         context_hash: str,
         response: dict[str, Any],
         status: str,
+        *,
+        usage: dict[str, Any] | None = None,
+        static_prefix_hash: str | None = None,
+        static_prefix_chars: int = 0,
+        dynamic_chars: int = 0,
     ) -> int:
+        usage = usage or {}
+        prompt_tokens = usage.get("prompt_tokens")
+        completion_tokens = usage.get("completion_tokens")
+        details = usage.get("prompt_tokens_details") if isinstance(usage.get("prompt_tokens_details"), dict) else {}
+        cached_tokens = usage.get("cached_tokens", usage.get("prompt_cache_hit_tokens", details.get("cached_tokens")))
         with self._write_lock:
             cur = self.connection.execute(
-                "INSERT INTO llm_call(actor_id,role,task_type,iteration,context_hash,response_json,status,world_minute) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "INSERT INTO llm_call(actor_id,role,task_type,iteration,context_hash,response_json,status,world_minute,prompt_tokens,cached_tokens,completion_tokens,static_prefix_hash,static_prefix_chars,dynamic_chars) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     actor_id,
                     role,
@@ -508,12 +616,47 @@ class WorldStore:
                     json_dumps(response),
                     status,
                     int(self.get_meta("world_minute", 0)),
+                    int(prompt_tokens) if isinstance(prompt_tokens, (int, float)) else None,
+                    int(cached_tokens) if isinstance(cached_tokens, (int, float)) else None,
+                    int(completion_tokens) if isinstance(completion_tokens, (int, float)) else None,
+                    static_prefix_hash,
+                    int(static_prefix_chars),
+                    int(dynamic_chars),
                 ),
             )
             self.connection.commit()
         return int(cur.lastrowid)
 
-    def list_memories(self, agent_id: str, *, limit: int = 8, query: str = "") -> list[dict[str, Any]]:
+    def llm_cache_metrics(self) -> dict[str, Any]:
+        """Report provider cache evidence and prompt-prefix reuse separately."""
+
+        row = self.connection.execute(
+            "SELECT COUNT(*) AS calls, SUM(CASE WHEN cached_tokens IS NOT NULL THEN 1 ELSE 0 END) AS measured, "
+            "COALESCE(SUM(prompt_tokens),0) AS prompt_tokens, COALESCE(SUM(cached_tokens),0) AS cached_tokens, "
+            "COALESCE(SUM(completion_tokens),0) AS completion_tokens FROM llm_call"
+        ).fetchone()
+        prefixes = self.connection.execute(
+            "SELECT COUNT(*) AS total, COUNT(DISTINCT static_prefix_hash) AS distinct_prefixes, "
+            "COALESCE(AVG(static_prefix_chars),0) AS avg_static_chars, COALESCE(AVG(dynamic_chars),0) AS avg_dynamic_chars FROM llm_call"
+        ).fetchone()
+        calls = int(row["calls"] or 0)
+        measured = int(row["measured"] or 0)
+        prompt_tokens = int(row["prompt_tokens"] or 0)
+        cached_tokens = int(row["cached_tokens"] or 0)
+        return {
+            "calls": calls,
+            "provider_usage_calls": measured,
+            "provider_cache_hit_rate": round(cached_tokens / prompt_tokens, 4) if prompt_tokens else None,
+            "cached_tokens": cached_tokens,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": int(row["completion_tokens"] or 0),
+            "static_prefix_distinct": int(prefixes["distinct_prefixes"] or 0),
+            "static_prefix_reuse_rate": round(1 - int(prefixes["distinct_prefixes"] or 0) / int(prefixes["total"] or 1), 4) if calls else 0.0,
+            "average_static_prefix_chars": round(float(prefixes["avg_static_chars"] or 0), 1),
+            "average_dynamic_chars": round(float(prefixes["avg_dynamic_chars"] or 0), 1),
+        }
+
+    def list_memories(self, agent_id: str, *, limit: int = 8, query: str = "", touch: bool = False) -> list[dict[str, Any]]:
         """Return the agent's newest memories, optionally matching plain text.
 
         Memory retrieval is intentionally small and role-scoped.  The full
@@ -531,25 +674,33 @@ class WorldStore:
                 if ids:
                     placeholders = ",".join("?" for _ in ids)
                     rows = self.connection.execute(
-                        f"SELECT id,memory_type,data_json FROM memory_item WHERE agent_id=? AND id IN ({placeholders}) ORDER BY id DESC LIMIT ?",
+                        f"SELECT id,memory_type,data_json,importance,salience,access_count,last_access_minute FROM memory_item WHERE agent_id=? AND id IN ({placeholders}) ORDER BY (importance + salience + MIN(access_count, 100) * 0.01) DESC, id DESC LIMIT ?",
                         (agent_id, *ids, limit),
                     ).fetchall()
                 else:
                     rows = []
             except sqlite3.OperationalError:
                 rows = self.connection.execute(
-                    "SELECT id,memory_type,data_json FROM memory_item WHERE agent_id=? AND data_json LIKE ? ORDER BY id DESC LIMIT ?",
+                    "SELECT id,memory_type,data_json,importance,salience,access_count,last_access_minute FROM memory_item WHERE agent_id=? AND data_json LIKE ? ORDER BY (importance + salience + MIN(access_count, 100) * 0.01) DESC, id DESC LIMIT ?",
                     (agent_id, f"%{query}%", limit),
                 ).fetchall()
         else:
             rows = self.connection.execute(
-                "SELECT id,memory_type,data_json FROM memory_item WHERE agent_id=? ORDER BY id DESC LIMIT ?",
+                "SELECT id,memory_type,data_json,importance,salience,access_count,last_access_minute FROM memory_item WHERE agent_id=? ORDER BY (importance + salience + MIN(access_count, 100) * 0.01) DESC, id DESC LIMIT ?",
                 (agent_id, limit),
             ).fetchall()
         result = []
         for row in rows:
             value = json.loads(row["data_json"])
-            result.append({"id": row["id"], "type": row["memory_type"], **value})
+            result.append({"id": row["id"], "type": row["memory_type"], "importance": row["importance"], "salience": row["salience"], "uses": row["access_count"], "last_access_minute": row["last_access_minute"], **value})
+        if result and touch:
+            was_in_transaction = self.connection.in_transaction
+            self.connection.executemany(
+                "UPDATE memory_item SET access_count=access_count+1,last_access_minute=? WHERE id=?",
+                [(int(self.get_meta("world_minute", 0)), int(item["id"])) for item in result],
+            )
+            if not was_in_transaction:
+                self.connection.commit()
         return result
 
     def delete_memories(self, agent_id: str, memory_ids: list[int]) -> int:

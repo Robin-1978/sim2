@@ -8,6 +8,7 @@ from ..agents.engine import AgentEngine
 from ..bootstrap.service import create_instance
 from ..llm.gateway import LLMRouter
 from ..platform.runtime import Platform
+from .text import TextWorldSession
 
 
 def main() -> None:
@@ -23,6 +24,13 @@ def main() -> None:
     decide.add_argument("--db", type=Path, required=True)
     decide.add_argument("--agent-id", required=True)
     decide.add_argument("--role", default="agent_decision")
+
+    mud = sub.add_parser("mud", help="start a text player or observer session")
+    mud.add_argument("--db", type=Path, required=True)
+    mud.add_argument("--player-id")
+    mud.add_argument("--origin")
+    mud.add_argument("--name")
+    mud.add_argument("--observer", action="store_true")
 
     for name, help_text in [("status", "show instance status"), ("pause", "pause world advancement"), ("resume", "resume world advancement"), ("step", "advance one world minute"), ("metrics", "show runtime metrics"), ("audit", "export event and Agent audit")]:
         command = sub.add_parser(name, help=help_text)
@@ -62,6 +70,24 @@ def main() -> None:
             print(json.dumps({"response": turn.response, "result": turn.result, "iterations": turn.iterations}, ensure_ascii=False))
         finally:
             platform.close()
+    if args.command == "mud":
+        platform = Platform(args.db)
+        try:
+            if not args.observer:
+                if not args.player_id:
+                    raise ValueError("--player-id is required in player mode")
+                try:
+                    platform.store.get_agent(args.player_id)
+                except KeyError:
+                    if not args.origin:
+                        raise ValueError("--origin is required when creating a new player")
+                    entered = platform.enter_player(args.player_id, args.origin, name=args.name)
+                    if entered.get("status") != "accepted":
+                        raise ValueError(str(entered))
+            TextWorldSession(platform, player_id=args.player_id, observer=args.observer).run()
+        finally:
+            platform.close()
+        return
     if args.command in {"status", "pause", "resume", "step", "advance", "metrics", "audit", "snapshot", "restore", "enter-player", "inject"}:
         platform = Platform(args.db)
         try:

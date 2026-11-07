@@ -39,6 +39,18 @@ class ControlService:
     def metrics(self) -> dict[str, Any]:
         return self.platform.metrics()
 
+    def observer(self, event_limit: int = 20) -> dict[str, Any]:
+        return self.platform.observer_view(event_limit=event_limit)
+
+    def dialogue(self, speaker_id: str, listener_id: str, topic: str, message: str) -> dict[str, Any]:
+        return self.platform.submit_dialogue(speaker_id, listener_id, topic, message)
+
+    def trade_offer(self, offerer_id: str, recipient_id: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
+        return self.platform.create_trade_offer(offerer_id, recipient_id, give, want)
+
+    def trade_accept(self, recipient_id: str, offer_id: str) -> dict[str, Any]:
+        return self.platform.accept_trade_offer(recipient_id, offer_id)
+
     def audit(self) -> dict[str, Any]:
         return self.platform.export_audit()
 

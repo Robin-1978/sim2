@@ -96,7 +96,7 @@ class Platform:
             "beliefs": [],
             "needs": {},
             "knowledge_seed": list(template.get("knowledge_seed") or []),
-            "initial_bt_ids": [],
+            "initial_bt_ids": list(template.get("initial_bt_ids") or []),
             "capabilities": {},
             "initial_state": {"location_id": location_id, "health": 100, "stamina": 100, "fatigue": 0, "status": "idle", "injuries": [], "conditions": [], "active_bt_instance": None, "active_action": None, "remaining_minutes": 0},
             "inventory": {},
@@ -111,6 +111,40 @@ class Platform:
 
     def decision_view(self, agent_id: str, role: str = "agent_decision") -> dict[str, Any]:
         return self.view.build_decision_view(agent_id, role=role)
+
+    def observer_view(self, *, event_limit: int = 20) -> dict[str, Any]:
+        """Return public whole-world telemetry without private memories."""
+
+        agents = []
+        for agent in self.store.list_agents():
+            state = agent.get("initial_state", {}) or {}
+            agents.append({
+                "id": agent["id"],
+                "name": agent.get("name", agent["id"]),
+                "role": agent.get("role", "agent"),
+                "location": state.get("location_id"),
+                "status": state.get("status", "idle"),
+                "health": state.get("health"),
+                "active_behavior": state.get("active_behavior_id"),
+                "remaining_minutes": state.get("remaining_minutes", 0),
+            })
+        public_events = []
+        for event in self.store.recent_events(limit=max(1, min(int(event_limit), 100))):
+            public = {key: event.get(key) for key in ("event_id", "event_type", "actor_id", "world_minute")}
+            for key in ("summary", "behavior_id", "action_id", "result", "change_type", "effect", "activation"):
+                if event.get(key) is not None:
+                    public[key] = event[key]
+            public_events.append(public)
+        return {
+            "status": "ok",
+            "world_time": int(self.store.get_meta("world_minute", 0)),
+            "world_id": self.store.get_meta("world_id"),
+            "world_properties": self.store.get_meta("world_properties", {}) or {},
+            "agents": agents,
+            "entity_counts": {entity_type: len(self.store.entities_of_type(entity_type)) for entity_type in ("location", "agent", "faction", "resource", "object")},
+            "recent_events": public_events,
+            "private_data": "excluded",
+        }
 
     def _reject_intent(self, intent_id: str, actor_id: str, intent_type: str, data: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
         world_minute = int(self.store.get_meta("world_minute", 0))
@@ -178,6 +212,14 @@ class Platform:
         except (TypeError, ValueError):
             remaining_minutes = 0
         world_minute = int(self.store.get_meta("world_minute", 0))
+        expected = {
+            "summary": bt.get("summary") or bt.get("description") or behavior_id,
+            "success": list(bt.get("success_results", []) or []),
+            "failure": list(bt.get("failure_results", []) or []),
+            "estimated_minutes": remaining_minutes,
+            "goal_tags": list(bt.get("goal_tags", []) or []),
+            "drive_tags": list(bt.get("drive_tags", []) or []),
+        }
         with self.store.transaction():
             self.store.create_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, world_minute)
             state["status"] = "executing"
@@ -196,13 +238,20 @@ class Platform:
                 behavior_id,
                 "executing",
                 0,
-                {"target": intent.target, "parameters": intent.parameters, "actions": self._compile_behavior_actions(behavior_id)},
+                {
+                    "target": intent.target,
+                    "parameters": intent.parameters,
+                    "actions": self._compile_behavior_actions(behavior_id),
+                    "expected": expected,
+                    "decision": {"reason": intent.reason, "confidence": intent.confidence},
+                    "before": self._execution_snapshot(agent),
+                },
                 world_minute,
                 world_minute,
             )
             self.store.append_event(
                 "behavior.started", intent.actor_id, world_minute,
-                {"intent_id": intent.intent_id, "behavior_id": behavior_id, "target": intent.target},
+                {"intent_id": intent.intent_id, "behavior_id": behavior_id, "target": intent.target, "expected": expected, "decision": {"reason": intent.reason, "confidence": intent.confidence}},
             )
             result = {
                 "status": "accepted",
@@ -215,6 +264,7 @@ class Platform:
         return result
 
     def submit_experience(self, actor_id: str, event_ref: str, summary: str, confidence: float) -> dict[str, Any]:
+        summary = str(summary).strip()
         data = {"event_ref": event_ref, "summary": summary, "confidence": confidence}
         intent_id = str(uuid4())
         if not summary.strip():
@@ -226,11 +276,186 @@ class Platform:
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             self.store.get_agent(actor_id)
+            similarity = self.memory.experience_match(actor_id, summary)
+            if similarity["duplicate"]:
+                result = {
+                    "status": "rejected",
+                    "message": "This experience is too similar to a retained lesson; return wait or submit a genuinely new lesson.",
+                    "failed_check": "similar_experience",
+                    "similarity": similarity,
+                    "retryable": True,
+                }
+                self.store.create_intent(intent_id, actor_id, "record_experience", data, world_minute)
+                self.store.finish_intent(intent_id, "rejected", result)
+                return result
+            duplicate = self.store.connection.execute(
+                "SELECT 1 FROM memory_item WHERE agent_id=? AND memory_type='experience' AND json_extract(data_json,'$.summary')=? LIMIT 1",
+                (actor_id, summary.strip()),
+            ).fetchone()
+            if duplicate is not None:
+                result = {"status": "rejected", "message": "This experience is already retained; return wait or submit a genuinely new lesson.", "failed_check": "duplicate_experience", "retryable": True}
+                self.store.create_intent(intent_id, actor_id, "record_experience", data, world_minute)
+                self.store.finish_intent(intent_id, "rejected", result)
+                return result
             self.store.create_intent(intent_id, actor_id, "record_experience", data, world_minute)
             memory_id = self.store.put_memory(actor_id, "experience", {**data, "world_minute": world_minute})
             self.store.append_event("memory.experience_recorded", actor_id, world_minute, {"memory_id": memory_id, **data})
             result = {"status": "accepted", "intent_id": intent_id, "memory_id": memory_id}
             self.store.finish_intent(intent_id, "accepted", result)
+        return result
+
+    @staticmethod
+    def _valid_transfer(bundle: dict[str, Any]) -> bool:
+        return bool(bundle) and all(isinstance(item, str) and item and isinstance(quantity, (int, float)) and not isinstance(quantity, bool) and quantity > 0 for item, quantity in bundle.items())
+
+    @staticmethod
+    def _has_inventory(agent: dict[str, Any], bundle: dict[str, Any]) -> bool:
+        inventory = agent.get("inventory", {}) or {}
+        return all(float(inventory.get(item, 0)) >= float(quantity) for item, quantity in bundle.items())
+
+    @staticmethod
+    def _same_public_location(first: dict[str, Any], second: dict[str, Any]) -> bool:
+        first_state = first.get("initial_state", {}) or {}
+        second_state = second.get("initial_state", {}) or {}
+        return bool(first_state.get("location_id")) and first_state.get("location_id") == second_state.get("location_id")
+
+    def submit_dialogue(self, speaker_id: str, listener_id: str, topic: str, message: str) -> dict[str, Any]:
+        """Record a direct, permission-checked text exchange."""
+
+        intent_id = str(uuid4())
+        topic = str(topic).strip()
+        message = str(message).strip()
+        if not listener_id or listener_id == speaker_id or not topic or not message:
+            return {"status": "rejected", "message": "speaker, listener, topic and message are required.", "failed_check": "dialogue", "retryable": True}
+        if len(message) > 1000:
+            return {"status": "rejected", "message": "message must be at most 1000 characters.", "failed_check": "message_length", "retryable": True}
+        try:
+            speaker = self.store.get_agent(speaker_id)
+            listener = self.store.get_agent(listener_id)
+        except KeyError:
+            return {"status": "rejected", "message": "Both participants must exist.", "failed_check": "participant", "retryable": False}
+        if not self._same_public_location(speaker, listener):
+            return {"status": "rejected", "message": "Both participants must be at the same location.", "failed_check": "location", "retryable": True}
+        minute = int(self.store.get_meta("world_minute", 0))
+        with self.store.transaction():
+            self.store.create_intent(intent_id, speaker_id, "send_message", {"target_id": listener_id, "topic": topic, "message": message}, minute)
+            exchange_id = self.store.put_dialogue_exchange(speaker_id, listener_id, topic, minute, {"message": message, "source": "direct_text"})
+            self.store.put_memory(speaker_id, "dialogue", {"topic": topic, "message": message, "target_id": listener_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.35})
+            self.store.put_memory(listener_id, "testimony", {"topic": topic, "message": message, "speaker_id": speaker_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.45, "pending_decision": True})
+            event_id = self.store.append_event("dialogue.completed", speaker_id, minute, {"dialogue_id": exchange_id, "target_id": listener_id, "topic": topic, "summary": "A direct exchange was recorded.", "activation": "recipient_next_decision_or_reflection", "duration_minutes": 0, "priority": "normal"})
+            result = {"status": "accepted", "intent_id": intent_id, "dialogue_id": exchange_id, "event_id": event_id, "topic": topic}
+            self.store.finish_intent(intent_id, "accepted", result)
+        return result
+
+    def create_trade_offer(self, offerer_id: str, recipient_id: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
+        """Create a two-phase item offer; no inventory moves until acceptance."""
+
+        give = dict(give or {})
+        want = dict(want or {})
+        if not recipient_id or recipient_id == offerer_id or not self._valid_transfer(give) or not self._valid_transfer(want):
+            return {"status": "rejected", "message": "A trade needs two participants and positive give/want quantities.", "failed_check": "trade_schema", "retryable": True}
+        try:
+            offerer = self.store.get_agent(offerer_id)
+            recipient = self.store.get_agent(recipient_id)
+        except KeyError:
+            return {"status": "rejected", "message": "Both traders must exist.", "failed_check": "participant", "retryable": False}
+        if not self._same_public_location(offerer, recipient):
+            return {"status": "rejected", "message": "Both traders must be at the same location.", "failed_check": "location", "retryable": True}
+        if not self._has_inventory(offerer, give):
+            return {"status": "rejected", "message": "The offerer lacks an offered item.", "failed_check": "offer_inventory", "retryable": True}
+        minute = int(self.store.get_meta("world_minute", 0))
+        offer_id = str(uuid4())
+        intent_id = str(uuid4())
+        with self.store.transaction():
+            self.store.create_intent(intent_id, offerer_id, "create_trade_offer", {"recipient_id": recipient_id, "give": give, "want": want}, minute)
+            self.store.put_trade_offer(offer_id, offerer_id, recipient_id, give, want, minute)
+            self.store.put_memory(recipient_id, "trade_offer", {"offer_id": offer_id, "offerer_id": offerer_id, "give": give, "want": want, "world_minute": minute, "pending_decision": True, "importance": 0.6})
+            self.store.put_memory(offerer_id, "trade_offer", {"offer_id": offer_id, "recipient_id": recipient_id, "give": give, "want": want, "world_minute": minute, "pending_decision": True, "importance": 0.45})
+            event_id = self.store.append_event("trade.offer_created", offerer_id, minute, {"offer_id": offer_id, "recipient_id": recipient_id, "give": give, "want": want, "activation": "recipient_next_decision", "duration_minutes": 0, "priority": "normal"})
+            result = {"status": "accepted", "intent_id": intent_id, "offer_id": offer_id, "event_id": event_id, "trade_status": "open"}
+            self.store.finish_intent(intent_id, "accepted", result)
+        return result
+
+    def accept_trade_offer(self, recipient_id: str, offer_id: str) -> dict[str, Any]:
+        offer = self.store.get_trade_offer(offer_id)
+        if offer is None:
+            return {"status": "rejected", "message": "Trade offer does not exist.", "failed_check": "offer_id", "retryable": False}
+        if offer["status"] != "open":
+            return {"status": "rejected", "message": "Trade offer is no longer open.", "failed_check": "offer_status", "retryable": False}
+        if offer["recipient_id"] != recipient_id:
+            return {"status": "rejected", "message": "Only the named recipient can accept this offer.", "failed_check": "recipient", "retryable": False}
+        try:
+            offerer = self.store.get_agent(offer["offerer_id"])
+            recipient = self.store.get_agent(recipient_id)
+        except KeyError:
+            return {"status": "rejected", "message": "Both traders must still exist.", "failed_check": "participant", "retryable": False}
+        if not self._same_public_location(offerer, recipient):
+            return {"status": "rejected", "message": "Both traders must still be at the same location.", "failed_check": "location", "retryable": True}
+        if not self._has_inventory(offerer, offer["give"]):
+            return {"status": "rejected", "message": "The offered items are no longer available.", "failed_check": "offer_inventory", "retryable": False}
+        if not self._has_inventory(recipient, offer["want"]):
+            return {"status": "rejected", "message": "The requested items are no longer available.", "failed_check": "request_inventory", "retryable": True}
+        minute = int(self.store.get_meta("world_minute", 0))
+        intent_id = str(uuid4())
+        with self.store.transaction():
+            self.store.create_intent(intent_id, recipient_id, "accept_trade_offer", {"offer_id": offer_id}, minute)
+            for item, quantity in offer["give"].items():
+                offerer.setdefault("inventory", {})[item] = offerer["inventory"].get(item, 0) - quantity
+                recipient.setdefault("inventory", {})[item] = recipient["inventory"].get(item, 0) + quantity
+            for item, quantity in offer["want"].items():
+                recipient.setdefault("inventory", {})[item] = recipient["inventory"].get(item, 0) - quantity
+                offerer.setdefault("inventory", {})[item] = offerer["inventory"].get(item, 0) + quantity
+            self.store.update_agent(offerer_id := offer["offerer_id"], offerer)
+            self.store.update_agent(recipient_id, recipient)
+            result = {"status": "accepted", "offer_id": offer_id, "trade_status": "completed", "give": offer["give"], "want": offer["want"]}
+            self.store.finish_trade_offer(offer_id, "completed", minute, result)
+            self.store.put_memory(offerer_id, "trade_result", {"offer_id": offer_id, "trade_status": "completed", "world_minute": minute, "importance": 0.55})
+            self.store.put_memory(recipient_id, "trade_result", {"offer_id": offer_id, "trade_status": "completed", "world_minute": minute, "importance": 0.55})
+            event_id = self.store.append_event("trade.completed", recipient_id, minute, {"offer_id": offer_id, "offerer_id": offerer_id, "recipient_id": recipient_id, "give": offer["give"], "want": offer["want"], "activation": "both_next_reflection", "duration_minutes": 0, "priority": "normal"})
+            result["intent_id"] = intent_id
+            result["event_id"] = event_id
+            self.store.finish_intent(intent_id, "accepted", result)
+        return result
+
+    def counter_trade_offer(self, counterparty_id: str, offer_id: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
+        """Close an offer and create the counterparty's next-round offer."""
+
+        offer = self.store.get_trade_offer(offer_id)
+        if offer is None or offer["status"] != "open" or offer["recipient_id"] != counterparty_id:
+            return {"status": "rejected", "message": "Only the open offer recipient can counter it.", "failed_check": "offer", "retryable": False}
+        if int(offer.get("round", 1)) >= 8:
+            return {"status": "rejected", "message": "The negotiation reached its round limit.", "failed_check": "round_limit", "retryable": False}
+        give = dict(give or {})
+        want = dict(want or {})
+        if not self._valid_transfer(give) or not self._valid_transfer(want):
+            return {"status": "rejected", "message": "A counteroffer needs positive give/want quantities.", "failed_check": "trade_schema", "retryable": True}
+        try:
+            counterparty = self.store.get_agent(counterparty_id)
+            original_offerer = self.store.get_agent(offer["offerer_id"])
+        except KeyError:
+            return {"status": "rejected", "message": "Both traders must still exist.", "failed_check": "participant", "retryable": False}
+        if not self._same_public_location(counterparty, original_offerer):
+            return {"status": "rejected", "message": "Both traders must still be at the same location.", "failed_check": "location", "retryable": True}
+        if not self._has_inventory(counterparty, give):
+            return {"status": "rejected", "message": "The counterparty lacks the counteroffer items.", "failed_check": "offer_inventory", "retryable": True}
+        minute = int(self.store.get_meta("world_minute", 0))
+        counter_id = str(uuid4())
+        with self.store.transaction():
+            self.store.finish_trade_offer(offer_id, "countered", minute, {"status": "accepted", "trade_status": "countered", "counter_offer_id": counter_id})
+            self.store.put_trade_offer(counter_id, counterparty_id, offer["offerer_id"], give, want, minute, parent_offer_id=offer_id, round_number=int(offer.get("round", 1)) + 1)
+            self.store.put_memory(offer["offerer_id"], "trade_offer", {"offer_id": counter_id, "parent_offer_id": offer_id, "offerer_id": counterparty_id, "give": give, "want": want, "world_minute": minute, "pending_decision": True, "importance": 0.6})
+            event_id = self.store.append_event("trade.countered", counterparty_id, minute, {"offer_id": counter_id, "parent_offer_id": offer_id, "recipient_id": offer["offerer_id"], "give": give, "want": want, "activation": "recipient_next_decision", "duration_minutes": 0, "priority": "normal"})
+        return {"status": "accepted", "offer_id": counter_id, "parent_offer_id": offer_id, "trade_status": "open", "event_id": event_id}
+
+    def reject_trade_offer(self, recipient_id: str, offer_id: str) -> dict[str, Any]:
+        offer = self.store.get_trade_offer(offer_id)
+        if offer is None or offer["recipient_id"] != recipient_id or offer["status"] != "open":
+            return {"status": "rejected", "message": "The trade offer cannot be rejected by this participant.", "failed_check": "offer", "retryable": False}
+        minute = int(self.store.get_meta("world_minute", 0))
+        with self.store.transaction():
+            result = {"status": "accepted", "offer_id": offer_id, "trade_status": "rejected"}
+            self.store.finish_trade_offer(offer_id, "rejected", minute, result)
+            self.store.append_event("trade.rejected", recipient_id, minute, {"offer_id": offer_id, "offerer_id": offer["offerer_id"], "recipient_id": recipient_id, "activation": "offerer_next_decision_or_reflection", "duration_minutes": 0, "priority": "normal"})
         return result
 
     def submit_belief_update(self, actor_id: str, belief_id: str, statement: str, confidence: float, reason: str) -> dict[str, Any]:
@@ -364,8 +589,8 @@ class Platform:
         with self.store.transaction():
             self.store.create_intent(intent_id, actor_id, "propose_entity", data, world_minute)
             self.store.put_entity(entity_id, str(proposal["entity_type"]), str(proposal["name"]), entity_data)
-            self.store.append_event("entity.created", actor_id, world_minute, {"entity_id": entity_id, "entity_type": proposal["entity_type"]})
-            result = {"status": "accepted", "intent_id": intent_id, "entity_id": entity_id}
+            event_id = self.store.append_event("entity.created", actor_id, world_minute, {"intent_id": intent_id, "entity_id": entity_id, "entity_type": proposal["entity_type"], "summary": proposal.get("description", "")})
+            result = {"status": "accepted", "intent_id": intent_id, "entity_id": entity_id, "event_id": event_id, "applied": True}
             self.store.finish_intent(intent_id, "accepted", result)
         return result
 
@@ -387,16 +612,20 @@ class Platform:
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             self.store.create_intent(intent_id, actor_id, "propose_world_change", proposal, world_minute)
+            effect: dict[str, Any] = {}
             if change_type == "world_property":
                 properties = dict(self.store.get_meta("world_properties", {}) or {})
+                before_value = properties.get(str(proposal["property"]))
                 properties[str(proposal["property"])] = proposal.get("value")
                 self.store.set_meta("world_properties", properties)
+                effect = {"world_property": str(proposal["property"]), "before": before_value, "after": proposal.get("value")}
             elif change_type == "rule":
                 rules = dict(self.store.get_meta("rules", {}) or {})
                 world_rules = list(rules.get("world_rules", []))
                 world_rules.append(dict(proposal["rule"]))
                 rules["world_rules"] = world_rules
                 self.store.set_meta("rules", rules)
+                effect = {"rule_added": dict(proposal["rule"]), "rule_count": len(world_rules)}
             elif change_type == "relationship":
                 relation = dict(proposal["relationship"])
                 source = relation.pop("from", relation.pop("from_id", ""))
@@ -406,6 +635,7 @@ class Platform:
                     self.store.finish_intent(intent_id, "rejected", {"status": "rejected", "message": "relationship from and to are required.", "failed_check": "relationship", "retryable": True})
                     return {"status": "rejected", "message": "relationship from and to are required.", "failed_check": "relationship", "retryable": True}
                 self.store.put_relationship(str(source), str(target), relation_type, relation)
+                effect = {"relationship": {"from": str(source), "to": str(target), "type": relation_type, **relation}}
             elif change_type == "faction":
                 faction = dict(proposal["faction"])
                 faction_id = str(faction.pop("id", faction.pop("faction_id", "")))
@@ -419,8 +649,24 @@ class Platform:
                     return {"status": "rejected", "message": "faction does not exist.", "failed_check": "faction.id", "retryable": True}
                 current.update(faction)
                 self.store.put_entity(faction_id, "faction", current.get("name", faction_id), {key: value for key, value in current.items() if key not in {"id", "entity_type", "name"}})
-            self.store.append_event(f"world.change.{change_type}", actor_id, world_minute, proposal)
-            result = {"status": "accepted", "intent_id": intent_id, "applied": True, "change_type": change_type}
+                effect = {"faction_id": faction_id, "changed_fields": sorted(faction), "after": {key: current.get(key) for key in faction}}
+            elif change_type == "event" and proposal.get("property"):
+                properties = dict(self.store.get_meta("world_properties", {}) or {})
+                before_value = properties.get(str(proposal["property"]))
+                properties[str(proposal["property"])] = proposal.get("value")
+                self.store.set_meta("world_properties", properties)
+                effect = {"world_property": str(proposal["property"]), "before": before_value, "after": proposal.get("value")}
+            else:
+                effect = {"event_recorded": True}
+            event_data = {
+                "intent_id": intent_id,
+                "change_type": change_type,
+                "summary": str(proposal.get("summary", "")),
+                "scope": str(proposal.get("scope", "world")),
+                "effect": effect,
+            }
+            event_id = self.store.append_event(f"world.change.{change_type}", actor_id, world_minute, event_data)
+            result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "applied": True, "applied_effects": bool(effect), "change_type": change_type, "effect": effect}
             self.store.finish_intent(intent_id, "accepted", result)
         return result
 
@@ -525,9 +771,45 @@ class Platform:
         return visit(behavior.get("nodes", []))
 
     @staticmethod
+    def _execution_snapshot(agent: dict[str, Any]) -> dict[str, Any]:
+        """Return a small, JSON-safe state projection for outcome review."""
+
+        state = dict(agent.get("initial_state") or {})
+        return {
+            "location": state.get("location_id"),
+            "health": state.get("health"),
+            "stamina": state.get("stamina"),
+            "fatigue": state.get("fatigue"),
+            "needs": dict(agent.get("needs") or {}),
+            "inventory": dict(agent.get("inventory") or {}),
+            "capabilities": dict(agent.get("capabilities") or {}),
+        }
+
+    @staticmethod
+    def _execution_delta(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+        """Describe only changed values so the next Agent sees consequences."""
+
+        delta: dict[str, Any] = {}
+        for key in ("location", "health", "stamina", "fatigue"):
+            if before.get(key) != after.get(key):
+                delta[key] = {"before": before.get(key), "after": after.get(key)}
+        for group in ("needs", "inventory", "capabilities"):
+            old = before.get(group) or {}
+            new = after.get(group) or {}
+            changes = {}
+            for key in sorted(set(old) | set(new)):
+                if old.get(key) != new.get(key):
+                    changes[key] = {"before": old.get(key, 0), "after": new.get(key, 0)}
+            if changes:
+                delta[group] = changes
+        return delta
+
+    @staticmethod
     def _resolve_parameters(parameters: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
-        context = dict(state.get("active_parameters") or {})
-        context.update(state)
+        context = dict(state)
+        # Intent parameters are the caller's selected targets and override the
+        # actor's current state when a definition uses context.* references.
+        context.update(state.get("active_parameters") or {})
 
         def resolve(value: Any) -> Any:
             if isinstance(value, str) and value.startswith("context."):
@@ -841,6 +1123,9 @@ class Platform:
         self._apply_success_effects(agent, action, action_parameters, minute, target=self.targets.resolve(agent, action_parameters)[0])
         self._record_information_result(agent, action, state.get("active_action_parameters", {}), minute)
         self.store.append_event("action.completed", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "result": action.get("success", {}).get("result", "completed")})
+        # Effects may update location, health, inventory or needs; retain that
+        # projection before clearing the completed action fields.
+        state = dict(agent.get("initial_state") or {})
         state["active_action_index"] = index + 1
         state["active_action"] = None
         state["active_action_instance"] = None
@@ -863,7 +1148,11 @@ class Platform:
     def _apply_success_effects(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int, *, target: dict[str, Any] | None = None) -> None:
         effects = list(action.get("effects", []) or [])
         for effect in effects:
-            self.effects.apply(agent, effect, target=target or parameters)
+            resolved_effect = {
+                key: parameters.get(value.removeprefix("context."), value) if isinstance(value, str) and value.startswith("context.") else value
+                for key, value in effect.items()
+            }
+            self.effects.apply(agent, resolved_effect, target=target or parameters)
             if effect.get("type") in {"capability_xp", "capability.add_xp"} or effect.get("op") == "capability.add_xp":
                 capability = effect.get("capability")
                 if capability:
@@ -918,6 +1207,18 @@ class Platform:
 
     def _finish_behavior(self, agent: dict[str, Any], execution_id: str, behavior_id: str, status: str, result: str, minute: int) -> None:
         state = dict(agent.get("initial_state") or {})
+        bt_row = self.store.connection.execute("SELECT data_json FROM bt_instance WHERE execution_id=?", (execution_id,)).fetchone()
+        bt_data = json.loads(bt_row["data_json"]) if bt_row is not None else {}
+        before = dict(bt_data.get("before") or {})
+        after = self._execution_snapshot(agent)
+        outcome = {
+            "status": status,
+            "result": result,
+            "expected": dict(bt_data.get("expected") or {}),
+            "actual": after,
+            "delta": self._execution_delta(before, after) if before else {},
+            "decision": dict(bt_data.get("decision") or {}),
+        }
         action_instance_id = state.get("active_action_instance")
         if action_instance_id and status != "completed":
             action_row = self.store.connection.execute("SELECT elapsed_minutes,remaining_minutes,data_json FROM action_instance WHERE action_instance_id=?", (action_instance_id,)).fetchone()
@@ -942,11 +1243,14 @@ class Platform:
         state["active_action_instance"] = None
         state["active_parallel_actions"] = {}
         state["remaining_minutes"] = 0
-        state["last_platform_result"] = {"status": status, "behavior_ref": f"behavior:{behavior_id}", "result": result}
+        state["last_platform_result"] = {"status": status, "behavior_ref": f"behavior:{behavior_id}", "result": result, "outcome": outcome}
+        state["last_outcome"] = outcome
         agent["initial_state"] = state
         self.store.update_agent(agent["id"], agent)
-        self.store.update_bt_instance(execution_id, status=status, current_node=int(state.get("active_action_index", 0)), data={"result": result}, updated_minute=minute)
-        self.store.append_event(f"behavior.{status}", agent["id"], minute, {"execution_id": execution_id, "behavior_id": behavior_id, "result": result})
+        bt_data["outcome"] = outcome
+        bt_data["result"] = result
+        self.store.update_bt_instance(execution_id, status=status, current_node=int(state.get("active_action_index", 0)), data=bt_data, updated_minute=minute)
+        self.store.append_event(f"behavior.{status}", agent["id"], minute, {"execution_id": execution_id, "behavior_id": behavior_id, "result": result, "outcome": outcome})
 
     def _world_trigger_context(self) -> dict[str, Any]:
         context = dict(self.store.get_meta("world_properties", {}) or {})
@@ -1053,7 +1357,7 @@ class Platform:
         events = self.store.connection.execute("SELECT COUNT(*) AS n FROM event_log").fetchone()["n"]
         intents = self.store.connection.execute("SELECT COUNT(*) AS n FROM intent").fetchone()["n"]
         llm_calls = self.store.connection.execute("SELECT COUNT(*) AS n FROM llm_call").fetchone()["n"]
-        return {"world_minute": int(self.store.get_meta("world_minute", 0)), "active_behaviors": int(active), "events": int(events), "intents": int(intents), "llm_calls": int(llm_calls)}
+        return {"world_minute": int(self.store.get_meta("world_minute", 0)), "active_behaviors": int(active), "events": int(events), "intents": int(intents), "llm_calls": int(llm_calls), "llm_cache": self.store.llm_cache_metrics()}
 
     def export_audit(self) -> dict[str, Any]:
         def rows(query: str) -> list[dict[str, Any]]:
@@ -1098,6 +1402,17 @@ class Platform:
         minute = int(self.store.get_meta("world_minute", 0))
         status = "cancelled" if hard else "paused"
         with self.store.transaction():
+            bt_row = self.store.connection.execute("SELECT behavior_id,data_json FROM bt_instance WHERE execution_id=?", (execution_id,)).fetchone()
+            bt_data = json.loads(bt_row["data_json"]) if bt_row is not None else {}
+            before = dict(bt_data.get("before") or {})
+            outcome = {
+                "status": status,
+                "result": reason,
+                "expected": dict(bt_data.get("expected") or {}),
+                "actual": self._execution_snapshot(agent),
+                "delta": self._execution_delta(before, self._execution_snapshot(agent)) if before else {},
+                "decision": dict(bt_data.get("decision") or {}),
+            }
             action_instance_id = state.get("active_action_instance")
             if action_instance_id:
                 action_row = self.store.connection.execute("SELECT elapsed_minutes,remaining_minutes,data_json FROM action_instance WHERE action_instance_id=?", (action_instance_id,)).fetchone()
@@ -1115,7 +1430,8 @@ class Platform:
                 if action_row is not None and action_row["remaining_minutes"] > 0:
                     self.store.update_action_instance(entry["action_instance_id"], status="cancelled" if hard else "paused", elapsed_minutes=action_row["elapsed_minutes"], remaining_minutes=action_row["remaining_minutes"], data=json.loads(action_row["data_json"]), updated_minute=minute)
             state["status"] = "idle" if hard else "paused"
-            state["last_platform_result"] = {"status": status, "reason": reason}
+            state["last_platform_result"] = {"status": status, "reason": reason, "outcome": outcome}
+            state["last_outcome"] = outcome
             if hard:
                 state["active_bt_instance"] = None
                 state["active_behavior_id"] = None
@@ -1125,8 +1441,10 @@ class Platform:
                 state["remaining_minutes"] = 0
             agent["initial_state"] = state
             self.store.update_agent(actor_id, agent)
-            self.store.update_bt_instance(execution_id, status=status, current_node=int(state.get("active_action_index", 0)), data={"reason": reason}, updated_minute=minute)
-            self.store.append_event("behavior.interrupted", actor_id, minute, {"execution_id": execution_id, "reason": reason, "hard": hard})
+            bt_data["outcome"] = outcome
+            bt_data["result"] = reason
+            self.store.update_bt_instance(execution_id, status=status, current_node=int(state.get("active_action_index", 0)), data=bt_data, updated_minute=minute)
+            self.store.append_event("behavior.interrupted", actor_id, minute, {"execution_id": execution_id, "reason": reason, "hard": hard, "outcome": outcome})
         return {"status": status, "execution_id": execution_id, "reason": reason}
 
     def resume_behavior(self, actor_id: str) -> dict[str, Any]:

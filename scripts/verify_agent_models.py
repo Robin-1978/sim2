@@ -45,6 +45,12 @@ def run_session(platform: Platform, provider: OpenAICompatibleProvider, role: st
         "role": role,
         "iterations": turn.iterations,
         "steps": [step.get("step") for step in turn.transcript],
+        "errors": [str(step.get("error", ""))[:300] for step in turn.transcript if step.get("step") == "llm_error"],
+        "tool_calls": [
+            {"name": step.get("name"), "arguments": step.get("arguments"), "status": step.get("result", {}).get("status"), "failed_check": step.get("result", {}).get("failed_check")}
+            for step in turn.transcript if step.get("step") == "tool"
+        ],
+        "final_response": turn.response,
         "status": turn.result.get("status"),
         "failed_check": turn.result.get("failed_check"),
         "behavior_ref": turn.result.get("behavior_ref"),
@@ -53,12 +59,14 @@ def run_session(platform: Platform, provider: OpenAICompatibleProvider, role: st
     result["quality"] = quality["passed"]
     result["quality_grade"] = quality["grade"]
     result["quality_checks"] = quality["checks"]
+    result["context_cache"] = platform.metrics().get("llm_cache", {})
     return result
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-remote", action="store_true")
+    parser.add_argument("--skip-local", action="store_true")
     args = parser.parse_args()
     config = LLMConfig.load()
     world_config = Path(__file__).parents[1] / "worlds" / "starter_village"
@@ -68,7 +76,7 @@ def main() -> int:
         platform = Platform(db)
         try:
             local = config.providers.get("local")
-            if local:
+            if local and not args.skip_local:
                 model = discover_local_model(local.base_url) or local.model
                 local_provider = OpenAICompatibleProvider(ProviderConfig(**{**local.__dict__, "model": model, "proxy": None}))
                 reports.append({"provider": "local", "model": model, **run_session(platform, local_provider, "agent_decision", "lu_xingzhou")})

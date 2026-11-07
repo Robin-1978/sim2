@@ -19,6 +19,7 @@ class ProviderConfig:
     model: str
     api_key_env: str | None = None
     proxy: str | None = None
+    session_header: str | None = None
     timeout_seconds: float = 120.0
 
 
@@ -46,6 +47,7 @@ class LLMConfig:
                 model=str(value["model"]),
                 api_key_env=value.get("api_key_env"),
                 proxy=value.get("proxy"),
+                session_header=value.get("session_header"),
                 timeout_seconds=float(value.get("timeout_seconds", 120)),
             )
         if not providers:

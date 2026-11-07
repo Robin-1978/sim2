@@ -14,6 +14,7 @@ from sandbox.actions.effects import EffectPipeline
 from sandbox.world.drives import DriveCalculator
 from sandbox.api.service import ControlService
 from sandbox.api.http import ControlHTTPServer
+from sandbox.api.text import TextWorldSession
 from sandbox.bootstrap.service import create_instance, validate_config
 from sandbox.platform.runtime import Platform
 from sandbox.prompting.renderer import render_context
@@ -70,7 +71,7 @@ def test_bootstrap_and_agent_intent(tmp_path: Path):
         assert turn.iterations == 1
         assert provider.calls
         prompt = provider.calls[0][1]
-        assert "<executable_behaviors dynamic=\"true\">" in prompt
+        assert "<executable_behaviors>" in prompt
         assert "collect" not in prompt.lower()
         assert "actor.can" not in prompt
         assert "nodes" not in prompt.lower()
@@ -94,9 +95,9 @@ def test_context_uses_role_tools_and_plain_sections():
         "tools": [{"name": "request_behavior", "purpose": "Ask Platform to start one offered behavior."}],
     }
     prompt = render_context(context, "Choose a behavior.")
-    assert "<tools stable=\"true\">" in prompt
+    assert "<tools>" not in prompt
     assert "request_behavior" in prompt
-    assert "arguments: none" in prompt
+    assert "arguments:" not in prompt
     assert "A fresh mark is visible." in prompt
 
 
@@ -116,6 +117,27 @@ def test_agent_view_contract_and_native_react_messages(tmp_path: Path):
         assert len(provider.messages) == 2
         assert any(message.get("role") == "assistant" and message.get("tool_calls") for message in provider.messages[1])
         assert any(message.get("role") == "tool" and message.get("tool_call_id") == "call-1" for message in provider.messages[1])
+    finally:
+        platform.close()
+
+
+def test_native_multiple_tool_calls_receive_one_result_each(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "multi-tool-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    provider = MessageProvider([
+        {"tool_calls": [
+            {"id": "call-a", "type": "function", "function": {"name": "observe_nearby", "arguments": "{\"question\":\"Who is here?\"}"}},
+            {"id": "call-b", "type": "function", "function": {"name": "query_known_fact", "arguments": "{\"query\":\"village\"}"}},
+        ]},
+        {"behavior_ref": "behavior:explore_greywood", "reason": "The exploration goal requires this behavior.", "confidence": 0.8},
+    ])
+    try:
+        turn = AgentEngine(platform, provider).run(role="agent_decision", actor_id="lu_xingzhou")
+        assert turn.result["status"] == "accepted"
+        second = provider.messages[1]
+        tool_messages = [message for message in second if message.get("role") == "tool"]
+        assert {message["tool_call_id"] for message in tool_messages} == {"call-a", "call-b"}
     finally:
         platform.close()
 
@@ -153,10 +175,30 @@ def test_react_session_reads_tool_result_before_selecting_behavior(tmp_path: Pat
         turn = AgentEngine(platform, provider).run(role="agent_decision", actor_id="lu_xingzhou")
         assert turn.result["status"] == "accepted"
         assert turn.iterations == 2
-        assert "<interaction_history append_only=\"true\">" in provider.calls[1]["context"]
+        assert "<interaction_history>" in provider.calls[1]["context"]
         assert provider.calls[0]["tools"]
         assert provider.calls[0]["tools"][0]["function"]["name"] == "observe_nearby"
         assert any(step["step"] == "tool" for step in turn.transcript)
+    finally:
+        platform.close()
+
+
+def test_metrics_report_prompt_prefix_reuse_and_provider_cache_evidence(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "cache-metrics-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    provider = SequenceProvider([
+        {"tool_call": {"name": "observe_nearby", "arguments": {"question": "Who is nearby?"}}},
+        {"behavior_ref": "behavior:explore_greywood", "reason": "The goal requires exploration.", "confidence": 0.8},
+    ])
+    try:
+        assert AgentEngine(platform, provider).run(role="agent_decision", actor_id="lu_xingzhou").result["status"] == "accepted"
+        cache = platform.metrics()["llm_cache"]
+        assert cache["calls"] == 2
+        assert cache["static_prefix_reuse_rate"] == 0.5
+        assert cache["provider_cache_hit_rate"] is None
+        assert cache["average_static_prefix_chars"] > 0
+        assert cache["average_dynamic_chars"] > 0
     finally:
         platform.close()
 
@@ -419,6 +461,29 @@ def test_platform_interrupt_updates_bt_and_action_instances(tmp_path: Path):
         platform.close()
 
 
+def test_behavior_outcome_is_available_to_nightly_reflection(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "outcome-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        intent = BehaviorIntent("lin_bo", "behavior:rest_and_recover", {}, {}, "Recover before the next duty.", 0.8, "outcome-intent")
+        assert platform.submit_behavior(intent)["status"] == "accepted"
+        platform.advance(49)
+        events = platform.store.recent_events_for_actor("lin_bo", limit=20)
+        outcome_event = next(item for item in events if item["event_type"] == "behavior.completed")
+        outcome = outcome_event["outcome"]
+        assert outcome["expected"]["summary"]
+        assert "actual" in outcome and "delta" in outcome
+        assert platform.ready_evolution_tasks() == []
+        view = platform.decision_view("lin_bo", role="agent_reflection")
+        assert view["recent_outcomes"][0]["event_type"] == "behavior.completed"
+        prompt = render_context(view, "Review the latest nightly outcome.")
+        assert "<outcome_review>" in prompt
+        assert "expected=" in prompt
+    finally:
+        platform.close()
+
+
 def test_parallel_bt_runs_action_instances_concurrently(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "parallel-world", tmp_path / "runtime")
@@ -555,6 +620,104 @@ def test_god_can_update_faction_strategy_through_platform(tmp_path: Path):
         assert result["status"] == "accepted"
         faction = platform.store.get_entity("village_watch")
         assert faction["strategy"] == "protect_boundary"
+    finally:
+        platform.close()
+
+
+def test_world_event_change_applies_structured_property_effect(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "event-change-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        result = platform.submit_world_change("god", {"change_type": "event", "summary": "A boundary signal changes threat assessment.", "property": "north_gate_threat_level", "value": 0.3})
+        assert result["status"] == "accepted"
+        assert result["applied_effects"] is True
+        assert platform.store.get_meta("world_properties")["north_gate_threat_level"] == 0.3
+    finally:
+        platform.close()
+
+
+def test_god_view_compares_world_change_effects_on_next_window(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "god-outcome-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        result = platform.submit_world_change("god", {"change_type": "world_property", "summary": "Lower fog pressure after a clear reading.", "property": "fog_pressure", "value": 0.2})
+        assert result["status"] == "accepted"
+        view = platform.decision_view("god", role="god")
+        change = view["recent_world_changes"][0]
+        assert change["effect"]["before"] is None
+        assert change["effect"]["after"] == 0.2
+        prompt = render_context(view, "Review the world result before the next scheduled intervention.")
+        assert "<world_outcomes>" in prompt
+        assert "Lower fog pressure" in prompt
+        assert "before" in prompt and "after" in prompt
+    finally:
+        platform.close()
+
+
+def test_experience_repetition_is_rejected_without_time_based_forgetting(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "memory-activation-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        first = platform.submit_experience("lu_xingzhou", "event:lesson", "The river route is safe only before the fog rises.", 0.9)
+        assert first["status"] == "accepted"
+        duplicate = platform.submit_experience("lu_xingzhou", "event:lesson-2", "The river route is safe only before the fog rises.", 0.9)
+        assert duplicate["status"] == "rejected"
+        assert duplicate["failed_check"] in {"duplicate_experience", "similar_experience"}
+        platform.store.set_meta("world_minute", 100000)
+        retained = platform.store.list_memories("lu_xingzhou", limit=20)
+        assert any(item.get("summary", "").startswith("The river route") for item in retained)
+        recalled = platform.memory.recall("lu_xingzhou", "river route", limit=1)
+        assert recalled["memories"][0]["uses"] >= 1
+    finally:
+        platform.close()
+
+
+def test_dialogue_trade_negotiation_and_observer_text_view(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "interaction-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        dialogue = platform.submit_dialogue("fei_lan", "yu_ge", "route", "The western road is open before dusk.")
+        assert dialogue["status"] == "accepted"
+        testimony = platform.store.list_memories("yu_ge", limit=10)
+        assert any(item.get("type") == "testimony" and item.get("message", "").startswith("The western road") for item in testimony)
+        offer = platform.create_trade_offer("fei_lan", "yu_ge", {"trade_goods": 1}, {"letter_bundle": 1})
+        assert offer["status"] == "accepted"
+        counter = platform.counter_trade_offer("yu_ge", offer["offer_id"], {"letter_bundle": 1}, {"trade_goods": 1})
+        assert counter["status"] == "accepted"
+        completed = platform.accept_trade_offer("fei_lan", counter["offer_id"])
+        assert completed["trade_status"] == "completed"
+        assert platform.store.get_agent("fei_lan")["inventory"]["letter_bundle"] == 1
+        observer = platform.observer_view(event_limit=20)
+        assert any(event["event_type"] == "trade.completed" for event in observer["recent_events"])
+        assert observer["private_data"] == "excluded"
+        session = TextWorldSession(platform, observer=True)
+        world_text = session.execute("world")
+        assert "World minute" in world_text and "Characters:" in world_text
+        assert "message" not in world_text
+    finally:
+        platform.close()
+
+
+def test_player_text_session_can_enter_and_move_without_direct_state_write(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "text-player-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        entered = platform.enter_player("player_text", "courier")
+        assert entered["status"] == "accepted"
+        session = TextWorldSession(platform, player_id="player_text")
+        assert "Commands:" in session.execute("help")
+        assert session.execute("say yu_ge route hello") .startswith("status=rejected")
+        # A text interface command still submits a Platform behavior intent;
+        # it does not mutate the player's location directly.
+        travel = platform.submit_behavior(BehaviorIntent("player_text", "behavior:travel", {}, {"location_id": "village_square"}, "Enter the village.", 0.8, "player-travel"))
+        assert travel["status"] == "accepted"
+        platform.advance(2)
+        assert platform.store.get_agent("player_text")["initial_state"]["location_id"] == "village_square"
     finally:
         platform.close()
 

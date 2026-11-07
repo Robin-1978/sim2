@@ -46,6 +46,64 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "additionalProperties": False,
         },
     },
+    "send_message": {
+        "purpose": "Send a short message to a visible participant at your location; the Platform records testimony for the recipient.",
+        "kind": "intent",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "target_id": {"type": "string"},
+                "topic": {"type": "string"},
+                "message": {"type": "string", "maxLength": 1000},
+            },
+            "required": ["target_id", "topic", "message"],
+            "additionalProperties": False,
+        },
+    },
+    "create_trade_offer": {
+        "purpose": "Offer an item bundle for another participant's item bundle; no inventory changes until acceptance.",
+        "kind": "intent",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "recipient_id": {"type": "string"},
+                "give": {"type": "object", "description": "item to positive quantity"},
+                "want": {"type": "object", "description": "item to positive quantity"},
+            },
+            "required": ["recipient_id", "give", "want"],
+            "additionalProperties": False,
+        },
+    },
+    "accept_trade_offer": {
+        "purpose": "Accept one open trade offer; Platform atomically transfers both item bundles.",
+        "kind": "intent",
+        "parameters": {
+            "type": "object",
+            "properties": {"offer_id": {"type": "string"}},
+            "required": ["offer_id"],
+            "additionalProperties": False,
+        },
+    },
+    "counter_trade_offer": {
+        "purpose": "Replace an open offer with a counteroffer; no inventory changes until a later acceptance.",
+        "kind": "intent",
+        "parameters": {
+            "type": "object",
+            "properties": {"offer_id": {"type": "string"}, "give": {"type": "object"}, "want": {"type": "object"}},
+            "required": ["offer_id", "give", "want"],
+            "additionalProperties": False,
+        },
+    },
+    "reject_trade_offer": {
+        "purpose": "Reject one open trade offer without changing inventory.",
+        "kind": "intent",
+        "parameters": {
+            "type": "object",
+            "properties": {"offer_id": {"type": "string"}},
+            "required": ["offer_id"],
+            "additionalProperties": False,
+        },
+    },
     "read_public_record": {
         "purpose": "Read a public document, location or faction record.",
         "kind": "read",
@@ -193,7 +251,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "parameters": {
             "type": "object",
             "properties": {
-                "change_type": {"type": "string"},
+                "change_type": {"type": "string", "enum": ["world_property", "rule", "relationship", "faction", "event"], "description": "Choose exactly one: world_property, rule, relationship, faction, or event."},
                 "summary": {"type": "string"},
                 "scope": {"type": "string"},
                 "conditions": {"type": "array", "items": {"type": "string"}},
@@ -232,7 +290,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
 
 
 ROLE_TOOLS: dict[str, list[str]] = {
-    "agent_decision": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "request_behavior"],
+    "agent_decision": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "request_behavior"],
     "agent_reflection": ["recall_memory", "query_known_fact", "record_experience", "update_belief", "update_goal", "propose_behavior"],
     "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "propose_entity", "propose_world_change"],
     "world_builder": ["validate_world_template", "submit_world_template"],
@@ -304,6 +362,8 @@ def validate_tool_arguments(name: str, arguments: dict[str, Any]) -> list[str]:
             errors.append(f"{key} is above the maximum")
         if isinstance(value, str) and "maxLength" in properties[key] and len(value) > properties[key]["maxLength"]:
             errors.append(f"{key} is too long")
+        if "enum" in properties[key] and value not in properties[key]["enum"]:
+            errors.append(f"{key} must be one of: {', '.join(str(item) for item in properties[key]['enum'])}")
     return errors
 
 
@@ -352,8 +412,23 @@ class AgentToolExecutor:
     def _listen(self, question: str = "", limit: int = 5) -> dict[str, Any]:
         return self.platform.perception.listen(self.actor_id, question, limit)
 
+    def _send_message(self, target_id: str, topic: str, message: str) -> dict[str, Any]:
+        return self.platform.submit_dialogue(self.actor_id, target_id, topic, message)
+
+    def _create_trade_offer(self, recipient_id: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
+        return self.platform.create_trade_offer(self.actor_id, recipient_id, give, want)
+
+    def _accept_trade_offer(self, offer_id: str) -> dict[str, Any]:
+        return self.platform.accept_trade_offer(self.actor_id, offer_id)
+
+    def _counter_trade_offer(self, offer_id: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
+        return self.platform.counter_trade_offer(self.actor_id, offer_id, give, want)
+
+    def _reject_trade_offer(self, offer_id: str) -> dict[str, Any]:
+        return self.platform.reject_trade_offer(self.actor_id, offer_id)
+
     def _read_public_record(self, entity_id: str, question: str = "") -> dict[str, Any]:
-        return self.platform.perception.read_public_record(self.actor_id, entity_id, question)
+        return self.platform.perception.read_public_record(self.actor_id, entity_id, question, global_scope=self.role == "god")
 
     def _query_known_fact(self, query: str = "", limit: int = 8) -> dict[str, Any]:
         return self.platform.perception.query_known_fact(self.actor_id, query, limit)

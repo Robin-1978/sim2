@@ -15,7 +15,7 @@
 
 用户提供世界观、地点、势力、初始 Agent、元动作、行为树、规则、提示词和开局事件，系统将其导入一个全新的 SQLite 世界实例。初始化完成后，配置文件不再参与运行；Platform 从该 SQLite 读取当前状态并把每次演化写回同一文件。
 
-每个 Agent 由两个逻辑 Agent 驱动：`Decision Agent` 负责需要语义选择的行为决策，`Reflection/Evolution Agent` 负责反思、记忆、目标和个体创新。每个世界拥有一个 `God Agent`，负责世界事件、势力、规则、技术和实体演化；创建新世界时使用 `WorldBuilder Agent` 生成模板草稿。三类运行时 Agent 和 WorldBuilder Agent 共同构成演化核心，只表达 Intent，Platform 执行所有副作用。
+运行时只有两类参与者：每个个体一个 `Agent`，以及每个世界一个 `God Agent`。个体 Agent 在一次唤醒中进入“决策”或“反思/演化”阶段：决策阶段快速选择一个 Platform 已验证的 BT；行为完成后，反思阶段比较预期与实际结果，只把新的、持久且有助于下次决策的结论写成经验、信念、目标或 BT 提案。God Agent 同样读取世界提案的实际结果，再决定是否提出下一次世界变化。创建新世界时使用独立的 `WorldBuilder Agent` 生成模板草稿。所有 Agent 只表达 Intent，Platform 执行所有副作用。
 
 世界时间以分钟推进，Platform 主要推进当前 BT 和长时 Action。LLM 不在每一分钟调用，也不由模拟分钟驱动 ReAct；需要语义决策时启动一次有预算的会话，模型可以在该会话内连续调用工具、读取结果和修正 Intent，直到 Platform 接受、Agent 等待或会话预算耗尽。会话结束后，长时 BT 由 Platform 独立推进。LLM 只在没有活动计划、进入语义决策节点、紧急中断后、反思窗口或创新窗口介入。探索和沟通都会形成持久化结果：世界事件保存真实变化，Agent 的 `knowledge_fact` 保存其主观知识，`memory_item` 保存经历和摘要。
 
@@ -40,7 +40,8 @@ flowchart LR
     DB --> P[Platform]
     P --> T[分钟推进与 BT 执行]
     T --> Q[决策边界与周期调度]
-    Q --> A[Agent Decision / Reflection / God Agent]
+    Q --> A[Individual Agent: Decision or Reflection]
+    Q --> G[God Agent]
     A --> R[Perception、Memory、规则预览]
     A --> I[Intent Gateway]
     I --> P
@@ -61,7 +62,7 @@ flowchart LR
 | `actions` | 配置化元动作、持续时间、成本、进度和结果 |
 | `behavior` | BT 定义、版本、候选目录和运行实例 |
 | `intents` | Intent 生命周期、权限、资源、前置条件、幂等和错误反馈 |
-| `agents` | Decision、Reflection/Evolution、God 三类逻辑 Agent |
+| `agents` | 个体 Agent 的决策/反思阶段与 God Agent |
 | `memory` | 知识事实、情节记忆、信念、摘要、关系证据和 FTS5 |
 | `llm` | 模型适配、Prompt、Function Schema、预算、超时和审计 |
 | `persistence` | SQLite 连接、事务、事件日志、投影、快照和备份 |
@@ -75,7 +76,7 @@ flowchart LR
 
 配置目录包含故事、地点、势力、Agent、能力、配方、`actions/`、`behavior_trees/`、提示词、规则和开局事件。元动作是声明式配置，包含目标、参数 Schema、前置条件、持续时间、每分钟成本、成功/失败条件、资源效果、退款和中断策略；配置禁止嵌入 Python、SQL、Shell 或网络代码。
 
-Platform 采用通用 `target_resolver`、`condition_engine`、`effect_pipeline` 和 `event_writer` 执行配置动作。Action 是原子能力，Recipe 是输入到输出的变换，BT 是组合 Action、Recipe 和子 BT 的长期控制流，Capability 是执行资格和熟练度；它们都由配置导入，Platform 不为每个语义动作编写专用业务分支。完整边界见 [platform-action-schema.md](design/platform-action-schema.md)。LLM 使用精简 JSON AgentView 和 Intent JSON；世界模板由独立的 `WorldBuilder Agent` 生成草稿，经 Platform 校验后创建新实例，协议见 [agent-world-schema.md](design/agent-world-schema.md)。
+Platform 采用通用 `target_resolver`、`condition_engine`、`effect_pipeline` 和 `event_writer` 执行配置动作。Action 是原子能力，Recipe 是输入到输出的变换，BT 是组合 Action、Recipe 和子 BT 的长期控制流，Capability 是执行资格和熟练度；它们都由配置导入，Platform 不为每个语义动作编写专用业务分支。完整边界见 [platform-action-schema.md](design/platform-action-schema.md)。LLM 读取精简的 XML-like 文本上下文，工具和 Intent 使用原生 JSON Schema/JSON；世界模板由独立的 `WorldBuilder Agent` 生成草稿，经 Platform 校验后创建新实例，协议见 [agent-world-schema.md](design/agent-world-schema.md)。
 
 每次初始化都生成新的 `world_instance_id` 和新的 `world.sqlite3`。Bootstrap 在事务中导入初始实体、Agent、需求、初始知识、元动作、BT、提示词、调度任务和事件，并记录 `config_version`、`config_hash` 和 `bootstrap_report`。已有实例 ID 直接拒绝，不做同实例配置升级或数据库迁移。
 
@@ -99,11 +100,10 @@ Platform 采用通用 `target_resolver`、`condition_engine`、`effect_pipeline`
 
 ### Agent 与上下文
 
-三类 Agent 都只产生 Intent：
+两类运行时参与者都只产生 Intent：
 
-- `Decision Agent`：读取自身视角、需求驱动、知识、记忆、关系、活动 BT 和 `eligible_bt_catalog`，选择已有 BT、分支或等待。
-- `Reflection/Evolution Agent`：按日反思、按周创新或在重大经历后触发，生成记忆、信念、目标和 `BehaviorTreeProposalIntent`。
-- `God Agent`：按周/月或重大事件触发，生成创建世界实体、规则、势力、技术和事件的 Intent。
+- `Individual Agent`：在决策阶段读取自身视角、需求驱动、知识、记忆、关系、活动 BT 和 `eligible_bt_catalog`，选择已有 BT、分支或等待；在反思/演化阶段读取行为 outcome，只保留值得复用的经验并提出记忆、信念、目标和 `BehaviorTreeProposalIntent`。
+- `God Agent`：按周/月或重大事件触发，读取世界提案的实际影响和长期指标，生成创建世界实体、规则、势力、技术和事件的 Intent，再在后续窗口复盘结果。
 
 上下文按缓存友好的顺序排列，并只生成当前决策切片，不传完整世界：
 
@@ -140,11 +140,12 @@ System Prompt 定义身份、职责和不变量；Function Schema 使用简短�
 | 沟通 | 对话写入证词和来源，听者置信度可被反思调整 |
 | BT 注册 | 非法 BT 被拒绝并返回可修正错误，合法 BT 注册新版本 |
 | God Agent 实体 | 合法实体进入 SQLite 和事件日志，非法意图不产生副作用 |
+| 结果闭环 | 行为完成/失败/中断写入 expected/actual/delta；结果留在 SQLite，个体 Agent 在下一个日/周窗口、God 在下一个周/月窗口读取并复盘 |
 | 非线性驱动 | 需求接近临界阈值时驱动增压，输出保持在 0 到 1 |
 | 确定性回放 | 冻结配置、种子和 LLM 响应后事件序列一致 |
 
 ## 影响评估
 
-首版新增配置导入、单实例 SQLite、Platform、12 个业务模块和三类逻辑 Agent，不改变现有空仓库行为。发布顺序为：固定 SQLite Schema、配置创世、世界与分钟推进、元动作和 BT、Intent 校验、感知与知识、LLM Agent、控制接口和回放工具。最高风险是 LLM 成本、延迟和意图错误，通过决策边界调用、Token 预算、Function 白名单、Platform 拒绝反馈和安全待机控制。详细模块实现见 [docs/design/details.md](design/details.md)，资料依据见 [docs/design/references.md](design/references.md)，AgentView 协议见 [docs/design/agent-world-schema.md](design/agent-world-schema.md)。
+首版新增配置导入、单实例 SQLite、Platform、12 个业务模块和两类运行时参与者，不改变现有空仓库行为。发布顺序为：固定 SQLite Schema、配置创世、世界与分钟推进、元动作和 BT、Intent 校验、感知与知识、LLM Agent、控制接口和回放工具。最高风险是 LLM 成本、延迟和意图错误，通过决策边界调用、Token 预算、Function 白名单、Platform 拒绝反馈和安全待机控制。详细模块实现见 [docs/design/details.md](design/details.md)，资料依据见 [docs/design/references.md](design/references.md)，AgentView 协议见 [docs/design/agent-world-schema.md](design/agent-world-schema.md)。
 
 第一个验收世界为 [雾溪村设计](worlds/starter-village.md)，其配置包位于 `worlds/starter_village/`，包含 9 个 Agent、15 个通用元动作、17 棵基础 BT、14 个地点、10 个物体、能力、配方、世界属性、初始知识和玩家入口。

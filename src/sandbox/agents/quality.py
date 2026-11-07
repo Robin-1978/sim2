@@ -51,7 +51,9 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         evidence_terms = tokens(selected.get("name", "")) | tokens(selected.get("goal_tags", [])) | tokens(view.get("identity", {}).get("capabilities", {}))
         checks.append(_check("decision_reason_grounding_advisory", True, "reason overlaps visible evidence" if reason_terms & evidence_terms else "no evidence overlap; Reflection review required"))
     elif turn.role == "agent_reflection":
-        if name == "record_experience" or payload.get("intent_type") == "record_experience":
+        if name == "wait" or payload.get("intent_type") == "wait" or turn.result.get("status") == "wait":
+            checks.append(_check("reflection_can_decline_low_value_memory", True, "no new durable lesson was submitted"))
+        elif name == "record_experience" or payload.get("intent_type") == "record_experience":
             summary = str(payload.get("summary") or "")
             checks.append(_check("reflection_experience_is_specific_and_bounded", (len(summary.split()) >= 4 or len(summary) >= 16) and len(summary) <= 500, f"summary_length={len(summary)}"))
         elif name == "update_goal" or payload.get("intent_type") == "update_goal":
@@ -67,6 +69,7 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
             checks.append(_check("god_entity_platform_created", bool(turn.result.get("entity_id")), f"entity_id={turn.result.get('entity_id')}"))
         elif name == "propose_world_change":
             checks.append(_check("god_world_change_has_summary", len(str(payload.get("summary", "")).strip()) >= 8, f"summary_length={len(str(payload.get('summary', '')))}"))
+            checks.append(_check("god_world_change_applied", turn.result.get("status") == "accepted" and bool(turn.result.get("applied")), f"applied={turn.result.get('applied')}; effects={turn.result.get('applied_effects')}"))
         else:
             checks.append(_check("god_submission_is_known", name in {"propose_entity", "propose_world_change"}, f"submission={name}"))
     passed = all(item["passed"] for item in checks)

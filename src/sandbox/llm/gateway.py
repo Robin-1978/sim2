@@ -5,6 +5,7 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Any, Protocol
+from uuid import uuid4
 
 import httpx
 
@@ -29,9 +30,15 @@ def _json_from_text(text: str) -> dict[str, Any]:
 @dataclass
 class OpenAICompatibleProvider:
     config: ProviderConfig
+    session_id: str = ""
 
     def complete_json(self, *, system: str, context: str, tools: list[dict[str, Any]] | None = None, messages: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         headers = {"content-type": "application/json"}
+        if not self.session_id:
+            self.session_id = str(uuid4())
+        session_header = self.config.session_header or ("x-opencode-session" if "opencode.ai" in self.config.base_url else None)
+        if session_header:
+            headers[session_header] = self.session_id
         api_key = None
         if self.config.api_key_env:
             # The value is read only at request time and is never logged or persisted.
@@ -67,17 +74,26 @@ class OpenAICompatibleProvider:
             fallback.pop("tools", None)
             fallback.pop("tool_choice", None)
             response = httpx.post(url, headers=headers, json=fallback, timeout=self.config.timeout_seconds, proxy=self.config.proxy, trust_env=False)
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            detail = response.text[:800].replace("authorization", "auth")
+            raise RuntimeError(f"LLM HTTP {response.status_code}: {detail}") from exc
         data = response.json()
         message = data["choices"][0]["message"]
+        usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
         # Native tool calls are normalized to the same compact envelope used
         # by local llama.cpp models that return a JSON object in content.
         if message.get("tool_calls"):
-            return {"tool_calls": message["tool_calls"]}
-        if message.get("function_call"):
-            return {"function_call": message["function_call"]}
-        content = message.get("content") or ""
-        return _json_from_text(content)
+            result = {"tool_calls": message["tool_calls"]}
+        elif message.get("function_call"):
+            result = {"function_call": message["function_call"]}
+        else:
+            content = message.get("content") or ""
+            result = _json_from_text(content)
+        if usage:
+            result["_usage"] = usage
+        return result
 
 
 class LLMRouter:

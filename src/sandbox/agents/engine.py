@@ -20,14 +20,14 @@ from .tools import (
 
 
 ROLE_POLICIES = {
-    "agent_decision": """You are the Decision Agent for one character. This is one bounded decision session: use an allowed read tool when a fact is missing, then choose one offered behavior or wait. You may only express intent; Platform owns every state change. Never invent hidden facts or references. A long behavior continues in Platform after this session ends.""",
-    "agent_reflection": """You are the Reflection and Evolution Agent for one character. Use memory and recent results, then submit an experience, belief update, or small behavior proposal. Platform validates every proposal; never edit state directly.""",
-    "god": """You are the God Agent for one world. Use the permitted world summary and read tools, then propose an entity or world change. Platform validates and applies every side effect; never edit state directly.""",
+    "agent_decision": """You are the decision phase of one individual Agent. This is one bounded session: use an allowed read tool when a fact is missing, then choose one offered behavior, reply to an interaction, accept/counter/reject a trade, or wait. You may only express intent; Platform owns every state change. Never invent hidden facts or references. A long behavior continues in Platform after this session ends.""",
+    "agent_reflection": """You are the Reflection and Evolution phase of one individual Agent. Compare the selected behavior's expected and observed result. Keep an experience only when it is new, durable, and useful for a future decision; otherwise wait. You may submit a belief, goal, or behavior proposal, but Platform validates every proposal and you never edit state directly.""",
+    "god": """You are the God Agent for one world. Read only the few facts needed for one decision (at most 8 read calls), then submit exactly one entity or world change proposal. For a world change, change_type must be exactly one of world_property, rule, relationship, faction, or event. Use event for a narrative intervention without directly setting a property. Do not enumerate the whole world. Platform validates and applies every side effect; never edit state directly.""",
     "world_builder": """You are the World Builder Agent. Draft a declarative world template, validate it, and submit it only after validation succeeds. Do not execute code or create a database directly.""",
 }
 
 ROLE_INTENTS = {
-    "agent_decision": {"select_behavior", "wait"},
+    "agent_decision": {"select_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "wait"},
     "agent_reflection": {"record_experience", "update_belief", "update_goal", "propose_behavior", "wait"},
     "god": {"propose_entity", "propose_world_change", "wait"},
     "world_builder": {"submit_world_template", "wait"},
@@ -54,12 +54,15 @@ class AgentEngine:
     subsequently advanced by Platform rather than by another LLM call.
     """
 
-    def __init__(self, platform: Platform, provider: Any, max_iterations: int = 6, max_repeated_tool_calls: int = 2):
+    def __init__(self, platform: Platform, provider: Any, max_iterations: int = 6, max_repeated_tool_calls: int = 2, max_tool_calls: int = 12, max_read_tool_calls: int = 8):
         self.platform = platform
         self.provider = provider
         self.max_iterations = max(1, max_iterations)
         self.max_repeated_tool_calls = max(1, max_repeated_tool_calls)
+        self.max_tool_calls = max(1, max_tool_calls)
+        self.max_read_tool_calls = max(1, max_read_tool_calls)
         self.view = AgentViewCompiler(platform.store)
+        self._last_usage: dict[str, Any] = {}
 
     def _complete(self, *, role: str, system: str, context: str, messages: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """Call old test providers and native tool-capable providers alike."""
@@ -76,7 +79,9 @@ class AgentEngine:
             kwargs["role"] = role
         if "messages" in parameters:
             kwargs["messages"] = messages
-        return method(**kwargs)
+        response = method(**kwargs)
+        self._last_usage = dict(response.pop("_usage", {}) or {}) if isinstance(response, dict) else {}
+        return response
 
     def run(self, *, role: str, actor_id: str, task_type: str = "decision") -> AgentTurn:
         if role not in ROLE_POLICIES:
@@ -100,6 +105,8 @@ class AgentEngine:
         last_result: dict[str, Any] = {"status": "no_result"}
         transcript: list[dict[str, Any]] = []
         repeated: dict[str, int] = {}
+        tool_calls_used = 0
+        read_tool_calls = 0
         conversation_messages: list[dict[str, Any]] = [
             {"role": "system", "content": ROLE_POLICIES[role]},
             {"role": "user", "content": render_context(context, task)},
@@ -108,6 +115,7 @@ class AgentEngine:
         for iteration in range(1, self.max_iterations + 1):
             prompt = render_context(context, task)
             try:
+                self._last_usage = {}
                 response = self._complete(role=role, system=ROLE_POLICIES[role], context=prompt, messages=conversation_messages)
                 if not isinstance(response, dict):
                     raise ValueError("LLM response must be a JSON object")
@@ -116,11 +124,11 @@ class AgentEngine:
                 context["last_platform_result"] = last_result
                 transcript.append({"step": "llm_error", "error": str(exc)})
                 context.setdefault("interaction_history", []).append({"kind": "llm_error", "error": str(exc)})
-                self._audit(actor_id, role, task_type, iteration, prompt, {"error": str(exc)}, "llm_error")
+                self._audit(actor_id, role, task_type, iteration, prompt, {"error": str(exc)}, "llm_error", usage=self._last_usage)
                 continue
             last_response = response
             transcript.append({"step": "llm", "response": response})
-            self._audit(actor_id, role, task_type, iteration, prompt, response, "response")
+            self._audit(actor_id, role, task_type, iteration, prompt, response, "response", usage=self._last_usage)
 
             try:
                 call = parse_tool_call(response)
@@ -132,36 +140,49 @@ class AgentEngine:
                 continue
 
             if call is not None:
-                tool_name, arguments = call
-                if response.get("tool_calls"):
-                    conversation_messages.append({"role": "assistant", "tool_calls": response["tool_calls"]})
-                signature_key = f"{tool_name}:{repr(sorted(arguments.items()))}"
-                repeated[signature_key] = repeated.get(signature_key, 0) + 1
-                if repeated[signature_key] > self.max_repeated_tool_calls:
-                    tool_result = {
-                        "status": "rejected",
-                        "tool": tool_name,
-                        "failed_check": "repeated_tool_call",
-                        "message": "The same tool request was repeated; use the previous result or choose an Intent.",
-                    }
+                native_tool_calls = response.get("tool_calls") if isinstance(response.get("tool_calls"), list) else None
+                calls: list[tuple[str, dict[str, Any], dict[str, Any] | None]] = []
+                if native_tool_calls:
+                    for native_call in native_tool_calls:
+                        parsed = parse_tool_call({"tool_calls": [native_call]})
+                        if parsed is not None:
+                            calls.append((parsed[0], parsed[1], native_call))
+                    conversation_messages.append({"role": "assistant", "tool_calls": native_tool_calls})
                 else:
-                    tool_result = executor.execute(tool_name, arguments)
-                transcript.append({"step": "tool", "name": tool_name, "arguments": arguments, "result": tool_result})
-                context.setdefault("interaction_history", []).extend([
-                    {"kind": "assistant_tool_call", "name": tool_name, "arguments": arguments},
-                    {"kind": "tool_result", "name": tool_name, "result": tool_result},
-                ])
-                context.setdefault("tool_results", []).append({"tool": tool_name, "result": tool_result})
-                context["last_platform_result"] = tool_result
-                last_result = tool_result
-                if response.get("tool_calls"):
-                    native_call = response["tool_calls"][0]
-                    conversation_messages.append({"role": "tool", "tool_call_id": native_call.get("id", "tool_call"), "name": tool_name, "content": json.dumps(tool_result, ensure_ascii=False)})
-                else:
+                    calls.append((call[0], call[1], None))
+                accepted_result: dict[str, Any] | None = None
+                for tool_name, arguments, native_call in calls:
+                    tool_calls_used += 1
+                    is_read_tool = TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "read"
+                    if is_read_tool:
+                        read_tool_calls += 1
+                    signature_key = f"{tool_name}:{repr(sorted(arguments.items()))}"
+                    repeated[signature_key] = repeated.get(signature_key, 0) + 1
+                    if tool_calls_used > self.max_tool_calls:
+                        tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "tool_budget", "message": "Tool-call budget exhausted; submit one final Intent now."}
+                    elif is_read_tool and read_tool_calls > self.max_read_tool_calls:
+                        tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "read_budget", "message": "Read budget exhausted; use the facts already collected and submit one final Intent."}
+                    elif repeated[signature_key] > self.max_repeated_tool_calls:
+                        tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "repeated_tool_call", "message": "The same tool request was repeated; use the previous result or choose the previous result."}
+                    else:
+                        tool_result = executor.execute(tool_name, arguments)
+                    transcript.append({"step": "tool", "name": tool_name, "arguments": arguments, "result": tool_result})
+                    context.setdefault("interaction_history", []).extend([
+                        {"kind": "assistant_tool_call", "name": tool_name, "arguments": arguments},
+                        {"kind": "tool_result", "name": tool_name, "result": tool_result},
+                    ])
+                    context.setdefault("tool_results", []).append({"tool": tool_name, "result": tool_result})
+                    context["last_platform_result"] = tool_result
+                    last_result = tool_result
+                    if native_call is not None:
+                        conversation_messages.append({"role": "tool", "tool_call_id": native_call.get("id", "tool_call"), "name": tool_name, "content": json.dumps(tool_result, ensure_ascii=False)})
+                    if TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "intent" and tool_result.get("status") in {"accepted", "wait"}:
+                        accepted_result = tool_result
+                if not native_tool_calls:
                     conversation_messages.append({"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
-                    conversation_messages.append({"role": "user", "content": f"Tool result ({tool_name}): {json.dumps(tool_result, ensure_ascii=False)}"})
-                if TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "intent" and tool_result.get("status") in {"accepted", "wait"}:
-                    return AgentTurn(role, task_type, last_response, tool_result, iteration, transcript)
+                    conversation_messages.append({"role": "user", "content": f"Tool results: {json.dumps(last_result, ensure_ascii=False)}"})
+                if accepted_result is not None:
+                    return AgentTurn(role, task_type, last_response, accepted_result, iteration, transcript)
                 continue
 
             result = self._submit_response(role, actor_id, response)
@@ -182,9 +203,11 @@ class AgentEngine:
     @staticmethod
     def _task_text(role: str, task_type: str) -> str:
         if role == "agent_decision":
+            if task_type.startswith("instant:"):
+                return f"Task type: {task_type}. Review the incoming instant interaction and choose one response, trade decision, behavior, or wait. Do not advance world time."
             return f"Task type: {task_type}. Select the best available behavior for the current goal, or wait if none is appropriate."
         if role == "agent_reflection":
-            return f"Task type: {task_type}. Review the recent experience and submit the smallest useful learning or behavior proposal."
+            return f"Task type: {task_type}. Review the latest behavior outcome and existing memories. Submit one new durable lesson or evolution proposal only if it improves a future decision; otherwise wait."
         if role == "god":
             return f"Task type: {task_type}. Review the world signal and submit one validated world proposal if needed."
         return f"Task type: {task_type}. Produce or refine one declarative world template."
@@ -205,6 +228,16 @@ class AgentEngine:
         try:
             if intent_type == "select_behavior":
                 return self.platform.submit_behavior(BehaviorIntent.from_json(data, actor_id=actor_id))
+            if intent_type == "send_message":
+                return self.platform.submit_dialogue(actor_id, str(data.get("target_id") or ""), str(data.get("topic") or "general"), str(data.get("message") or ""))
+            if intent_type == "create_trade_offer":
+                return self.platform.create_trade_offer(actor_id, str(data.get("recipient_id") or ""), dict(data.get("give") or {}), dict(data.get("want") or {}))
+            if intent_type == "accept_trade_offer":
+                return self.platform.accept_trade_offer(actor_id, str(data.get("offer_id") or ""))
+            if intent_type == "counter_trade_offer":
+                return self.platform.counter_trade_offer(actor_id, str(data.get("offer_id") or ""), dict(data.get("give") or {}), dict(data.get("want") or {}))
+            if intent_type == "reject_trade_offer":
+                return self.platform.reject_trade_offer(actor_id, str(data.get("offer_id") or ""))
             if intent_type == "record_experience":
                 return self.platform.submit_experience(actor_id, str(data.get("event_ref") or ""), str(data.get("summary") or ""), float(data.get("confidence", 1.0)))
             if intent_type == "update_belief":
@@ -238,6 +271,7 @@ class AgentEngine:
         context: str,
         response: dict[str, Any],
         status: str,
+        usage: dict[str, Any] | None = None,
     ) -> None:
         """Persist a redacted-size response and a context digest for replay."""
 
@@ -249,7 +283,22 @@ class AgentEngine:
             encoded = json.dumps(response, ensure_ascii=False)
             if len(encoded) > 16_000:
                 response = {"truncated": True, "sha256": hashlib.sha256(encoded.encode("utf-8")).hexdigest()}
-            self.platform.store.append_llm_call(actor_id, role, task_type, iteration, digest, response, status)
+            static_prefix = context.split("<world_state>", 1)[0]
+            dynamic_text = context[len(static_prefix):]
+            prefix_hash = hashlib.sha256(static_prefix.encode("utf-8")).hexdigest()
+            self.platform.store.append_llm_call(
+                actor_id,
+                role,
+                task_type,
+                iteration,
+                digest,
+                response,
+                status,
+                usage=usage or {},
+                static_prefix_hash=prefix_hash,
+                static_prefix_chars=len(static_prefix),
+                dynamic_chars=len(dynamic_text),
+            )
         except Exception:
             # Observability must never turn a valid Intent into a failed turn.
             return

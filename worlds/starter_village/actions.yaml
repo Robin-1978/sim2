@@ -20,6 +20,9 @@ actions:
   success:
     condition: actor.location == target.location
     result: arrived
+  effects:
+  - type: location_set
+    location_id: context.location_id
   failure:
     condition: actor.incapacitated
     result: failed
