@@ -83,7 +83,7 @@ LLM Agent 不直接依赖 SQLite。所有 Agent 输出经过 Intent 网关；所
 
 实现日级反思、周级个体创新、记忆摘要、信念和目标更新、Capability 熟练度以及 `BehaviorTreeProposalIntent`。AgentView 只保留当前地点、直接关系、相关知识、最高驱动、最多 5 个候选和最近结果，使用简明英语描述。
 
-验收：反思 Agent 能根据行动结果更新记忆和目标；新 BT 校验失败后能根据 Platform 的英语错误修正并重新提交。当前已完成 Reflection 角色会话、经验/信念/BT 提案 Intent、Platform 注册校验、低频日/周任务表和到期事件；目标更新、能力熟练度统计和完整的反思摘要仍需补齐。
+验收：反思 Agent 能根据行动结果更新记忆和目标；新 BT 校验失败后能根据 Platform 的英语错误修正并重新提交。当前已完成 Reflection 角色会话、经验/信念/目标/BT 提案 Intent、Platform 注册校验、低频日/周任务表和到期事件、动作/配方能力经验入口；完整的反思摘要和熟练度统计仍需补齐。
 
 ### M7：God Agent 与 WorldBuilder Agent
 

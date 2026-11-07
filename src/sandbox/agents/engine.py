@@ -27,7 +27,7 @@ ROLE_POLICIES = {
 
 ROLE_INTENTS = {
     "agent_decision": {"select_behavior", "wait"},
-    "agent_reflection": {"record_experience", "update_belief", "propose_behavior", "wait"},
+    "agent_reflection": {"record_experience", "update_belief", "update_goal", "propose_behavior", "wait"},
     "god": {"propose_entity", "propose_world_change", "wait"},
     "world_builder": {"submit_world_template", "wait"},
 }
@@ -180,6 +180,8 @@ class AgentEngine:
                 return self.platform.submit_experience(actor_id, str(data.get("event_ref") or ""), str(data.get("summary") or ""), float(data.get("confidence", 1.0)))
             if intent_type == "update_belief":
                 return self.platform.submit_belief_update(actor_id, str(data.get("belief_id") or ""), str(data.get("statement") or ""), float(data.get("confidence", 0.0)), str(data.get("reason") or ""))
+            if intent_type == "update_goal":
+                return self.platform.submit_goal_update(actor_id, str(data.get("goal_id") or "ultimate_goal"), str(data.get("statement") or ""), str(data.get("status") or "active"), float(data.get("priority", 1.0)))
             if intent_type == "propose_behavior":
                 proposal = dict(data)
                 proposal.pop("intent_type", None)

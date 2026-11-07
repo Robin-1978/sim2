@@ -148,6 +148,19 @@ def test_reflection_intent_is_committed_by_platform(tmp_path: Path):
         platform.close()
 
 
+def test_reflection_can_update_goal_through_platform(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "goal-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    provider = SequenceProvider([{"intent_type": "update_goal", "statement": "Confirm the safest route before the next fog cycle.", "priority": 0.9}])
+    try:
+        turn = AgentEngine(platform, provider).run(role="agent_reflection", actor_id="lu_xingzhou", task_type="goal_review")
+        assert turn.result["status"] == "accepted"
+        assert platform.store.get_agent("lu_xingzhou")["ultimate_goal"].startswith("Confirm the safest route")
+    finally:
+        platform.close()
+
+
 def test_decision_session_does_not_call_llm_while_behavior_is_active(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "active-world", tmp_path / "runtime")

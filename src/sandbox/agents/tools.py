@@ -107,6 +107,21 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "additionalProperties": False,
         },
     },
+    "update_goal": {
+        "purpose": "Submit a change to the agent's goal or goal progress.",
+        "kind": "intent",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "goal_id": {"type": "string"},
+                "statement": {"type": "string"},
+                "status": {"type": "string"},
+                "priority": {"type": "number", "minimum": 0, "maximum": 1},
+            },
+            "required": ["statement"],
+            "additionalProperties": False,
+        },
+    },
     "propose_behavior": {
         "purpose": "Propose a small behavior made only from registered actions for validation.",
         "kind": "intent",
@@ -183,7 +198,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
 
 ROLE_TOOLS: dict[str, list[str]] = {
     "agent_decision": ["observe_nearby", "inspect_entity", "recall_memory", "preview_behavior", "request_behavior"],
-    "agent_reflection": ["recall_memory", "record_experience", "update_belief", "propose_behavior"],
+    "agent_reflection": ["recall_memory", "record_experience", "update_belief", "update_goal", "propose_behavior"],
     "god": ["observe_nearby", "inspect_entity", "recall_memory", "preview_behavior", "propose_entity", "propose_world_change"],
     "world_builder": ["validate_world_template", "submit_world_template"],
 }
@@ -362,6 +377,9 @@ class AgentToolExecutor:
 
     def _update_belief(self, confidence: float, belief_id: str = "", statement: str = "", reason: str = "") -> dict[str, Any]:
         return self.platform.submit_belief_update(self.actor_id, belief_id, statement, float(confidence), reason)
+
+    def _update_goal(self, statement: str, goal_id: str = "ultimate_goal", status: str = "active", priority: float = 1.0) -> dict[str, Any]:
+        return self.platform.submit_goal_update(self.actor_id, goal_id, statement, status, float(priority))
 
     def _propose_behavior(
         self,

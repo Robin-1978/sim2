@@ -228,6 +228,33 @@ class Platform:
             self.store.finish_intent(intent_id, "accepted", result)
         return result
 
+    def submit_goal_update(self, actor_id: str, goal_id: str, statement: str, status: str, priority: float) -> dict[str, Any]:
+        intent_id = str(uuid4())
+        data = {"goal_id": goal_id, "statement": statement, "status": status, "priority": priority}
+        if not statement.strip():
+            return self._reject_intent(intent_id, actor_id, "update_goal", data, {"status": "rejected", "message": "Goal statement is required.", "failed_check": "statement", "retryable": True})
+        if not 0 <= priority <= 1:
+            return self._reject_intent(intent_id, actor_id, "update_goal", data, {"status": "rejected", "message": "Goal priority must be between 0 and 1.", "failed_check": "priority", "retryable": True})
+        world_minute = int(self.store.get_meta("world_minute", 0))
+        with self.store.transaction():
+            agent = self.store.get_agent(actor_id)
+            if goal_id in {"", "ultimate_goal"}:
+                agent["ultimate_goal"] = statement
+            else:
+                goals = list(agent.get("goals", []))
+                match = next((goal for goal in goals if goal.get("id") == goal_id), None)
+                if match is None:
+                    match = {"id": goal_id}
+                    goals.append(match)
+                match.update({"statement": statement, "status": status, "priority": priority, "updated_world_minute": world_minute})
+                agent["goals"] = goals
+            self.store.create_intent(intent_id, actor_id, "update_goal", data, world_minute)
+            self.store.update_agent(actor_id, agent)
+            self.store.append_event("goal.updated", actor_id, world_minute, data)
+            result = {"status": "accepted", "intent_id": intent_id, "goal_id": goal_id or "ultimate_goal"}
+            self.store.finish_intent(intent_id, "accepted", result)
+        return result
+
     def submit_behavior_proposal(self, actor_id: str, proposal: dict[str, Any]) -> dict[str, Any]:
         intent_id = str(uuid4())
         action_ids = list(proposal.get("action_ids") or [])
@@ -625,6 +652,14 @@ class Platform:
         effects = list(action.get("effects", []) or [])
         for effect in effects:
             self.effects.apply(agent, effect, target=parameters)
+            if effect.get("type") in {"capability_xp", "capability.add_xp"} or effect.get("op") == "capability.add_xp":
+                capability = effect.get("capability")
+                if capability:
+                    agent.setdefault("capabilities", {})[capability] = min(1.0, float(agent["capabilities"].get(capability, 0)) + float(effect.get("value", effect.get("delta", 0))))
+        for effect in action.get("capability_effects", []) or []:
+            capability = effect.get("capability")
+            if capability:
+                agent.setdefault("capabilities", {})[capability] = min(1.0, float(agent["capabilities"].get(capability, 0)) + float(effect.get("value", 0)))
         recipe_id = parameters.get("recipe_id")
         if not recipe_id:
             return
