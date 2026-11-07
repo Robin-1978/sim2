@@ -2,7 +2,7 @@
 
 ## 实施状态（2026-11-07）
 
-`M0` 和 `M1` 的 Agent 纵向切片已落地：配置创建 SQLite、AgentView、角色工具白名单、OpenAI-compatible 工具 Schema、统一 ReAct 会话、参数校验、工具结果和 Platform 错误回填、Decision/Reflection/God/WorldBuilder Intent 路由，以及 LLM 调用审计均已有代码和测试。当前 ReAct 会话默认最多 6 次模型调用，长时 BT 不在会话内推进；下一阶段进入 `M2` 的配置引用校验和更完整的 SQLite 投影，再进入分钟执行内核。
+`M0`–`M8` 的核心纵向切片已经落地并分阶段提交：统一 ReAct、通用配置创世、SQLite BT/Action 执行、条件/效果、探索与沟通知识、低频演化、God/WorldBuilder、玩家入口和控制/回放均有代码与测试。当前 ReAct 会话默认最多 6 次模型调用，长时 BT 不在会话内推进。剩余工作集中在并行 BT、完整目标/资源语义、记忆摘要与遗忘、势力规则演化、性能基准和完整场景验收。
 
 ## 开发目标
 
