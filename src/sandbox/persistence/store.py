@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -147,7 +148,10 @@ class WorldStore:
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(self.db_path)
+        # The control adapter may dispatch read requests on worker threads;
+        # Platform still serializes writes through ``transaction``.
+        self.connection = sqlite3.connect(self.db_path, check_same_thread=False)
+        self._write_lock = threading.RLock()
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys = ON")
         self.connection.execute("PRAGMA journal_mode = WAL")
@@ -157,13 +161,14 @@ class WorldStore:
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
-        try:
-            self.connection.execute("BEGIN IMMEDIATE")
-            yield self.connection
-            self.connection.commit()
-        except Exception:
-            self.connection.rollback()
-            raise
+        with self._write_lock:
+            try:
+                self.connection.execute("BEGIN IMMEDIATE")
+                yield self.connection
+                self.connection.commit()
+            except Exception:
+                self.connection.rollback()
+                raise
 
     def close(self) -> None:
         self.connection.close()
@@ -414,21 +419,22 @@ class WorldStore:
         response: dict[str, Any],
         status: str,
     ) -> int:
-        cur = self.connection.execute(
-            "INSERT INTO llm_call(actor_id,role,task_type,iteration,context_hash,response_json,status,world_minute) "
-            "VALUES (?,?,?,?,?,?,?,?)",
-            (
-                actor_id,
-                role,
-                task_type,
-                int(iteration),
-                context_hash,
-                json_dumps(response),
-                status,
-                int(self.get_meta("world_minute", 0)),
-            ),
-        )
-        self.connection.commit()
+        with self._write_lock:
+            cur = self.connection.execute(
+                "INSERT INTO llm_call(actor_id,role,task_type,iteration,context_hash,response_json,status,world_minute) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    actor_id,
+                    role,
+                    task_type,
+                    int(iteration),
+                    context_hash,
+                    json_dumps(response),
+                    status,
+                    int(self.get_meta("world_minute", 0)),
+                ),
+            )
+            self.connection.commit()
         return int(cur.lastrowid)
 
     def list_memories(self, agent_id: str, *, limit: int = 8, query: str = "") -> list[dict[str, Any]]:

@@ -1,5 +1,8 @@
 from pathlib import Path
 import pytest
+import json
+import threading
+from urllib.request import Request, urlopen
 from sandbox.intents.models import BehaviorIntent
 
 from sandbox.agents.engine import AgentEngine
@@ -7,6 +10,7 @@ from sandbox.agents.tools import AgentToolExecutor
 from sandbox.actions.conditions import ConditionEngine
 from sandbox.actions.effects import EffectPipeline
 from sandbox.api.service import ControlService
+from sandbox.api.http import ControlHTTPServer
 from sandbox.bootstrap.service import create_instance, validate_config
 from sandbox.platform.runtime import Platform
 from sandbox.prompting.renderer import render_context
@@ -410,3 +414,23 @@ def test_player_entry_and_snapshot_restore_use_platform(tmp_path: Path):
         assert platform.store.get_agent("player_one")["name"] == "Ari"
     finally:
         platform.close()
+
+
+def test_local_http_control_adapter_uses_platform(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "http-world", tmp_path / "runtime")
+    server = ControlHTTPServer(("127.0.0.1", 0), db_path)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with urlopen(base + "/status") as response:
+            status = json.loads(response.read())
+        assert status["status"] == "running"
+        request = Request(base + "/pause", data=b'{"reason":"test"}', headers={"content-type": "application/json"}, method="POST")
+        with urlopen(request) as response:
+            paused = json.loads(response.read())
+        assert paused["status"] == "paused"
+    finally:
+        server.close()
+        thread.join(timeout=2)
