@@ -128,6 +128,24 @@ Decision Agent 返回选择 Intent，而不是完整状态或 BT 定义：
 
 Platform 使用 SQLite 中的定义重新计算条件、成本和效果，忽略 LLM 自己填写的数值。校验失败时返回简短英语 `message`、`failed_check`、`repair_hint` 和新的可选项，LLM 在同一 ReAct 任务中修正 JSON。
 
+## ReAct 会话协议
+
+Agent Engine 以一次会话处理一个语义任务。会话不等待模拟分钟，也不把 LLM 调用放进 Action 的进度循环：
+
+```text
+AgentView + task
+  → model response
+  → tool_call(name, arguments)
+  → schema/permission validation
+  → tool_result or tool_error
+  → append compact result to the next context
+  → model response ...
+  → final Intent
+  → Platform accepted / rejected
+```
+
+工具错误和 Platform 拒绝都必须返回 `status`、`failed_check`、简短 `message` 和 `retryable`（适用时）。相同工具参数超过会话预算后停止重复调用。Intent 只有在 Platform 返回 `accepted` 或 `wait` 时结束会话；会话达到调用上限后返回 `budget_exhausted`，不产生副作用。原生 OpenAI-compatible `tool_calls` 与本地模型输出的 JSON `tool_call` 使用同一内部信封。决策 Agent 若已经有活动 BT，Engine 直接跳过 LLM，会话只在完成、失败或中断边界重新开启。
+
 ## LLM 创建新世界模板
 
 创建新世界使用独立的 `WorldBuilder Agent`，它和运行中的 God Agent 分离。WorldBuilder Agent 生成 `WorldTemplateDraft` JSON，Platform 校验后才创建新的配置包和 SQLite 实例。

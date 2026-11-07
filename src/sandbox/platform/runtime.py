@@ -41,7 +41,7 @@ class Platform:
         try:
             agent = self.store.get_agent(intent.actor_id)
         except KeyError:
-            return {"status": "rejected", "message": "The actor does not exist.", "failed_check": "actor"}
+            return {"status": "rejected", "message": "The actor does not exist.", "failed_check": "actor", "retryable": False}
         behavior_id = intent.behavior_ref.removeprefix("behavior:")
         intent_data = {
             "actor_id": intent.actor_id,
@@ -54,17 +54,17 @@ class Platform:
         available_defs = {x["id"]: x for x in self.store.get_definitions("bt_def")}
         if behavior_id not in available_defs:
             return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
-                "status": "rejected", "message": "The selected behavior is not registered.", "failed_check": "behavior_ref",
+                "status": "rejected", "message": "The selected behavior is not registered.", "failed_check": "behavior_ref", "retryable": True,
             })
         allowed = set(agent.get("initial_bt_ids", []))
         if behavior_id not in allowed:
             return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
-                "status": "rejected", "message": "This behavior is not available to this character.", "failed_check": "capability",
+                "status": "rejected", "message": "This behavior is not available to this character.", "failed_check": "capability", "retryable": True,
             })
         state = dict(agent.get("initial_state", {}))
         if state.get("status") in {"executing", "paused"}:
             return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
-                "status": "rejected", "message": "The actor already has an active behavior; wait for its result or an interrupt.", "failed_check": "active_behavior",
+                "status": "rejected", "message": "The actor already has an active behavior; wait for its result or an interrupt.", "failed_check": "active_behavior", "retryable": False,
             })
         bt = available_defs[behavior_id]
         try:
@@ -100,9 +100,9 @@ class Platform:
         data = {"event_ref": event_ref, "summary": summary, "confidence": confidence}
         intent_id = str(uuid4())
         if not summary.strip():
-            return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Experience summary is required.", "failed_check": "summary"})
+            return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Experience summary is required.", "failed_check": "summary", "retryable": True})
         if not 0 <= confidence <= 1:
-            return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Confidence must be between 0 and 1.", "failed_check": "confidence"})
+            return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Confidence must be between 0 and 1.", "failed_check": "confidence", "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             self.store.get_agent(actor_id)
@@ -117,9 +117,9 @@ class Platform:
         data = {"belief_id": belief_id, "statement": statement, "confidence": confidence, "reason": reason}
         intent_id = str(uuid4())
         if not statement and not belief_id:
-            return self._reject_intent(intent_id, actor_id, "update_belief", data, {"status": "rejected", "message": "A belief id or statement is required.", "failed_check": "belief"})
+            return self._reject_intent(intent_id, actor_id, "update_belief", data, {"status": "rejected", "message": "A belief id or statement is required.", "failed_check": "belief", "retryable": True})
         if not 0 <= confidence <= 1:
-            return self._reject_intent(intent_id, actor_id, "update_belief", data, {"status": "rejected", "message": "Confidence must be between 0 and 1.", "failed_check": "confidence"})
+            return self._reject_intent(intent_id, actor_id, "update_belief", data, {"status": "rejected", "message": "Confidence must be between 0 and 1.", "failed_check": "confidence", "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             agent = self.store.get_agent(actor_id)
@@ -157,7 +157,7 @@ class Platform:
             errors.append(f"behavior already exists: {behavior_id}")
         data = {**proposal, "behavior_id": behavior_id, "actor_id": actor_id}
         if errors:
-            return self._reject_intent(intent_id, actor_id, "propose_behavior", data, {"status": "rejected", "message": "Behavior proposal failed validation.", "errors": errors})
+            return self._reject_intent(intent_id, actor_id, "propose_behavior", data, {"status": "rejected", "message": "Behavior proposal failed validation.", "errors": errors, "retryable": True})
         estimated = 0
         nodes = []
         for action_id in action_ids:
@@ -209,7 +209,7 @@ class Platform:
         except KeyError:
             pass
         if errors:
-            return self._reject_intent(intent_id, actor_id, "propose_entity", data, {"status": "rejected", "message": "Entity proposal failed validation.", "errors": errors})
+            return self._reject_intent(intent_id, actor_id, "propose_entity", data, {"status": "rejected", "message": "Entity proposal failed validation.", "errors": errors, "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         entity_data = {"description": proposal.get("description", ""), "initial_state": dict(proposal.get("state") or {})}
         if proposal.get("location_id"):
@@ -225,7 +225,7 @@ class Platform:
     def submit_world_change(self, actor_id: str, proposal: dict[str, Any]) -> dict[str, Any]:
         intent_id = str(uuid4())
         if not proposal.get("change_type") or not proposal.get("summary"):
-            return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "change_type and summary are required."})
+            return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "change_type and summary are required.", "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             self.store.create_intent(intent_id, actor_id, "propose_world_change", proposal, world_minute)
@@ -237,7 +237,7 @@ class Platform:
     def validate_world_template(self, template: dict[str, Any]) -> dict[str, Any]:
         errors: list[str] = []
         if not isinstance(template, dict):
-            return {"status": "ok", "valid": False, "errors": ["template must be an object"]}
+            return {"status": "ok", "valid": False, "errors": ["template must be an object"], "failed_check": "template", "message": "Template must be an object.", "retryable": True}
         collections = {key: value for key, value in template.items() if isinstance(value, list)}
         for key, values in collections.items():
             ids = [value.get("id") for value in values if isinstance(value, dict)]
@@ -253,12 +253,19 @@ class Platform:
             for bt_id in agent.get("initial_bt_ids", []):
                 if bt_id not in bt_ids:
                     errors.append(f"agent {agent.get('id')} references unknown behavior {bt_id}")
-        return {"status": "ok", "valid": not errors, "errors": errors}
+        return {
+            "status": "ok",
+            "valid": not errors,
+            "errors": errors,
+            "failed_check": "template" if errors else None,
+            "message": "Template is valid." if not errors else "Template needs correction.",
+            "retryable": bool(errors),
+        }
 
     def submit_world_template(self, actor_id: str, template: dict[str, Any]) -> dict[str, Any]:
         validation = self.validate_world_template(template)
         if not validation["valid"]:
-            return {"status": "rejected", "message": "World template failed validation.", "errors": validation["errors"]}
+            return {"status": "rejected", "message": "World template failed validation.", "errors": validation["errors"], "retryable": True}
         intent_id = str(uuid4())
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
