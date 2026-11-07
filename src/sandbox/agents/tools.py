@@ -168,6 +168,10 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "scope": {"type": "string"},
                 "conditions": {"type": "array", "items": {"type": "string"}},
                 "effects": {"type": "array", "items": {"type": "string"}},
+                "property": {"type": "string"},
+                "value": {},
+                "rule": {"type": "object"},
+                "relationship": {"type": "object"},
             },
             "required": ["change_type", "summary"],
             "additionalProperties": False,
@@ -397,6 +401,10 @@ class AgentToolExecutor:
         scope: str = "world",
         conditions: list[str] | None = None,
         effects: list[str] | None = None,
+        property: str = "",
+        value: Any = None,
+        rule: dict[str, Any] | None = None,
+        relationship: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         proposal = {
             "change_type": change_type,
@@ -404,6 +412,10 @@ class AgentToolExecutor:
             "scope": scope,
             "conditions": list(conditions or []),
             "effects": list(effects or []),
+            "property": property,
+            "value": value,
+            "rule": dict(rule or {}),
+            "relationship": dict(relationship or {}),
         }
         return self.platform.submit_world_change(self.actor_id, proposal)
 

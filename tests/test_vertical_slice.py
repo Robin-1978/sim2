@@ -436,6 +436,25 @@ def test_god_proposal_creates_entity_only_through_platform(tmp_path: Path):
         platform.close()
 
 
+def test_god_world_change_and_trigger_create_platform_state(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "evolution-trigger-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        change = platform.submit_world_change("god", {"change_type": "world_property", "summary": "Adjust fog pressure.", "property": "fog_pressure", "value": 0.4})
+        assert change["status"] == "accepted"
+        assert platform.store.get_meta("world_properties")["fog_pressure"] == 0.4
+        resource = platform.store.get_entity("village_food")
+        resource["amount"] = 100
+        with platform.store.transaction():
+            platform.store.put_entity("village_food", resource["entity_type"], resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
+        platform.advance(1)
+        tasks = platform.ready_evolution_tasks()
+        assert any(task.get("trigger_id") == "food_crisis" for task in tasks)
+    finally:
+        platform.close()
+
+
 def test_world_builder_validates_then_submits_template(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "builder-world", tmp_path / "runtime")

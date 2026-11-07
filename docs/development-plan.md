@@ -89,7 +89,7 @@ LLM Agent 不直接依赖 SQLite。所有 Agent 输出经过 Intent 网关；所
 
 实现周/月世界创新、危机触发器、实体创建、规则候选、势力演化，以及 LLM 生成新世界模板的分阶段校验流程。God Agent 和 WorldBuilder Agent 使用更高层的世界摘要，但仍只提交 Intent。
 
-验收：God Agent 能提交合法的新实体或事件；非法提案不会改变世界；WorldBuilder Agent 能生成可导入的新世界模板。当前已完成 God/WorldBuilder 共用 Agent Engine、世界摘要视图、实体创建与世界变更 Intent、模板 Schema 校验、模板规范化和独立 SQLite 实例创建；更完整的规则/势力演化策略仍需扩展。
+验收：God Agent 能提交合法的新实体或事件；非法提案不会改变世界；WorldBuilder Agent 能生成可导入的新世界模板。当前已完成 God/WorldBuilder 共用 Agent Engine、世界摘要视图、实体创建与世界属性/规则/关系/事件变更 Intent、模板 Schema 校验、模板规范化和独立 SQLite 实例创建、配置危机触发器到 God/Reflection 任务的调度；更复杂的势力策略模型仍需扩展。
 
 ### M8：控制、观测和规模验证
 

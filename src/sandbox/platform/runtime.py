@@ -350,11 +350,39 @@ class Platform:
         intent_id = str(uuid4())
         if not proposal.get("change_type") or not proposal.get("summary"):
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "change_type and summary are required.", "retryable": True})
+        change_type = str(proposal["change_type"])
+        if change_type not in {"world_property", "rule", "relationship", "event"}:
+            return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "Unsupported world change type.", "failed_check": "change_type", "retryable": True})
+        if change_type == "world_property" and not proposal.get("property"):
+            return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "property is required for a world_property change.", "failed_check": "property", "retryable": True})
+        if change_type == "rule" and not isinstance(proposal.get("rule"), dict):
+            return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "rule object is required for a rule change.", "failed_check": "rule", "retryable": True})
+        if change_type == "relationship" and not isinstance(proposal.get("relationship"), dict):
+            return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "relationship object is required for a relationship change.", "failed_check": "relationship", "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             self.store.create_intent(intent_id, actor_id, "propose_world_change", proposal, world_minute)
-            self.store.append_event("world.change.proposed", actor_id, world_minute, proposal)
-            result = {"status": "accepted", "intent_id": intent_id, "applied": False, "message": "The proposal is recorded for the world validator."}
+            if change_type == "world_property":
+                properties = dict(self.store.get_meta("world_properties", {}) or {})
+                properties[str(proposal["property"])] = proposal.get("value")
+                self.store.set_meta("world_properties", properties)
+            elif change_type == "rule":
+                rules = dict(self.store.get_meta("rules", {}) or {})
+                world_rules = list(rules.get("world_rules", []))
+                world_rules.append(dict(proposal["rule"]))
+                rules["world_rules"] = world_rules
+                self.store.set_meta("rules", rules)
+            elif change_type == "relationship":
+                relation = dict(proposal["relationship"])
+                source = relation.pop("from", relation.pop("from_id", ""))
+                target = relation.pop("to", relation.pop("to_id", ""))
+                relation_type = str(relation.pop("type", "related"))
+                if not source or not target:
+                    self.store.finish_intent(intent_id, "rejected", {"status": "rejected", "message": "relationship from and to are required.", "failed_check": "relationship", "retryable": True})
+                    return {"status": "rejected", "message": "relationship from and to are required.", "failed_check": "relationship", "retryable": True}
+                self.store.put_relationship(str(source), str(target), relation_type, relation)
+            self.store.append_event(f"world.change.{change_type}", actor_id, world_minute, proposal)
+            result = {"status": "accepted", "intent_id": intent_id, "applied": True, "change_type": change_type}
             self.store.finish_intent(intent_id, "accepted", result)
         return result
 
@@ -880,6 +908,46 @@ class Platform:
         self.store.update_bt_instance(execution_id, status=status, current_node=int(state.get("active_action_index", 0)), data={"result": result}, updated_minute=minute)
         self.store.append_event(f"behavior.{status}", agent["id"], minute, {"execution_id": execution_id, "behavior_id": behavior_id, "result": result})
 
+    def _world_trigger_context(self) -> dict[str, Any]:
+        context = dict(self.store.get_meta("world_properties", {}) or {})
+        for resource in self.store.entities_of_type("resource"):
+            try:
+                entity = self.store.get_entity(resource["id"])
+            except KeyError:
+                continue
+            amount = entity.get("amount", (entity.get("initial_state") or {}).get("quantity"))
+            if isinstance(amount, (int, float)):
+                context[resource["id"]] = amount
+        return context
+
+    def _emit_evolution_triggers(self, minute: int) -> None:
+        evolution = self.store.get_meta("evolution", {}) or {}
+        config = evolution.get("evolution", evolution) if isinstance(evolution, dict) else {}
+        triggers = config.get("triggers", []) if isinstance(config, dict) else []
+        states = dict(self.store.get_meta("evolution_trigger_state", {}) or {})
+        world = self._world_trigger_context()
+        agents = {agent["id"] for agent in self.store.list_agents()}
+        for trigger in triggers:
+            trigger_id = str(trigger.get("id", ""))
+            if not trigger_id:
+                continue
+            expression = str(trigger.get("when", ""))
+            active = self.conditions.evaluate(expression, agent={}, target={}, world=world, context={}) if expression else False
+            previous = bool(states.get(trigger_id, False))
+            if active and not previous:
+                self.store.append_event("evolution.triggered", None, minute, {"trigger_id": trigger_id, "condition": expression, "invoke": trigger.get("invoke", [])})
+                for index, target in enumerate(trigger.get("invoke", []) or []):
+                    target = str(target)
+                    if target in agents:
+                        role, task_type, actor_id = "agent_reflection", f"trigger:{trigger_id}", target
+                    elif target.startswith("god"):
+                        role, task_type, actor_id = "god", target, None
+                    else:
+                        role, task_type, actor_id = "agent_reflection", target, None
+                    self.store.put_evolution_task(f"trigger:{trigger_id}:{minute}:{index}", role, actor_id, task_type, minute, 0, data={"trigger_id": trigger_id})
+            states[trigger_id] = active
+        self.store.set_meta("evolution_trigger_state", states)
+
     def _emit_due_evolution_tasks(self, minute: int) -> None:
         for task in self.store.due_evolution_tasks(minute):
             self.store.mark_evolution_task_ready(task["task_id"])
@@ -931,6 +999,7 @@ class Platform:
                         failed.append(agent["id"])
                 self.store.set_meta("world_minute", minute)
                 self.store.append_event("world_minute.advanced", None, minute, {"minute": minute})
+                self._emit_evolution_triggers(minute)
                 self._emit_due_evolution_tasks(minute)
         return {"status": "advanced", "from_minute": start, "to_minute": start + minutes, "completed_agents": sorted(set(completed)), "failed_agents": sorted(set(failed))}
 

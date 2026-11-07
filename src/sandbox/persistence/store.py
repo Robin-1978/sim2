@@ -327,6 +327,9 @@ class WorldStore:
         row = self.connection.execute("SELECT cadence_minutes FROM evolution_task WHERE task_id=?", (task_id,)).fetchone()
         if row is None:
             return
+        if int(row["cadence_minutes"]) <= 0:
+            self.connection.execute("UPDATE evolution_task SET status='completed' WHERE task_id=?", (task_id,))
+            return
         self.connection.execute(
             "UPDATE evolution_task SET due_minute=?,status='scheduled' WHERE task_id=?",
             (int(completed_minute) + int(row["cadence_minutes"]), task_id),
