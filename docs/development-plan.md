@@ -95,7 +95,9 @@ LLM Agent 不直接依赖 SQLite。所有 Agent 输出经过 Intent 网关；所
 
 实现 API、实例管理、暂停/继续、单步推进、外部事件注入、审计导出、快照恢复、指标、Prompt 缓存命中率和 Agent 成本分析。运行雾溪村完整场景，覆盖玩家进入、探索、沟通、制作、战斗、反思和 God Agent 演化。
 
-验收：配置创世、分钟推进、LLM 驱动的 Agent 自动演化、玩家进入、知识传播、战斗中断、BT 演化、世界实体创建和确定性回放全部通过。当前已完成 transport-neutral `ControlService` 和 CLI 控制命令、本地 HTTP 控制适配器、暂停/继续/单步、外部事件注入、玩家模板入口、SQLite 一致性快照、快照恢复、审计导出和基础运行指标；性能基准和完整玩家场景仍需补齐。
+验收：配置创世、分钟推进、LLM 驱动的 Agent 自动演化、玩家进入、知识传播、战斗中断、BT 演化、世界实体创建和确定性回放全部通过。当前已完成 transport-neutral `ControlService` 和 CLI 控制命令、本地 HTTP 控制适配器、暂停/继续/单步、外部事件注入、玩家模板入口、SQLite 一致性快照、快照恢复、审计导出、基础运行指标和相同配置/Intent 的事件序列回放测试；性能基准和完整玩家场景仍需补齐。
+
+性能测量入口为 `PYTHONPATH=src python scripts/benchmark_platform.py --agents 1000`；它只测非 LLM 的一个模拟分钟，不把网络模型延迟混入 Platform 指标。
 
 ## 测试层次
 

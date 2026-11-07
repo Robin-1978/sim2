@@ -434,3 +434,24 @@ def test_local_http_control_adapter_uses_platform(tmp_path: Path):
     finally:
         server.close()
         thread.join(timeout=2)
+
+
+def test_same_config_and_intent_replay_same_event_sequence(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    first_db = create_instance(config, "replay-a", tmp_path / "runtime")
+    second_db = create_instance(config, "replay-b", tmp_path / "runtime")
+    first = Platform(first_db)
+    second = Platform(second_db)
+    intent_data = dict(actor_id="lu_xingzhou", behavior_ref="behavior:explore_greywood", target={}, parameters={}, reason="Replay", confidence=0.8, intent_id="replay-intent")
+    try:
+        first.submit_behavior(BehaviorIntent(**intent_data))
+        second.submit_behavior(BehaviorIntent(**intent_data))
+        first.advance(3)
+        second.advance(3)
+        select = "SELECT event_type,actor_id,world_minute,data_json FROM event_log ORDER BY event_id"
+        first_events = [tuple(row) for row in first.store.connection.execute(select).fetchall()]
+        second_events = [tuple(row) for row in second.store.connection.execute(select).fetchall()]
+        assert first_events == second_events
+    finally:
+        first.close()
+        second.close()
