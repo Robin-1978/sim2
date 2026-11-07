@@ -196,6 +196,22 @@ class WorldStore:
             (status, json_dumps(result), intent_id),
         )
 
+    def get_intent(self, intent_id: str) -> dict[str, Any] | None:
+        row = self.connection.execute(
+            "SELECT intent_id,actor_id,intent_type,status,data_json,result_json FROM intent WHERE intent_id=?",
+            (intent_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "intent_id": row["intent_id"],
+            "actor_id": row["actor_id"],
+            "intent_type": row["intent_type"],
+            "status": row["status"],
+            "data": json.loads(row["data_json"]),
+            "result": json.loads(row["result_json"]) if row["result_json"] else None,
+        }
+
     def update_agent(self, agent_id: str, data: dict[str, Any]) -> None:
         self.connection.execute("UPDATE agent_state SET data_json=? WHERE id=?", (json_dumps(data), agent_id))
         self.connection.execute("UPDATE entity SET data_json=? WHERE id=?", (json_dumps(data), agent_id))

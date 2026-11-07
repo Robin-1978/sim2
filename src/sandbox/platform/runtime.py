@@ -35,6 +35,9 @@ class Platform:
         return result
 
     def submit_behavior(self, intent: BehaviorIntent) -> dict[str, Any]:
+        previous = self.store.get_intent(intent.intent_id)
+        if previous is not None:
+            return previous["result"] or {"status": previous["status"], "intent_id": intent.intent_id}
         try:
             agent = self.store.get_agent(intent.actor_id)
         except KeyError:

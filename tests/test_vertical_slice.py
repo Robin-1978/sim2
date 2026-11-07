@@ -1,4 +1,5 @@
 from pathlib import Path
+from sandbox.intents.models import BehaviorIntent
 
 from sandbox.agents.engine import AgentEngine
 from sandbox.bootstrap.service import create_instance
@@ -151,5 +152,27 @@ def test_decision_session_does_not_call_llm_while_behavior_is_active(tmp_path: P
         assert skipped.result["status"] == "skipped"
         assert skipped.iterations == 0
         assert second.calls == []
+    finally:
+        platform.close()
+
+
+def test_behavior_intent_is_idempotent(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "idempotent-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    intent = BehaviorIntent(
+        actor_id="lu_xingzhou",
+        behavior_ref="behavior:explore_greywood",
+        target={},
+        parameters={},
+        reason="Explore the unknown area.",
+        confidence=0.8,
+        intent_id="stable-intent",
+    )
+    try:
+        first = platform.submit_behavior(intent)
+        second = platform.submit_behavior(intent)
+        assert first["status"] == "accepted"
+        assert second == first
     finally:
         platform.close()
