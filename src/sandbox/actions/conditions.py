@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+import yaml
+
 
 class ConditionEngine:
     """Evaluate the small declarative predicate language used by definitions.
@@ -18,6 +20,8 @@ class ConditionEngine:
         expression = str(expression or "").strip()
         if not expression:
             return True
+        if expression.startswith("(") and expression.endswith(")"):
+            expression = expression[1:-1].strip()
         for operator in (" or ", " and "):
             if operator in expression:
                 parts = [part.strip() for part in expression.split(operator)]
@@ -25,6 +29,17 @@ class ConditionEngine:
                 return any(values) if operator.strip() == "or" else all(values)
         if expression.startswith("not "):
             return not self.evaluate(expression[4:], agent=agent, target=target, world=world, context=context)
+        for operator in (" not_in ", " in "):
+            if operator in expression:
+                left_path, right_text = expression.split(operator, 1)
+                left = self._value(left_path.strip(), agent, target, world, context)
+                right = self._literal(right_text)
+                if left is None:
+                    return False
+                try:
+                    return left not in right if operator.strip() == "not_in" else left in right
+                except TypeError:
+                    return False
         comparison = self._comparison.match(expression)
         if comparison:
             left = self._value(comparison.group(1), agent, target, world, context)
@@ -32,7 +47,8 @@ class ConditionEngine:
             if left is None:
                 return False
             try:
-                return {"==": left == right, "!=": left != right, ">=": left >= right, "<=": left <= right, ">": left > right, "<": left < right}[comparison.group(2)]
+                operator = comparison.group(2)
+                return {"==": left == right, "!=": left != right, ">=": left >= right, "<=": left <= right, ">": left > right, "<": left < right}[operator]
             except TypeError:
                 return False
         return bool(self._value(expression, agent, target, world, context))
@@ -53,6 +69,12 @@ class ConditionEngine:
             aliases = {"explore": "exploration", "speak": "conversation", "communicate": "conversation", "craft": "cooking", "attack": "combat", "defend": "defense", "gather": "gather", "research": "research", "inspect": "investigation", "negotiate": "conversation", "sound_alarm": "alarm", "mediate": "mediation"}
             value = agent.get("capabilities", {}).get(aliases.get(capability, capability), 0)
             return float(value or 0) > 0
+        if path == "actor.faction_id":
+            factions = agent.get("faction_ids", [])
+            return factions[0] if factions else None
+        if path.startswith("actor.permission."):
+            permissions = agent.get("permissions", {})
+            return permissions.get(path.removeprefix("actor.permission."), False)
         if path.startswith("actor.is_"):
             role = str(agent.get("role", "")).lower()
             expected = path.removeprefix("actor.is_").replace("_", " ")
@@ -93,6 +115,11 @@ class ConditionEngine:
     @staticmethod
     def _literal(value: str) -> Any:
         value = value.strip().strip("\"")
+        if value.startswith("[") or value.startswith("{"):
+            try:
+                return yaml.safe_load(value)
+            except yaml.YAMLError:
+                return value
         if value.lower() in {"true", "false"}:
             return value.lower() == "true"
         try:

@@ -304,6 +304,8 @@ def test_generic_condition_and_effect_components():
     conditions = ConditionEngine()
     assert conditions.evaluate("actor.alive and actor.can_explore", agent=agent)
     assert not conditions.evaluate("actor.can_fly", agent=agent)
+    agent["faction_ids"] = ["village_watch"]
+    assert conditions.evaluate("actor.faction_id not_in [root_keepers]", agent=agent)
     effects = EffectPipeline()
     result = effects.apply(agent, {"type": "inventory_add", "item": "map", "quantity": 1})
     assert result["applied"] is True
