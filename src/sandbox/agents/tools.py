@@ -36,6 +36,36 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "additionalProperties": False,
         },
     },
+    "listen": {
+        "purpose": "Read recent public events that can be heard at the current location.",
+        "kind": "read",
+        "parameters": {
+            "type": "object",
+            "properties": {"question": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 8}},
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
+    "read_public_record": {
+        "purpose": "Read a public document, location or faction record.",
+        "kind": "read",
+        "parameters": {
+            "type": "object",
+            "properties": {"entity_id": {"type": "string"}, "question": {"type": "string"}},
+            "required": ["entity_id"],
+            "additionalProperties": False,
+        },
+    },
+    "query_known_fact": {
+        "purpose": "Search facts already known by this agent.",
+        "kind": "read",
+        "parameters": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 8}},
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
     "recall_memory": {
         "purpose": "Recall the agent's own retained experiences and knowledge.",
         "kind": "read",
@@ -201,9 +231,9 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
 
 
 ROLE_TOOLS: dict[str, list[str]] = {
-    "agent_decision": ["observe_nearby", "inspect_entity", "recall_memory", "preview_behavior", "request_behavior"],
-    "agent_reflection": ["recall_memory", "record_experience", "update_belief", "update_goal", "propose_behavior"],
-    "god": ["observe_nearby", "inspect_entity", "recall_memory", "preview_behavior", "propose_entity", "propose_world_change"],
+    "agent_decision": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "request_behavior"],
+    "agent_reflection": ["recall_memory", "query_known_fact", "record_experience", "update_belief", "update_goal", "propose_behavior"],
+    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "propose_entity", "propose_world_change"],
     "world_builder": ["validate_world_template", "submit_world_template"],
 }
 
@@ -315,6 +345,15 @@ class AgentToolExecutor:
 
     def _inspect_entity(self, entity_id: str, question: str = "") -> dict[str, Any]:
         return self.platform.perception.inspect_entity(self.actor_id, entity_id, question, global_scope=self.role in {"god", "world_builder"})
+
+    def _listen(self, question: str = "", limit: int = 5) -> dict[str, Any]:
+        return self.platform.perception.listen(self.actor_id, question, limit)
+
+    def _read_public_record(self, entity_id: str, question: str = "") -> dict[str, Any]:
+        return self.platform.perception.read_public_record(self.actor_id, entity_id, question)
+
+    def _query_known_fact(self, query: str = "", limit: int = 8) -> dict[str, Any]:
+        return self.platform.perception.query_known_fact(self.actor_id, query, limit)
 
     def _recall_memory(self, question: str = "", limit: int = 8) -> dict[str, Any]:
         return self.platform.memory.recall(self.actor_id, question, limit)

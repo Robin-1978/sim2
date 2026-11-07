@@ -243,6 +243,17 @@ class WorldStore:
         )
         return int(cur.lastrowid)
 
+    def merge_knowledge_fact(self, agent_id: str, fact_key: str, data: dict[str, Any]) -> int:
+        confidence = float(data.get("confidence", 0.5))
+        row = self.connection.execute("SELECT id,data_json FROM knowledge_fact WHERE agent_id=? AND fact_key=? ORDER BY id DESC LIMIT 1", (agent_id, fact_key)).fetchone()
+        if row is None:
+            return self.put_knowledge_fact(agent_id, fact_key, data)
+        current = json.loads(row["data_json"])
+        old_confidence = float(current.get("confidence", 0.5))
+        merged = {**current, **data, "confidence": round((old_confidence + confidence) / 2, 4), "evidence_count": int(current.get("evidence_count", 1)) + 1}
+        self.connection.execute("UPDATE knowledge_fact SET data_json=? WHERE id=?", (json_dumps(merged), row["id"]))
+        return int(row["id"])
+
     def list_knowledge_facts(self, agent_id: str, *, limit: int = 8) -> list[dict[str, Any]]:
         rows = self.connection.execute(
             "SELECT id,fact_key,data_json FROM knowledge_fact WHERE agent_id=? ORDER BY id DESC LIMIT ?",
@@ -401,6 +412,13 @@ class WorldStore:
         )
         return int(cur.lastrowid)
 
+    def recent_events(self, *, limit: int = 20) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT event_id,event_type,actor_id,world_minute,data_json FROM event_log ORDER BY event_id DESC LIMIT ?",
+            (max(1, min(int(limit), 100)),),
+        ).fetchall()
+        return [{"event_id": row["event_id"], "event_type": row["event_type"], "actor_id": row["actor_id"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
+
     def create_intent(self, intent_id: str, actor_id: str, intent_type: str, data: dict[str, Any], world_minute: int) -> None:
         self.connection.execute(
             "INSERT INTO intent(intent_id,actor_id,intent_type,status,data_json,created_minute) VALUES (?,?,?,?,?,?)",
@@ -432,6 +450,11 @@ class WorldStore:
     def update_agent(self, agent_id: str, data: dict[str, Any]) -> None:
         self.connection.execute("UPDATE agent_state SET data_json=? WHERE id=?", (json_dumps(data), agent_id))
         self.connection.execute("UPDATE entity SET data_json=? WHERE id=?", (json_dumps(data), agent_id))
+
+    def update_agents_bulk(self, agents: list[dict[str, Any]]) -> None:
+        rows = [(json_dumps(agent), agent["id"]) for agent in agents]
+        self.connection.executemany("UPDATE agent_state SET data_json=? WHERE id=?", rows)
+        self.connection.executemany("UPDATE entity SET data_json=? WHERE id=?", rows)
 
     def put_memory(self, agent_id: str, memory_type: str, data: dict[str, Any]) -> int:
         encoded = json_dumps(data)

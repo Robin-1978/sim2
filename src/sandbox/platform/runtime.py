@@ -553,12 +553,14 @@ class Platform:
             scope = effect.get("scope")
             definition = effect.get("effect", {}) or {}
             if scope == "agent":
+                changed_agents: list[dict[str, Any]] = []
                 for agent in self.store.list_agents():
                     state = dict(agent.get("initial_state") or {})
                     if effect.get("condition") == "action.none" and state.get("status") in {"executing", "paused"}:
                         continue
                     self._apply_simple_effect(agent, definition)
-                    self.store.update_agent(agent["id"], agent)
+                    changed_agents.append(agent)
+                self.store.update_agents_bulk(changed_agents)
             elif scope == "world":
                 properties = dict(self.store.get_meta("world_properties", {}) or {})
                 key = definition.get("world_property") or definition.get("property") or definition.get("need")
@@ -858,11 +860,11 @@ class Platform:
         if area_id:
             area_id = str(area_id)
             result_id = self.store.put_exploration_result(agent["id"], area_id, minute, {"source": action.get("id"), "parameters": parameters})
-            self.store.put_knowledge_fact(agent["id"], f"explored:{area_id}", {"fact": f"Area {area_id} was explored.", "source_type": "exploration", "source_id": result_id, "confidence": 0.8, "observed_at": minute})
+            self.store.merge_knowledge_fact(agent["id"], f"explored:{area_id}", {"fact": f"Area {area_id} was explored.", "source_type": "exploration", "source_id": result_id, "confidence": 0.8, "observed_at": minute})
             self.store.append_event("exploration.completed", agent["id"], minute, {"area_id": area_id, "result_id": result_id})
         if source_id:
             source_id = str(source_id)
-            self.store.put_knowledge_fact(agent["id"], f"researched:{source_id}", {"fact": f"Source {source_id} was researched.", "source_type": "research", "confidence": 0.8, "observed_at": minute})
+            self.store.merge_knowledge_fact(agent["id"], f"researched:{source_id}", {"fact": f"Source {source_id} was researched.", "source_type": "research", "confidence": 0.8, "observed_at": minute})
             self.store.append_event("research.completed", agent["id"], minute, {"source_id": source_id})
         if target_id and topic:
             target_id = str(target_id)
@@ -990,6 +992,8 @@ class Platform:
                 self._apply_minute_effects(minute)
                 for agent in self.store.list_agents():
                     before = agent.get("initial_state", {}).get("active_bt_instance")
+                    if not before:
+                        continue
                     self._progress_agent(agent, minute)
                     after = self.store.get_agent(agent["id"]).get("initial_state", {})
                     result = after.get("last_platform_result") or {}

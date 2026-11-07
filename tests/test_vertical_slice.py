@@ -252,6 +252,22 @@ def test_read_tool_respects_agent_visibility(tmp_path: Path):
         platform.close()
 
 
+def test_perception_channels_are_scoped_and_model_readable(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "perception-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        executor = AgentToolExecutor(platform, role="agent_decision", actor_id="lu_xingzhou")
+        listened = executor.execute("listen", {"question": "What happened nearby?"})
+        assert listened["status"] == "ok"
+        known = executor.execute("query_known_fact", {"query": "village"})
+        assert known["status"] == "ok"
+        public = executor.execute("read_public_record", {"entity_id": "village_square"})
+        assert public["status"] == "ok"
+    finally:
+        platform.close()
+
+
 def test_bootstrap_imports_generic_relationships_and_knowledge(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "import-world", tmp_path / "runtime")
@@ -580,3 +596,25 @@ def test_same_config_and_intent_replay_same_event_sequence(tmp_path: Path):
     finally:
         first.close()
         second.close()
+
+
+def test_starter_village_end_to_end_scenario(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "full-scenario", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        assert platform.enter_player("player_courier", "courier")["status"] == "accepted"
+        decision_provider = SequenceProvider([{"behavior_ref": "behavior:explore_greywood", "reason": "Map the unknown area.", "confidence": 0.9}])
+        decision = AgentEngine(platform, decision_provider).run(role="agent_decision", actor_id="lu_xingzhou")
+        assert decision.result["status"] == "accepted"
+        platform.advance(241)
+        assert any(item["fact_key"] == "explored:greywood_edge" for item in platform.store.list_knowledge_facts("lu_xingzhou"))
+        reflection_provider = SequenceProvider([{"intent_type": "record_experience", "event_ref": "exploration.completed", "summary": "The survey revealed a route boundary.", "confidence": 0.9}])
+        reflection = AgentEngine(platform, reflection_provider).run(role="agent_reflection", actor_id="lu_xingzhou", task_type="daily_reflection")
+        assert reflection.result["status"] == "accepted"
+        god_provider = SequenceProvider([{"tool_call": {"name": "propose_entity", "arguments": {"entity_type": "landmark", "name": "Survey Marker", "location_id": "greywood_edge"}}}])
+        god = AgentEngine(platform, god_provider).run(role="god", actor_id="god")
+        assert god.result["status"] == "accepted"
+        assert platform.metrics()["events"] > 0
+    finally:
+        platform.close()
