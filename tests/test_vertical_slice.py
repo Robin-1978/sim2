@@ -471,6 +471,19 @@ def test_god_world_change_and_trigger_create_platform_state(tmp_path: Path):
         platform.close()
 
 
+def test_god_can_update_faction_strategy_through_platform(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "faction-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        result = platform.submit_world_change("god", {"change_type": "faction", "summary": "The watch changes patrol policy.", "faction": {"id": "village_watch", "strategy": "protect_boundary", "norms": ["protect_civilians", "verify_unknowns"]}})
+        assert result["status"] == "accepted"
+        faction = platform.store.get_entity("village_watch")
+        assert faction["strategy"] == "protect_boundary"
+    finally:
+        platform.close()
+
+
 def test_world_builder_validates_then_submits_template(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "builder-world", tmp_path / "runtime")

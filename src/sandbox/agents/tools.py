@@ -202,6 +202,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "value": {},
                 "rule": {"type": "object"},
                 "relationship": {"type": "object"},
+                "faction": {"type": "object"},
             },
             "required": ["change_type", "summary"],
             "additionalProperties": False,
@@ -444,6 +445,7 @@ class AgentToolExecutor:
         value: Any = None,
         rule: dict[str, Any] | None = None,
         relationship: dict[str, Any] | None = None,
+        faction: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         proposal = {
             "change_type": change_type,
@@ -455,6 +457,7 @@ class AgentToolExecutor:
             "value": value,
             "rule": dict(rule or {}),
             "relationship": dict(relationship or {}),
+            "faction": dict(faction or {}),
         }
         return self.platform.submit_world_change(self.actor_id, proposal)
 

@@ -351,7 +351,7 @@ class Platform:
         if not proposal.get("change_type") or not proposal.get("summary"):
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "change_type and summary are required.", "retryable": True})
         change_type = str(proposal["change_type"])
-        if change_type not in {"world_property", "rule", "relationship", "event"}:
+        if change_type not in {"world_property", "rule", "relationship", "faction", "event"}:
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "Unsupported world change type.", "failed_check": "change_type", "retryable": True})
         if change_type == "world_property" and not proposal.get("property"):
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "property is required for a world_property change.", "failed_check": "property", "retryable": True})
@@ -359,6 +359,8 @@ class Platform:
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "rule object is required for a rule change.", "failed_check": "rule", "retryable": True})
         if change_type == "relationship" and not isinstance(proposal.get("relationship"), dict):
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "relationship object is required for a relationship change.", "failed_check": "relationship", "retryable": True})
+        if change_type == "faction" and not isinstance(proposal.get("faction"), dict):
+            return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "faction object is required for a faction change.", "failed_check": "faction", "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             self.store.create_intent(intent_id, actor_id, "propose_world_change", proposal, world_minute)
@@ -381,6 +383,19 @@ class Platform:
                     self.store.finish_intent(intent_id, "rejected", {"status": "rejected", "message": "relationship from and to are required.", "failed_check": "relationship", "retryable": True})
                     return {"status": "rejected", "message": "relationship from and to are required.", "failed_check": "relationship", "retryable": True}
                 self.store.put_relationship(str(source), str(target), relation_type, relation)
+            elif change_type == "faction":
+                faction = dict(proposal["faction"])
+                faction_id = str(faction.pop("id", faction.pop("faction_id", "")))
+                if not faction_id:
+                    self.store.finish_intent(intent_id, "rejected", {"status": "rejected", "message": "faction id is required.", "failed_check": "faction.id", "retryable": True})
+                    return {"status": "rejected", "message": "faction id is required.", "failed_check": "faction.id", "retryable": True}
+                try:
+                    current = self.store.get_entity(faction_id)
+                except KeyError:
+                    self.store.finish_intent(intent_id, "rejected", {"status": "rejected", "message": "faction does not exist.", "failed_check": "faction.id", "retryable": True})
+                    return {"status": "rejected", "message": "faction does not exist.", "failed_check": "faction.id", "retryable": True}
+                current.update(faction)
+                self.store.put_entity(faction_id, "faction", current.get("name", faction_id), {key: value for key, value in current.items() if key not in {"id", "entity_type", "name"}})
             self.store.append_event(f"world.change.{change_type}", actor_id, world_minute, proposal)
             result = {"status": "accepted", "intent_id": intent_id, "applied": True, "change_type": change_type}
             self.store.finish_intent(intent_id, "accepted", result)
