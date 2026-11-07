@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import statistics
 import tempfile
 import time
 from pathlib import Path
@@ -20,9 +21,12 @@ from sandbox.platform.runtime import Platform
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--agents", type=int, default=1000)
+    parser.add_argument("--runs", type=int, default=5)
     args = parser.parse_args()
     if args.agents < 1:
         raise SystemExit("--agents must be positive")
+    if args.runs < 1:
+        raise SystemExit("--runs must be positive")
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     with tempfile.TemporaryDirectory(prefix="sim2-benchmark-") as directory:
         db_path = create_instance(config, "benchmark", Path(directory))
@@ -36,10 +40,14 @@ def main() -> None:
                     value["id"] = agent_id
                     value["name"] = agent_id
                     platform.store.put_agent(agent_id, value, agent_id)
-            started = time.perf_counter()
-            result = platform.advance(1)
-            elapsed_ms = (time.perf_counter() - started) * 1000
-            print(json.dumps({"agents": args.agents, "elapsed_ms": round(elapsed_ms, 3), "result": result}, ensure_ascii=False))
+            durations = []
+            result = None
+            for _ in range(args.runs):
+                started = time.perf_counter()
+                result = platform.advance(1)
+                durations.append((time.perf_counter() - started) * 1000)
+            p95 = statistics.quantiles(durations, n=20, method="inclusive")[18] if len(durations) >= 2 else durations[0]
+            print(json.dumps({"agents": args.agents, "runs": args.runs, "elapsed_ms": [round(value, 3) for value in durations], "p95_ms": round(p95, 3), "result": result}, ensure_ascii=False))
         finally:
             platform.close()
 
