@@ -222,3 +222,58 @@ def test_invalid_reference_fails_before_sqlite_creation(tmp_path: Path):
     with pytest.raises(ValueError):
         create_instance(copied, "invalid", tmp_path / "runtime")
     assert not (tmp_path / "runtime" / "instances" / "invalid" / "world.sqlite3").exists()
+
+
+def test_platform_advances_persisted_action_progress_without_llm(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "progress-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    intent = BehaviorIntent(
+        actor_id="lu_xingzhou",
+        behavior_ref="behavior:explore_greywood",
+        target={},
+        parameters={},
+        reason="Map the unknown area.",
+        confidence=0.9,
+        intent_id="progress-intent",
+    )
+    try:
+        assert platform.submit_behavior(intent)["status"] == "accepted"
+        first = platform.advance(1)
+        assert first["to_minute"] == 1
+        state = platform.store.get_agent("lu_xingzhou")["initial_state"]
+        assert state["status"] == "executing"
+        assert state["active_action_index"] == 1
+        platform.advance(1)
+        state = platform.store.get_agent("lu_xingzhou")["initial_state"]
+        assert state["active_action"] == "explore_area"
+        assert state["remaining_minutes"] == 239
+        row = platform.store.connection.execute("SELECT status,remaining_minutes FROM action_instance WHERE execution_id=? AND action_id=?", ("progress-intent", "explore_area")).fetchone()
+        assert row["status"] == "running"
+        assert row["remaining_minutes"] == 239
+    finally:
+        platform.close()
+
+
+def test_platform_interrupt_updates_bt_and_action_instances(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "interrupt-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    intent = BehaviorIntent(
+        actor_id="lu_xingzhou", behavior_ref="behavior:explore_greywood", target={}, parameters={},
+        reason="Explore", confidence=0.9, intent_id="interrupt-intent",
+    )
+    try:
+        platform.submit_behavior(intent)
+        platform.advance(2)
+        paused = platform.interrupt_behavior("lu_xingzhou", "urgent boundary signal", hard=False)
+        assert paused["status"] == "paused"
+        state = platform.store.get_agent("lu_xingzhou")["initial_state"]
+        assert state["status"] == "paused"
+        row = platform.store.connection.execute("SELECT status FROM action_instance WHERE execution_id=? AND status=?", ("interrupt-intent", "paused")).fetchone()
+        assert row is not None
+        cancelled = platform.interrupt_behavior("lu_xingzhou", "threat confirmed", hard=True)
+        assert cancelled["status"] == "cancelled"
+        assert platform.store.get_agent("lu_xingzhou")["initial_state"]["status"] == "idle"
+    finally:
+        platform.close()

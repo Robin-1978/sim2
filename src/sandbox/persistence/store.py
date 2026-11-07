@@ -89,6 +89,28 @@ CREATE TABLE IF NOT EXISTS llm_call (
   status TEXT NOT NULL,
   world_minute INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS bt_instance (
+  execution_id TEXT PRIMARY KEY,
+  actor_id TEXT NOT NULL,
+  behavior_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  current_node INTEGER NOT NULL,
+  data_json TEXT NOT NULL,
+  started_minute INTEGER NOT NULL,
+  updated_minute INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS action_instance (
+  action_instance_id TEXT PRIMARY KEY,
+  execution_id TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  action_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  elapsed_minutes INTEGER NOT NULL,
+  remaining_minutes INTEGER NOT NULL,
+  data_json TEXT NOT NULL,
+  started_minute INTEGER NOT NULL,
+  updated_minute INTEGER NOT NULL
+);
 """
 
 
@@ -166,6 +188,10 @@ class WorldStore:
         ).fetchall()
         return [{"person": row["to_id"], "relation": row["relation_type"], **json.loads(row["data_json"])} for row in rows]
 
+    def list_relationships(self) -> list[dict[str, Any]]:
+        rows = self.connection.execute("SELECT from_id,to_id,relation_type,data_json FROM relationship ORDER BY from_id,to_id").fetchall()
+        return [{"from": row["from_id"], "to": row["to_id"], "type": row["relation_type"], **json.loads(row["data_json"])} for row in rows]
+
     def put_knowledge_fact(self, agent_id: str, fact_key: str, data: dict[str, Any]) -> int:
         cur = self.connection.execute(
             "INSERT INTO knowledge_fact(agent_id,fact_key,data_json) VALUES (?,?,?)",
@@ -183,11 +209,39 @@ class WorldStore:
     def put_prompt(self, prompt_id: str, data: dict[str, Any]) -> None:
         self.connection.execute("INSERT OR REPLACE INTO prompt_def(id,data_json) VALUES (?,?)", (prompt_id, json_dumps(data)))
 
+    def put_bt_instance(self, execution_id: str, actor_id: str, behavior_id: str, status: str, current_node: int, data: dict[str, Any], started_minute: int, updated_minute: int) -> None:
+        self.connection.execute(
+            "INSERT OR REPLACE INTO bt_instance(execution_id,actor_id,behavior_id,status,current_node,data_json,started_minute,updated_minute) VALUES (?,?,?,?,?,?,?,?)",
+            (execution_id, actor_id, behavior_id, status, int(current_node), json_dumps(data), int(started_minute), int(updated_minute)),
+        )
+
+    def update_bt_instance(self, execution_id: str, *, status: str, current_node: int, data: dict[str, Any], updated_minute: int) -> None:
+        self.connection.execute(
+            "UPDATE bt_instance SET status=?,current_node=?,data_json=?,updated_minute=? WHERE execution_id=?",
+            (status, int(current_node), json_dumps(data), int(updated_minute), execution_id),
+        )
+
+    def put_action_instance(self, action_instance_id: str, execution_id: str, actor_id: str, action_id: str, status: str, elapsed_minutes: int, remaining_minutes: int, data: dict[str, Any], started_minute: int, updated_minute: int) -> None:
+        self.connection.execute(
+            "INSERT OR REPLACE INTO action_instance(action_instance_id,execution_id,actor_id,action_id,status,elapsed_minutes,remaining_minutes,data_json,started_minute,updated_minute) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (action_instance_id, execution_id, actor_id, action_id, status, int(elapsed_minutes), int(remaining_minutes), json_dumps(data), int(started_minute), int(updated_minute)),
+        )
+
+    def update_action_instance(self, action_instance_id: str, *, status: str, elapsed_minutes: int, remaining_minutes: int, data: dict[str, Any], updated_minute: int) -> None:
+        self.connection.execute(
+            "UPDATE action_instance SET status=?,elapsed_minutes=?,remaining_minutes=?,data_json=?,updated_minute=? WHERE action_instance_id=?",
+            (status, int(elapsed_minutes), int(remaining_minutes), json_dumps(data), int(updated_minute), action_instance_id),
+        )
+
     def get_agent(self, agent_id: str) -> dict[str, Any]:
         row = self.connection.execute("SELECT data_json FROM agent_state WHERE id=?", (agent_id,)).fetchone()
         if row is None:
             raise KeyError(f"agent not found: {agent_id}")
         return json.loads(row["data_json"])
+
+    def list_agents(self) -> list[dict[str, Any]]:
+        rows = self.connection.execute("SELECT id,data_json FROM agent_state ORDER BY id").fetchall()
+        return [{"id": row["id"], **json.loads(row["data_json"])} for row in rows]
 
     def get_entity(self, entity_id: str) -> dict[str, Any]:
         row = self.connection.execute("SELECT entity_type,name,data_json FROM entity WHERE id=?", (entity_id,)).fetchone()
