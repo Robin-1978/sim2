@@ -109,3 +109,15 @@ LLM Agent 不直接依赖 SQLite。所有 Agent 输出经过 Intent 网关；所
 - 回放测试：固定配置、随机种子和 LLM 响应后事件序列一致。
 
 核心 Platform 测试使用 Mock LLM；真实模型只用于 AgentView、Prompt 和成本回归测试。
+
+## 验收证据
+
+在当前提交上执行：
+
+```bash
+pytest -q
+PYTHONPATH=src python -m compileall -q src scripts
+PYTHONPATH=src python scripts/benchmark_platform.py --agents 1000 --runs 5
+```
+
+最近一次结果为 `30 passed`；1000 个 Agent、5 次非 LLM 模拟分钟的 p95 为约 `148 ms`。测试覆盖 ReAct 工具反馈与拒绝重试、SQLite 创世与回滚、长 Action/并行 BT/共享资源、中断恢复、探索沟通知识、记忆 FTS5、反思目标和能力历史、God/WorldBuilder、玩家入口、HTTP 控制、快照恢复、确定性回放以及 Starter Village 端到端场景。
