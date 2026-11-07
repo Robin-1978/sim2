@@ -207,7 +207,7 @@ ROLE_TOOLS: dict[str, list[str]] = {
 def tools_for_role(role: str) -> list[dict[str, Any]]:
     """Return compact, human-readable descriptions used in AgentView."""
 
-    return [{"name": name, **TOOL_DEFINITIONS[name]} for name in ROLE_TOOLS.get(role, [])]
+    return [{"name": name, **TOOL_DEFINITIONS[name], "input": TOOL_DEFINITIONS[name]["parameters"]} for name in ROLE_TOOLS.get(role, [])]
 
 
 def tool_schemas_for_role(role: str) -> list[dict[str, Any]]:
