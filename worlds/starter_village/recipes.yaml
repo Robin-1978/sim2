@@ -1,0 +1,34 @@
+recipes:
+  - id: cooked_meal
+    name: 熟食
+    station_tags: [kitchen, fireplace]
+    inputs: [{item: grain, quantity: 1}, {item: clean_water, quantity: 1}]
+    outputs: [{item: cooked_meal, quantity: 2}]
+    requires: [{capability: cooking, min_level: 0.30}]
+    duration_minutes: 60
+    effects:
+      - {op: inventory.consume_inputs}
+      - {op: inventory.add_outputs}
+      - {op: capability.add_xp, capability: cooking, value: 0.02}
+  - id: field_ration
+    name: 旅行口粮
+    station_tags: [kitchen]
+    inputs: [{item: grain, quantity: 1}, {item: herb_bundle, quantity: 1}]
+    outputs: [{item: ration, quantity: 2}]
+    requires: [{capability: cooking, min_level: 0.40}]
+    duration_minutes: 90
+    effects:
+      - {op: inventory.consume_inputs}
+      - {op: inventory.add_outputs}
+      - {op: capability.add_xp, capability: cooking, value: 0.03}
+  - id: herbal_medicine
+    name: 草药药剂
+    station_tags: [clinic]
+    inputs: [{item: herb_bundle, quantity: 2}, {item: clean_water, quantity: 1}]
+    outputs: [{item: medicine, quantity: 1}]
+    requires: [{capability: herbalism, min_level: 0.40}]
+    duration_minutes: 120
+    effects:
+      - {op: inventory.consume_inputs}
+      - {op: inventory.add_outputs}
+      - {op: capability.add_xp, capability: herbalism, value: 0.03}

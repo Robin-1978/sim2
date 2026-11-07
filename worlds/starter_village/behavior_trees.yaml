@@ -1,0 +1,320 @@
+behavior_trees:
+- id: govern_village
+  version: 1
+  scope: village_council
+  entry_conditions:
+  - actor.is_steward
+  estimated_minutes: 144
+  interrupt_policy: interruptible
+  success_results:
+  - rations_reviewed
+  - risk_reviewed
+  failure_results:
+  - council_blocked
+  nodes:
+  - type: action
+    action_id: inspect_object
+    parameters:
+      location_id: context.location_id
+  - type: selector
+    children:
+    - mediate_conflict
+  definition_source: config
+  kind: base
+- id: mediate_conflict
+  version: 1
+  scope: personal
+  entry_conditions:
+  - conflict.available
+  - actor.can_mediate
+  estimated_minutes: 48
+  nodes:
+  - type: action
+    action_id: communicate
+    parameters:
+      target_id: context.target_id
+      topic: context.topic
+  - type: condition
+    expression: conflict.resolved
+  definition_source: config
+  kind: base
+- id: inspect_granary
+  version: 1
+  scope: personal
+  entry_conditions:
+  - actor.can_inspect_granary
+  estimated_minutes: 24
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: granary
+  - type: action
+    action_id: inspect_object
+    parameters:
+      location_id: context.location_id
+  definition_source: config
+  kind: base
+- id: patrol_route
+  version: 1
+  scope: village_watch
+  entry_conditions:
+  - actor.is_guard
+  estimated_minutes: 96
+  interrupt_policy: pause
+  success_results:
+  - patrol_reported
+  - marks_classified
+  failure_results:
+  - emergency
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: north_gate
+  - type: action
+    action_id: patrol_route
+    parameters:
+      route_id: north_gate_loop
+  definition_source: config
+  kind: base
+- id: manage_ration
+  version: 1
+  scope: personal
+  entry_conditions:
+  - actor.is_granary_keeper
+  estimated_minutes: 48
+  nodes:
+  - type: action
+    action_id: inspect_object
+    parameters:
+      location_id: context.location_id
+  - type: action
+    action_id: communicate
+    parameters:
+      target_id: lin_bo
+      topic: food_ration
+  definition_source: config
+  kind: base
+- id: heal_target
+  version: 1
+  scope: personal
+  entry_conditions:
+  - actor.is_healer
+  - patient.available
+  estimated_minutes: 72
+  interrupt_policy: pause
+  nodes:
+  - type: action
+    action_id: heal_target
+    parameters:
+      patient_id: context.patient_id
+  definition_source: config
+  kind: base
+- id: explore_greywood
+  version: 1
+  scope: personal
+  entry_conditions:
+  - actor.can_explore
+  - area.unknown
+  estimated_minutes: 240
+  interrupt_policy: pause
+  success_results:
+  - exploration_completed
+  - knowledge_updated
+  failure_results:
+  - lost
+  - injured
+  - emergency
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: greywood_edge
+  - type: action
+    action_id: explore_area
+    parameters:
+      area_id: greywood_edge
+  - type: action
+    action_id: communicate
+    parameters:
+      target_id: yu_ge
+      topic: findings
+  definition_source: config
+  kind: base
+- id: research_source
+  version: 1
+  scope: root_keepers
+  entry_conditions:
+  - actor.can_research
+  - secret.source_available
+  estimated_minutes: 192
+  interrupt_policy: pause
+  success_results:
+  - new_pact_fact
+  - ritual_candidate
+  failure_results:
+  - source_lost
+  - belief_conflict
+  nodes:
+  - type: action
+    action_id: research_source
+    parameters:
+      source_id: old_pact_tablet
+  - type: condition
+    expression: research.new_fact_found
+  definition_source: config
+  kind: base
+- id: inspect_object
+  version: 1
+  scope: personal
+  entry_conditions:
+  - actor.can_inspect
+  estimated_minutes: 24
+  nodes:
+  - type: action
+    action_id: inspect_object
+    parameters:
+      location_id: context.location_id
+  definition_source: config
+  kind: base
+- id: defend_village
+  version: 1
+  scope: village_watch
+  entry_conditions:
+  - actor.is_guard
+  - threat.at_village
+  estimated_minutes: 48
+  interrupt_policy: interruptible
+  success_results:
+  - threat_contained
+  - civilians_safe
+  failure_results:
+  - defense_broken
+  - retreat_required
+  nodes:
+  - type: action
+    action_id: sound_alarm
+    parameters:
+      alarm_type: village_attack
+      location_id: watchtower
+  - type: selector
+    children:
+    - defend_position
+    - flee_to_safety
+- id: defend_position
+  version: 1
+  scope: personal
+  entry_conditions:
+  - actor.can_defend
+  - threat.reachable
+  estimated_minutes: 24
+  interrupt_policy: interruptible
+  nodes:
+  - type: action
+    action_id: defend
+    parameters:
+      protected_target_id: context.protected_target_id
+  - type: action
+    action_id: attack
+    parameters:
+      target_id: context.target_id
+      weapon_id: context.weapon_id
+- id: flee_to_safety
+  version: 1
+  scope: personal
+  entry_conditions:
+  - actor.alive
+  - threat.overwhelming
+  estimated_minutes: 96
+  nodes:
+  - type: action
+    action_id: flee_to_safety
+    parameters:
+      destination_id: village_square
+- id: sound_alarm
+  version: 1
+  scope: village_watch
+  entry_conditions:
+  - actor.can_sound_alarm
+  - threat.detected
+  estimated_minutes: 6
+  nodes:
+  - type: action
+    action_id: sound_alarm
+    parameters:
+      alarm_type: boundary
+      location_id: watchtower
+- id: craft_meal
+  version: 1
+  scope: personal
+  entry_conditions:
+  - actor.can_craft
+  - recipe.available
+  - inputs.available
+  estimated_minutes: 60
+  interrupt_policy: pause
+  success_results:
+  - food_created
+  - capability_improved
+  failure_results:
+  - crafting_failed
+  nodes:
+  - type: action
+    action_id: craft_recipe
+    parameters:
+      recipe_id: cooked_meal
+      station_id: context.station_id
+- id: communicate
+  version: 1
+  scope: personal
+  entry_conditions:
+  - actor.can_communicate
+  - target.available
+  estimated_minutes: 12
+  nodes:
+  - type: action
+    action_id: communicate
+    parameters:
+      target_id: context.target_id
+      topic: context.topic
+  definition_source: config
+  kind: base
+  summary: Exchange information with another character.
+- id: negotiate
+  version: 1
+  scope: personal
+  entry_conditions:
+  - actor.can_communicate
+  - target.available
+  estimated_minutes: 12
+  nodes:
+  - type: action
+    action_id: negotiate
+    parameters:
+      target_id: context.target_id
+      topic: context.topic
+  definition_source: config
+  kind: base
+  summary: Reach an agreement with another character.
+- id: gather_resource
+  version: 1
+  scope: personal
+  entry_conditions:
+  - actor.can_gather
+  - resource.available
+  estimated_minutes: 120
+  interrupt_policy: pause
+  success_results:
+  - action_completed
+  failure_results:
+  - action_failed
+  nodes:
+  - type: action
+    action_id: gather_resource
+    parameters:
+      resource_tag: context.resource_tag
+      location_id: context.location_id
+  definition_source: config
+  kind: base
+  summary: Collect a configured resource from a known node.

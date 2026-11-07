@@ -1,0 +1,456 @@
+actions:
+- id: travel_to
+  version: 1
+  description: 沿已知路线移动到目标地点
+  parameters:
+    location_id: string
+  preconditions:
+  - route.known
+  - actor.mobile
+  - destination.reachable
+  duration:
+    mode: route_distance
+  costs:
+    reserve: {}
+    per_minute:
+      fatigue: 0.5
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success:
+    condition: actor.location == target.location
+    result: arrived
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: rest
+  version: 1
+  description: 在安全地点休息
+  parameters:
+    location_id: string
+  preconditions:
+  - actor.at_location
+  - location.safe
+  duration:
+    minutes: 48
+  costs:
+    reserve: {}
+    per_minute:
+      time: 1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  progress_effects:
+  - type: need_delta
+    need: fatigue
+    delta: -1.2
+  success:
+    condition: fatigue <= 20
+    result: rested
+  failure:
+    condition: danger.detected
+    result: interrupted
+  interrupt_policy: pause
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: gather_resource
+  version: 1
+  description: 在可见资源节点采集指定类型资源
+  parameters:
+    resource_tag: string
+    location_id: string
+  preconditions:
+  - actor.can_gather
+  - location.has_food
+  - route.known
+  duration:
+    minutes: 144
+  costs:
+    reserve:
+      tool_durability: 1
+    per_minute:
+      fatigue: 0.8
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  progress_effects:
+  - type: need_delta
+    need: fatigue
+    delta: 0.8
+  success:
+    condition: inventory.food >= 1
+    result: food_gathered
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: patrol_route
+  version: 1
+  description: 巡逻已知路线并记录发现
+  parameters:
+    route_id: string
+  preconditions:
+  - actor.is_guard
+  - route.known
+  duration:
+    minutes: 96
+  costs:
+    reserve: {}
+    per_minute:
+      fatigue: 0.6
+      exposure: 0.2
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success:
+    condition: route.completed
+    result: patrol_reported
+  failure:
+    condition: hostile_contact
+    result: emergency
+  interrupt_policy: pause
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: heal_target
+  version: 1
+  description: 使用可用治疗资源恢复目标状态
+  parameters:
+    target_id: string
+  preconditions:
+  - actor.is_healer
+  - patient.in_clinic
+  - medicine.available
+  duration:
+    minutes: 72
+  costs:
+    reserve:
+      medicine: 1
+    per_minute:
+      fatigue: 0.4
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  progress_effects:
+  - type: need_delta
+    need: belonging
+    delta: 0.2
+  success:
+    condition: patient.fever_reduced
+    result: patient_stabilized
+  failure:
+    condition: medicine.failed
+    result: failed
+  interrupt_policy: pause
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: explore_area
+  version: 1
+  description: 探索一块尚未充分了解的区域并记录发现
+  parameters:
+    area_id: string
+  preconditions:
+  - actor.can_explore
+  - route.known
+  - area.not_fully_mapped
+  duration:
+    minutes: 240
+  costs:
+    reserve:
+      rations: 1
+    per_minute:
+      fatigue: 0.7
+      exposure: 0.4
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success:
+    condition: area.survey_complete
+    result: exploration_completed
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: communicate
+  version: 1
+  description: 与目标角色沟通并记录可传播信息
+  parameters:
+    target_id: string
+    topic: string
+  preconditions:
+  - actor.can_speak
+  - target.available
+  - communication.channel_open
+  duration:
+    minutes: 6
+  costs:
+    reserve: {}
+    per_minute:
+      attention: 1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success:
+    condition: dialogue.completed
+    result: dialogue_recorded
+  failure:
+    condition: target.refused
+    result: conversation_refused
+  interrupt_policy: cancel
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: research_source
+  version: 1
+  description: 研究可访问的信息源并记录事实
+  parameters:
+    source_id: string
+  preconditions:
+  - actor.can_research
+  - source.accessible
+  duration:
+    minutes: 192
+  costs:
+    reserve: {}
+    per_minute:
+      fatigue: 0.3
+      attention: 0.8
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success:
+    condition: research.new_fact_found
+    result: research_completed
+  failure:
+    condition: source.destroyed
+    result: failed
+  interrupt_policy: pause
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: inspect_object
+  version: 1
+  description: 检查可访问的物体、库存或设施
+  parameters:
+    object_id: string
+  preconditions:
+  - actor.can_inspect
+  - location.reachable
+  duration:
+    minutes: 24
+  costs:
+    reserve: {}
+    per_minute:
+      attention: 0.2
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success:
+    condition: inventory.read_complete
+    result: stock_reported
+  failure:
+    condition: location.locked
+    result: denied
+  interrupt_policy: cancel
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: negotiate
+  version: 1
+  description: 与目标角色协商交换或契约
+  parameters:
+    target_id: string
+    topic: string
+  preconditions:
+  - actor.can_negotiate
+  - counterparty.available
+  duration:
+    minutes: 36
+  costs:
+    reserve: {}
+    per_minute:
+      attention: 0.6
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success:
+    condition: contract.signed
+    result: contract_signed
+  failure:
+    condition: trust.collapsed
+    result: negotiation_failed
+  interrupt_policy: cancel
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: attack
+  version: 1
+  description: 使用指定武器攻击可达目标
+  parameters:
+    target_id: string
+    weapon_id: string
+  preconditions:
+  - actor.alive
+  - actor.can_attack
+  - target.visible
+  - target.reachable
+  - combat.allowed
+  duration:
+    minutes: 6
+  costs:
+    reserve:
+      weapon_durability: 0.1
+    per_minute:
+      stamina: 1.0
+      attention: 0.3
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  progress_effects:
+  - type: threat_delta
+    delta: 0.2
+  success:
+    condition: attack.resolved
+    result: attack_completed
+  failure:
+    condition: target.out_of_range
+    result: attack_blocked
+  effects:
+  - type: damage
+    formula: actor.attack_power + weapon.damage - target.defense
+  - type: relationship_delta
+    relation: hostility
+    delta: 0.15
+  interrupt_policy: cancel
+  executor: effect_pipeline
+- id: defend
+  version: 1
+  description: 保持防御姿态并保护附近目标
+  parameters:
+    protected_target_id: string
+  preconditions:
+  - actor.alive
+  - actor.can_defend
+  - protected_target.available
+  duration:
+    minutes: 24
+  costs:
+    reserve: {}
+    per_minute:
+      stamina: 0.3
+      attention: 0.4
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  progress_effects:
+  - type: status_add
+    status: guarded
+    duration_minutes: 6
+  success:
+    condition: defense.window_complete
+    result: defended
+  failure:
+    condition: actor.stunned
+    result: interrupted
+  interrupt_policy: interruptible
+  executor: effect_pipeline
+- id: flee_to_safety
+  version: 1
+  description: 沿已知路线撤离到安全地点
+  parameters:
+    destination_id: string
+  preconditions:
+  - actor.alive
+  - route.known
+  - destination.safe_or_defensible
+  duration:
+    mode: route_distance
+  costs:
+    reserve: {}
+    per_minute:
+      stamina: 1.2
+      fatigue: 0.8
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success:
+    condition: actor.at_safe_location
+    result: escaped
+  failure:
+    condition: actor.exhausted
+    result: collapsed
+  interrupt_policy: cancel
+  executor: effect_pipeline
+- id: sound_alarm
+  version: 1
+  description: 向村庄广播边界或战斗警报
+  parameters:
+    alarm_type: string
+    location_id: string
+  preconditions:
+  - actor.can_sound_alarm
+  - location.watch_post
+  duration:
+    minutes: 6
+  costs:
+    reserve: {}
+    per_minute:
+      attention: 0.2
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success:
+    condition: alarm.broadcast
+    result: alarm_raised
+  failure:
+    condition: alarm_device.broken
+    result: failed
+  effects:
+  - type: public_event
+    event: alarm.raised
+  interrupt_policy: cancel
+  executor: effect_pipeline
+- id: craft_recipe
+  version: 1
+  description: 在可用工作站按配方制作物品
+  parameters:
+    recipe_id: string
+    station_id: string
+  preconditions:
+  - actor.can_craft
+  - recipe.available
+  - station.available
+  - inputs.available
+  duration:
+    mode: recipe_duration
+  costs:
+    reserve:
+      recipe_inputs: 1
+    per_minute:
+      fatigue: 0.4
+      attention: 0.5
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success:
+    condition: outputs.created
+    result: recipe_completed
+  failure:
+    condition: inputs.lost or station.damaged
+    result: crafting_failed
+  interrupt_policy: pause
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline

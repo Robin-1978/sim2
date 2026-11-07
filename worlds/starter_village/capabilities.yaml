@@ -1,0 +1,51 @@
+capabilities:
+- id: gather
+  name: 采集
+  value_path: agent.capabilities.gather
+  uses:
+  - gather_resource
+  xp_rule: one_successful_resource_effect
+- id: farming
+  name: 农作
+  value_path: agent.capabilities.farming
+  uses:
+  - gather_resource
+  xp_rule: one_successful_resource_effect
+- id: cooking
+  name: 烹饪
+  value_path: agent.capabilities.cooking
+  uses:
+  - craft_recipe
+  xp_rule: one_successful_recipe
+- id: forging
+  name: 锻造
+  value_path: agent.capabilities.forging
+  uses:
+  - craft_recipe
+  xp_rule: one_successful_recipe
+- id: combat
+  name: 战斗
+  value_path: agent.capabilities.combat
+  uses:
+  - attack
+  - defend
+  xp_rule: one_resolved_attack
+- id: exploration
+  name: 探索
+  value_path: agent.capabilities.exploration
+  uses:
+  - explore_area
+  xp_rule: one_new_discovery
+- id: conversation
+  name: 沟通
+  value_path: agent.capabilities.conversation
+  uses:
+  - communicate
+  - negotiate
+  xp_rule: one_completed_dialogue
+- id: research
+  name: 研究
+  value_path: agent.capabilities.research
+  uses:
+  - research_source
+  xp_rule: one_verified_fact

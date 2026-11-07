@@ -1,0 +1,27 @@
+evolution:
+  schedule:
+    agent_reflection_minutes: 1440
+    agent_innovation_minutes: 10080
+    god_local_minutes: 10080
+    god_structural_minutes: 43200
+  triggers:
+    - id: food_crisis
+      when: world.village_food < 120
+      invoke: [liang_he, lin_bo, god_local]
+    - id: water_crisis
+      when: world.water_quality < 0.50
+      invoke: [qiao_ning, su_wu, god_local]
+    - id: boundary_threat
+      when: world.north_gate_threat_level > 0.70
+      invoke: [he_yan, lu_xingzhou, god_local]
+    - id: pact_instability
+      when: world.root_gate_stability < 0.35
+      invoke: [su_wu, qiao_ning, god_structural]
+    - id: goal_completed
+      when: agent.goal.completed == true
+      invoke: [agent_reflection, agent_decision]
+  limits:
+    agent_reflection_calls_per_day: 1
+    agent_innovation_calls_per_week: 1
+    god_local_candidates_per_week: 3
+    god_structural_candidates_per_month: 1

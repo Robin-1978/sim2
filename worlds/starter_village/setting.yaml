@@ -1,0 +1,28 @@
+world_id: starter_village
+name: 雾溪村
+locale: zh-CN
+genre: frontier_fantasy
+premise: 灰林边缘的村庄依靠一份正在减弱的古老契约维持边界。
+public_history:
+- 雾溪村由第一批守望者建立。
+- 灰林在每年深秋进入浓雾期。
+- 村民遵守夜间不得接近旧井的村规。
+secrets:
+- id: root_gate
+  location_id: hidden_root_gate
+  visibility: god_and_keeper_only
+  summary: 旧井下方的根门连接村庄与森林记忆。
+- id: old_pact
+  visibility: lin_bo_su_wu_qiao_ning
+  summary: 创村者曾与森林记忆订立边界契约。
+- id: grey_fever_source
+  visibility: qiao_ning_su_wu
+  summary: 灰热病与河水污染和根门渗漏有关。
+calendar:
+  minutes_per_day: 1440
+  minutes_per_week: 10080
+  minutes_per_month: 43200
+world_clock:
+  start_day: 1
+  season: late_autumn
+  start_minute: 0

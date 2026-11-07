@@ -1,0 +1,88 @@
+locations:
+  - id: river_bridge
+    name: 河桥
+    public: true
+    tags: [entry, road, river]
+    routes: [village_square, greywood_edge]
+  - id: village_square
+    name: 村广场
+    public: true
+    tags: [public, meeting]
+    routes: [river_bridge, inn, granary, old_well, watchtower]
+  - id: inn
+    name: 余歌旅店
+    public: true
+    tags: [public, social, information]
+    routes: [village_square]
+  - id: granary
+    name: 粮仓
+    public: restricted
+    tags: [food, resource]
+    routes: [village_square, farm_fields]
+  - id: farm_fields
+    name: 农田
+    public: true
+    tags: [food, work]
+    routes: [granary, greywood_edge]
+  - id: clinic
+    name: 草药诊所
+    public: restricted
+    tags: [health, research]
+    routes: [village_square, river_bank]
+  - id: smithy
+    name: 铁匠铺
+    public: restricted
+    tags: [craft, resource]
+    routes: [village_square, old_quarry]
+  - id: watchtower
+    name: 北门瞭望塔
+    public: restricted
+    tags: [security, observation]
+    routes: [village_square, north_gate]
+  - id: north_gate
+    name: 北门
+    public: restricted
+    tags: [security, boundary]
+    routes: [watchtower, greywood_edge]
+  - id: river_bank
+    name: 河岸
+    public: true
+    tags: [water, investigation]
+    routes: [clinic, river_bridge, greywood_edge]
+  - id: old_well
+    name: 旧井
+    public: restricted
+    tags: [ritual, secret]
+    routes: [village_square]
+  - id: old_quarry
+    name: 旧矿坑
+    public: restricted
+    tags: [mine, resource, danger]
+    routes: [smithy, greywood_edge]
+  - id: greywood_edge
+    name: 灰林边缘
+    public: restricted
+    tags: [exploration, danger, forest]
+    routes: [river_bridge, farm_fields, north_gate, river_bank, old_quarry]
+  - id: hidden_root_gate
+    name: 根门
+    public: hidden
+    tags: [secret, world_truth, danger]
+    routes: []
+resources:
+  - id: village_food
+    type: shared_stock
+    location_id: granary
+    amount: 320
+  - id: clean_water
+    type: shared_stock
+    location_id: river_bank
+    amount: 100
+  - id: iron_ore
+    type: local_ore
+    location_id: old_quarry
+    amount: 80
+  - id: star_metal
+    type: rare_material
+    location_id: old_quarry
+    amount: 1

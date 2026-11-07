@@ -1,0 +1,51 @@
+objects:
+  - id: dawn_bell
+    type: artifact
+    name: 晨钟
+    initial_state: {created: false, durability: 100, alarm_radius: 3}
+    tags: [craftable, defense, public]
+  - id: star_metal_fragment
+    type: material
+    name: 星铁碎片
+    initial_state: {quantity: 1, location_id: old_quarry, hidden: true}
+    tags: [rare, pact_related]
+  - id: old_pact_tablet
+    type: document
+    name: 旧契约石板
+    initial_state: {location_id: hidden_root_gate, readable: false}
+    tags: [secret, lore]
+  - id: caravan_ledger
+    type: document
+    name: 失踪车队账册
+    initial_state: {location_id: greywood_edge, recovered: false}
+    tags: [trade, evidence]
+  - id: water_test_kit
+    type: tool
+    name: 水样检测盒
+    initial_state: {location_id: clinic, durability: 3}
+    tags: [medical, investigation]
+  - id: ritual_material
+    type: material
+    name: 根门仪式材料
+    initial_state: {quantity: 1, location_id: old_well, visibility: keeper_only}
+    tags: [ritual, secret]
+  - id: village_seed_grain
+    type: resource
+    name: 留种粮
+    initial_state: {quantity: 40, location_id: granary, protected: true}
+    tags: [food, winter_reserve]
+  - id: grain
+    type: material
+    name: 谷物
+    initial_state: {quantity: 80, location_id: granary}
+    tags: [food_input, craft_material]
+  - id: cooked_meal
+    type: consumable
+    name: 熟食
+    initial_state: {quantity: 0, location_id: granary}
+    tags: [food, craft_output]
+  - id: medicine
+    type: consumable
+    name: 草药药剂
+    initial_state: {quantity: 0, location_id: clinic}
+    tags: [medical, craft_output]

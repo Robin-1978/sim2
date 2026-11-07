@@ -1,0 +1,24 @@
+world_state:
+  properties:
+    fog_level: 0.10
+    water_quality: 0.72
+    public_trust: 0.55
+    village_food: 320
+    winter_days_remaining: 30
+    root_gate_stability: 0.64
+    north_gate_threat_level: 0.22
+  initial_facts:
+    - {id: village_rules, subject: starter_village, predicate: public_rule, object: night_restriction_at_old_well, source_type: public}
+    - {id: trade_route, subject: river_trade_route, predicate: status, object: disrupted, source_type: public}
+    - {id: missing_sister, subject: lu_su, predicate: status, object: missing, source_type: family_report}
+    - {id: missing_ledger, subject: caravan_ledger, predicate: status, object: missing, source_type: merchant_report}
+  initial_spawn:
+    - {entity_id: lin_bo, location_id: village_square}
+    - {entity_id: he_yan, location_id: watchtower}
+    - {entity_id: liang_he, location_id: granary}
+    - {entity_id: qiao_ning, location_id: clinic}
+    - {entity_id: tian_yan, location_id: smithy}
+    - {entity_id: lu_xingzhou, location_id: north_gate}
+    - {entity_id: yu_ge, location_id: inn}
+    - {entity_id: fei_lan, location_id: inn}
+    - {entity_id: su_wu, location_id: old_well}

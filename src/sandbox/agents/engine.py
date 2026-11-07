@@ -1,0 +1,224 @@
+from __future__ import annotations
+
+import inspect
+import hashlib
+import json
+from dataclasses import dataclass, field
+from typing import Any
+
+from ..agent_view.compiler import AgentViewCompiler
+from ..intents.models import BehaviorIntent
+from ..platform.runtime import Platform
+from ..prompting.renderer import render_context
+from .tools import (
+    AgentToolExecutor,
+    TOOL_DEFINITIONS,
+    parse_tool_call,
+    tool_schemas_for_role,
+)
+
+
+ROLE_POLICIES = {
+    "agent_decision": """You are the Decision Agent for one character. This is one bounded decision session: use an allowed read tool when a fact is missing, then choose one offered behavior or wait. You may only express intent; Platform owns every state change. Never invent hidden facts or references. A long behavior continues in Platform after this session ends.""",
+    "agent_reflection": """You are the Reflection and Evolution Agent for one character. Use memory and recent results, then submit an experience, belief update, or small behavior proposal. Platform validates every proposal; never edit state directly.""",
+    "god": """You are the God Agent for one world. Use the permitted world summary and read tools, then propose an entity or world change. Platform validates and applies every side effect; never edit state directly.""",
+    "world_builder": """You are the World Builder Agent. Draft a declarative world template, validate it, and submit it only after validation succeeds. Do not execute code or create a database directly.""",
+}
+
+ROLE_INTENTS = {
+    "agent_decision": {"select_behavior", "wait"},
+    "agent_reflection": {"record_experience", "update_belief", "propose_behavior", "wait"},
+    "god": {"propose_entity", "propose_world_change", "wait"},
+    "world_builder": {"submit_world_template", "wait"},
+}
+
+
+@dataclass(frozen=True)
+class AgentTurn:
+    role: str
+    task_type: str
+    response: dict[str, Any]
+    result: dict[str, Any]
+    iterations: int
+    transcript: list[dict[str, Any]] = field(default_factory=list)
+
+
+class AgentEngine:
+    """Run one bounded ReAct session for any supported agent role.
+
+    A session is independent of simulation minutes.  Each provider call either
+    returns a tool request or a final Intent.  Tool results and Platform errors
+    are appended to the compact context, so the model can correct its next
+    request.  Once an Intent is accepted, the session ends; a long action is
+    subsequently advanced by Platform rather than by another LLM call.
+    """
+
+    def __init__(self, platform: Platform, provider: Any, max_iterations: int = 6, max_repeated_tool_calls: int = 2):
+        self.platform = platform
+        self.provider = provider
+        self.max_iterations = max(1, max_iterations)
+        self.max_repeated_tool_calls = max(1, max_repeated_tool_calls)
+        self.view = AgentViewCompiler(platform.store)
+
+    def _complete(self, *, role: str, system: str, context: str) -> dict[str, Any]:
+        """Call old test providers and native tool-capable providers alike."""
+
+        method = self.provider.complete_json
+        kwargs: dict[str, Any] = {"system": system, "context": context}
+        try:
+            parameters = inspect.signature(method).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        if "tools" in parameters:
+            kwargs["tools"] = tool_schemas_for_role(role)
+        if "role" in parameters:
+            kwargs["role"] = role
+        return method(**kwargs)
+
+    def run(self, *, role: str, actor_id: str, task_type: str = "decision") -> AgentTurn:
+        if role not in ROLE_POLICIES:
+            raise ValueError(f"unknown agent role: {role}")
+        if role == "agent_decision":
+            try:
+                state = self.platform.store.get_agent(actor_id).get("initial_state", {})
+            except KeyError:
+                state = {}
+            if state.get("status") in {"executing", "paused"}:
+                result = {"status": "skipped", "reason": "active_behavior", "message": "Platform is already executing a behavior; wait for completion or an interrupt."}
+                return AgentTurn(role, task_type, {}, result, 0, [{"step": "skipped", "result": result}])
+        context = self.view.build_decision_view(actor_id, role=role)
+        context["role"] = role
+        task = self._task_text(role, task_type)
+        executor = AgentToolExecutor(self.platform, role=role, actor_id=actor_id)
+        last_response: dict[str, Any] = {}
+        last_result: dict[str, Any] = {"status": "no_result"}
+        transcript: list[dict[str, Any]] = []
+        repeated: dict[str, int] = {}
+
+        for iteration in range(1, self.max_iterations + 1):
+            prompt = render_context(context, task)
+            try:
+                response = self._complete(role=role, system=ROLE_POLICIES[role], context=prompt)
+                if not isinstance(response, dict):
+                    raise ValueError("LLM response must be a JSON object")
+            except Exception as exc:
+                last_result = {"status": "rejected", "failed_check": "llm_response", "message": str(exc)}
+                context["last_platform_result"] = last_result
+                transcript.append({"step": "llm_error", "error": str(exc)})
+                self._audit(actor_id, role, task_type, iteration, prompt, {"error": str(exc)}, "llm_error")
+                continue
+            last_response = response
+            transcript.append({"step": "llm", "response": response})
+            self._audit(actor_id, role, task_type, iteration, prompt, response, "response")
+
+            try:
+                call = parse_tool_call(response)
+            except (TypeError, ValueError) as exc:
+                call = None
+                last_result = {"status": "rejected", "failed_check": "tool_arguments", "message": str(exc)}
+                context["last_platform_result"] = last_result
+                transcript.append({"step": "tool_error", "error": str(exc)})
+                continue
+
+            if call is not None:
+                tool_name, arguments = call
+                signature_key = f"{tool_name}:{repr(sorted(arguments.items()))}"
+                repeated[signature_key] = repeated.get(signature_key, 0) + 1
+                if repeated[signature_key] > self.max_repeated_tool_calls:
+                    tool_result = {
+                        "status": "rejected",
+                        "tool": tool_name,
+                        "failed_check": "repeated_tool_call",
+                        "message": "The same tool request was repeated; use the previous result or choose an Intent.",
+                    }
+                else:
+                    tool_result = executor.execute(tool_name, arguments)
+                transcript.append({"step": "tool", "name": tool_name, "arguments": arguments, "result": tool_result})
+                context.setdefault("tool_results", []).append({"tool": tool_name, "result": tool_result})
+                context["last_platform_result"] = tool_result
+                last_result = tool_result
+                if TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "intent" and tool_result.get("status") in {"accepted", "wait"}:
+                    return AgentTurn(role, task_type, last_response, tool_result, iteration, transcript)
+                continue
+
+            result = self._submit_response(role, actor_id, response)
+            transcript.append({"step": "intent", "result": result})
+            context["last_platform_result"] = result
+            last_result = result
+            if result.get("status") in {"accepted", "wait"}:
+                return AgentTurn(role, task_type, response, result, iteration, transcript)
+
+        return AgentTurn(role, task_type, last_response, last_result, self.max_iterations, transcript)
+
+    @staticmethod
+    def _task_text(role: str, task_type: str) -> str:
+        if role == "agent_decision":
+            return f"Task type: {task_type}. Select the best available behavior for the current goal, or wait if none is appropriate."
+        if role == "agent_reflection":
+            return f"Task type: {task_type}. Review the recent experience and submit the smallest useful learning or behavior proposal."
+        if role == "god":
+            return f"Task type: {task_type}. Review the world signal and submit one validated world proposal if needed."
+        return f"Task type: {task_type}. Produce or refine one declarative world template."
+
+    def _submit_response(self, role: str, actor_id: str, response: dict[str, Any]) -> dict[str, Any]:
+        data = response.get("intent") if isinstance(response.get("intent"), dict) else dict(response)
+        if not isinstance(data, dict):
+            return {"status": "rejected", "failed_check": "intent_schema", "retryable": True, "message": "Intent must be an object."}
+        if data.get("type") == "intent":
+            data.pop("type", None)
+        intent_type = str(data.get("intent_type") or data.get("kind") or ("select_behavior" if data.get("behavior_ref") or data.get("behavior_id") else ""))
+        if data.get("wait") is True:
+            intent_type = "wait"
+        if intent_type not in ROLE_INTENTS.get(role, set()):
+            return {"status": "rejected", "failed_check": "intent_type", "retryable": True, "message": "This intent type is not allowed for the current role."}
+        if intent_type == "wait":
+            return {"status": "wait", "reason": str(data.get("reason") or data.get("message") or "No suitable behavior now.")}
+        try:
+            if intent_type == "select_behavior":
+                return self.platform.submit_behavior(BehaviorIntent.from_json(data, actor_id=actor_id))
+            if intent_type == "record_experience":
+                return self.platform.submit_experience(actor_id, str(data.get("event_ref") or ""), str(data.get("summary") or ""), float(data.get("confidence", 1.0)))
+            if intent_type == "update_belief":
+                return self.platform.submit_belief_update(actor_id, str(data.get("belief_id") or ""), str(data.get("statement") or ""), float(data.get("confidence", 0.0)), str(data.get("reason") or ""))
+            if intent_type == "propose_behavior":
+                proposal = dict(data)
+                proposal.pop("intent_type", None)
+                return self.platform.submit_behavior_proposal(actor_id, proposal)
+            if intent_type == "propose_entity":
+                proposal = dict(data)
+                proposal.pop("intent_type", None)
+                return self.platform.submit_entity_proposal(actor_id, proposal)
+            if intent_type == "propose_world_change":
+                proposal = dict(data)
+                proposal.pop("intent_type", None)
+                return self.platform.submit_world_change(actor_id, proposal)
+            if intent_type == "submit_world_template":
+                return self.platform.submit_world_template(actor_id, data.get("template") or {})
+        except (TypeError, ValueError, KeyError) as exc:
+            return {"status": "rejected", "failed_check": "intent_schema", "message": str(exc)}
+        return {"status": "rejected", "failed_check": "intent_type", "message": "Intent was not handled."}
+
+    def _audit(
+        self,
+        actor_id: str,
+        role: str,
+        task_type: str,
+        iteration: int,
+        context: str,
+        response: dict[str, Any],
+        status: str,
+    ) -> None:
+        """Persist a redacted-size response and a context digest for replay."""
+
+        try:
+            digest = hashlib.sha256(context.encode("utf-8")).hexdigest()
+            # Keep audit rows bounded even when a provider accidentally emits a
+            # very large object.  The full model context is reconstructed from
+            # the instance and the digest still detects replay drift.
+            encoded = json.dumps(response, ensure_ascii=False)
+            if len(encoded) > 16_000:
+                response = {"truncated": True, "sha256": hashlib.sha256(encoded.encode("utf-8")).hexdigest()}
+            self.platform.store.append_llm_call(actor_id, role, task_type, iteration, digest, response, status)
+        except Exception:
+            # Observability must never turn a valid Intent into a failed turn.
+            return

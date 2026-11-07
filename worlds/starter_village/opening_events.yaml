@@ -1,0 +1,25 @@
+opening_events:
+- id: world_created
+  world_minute: 0
+  type: world.created
+  payload:
+    world_id: starter_village
+- id: player_entry_window
+  world_minute: 1
+  type: player.entry_available
+  payload:
+    location_id: river_bridge
+    duration_minutes: 12
+- id: north_gate_marks
+  world_minute: 6
+  type: boundary.marks_found
+  payload:
+    location_id: north_gate
+    visibility: watch_only
+- id: grey_fever_notice
+  world_minute: 12
+  type: clinic.fever_reported
+  payload:
+    location_id: clinic
+    cases: 2
+    visibility: public

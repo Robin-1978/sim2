@@ -1,0 +1,72 @@
+minute_effects:
+- id: hunger_decay
+  scope: agent
+  every_minutes: 1
+  effect:
+    need: hunger
+    delta: -0.02
+- id: fatigue_recovery_idle
+  scope: agent
+  every_minutes: 1
+  condition: action.none
+  effect:
+    need: fatigue
+    delta: -0.1
+- id: relation_decay
+  scope: relationship
+  every_minutes: 144
+  effect:
+    relation_strength: -0.01
+- id: fog_cycle
+  scope: world
+  every_minutes: 144
+  effect:
+    fog_level: 0.05
+needs:
+- id: hunger
+  target: 80
+  minimum: 0
+  gamma: 1.8
+  critical_threshold: 0.75
+  critical_gain: 1.4
+- id: safety
+  target: 80
+  minimum: 0
+  gamma: 2.0
+  critical_threshold: 0.7
+  critical_gain: 1.8
+- id: belonging
+  target: 70
+  minimum: 0
+  gamma: 1.2
+  critical_threshold: 0.8
+  critical_gain: 0.8
+- id: esteem
+  target: 65
+  minimum: 0
+  gamma: 1.4
+  critical_threshold: 0.85
+  critical_gain: 0.6
+- id: self_actualization
+  target: 60
+  minimum: 0
+  gamma: 1.1
+  critical_threshold: 0.9
+  critical_gain: 0.4
+need_gates:
+- from: safety
+  to: self_actualization
+  threshold: 0.8
+  multiplier: 0.25
+- from: hunger
+  to: esteem
+  threshold: 0.85
+  multiplier: 0.4
+world_rules:
+- id: old_well_restriction
+  condition: actor.faction_id not_in [root_keepers] and actor.permission.old_well
+    == false
+  effect: deny_access
+- id: public_ration
+  condition: resource.village_food < 120
+  effect: council.ration_alert

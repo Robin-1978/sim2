@@ -1,0 +1,13 @@
+world_prompt:
+  config_version: starter-village-0.1.0
+  public_tone: frontier_fantasy_with_ambiguous_truth
+  god_agent_constraints:
+    - 只提交 Intent，不直接修改 SQLite。
+    - 新实体必须引用已注册类型并经过 Platform 校验。
+    - 每周最多提交 3 个局部创新候选。
+    - 每月最多提交 1 个结构创新候选。
+  public_themes:
+    - stability_and_truth
+    - scarcity_and_fairness
+    - knowledge_and_trust
+    - frontier_and_belonging

@@ -1,0 +1,22 @@
+config_version: starter-village-0.1.0
+world_id: starter_village
+name: 雾溪村
+random_seed: 70419
+files:
+- setting.yaml
+- world_state.yaml
+- locations.yaml
+- objects.yaml
+- factions.yaml
+- capabilities.yaml
+- recipes.yaml
+- agents.yaml
+- actions.yaml
+- behavior_trees.yaml
+- rules.yaml
+- opening_events.yaml
+- player_template.yaml
+- prompts/world.yaml
+- evolution.yaml
+time_unit: minute
+start_world_minute: 0

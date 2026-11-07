@@ -1,0 +1,25 @@
+{
+  "default_provider": "local",
+  "role_providers": {
+    "agent_decision": "local",
+    "agent_reflection": "local",
+    "god": "remote",
+    "world_builder": "remote"
+  },
+  "providers": {
+    "local": {
+      "type": "openai_compatible",
+      "base_url": "http://127.0.0.1:8192/v1",
+      "model": "local-model",
+      "api_key_env": null,
+      "timeout_seconds": 120
+    },
+    "remote": {
+      "type": "openai_compatible",
+      "base_url": "https://opencode.ai/inference/go/openai/v1",
+      "model": "beam-free",
+      "api_key_env": "MY_MY_API",
+      "timeout_seconds": 120
+    }
+  }
+}

@@ -1,0 +1,43 @@
+factions:
+  - id: village_council
+    name: 村务会
+    public: true
+    leader_id: lin_bo
+    norms:
+      - ration_before_trade
+      - night_restriction_at_old_well
+      - outsiders_register_at_inn
+  - id: village_watch
+    name: 村卫队
+    public: true
+    leader_id: he_yan
+    norms:
+      - report_boundary_events
+      - patrol_north_gate
+      - protect_civilians
+  - id: river_trade
+    name: 河路商盟
+    public: true
+    leader_id: fei_lan
+    norms:
+      - honor_contracts
+      - trade_information_for_value
+  - id: root_keepers
+    name: 根门守望者
+    public: hidden
+    leader_id: su_wu
+    norms:
+      - protect_root_gate
+      - do_not_reveal_pact_without_evidence
+relationships:
+  - {from: lin_bo, to: he_yan, type: trust, value: 0.72}
+  - {from: lin_bo, to: liang_he, type: dependence, value: 0.65}
+  - {from: lin_bo, to: fei_lan, type: suspicion, value: -0.42}
+  - {from: lin_bo, to: su_wu, type: distrust, value: -0.58}
+  - {from: he_yan, to: lu_xingzhou, type: respect, value: 0.58}
+  - {from: he_yan, to: qiao_ning, type: conflict, value: -0.35}
+  - {from: qiao_ning, to: su_wu, type: trust, value: 0.62}
+  - {from: tian_yan, to: liang_he, type: dependence, value: 0.54}
+  - {from: tian_yan, to: fei_lan, type: debt, value: -0.31}
+  - {from: yu_ge, to: lin_bo, type: respect, value: 0.44}
+  - {from: yu_ge, to: player, type: openness, value: 0.30}

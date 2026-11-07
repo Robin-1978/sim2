@@ -1,0 +1,19 @@
+player:
+  id_prefix: player_
+  entry_location_id: river_bridge
+  initial_faction_ids: []
+  initial_reputation: 0
+  knowledge_seed: [public:river_bridge, public:village_square, public:inn, public:village_rules]
+  origin_choices:
+    - id: courier
+      traits: {mobility: 0.7, negotiation: 0.5}
+      starting_goal: 找到失踪车队的下落
+    - id: apprentice
+      traits: {learning: 0.8, craft: 0.4}
+      starting_goal: 找到一位愿意收徒的工匠
+    - id: pilgrim
+      traits: {empathy: 0.7, ritual_sensitivity: 0.5}
+      starting_goal: 查明旧井禁令的由来
+    - id: survivor
+      traits: {survival: 0.8, caution: 0.6}
+      starting_goal: 在村中获得安全住所

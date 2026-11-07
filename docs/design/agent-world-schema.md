@@ -1,0 +1,165 @@
+# Agent World JSON 与世界模板协议
+
+## 设计结论
+
+LLM 使用 JSON 进行读取和表达意图。SQLite 保存运行时事实，SQL 表用于事务、索引和约束，JSON 只作为配置交换格式、LLM 上下文投影和 Intent 协议。LLM 不直接编辑完整世界状态，也不执行 SQL。原始配置中的条件表达式、数据库字段名、效果原语和内部路径只供 Platform 使用，不直接进入 Prompt。
+
+```text
+Authoring YAML/JSON
+  → Bootstrap normalized domain objects
+  → SQLite tables + JSON payloads
+  → AgentViewCompiler
+  → compact ContextEnvelope JSON
+  → LLM Intent JSON
+  → Platform validation and transaction
+```
+
+## 统一 AgentView
+
+Platform 根据当前 Agent 角色和权限生成精简 JSON。视图只包含与当前任务相关的信息，使用简短英语字段，避免把数据库列、内部实现和无关实体传给 LLM。
+
+Decision Agent 只选择 Platform 已经注册、校验并过滤过的行为。它不编写 BT、不填写效果、不计算成本，也不直接选择底层 Action。BT 创新由 Reflection/Evolution、God 或 WorldBuilder Agent 通过单独的 Proposal Function 提出，Platform 校验成功后才会进入后续候选目录。
+
+```json
+{
+  "context_version": "1",
+  "role": "agent_decision",
+  "world_time": {"minute": 1530, "label": "Day 2 01:30"},
+  "self": {
+    "id": "he_yan",
+    "role": "watch_captain",
+    "status": "injured",
+    "location": "north_gate",
+    "health": 72,
+    "stamina": 44,
+    "fatigue": 61,
+    "goal": "Build a reliable warning and patrol system"
+  },
+  "drives": [
+    {"id": "safety", "urgency": 0.91, "reason": "boundary threat is high"},
+    {"id": "esteem", "urgency": 0.58, "reason": "patrol failure needs repair"}
+  ],
+  "observation": {
+    "facts": ["fresh marks at the north gate", "one civilian is nearby"],
+    "source": "direct_sight",
+    "expires_in_minutes": 30
+  },
+  "known_facts": [
+    {"fact": "north gate marks are new", "source": "observation", "confidence": 0.88}
+  ],
+  "active_task": null,
+  "available_behaviors": [
+    {
+      "ref": "behavior:sound_alarm",
+      "name": "Raise warning alarm",
+      "when": ["A boundary threat is confirmed.", "You are at a watch post."],
+      "time": "6 minutes",
+      "cost": ["Attention: low"],
+      "result": ["The village receives a warning."],
+      "failure": ["The alarm device is unavailable."]
+    }
+  ],
+  "tools": [
+    {"name": "observe_nearby", "purpose": "Read visible facts around your current location.", "input": {"question": "plain language"}},
+    {"name": "recall_memory", "purpose": "Recall your own knowledge and past experiences.", "input": {"question": "plain language"}},
+    {"name": "preview_behavior", "purpose": "Preview whether an offered behavior is possible and what it will cost.", "input": {"behavior_ref": "offered behavior reference"}},
+    {"name": "request_behavior", "purpose": "Ask the Platform to execute one offered behavior.", "input": {"behavior_ref": "offered behavior reference", "target": "optional target", "reason": "short explanation"}}
+  ],
+  "last_platform_result": null
+}
+```
+
+`available_behaviors` 只包含 Platform 已经验证过的 BT 或 Action。实体、地点、物体和规则也使用相同的简洁视图：`ref`、`name`、`type`、`summary`、`known_state`、`distance`、`visibility` 和 `constraints`。隐藏真相、完整数据库和其他 Agent 的私有记忆不进入视图。
+
+这段 JSON 是单个决策的切片，不是完整世界。Context Compiler 默认只保留：当前 Agent、当前地点、当前事件、最高的 3 个驱动、直接关系、最相关的 3 到 8 条知识或记忆、最多 5 个可执行候选和最近一次 Platform 结果。God Agent 使用世界级摘要和按需查询；WorldBuilder Agent 分阶段处理世界模板。上下文预算先保证当前错误、活动任务、直接关系和候选行为，再压缩长期摘要和低相关信息。
+
+关系使用人类可读摘要表达：
+
+```json
+{
+  "person": "Lin Bo",
+  "relation": "village leader",
+  "trust": "high",
+  "recent_change": "He concealed the old pact from the council.",
+  "relevant_to_goal": true
+}
+```
+
+Agent 需要更远或更详细的信息时，通过 `observe_nearby`、`recall_memory` 或 `preview_behavior` 按需获取。工具结果也必须是短句、有限列表和明确来源，Platform 不返回原始表格或长事件日志。
+
+## ActionView 与 BTView
+
+每个元动作和 BT 都必须生成以下英文视图字段：
+
+| 字段 | 含义 |
+|---|---|
+| `ref` | Platform 稳定引用，LLM 原样回传 |
+| `name` | 人类可读名称 |
+| `summary` | 一句话目的 |
+| `when` | 简短自然语言条件 |
+| `purpose` | 行为的目标 |
+| `requires` | 当前选择需要满足的条件 |
+| `steps` | BT 内部的简短步骤名称 |
+| `target` | 人类可读的目标范围 |
+| `time` | 人类可读执行时间 |
+| `cost` | 人类可读消耗 |
+| `impact` | 可观察的状态或事件影响 |
+| `success` | 成功后的可观察结果 |
+| `failure` | 可能失败或被拒绝的原因 |
+| `interrupt` | 是否可暂停、取消或不可中断 |
+
+英语视图由规范化配置和模板编译生成，不能由 LLM 随意改写 Platform 的真实数值。世界配置可以保存中文说明和英文说明，英文视图是给 LLM 的稳定协议。内部 predicate、path、opcode、handler 和表名永远留在 Platform 层。
+
+## Intent JSON
+
+Decision Agent 返回选择 Intent，而不是完整状态或 BT 定义：
+
+```json
+{
+  "intent_type": "select_behavior",
+  "actor_id": "he_yan",
+  "behavior_ref": "behavior:sound_alarm",
+  "target": {"location_id": "north_gate"},
+  "parameters": {"alarm_type": "boundary"},
+  "reason": "The threat is high and the watch post is available.",
+  "confidence": 0.87
+}
+```
+
+Platform 使用 SQLite 中的定义重新计算条件、成本和效果，忽略 LLM 自己填写的数值。校验失败时返回简短英语 `message`、`failed_check`、`repair_hint` 和新的可选项，LLM 在同一 ReAct 任务中修正 JSON。
+
+## LLM 创建新世界模板
+
+创建新世界使用独立的 `WorldBuilder Agent`，它和运行中的 God Agent 分离。WorldBuilder Agent 生成 `WorldTemplateDraft` JSON，Platform 校验后才创建新的配置包和 SQLite 实例。
+
+```json
+{
+  "template_version": "1",
+  "world": {
+    "id": "mist_valley",
+    "title": "Mist Valley",
+    "premise": "A frontier settlement depends on a failing pact.",
+    "time_unit": "minute",
+    "calendar": {"minutes_per_day": 1440}
+  },
+  "entities": [],
+  "capabilities": [],
+  "actions": [],
+  "recipes": [],
+  "behavior_trees": [],
+  "rules": [],
+  "initial_events": [],
+  "agent_views": {"public_summary": "A frontier settlement depends on a failing pact."}
+}
+```
+
+WorldBuilder Agent 的流程是：
+
+1. 根据用户自然语言需求生成 Draft JSON。
+2. 调用只读 `validate_world_template`。
+3. Platform 返回 Schema、引用、循环、能力、效果、资源、时间和安全错误。
+4. Agent 在 ReAct 中修正 Draft。
+5. Platform 通过后生成规范化配置包、计算哈希并创建新的 SQLite 实例。
+6. Bootstrap 导入实体、能力、元动作、BT、规则、初始知识、提示词和开局事件。
+
+WorldBuilder Agent 可以提出世界实体、初始 Agent、元动作、配方和基础 BT，但不能写文件、执行 SQL 或直接创建实例。创建结果仍然经过 Platform 的白名单原语和事务初始化。

@@ -1,0 +1,539 @@
+agents:
+- id: lin_bo
+  name: 林泊
+  role: village_steward
+  age: 52
+  faction_ids:
+  - village_council
+  traits:
+    cautious: 0.85
+    responsible: 0.9
+    secretive: 0.78
+    empathetic: 0.55
+  ultimate_goal: 让雾溪村在下一次深雾周期后保持自治和人口完整
+  beliefs:
+  - id: stability_first
+    statement: 稳定先于真相，真相必须在能被承受时公开
+    confidence: 0.88
+  - id: outsider_risk
+    statement: 外来者必须先证明可靠
+    confidence: 0.72
+  needs:
+    safety: 68
+    belonging: 78
+    esteem: 70
+    self_actualization: 52
+  knowledge_seed:
+  - public:village
+  - public:population
+  - public:granary
+  - secret:old_pact_fragment
+  initial_bt_ids:
+  - govern_village
+  - mediate_conflict
+  - inspect_granary
+  - sound_alarm
+  capabilities:
+    governance: 0.92
+    mediation: 0.72
+    public_speaking: 0.65
+  initial_state:
+    location_id: village_square
+    health: 100
+    fatigue: 10
+    reputation: 0
+    stamina: 100
+    threat_level: 0
+    status: idle
+    injuries: []
+    conditions: []
+    active_bt_instance: null
+    active_action: null
+    action_progress: 0.0
+    remaining_minutes: 0
+    current_goal_id: ultimate_goal
+    last_platform_result: null
+  inventory:
+    ration_tokens: 3
+  combat_stats:
+    attack_power: 2
+    defense: 2
+- id: he_yan
+  name: 何砚
+  role: watch_captain
+  age: 34
+  faction_ids:
+  - village_watch
+  traits:
+    vigilant: 0.92
+    disciplined: 0.88
+    suspicious: 0.7
+    loyal: 0.8
+  ultimate_goal: 建立能够保护所有人的巡逻和预警体系
+  beliefs:
+  - id: unknown_is_threat
+    statement: 未验证的未知事物应先按威胁处理
+    confidence: 0.83
+  - id: duty_over_feeling
+    statement: 职责胜过个人情感
+    confidence: 0.76
+  needs:
+    safety: 74
+    belonging: 62
+    esteem: 81
+    self_actualization: 45
+  knowledge_seed:
+  - public:village
+  - public:watch_routes
+  - public:north_gate
+  - event:north_gate_marks
+  initial_bt_ids:
+  - patrol_route
+  - defend_village
+  - sound_alarm
+  capabilities:
+    patrol: 0.94
+    investigation: 0.78
+    escort: 0.82
+    combat: 0.9
+    defense: 0.92
+    alarm: 0.96
+  initial_state:
+    location_id: watchtower
+    health: 100
+    fatigue: 10
+    reputation: 0
+    stamina: 100
+    threat_level: 0
+    status: idle
+    injuries: []
+    conditions: []
+    active_bt_instance: null
+    active_action: null
+    action_progress: 0.0
+    remaining_minutes: 0
+    current_goal_id: ultimate_goal
+    last_platform_result: null
+  inventory:
+    spear: 1
+    lantern: 1
+  combat_stats:
+    attack_power: 8
+    defense: 6
+- id: liang_he
+  name: 梁禾
+  role: granary_keeper
+  age: 39
+  faction_ids:
+  - village_council
+  traits:
+    practical: 0.9
+    frugal: 0.88
+    stubborn: 0.64
+    protective: 0.78
+  ultimate_goal: 让村庄安全度过冬季且不发生饥荒
+  beliefs:
+  - id: food_before_honor
+    statement: 人人先有食物，规则才有意义
+    confidence: 0.91
+  - id: reserve_is_safety
+    statement: 没有储备就没有自由
+    confidence: 0.8
+  needs:
+    safety: 71
+    belonging: 66
+    esteem: 60
+    self_actualization: 38
+  knowledge_seed:
+  - public:village
+  - public:granary
+  - public:farm_fields
+  - public:food_ration
+  initial_bt_ids:
+  - manage_ration
+  - gather_resource
+  - inspect_granary
+  - craft_meal
+  capabilities:
+    farming: 0.88
+    rationing: 0.94
+    accounting: 0.79
+    cooking: 0.45
+  initial_state:
+    location_id: granary
+    health: 100
+    fatigue: 10
+    reputation: 0
+    stamina: 100
+    threat_level: 0
+    status: idle
+    injuries: []
+    conditions: []
+    active_bt_instance: null
+    active_action: null
+    action_progress: 0.0
+    remaining_minutes: 0
+    current_goal_id: ultimate_goal
+    last_platform_result: null
+  inventory:
+    ledger: 1
+    seed_grain: 2
+  combat_stats:
+    attack_power: 3
+    defense: 3
+- id: qiao_ning
+  name: 乔宁
+  role: herbalist
+  age: 29
+  faction_ids: []
+  traits:
+    curious: 0.87
+    empathetic: 0.81
+    independent: 0.72
+    patient: 0.66
+  ultimate_goal: 找到灰热病的稳定疗法并恢复河水安全
+  beliefs:
+  - id: forest_feedback
+    statement: 森林是有反馈的生态，不是单纯敌人
+    confidence: 0.76
+  - id: symptoms_are_clues
+    statement: 症状是世界传递信息的方式
+    confidence: 0.71
+  needs:
+    safety: 54
+    belonging: 58
+    esteem: 64
+    self_actualization: 84
+  knowledge_seed:
+  - public:village
+  - public:clinic
+  - public:river_bank
+  - secret:grey_fever_source
+  initial_bt_ids:
+  - heal_target
+  - gather_resource
+  - research_source
+  capabilities:
+    healing: 0.91
+    herbalism: 0.82
+    water_testing: 0.7
+  initial_state:
+    location_id: clinic
+    health: 100
+    fatigue: 10
+    reputation: 0
+    stamina: 100
+    threat_level: 0
+    status: idle
+    injuries: []
+    conditions: []
+    active_bt_instance: null
+    active_action: null
+    action_progress: 0.0
+    remaining_minutes: 0
+    current_goal_id: ultimate_goal
+    last_platform_result: null
+  inventory:
+    water_test_kit: 1
+    herb_bundle: 2
+  combat_stats:
+    attack_power: 2
+    defense: 2
+- id: tian_yan
+  name: 田岩
+  role: blacksmith
+  age: 46
+  faction_ids: []
+  traits:
+    craft_focused: 0.92
+    dependable: 0.76
+    proud: 0.7
+    direct: 0.74
+  ultimate_goal: 在深雾前完成晨钟并为村庄建立可靠的预警工具
+  beliefs:
+  - id: craft_over_prophecy
+    statement: 可验证的工艺比预言可靠
+    confidence: 0.89
+  - id: promises_need_tools
+    statement: 每个承诺都应该有能被使用的工具
+    confidence: 0.73
+  needs:
+    safety: 60
+    belonging: 52
+    esteem: 79
+    self_actualization: 81
+  knowledge_seed:
+  - public:village
+  - public:smithy
+  - public:old_quarry
+  - resource:star_metal_hint
+  initial_bt_ids:
+  - craft_meal
+  - gather_resource
+  capabilities:
+    forging: 0.96
+    mining: 0.72
+    repair: 0.89
+    cooking: 0.1
+  initial_state:
+    location_id: smithy
+    health: 100
+    fatigue: 10
+    reputation: 0
+    stamina: 100
+    threat_level: 0
+    status: idle
+    injuries: []
+    conditions: []
+    active_bt_instance: null
+    active_action: null
+    action_progress: 0.0
+    remaining_minutes: 0
+    current_goal_id: ultimate_goal
+    last_platform_result: null
+  inventory:
+    hammer: 1
+    iron_ore: 3
+  combat_stats:
+    attack_power: 6
+    defense: 5
+- id: lu_xingzhou
+  name: 陆行舟
+  role: hunter_mapper
+  age: 28
+  faction_ids: []
+  traits:
+    bold: 0.86
+    observant: 0.91
+    restless: 0.78
+    honest: 0.68
+  ultimate_goal: 完成灰林地图并找到失踪的妹妹陆素
+  beliefs:
+  - id: forest_punishes_lies
+    statement: 森林会惩罚谎言
+    confidence: 0.74
+  - id: maps_are_promises
+    statement: 地图是一种承诺
+    confidence: 0.85
+  needs:
+    safety: 42
+    belonging: 57
+    esteem: 61
+    self_actualization: 88
+  knowledge_seed:
+  - public:village
+  - public:greywood_edge
+  - event:missing_sister
+  - route:old_quarry
+  initial_bt_ids:
+  - explore_greywood
+  - patrol_route
+  - defend_position
+  - flee_to_safety
+  capabilities:
+    exploration: 0.95
+    tracking: 0.93
+    hunting: 0.87
+    combat: 0.76
+    ranged_attack: 0.82
+    flee: 0.88
+  initial_state:
+    location_id: north_gate
+    health: 100
+    fatigue: 10
+    reputation: 0
+    stamina: 100
+    threat_level: 0
+    status: idle
+    injuries: []
+    conditions: []
+    active_bt_instance: null
+    active_action: null
+    action_progress: 0.0
+    remaining_minutes: 0
+    current_goal_id: ultimate_goal
+    last_platform_result: null
+  inventory:
+    bow: 1
+    rations: 3
+    map_kit: 1
+  combat_stats:
+    attack_power: 7
+    defense: 4
+- id: yu_ge
+  name: 余歌
+  role: innkeeper_information_broker
+  age: 41
+  faction_ids: []
+  traits:
+    social: 0.93
+    perceptive: 0.86
+    diplomatic: 0.82
+    opportunistic: 0.58
+  ultimate_goal: 把旅店变成各方都能安全交换信息的中立场所
+  beliefs:
+  - id: stories_are_currency
+    statement: 故事和消息是公共资源
+    confidence: 0.87
+  - id: truth_needs_carriers
+    statement: 真相只有被传递才会改变世界
+    confidence: 0.79
+  needs:
+    safety: 64
+    belonging: 86
+    esteem: 72
+    self_actualization: 66
+  knowledge_seed:
+  - public:village
+  - public:inn
+  - rumor:caravan_loss
+  - rumor:north_gate_marks
+  initial_bt_ids:
+  - communicate
+  - mediate_conflict
+  capabilities:
+    hospitality: 0.91
+    conversation: 0.85
+    rumor_assessment: 0.85
+  initial_state:
+    location_id: inn
+    health: 100
+    fatigue: 10
+    reputation: 0
+    stamina: 100
+    threat_level: 0
+    status: idle
+    injuries: []
+    conditions: []
+    active_bt_instance: null
+    active_action: null
+    action_progress: 0.0
+    remaining_minutes: 0
+    current_goal_id: ultimate_goal
+    last_platform_result: null
+  inventory:
+    inn_keys: 1
+    letter_bundle: 1
+  combat_stats:
+    attack_power: 2
+    defense: 2
+- id: fei_lan
+  name: 费兰
+  role: traveling_merchant
+  age: 36
+  faction_ids:
+  - river_trade
+  traits:
+    persuasive: 0.88
+    pragmatic: 0.83
+    ambitious: 0.76
+    secretive: 0.64
+  ultimate_goal: 恢复商路并找回失踪车队的账册
+  beliefs:
+  - id: everything_has_price
+    statement: 一切关系都能通过交换重新定价
+    confidence: 0.82
+  - id: routes_make_power
+    statement: 谁控制路线谁就控制选择
+    confidence: 0.77
+  needs:
+    safety: 48
+    belonging: 44
+    esteem: 75
+    self_actualization: 69
+  knowledge_seed:
+  - public:village
+  - public:trade_route
+  - rumor:missing_ledger
+  - faction:river_trade
+  initial_bt_ids:
+  - communicate
+  - negotiate
+  - explore_greywood
+  capabilities:
+    trade: 0.92
+    negotiation: 0.89
+    route_planning: 0.77
+    conversation: 0.85
+  initial_state:
+    location_id: inn
+    health: 100
+    fatigue: 10
+    reputation: 0
+    stamina: 100
+    threat_level: 0
+    status: idle
+    injuries: []
+    conditions: []
+    active_bt_instance: null
+    active_action: null
+    action_progress: 0.0
+    remaining_minutes: 0
+    current_goal_id: ultimate_goal
+    last_platform_result: null
+  inventory:
+    trade_goods: 3
+    rations: 2
+    coin: 20
+  combat_stats:
+    attack_power: 3
+    defense: 2
+- id: su_wu
+  name: 苏巫
+  role: pact_scholar
+  age: 61
+  faction_ids:
+  - root_keepers
+  traits:
+    scholarly: 0.94
+    secretive: 0.82
+    patient: 0.72
+    risk_tolerant: 0.68
+  ultimate_goal: 理解根门并决定续约、改约或终止契约
+  beliefs:
+  - id: village_watches_forest
+    statement: 村庄建立的目的不是占有森林，而是守望边界
+    confidence: 0.92
+  - id: truth_has_cost
+    statement: 真相有代价，但沉默也有代价
+    confidence: 0.88
+  needs:
+    safety: 50
+    belonging: 48
+    esteem: 57
+    self_actualization: 96
+  knowledge_seed:
+  - public:village
+  - secret:root_gate
+  - secret:old_pact
+  - secret:grey_fever_source
+  initial_bt_ids:
+  - research_source
+  - inspect_object
+  - craft_meal
+  capabilities:
+    research: 0.96
+    ritual: 0.9
+    lore: 0.98
+  initial_state:
+    location_id: old_well
+    health: 100
+    fatigue: 10
+    reputation: 0
+    stamina: 100
+    threat_level: 0
+    status: idle
+    injuries: []
+    conditions: []
+    active_bt_instance: null
+    active_action: null
+    action_progress: 0.0
+    remaining_minutes: 0
+    current_goal_id: ultimate_goal
+    last_platform_result: null
+  inventory:
+    pact_notes: 1
+    ritual_material: 1
+  combat_stats:
+    attack_power: 1
+    defense: 3

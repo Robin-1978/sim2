@@ -1,0 +1,155 @@
+from pathlib import Path
+
+from sandbox.agents.engine import AgentEngine
+from sandbox.bootstrap.service import create_instance
+from sandbox.platform.runtime import Platform
+from sandbox.prompting.renderer import render_context
+
+
+class FakeProvider:
+    def __init__(self, response):
+        self.response = response
+        self.calls = []
+
+    def complete_json(self, *, system, context):
+        self.calls.append((system, context))
+        return dict(self.response)
+
+
+class SequenceProvider:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def complete_json(self, *, system, context, tools=None):
+        self.calls.append({"system": system, "context": context, "tools": tools})
+        return dict(self.responses.pop(0))
+
+
+def test_bootstrap_and_agent_intent(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "test-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    provider = FakeProvider(
+        {
+            "actor_id": "lu_xingzhou",
+            "behavior_ref": "behavior:explore_greywood",
+            "target": {},
+            "parameters": {},
+            "reason": "The area is not fully mapped.",
+            "confidence": 0.9,
+        }
+    )
+    try:
+        turn = AgentEngine(platform, provider).run(role="agent_decision", actor_id="lu_xingzhou")
+        assert turn.result["status"] == "accepted"
+        assert turn.result["behavior_ref"] == "behavior:explore_greywood"
+        assert turn.iterations == 1
+        assert provider.calls
+        prompt = provider.calls[0][1]
+        assert "# OPTIONS" in prompt
+        assert "collect" not in prompt.lower()
+        assert "actor.can" not in prompt
+    finally:
+        platform.close()
+
+
+def test_context_uses_role_tools_and_plain_sections():
+    class View:
+        pass
+
+    context = {
+        "self": {"name": "A", "role": "watcher", "status": "idle", "location": "gate", "goal": "protect"},
+        "drives": [],
+        "observation": {"facts": ["A fresh mark is visible."], "source": "direct sight"},
+        "direct_relationships": [],
+        "known_facts": [],
+        "active_task": {},
+        "available_behaviors": [{"ref": "behavior:patrol_route", "name": "Patrol Route", "when": ["A route needs inspection."], "time": "96 minutes", "result": ["A report is recorded."]}],
+        "tools": [{"name": "request_behavior", "purpose": "Ask Platform to start one offered behavior."}],
+    }
+    prompt = render_context(context, "Choose a behavior.")
+    assert "# TOOLS" in prompt
+    assert "request_behavior" in prompt
+    assert "A fresh mark is visible." in prompt
+
+
+def test_react_session_reads_tool_result_before_selecting_behavior(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "react-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    provider = SequenceProvider([
+        {"tool_call": {"name": "observe_nearby", "arguments": {"question": "Who is nearby?"}}},
+        {
+            "behavior_ref": "behavior:explore_greywood",
+            "target": {},
+            "parameters": {},
+            "reason": "The local view confirms exploration is useful.",
+            "confidence": 0.8,
+        },
+    ])
+    try:
+        turn = AgentEngine(platform, provider).run(role="agent_decision", actor_id="lu_xingzhou")
+        assert turn.result["status"] == "accepted"
+        assert turn.iterations == 2
+        assert "TOOL RESULTS" in provider.calls[1]["context"]
+        assert provider.calls[0]["tools"]
+        assert provider.calls[0]["tools"][0]["function"]["name"] == "observe_nearby"
+        assert any(step["step"] == "tool" for step in turn.transcript)
+    finally:
+        platform.close()
+
+
+def test_react_session_retries_after_platform_rejection(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "retry-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    provider = SequenceProvider([
+        {"behavior_ref": "behavior:manage_ration", "reason": "Not available to this character."},
+        {"behavior_ref": "behavior:explore_greywood", "reason": "Use an offered behavior."},
+    ])
+    try:
+        turn = AgentEngine(platform, provider).run(role="agent_decision", actor_id="lu_xingzhou")
+        assert turn.result["status"] == "accepted"
+        assert turn.iterations == 2
+        assert "not available" in provider.calls[1]["context"].lower()
+    finally:
+        platform.close()
+
+
+def test_reflection_intent_is_committed_by_platform(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "reflection-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    provider = SequenceProvider([
+        {
+            "intent_type": "record_experience",
+            "event_ref": "event:test",
+            "summary": "The first observation was confirmed by a nearby witness.",
+            "confidence": 0.7,
+        }
+    ])
+    try:
+        turn = AgentEngine(platform, provider).run(role="agent_reflection", actor_id="lu_xingzhou", task_type="daily_reflection")
+        assert turn.result["status"] == "accepted"
+        memories = platform.store.list_memories("lu_xingzhou")
+        assert memories[0]["summary"].startswith("The first observation")
+    finally:
+        platform.close()
+
+
+def test_decision_session_does_not_call_llm_while_behavior_is_active(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "active-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    first = SequenceProvider([{"behavior_ref": "behavior:explore_greywood"}])
+    second = SequenceProvider([{"behavior_ref": "behavior:patrol_route"}])
+    try:
+        accepted = AgentEngine(platform, first).run(role="agent_decision", actor_id="lu_xingzhou")
+        skipped = AgentEngine(platform, second).run(role="agent_decision", actor_id="lu_xingzhou")
+        assert accepted.result["status"] == "accepted"
+        assert skipped.result["status"] == "skipped"
+        assert skipped.iterations == 0
+        assert second.calls == []
+    finally:
+        platform.close()
