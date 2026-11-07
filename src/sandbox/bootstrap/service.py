@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import shutil
 from pathlib import Path
 from typing import Any
@@ -10,6 +9,19 @@ import yaml
 from ..persistence.store import WorldStore, config_hash
 
 
+CONFIG_COLLECTIONS = {
+    "locations.yaml": "locations",
+    "objects.yaml": "objects",
+    "factions.yaml": "factions",
+    "agents.yaml": "agents",
+    "actions.yaml": "actions",
+    "behavior_trees.yaml": "behavior_trees",
+    "recipes.yaml": "recipes",
+    "capabilities.yaml": "capabilities",
+    "opening_events.yaml": "opening_events",
+}
+
+
 def load_yaml(config_dir: Path, name: str, default: Any) -> Any:
     path = config_dir / name
     if not path.exists():
@@ -17,12 +29,108 @@ def load_yaml(config_dir: Path, name: str, default: Any) -> Any:
     return yaml.safe_load(path.read_text(encoding="utf-8")) or default
 
 
-def create_instance(
-    config_dir: Path,
-    instance_id: str,
-    runtime_root: Path | None = None,
-) -> Path:
+def _ids(values: list[dict[str, Any]], label: str, errors: list[str]) -> set[str]:
+    result: set[str] = set()
+    for value in values:
+        value_id = value.get("id")
+        if not isinstance(value_id, str) or not value_id:
+            errors.append(f"{label} entry has no non-empty id")
+            continue
+        if value_id in result:
+            errors.append(f"duplicate {label} id: {value_id}")
+        result.add(value_id)
+    return result
+
+
+def validate_config(config_dir: Path) -> dict[str, Any]:
+    """Validate generic package references before creating a SQLite file."""
+
     config_dir = Path(config_dir).resolve()
+    errors: list[str] = []
+    manifest = load_yaml(config_dir, "manifest.yaml", {})
+    if not isinstance(manifest, dict):
+        return {"valid": False, "errors": ["manifest.yaml must contain an object"]}
+    if not manifest.get("config_version"):
+        errors.append("manifest.config_version is required")
+    declared_files = manifest.get("files", [])
+    if declared_files and not isinstance(declared_files, list):
+        errors.append("manifest.files must be a list")
+    for name in declared_files if isinstance(declared_files, list) else []:
+        if not isinstance(name, str) or not name or Path(name).is_absolute() or ".." in Path(name).parts:
+            errors.append(f"invalid manifest file path: {name!r}")
+        elif not (config_dir / name).is_file():
+            errors.append(f"declared config file is missing: {name}")
+
+    data: dict[str, list[dict[str, Any]]] = {}
+    for filename, key in CONFIG_COLLECTIONS.items():
+        values = load_yaml(config_dir, filename, {}).get(key, [])
+        if not isinstance(values, list):
+            errors.append(f"{filename}.{key} must be a list")
+            values = []
+        data[key] = values
+    ids_by_key = {key: _ids(values, key, errors) for key, values in data.items()}
+
+    location_ids = ids_by_key["locations"]
+    action_ids = ids_by_key["actions"]
+    behavior_ids = ids_by_key["behavior_trees"]
+    agent_ids = ids_by_key["agents"]
+    object_ids = ids_by_key["objects"]
+    faction_ids = ids_by_key["factions"]
+    known_entities = location_ids | object_ids | agent_ids | faction_ids
+
+    for location in data["locations"]:
+        for route in location.get("routes", []):
+            if route not in location_ids:
+                errors.append(f"location {location.get('id')} references unknown route {route}")
+    for obj in data["objects"]:
+        location_id = obj.get("initial_state", {}).get("location_id")
+        if location_id and location_id not in location_ids:
+            errors.append(f"object {obj.get('id')} references unknown location {location_id}")
+    for action in data["actions"]:
+        if not isinstance(action.get("id"), str):
+            continue
+        for parameter in (action.get("parameters") or {}).values():
+            if isinstance(parameter, dict) and parameter.get("entity_ref") and parameter["entity_ref"] not in known_entities:
+                errors.append(f"action {action.get('id')} references unknown entity {parameter['entity_ref']}")
+    for behavior in data["behavior_trees"]:
+        for node in behavior.get("nodes", []):
+            if not isinstance(node, dict):
+                errors.append(f"behavior {behavior.get('id')} contains a non-object node")
+                continue
+            if node.get("type") == "action" and node.get("action_id") not in action_ids:
+                errors.append(f"behavior {behavior.get('id')} references unknown action {node.get('action_id')}")
+            if node.get("type") in {"subtree", "behavior"} and node.get("behavior_id") not in behavior_ids:
+                errors.append(f"behavior {behavior.get('id')} references unknown behavior {node.get('behavior_id')}")
+            if node.get("type") in {"selector", "sequence", "parallel"}:
+                for child in node.get("children", []):
+                    if isinstance(child, str) and child not in behavior_ids:
+                        errors.append(f"behavior {behavior.get('id')} references unknown child behavior {child}")
+    for agent in data["agents"]:
+        for behavior_id in agent.get("initial_bt_ids", []):
+            if behavior_id not in behavior_ids:
+                errors.append(f"agent {agent.get('id')} references unknown behavior {behavior_id}")
+        for faction_id in agent.get("faction_ids", []):
+            if faction_id not in faction_ids:
+                errors.append(f"agent {agent.get('id')} references unknown faction {faction_id}")
+    for faction in data["factions"]:
+        leader_id = faction.get("leader_id")
+        if leader_id and leader_id not in agent_ids:
+            errors.append(f"faction {faction.get('id')} references unknown leader {leader_id}")
+    relationships = load_yaml(config_dir, "factions.yaml", {}).get("relationships", [])
+    for relation in relationships:
+        if relation.get("from") not in agent_ids:
+            errors.append(f"relationship references unknown source {relation.get('from')}")
+        if relation.get("to") not in agent_ids and relation.get("to") != "player":
+            errors.append(f"relationship references unknown target {relation.get('to')}")
+
+    return {"valid": not errors, "errors": errors, "manifest": manifest}
+
+
+def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | None = None) -> Path:
+    config_dir = Path(config_dir).resolve()
+    validation = validate_config(config_dir)
+    if not validation["valid"]:
+        raise ValueError("Invalid world configuration: " + "; ".join(validation["errors"]))
     runtime_root = Path(runtime_root or (Path.home() / ".sim2"))
     db_path = runtime_root / "instances" / instance_id / "world.sqlite3"
     if db_path.exists():
@@ -30,7 +138,7 @@ def create_instance(
     db_path.parent.mkdir(parents=True, exist_ok=True)
     store = WorldStore(db_path)
     try:
-        manifest = load_yaml(config_dir, "manifest.yaml", {})
+        manifest = validation["manifest"]
         with store.transaction():
             store.set_meta("world_id", manifest.get("world_id", instance_id))
             store.set_meta("instance_id", instance_id)
@@ -38,20 +146,36 @@ def create_instance(
             store.set_meta("config_hash", config_hash(config_dir))
             store.set_meta("world_minute", manifest.get("start_world_minute", 0))
             store.set_meta("time_unit", manifest.get("time_unit", "minute"))
+            store.set_meta("random_seed", manifest.get("random_seed"))
 
             setting = load_yaml(config_dir, "setting.yaml", {})
             store.set_meta("setting", setting)
             world_state = load_yaml(config_dir, "world_state.yaml", {}).get("world_state", {})
             store.set_meta("world_properties", world_state.get("properties", {}))
             store.set_meta("rules", load_yaml(config_dir, "rules.yaml", {}))
+            store.set_meta("evolution", load_yaml(config_dir, "evolution.yaml", {}))
 
             for location in load_yaml(config_dir, "locations.yaml", {}).get("locations", []):
                 store.put_entity(location["id"], "location", location.get("name", location["id"]), location)
             for obj in load_yaml(config_dir, "objects.yaml", {}).get("objects", []):
                 store.put_entity(obj["id"], obj.get("type", "object"), obj.get("name", obj["id"]), obj)
-            for npc in load_yaml(config_dir, "agents.yaml", {}).get("agents", []):
-                state = dict(npc)
-                store.put_agent(npc["id"], state, npc.get("name", npc["id"]))
+            locations = load_yaml(config_dir, "locations.yaml", {})
+            for resource in locations.get("resources", []):
+                store.put_entity(resource["id"], "resource", resource.get("id", "resource"), resource)
+            for faction in load_yaml(config_dir, "factions.yaml", {}).get("factions", []):
+                store.put_entity(faction["id"], "faction", faction.get("name", faction["id"]), faction)
+            for agent in load_yaml(config_dir, "agents.yaml", {}).get("agents", []):
+                state = dict(agent)
+                store.put_agent(agent["id"], state, agent.get("name", agent["id"]))
+                for knowledge in agent.get("knowledge_seed", []):
+                    fact_key = str(knowledge)
+                    store.put_knowledge_fact(agent["id"], fact_key, {"fact": fact_key, "source_type": "config_seed", "confidence": 1.0})
+            for relation in load_yaml(config_dir, "factions.yaml", {}).get("relationships", []):
+                relation_data = dict(relation)
+                from_id = str(relation_data.pop("from"))
+                to_id = str(relation_data.pop("to"))
+                relation_type = str(relation_data.pop("type", "related"))
+                store.put_relationship(from_id, to_id, relation_type, relation_data)
             for table, filename, key in [
                 ("action_def", "actions.yaml", "actions"),
                 ("bt_def", "behavior_trees.yaml", "behavior_trees"),
@@ -60,11 +184,14 @@ def create_instance(
             ]:
                 for definition in load_yaml(config_dir, filename, {}).get(key, []):
                     store.put_definition(table, definition["id"], definition)
-
+            prompt_dir = config_dir / "prompts"
+            if prompt_dir.is_dir():
+                for prompt_path in sorted(prompt_dir.glob("*.yaml")):
+                    store.put_prompt(prompt_path.stem, yaml.safe_load(prompt_path.read_text(encoding="utf-8")) or {})
             for event in load_yaml(config_dir, "opening_events.yaml", {}).get("opening_events", []):
                 minute = int(event.get("world_minute", event.get("minute", 0)))
                 store.append_event(event["type"], None, minute, event.get("payload", {}))
-            store.set_meta("bootstrap_report", {"status": "complete", "config_dir": str(config_dir)})
+            store.set_meta("bootstrap_report", {"status": "complete", "config_dir": str(config_dir), "validation_errors": []})
         return db_path
     except Exception:
         store.close()

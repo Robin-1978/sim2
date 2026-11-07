@@ -1,9 +1,10 @@
 from pathlib import Path
+import pytest
 from sandbox.intents.models import BehaviorIntent
 
 from sandbox.agents.engine import AgentEngine
 from sandbox.agents.tools import AgentToolExecutor
-from sandbox.bootstrap.service import create_instance
+from sandbox.bootstrap.service import create_instance, validate_config
 from sandbox.platform.runtime import Platform
 from sandbox.prompting.renderer import render_context
 
@@ -190,3 +191,34 @@ def test_read_tool_respects_agent_visibility(tmp_path: Path):
         assert result["failed_check"] == "visibility"
     finally:
         platform.close()
+
+
+def test_bootstrap_imports_generic_relationships_and_knowledge(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "import-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        assert platform.store.get_entity("village_council")["entity_type"] == "faction"
+        assert any(row["person"] == "he_yan" for row in platform.store.get_relationships("lin_bo"))
+        facts = platform.store.list_knowledge_facts("lu_xingzhou")
+        assert any(fact["fact_key"] == "public:village" for fact in facts)
+        assert platform.store.get_meta("config_version") == "starter-village-0.1.0"
+    finally:
+        platform.close()
+
+
+def test_invalid_reference_fails_before_sqlite_creation(tmp_path: Path):
+    source = Path(__file__).parents[1] / "worlds" / "starter_village"
+    copied = tmp_path / "invalid-world"
+    copied.mkdir()
+    for path in source.iterdir():
+        if path.is_file():
+            copied.joinpath(path.name).write_bytes(path.read_bytes())
+    behavior_file = copied / "behavior_trees.yaml"
+    behavior_file.write_text(behavior_file.read_text().replace("action_id: explore_area", "action_id: missing_action", 1), encoding="utf-8")
+    report = validate_config(copied)
+    assert report["valid"] is False
+    assert any("missing_action" in error for error in report["errors"])
+    with pytest.raises(ValueError):
+        create_instance(copied, "invalid", tmp_path / "runtime")
+    assert not (tmp_path / "runtime" / "instances" / "invalid" / "world.sqlite3").exists()

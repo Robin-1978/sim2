@@ -61,6 +61,23 @@ CREATE TABLE IF NOT EXISTS memory_item (
   memory_type TEXT NOT NULL,
   data_json TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS knowledge_fact (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id TEXT NOT NULL,
+  fact_key TEXT NOT NULL,
+  data_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS relationship (
+  from_id TEXT NOT NULL,
+  to_id TEXT NOT NULL,
+  relation_type TEXT NOT NULL,
+  data_json TEXT NOT NULL,
+  PRIMARY KEY (from_id, to_id, relation_type)
+);
+CREATE TABLE IF NOT EXISTS prompt_def (
+  id TEXT PRIMARY KEY,
+  data_json TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS llm_call (
   call_id INTEGER PRIMARY KEY AUTOINCREMENT,
   actor_id TEXT NOT NULL,
@@ -122,7 +139,7 @@ class WorldStore:
         )
 
     def put_agent(self, agent_id: str, data: dict[str, Any], name: str) -> None:
-        self.put_entity(agent_id, "npc", name, data)
+        self.put_entity(agent_id, "agent", name, data)
         self.connection.execute(
             "INSERT OR REPLACE INTO agent_state(id,data_json) VALUES (?,?)",
             (agent_id, json_dumps(data)),
@@ -135,6 +152,36 @@ class WorldStore:
             f"INSERT OR REPLACE INTO {table}(id,data_json) VALUES (?,?)",
             (definition_id, json_dumps(data)),
         )
+
+    def put_relationship(self, from_id: str, to_id: str, relation_type: str, data: dict[str, Any]) -> None:
+        self.connection.execute(
+            "INSERT OR REPLACE INTO relationship(from_id,to_id,relation_type,data_json) VALUES (?,?,?,?)",
+            (from_id, to_id, relation_type, json_dumps(data)),
+        )
+
+    def get_relationships(self, from_id: str, *, limit: int = 8) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT to_id,relation_type,data_json FROM relationship WHERE from_id=? ORDER BY to_id LIMIT ?",
+            (from_id, max(1, min(int(limit), 50))),
+        ).fetchall()
+        return [{"person": row["to_id"], "relation": row["relation_type"], **json.loads(row["data_json"])} for row in rows]
+
+    def put_knowledge_fact(self, agent_id: str, fact_key: str, data: dict[str, Any]) -> int:
+        cur = self.connection.execute(
+            "INSERT INTO knowledge_fact(agent_id,fact_key,data_json) VALUES (?,?,?)",
+            (agent_id, fact_key, json_dumps(data)),
+        )
+        return int(cur.lastrowid)
+
+    def list_knowledge_facts(self, agent_id: str, *, limit: int = 8) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT id,fact_key,data_json FROM knowledge_fact WHERE agent_id=? ORDER BY id DESC LIMIT ?",
+            (agent_id, max(1, min(int(limit), 50))),
+        ).fetchall()
+        return [{"id": row["id"], "fact_key": row["fact_key"], **json.loads(row["data_json"])} for row in rows]
+
+    def put_prompt(self, prompt_id: str, data: dict[str, Any]) -> None:
+        self.connection.execute("INSERT OR REPLACE INTO prompt_def(id,data_json) VALUES (?,?)", (prompt_id, json_dumps(data)))
 
     def get_agent(self, agent_id: str) -> dict[str, Any]:
         row = self.connection.execute("SELECT data_json FROM agent_state WHERE id=?", (agent_id,)).fetchone()

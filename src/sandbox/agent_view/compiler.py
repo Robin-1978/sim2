@@ -96,13 +96,17 @@ class AgentViewCompiler:
         nearby = self.store.entities_at_location(location_id) if location_id else []
         needs = agent.get("needs", {})
         drives = DriveCalculator(self.store.get_meta("rules", {})).calculate(agent)
+        known_facts = self.store.list_knowledge_facts(agent_id, limit=8)
+        if not known_facts:
+            known_facts = [{"fact": fact, "source_type": "config_seed", "confidence": 1.0} for fact in agent.get("knowledge_seed", [])[:8]]
+        relationships = self.store.get_relationships(agent_id, limit=5)
         return {
             "context_version": "1", "role": role,
             "world_time": {"minute": self.store.get_meta("world_minute", 0), "label": f"World minute {self.store.get_meta('world_minute', 0)}"},
             "self": {"id": agent_id, "name": agent.get("name", agent_id), "role": agent.get("role", "agent"), "status": state.get("status", "idle"), "location": location_id, "health": state.get("health"), "stamina": state.get("stamina"), "fatigue": state.get("fatigue"), "goal": agent.get("ultimate_goal")},
             "identity": {"traits": agent.get("traits", {}), "beliefs": agent.get("beliefs", []), "capabilities": agent.get("capabilities", {})},
             "needs": needs, "inventory": agent.get("inventory", {}), "injuries": state.get("injuries", []),
-            "drives": drives[:5], "observation": {"facts": [], "source": "platform_snapshot"}, "nearby_entities": nearby[:8], "known_facts": agent.get("knowledge_seed", [])[:8], "direct_relationships": [],
+            "drives": drives[:5], "observation": {"facts": [], "source": "platform_snapshot"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "direct_relationships": relationships,
             "active_task": {"bt": state.get("active_bt_instance"), "action": state.get("active_action"), "remaining_minutes": state.get("remaining_minutes", 0)},
             "available_behaviors": available[:5], "last_platform_result": state.get("last_platform_result"), "tools": tools_for_role(role),
         }
