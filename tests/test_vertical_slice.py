@@ -949,17 +949,21 @@ def test_god_world_change_and_trigger_create_platform_state(tmp_path: Path):
         platform.close()
 
 
-def test_quality_flags_recorded_only_god_event_without_structured_effect(tmp_path: Path):
+def test_god_reacts_after_event_effect_rejection(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "god-quality-world", tmp_path / "runtime")
     platform = Platform(db_path)
-    provider = SequenceProvider([{"intent_type": "propose_world_change", "change_type": "event", "summary": "Mobilize a public response.", "effects": ["stabilize the clinic"]}])
+    provider = SequenceProvider([
+        {"intent_type": "propose_world_change", "change_type": "event", "summary": "Mobilize a public response.", "effects": ["stabilize the clinic"]},
+        {"intent_type": "propose_world_change", "change_type": "world_property", "summary": "Record the clinic report.", "property": "clinic_fever_outbreak", "value": {"status": "reported", "severity": 0.3}},
+    ])
     try:
         view = platform.decision_view("god", role="god")
         turn = AgentEngine(platform, provider).run(role="god", actor_id="god", task_type="quality")
         quality = evaluate_turn(turn, view)
-        assert quality["passed"] is False
-        assert quality["grade"] == "accepted_needs_world_followup"
+        assert turn.result["status"] == "accepted"
+        assert len(provider.calls) == 2
+        assert quality["passed"] is True
     finally:
         platform.close()
 

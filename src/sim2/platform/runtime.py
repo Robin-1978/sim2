@@ -773,6 +773,22 @@ class Platform:
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "relationship object is required for a relationship change.", "failed_check": "relationship", "retryable": True})
         if change_type == "faction" and not isinstance(proposal.get("faction"), dict):
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "faction object is required for a faction change.", "failed_check": "faction", "retryable": True})
+        if change_type == "event" and not proposal.get("property"):
+            effects_text = " ".join(str(item).casefold() for item in (proposal.get("effects") or []))
+            direct_terms = ("increase", "decrease", "restore", "activate", "stabilize", "reduce", "raise", "lower", "set ", "change", "remain", " can ")
+            if any(term in effects_text for term in direct_terms):
+                return self._reject_intent(
+                    intent_id,
+                    actor_id,
+                    "propose_world_change",
+                    proposal,
+                    {
+                        "status": "rejected",
+                        "message": "Event effects must be narrative only. Use world_property, rule, relationship or faction for direct state changes.",
+                        "failed_check": "event_effects",
+                        "retryable": True,
+                    },
+                )
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             self.store.create_intent(intent_id, actor_id, "propose_world_change", proposal, world_minute)
