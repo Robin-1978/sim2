@@ -217,11 +217,15 @@ class Platform:
         except KeyError:
             return {"status": "rejected", "message": "The actor does not exist.", "failed_check": "actor", "retryable": False}
         behavior_id = intent.behavior_ref.removeprefix("behavior:")
+        normalized_parameters = dict(intent.parameters or {})
+        for alias in ("destination", "destination_id", "location"):
+            if alias in intent.target and "location_id" not in normalized_parameters:
+                normalized_parameters["location_id"] = intent.target[alias]
         intent_data = {
             "actor_id": intent.actor_id,
             "behavior_ref": intent.behavior_ref,
             "target": intent.target,
-            "parameters": intent.parameters,
+            "parameters": normalized_parameters,
             "reason": intent.reason,
             "confidence": intent.confidence,
         }
@@ -235,7 +239,7 @@ class Platform:
             return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                 "status": "rejected", "message": "This behavior is not available to this character.", "failed_check": "capability", "retryable": True,
             })
-        parameter_errors = self._validate_behavior_parameters(behavior_id, intent.parameters)
+        parameter_errors = self._validate_behavior_parameters(behavior_id, normalized_parameters)
         if parameter_errors:
             return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                 "status": "rejected", "message": "Behavior parameters must match the registered Action schema.", "failed_check": "parameters", "errors": parameter_errors, "retryable": True,
@@ -267,7 +271,7 @@ class Platform:
             state["active_action"] = None
             state["remaining_minutes"] = remaining_minutes
             state["active_action_index"] = 0
-            state["active_parameters"] = {**intent.parameters, **intent.target}
+            state["active_parameters"] = {**normalized_parameters, **intent.target}
             state["last_platform_result"] = {"status": "accepted", "behavior_ref": intent.behavior_ref}
             agent["initial_state"] = state
             self.store.update_agent(intent.actor_id, agent)

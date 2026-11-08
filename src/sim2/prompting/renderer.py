@@ -94,6 +94,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         f"  role: {_line(self_state.get('role'))}",
         f"  status: {_line(self_state.get('status'))}",
         f"  location: {_line(self_state.get('location'))}",
+        f"  known_routes: {_line(self_state.get('known_routes'))}",
         f"  health: {_line(self_state.get('health'))}",
         f"  stamina: {_line(self_state.get('stamina'))}",
         f"  fatigue: {_line(self_state.get('fatigue'))}",
