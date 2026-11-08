@@ -43,16 +43,19 @@ class SimulationReport:
 class SimulationRunner:
     """Drive Platform minutes and invoke Agent phases only at boundaries."""
 
-    def __init__(self, platform: Platform, providers: dict[str, Any], *, wait_cooldown_minutes: int = 30, llm_error_cooldown_minutes: int = 60):
+    def __init__(self, platform: Platform, providers: dict[str, Any], *, wait_cooldown_minutes: int = 30, llm_error_cooldown_minutes: int = 60, max_interaction_rounds: int = 4, interaction_cooldown_minutes: int = 30):
         self.platform = platform
         self.providers = providers
         self.wait_cooldown_minutes = max(1, int(wait_cooldown_minutes))
         self.llm_error_cooldown_minutes = max(1, int(llm_error_cooldown_minutes))
+        self.max_interaction_rounds = max(1, int(max_interaction_rounds))
+        self.interaction_cooldown_minutes = max(1, int(interaction_cooldown_minutes))
         self._decision_not_before: dict[str, int] = {}
         self._llm_error_count: dict[str, int] = {}
         self._llm_retry_until: dict[str, int] = {}
         self._failure_seen: dict[str, int] = {}
         self._interaction_events_seen: set[int] = set()
+        self._interaction_rounds: dict[tuple[str, ...], tuple[int, int]] = {}
 
     def run(self, minutes: int) -> SimulationReport:
         minutes = int(minutes)
@@ -90,18 +93,27 @@ class SimulationRunner:
             if event.get("event_type") not in {"dialogue.completed", "trade.offer_created", "trade.countered"}:
                 continue
             self._interaction_events_seen.add(event_id)
-            participants = {str(event.get("actor_id"))}
-            for key in ("target_id", "recipient_id", "offerer_id"):
-                if event.get(key):
-                    participants.add(str(event[key]))
-            for actor_id in sorted(participants):
-                if actor_id == "None":
-                    continue
-                turn = AgentEngine(self.platform, provider).run(role="agent_decision", actor_id=actor_id, task_type=f"instant:{event['event_type']}")
-                report.decisions += 1
-                self._record_turn(report, turn.result, actor_id)
-                if turn.result.get("status") == "wait":
-                    report.waits += 1
+            minute = int(self.platform.store.get_meta("world_minute", 0))
+            actor_id = str(event.get("actor_id") or "")
+            recipient_id = str(event.get("target_id") or event.get("recipient_id") or "")
+            if not actor_id or not recipient_id or actor_id == recipient_id:
+                continue
+            pair = tuple(sorted((actor_id, recipient_id)))
+            last_minute, rounds = self._interaction_rounds.get(pair, (minute, 0))
+            if minute - last_minute >= self.interaction_cooldown_minutes:
+                rounds = 0
+            if rounds >= self.max_interaction_rounds:
+                continue
+            self._interaction_rounds[pair] = (minute, rounds + 1)
+            turn = AgentEngine(self.platform, provider).run(
+                role="agent_decision",
+                actor_id=recipient_id,
+                task_type=f"instant:{event['event_type']}",
+            )
+            report.decisions += 1
+            self._record_turn(report, turn.result, recipient_id)
+            if turn.result.get("status") == "wait":
+                report.waits += 1
 
     def _run_idle_decisions(self, report: SimulationReport) -> None:
         provider = self.providers.get("agent_decision")

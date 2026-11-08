@@ -64,12 +64,21 @@ class ConditionEngine:
             return float(state.get("health", 100)) <= 0 or "incapacitated" in state.get("conditions", [])
         if path == "actor.mobile":
             return self._value("actor.alive", agent, target, world, context)
+        if path == "actor.has_food":
+            inventory = agent.get("inventory", {}) or {}
+            food_items = context.get("food_items", []) or []
+            item_id = context.get("item_id") or target.get("item_id")
+            if item_id:
+                return str(item_id) in {str(item) for item in food_items} and float(inventory.get(str(item_id), 0) or 0) >= 1
+            return any(float(inventory.get(str(item), 0) or 0) >= 1 for item in food_items)
         if path.startswith("actor.can_"):
             capability = path.removeprefix("actor.can_")
             aliases = {"explore": "exploration", "speak": "conversation", "communicate": "conversation", "craft": "cooking", "attack": "combat", "defend": "defense", "gather": "gather", "research": "research", "inspect": "investigation", "inspect_granary": "accounting", "negotiate": "conversation", "sound_alarm": "alarm", "mediate": "conversation"}
             value = agent.get("capabilities", {}).get(aliases.get(capability, capability), 0)
             if not value and capability == "inspect":
                 value = max((agent.get("capabilities", {}).get(item, 0) for item in ("investigation", "lore", "accounting")), default=0)
+            if not value and capability == "gather":
+                value = max((agent.get("capabilities", {}).get(item, 0) for item in ("gather", "farming", "hunting", "foraging")), default=0)
             return float(value or 0) > 0
         if path == "actor.faction_id":
             factions = agent.get("faction_ids", [])
@@ -111,7 +120,18 @@ class ConditionEngine:
             return self._path_value(target, path.removeprefix("target."))
         if path.startswith("world."):
             return self._path_value(world, path.removeprefix("world."))
-        if path in {"location.safe", "destination.safe_or_defensible", "target.available", "patient.available", "patient.in_clinic", "source.accessible", "resource.available", "inputs.available", "recipe.available", "station.available", "counterparty.available", "communication.channel_open", "location.reachable"}:
+        if path == "location.has_food":
+            location = context.get("current_location", {}) or {}
+            return "food" in (location.get("tags", []) or []) or bool(context.get("food_available", False))
+        if path == "location.food_store":
+            location = context.get("current_location", {}) or {}
+            tags = set(location.get("tags", []) or [])
+            return {"food", "resource"}.issubset(tags)
+        if path == "station.available":
+            required = set(context.get("station_tags", []) or [])
+            current = set((context.get("current_location", {}) or {}).get("tags", []) or [])
+            return not required or bool(required & current)
+        if path in {"location.safe", "destination.safe_or_defensible", "target.available", "patient.available", "patient.in_clinic", "source.accessible", "resource.available", "inputs.available", "recipe.available", "counterparty.available", "communication.channel_open", "location.reachable"}:
             if path == "location.safe":
                 location = context.get("current_location", {})
                 return bool(location.get("safe", False) or location.get("public", False) is True or "safe" in location.get("tags", []))

@@ -55,7 +55,7 @@ agents:
     current_goal_id: ultimate_goal
     last_platform_result: null
   inventory:
-    ration_tokens: 3
+    rations: 3
   combat_stats:
     attack_power: 2
     defense: 2

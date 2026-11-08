@@ -102,7 +102,13 @@ class AgentViewCompiler:
             bt = bt_defs.get(bt_id)
             if not bt:
                 continue
-            condition_context = {"current_location": current_location, "location_id": location_id}
+            rules = self.store.get_meta("rules", {}) or {}
+            condition_context = {
+                "current_location": current_location,
+                "location_id": location_id,
+                "inventory": agent.get("inventory", {}) or {},
+                "food_items": rules.get("food_items", []) or [],
+            }
             if any(not self.conditions.evaluate(str(predicate), agent=agent, target={}, context=condition_context, world=self.store.get_meta("world_properties", {}) or {}) for predicate in bt.get("entry_conditions", []) or []):
                 continue
             steps = []
@@ -139,6 +145,11 @@ class AgentViewCompiler:
                 "goal_tags": bt.get("goal_tags", []),
                 "drive_tags": bt.get("drive_tags", []),
             })
+        # Keep the context small, but never hide a configured food/survival
+        # choice behind a character's first five unrelated BTs.
+        available.sort(
+            key=lambda item: 0 if set(item.get("goal_tags", [])) & {"food", "survival"} else 1
+        )
         nearby = [item for item in (self.store.entities_at_location(location_id) if location_id else []) if item.get("id") != agent_id]
         needs = agent.get("needs", {})
         drives = DriveCalculator(self.store.get_meta("rules", {})).calculate(agent)

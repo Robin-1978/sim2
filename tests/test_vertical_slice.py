@@ -136,6 +136,54 @@ def test_platform_run_owns_autonomous_scheduler(tmp_path: Path):
         platform.close()
 
 
+def test_food_bt_is_available_with_food_and_closes_hunger_loop(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "food-loop-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        view = platform.decision_view("lu_xingzhou")
+        assert any(item["ref"] == "behavior:eat_food" for item in view["executable_behaviors"])
+        before = platform.store.get_agent("lu_xingzhou")
+        result = platform.submit_behavior(BehaviorIntent(
+            actor_id="lu_xingzhou",
+            behavior_ref="behavior:eat_food",
+            target={},
+            parameters={"item_id": "rations"},
+            reason="Eat carried food before taking another task.",
+            confidence=0.9,
+            intent_id="eat-food-intent",
+        ))
+        assert result["status"] == "accepted"
+        platform.step()
+        after = platform.store.get_agent("lu_xingzhou")
+        assert after["inventory"]["rations"] == before["inventory"]["rations"] - 1
+        assert after["needs"]["hunger"] == before.get("needs", {}).get("hunger", 0) + 30
+        assert after["initial_state"]["status"] == "idle"
+    finally:
+        platform.close()
+
+
+def test_food_store_bt_supplies_agents_without_carried_food(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "food-store-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        view = platform.decision_view("liang_he")
+        assert any(item["ref"] == "behavior:get_food" for item in view["executable_behaviors"])
+        before = platform.store.get_entity("village_food")["amount"]
+        result = platform.submit_behavior(BehaviorIntent(
+            actor_id="liang_he", behavior_ref="behavior:get_food", target={}, parameters={},
+            reason="Withdraw a ration before the next task.", confidence=0.9, intent_id="get-food-intent",
+        ))
+        assert result["status"] == "accepted"
+        platform.step()
+        after = platform.store.get_agent("liang_he")
+        assert after["inventory"]["rations"] == 1
+        assert platform.store.get_entity("village_food")["amount"] == before - 1
+    finally:
+        platform.close()
+
+
 def test_context_uses_role_tools_and_plain_sections():
     class View:
         pass

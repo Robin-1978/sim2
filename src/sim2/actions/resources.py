@@ -17,8 +17,19 @@ class ResourceLedger:
         for key, value in (action.get("costs", {}).get("reserve", {}) or {}).items():
             if key == "recipe_inputs":
                 recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
+                if recipe is None:
+                    return False, "recipe is unavailable", []
+                for requirement in recipe.get("requires", []) or []:
+                    capability = str(requirement.get("capability", ""))
+                    minimum = float(requirement.get("min_level", 0) or 0)
+                    if float((agent.get("capabilities") or {}).get(capability, 0) or 0) < minimum:
+                        return False, f"capability {capability} is below recipe requirement", []
                 for item in (recipe or {}).get("inputs", []):
                     required.append((str(item.get("item")), float(item.get("quantity", 0))))
+            elif key == "item_parameter":
+                item_id = parameters.get(str(value))
+                if item_id:
+                    required.append((str(item_id), 1.0))
             elif isinstance(value, (int, float)):
                 required.append((str(key), float(value)))
         inventory = dict(agent.get("inventory") or {})

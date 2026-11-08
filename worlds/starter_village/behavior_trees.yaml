@@ -374,3 +374,45 @@ behavior_trees:
   definition_source: config
   kind: base
   summary: Collect a configured resource from a known node.
+- id: eat_food
+  version: 1
+  scope: universal
+  summary: Eat one available food item.
+  description: Consume one carried food item to restore hunger before choosing another task.
+  entry_conditions:
+  - actor.alive
+  - actor.has_food
+  estimated_minutes: 1
+  requirements: ["Carry one food item: rations, ration, or cooked_meal."]
+  goal_tags: [food, recovery, readiness]
+  drive_tags: [physiological_homeostasis, safety]
+  interrupt_policy: cancel
+  success_results: [ate_food]
+  failure_results: [eating_failed]
+  nodes:
+  - type: action
+    action_id: consume_food
+    parameters:
+      item_id: context.item_id
+  definition_source: config
+  kind: fallback
+- id: get_food
+  version: 1
+  scope: universal
+  summary: Withdraw one ration at the granary.
+  description: Take one ration from the shared food store when standing at the granary.
+  entry_conditions:
+  - actor.alive
+  - location.food_store
+  estimated_minutes: 1
+  requirements: ["Stand at the granary and shared village food must be available."]
+  goal_tags: [food, reserve, survival]
+  drive_tags: [physiological_homeostasis, safety]
+  interrupt_policy: cancel
+  success_results: [ration_received]
+  failure_results: [ration_unavailable]
+  nodes:
+  - type: action
+    action_id: withdraw_food
+  definition_source: config
+  kind: fallback

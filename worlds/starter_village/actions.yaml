@@ -30,6 +30,70 @@ actions:
   definition_source: config
   kind: atomic
   executor: effect_pipeline
+- id: consume_food
+  version: 1
+  description: Consume one available food item and restore hunger.
+  parameters:
+    item_id: string
+  preconditions:
+  - actor.alive
+  - actor.has_food
+  duration:
+    minutes: 1
+  costs:
+    reserve:
+      item_parameter: item_id
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory.consume_item
+    item: context.item_id
+    quantity: 1
+  - type: need_delta
+    need: hunger
+    delta: 30
+  success:
+    condition: food.consumed
+    result: ate_food
+  failure:
+    condition: food.unavailable
+    result: eating_failed
+  interaction_policy: deny
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: withdraw_food
+  version: 1
+  description: Withdraw one ration from the configured shared food store.
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.food_store
+  duration:
+    minutes: 1
+  costs:
+    reserve:
+      village_food: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: rations
+    quantity: 1
+  success:
+    condition: ration.withdrawn
+    result: ration_received
+  failure:
+    condition: village_food.empty
+    result: ration_unavailable
+  interaction_policy: allow
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
 - id: rest
   version: 1
   description: 在安全地点休息
@@ -76,16 +140,16 @@ actions:
     minutes: 144
   costs:
     reserve:
-      tool_durability: 1
+      {}
     per_minute:
       fatigue: 0.8
     on_success: {}
     on_failure: {}
     refund: {}
-  progress_effects:
-  - type: need_delta
-    need: fatigue
-    delta: 0.8
+  effects:
+  - type: inventory_add
+    item: context.resource_tag
+    quantity: 2
   success:
     condition: inventory.food >= 1
     result: food_gathered

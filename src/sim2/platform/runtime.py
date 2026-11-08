@@ -994,11 +994,18 @@ class Platform:
             "location_id": location_id,
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "area_id": parameters.get("area_id"),
+            "item_id": parameters.get("item_id"),
+            "inventory": agent.get("inventory", {}) or {},
+            "food_items": (self.store.get_meta("rules", {}) or {}).get("food_items", []) or [],
+            "station_tags": [],
             "current_location": current_location,
             "target": resolved_target or {},
             "target.visible": (resolved_target or {}).get("visible", True),
             "target.available": (resolved_target or {}).get("available", True),
         }
+        if action_id == "craft_recipe":
+            recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
+            condition_context["station_tags"] = list((recipe or {}).get("station_tags", []) or [])
         for predicate in action.get("preconditions", []) or []:
             condition_target = {**parameters, **(resolved_target or {})}
             if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=condition_context, world=self.store.get_meta("world_properties", {}) or {}):
@@ -1040,11 +1047,18 @@ class Platform:
             "location_id": state.get("location_id"),
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "area_id": parameters.get("area_id"),
+            "item_id": parameters.get("item_id"),
+            "inventory": agent.get("inventory", {}) or {},
+            "food_items": (self.store.get_meta("rules", {}) or {}).get("food_items", []) or [],
+            "station_tags": [],
             "current_location": current_location,
             "target": target or {},
             "target.visible": (target or {}).get("visible", True),
             "target.available": (target or {}).get("available", True),
         }
+        if action_info.get("action_id") == "craft_recipe":
+            recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
+            context["station_tags"] = list((recipe or {}).get("station_tags", []) or [])
         condition_target = {**parameters, **(target or {})}
         for predicate in action.get("preconditions", []) or []:
             if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=context, world=self.store.get_meta("world_properties", {}) or {}):

@@ -19,7 +19,7 @@ locations:
   - id: granary
     name: 粮仓
     public: restricted
-    tags: [food, resource]
+    tags: [food, resource, kitchen]
     routes: [village_square, farm_fields]
   - id: farm_fields
     name: 农田
