@@ -44,7 +44,7 @@ def main() -> None:
             result = None
             for _ in range(args.runs):
                 started = time.perf_counter()
-                result = platform.advance(1)
+                result = platform.step()
                 durations.append((time.perf_counter() - started) * 1000)
             p95 = statistics.quantiles(durations, n=20, method="inclusive")[18] if len(durations) >= 2 else durations[0]
             print(json.dumps({"agents": args.agents, "runs": args.runs, "elapsed_ms": [round(value, 3) for value in durations], "p95_ms": round(p95, 3), "result": result}, ensure_ascii=False))

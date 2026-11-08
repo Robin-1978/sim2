@@ -60,8 +60,9 @@ class TextWorldSession:
         if command in {"look", "status"}:
             return self._look()
         if command == "wait":
-            minutes = int(args[0]) if args else 1
-            return self._format_result(self.platform.advance(minutes, force=True))
+            if args:
+                raise ValueError("wait takes no duration; issue one command per world minute")
+            return self._format_result(self.platform.step())
         if command == "move":
             self._require_player()
             if len(args) != 1:

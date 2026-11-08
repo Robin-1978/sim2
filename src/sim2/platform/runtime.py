@@ -39,6 +39,45 @@ class Platform:
     def close(self) -> None:
         self.store.close()
 
+    def run(
+        self,
+        minutes: int,
+        *,
+        providers: dict[str, Any] | None = None,
+        provider_name: str | None = None,
+        wait_cooldown_minutes: int = 30,
+        llm_error_cooldown_minutes: int = 60,
+    ) -> Any:
+        """Run the autonomous world loop owned by Platform.
+
+        ``step`` remains the single-tick manual/test primitive. Normal CLI,
+        service, and daemon callers use this method so scheduling, Agent
+        wakeups, interactions, and evolution stay inside the runtime.
+        """
+
+        from ..llm.gateway import LLMRouter
+        from ..simulation.runner import SimulationRunner
+
+        if providers is None:
+            router = LLMRouter.from_default_config()
+            if provider_name:
+                providers = {
+                    role: router.new_provider_for_name(provider_name)
+                    for role in ("agent_decision", "agent_reflection", "god")
+                }
+            else:
+                providers = {
+                    "agent_decision": router.provider_for_role("agent_decision"),
+                    "agent_reflection": router.provider_for_role("agent_reflection"),
+                    "god": router.provider_for_role("god"),
+                }
+        return SimulationRunner(
+            self,
+            providers,
+            wait_cooldown_minutes=wait_cooldown_minutes,
+            llm_error_cooldown_minutes=llm_error_cooldown_minutes,
+        ).run(minutes)
+
     def status(self) -> dict[str, Any]:
         return {
             "status": self.store.get_meta("runtime_status", "running"),
@@ -1348,45 +1387,31 @@ class Platform:
         with self.store.transaction():
             self.store.complete_evolution_task(task_id, minute)
 
-    def advance(self, minutes: int = 1, *, force: bool = False) -> dict[str, Any]:
-        """Advance sequential world ticks, committing each minute separately."""
+    def step(self) -> dict[str, Any]:
+        """Commit exactly one world-minute tick."""
 
-        minutes = int(minutes)
-        if minutes < 1:
-            raise ValueError("minutes must be at least 1")
-        if not force and self.store.get_meta("runtime_status", "running") != "running":
-            return {"status": "paused", "world_minute": int(self.store.get_meta("world_minute", 0))}
         start = int(self.store.get_meta("world_minute", 0))
+        minute = start + 1
         completed: list[str] = []
         failed: list[str] = []
-        processed = 0
-        for _ in range(minutes):
-            if not force and self.store.get_meta("runtime_status", "running") != "running":
-                break
-            minute = int(self.store.get_meta("world_minute", start)) + 1
-            with self.store.transaction():
-                self._apply_minute_effects(minute)
-                for agent in self.store.list_agents():
-                    before = agent.get("initial_state", {}).get("active_bt_instance")
-                    if not before:
-                        continue
-                    self._progress_agent(agent, minute)
-                    after = self.store.get_agent(agent["id"]).get("initial_state", {})
-                    result = after.get("last_platform_result") or {}
-                    if before and result.get("status") == "completed" and result.get("behavior_ref"):
-                        completed.append(agent["id"])
-                    if before and result.get("status") == "failed" and result.get("behavior_ref"):
-                        failed.append(agent["id"])
-                self.store.set_meta("world_minute", minute)
-                self.store.append_event("world_minute.advanced", None, minute, {"minute": minute})
-                self._emit_evolution_triggers(minute)
-                self._emit_due_evolution_tasks(minute)
-            processed += 1
-        status = "advanced" if processed == minutes else "paused"
-        return {"status": status, "from_minute": start, "to_minute": int(self.store.get_meta("world_minute", start)), "completed_agents": sorted(set(completed)), "failed_agents": sorted(set(failed))}
-
-    def step(self) -> dict[str, Any]:
-        return self.advance(1, force=True)
+        with self.store.transaction():
+            self._apply_minute_effects(minute)
+            for agent in self.store.list_agents():
+                before = agent.get("initial_state", {}).get("active_bt_instance")
+                if not before:
+                    continue
+                self._progress_agent(agent, minute)
+                after = self.store.get_agent(agent["id"]).get("initial_state", {})
+                result = after.get("last_platform_result") or {}
+                if result.get("status") == "completed" and result.get("behavior_ref"):
+                    completed.append(agent["id"])
+                if result.get("status") == "failed" and result.get("behavior_ref"):
+                    failed.append(agent["id"])
+            self.store.set_meta("world_minute", minute)
+            self.store.append_event("world_minute.advanced", None, minute, {"minute": minute})
+            self._emit_evolution_triggers(minute)
+            self._emit_due_evolution_tasks(minute)
+        return {"status": "advanced", "from_minute": start, "to_minute": minute, "completed_agents": sorted(set(completed)), "failed_agents": sorted(set(failed))}
 
     def metrics(self) -> dict[str, Any]:
         active = self.store.connection.execute("SELECT COUNT(*) AS n FROM agent_state WHERE json_extract(data_json,'$.initial_state.status') IN ('executing','paused')").fetchone()["n"]

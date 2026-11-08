@@ -27,9 +27,6 @@ class ControlService:
     def step(self) -> dict[str, Any]:
         return self.platform.step()
 
-    def advance(self, minutes: int) -> dict[str, Any]:
-        return self.platform.advance(minutes)
-
     def inject(self, event_type: str, payload: dict[str, Any], actor_id: str | None = None) -> dict[str, Any]:
         return self.platform.inject_event(event_type, payload, actor_id)
 

@@ -39,7 +39,8 @@ def main() -> int:
             decision_quality = evaluate_turn(decision, decision_view)
 
             platform.submit_behavior(BehaviorIntent("lin_bo", "behavior:rest_and_recover", {}, {}, "Recover before duty.", 0.8, "core-outcome"))
-            platform.advance(49)
+            for _ in range(49):
+                platform.step()
             reflection_view = platform.decision_view("lin_bo", role="agent_reflection")
             reflection_provider = OpenAICompatibleProvider(ProviderConfig(**provider_config.__dict__))
             reflection = AgentEngine(platform, reflection_provider).run(role="agent_reflection", actor_id="lin_bo", task_type="core_reflection")

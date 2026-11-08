@@ -61,6 +61,8 @@ class SimulationRunner:
         start = int(self.platform.store.get_meta("world_minute", 0))
         report = SimulationReport(start, start + minutes)
         for _ in range(minutes):
+            if self.platform.status().get("status") != "running":
+                break
             self.platform.step()
             self._run_instant_interactions(report)
             self._run_due_evolution(report)

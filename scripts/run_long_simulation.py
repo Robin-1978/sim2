@@ -17,7 +17,6 @@ from pathlib import Path
 
 from sim2.bootstrap.service import create_instance
 from sim2.platform.runtime import Platform
-from sim2.simulation.runner import SimulationRunner
 
 
 class DeterministicProvider:
@@ -52,7 +51,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="sim2-long-run-") as runtime:
         platform = Platform(create_instance(config, "long-run", Path(runtime)))
         try:
-            report = SimulationRunner(platform, {"agent_decision": provider, "agent_reflection": provider, "god": provider}).run(args.minutes)
+            report = platform.run(args.minutes, providers={"agent_decision": provider, "agent_reflection": provider, "god": provider})
             output = {"provider_calls": provider.calls, "report": report.as_dict(), "metrics": platform.metrics()}
             print(json.dumps(output, ensure_ascii=False, indent=2))
         finally:

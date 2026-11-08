@@ -22,13 +22,13 @@ sim2 mud --db "$DB" --player-id player_one --origin courier --name Ari
 sim2 mud --db "$DB" --observer
 ```
 
-Run the automatic Agent/Platform loop after configuring providers in `~/.sim2/llm.json`:
+Run the autonomous Platform runtime after configuring providers in `~/.sim2/llm.json`:
 
 ```bash
 sim2 simulate --db "$DB" --minutes 1440
 ```
 
-For a real-provider run using one configured provider for every Agent role, use `--provider remote` (the value is a provider name, never an API key):
+For a real-provider run using one configured provider for every Agent role, use `--provider remote` (the value is a provider name, never an API key). The runtime still advances one Platform tick at a time:
 
 ```bash
 sim2 simulate --db "$DB" --minutes 1440 --provider remote

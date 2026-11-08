@@ -61,6 +61,13 @@ class FailingProvider:
         raise RuntimeError(self.message)
 
 
+def step_n(platform: Platform, minutes: int):
+    result = None
+    for _ in range(minutes):
+        result = platform.step()
+    return result
+
+
 def test_bootstrap_and_agent_intent(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "test-world", tmp_path / "runtime")
@@ -108,6 +115,23 @@ def test_provider_failure_is_bounded_and_backed_off(tmp_path: Path):
         assert provider.calls == len(platform.store.list_agents())
         assert report.llm_errors == provider.calls
         assert report.rejected_turns == provider.calls
+    finally:
+        platform.close()
+
+
+def test_platform_run_owns_autonomous_scheduler(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "platform-runtime-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    provider = FakeProvider({"intent_type": "wait", "reason": "No urgent work."})
+    try:
+        report = platform.run(
+            1,
+            providers={"agent_decision": provider, "agent_reflection": provider, "god": provider},
+        )
+        assert report.end_minute == 1
+        assert platform.status()["world_minute"] == 1
+        assert provider.calls
     finally:
         platform.close()
 
@@ -331,7 +355,7 @@ def test_successful_recipe_records_capability_history(tmp_path: Path):
             platform.store.update_agent("liang_he", agent)
         intent = BehaviorIntent("liang_he", "behavior:craft_meal", {}, {}, "Prepare food", 0.8, "capability-intent")
         assert platform.submit_behavior(intent)["status"] == "accepted"
-        platform.advance(60)
+        step_n(platform, 60)
         history = platform.store.list_capability_progress("liang_he")
         assert any(item["capability"] == "cooking" and item["delta"] > 0 for item in history)
         assert platform.store.get_entity("clean_water")["amount"] == 99
@@ -453,12 +477,12 @@ def test_platform_advances_persisted_action_progress_without_llm(tmp_path: Path)
     )
     try:
         assert platform.submit_behavior(intent)["status"] == "accepted"
-        first = platform.advance(1)
+        first = platform.step()
         assert first["to_minute"] == 1
         state = platform.store.get_agent("lu_xingzhou")["initial_state"]
         assert state["status"] == "executing"
         assert state["active_action_index"] == 1
-        platform.advance(1)
+        platform.step()
         state = platform.store.get_agent("lu_xingzhou")["initial_state"]
         assert state["active_action"] == "explore_area"
         assert state["remaining_minutes"] == 239
@@ -469,7 +493,7 @@ def test_platform_advances_persisted_action_progress_without_llm(tmp_path: Path)
         platform.close()
 
 
-def test_advance_commits_each_tick_before_a_later_tick_fails(tmp_path: Path):
+def test_step_commits_each_tick_before_a_later_tick_fails(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "tick-commit-world", tmp_path / "runtime")
     platform = Platform(db_path)
@@ -483,7 +507,7 @@ def test_advance_commits_each_tick_before_a_later_tick_fails(tmp_path: Path):
     platform._apply_minute_effects = fail_on_second_tick
     try:
         with pytest.raises(RuntimeError, match="synthetic tick failure"):
-            platform.advance(3)
+            step_n(platform, 3)
         assert platform.store.get_meta("world_minute") == 1
         event = platform.store.recent_events(limit=5)
         assert any(item["event_type"] == "world_minute.advanced" and item["world_minute"] == 1 for item in event)
@@ -503,7 +527,7 @@ def test_platform_interrupt_updates_bt_and_action_instances(tmp_path: Path):
     try:
         starting_rations = platform.store.get_agent("lu_xingzhou")["inventory"]["rations"]
         platform.submit_behavior(intent)
-        platform.advance(2)
+        step_n(platform, 2)
         assert platform.store.get_agent("lu_xingzhou")["inventory"]["rations"] == starting_rations - 1
         paused = platform.interrupt_behavior("lu_xingzhou", "urgent boundary signal", hard=False)
         assert paused["status"] == "paused"
@@ -515,7 +539,7 @@ def test_platform_interrupt_updates_bt_and_action_instances(tmp_path: Path):
         resumed = platform.resume_behavior("lu_xingzhou")
         assert resumed["status"] == "resumed"
         assert platform.store.get_agent("lu_xingzhou")["initial_state"]["remaining_minutes"] == remaining_before_resume
-        platform.advance(1)
+        platform.step()
         assert platform.store.get_agent("lu_xingzhou")["initial_state"]["remaining_minutes"] == remaining_before_resume - 1
         cancelled = platform.interrupt_behavior("lu_xingzhou", "threat confirmed", hard=True)
         assert cancelled["status"] == "cancelled"
@@ -539,7 +563,7 @@ def test_direct_interaction_does_not_interrupt_active_behavior(tmp_path: Path):
             reason="Prepare food before trading.", confidence=0.8, intent_id="interaction-boundary-intent",
         )
         assert platform.submit_behavior(intent)["status"] == "accepted"
-        platform.advance(1)
+        platform.step()
         result = platform.submit_dialogue("liang_he", "qiao_ning", "trade", "Can we trade now?")
         assert result["status"] == "rejected"
         assert result["failed_check"] == "participant_busy"
@@ -560,7 +584,7 @@ def test_behavior_outcome_is_available_to_nightly_reflection(tmp_path: Path):
     try:
         intent = BehaviorIntent("lin_bo", "behavior:rest_and_recover", {}, {}, "Recover before the next duty.", 0.8, "outcome-intent")
         assert platform.submit_behavior(intent)["status"] == "accepted"
-        platform.advance(49)
+        step_n(platform, 49)
         events = platform.store.recent_events_for_actor("lin_bo", limit=20)
         outcome_event = next(item for item in events if item["event_type"] == "behavior.completed")
         outcome = outcome_event["outcome"]
@@ -589,12 +613,12 @@ def test_parallel_bt_runs_action_instances_concurrently(tmp_path: Path):
             platform.store.update_agent("lu_xingzhou", agent)
         intent = BehaviorIntent("lu_xingzhou", "behavior:parallel_test", {}, {}, "Run parallel work", 0.8, "parallel-intent")
         assert platform.submit_behavior(intent)["status"] == "accepted"
-        platform.advance(1)
+        platform.step()
         rows = platform.store.connection.execute("SELECT action_id,status,remaining_minutes FROM action_instance WHERE execution_id=? ORDER BY action_id", ("parallel-intent",)).fetchall()
         assert len(rows) == 2
         assert rows[0]["status"] == "running" or rows[1]["status"] == "running"
         assert platform.store.get_agent("lu_xingzhou")["initial_state"]["active_action"] == "parallel"
-        platform.advance(47)
+        step_n(platform, 47)
         assert platform.store.get_agent("lu_xingzhou")["initial_state"]["status"] == "idle"
     finally:
         platform.close()
@@ -639,7 +663,7 @@ def test_exploration_completion_persists_result_and_knowledge(tmp_path: Path):
     )
     try:
         platform.submit_behavior(intent)
-        report = platform.advance(241)
+        report = step_n(platform, 241)
         assert report["to_minute"] == 241
         fact = platform.store.connection.execute("SELECT area_id FROM exploration_result WHERE agent_id=?", ("lu_xingzhou",)).fetchone()
         assert fact["area_id"] == "greywood_edge"
@@ -656,7 +680,7 @@ def test_evolution_windows_are_scheduled_without_llm_calls(tmp_path: Path):
         platform.store.connection.execute("UPDATE evolution_task SET due_minute=2 WHERE task_id='reflection:lu_xingzhou'")
         platform.store.connection.commit()
         assert platform.ready_evolution_tasks() == []
-        platform.advance(2)
+        step_n(platform, 2)
         tasks = platform.ready_evolution_tasks()
         task = next(item for item in tasks if item["task_id"] == "reflection:lu_xingzhou")
         assert task["task_type"] == "daily_reflection"
@@ -696,7 +720,7 @@ def test_god_world_change_and_trigger_create_platform_state(tmp_path: Path):
         resource["amount"] = 100
         with platform.store.transaction():
             platform.store.put_entity("village_food", resource["entity_type"], resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
-        platform.advance(1)
+        platform.step()
         tasks = platform.ready_evolution_tasks()
         assert any(task.get("trigger_id") == "food_crisis" for task in tasks)
     finally:
@@ -823,7 +847,7 @@ def test_player_text_session_can_enter_and_move_without_direct_state_write(tmp_p
         # it does not mutate the player's location directly.
         travel = platform.submit_behavior(BehaviorIntent("player_text", "behavior:travel", {}, {"location_id": "village_square"}, "Enter the village.", 0.8, "player-travel"))
         assert travel["status"] == "accepted"
-        platform.advance(2)
+        step_n(platform, 2)
         assert platform.store.get_agent("player_text")["initial_state"]["location_id"] == "village_square"
     finally:
         platform.close()
@@ -881,7 +905,6 @@ def test_control_service_pause_step_snapshot_and_audit(tmp_path: Path):
     try:
         assert service.status()["status"] == "running"
         service.pause("test")
-        assert service.advance(2)["status"] == "paused"
         assert service.step()["to_minute"] == 1
         service.resume("test")
         injected = service.inject("operator.signal", {"kind": "test"})
@@ -906,7 +929,7 @@ def test_player_entry_and_snapshot_restore_use_platform(tmp_path: Path):
         assert entered["status"] == "accepted"
         assert platform.store.get_agent("player_one")["initial_state"]["location_id"] == "river_bridge"
         platform.snapshot(snapshot)
-        platform.advance(3)
+        step_n(platform, 3)
         assert platform.status()["world_minute"] == 3
         restored = platform.restore_snapshot(snapshot)
         assert restored["world_minute"] == 0
@@ -945,8 +968,8 @@ def test_same_config_and_intent_replay_same_event_sequence(tmp_path: Path):
     try:
         first.submit_behavior(BehaviorIntent(**intent_data))
         second.submit_behavior(BehaviorIntent(**intent_data))
-        first.advance(3)
-        second.advance(3)
+        step_n(first, 3)
+        step_n(second, 3)
         select = "SELECT event_type,actor_id,world_minute,data_json FROM event_log ORDER BY event_id"
         first_events = [tuple(row) for row in first.store.connection.execute(select).fetchall()]
         second_events = [tuple(row) for row in second.store.connection.execute(select).fetchall()]
@@ -965,7 +988,7 @@ def test_starter_village_end_to_end_scenario(tmp_path: Path):
         decision_provider = SequenceProvider([{"behavior_ref": "behavior:explore_greywood", "reason": "Map the unknown area.", "confidence": 0.9}])
         decision = AgentEngine(platform, decision_provider).run(role="agent_decision", actor_id="lu_xingzhou")
         assert decision.result["status"] == "accepted"
-        platform.advance(241)
+        step_n(platform, 241)
         assert any(item["fact_key"] == "explored:greywood_edge" for item in platform.store.list_knowledge_facts("lu_xingzhou"))
         reflection_provider = SequenceProvider([{"intent_type": "record_experience", "event_ref": "exploration.completed", "summary": "The survey revealed a route boundary.", "confidence": 0.9}])
         reflection = AgentEngine(platform, reflection_provider).run(role="agent_reflection", actor_id="lu_xingzhou", task_type="daily_reflection")

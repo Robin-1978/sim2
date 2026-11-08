@@ -14,9 +14,20 @@ The world is layered:
 
 Agents receive the local layer, relevant region summaries, known routes, and retrieved facts. They do not receive the whole map. God Agent receives cross-region indicators and event outcomes, then submits the same validated world intents as in a small world.
 
+## Starter Village connection
+
+Starter Village is the canonical starting region, not a sealed tutorial map. Its existing locations remain the local anchor while the broader setting connects through declared routes:
+
+- `river_bridge` is the southern arrival and trade road toward downstream towns.
+- `greywood_edge` connects the north gate, farm fields, river bank, and old quarry to the wider forest frontier.
+- `inn` and the caravan ledger connect local information and trade to external settlements.
+- `old_well` and the hidden root gate connect the local pact to the world-level forest memory.
+
+The first release can keep those external regions as configured summaries and unknown routes. Later world packages fill them with regions, factions, markets, and events without changing the Starter Village IDs or local Agent knowledge. Discovering a route is an in-world event; it is never injected into every Agent's context.
+
 ## Time, tick, and level of detail
 
-`world_minute` remains the canonical clock and is stored in SQLite. A minute is a precision unit, not an LLM decision cadence. Every minute is still a logical tick: Platform applies rules, Action progress, resource locks, and event checks in order and commits that tick before starting the next one. An `advance(N)` request is only an API envelope around N sequential ticks; it never jumps over a minute. Full Agent sessions run only at semantic boundaries inside those ticks.
+`world_minute` remains the canonical clock and is stored in SQLite. A minute is a precision unit, not an LLM decision cadence. Every minute is still a logical tick: Platform applies rules, Action progress, resource locks, and event checks in order and commits that tick before starting the next one. The autonomous Runtime calls one `Platform.step()` at a time; there is no public multi-minute time-jump interface. Full Agent sessions run only at semantic boundaries inside those ticks.
 
 The scheduler uses three simulation levels:
 

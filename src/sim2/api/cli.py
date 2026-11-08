@@ -6,9 +6,7 @@ from pathlib import Path
 
 from ..agents.engine import AgentEngine
 from ..bootstrap.service import create_instance
-from ..llm.gateway import LLMRouter
 from ..platform.runtime import Platform
-from ..simulation.runner import SimulationRunner
 from .text import TextWorldSession
 
 
@@ -43,9 +41,6 @@ def main() -> None:
     for name, help_text in [("status", "show instance status"), ("pause", "pause world advancement"), ("resume", "resume world advancement"), ("step", "advance one world minute"), ("metrics", "show runtime metrics"), ("audit", "export event and Agent audit")]:
         command = sub.add_parser(name, help=help_text)
         command.add_argument("--db", type=Path, required=True)
-    advance = sub.add_parser("advance", help="advance world minutes")
-    advance.add_argument("--db", type=Path, required=True)
-    advance.add_argument("--minutes", type=int, required=True)
     snapshot = sub.add_parser("snapshot", help="copy a consistent SQLite snapshot")
     snapshot.add_argument("--db", type=Path, required=True)
     snapshot.add_argument("--destination", type=Path, required=True)
@@ -101,29 +96,17 @@ def main() -> None:
     if args.command == "simulate":
         platform = Platform(args.db)
         try:
-            router = LLMRouter.from_default_config()
-            if args.provider:
-                providers = {
-                    role: router.new_provider_for_name(args.provider)
-                    for role in ("agent_decision", "agent_reflection", "god")
-                }
-            else:
-                providers = {
-                    "agent_decision": router.provider_for_role("agent_decision"),
-                    "agent_reflection": router.provider_for_role("agent_reflection"),
-                    "god": router.provider_for_role("god"),
-                }
-            report = SimulationRunner(
-                platform,
-                providers,
+            report = platform.run(
+                args.minutes,
+                provider_name=args.provider,
                 wait_cooldown_minutes=args.wait_cooldown,
                 llm_error_cooldown_minutes=args.llm_error_cooldown,
-            ).run(args.minutes)
+            )
             print(json.dumps({"report": report.as_dict(), "metrics": platform.metrics()}, ensure_ascii=False))
         finally:
             platform.close()
         return
-    if args.command in {"status", "pause", "resume", "step", "advance", "metrics", "audit", "snapshot", "restore", "enter-player", "inject"}:
+    if args.command in {"status", "pause", "resume", "step", "metrics", "audit", "snapshot", "restore", "enter-player", "inject"}:
         platform = Platform(args.db)
         try:
             if args.command == "status":
@@ -134,8 +117,6 @@ def main() -> None:
                 result = platform.resume()
             elif args.command == "step":
                 result = platform.step()
-            elif args.command == "advance":
-                result = platform.advance(args.minutes)
             elif args.command == "metrics":
                 result = platform.metrics()
             elif args.command == "audit":

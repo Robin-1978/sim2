@@ -59,8 +59,6 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._write(200, self.server.control.resume(str(body.get("reason", "http"))))
             if path == "/step":
                 return self._write(200, self.server.control.step())
-            if path == "/advance":
-                return self._write(200, self.server.control.advance(int(body.get("minutes", 1))))
             if path == "/events":
                 return self._write(200, self.server.control.inject(str(body["event_type"]), dict(body.get("payload", {})), body.get("actor_id")))
             if path == "/players":

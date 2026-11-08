@@ -22,7 +22,7 @@ python -m compileall -q src scripts
 python scripts/benchmark_platform.py --agents 1000 --runs 5
 ```
 
-Use `python scripts/run_long_simulation.py --minutes 10080` for a deterministic one-week smoke run. Real-provider checks use `python scripts/verify_agent_models.py` or `sim2 simulate --provider remote`; both require `~/.sim2/llm.json`, which stores provider metadata and environment-variable names only.
+Use `python scripts/run_long_simulation.py --minutes 10080` for a deterministic one-week smoke run. Real-provider checks use `python scripts/verify_agent_models.py` or `sim2 simulate --provider remote`; both start the internal Platform runtime and require `~/.sim2/llm.json`, which stores provider metadata and environment-variable names only.
 
 ## Style and Design Rules
 
