@@ -1063,6 +1063,8 @@ def test_control_service_pause_step_snapshot_and_audit(tmp_path: Path):
     snapshot = tmp_path / "snapshot.sqlite3"
     try:
         assert service.status()["status"] == "running"
+        assert service.health()["status"] == "ok"
+        assert service.health()["database"] == "ok"
         service.pause("test")
         assert service.step()["to_minute"] == 1
         service.resume("test")
@@ -1108,6 +1110,9 @@ def test_local_http_control_adapter_uses_platform(tmp_path: Path):
         with urlopen(base + "/status") as response:
             status = json.loads(response.read())
         assert status["status"] == "running"
+        with urlopen(base + "/health") as response:
+            health = json.loads(response.read())
+        assert health["status"] == "ok"
         request = Request(base + "/pause", data=b'{"reason":"test"}', headers={"content-type": "application/json"}, method="POST")
         with urlopen(request) as response:
             paused = json.loads(response.read())

@@ -18,6 +18,9 @@ class ControlService:
     def status(self) -> dict[str, Any]:
         return self.platform.status()
 
+    def health(self) -> dict[str, Any]:
+        return self.platform.health()
+
     def pause(self, reason: str = "operator") -> dict[str, Any]:
         return self.platform.pause(reason)
 

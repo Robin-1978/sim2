@@ -45,7 +45,7 @@ def main() -> None:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8080)
 
-    for name, help_text in [("status", "show instance status"), ("pause", "pause world advancement"), ("resume", "resume world advancement"), ("step", "advance one world minute"), ("metrics", "show runtime metrics"), ("audit", "export event and Agent audit")]:
+    for name, help_text in [("status", "show instance status"), ("health", "check database and runtime health"), ("pause", "pause world advancement"), ("resume", "resume world advancement"), ("step", "advance one world minute"), ("metrics", "show runtime metrics"), ("audit", "export event and Agent audit")]:
         command = sub.add_parser(name, help=help_text)
         command.add_argument("--db", type=Path, required=True)
     snapshot = sub.add_parser("snapshot", help="copy a consistent SQLite snapshot")
@@ -122,11 +122,13 @@ def main() -> None:
         finally:
             server.close()
         return
-    if args.command in {"status", "pause", "resume", "step", "metrics", "audit", "snapshot", "restore", "enter-player", "inject"}:
+    if args.command in {"status", "health", "pause", "resume", "step", "metrics", "audit", "snapshot", "restore", "enter-player", "inject"}:
         platform = Platform(args.db)
         try:
             if args.command == "status":
                 result = platform.status()
+            elif args.command == "health":
+                result = platform.health()
             elif args.command == "pause":
                 result = platform.pause()
             elif args.command == "resume":

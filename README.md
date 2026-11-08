@@ -13,6 +13,7 @@ python -m pip install -e .
 sim2 init --config worlds/starter_village --instance-id mist-village-001
 DB=~/.sim2/instances/mist-village-001/world.sqlite3
 sim2 status --db "$DB"
+sim2 health --db "$DB"
 ```
 
 Open the text interface as a player or observer:

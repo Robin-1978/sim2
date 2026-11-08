@@ -85,6 +85,18 @@ class Platform:
             "instance_id": self.store.get_meta("instance_id"),
         }
 
+    def health(self) -> dict[str, Any]:
+        """Return a read-only liveness check for external process probes."""
+
+        database = str(self.store.connection.execute("PRAGMA quick_check").fetchone()[0])
+        return {
+            "status": "ok" if database == "ok" else "degraded",
+            "database": database,
+            "runtime": self.store.get_meta("runtime_status", "running"),
+            "world_minute": int(self.store.get_meta("world_minute", 0)),
+            "instance_id": self.store.get_meta("instance_id"),
+        }
+
     def pause(self, reason: str = "operator") -> dict[str, Any]:
         with self.store.transaction():
             self.store.set_meta("runtime_status", "paused")

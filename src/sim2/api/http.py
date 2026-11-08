@@ -35,6 +35,9 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             if path == "/status":
                 return self._write(200, self.server.control.status())
+            if path == "/health":
+                health = self.server.control.health()
+                return self._write(200 if health.get("status") == "ok" else 503, health)
             if path == "/metrics":
                 return self._write(200, self.server.control.metrics())
             if path == "/observer":
