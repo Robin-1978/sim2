@@ -59,8 +59,24 @@ def run_session(platform: Platform, provider: OpenAICompatibleProvider, role: st
     result["quality"] = quality["passed"]
     result["quality_grade"] = quality["grade"]
     result["quality_checks"] = quality["checks"]
+    result["provider_status"] = _provider_status(turn.result)
+    if result["provider_status"]:
+        result["quality_grade"] = f"provider_{result['provider_status']}"
     result["context_cache"] = platform.metrics().get("llm_cache", {})
     return result
+
+
+def _provider_status(result: dict[str, Any]) -> str | None:
+    if result.get("failed_check") != "llm_response":
+        return None
+    message = str(result.get("message", "")).lower()
+    if "429" in message or "rate_limit" in message:
+        return "rate_limited"
+    if "cooldown" in message:
+        return "cooldown"
+    if "http 5" in message or "disconnect" in message or "timeout" in message:
+        return "upstream_unavailable"
+    return "provider_error"
 
 
 def main() -> int:
@@ -90,7 +106,11 @@ def main() -> int:
                     reports.append({"provider": "remote", "model": remote.model, **run_session(platform, remote_provider, "god", "god")})
         finally:
             platform.close()
-    print(json.dumps({"checks": reports, "all_quality_checks_passed": bool(reports) and all(item.get("quality") for item in reports)}, ensure_ascii=False, indent=2))
+    print(json.dumps({
+        "checks": reports,
+        "provider_blocked": any(item.get("provider_status") in {"rate_limited", "cooldown", "upstream_unavailable"} for item in reports),
+        "all_quality_checks_passed": bool(reports) and all(item.get("quality") and not item.get("provider_status") for item in reports),
+    }, ensure_ascii=False, indent=2))
     return 0 if reports and all(item.get("quality") for item in reports) else 1
 
 
