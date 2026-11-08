@@ -3,7 +3,7 @@
 This is intentionally a review tool, not a production loop.  It writes a
 redacted session report under ``artifacts/`` and prints only quality summaries.
 
-    PYTHONPATH=src python scripts/review_agent_sessions.py
+    python scripts/review_agent_sessions.py
 """
 
 from __future__ import annotations
@@ -13,14 +13,14 @@ import json
 import tempfile
 from pathlib import Path
 
-from sandbox.agent_view.validator import validate_agent_view
-from sandbox.agents.engine import AgentEngine
-from sandbox.agents.quality import evaluate_turn
-from sandbox.bootstrap.service import create_instance
-from sandbox.llm.config import ProviderConfig
-from sandbox.llm.gateway import OpenAICompatibleProvider
-from sandbox.platform.runtime import Platform
-from sandbox.prompting.renderer import render_context
+from sim2.agent_view.validator import validate_agent_view
+from sim2.agents.engine import AgentEngine
+from sim2.agents.quality import evaluate_turn
+from sim2.bootstrap.service import create_instance
+from sim2.llm.config import ProviderConfig
+from sim2.llm.gateway import OpenAICompatibleProvider
+from sim2.platform.runtime import Platform
+from sim2.prompting.renderer import render_context
 
 
 def discover_model() -> str:

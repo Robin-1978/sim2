@@ -3,7 +3,7 @@
 The script never prints API keys or raw model reasoning.  It reports only
 AgentView validation, session steps, final Intent status and Platform checks.
 
-    PYTHONPATH=src python scripts/verify_agent_models.py
+    python scripts/verify_agent_models.py
 """
 
 from __future__ import annotations
@@ -16,12 +16,12 @@ from typing import Any
 
 import httpx
 
-from sandbox.agents.engine import AgentEngine
-from sandbox.agents.quality import evaluate_turn
-from sandbox.bootstrap.service import create_instance
-from sandbox.llm.config import LLMConfig, ProviderConfig
-from sandbox.llm.gateway import OpenAICompatibleProvider
-from sandbox.platform.runtime import Platform
+from sim2.agents.engine import AgentEngine
+from sim2.agents.quality import evaluate_turn
+from sim2.bootstrap.service import create_instance
+from sim2.llm.config import LLMConfig, ProviderConfig
+from sim2.llm.gateway import OpenAICompatibleProvider
+from sim2.platform.runtime import Platform
 
 
 def discover_local_model(base_url: str) -> str | None:

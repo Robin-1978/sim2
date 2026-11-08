@@ -1,7 +1,7 @@
 """Measure one non-LLM Platform minute with a configurable agent count.
 
 Example:
-    PYTHONPATH=src python scripts/benchmark_platform.py --agents 1000
+    python scripts/benchmark_platform.py --agents 1000
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ import tempfile
 import time
 from pathlib import Path
 
-from sandbox.bootstrap.service import create_instance
-from sandbox.platform.runtime import Platform
+from sim2.bootstrap.service import create_instance
+from sim2.platform.runtime import Platform
 
 
 def main() -> None:

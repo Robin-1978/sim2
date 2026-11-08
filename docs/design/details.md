@@ -11,7 +11,7 @@
 > 首要风险: LLM 输出不可控会破坏世界一致性并造成成本失控，因此所有 LLM 结果只能生成发送给 Platform 的意图，Platform 必须完成 Schema、权限、前置条件、资源和行为树安全校验后才允许执行。
 > 创建时间: 2026-11-07
 > 更新时间: 2026-11-07
-> 代码位置: docs/design.md；实现目录规划为 src/sandbox
+> 代码位置: docs/design.md；实现目录规划为 src/sim2
 
 ## 需求
 
@@ -77,18 +77,18 @@ flowchart LR
 
 | 模块 | 目录 | 单一职责 |
 |---|---|---|
-| 配置与初始化 | `src/sandbox/bootstrap` | 读取配置包、校验引用、创建新的 SQLite 实例并导入初始数据 |
-| Platform 运行时 | `src/sandbox/platform` | 推进时钟和 模拟分钟、调度边界、执行事务、协调所有模块 |
-| 世界领域 | `src/sandbox/world` | 实体、属性、地点、势力、关系、社会规则和世界约束 |
-| 感知与信息 | `src/sandbox/perception` | 从世界只读投影生成带权限和视角的观察、查询和信息渠道结果 |
-| 元动作 | `src/sandbox/actions` | 声明和执行长时 Action，维护进度、资源锁、完成和失败结果 |
-| 行为树 | `src/sandbox/behavior` | BT Schema、版本注册、候选过滤、实例推进和条件结果 |
-| 意图网关 | `src/sandbox/intents` | 接收 `IntentEnvelope`、权限校验、幂等、ReAct 错误反馈和提交状态 |
-| Agent 运行时 | `src/sandbox/agents` | 个体 Agent 的决策/反思阶段与 God Agent 的上下文和任务调度 |
-| 记忆与社会认知 | `src/sandbox/memory` | 记忆、信念、关系证据、摘要、遗忘和 FTS5 检索 |
-| LLM 网关 | `src/sandbox/llm` | 模型适配、提示词编译、结构化输出、预算、超时和调用审计 |
-| SQLite 持久化 | `src/sandbox/persistence` | 连接、事务、Repository、事件日志、投影、快照和备份 |
-| 控制接口 | `src/sandbox/api` | 导入、启动、暂停、单步推进、查询、注入事件和导出 |
+| 配置与初始化 | `src/sim2/bootstrap` | 读取配置包、校验引用、创建新的 SQLite 实例并导入初始数据 |
+| Platform 运行时 | `src/sim2/platform` | 推进时钟和 模拟分钟、调度边界、执行事务、协调所有模块 |
+| 世界领域 | `src/sim2/world` | 实体、属性、地点、势力、关系、社会规则和世界约束 |
+| 感知与信息 | `src/sim2/perception` | 从世界只读投影生成带权限和视角的观察、查询和信息渠道结果 |
+| 元动作 | `src/sim2/actions` | 声明和执行长时 Action，维护进度、资源锁、完成和失败结果 |
+| 行为树 | `src/sim2/behavior` | BT Schema、版本注册、候选过滤、实例推进和条件结果 |
+| 意图网关 | `src/sim2/intents` | 接收 `IntentEnvelope`、权限校验、幂等、ReAct 错误反馈和提交状态 |
+| Agent 运行时 | `src/sim2/agents` | 个体 Agent 的决策/反思阶段与 God Agent 的上下文和任务调度 |
+| 记忆与社会认知 | `src/sim2/memory` | 记忆、信念、关系证据、摘要、遗忘和 FTS5 检索 |
+| LLM 网关 | `src/sim2/llm` | 模型适配、提示词编译、结构化输出、预算、超时和调用审计 |
+| SQLite 持久化 | `src/sim2/persistence` | 连接、事务、Repository、事件日志、投影、快照和备份 |
+| 控制接口 | `src/sim2/api` | 导入、启动、暂停、单步推进、查询、注入事件和导出 |
 
 依赖方向固定为 `api → platform → world/perception/behavior/actions/intents → persistence`。`agents` 通过 `perception`、`memory` 和 `llm` 生成意图，不能直接依赖 `persistence`；`world`、`perception`、`actions` 和 `behavior` 不依赖 Web 框架或具体 LLM。所有副作用必须经过 Platform 和 Intent Gateway，观测、审计和 trace 由横向基础设施注入。
 

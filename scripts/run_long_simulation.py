@@ -1,6 +1,6 @@
 """Run a deterministic long-world smoke test without network LLM calls.
 
-    PYTHONPATH=src python scripts/run_long_simulation.py --minutes 10080
+    python scripts/run_long_simulation.py --minutes 10080
 
 This checks Platform scheduling, persistence, outcome review inputs and
 diversity/degeneration indicators. It is not a replacement for real-model
@@ -15,9 +15,9 @@ import re
 import tempfile
 from pathlib import Path
 
-from sandbox.bootstrap.service import create_instance
-from sandbox.platform.runtime import Platform
-from sandbox.simulation.runner import SimulationRunner
+from sim2.bootstrap.service import create_instance
+from sim2.platform.runtime import Platform
+from sim2.simulation.runner import SimulationRunner
 
 
 class DeterministicProvider:

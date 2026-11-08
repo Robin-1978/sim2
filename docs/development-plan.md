@@ -26,18 +26,18 @@ Platform 不替 Agent 规划剧情，也不替 Agent 决定目标；它只执行
 
 | 模块 | 目录 | 首要交付 |
 |---|---|---|
-| 配置与初始化 | `src/sandbox/bootstrap` | Manifest、Schema、引用校验、新 SQLite 创建、初始导入 |
-| SQLite 持久化 | `src/sandbox/persistence` | Schema、Repository、事务、事件日志、状态投影、快照、备份 |
-| 世界领域 | `src/sandbox/world` | Entity、组件、资源、地点、关系、社会规则和领域约束 |
-| Platform 运行时 | `src/sandbox/platform` | 世界分钟、调度队列、暂停、恢复、单步和事务协调 |
-| Action 与效果 | `src/sandbox/actions` | ActionDefinition、目标解析、条件引擎、成本和通用 Effect Pipeline |
-| 行为树 | `src/sandbox/behavior` | BT 定义、实例、顺序、选择、并行、条件、结果和中断 |
-| Intent 网关 | `src/sandbox/intents` | Intent 生命周期、权限、资源、幂等、拒绝反馈 |
-| 感知与知识 | `src/sandbox/perception` | 视角过滤、局部观察、探索结果、知识事实和信息渠道 |
-| 记忆与社会认知 | `src/sandbox/memory` | 情节记忆、信念、关系证据、摘要、遗忘和 FTS5 |
-| AgentView 编译器 | `src/sandbox/agent_view` | 小型上下文切片、英文 Action/BT 描述、Token 预算和缓存分层 |
-| LLM 与 Agent | `src/sandbox/llm`, `src/sandbox/agents` | Decision、Reflection/Evolution、God、WorldBuilder 和 ReAct |
-| 控制、回放与观测 | `src/sandbox/api`, `src/sandbox/observability` | 启停、单步、查询、导出、指标、审计和确定性回放 |
+| 配置与初始化 | `src/sim2/bootstrap` | Manifest、Schema、引用校验、新 SQLite 创建、初始导入 |
+| SQLite 持久化 | `src/sim2/persistence` | Schema、Repository、事务、事件日志、状态投影、快照、备份 |
+| 世界领域 | `src/sim2/world` | Entity、组件、资源、地点、关系、社会规则和领域约束 |
+| Platform 运行时 | `src/sim2/platform` | 世界分钟、调度队列、暂停、恢复、单步和事务协调 |
+| Action 与效果 | `src/sim2/actions` | ActionDefinition、目标解析、条件引擎、成本和通用 Effect Pipeline |
+| 行为树 | `src/sim2/behavior` | BT 定义、实例、顺序、选择、并行、条件、结果和中断 |
+| Intent 网关 | `src/sim2/intents` | Intent 生命周期、权限、资源、幂等、拒绝反馈 |
+| 感知与知识 | `src/sim2/perception` | 视角过滤、局部观察、探索结果、知识事实和信息渠道 |
+| 记忆与社会认知 | `src/sim2/memory` | 情节记忆、信念、关系证据、摘要、遗忘和 FTS5 |
+| AgentView 编译器 | `src/sim2/agent_view` | 小型上下文切片、英文 Action/BT 描述、Token 预算和缓存分层 |
+| LLM 与 Agent | `src/sim2/llm`, `src/sim2/agents` | Decision、Reflection/Evolution、God、WorldBuilder 和 ReAct |
+| 控制、回放与观测 | `src/sim2/api`, `src/sim2/observability` | 启停、单步、查询、导出、指标、审计和确定性回放 |
 
 LLM Agent 不直接依赖 SQLite。所有 Agent 输出经过 Intent 网关；所有状态变化由 Platform 的领域和效果模块执行。
 
@@ -97,7 +97,7 @@ LLM Agent 不直接依赖 SQLite。所有 Agent 输出经过 Intent 网关；所
 
 验收：配置创世、分钟推进、LLM 驱动的 Agent 自动演化、玩家进入、知识传播、战斗中断、BT 演化、世界实体创建和确定性回放全部通过。当前已完成 transport-neutral `ControlService` 和 CLI 控制命令、本地 HTTP 控制适配器、暂停/继续/单步、外部事件注入、玩家模板入口、SQLite 一致性快照、快照恢复、审计导出、基础运行指标、相同配置/Intent 的事件序列回放、Starter Village 端到端场景和 1000 Agent 五次模拟分钟 p95 基准（约 145ms）。
 
-性能测量入口为 `PYTHONPATH=src python scripts/benchmark_platform.py --agents 1000`；它只测非 LLM 的一个模拟分钟，不把网络模型延迟混入 Platform 指标。
+性能测量入口为 `python scripts/benchmark_platform.py --agents 1000`；它只测非 LLM 的一个模拟分钟，不把网络模型延迟混入 Platform 指标。
 
 ## 测试层次
 
@@ -116,9 +116,9 @@ LLM Agent 不直接依赖 SQLite。所有 Agent 输出经过 Intent 网关；所
 
 ```bash
 pytest -q
-PYTHONPATH=src python -m compileall -q src scripts
-PYTHONPATH=src python scripts/benchmark_platform.py --agents 1000 --runs 5
-PYTHONPATH=src python scripts/verify_agent_models.py
+python -m compileall -q src scripts
+python scripts/benchmark_platform.py --agents 1000 --runs 5
+python scripts/verify_agent_models.py
 ```
 
 最近一次结果为 `43 passed`；1000 个 Agent、5 次非 LLM 模拟分钟的 p95 为约 `148 ms`。测试覆盖 ReAct 工具反馈与拒绝重试、SQLite 创世与回滚、长 Action/并行 BT/共享资源、中断恢复、探索沟通知识、聊天与两阶段交易、文本玩家/旁观者入口、记忆 FTS5 与激活、反思目标和能力历史、执行 outcome 复盘上下文、God 世界前后值复盘、God 事件语义质量门、HTTP 控制、快照恢复、确定性回放以及 Starter Village 端到端场景。
@@ -127,8 +127,8 @@ PYTHONPATH=src python scripts/verify_agent_models.py
 
 上下文缓存指标同时记录 Provider 返回的 `cached_tokens/prompt_tokens` 和结构化 Prompt 的稳定前缀复用率。最近一次 beam-free God 会话为 6 次模型调用，Provider 报告 `7616/11123` prompt tokens 命中，约 `68.47%`；稳定前缀复用率为 `83.33%`。本地确定性长跑没有 Provider token usage，但 1,585 次调用的稳定前缀复用率为 `99.81%`，说明动态内容已被放在稳定协议之后。
 
-`PYTHONPATH=src python scripts/run_long_simulation.py --minutes 10080` 的一周确定性闭环 smoke test 完成 1,512 次决策、72 次日/周反思、1 次 God 周期会话；选出 5 种行为、产生 9 种事件类型、8 个不同位置，未触发单一行为支配、健康耗尽或无限重规划标记。该 smoke provider 的反思固定返回 `wait`，所以不会伪造记忆增长；真实模型验收仍由 `verify_agent_models.py` 完成。
+`python scripts/run_long_simulation.py --minutes 10080` 的一周确定性闭环 smoke test 完成 1,512 次决策、72 次日/周反思、1 次 God 周期会话；选出 5 种行为、产生 9 种事件类型、8 个不同位置，未触发单一行为支配、健康耗尽或无限重规划标记。该 smoke provider 的反思固定返回 `wait`，所以不会伪造记忆增长；真实模型验收仍由 `verify_agent_models.py` 完成。
 
-2026-11-08 的真实本地验证使用 llama.cpp 模型 `Huihui-Qwen3.5-4B-abliterated.Q4_K_M`：Decision 选择了配置中可执行的 `behavior:explore_greywood`，目标/驱动标签对齐，未填充 duration/cost 参数；Reflection 提交了具体且不超过 500 字符的经验摘要。两者质量检查通过；Decision 因当前角色只有一个可执行 BT，质量等级标为 `grounded_forced_choice`。随后通过配置代理运行 beam-free 的 God Agent 检查，模型完成了 4 轮 ReAct、读取受限的世界信号，并提交了一个被 Platform 接受的世界事件提案；质量检查为 `grounded`，未输出密钥或原始推理。
+2026-11-08 的真实本地验证使用 llama.cpp 模型 `Huihui-Qwen3.5-4B-abliterated.Q4_K_M`：Decision 选择了配置中可执行的 `behavior:explore_greywood`，目标/驱动标签对齐；Reflection 提交了具体且不超过 500 字符的经验摘要。随后通过配置代理运行 beam-free 的 God Agent 检查，模型读取受限的世界信号后提交了 `root_gate_stability: 0.64 → 0.75` 的结构化世界属性变化，Platform 接受且质量为 `grounded`，未输出密钥或原始推理。只记录叙事 event、没有结构化状态效果的提案会被质量门标为 `accepted_needs_world_followup`。
 
 多 Agent 审查脚本还验证了 `liang_he` 的 3 个候选：本地模型选择 `behavior:craft_meal`，理由与 food/winter 目标及 safety/belonging 驱动标签一致，质量等级为 `comparative_grounded_choice`；`lin_bo` 的唯一治理候选为 `grounded_forced_choice`。完整 Prompt、原生 tool call、Platform 结果和质量检查保存在被 `.gitignore` 排除的 `artifacts/agent-session-review.json`。

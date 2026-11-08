@@ -45,17 +45,30 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         drive_ids = {item.get("id") for item in (view.get("drives") or [])[:3]}
         goal_tags = set(view.get("goal_tags") or [])
         alignment = (goal_tags & set(selected.get("goal_tags") or [])) | (drive_ids & set(selected.get("drive_tags") or []))
-        checks.append(_check("decision_semantic_signal", True, f"alignment={sorted(alignment)}; semantic outcome is reviewed by Reflection Agent"))
+        checks.append(_check("decision_semantic_signal", bool(alignment) or len(behaviors) <= 1, f"alignment={sorted(alignment)}; candidates={len(behaviors)}"))
         tokens = lambda value: set(re.findall(r"[a-z0-9]+", str(value).lower().replace("_", " ")))
         reason_terms = tokens(reason)
         evidence_terms = tokens(selected.get("name", "")) | tokens(selected.get("goal_tags", [])) | tokens(view.get("identity", {}).get("capabilities", {}))
-        checks.append(_check("decision_reason_grounding_advisory", True, "reason overlaps visible evidence" if reason_terms & evidence_terms else "no evidence overlap; Reflection review required"))
+        reason_grounded = bool(reason_terms & evidence_terms) if reason.strip() else bool(alignment)
+        reason_detail = "reason overlaps visible evidence" if reason_terms & evidence_terms else ("choice aligned with visible goals/drives; no explanation emitted" if not reason.strip() and alignment else "no overlap with selected behavior, goals, drives or capabilities")
+        checks.append(_check("decision_reason_grounding", reason_grounded, reason_detail))
     elif turn.role == "agent_reflection":
         if name == "wait" or payload.get("intent_type") == "wait" or turn.result.get("status") == "wait":
             checks.append(_check("reflection_can_decline_low_value_memory", True, "no new durable lesson was submitted"))
         elif name == "record_experience" or payload.get("intent_type") == "record_experience":
             summary = str(payload.get("summary") or "")
             checks.append(_check("reflection_experience_is_specific_and_bounded", (len(summary.split()) >= 4 or len(summary) >= 16) and len(summary) <= 500, f"summary_length={len(summary)}"))
+            outcomes = view.get("recent_outcomes") or []
+            if outcomes:
+                outcome = outcomes[0].get("outcome") or {}
+                evidence = " ".join([
+                    str(outcome.get("result", "")),
+                    str((outcome.get("expected") or {}).get("summary", "")),
+                    str(outcome.get("delta", {})),
+                ])
+                summary_terms = set(re.findall(r"[a-z0-9]+", summary.lower()))
+                evidence_terms = set(re.findall(r"[a-z0-9]+", evidence.lower()))
+                checks.append(_check("reflection_experience_matches_outcome", bool(summary_terms & evidence_terms), "summary overlaps expected result or observed delta" if summary_terms & evidence_terms else "summary does not cite the observed outcome"))
         elif name == "update_goal" or payload.get("intent_type") == "update_goal":
             statement = str(payload.get("statement") or "")
             checks.append(_check("reflection_goal_is_specific", len(statement) >= 12, f"statement_length={len(statement)}"))

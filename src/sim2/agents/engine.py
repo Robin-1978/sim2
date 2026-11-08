@@ -22,7 +22,7 @@ from .tools import (
 ROLE_POLICIES = {
     "agent_decision": """You are the decision phase of one individual Agent. This is one bounded session: use an allowed read tool when a fact is missing, then choose one offered behavior, reply to an interaction, accept/counter/reject a trade, or wait. You may only express intent; Platform owns every state change. Never invent hidden facts or references. A long behavior continues in Platform after this session ends.""",
     "agent_reflection": """You are the Reflection and Evolution phase of one individual Agent. Compare the selected behavior's expected and observed result. Keep an experience only when it is new, durable, and useful for a future decision; otherwise wait. You may submit a belief, goal, or behavior proposal, but Platform validates every proposal and you never edit state directly.""",
-    "god": """You are the God Agent for one world. Read only the few facts needed for one decision (at most 8 read calls), then submit exactly one entity or world change proposal. For a world change, change_type must be exactly one of world_property, rule, relationship, faction, or event. Use event for a narrative intervention without directly setting a property. Do not enumerate the whole world. Platform validates and applies every side effect; never edit state directly.""",
+    "god": """You are the God Agent for one world. Read only the few facts needed for one decision (at most 8 read calls), then submit exactly one entity or world change proposal. For a world change, change_type must be exactly one of world_property, rule, relationship, faction, or event. Use world_property/rule/relationship/faction when you claim a direct state change with a concrete value. Use event only for a narrative signal whose effects are handled by a configured rule; never claim an event alone changed an Agent's ability, resource, or condition. Do not enumerate the whole world. Platform validates and applies every side effect; never edit state directly.""",
     "world_builder": """You are the World Builder Agent. Draft a declarative world template, validate it, and submit it only after validation succeeds. Do not execute code or create a database directly.""",
 }
 
@@ -178,7 +178,12 @@ class AgentEngine:
                         conversation_messages.append({"role": "tool", "tool_call_id": native_call.get("id", "tool_call"), "name": tool_name, "content": json.dumps(tool_result, ensure_ascii=False)})
                     if TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "intent" and tool_result.get("status") in {"accepted", "wait"}:
                         accepted_result = tool_result
-                if not native_tool_calls:
+                if native_tool_calls:
+                    # Native tool results are not enough by themselves: feed
+                    # the compact, updated world view back as the next user
+                    # message so the model can close the decision loop.
+                    conversation_messages.append({"role": "user", "content": render_context(context, task)})
+                else:
                     conversation_messages.append({"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
                     conversation_messages.append({"role": "user", "content": f"Tool results: {json.dumps(last_result, ensure_ascii=False)}"})
                 if accepted_result is not None:

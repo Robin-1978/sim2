@@ -3,21 +3,21 @@ import pytest
 import json
 import threading
 from urllib.request import Request, urlopen
-from sandbox.intents.models import BehaviorIntent
+from sim2.intents.models import BehaviorIntent
 
-from sandbox.agents.engine import AgentEngine
-from sandbox.agents.tools import AgentToolExecutor
-from sandbox.agents.quality import evaluate_turn
-from sandbox.agent_view.validator import validate_agent_view
-from sandbox.actions.conditions import ConditionEngine
-from sandbox.actions.effects import EffectPipeline
-from sandbox.world.drives import DriveCalculator
-from sandbox.api.service import ControlService
-from sandbox.api.http import ControlHTTPServer
-from sandbox.api.text import TextWorldSession
-from sandbox.bootstrap.service import create_instance, validate_config
-from sandbox.platform.runtime import Platform
-from sandbox.prompting.renderer import render_context
+from sim2.agents.engine import AgentEngine
+from sim2.agents.tools import AgentToolExecutor
+from sim2.agents.quality import evaluate_turn
+from sim2.agent_view.validator import validate_agent_view
+from sim2.actions.conditions import ConditionEngine
+from sim2.actions.effects import EffectPipeline
+from sim2.world.drives import DriveCalculator
+from sim2.api.service import ControlService
+from sim2.api.http import ControlHTTPServer
+from sim2.api.text import TextWorldSession
+from sim2.bootstrap.service import create_instance, validate_config
+from sim2.platform.runtime import Platform
+from sim2.prompting.renderer import render_context
 
 
 class FakeProvider:
