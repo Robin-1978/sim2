@@ -65,6 +65,8 @@ class TextWorldSession:
         if command in {"look", "status"}:
             return self._look()
         if command == "wait":
+            if self.observer:
+                raise ValueError("Observer mode is read-only; run the Platform runtime to advance the world.")
             if args:
                 raise ValueError("wait takes no duration; issue one command per world minute")
             return self._format_result(self.platform.step())

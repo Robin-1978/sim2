@@ -988,6 +988,14 @@ def test_dialogue_trade_negotiation_and_observer_text_view(tmp_path: Path):
         world_text = session.execute("world")
         assert "World minute" in world_text and "Characters:" in world_text
         assert "message" not in world_text
+        assert session.execute("timeline 5")
+        try:
+            session.execute("wait")
+        except ValueError as exc:
+            assert "read-only" in str(exc)
+        else:
+            raise AssertionError("observer mode must not advance world time")
+        assert platform.status()["world_minute"] == 0
     finally:
         platform.close()
 
