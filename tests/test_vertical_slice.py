@@ -955,6 +955,43 @@ def test_public_event_and_world_property_effects_commit_through_platform(tmp_pat
         platform.close()
 
 
+def test_action_failure_condition_is_evaluated_at_completion(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "action-failure-world", tmp_path / "runtime"))
+    try:
+        action = {
+            "id": "stun_sensitive_action",
+            "parameters": {},
+            "preconditions": ["actor.alive"],
+            "duration": {"minutes": 1},
+            "costs": {"reserve": {}, "per_minute": {}},
+            "success": {"result": "done"},
+            "failure": {"condition": "actor.stunned", "result": "stunned"},
+        }
+        behavior = {
+            "id": "stun_sensitive_behavior",
+            "version": 1,
+            "scope": "personal",
+            "entry_conditions": ["actor.alive"],
+            "nodes": [{"type": "action", "action_id": "stun_sensitive_action"}],
+            "success_results": ["done"],
+            "failure_results": ["stunned"],
+        }
+        platform.store.put_definition("action_def", action["id"], action)
+        platform.store.put_definition("bt_def", behavior["id"], behavior)
+        agent = platform.store.get_agent("su_wu")
+        agent["initial_bt_ids"].append(behavior["id"])
+        agent["initial_state"]["conditions"] = ["stunned"]
+        platform.store.update_agent("su_wu", agent)
+        platform.store.connection.commit()
+        result = platform.submit_behavior(BehaviorIntent("su_wu", "behavior:stun_sensitive_behavior", {}, {}, "Try the action.", 0.8, "stun-failure"))
+        assert result["status"] == "accepted"
+        platform.step()
+        assert any(item["event_type"] == "behavior.failed" and item["actor_id"] == "su_wu" for item in platform.store.recent_events(limit=10))
+    finally:
+        platform.close()
+
+
 def test_step_commits_each_tick_before_a_later_tick_fails(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "tick-commit-world", tmp_path / "runtime")

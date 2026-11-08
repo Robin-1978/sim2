@@ -66,6 +66,8 @@ class ConditionEngine:
             return float(state.get("energy", 100))
         if path == "actor.health":
             return float(state.get("health", 100))
+        if path == "actor.location":
+            return state.get("location_id")
         if path == "actor.satiety":
             return float((agent.get("needs", {}) or {}).get("satiety", state.get("satiety", 0)))
         if path == "actor.mobile":

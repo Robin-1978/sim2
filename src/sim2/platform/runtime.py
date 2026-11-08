@@ -1445,6 +1445,10 @@ class Platform:
             elapsed = int(entry["duration"]) - int(entry["remaining"])
             self.store.update_action_instance(entry["action_instance_id"], status="succeeded" if entry["remaining"] == 0 else "running", elapsed_minutes=elapsed, remaining_minutes=entry["remaining"], data={"parameters": entry["parameters"], "target": entry["target"], "reservation": entry.get("reservation", []), "parallel_group": group}, updated_minute=minute)
             if entry["remaining"] == 0:
+                failure = self._action_failure_reason(agent, action, entry["parameters"], entry.get("target"))
+                if failure:
+                    self._finish_behavior(agent, execution_id, behavior_id, "failed", failure, minute)
+                    return
                 self._apply_success_effects(agent, action, entry["parameters"], minute, target=entry.get("target"))
                 self._record_information_result(agent, action, entry["parameters"], minute)
                 self.store.append_event("action.completed", agent["id"], minute, {"execution_id": execution_id, "action_id": entry["action_id"], "parallel_group": group, "result": action.get("success", {}).get("result", "completed")})
@@ -1521,6 +1525,10 @@ class Platform:
             self.store.update_agent(agent["id"], agent)
             return
         action_parameters = state.get("active_action_parameters", {})
+        failure = self._action_failure_reason(agent, action, action_parameters, self.targets.resolve(agent, action_parameters)[0])
+        if failure:
+            self._finish_behavior(agent, execution_id, behavior_id, "failed", failure, minute)
+            return
         self._apply_success_effects(agent, action, action_parameters, minute, target=self.targets.resolve(agent, action_parameters)[0])
         self._record_information_result(agent, action, state.get("active_action_parameters", {}), minute)
         self.store.append_event("action.completed", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "result": action.get("success", {}).get("result", "completed")})
@@ -1602,6 +1610,43 @@ class Platform:
                 capability = effect.get("capability")
                 if capability:
                     self._add_capability_progress(agent, capability, float(effect.get("value", 0)), f"recipe:{recipe_id}", minute)
+
+    def _action_failure_reason(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], target: dict[str, Any] | None) -> str | None:
+        condition = str((action.get("failure") or {}).get("condition") or "").strip()
+        if not condition:
+            return None
+        state = agent.get("initial_state", {}) or {}
+        location = {}
+        location_id = state.get("location_id")
+        if location_id:
+            try:
+                location = self.store.get_entity(str(location_id))
+            except KeyError:
+                location = {}
+        source = {}
+        source_id = parameters.get("source_id")
+        if source_id:
+            try:
+                source = self.store.get_entity(str(source_id))
+            except KeyError:
+                source = {}
+        context = {
+            "location_id": location_id,
+            "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
+            "item_id": parameters.get("item_id"),
+            "current_location": location,
+            "location": location,
+            "source": source,
+            "station": location,
+            "target": target or {},
+            "danger": {"detected": "danger" in (state.get("conditions") or [])},
+            "hostile_contact": "hostile_contact" in (state.get("conditions") or []),
+            "target.refused": "target_refused" in (state.get("conditions") or []),
+            "known_route_destinations": reachable_locations(self.store, location_id),
+        }
+        if self.conditions.evaluate(condition, agent=agent, target=target or {}, context=context, world=self.store.get_meta("world_properties", {}) or {}):
+            return str((action.get("failure") or {}).get("result") or condition)
+        return None
 
     def _apply_relationship_effect(self, agent: dict[str, Any], target: dict[str, Any], effect: dict[str, Any], minute: int) -> None:
         target_id = str(target.get("id") or target.get("entity_id") or "") if isinstance(target, dict) else ""
