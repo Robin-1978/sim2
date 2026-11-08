@@ -85,6 +85,23 @@ class AgentEngine:
         self._last_usage = dict(response.pop("_usage", {}) or {}) if isinstance(response, dict) else {}
         return response
 
+    @staticmethod
+    def _reflection_has_evidence(context: dict[str, Any]) -> bool:
+        """Allow reflection only when the view contains something observable."""
+
+        if context.get("recent_outcomes") or context.get("memories"):
+            return True
+        meaningful_events = {
+            "behavior.completed", "behavior.failed", "behavior.interrupted",
+            "dialogue.completed", "trade.completed", "trade.offer_created",
+            "trade.countered", "exploration.completed", "research.completed",
+            "object.recovered", "relationship.changed", "world.change.world_property",
+        }
+        return any(
+            isinstance(item, dict) and str(item.get("event_type", "")) in meaningful_events
+            for item in (context.get("recent_actions") or [])
+        )
+
     def run(self, *, role: str, actor_id: str, task_type: str = "decision") -> AgentTurn:
         if role not in ROLE_NAMES:
             raise ValueError(f"unknown agent role: {role}")
@@ -101,6 +118,9 @@ class AgentEngine:
         view_errors = validate_agent_view(context, role=role)
         if view_errors:
             raise ValueError("invalid AgentView: " + "; ".join(view_errors))
+        if role == "agent_reflection" and task_type in {"daily_reflection", "integration_verification"} and not self._reflection_has_evidence(context):
+            result = {"status": "wait", "reason": "No completed outcome or meaningful event is available for reflection."}
+            return AgentTurn(role, task_type, {}, result, 0, [{"step": "guard", "result": result}])
         task = self._task_text(role, task_type)
         executor = AgentToolExecutor(self.platform, role=role, actor_id=actor_id)
         last_response: dict[str, Any] = {}
@@ -325,6 +345,14 @@ class AgentEngine:
                     return error
                 return self.platform.reject_trade_offer(actor_id, str(offer["offer_id"]))
             if intent_type == "record_experience":
+                if role == "agent_reflection":
+                    if not self._reflection_has_evidence(context or {}):
+                        return {
+                            "status": "rejected",
+                            "failed_check": "reflection_no_observed_result",
+                            "retryable": True,
+                            "message": "No completed outcome, meaningful event, or prior memory is available for a durable experience.",
+                        }
                 return self.platform.submit_experience(actor_id, str(data.get("event") or data.get("event_ref") or ""), str(data.get("summary") or ""), float(data.get("confidence", 1.0)))
             if intent_type == "update_belief":
                 return self.platform.submit_belief_update(actor_id, "", str(data.get("statement") or data.get("belief") or ""), float(data.get("confidence", 0.0)), str(data.get("reason") or ""))

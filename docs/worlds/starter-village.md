@@ -65,6 +65,7 @@ LLM 看到的状态是精简摘要，例如“何砚，北门，受伤 20%，可
 | 研究事实 | 苏巫研究旧契约石板 | 产生“根门稳定性正在下降”的配置事实；来源已研究后 BT 隐藏，新的来源由世界演化提供 |
 | 沟通传播 | 玩家从余歌处询问北门异常，再向何砚求证 | 形成两条带来源的 testimony，Agent 置信度可以不同 |
 | 需求冲突 | 粮食减少且灰热病扩散 | 粮仓、守卫、草药师和村长的非线性驱动进入不同临界区 |
+| 市场生存 | 没有粮仓配给权但持有金币的 Agent 饥饿 | 在旅店市场购买口粮；Platform 同时锁定金币和市场库存，不能隔空取粮 |
 | BT 演化 | 乔宁提交“采药并隔离病源”的新 BT | 非法节点被 Platform 拒绝，错误回传给 Agent，修正后注册新版本 |
 | 世界演化 | 周/月结算触发 God Agent | 只提交经校验的实体、事件或规则变化，结果写入 SQLite |
 
@@ -72,7 +73,7 @@ LLM 看到的状态是精简摘要，例如“何砚，北门，受伤 20%，可
 
 完整的属性、元动作和基础 BT 清单见 [starter-village-catalog.md](starter-village-catalog.md)；给 LLM 的简明英文目录见 [starter-village-agent-catalog.md](starter-village-agent-catalog.md)。配置文件是 Platform 的规范输入；LLM 读取的是 Platform 根据当前状态过滤后的精简目录，不直接读取原始 YAML。AgentView 是运行时生成的临时投影，不作为世界事实文件保存。
 
-雾溪村中的 BT 用来组合通用能力：例如 `craft_meal` BT 调用 `craft_recipe` Action 读取 `cooked_meal` Recipe；`defend_village` BT 先报警，再选择防御或撤离；`explore_greywood` BT 组合移动和探索，完成后由配置的发现条目解锁后续 BT；`recover_caravan_ledger` 使用通用 `recover_object` Action，把探索结果转成物品状态、知识和公共事件。取粮分为 `get_food`（先移动到粮仓）和 `get_food_here`（已在粮仓），避免隔空改变库存。Recipe 只描述材料和产物，Action 负责按分钟执行，BT 负责控制流，Platform 负责状态变化。
+雾溪村中的 BT 用来组合通用能力：例如 `craft_meal` BT 调用 `craft_recipe` Action 读取 `cooked_meal` Recipe；`defend_village` BT 先报警，再选择防御或撤离；`explore_greywood` BT 组合移动和探索，完成后由配置的发现条目解锁后续 BT；`recover_caravan_ledger` 使用通用 `recover_object` Action，把探索结果转成物品状态、知识和公共事件。取粮分为 `get_food`（先移动到粮仓）、`get_food_here`（已在粮仓）和 `buy_food`（旅店市场用金币购买），避免隔空改变库存。Recipe 可声明 `limits.max_total` 防止独特工具或有限药品被无需求刷产出；饥饿伤害和市场交易也属于配置规则。Recipe 只描述材料和产物，Action 负责按分钟执行，BT 负责控制流，Platform 负责状态变化。
 
 配置包位于 `worlds/starter_village/`：
 

@@ -42,6 +42,7 @@
 | `grain` | material | 谷物 | {quantity: 80, location_id: granary} |
 | `cooked_meal` | consumable | 熟食 | {quantity: 0, location_id: granary} |
 | `medicine` | consumable | 草药药剂 | {quantity: 0, location_id: clinic} |
+| `market_rations` | market_stock | 旅店市场口粮 | {amount: 80, location_id: inn} |
 
 ## 元动作
 
@@ -53,7 +54,7 @@
 | `patrol_route` | 巡逻已知路线并记录发现 | {route_id: string} | 96 分钟 | actor.is_guard<br>route.known | per_minute: {energy: 0.6, exposure: 0.2} | 成功：{condition: route.completed, result: patrol_reported}<br>失败：{condition: hostile_contact, result: emergency} |
 | `heal_target` | 使用可用治疗资源恢复目标状态 | {target_id: string} | 72 分钟 | actor.is_healer<br>patient.in_clinic<br>medicine.available | reserve: {medicine: 1}<br>per_minute: {energy: 0.4} | 成功：{condition: patient.fever_reduced, result: patient_stabilized}<br>失败：{condition: medicine.failed, result: failed} |
 | `explore_area` | 探索一块尚未充分了解的区域并记录发现 | {area_id: string} | 240 分钟 | actor.can_explore<br>route.known<br>area.not_fully_mapped | reserve: {rations: 1}<br>per_minute: {energy: 0.25, exposure: 0.4} | 成功：记录区域事实、路线和配置发现；同一 Agent 不会重复探索已知区域 |
-| `communicate` | 与目标角色沟通并记录可传播信息 | {target_id: string, topic: string} | 6 分钟 | actor.can_speak<br>target.available<br>communication.channel_open | per_minute: {attention: 1} | 成功：{condition: dialogue.completed, result: dialogue_recorded}<br>失败：{condition: target.refused, result: conversation_refused} |
+| `communicate` | 与目标角色沟通并记录可传播信息 | {target_id: string, topic: string，默认 general} | 6 分钟 | actor.can_speak<br>target.available<br>communication.channel_open | per_minute: {attention: 1} | 成功：{condition: dialogue.completed, result: dialogue_recorded}<br>失败：{condition: target.refused, result: conversation_refused} |
 | `research_source` | 研究可访问的信息源并记录事实 | {source_id: string} | 192 分钟 | actor.can_research<br>source.accessible<br>research.new_fact_available | per_minute: {energy: 0.2, attention: 0.4} | 成功：写入配置的研究事实；同一信息源已知后不再显示 |
 | `inspect_object` | 检查可访问的物体、库存或设施 | {object_id: string} | 24 分钟 | actor.can_inspect<br>location.reachable | per_minute: {attention: 0.2} | 成功：{condition: inventory.read_complete, result: stock_reported}<br>失败：{condition: location.locked, result: denied} |
 | `negotiate` | 与目标角色协商交换或契约 | {target_id: string, topic: string} | 36 分钟 | actor.can_negotiate<br>counterparty.available | per_minute: {attention: 0.6} | 成功：{condition: contract.signed, result: contract_signed}<br>失败：{condition: trust.collapsed, result: negotiation_failed} |
@@ -64,6 +65,7 @@
 | `craft_recipe` | 在可用工作站按配方制作物品 | {recipe_id: string, station_id: string} | recipe_duration 分钟 | actor.can_craft<br>recipe.available<br>station.available<br>inputs.available | reserve: {recipe_inputs: 1}<br>per_minute: {energy: 0.4, attention: 0.5} | 成功：{condition: outputs.created, result: recipe_completed}<br>失败：{condition: inputs.lost or station.damaged, result: crafting_failed} |
 | `consume_food` | 消耗一份携带的食物恢复饱腹度 | {item_id: string} | 1 分钟 | actor.alive<br>actor.has_food | reserve: {item_parameter: item_id} | 成功：{result: ate_food, satiety: +30}<br>失败：{result: eating_failed} |
 | `withdraw_food` | 在粮仓按配给权从共享库存领取一份口粮 | {} | 10 分钟 | actor.alive<br>actor.food_withdrawal<br>location.food_store | reserve: {village_food: 1} | 成功：{result: ration_received, inventory.rations: +1}<br>失败：{result: ration_unavailable} |
+| `buy_food` | 在旅店市场用金币购买一份口粮 | {} | 5 分钟 | actor.alive<br>location.market | reserve: {coin: 1, market_rations: 1} | 成功：{result: ration_purchased, inventory.rations: +1}<br>失败：{result: ration_unavailable} |
 | `recover_object` | 回收探索发现的物体并登记证据 | {object_id: string} | 180 分钟 | actor.alive<br>actor.can_investigate<br>object.available | reserve: {rations: 1}<br>per_minute: {energy: 0.1, exposure: 0.01} | 成功：物体标记为 recovered，记录事实并提高配置的 public_trust；失败：{result: recovery_failed} |
 
 ## 基础 BT
@@ -78,18 +80,19 @@
 | `heal_target` | personal | actor.is_healer<br>patient.available | 72 分钟 | heal_target | — | — |
 | `explore_greywood` | personal | actor.can_explore；目标区域尚未完成测绘 | 241 分钟 | travel_to → explore_area | 区域路线、账册线索和探索事实写入知识 | lost, injured, emergency |
 | `research_source` | root_keepers | actor.can_research；信息源仍有新事实 | 192 分钟 | research_source → 条件 | 根门契约衰退事实写入知识 | source_lost, belief_conflict |
-| `inspect_object` | personal | actor.can_inspect；每 360 分钟最多一次 | 24 分钟 | inspect_object | — | — |
+| `inspect_object` | personal | actor.can_inspect；每 1,440 分钟最多一次 | 24 分钟 | inspect_object | — | — |
 | `defend_village` | village_watch | actor.is_guard<br>threat.at_village | 48 分钟 | sound_alarm → 选择[defend_position, flee_to_safety] | threat_contained, civilians_safe | defense_broken, retreat_required |
 | `defend_position` | personal | actor.can_defend<br>threat.reachable | 24 分钟 | defend → attack | — | — |
 | `flee_to_safety` | personal | actor.alive<br>threat.overwhelming | 96 分钟 | flee_to_safety | — | — |
 | `sound_alarm` | village_watch | actor.can_sound_alarm<br>threat.detected | 6 分钟 | sound_alarm | — | — |
 | `craft_meal` | personal | actor.can_craft<br>recipe.available<br>inputs.available | 60 分钟 | craft_recipe | food_created, capability_improved | crafting_failed |
-| `communicate` | personal | actor.can_communicate<br>target.available | 12 分钟 | communicate | — | — |
-| `negotiate` | personal | actor.can_communicate<br>target.available | 12 分钟 | negotiate | — | — |
+| `communicate` | personal | actor.can_communicate<br>target.available；每 1,440 分钟最多一次 | 6 分钟 | communicate | — | — |
+| `negotiate` | personal | actor.can_communicate<br>target.available；每 2,880 分钟最多一次 | 36 分钟 | negotiate | — | — |
 | `gather_resource` | personal | actor.can_gather<br>resource.available | 144 分钟 | gather_resource | resource_collected | gathering_failed |
 | `eat_food` | universal | actor.alive<br>actor.has_food | 1 分钟 | consume_food(item_id) | ate_food | eating_failed |
 | `get_food` | universal | actor.alive<br>actor.food_withdrawal<br>route.known | 路线分钟 + 10 分钟 | travel_to granary → withdraw_food | ration_received | ration_unavailable |
 | `get_food_here` | universal | actor.alive<br>actor.food_withdrawal<br>location.food_store | 10 分钟 | withdraw_food | ration_received | ration_unavailable |
+| `buy_food` | universal | actor.alive<br>location.market<br>actor.satiety <= 80 | 5 分钟 | buy_food | ration_purchased | ration_unavailable |
 | `recover_caravan_ledger` | personal | 灰林探索发现账册线索后，且 Agent 有调查能力 | 180 分钟 | recover_object(caravan_ledger) | ledger_recovered, trade_route_evidence | recovery_failed, interrupted |
 
 ## Platform 执行边界

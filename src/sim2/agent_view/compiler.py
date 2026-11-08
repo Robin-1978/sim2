@@ -48,6 +48,7 @@ def _predicate_text(predicate: str) -> str:
         "inputs available": "Required inputs are available",
         "recipe available": "A recipe is available",
         "object available": "The discovered object is at this location",
+        "location market": "You are at the local market",
     }
     return replacements.get(text, text[:1].upper() + text[1:] + ".")
 
@@ -277,6 +278,7 @@ class AgentViewCompiler:
                 current_location = self.store.get_entity(location_id)
             except KeyError:
                 pass
+        default_target = self.targets.default_visible_agent(agent)
         for bt_id in catalog_ids:
             bt = bt_defs.get(bt_id)
             if not bt:
@@ -294,8 +296,9 @@ class AgentViewCompiler:
                 "researched_sources": researched_sources,
                 "inventory": agent.get("inventory", {}) or {},
                 "food_items": rules.get("food_items", []) or [],
+                "target": {"id": default_target.get("id"), "available": True} if default_target else {"available": False},
             }
-            if any(not self.conditions.evaluate(str(predicate), agent=agent, target={}, context=condition_context, world=self.store.get_meta("world_properties", {}) or {}) for predicate in bt.get("entry_conditions", []) or []):
+            if any(not self.conditions.evaluate(str(predicate), agent=agent, target=condition_context["target"], context=condition_context, world=self.store.get_meta("world_properties", {}) or {}) for predicate in bt.get("entry_conditions", []) or []):
                 continue
             cooldown_minutes = max(0, int(bt.get("cooldown_minutes", 0) or 0))
             if cooldown_minutes:
@@ -316,7 +319,7 @@ class AgentViewCompiler:
                 if not action:
                     continue
                 simulated_state = simulated_agent.setdefault("initial_state", {})
-                parameters = self._view_action_parameters(node.get("parameters") or {}, simulated_state, simulated_agent.get("inventory", {}) or {}, rules.get("food_items", []) or [], safe_location_id=safe_location_id, resource_node=resource_node, health_location_id=health_location_id)
+                parameters = self._view_action_parameters(node.get("parameters") or {}, simulated_state, simulated_agent.get("inventory", {}) or {}, rules.get("food_items", []) or [], safe_location_id=safe_location_id, resource_node=resource_node, health_location_id=health_location_id, default_target_id=(default_target or {}).get("id"))
                 action_minutes = estimator._action_minutes(action, parameters, simulated_state.get("location_id"))
                 if not self._action_available(simulated_agent, action, parameters, simulated_location, rules.get("food_items", []) or [], action_minutes):
                     action_unavailable = True
@@ -355,6 +358,14 @@ class AgentViewCompiler:
                     target_text = f"Resource node: {self.store.get_entity(resource_node['location_id']).get('name', resource_node['location_id'])}."
                 except KeyError:
                     target_text = "Configured resource node is available."
+            elif any(
+                node.get("type") == "action"
+                and any(value == "context.target_id" for value in (node.get("parameters") or {}).values())
+                for node in bt.get("nodes", []) or []
+            ):
+                participants = self.targets.visible_agents(agent)
+                names = ", ".join(str(item.get("name", item.get("id"))) for item in participants[:5])
+                target_text = f"Nearby participant: {names}. Platform uses the first visible participant if no target is supplied."
             available.append({
                 "ref": f"behavior:{bt_id}",
                 "registration": "platform_validated",
@@ -449,7 +460,7 @@ class AgentViewCompiler:
         }
 
     @staticmethod
-    def _view_action_parameters(parameters: dict[str, Any], state: dict[str, Any], inventory: dict[str, Any], food_items: list[str], *, safe_location_id: str | None = None, resource_node: dict[str, str] | None = None, health_location_id: str | None = None) -> dict[str, Any]:
+    def _view_action_parameters(parameters: dict[str, Any], state: dict[str, Any], inventory: dict[str, Any], food_items: list[str], *, safe_location_id: str | None = None, resource_node: dict[str, str] | None = None, health_location_id: str | None = None, default_target_id: str | None = None) -> dict[str, Any]:
         resolved = {}
         first_food = next((item for item in food_items if float(inventory.get(item, 0) or 0) >= 1), None)
         for key, value in parameters.items():
@@ -465,6 +476,8 @@ class AgentViewCompiler:
                 resolved[key] = health_location_id
             elif value == "context.item_id":
                 resolved[key] = first_food
+            elif value == "context.target_id":
+                resolved[key] = default_target_id
             else:
                 resolved[key] = value
         return resolved

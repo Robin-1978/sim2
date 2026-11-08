@@ -294,7 +294,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_inspect
   estimated_minutes: 24
-  cooldown_minutes: 360
+  cooldown_minutes: 1440
   nodes:
   - type: action
     action_id: inspect_object
@@ -402,6 +402,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_communicate
   - target.available
+  cooldown_minutes: 1440
   estimated_minutes: 6
   nodes:
   - type: action
@@ -418,6 +419,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_communicate
   - target.available
+  cooldown_minutes: 2880
   estimated_minutes: 36
   nodes:
   - type: action
@@ -517,6 +519,26 @@ behavior_trees:
   nodes:
   - type: action
     action_id: withdraw_food
+  definition_source: config
+  kind: fallback
+- id: buy_food
+  version: 1
+  scope: universal
+  summary: Buy one ration at the local market.
+  description: Spend one coin at the market for one ration when carried food is unavailable.
+  entry_conditions:
+  - actor.alive
+  - location.market
+  - actor.satiety <= 80
+  requirements: ["You are at the market and carry at least one coin; market stock must remain." ]
+  goal_tags: [food, survival, trade]
+  drive_tags: [physiological_homeostasis, autonomy]
+  interrupt_policy: cancel
+  success_results: [ration_purchased]
+  failure_results: [ration_unavailable]
+  nodes:
+  - type: action
+    action_id: buy_food
   definition_source: config
   kind: fallback
 - id: recover_caravan_ledger

@@ -14,7 +14,7 @@ locations:
     name: 余歌旅店
     public: true
     safe: true
-    tags: [public, social, information]
+    tags: [public, social, information, market]
     routes: [village_square]
   - id: granary
     name: 粮仓
@@ -89,6 +89,10 @@ resources:
   - id: iron_ore
     type: local_ore
     location_id: old_quarry
+    amount: 80
+  - id: market_rations
+    type: market_stock
+    location_id: inn
     amount: 80
   - id: star_metal
     type: rare_material

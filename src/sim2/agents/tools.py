@@ -536,6 +536,26 @@ class AgentToolExecutor:
         return result
 
     def _record_experience(self, summary: str, event: str = "", confidence: float = 1.0) -> dict[str, Any]:
+        if self.role == "agent_reflection":
+            meaningful_events = {
+                "behavior.completed", "behavior.failed", "behavior.interrupted",
+                "dialogue.completed", "trade.completed", "trade.offer_created",
+                "trade.countered", "exploration.completed", "research.completed",
+                "object.recovered", "relationship.changed", "world.change.world_property",
+            }
+            has_outcome = bool(self.platform.store.recent_outcomes_for_actor(self.actor_id, limit=1))
+            has_memory = bool(self.platform.store.list_memories(self.actor_id, limit=1))
+            has_event = any(
+                str(item.get("event_type", "")) in meaningful_events
+                for item in self.platform.store.recent_events_for_actor(self.actor_id, limit=20)
+            )
+            if not (has_outcome or has_memory or has_event):
+                return {
+                    "status": "rejected",
+                    "failed_check": "reflection_no_observed_result",
+                    "retryable": True,
+                    "message": "No completed outcome, meaningful event, or prior memory is available for a durable experience.",
+                }
         return self.platform.submit_experience(self.actor_id, event, summary, float(confidence))
 
     def _update_belief(self, confidence: float, belief: str = "", statement: str = "", reason: str = "") -> dict[str, Any]:

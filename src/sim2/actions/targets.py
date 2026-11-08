@@ -32,6 +32,23 @@ class TargetResolver:
         matches = [str(row["id"]) for row in rows if self._key(row["name"]) == self._key(text)]
         return matches[0] if len(matches) == 1 else None
 
+    def visible_agents(self, agent: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return other Agents at the actor's current location in stable order."""
+
+        location_id = (agent.get("initial_state") or {}).get("location_id")
+        if not location_id:
+            return []
+        return [
+            item for item in self.store.entities_at_location(location_id)
+            if item.get("entity_type") == "agent" and item.get("id") != agent.get("id")
+        ]
+
+    def default_visible_agent(self, agent: dict[str, Any]) -> dict[str, Any] | None:
+        """Select a deterministic nearby participant when a BT omits a target."""
+
+        candidates = sorted(self.visible_agents(agent), key=lambda item: str(item.get("id", "")))
+        return candidates[0] if candidates else None
+
     def resolve(self, agent: dict[str, Any], parameters: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
         target_id = next((parameters.get(key) for key in self.TARGET_KEYS if parameters.get(key)), None)
         if not target_id:

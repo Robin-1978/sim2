@@ -19,6 +19,9 @@ class ResourceLedger:
                 recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
                 if recipe is None:
                     return False, "recipe is unavailable", []
+                limit_error = self._check_recipe_output_limits(recipe)
+                if limit_error:
+                    return False, limit_error, []
                 for requirement in recipe.get("requires", []) or []:
                     capability = str(requirement.get("capability", ""))
                     minimum = float(requirement.get("min_level", 0) or 0)
@@ -61,6 +64,27 @@ class ResourceLedger:
                 else:
                     self._change_world_resource(item["entity_id"], -float(item["amount"]))
         return True, "", reservation
+
+    def _check_recipe_output_limits(self, recipe: dict[str, Any]) -> str | None:
+        """Enforce declarative world-wide output caps before reserving inputs."""
+
+        limits = recipe.get("limits", []) or []
+        if isinstance(limits, dict):
+            limits = [limits]
+        if not limits:
+            return None
+        totals: dict[str, float] = {}
+        for agent in self.store.list_agents():
+            for item, quantity in (agent.get("inventory", {}) or {}).items():
+                totals[str(item)] = totals.get(str(item), 0.0) + float(quantity or 0)
+        for limit in limits:
+            if not isinstance(limit, dict) or not limit.get("item"):
+                continue
+            item = str(limit["item"])
+            maximum = float(limit.get("max_total", limit.get("max", 0)) or 0)
+            if maximum > 0 and totals.get(item, 0.0) >= maximum:
+                return f"recipe output limit reached for {item} ({maximum:g} total)"
+        return None
 
     def _world_resource(self, key: str) -> dict[str, Any] | None:
         try:

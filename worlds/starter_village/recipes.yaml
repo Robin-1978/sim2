@@ -26,6 +26,7 @@ recipes:
     station_tags: [health]
     inputs: [{item: herb_bundle, quantity: 2}, {item: clean_water, quantity: 1}]
     outputs: [{item: medicine, quantity: 1}]
+    limits: [{item: medicine, max_total: 2}]
     requires: [{capability: herbalism, min_level: 0.40}]
     duration_minutes: 120
     effects:
@@ -37,6 +38,7 @@ recipes:
     station_tags: [craft]
     inputs: [{item: iron_ore, quantity: 2}]
     outputs: [{item: dawn_bell, quantity: 1}]
+    limits: [{item: dawn_bell, max_total: 1}]
     requires: [{capability: forging, min_level: 0.80}]
     duration_minutes: 120
     effects:

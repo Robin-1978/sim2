@@ -282,6 +282,70 @@ def test_food_store_bt_supplies_agents_without_carried_food(tmp_path: Path):
         platform.close()
 
 
+def test_market_food_path_uses_coin_and_market_stock(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "market-food-world", tmp_path / "runtime"))
+    try:
+        agent = platform.store.get_agent("fei_lan")
+        agent["needs"]["satiety"] = 20
+        platform.store.update_agent("fei_lan", agent)
+        platform.store.connection.commit()
+        view = platform.decision_view("fei_lan")
+        assert any(item["ref"] == "behavior:buy_food" for item in view["executable_behaviors"])
+        before_coin = platform.store.get_agent("fei_lan")["inventory"]["coin"]
+        before_rations = platform.store.get_agent("fei_lan")["inventory"].get("rations", 0)
+        before_stock = platform.store.get_entity("market_rations")["amount"]
+        result = platform.submit_behavior(BehaviorIntent(
+            "fei_lan", "behavior:buy_food", {}, {}, "Buy food because carried food is unavailable.", 0.9, "market-food"
+        ))
+        assert result["status"] == "accepted"
+        step_n(platform, 5)
+        after = platform.store.get_agent("fei_lan")
+        assert after["inventory"]["coin"] == before_coin - 1
+        assert after["inventory"]["rations"] == before_rations + 1
+        assert platform.store.get_entity("market_rations")["amount"] == before_stock - 1
+    finally:
+        platform.close()
+
+
+def test_nearby_communication_behavior_resolves_a_visible_participant(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "nearby-dialogue-world", tmp_path / "runtime"))
+    try:
+        view = platform.decision_view("yu_ge")
+        communicate = next(item for item in view["executable_behaviors"] if item["ref"] == "behavior:communicate")
+        assert "费兰" in communicate["target"]
+        result = platform.submit_behavior(BehaviorIntent(
+            "yu_ge", "behavior:communicate", {}, {}, "Exchange the merchant's route information.", 0.8, "nearby-dialogue"
+        ))
+        assert result["status"] == "accepted"
+        step_n(platform, 6)
+        dialogue = next(item for item in platform.store.recent_events(limit=20) if item["event_type"] == "dialogue.completed")
+        assert dialogue["topic"] == "general"
+        assert platform.store.list_memories("fei_lan", limit=5)
+        assert any(item["from"] == "yu_ge" and item["to"] == "fei_lan" and item["type"] == "trust" for item in platform.store.list_relationships())
+        assert not any(item["ref"] == "behavior:communicate" for item in platform.decision_view("yu_ge")["executable_behaviors"])
+    finally:
+        platform.close()
+
+
+def test_starvation_is_a_configured_world_consequence(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "starvation-world", tmp_path / "runtime"))
+    try:
+        agent = platform.store.get_agent("fei_lan")
+        agent["needs"]["satiety"] = 0
+        agent["initial_state"]["health"] = 10
+        platform.store.update_agent("fei_lan", agent)
+        platform.store.connection.commit()
+        step_n(platform, 60)
+        after = platform.store.get_agent("fei_lan")
+        assert after["initial_state"]["health"] == 8
+        assert after["initial_state"]["status"] == "idle"
+    finally:
+        platform.close()
+
+
 def test_food_and_rest_fallbacks_disappear_when_needs_are_satisfied(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "satisfied-needs-world", tmp_path / "runtime")
@@ -346,7 +410,7 @@ def test_inspection_behaviors_have_configured_cooldowns(tmp_path: Path):
         assert platform.submit_behavior(intent)["status"] == "accepted"
         step_n(platform, 24)
         assert not any(item["ref"] == "behavior:inspect_object" for item in platform.decision_view("su_wu")["executable_behaviors"])
-        platform.store.set_meta("world_minute", 384)
+        platform.store.set_meta("world_minute", 1464)
         assert any(item["ref"] == "behavior:inspect_object" for item in platform.decision_view("su_wu")["executable_behaviors"])
     finally:
         platform.close()
@@ -662,6 +726,25 @@ def test_reflection_intent_is_committed_by_platform(tmp_path: Path):
         memories = platform.store.list_memories("lu_xingzhou")
         assert memories[0]["summary"].startswith("The first observation")
         assert "memory (experience)" in provider.calls[0]["context"]
+    finally:
+        platform.close()
+
+
+def test_reflection_cannot_record_an_experience_without_evidence(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "reflection-evidence-world", tmp_path / "runtime"))
+    provider = SequenceProvider([
+        {"intent_type": "record_experience", "event_ref": "Explore Greywood completion", "summary": "The map improved by fifteen percent and the sister route is confirmed."},
+        {"intent_type": "wait", "reason": "No completed result is available yet."},
+    ])
+    try:
+        assert platform.submit_behavior(BehaviorIntent(
+            "lu_xingzhou", "behavior:explore_greywood", {}, {}, "Begin the survey.", 0.9, "reflection-evidence-active"
+        ))["status"] == "accepted"
+        turn = AgentEngine(platform, provider).run(role="agent_reflection", actor_id="lu_xingzhou", task_type="daily_reflection")
+        assert turn.result["status"] == "wait"
+        assert len(platform.store.list_memories("lu_xingzhou")) == 0
+        assert turn.transcript[0]["step"] == "guard"
     finally:
         platform.close()
 
@@ -1004,6 +1087,7 @@ def test_role_goal_paths_produce_medicine_and_dawn_bell(tmp_path: Path):
             platform.step()
         assert platform.store.get_agent("qiao_ning")["inventory"].get("medicine", 0) == 1
         assert platform.store.get_agent("tian_yan")["inventory"].get("dawn_bell", 0) == 1
+        assert not any(item["ref"] == "behavior:craft_dawn_bell" for item in platform.decision_view("tian_yan")["executable_behaviors"])
     finally:
         platform.close()
 

@@ -348,6 +348,15 @@ class Platform:
             health_location_id = nearest_location_with_tag(self.store, state.get("location_id"), {"health", "clinic"})
             if health_location_id:
                 runtime_parameters.setdefault("health_location_id", health_location_id)
+        uses_context_target = any(
+            node.get("type") == "action"
+            and any(value == "context.target_id" for value in (node.get("parameters") or {}).values())
+            for node in bt.get("nodes", []) or []
+        )
+        if uses_context_target and not any(runtime_parameters.get(key) for key in ("target_id", "patient_id", "counterparty_id", "listener_id")):
+            default_target = self.targets.default_visible_agent(agent)
+            if default_target:
+                runtime_parameters["target_id"] = default_target["id"]
         entry_context = self._behavior_condition_context(agent, runtime_parameters, intent.target)
         entry_target = {**runtime_parameters, **intent.target, **(entry_context.get("target") or {})}
         for predicate in bt.get("entry_conditions", []) or []:
@@ -584,6 +593,7 @@ class Platform:
             self.store.put_memory(listener_id, "testimony", {"topic": topic, "message": message, "speaker_id": speaker_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.45, "pending_decision": True})
             self._apply_configured_need_effect(speaker, "dialogue.completed")
             self._apply_configured_need_effect(listener, "dialogue.completed")
+            self._apply_configured_relationship_effect(speaker, listener, "dialogue.completed", minute)
             self.store.update_agent(speaker_id, speaker)
             self.store.update_agent(listener_id, listener)
             event_id = self.store.append_event("dialogue.completed", speaker_id, minute, {"dialogue_id": exchange_id, "target_id": listener_id, "topic": topic, "summary": "A direct exchange was recorded.", "activation": "recipient_next_decision_or_reflection", "duration_minutes": 0, "priority": "normal"})
@@ -600,6 +610,16 @@ class Platform:
             effects = [{"type": "need_delta", "need": key, "delta": value} for key, value in effects.items()]
         for effect in effects or []:
             self.effects.apply(agent, dict(effect))
+
+    def _apply_configured_relationship_effect(self, source: dict[str, Any], target: dict[str, Any], event_type: str, minute: int) -> None:
+        """Apply package-declared relationship changes for completed interactions."""
+
+        rules = self.store.get_meta("rules", {}) or {}
+        effects = (rules.get("relationship_effects", {}) or {}).get(event_type, [])
+        if isinstance(effects, dict):
+            effects = [effects]
+        for effect in effects or []:
+            self._apply_relationship_effect(source, target, dict(effect), minute)
 
     def create_trade_offer(self, offerer_id: str, recipient_id: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
         """Create a two-phase item offer; no inventory moves until acceptance."""
@@ -667,6 +687,7 @@ class Platform:
                 offerer.setdefault("inventory", {})[item] = offerer["inventory"].get(item, 0) + quantity
             self._apply_configured_need_effect(offerer, "trade.completed")
             self._apply_configured_need_effect(recipient, "trade.completed")
+            self._apply_configured_relationship_effect(offerer, recipient, "trade.completed", minute)
             self.store.update_agent(offerer_id := offer["offerer_id"], offerer)
             self.store.update_agent(recipient_id, recipient)
             result = {"status": "accepted", "offer_id": offer_id, "trade_status": "completed", "give": offer["give"], "want": offer["want"]}
@@ -1174,6 +1195,8 @@ class Platform:
                 sources = self.store.entities_at_location(location_id) if location_id else []
                 source = next((item for item in sources if item.get("entity_type") in {"resource", "material"} and not (item.get("initial_state") or {}).get("protected") and self._entity_quantity(item) > 0), None)
                 result[key] = source.get("id") if source else value
+            elif value in (None, "") or (isinstance(value, str) and value.startswith("context.")):
+                result[key] = default
         return result
 
     @staticmethod
@@ -1247,9 +1270,27 @@ class Platform:
                 changed_agents: list[dict[str, Any]] = []
                 for agent in self.store.list_agents():
                     state = dict(agent.get("initial_state") or {})
-                    if effect.get("condition") == "action.none" and state.get("status") in {"executing", "paused"}:
+                    condition = str(effect.get("condition") or "").strip()
+                    if condition == "action.none" and state.get("status") in {"executing", "paused"}:
+                        continue
+                    if condition and condition != "action.none" and not self.conditions.evaluate(
+                        condition,
+                        agent=agent,
+                        target={},
+                        context={"current_location": self._entity_for_context(state.get("location_id"))},
+                        world=self.store.get_meta("world_properties", {}) or {},
+                    ):
                         continue
                     self._apply_simple_effect(agent, definition)
+                    state = dict(agent.get("initial_state") or {})
+                    if float(state.get("health", 100) or 0) <= 0 and state.get("status") not in {"unconscious", "dead"}:
+                        state["status"] = "unconscious"
+                        conditions = list(state.get("conditions") or [])
+                        if "incapacitated" not in conditions:
+                            conditions.append("incapacitated")
+                        state["conditions"] = conditions
+                        agent["initial_state"] = state
+                        self.store.append_event("agent.incapacitated", agent["id"], minute, {"reason": effect.get("id", "minute_effect")})
                     changed_agents.append(agent)
                 self.store.update_agents_bulk(changed_agents)
             elif scope == "world":
@@ -1770,6 +1811,8 @@ class Platform:
             self.store.put_memory(agent["id"], "dialogue", {"topic": str(topic), "target_id": target_id, "world_minute": minute, "dialogue_id": dialogue_id})
             if listener:
                 self.store.put_memory(target_id, "testimony", {"topic": str(topic), "speaker_id": agent["id"], "world_minute": minute, "dialogue_id": dialogue_id})
+                self._apply_configured_relationship_effect(agent, listener, "dialogue.completed", minute)
+                self.store.update_agent(listener["id"], listener)
             self.store.append_event("dialogue.completed", agent["id"], minute, {"target_id": target_id, "topic": str(topic), "dialogue_id": dialogue_id})
 
     def _finish_behavior(self, agent: dict[str, Any], execution_id: str, behavior_id: str, status: str, result: str, minute: int) -> None:

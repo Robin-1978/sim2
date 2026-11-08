@@ -166,6 +166,9 @@ class ConditionEngine:
             location = context.get("current_location", {}) or {}
             tags = set(location.get("tags", []) or [])
             return {"food", "resource"}.issubset(tags)
+        if path == "location.market":
+            location = context.get("current_location", {}) or {}
+            return "market" in set(location.get("tags", []) or [])
         if path == "location.health_service":
             location = context.get("current_location", {}) or {}
             return bool(set(location.get("tags", []) or []) & {"health", "clinic"})
