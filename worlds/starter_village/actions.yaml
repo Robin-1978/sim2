@@ -70,6 +70,7 @@ actions:
   parameters: {}
   preconditions:
   - actor.alive
+  - actor.food_withdrawal
   - location.food_store
   duration:
     minutes: 1

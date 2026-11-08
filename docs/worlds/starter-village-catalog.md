@@ -63,7 +63,7 @@
 | `sound_alarm` | 向村庄广播边界或战斗警报 | {alarm_type: string, location_id: string} | 6 分钟 | actor.can_sound_alarm<br>location.watch_post | per_minute: {attention: 0.2} | 成功：{condition: alarm.broadcast, result: alarm_raised}<br>失败：{condition: alarm_device.broken, result: failed} |
 | `craft_recipe` | 在可用工作站按配方制作物品 | {recipe_id: string, station_id: string} | recipe_duration 分钟 | actor.can_craft<br>recipe.available<br>station.available<br>inputs.available | reserve: {recipe_inputs: 1}<br>per_minute: {fatigue: 0.4, attention: 0.5} | 成功：{condition: outputs.created, result: recipe_completed}<br>失败：{condition: inputs.lost or station.damaged, result: crafting_failed} |
 | `consume_food` | 消耗一份携带的食物恢复饥饿满足度 | {item_id: string} | 1 分钟 | actor.alive<br>actor.has_food | reserve: {item_parameter: item_id} | 成功：{result: ate_food, hunger: +30}<br>失败：{result: eating_failed} |
-| `withdraw_food` | 在粮仓从共享库存领取一份口粮 | {} | 1 分钟 | actor.alive<br>location.food_store | reserve: {village_food: 1} | 成功：{result: ration_received, inventory.rations: +1}<br>失败：{result: ration_unavailable} |
+| `withdraw_food` | 在粮仓按配给权从共享库存领取一份口粮 | {} | 1 分钟 | actor.alive<br>actor.food_withdrawal<br>location.food_store | reserve: {village_food: 1} | 成功：{result: ration_received, inventory.rations: +1}<br>失败：{result: ration_unavailable} |
 
 ## 基础 BT
 
@@ -87,7 +87,7 @@
 | `negotiate` | personal | actor.can_communicate<br>target.available | 12 分钟 | negotiate | — | — |
 | `gather_resource` | personal | actor.can_gather<br>resource.available | 120 分钟 | gather_resource | action_completed | action_failed |
 | `eat_food` | universal | actor.alive<br>actor.has_food | 1 分钟 | consume_food(item_id) | ate_food | eating_failed |
-| `get_food` | universal | actor.alive<br>location.food_store | 1 分钟 | withdraw_food | ration_received | ration_unavailable |
+| `get_food` | universal | actor.alive<br>actor.food_withdrawal<br>location.food_store | 1 分钟 | withdraw_food | ration_received | ration_unavailable |
 
 ## Platform 执行边界
 

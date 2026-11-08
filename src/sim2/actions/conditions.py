@@ -86,6 +86,8 @@ class ConditionEngine:
         if path.startswith("actor.permission."):
             permissions = agent.get("permissions", {})
             return permissions.get(path.removeprefix("actor.permission."), False)
+        if path == "actor.food_withdrawal":
+            return bool((agent.get("permissions", {}) or {}).get("food_withdrawal", False))
         if path.startswith("actor.is_"):
             role = str(agent.get("role", "")).lower()
             expected = path.removeprefix("actor.is_").replace("_", " ")

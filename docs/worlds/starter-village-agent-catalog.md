@@ -55,7 +55,7 @@ This compact English catalog is generated from the world configuration. It is a 
 | behavior:negotiate | Negotiate | Reach an agreement with another character. | A counterparty is available and an agreement is needed. | Negotiate | 12 | A contract or exchange is recorded. | Trust collapses or the offer is refused. |
 | behavior:gather_resource | Gather Resource | Collect a configured resource from a known node. | A known resource source is visible and supply is needed. | Gather Resource | 120 | The resource enters inventory or storage. | The source is empty or the actor cannot continue. |
 | behavior:eat_food | Eat Food | You carry one configured food item and need to choose whether to restore hunger. | Consume Food(item_id) | 1 | Hunger satisfaction increases and the item is removed. | The food is unavailable. |
-| behavior:get_food | Get Food | You are at the granary and shared food remains. | Withdraw Food | 1 | One ration enters inventory. | The shared store is empty. |
+| behavior:get_food | Get Food | You have food-withdrawal rights, are at the granary, and shared food remains. | Withdraw Food | 1 | One ration enters inventory. | The shared store is empty or you lack ration rights. |
 
 ## Output
 

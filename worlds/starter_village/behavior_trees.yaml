@@ -403,6 +403,7 @@ behavior_trees:
   description: Take one ration from the shared food store when standing at the granary.
   entry_conditions:
   - actor.alive
+  - actor.food_withdrawal
   - location.food_store
   estimated_minutes: 1
   requirements: ["Stand at the granary and shared village food must be available."]
