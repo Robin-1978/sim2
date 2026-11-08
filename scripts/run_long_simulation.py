@@ -30,10 +30,12 @@ class DeterministicProvider:
         if "God Agent" in system:
             return {
                 "intent_type": "propose_world_change",
-                "change_type": "event",
-                "summary": f"A scheduled world signal at simulation call {self.calls}.",
+                "change_type": "world_property",
+                "summary": "The weekly review updates fog pressure from measured world signals.",
                 "scope": "world",
-                "effects": ["record a new public signal"],
+                "property": "fog_level",
+                "value": 0.2,
+                "expected_effects": ["Fog pressure is recorded at 0.2."],
             }
         behavior_section = context.split("<executable_behaviors>", 1)[-1].split("</executable_behaviors>", 1)[0]
         choices = re.findall(r"^\s+choice: (.+)$", behavior_section, flags=re.MULTILINE)
