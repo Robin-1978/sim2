@@ -76,7 +76,9 @@ class ConditionEngine:
             aliases = {"explore": "exploration", "speak": "conversation", "communicate": "conversation", "craft": "cooking", "attack": "combat", "defend": "defense", "gather": "gather", "research": "research", "inspect": "investigation", "inspect_granary": "accounting", "negotiate": "conversation", "sound_alarm": "alarm", "mediate": "conversation"}
             value = agent.get("capabilities", {}).get(aliases.get(capability, capability), 0)
             if not value and capability == "inspect":
-                value = max((agent.get("capabilities", {}).get(item, 0) for item in ("investigation", "lore", "accounting")), default=0)
+                value = max((agent.get("capabilities", {}).get(item, 0) for item in ("investigation", "lore", "accounting", "governance")), default=0)
+            if not value and capability == "inspect_granary":
+                value = max((agent.get("capabilities", {}).get(item, 0) for item in ("accounting", "governance")), default=0)
             if not value and capability == "gather":
                 value = max((agent.get("capabilities", {}).get(item, 0) for item in ("gather", "farming", "hunting", "foraging")), default=0)
             return float(value or 0) > 0
@@ -119,6 +121,10 @@ class ConditionEngine:
         if path in {"actor.exhausted", "actor.stunned"}:
             return float(state.get("stamina", 100)) <= 0 or path.removeprefix("actor.") in state.get("conditions", [])
         if path.startswith("target."):
+            if path == "target.available":
+                return bool(target.get("available", context.get("target.available", True)))
+            if path == "target.visible":
+                return bool(target.get("visible", context.get("target.visible", True)))
             return self._path_value(target, path.removeprefix("target."))
         if path.startswith("world."):
             return self._path_value(world, path.removeprefix("world."))

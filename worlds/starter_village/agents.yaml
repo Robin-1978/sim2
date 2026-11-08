@@ -343,6 +343,7 @@ agents:
     exploration: 0.95
     tracking: 0.93
     hunting: 0.87
+    conversation: 0.55
     combat: 0.76
     ranged_attack: 0.82
     flee: 0.88

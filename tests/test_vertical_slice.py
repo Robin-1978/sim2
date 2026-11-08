@@ -184,6 +184,19 @@ def test_food_store_bt_supplies_agents_without_carried_food(tmp_path: Path):
         platform.close()
 
 
+def test_agent_view_filters_unavailable_recipe_and_keeps_travel_fallback(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "agent-view-filter-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        blacksmith = {item["ref"] for item in platform.decision_view("tian_yan")["executable_behaviors"]}
+        assert "behavior:craft_meal" not in blacksmith
+        assert "behavior:travel" in blacksmith
+        assert all(platform.decision_view(agent["id"])["executable_behaviors"] for agent in platform.store.list_agents())
+    finally:
+        platform.close()
+
+
 def test_context_uses_role_tools_and_plain_sections():
     class View:
         pass

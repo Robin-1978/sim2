@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..actions.conditions import ConditionEngine
+from ..actions.resources import ResourceLedger
 from ..agents.tools import tools_for_role
 from ..persistence.store import WorldStore
 from ..world.drives import DriveCalculator
@@ -77,6 +78,7 @@ class AgentViewCompiler:
     def __init__(self, store: WorldStore):
         self.store = store
         self.conditions = ConditionEngine()
+        self.resources = ResourceLedger(store)
 
     def build_decision_view(self, agent_id: str, role: str = "agent_decision") -> dict[str, Any]:
         try:
@@ -114,16 +116,23 @@ class AgentViewCompiler:
             steps = []
             costs = []
             impacts = []
+            action_unavailable = False
             for node in bt.get("nodes", []):
                 if node.get("type") != "action":
                     continue
                 action = action_defs.get(node.get("action_id"))
                 if not action:
                     continue
+                parameters = self._view_action_parameters(node.get("parameters") or {}, state, agent.get("inventory", {}) or {}, rules.get("food_items", []) or [])
+                if not self._action_available(agent, action, parameters, current_location, rules.get("food_items", []) or []):
+                    action_unavailable = True
+                    break
                 view = _action_view(action)
                 steps.append(view["name"])
                 costs.extend(view["cost"])
                 impacts.extend(view["impact"][:1])
+            if action_unavailable:
+                continue
             available.append({
                 "ref": f"behavior:{bt_id}",
                 "registration": "platform_validated",
@@ -174,6 +183,42 @@ class AgentViewCompiler:
             "active_task": {"bt": state.get("active_bt_instance"), "action": state.get("active_action"), "remaining_minutes": state.get("remaining_minutes", 0)},
             "executable_behaviors": available[:5], "last_platform_result": state.get("last_platform_result"), "tools": tools_for_role(role),
         }
+
+    @staticmethod
+    def _view_action_parameters(parameters: dict[str, Any], state: dict[str, Any], inventory: dict[str, Any], food_items: list[str]) -> dict[str, Any]:
+        resolved = {}
+        first_food = next((item for item in food_items if float(inventory.get(item, 0) or 0) >= 1), None)
+        for key, value in parameters.items():
+            if value == "context.location_id" or value == "context.station_id":
+                resolved[key] = state.get("location_id")
+            elif value == "context.item_id":
+                resolved[key] = first_food
+            else:
+                resolved[key] = value
+        return resolved
+
+    def _action_available(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], location: dict[str, Any], food_items: list[str]) -> bool:
+        context = {
+            "current_location": location,
+            "location_id": (agent.get("initial_state") or {}).get("location_id"),
+            "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
+            "area_id": parameters.get("area_id"),
+            "item_id": parameters.get("item_id"),
+            "inventory": agent.get("inventory", {}) or {},
+            "food_items": food_items,
+            "station_tags": [],
+        }
+        if action.get("id") == "craft_recipe":
+            recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
+            if recipe is None:
+                return False
+            context["station_tags"] = list(recipe.get("station_tags", []) or [])
+        target = dict(parameters)
+        for predicate in action.get("preconditions", []) or []:
+            if not self.conditions.evaluate(str(predicate), agent=agent, target=target, context=context, world=self.store.get_meta("world_properties", {}) or {}):
+                return False
+        allowed, _, _ = self.resources.reserve(agent, action, parameters, commit=False)
+        return allowed
 
     def _build_world_view(self, actor_id: str, role: str) -> dict[str, Any]:
         minute = self.store.get_meta("world_minute", 0)
