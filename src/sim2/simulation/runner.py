@@ -55,6 +55,7 @@ class SimulationRunner:
         self._failure_seen: dict[str, int] = {}
         self._interaction_events_seen: set[int] = set()
         self._interaction_rounds: dict[tuple[str, ...], tuple[int, int]] = {}
+        self._interaction_not_before: dict[str, int] = {}
 
     def run(self, minutes: int) -> SimulationReport:
         minutes = int(minutes)
@@ -108,6 +109,9 @@ class SimulationRunner:
             )
             report.decisions += 1
             self._record_turn(report, turn.result, recipient_id)
+            if turn.result.get("status") == "accepted" and any(key in turn.result for key in ("dialogue_id", "offer_id", "trade_status")):
+                self._interaction_not_before[recipient_id] = minute + self.interaction_cooldown_minutes
+                self._interaction_not_before[actor_id] = minute + self.interaction_cooldown_minutes
             if turn.result.get("status") == "wait":
                 report.waits += 1
 
@@ -119,7 +123,7 @@ class SimulationRunner:
         for agent in self.platform.store.list_agents():
             agent_id = agent["id"]
             state = agent.get("initial_state", {}) or {}
-            if state.get("status") in {"executing", "paused"} or minute < max(self._decision_not_before.get(agent_id, 0), self._llm_not_before(agent_id)):
+            if state.get("status") in {"executing", "paused"} or minute < max(self._decision_not_before.get(agent_id, 0), self._llm_not_before(agent_id), self._interaction_not_before.get(agent_id, 0)):
                 continue
             outcomes = self.platform.store.recent_outcomes_for_actor(agent_id, limit=1)
             if outcomes and outcomes[0].get("event_type") == "behavior.failed":
@@ -136,6 +140,8 @@ class SimulationRunner:
                 self._decision_not_before[agent_id] = minute + self.wait_cooldown_minutes
             elif turn.result.get("status") == "accepted":
                 self._llm_error_count.pop(agent_id, None)
+                if any(key in turn.result for key in ("dialogue_id", "offer_id", "trade_status")):
+                    self._interaction_not_before[agent_id] = minute + self.interaction_cooldown_minutes
                 # If a selected BT fails at its first boundary, avoid an
                 # unbounded same-minute retry loop while preserving prompt
                 # driven replanning at the next safe boundary.
