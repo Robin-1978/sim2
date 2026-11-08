@@ -322,6 +322,22 @@ class AgentViewCompiler:
                         simulated_location = {}
             if action_unavailable:
                 continue
+            target_text = "Platform resolves permitted targets from the current view."
+            if bt_id == "recover_at_safe_location" and safe_location_id:
+                try:
+                    target_text = f"Configured safe location: {self.store.get_entity(safe_location_id).get('name', safe_location_id)}."
+                except KeyError:
+                    target_text = "Configured safe location is available."
+            elif bt_id == "seek_treatment" and health_location_id:
+                try:
+                    target_text = f"Health service: {self.store.get_entity(health_location_id).get('name', health_location_id)}."
+                except KeyError:
+                    target_text = "Configured health service is available."
+            elif bt_id == "gather_at_known_node" and resource_node:
+                try:
+                    target_text = f"Resource node: {self.store.get_entity(resource_node['location_id']).get('name', resource_node['location_id'])}."
+                except KeyError:
+                    target_text = "Configured resource node is available."
             available.append({
                 "ref": f"behavior:{bt_id}",
                 "registration": "platform_validated",
@@ -332,7 +348,7 @@ class AgentViewCompiler:
                 "purpose": bt.get("purpose") or bt.get("description") or bt.get("summary") or _label(bt_id),
                 "when": bt.get("when") or bt.get("entry_descriptions") or [_predicate_text(item) for item in bt.get("entry_conditions", [])] or ["The current goal makes this useful."],
                 "requires": bt.get("requirements") or bt.get("requirement_descriptions") or [_predicate_text(item) for item in bt.get("entry_conditions", [])] or ["Platform confirms all step requirements."],
-                "target": "Platform resolves permitted targets from the current view.",
+                "target": target_text,
                 "steps": steps[:5],
                 "time": f"{estimator.behavior_minutes(bt_id, {'safe_location_id': safe_location_id} if safe_location_id else {}, location_id)} minutes",
                 "cost": list(dict.fromkeys(costs))[:6] or ["Costs are defined by the selected steps."],
