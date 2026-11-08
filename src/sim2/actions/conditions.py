@@ -122,9 +122,12 @@ class ConditionEngine:
             return float(state.get("stamina", 100)) <= 0 or path.removeprefix("actor.") in state.get("conditions", [])
         if path.startswith("target."):
             if path == "target.available":
-                return bool(target.get("available", context.get("target.available", True)))
+                # A target-dependent action is not executable until Platform
+                # resolves an actual target. Treating an omitted target as
+                # available makes an apparently valid BT fail at execution.
+                return bool(target.get("available", context.get("target.available", False)))
             if path == "target.visible":
-                return bool(target.get("visible", context.get("target.visible", True)))
+                return bool(target.get("visible", context.get("target.visible", False)))
             return self._path_value(target, path.removeprefix("target."))
         if path.startswith("world."):
             return self._path_value(world, path.removeprefix("world."))
@@ -142,7 +145,9 @@ class ConditionEngine:
             required = set(context.get("station_tags", []) or [])
             current = set((context.get("current_location", {}) or {}).get("tags", []) or [])
             return not required or bool(required & current)
-        if path in {"location.safe", "destination.safe_or_defensible", "target.available", "patient.available", "patient.in_clinic", "source.accessible", "resource.available", "inputs.available", "recipe.available", "counterparty.available", "communication.channel_open", "location.reachable"}:
+        if path in {"patient.available", "counterparty.available"}:
+            return bool(context.get(path, target.get("available", False)))
+        if path in {"location.safe", "destination.safe_or_defensible", "target.available", "patient.in_clinic", "source.accessible", "resource.available", "inputs.available", "recipe.available", "communication.channel_open", "location.reachable"}:
             if path == "location.safe":
                 location = context.get("current_location", {})
                 return bool(location.get("safe", False) or location.get("public", False) is True or "safe" in location.get("tags", []))

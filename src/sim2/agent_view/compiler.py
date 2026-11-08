@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 from ..actions.conditions import ConditionEngine
 from ..actions.resources import ResourceLedger
+from ..actions.targets import TargetResolver
 from ..agents.tools import tools_for_role
 from ..behavior.estimator import BehaviorDurationEstimator
 from ..persistence.store import WorldStore
@@ -90,6 +92,7 @@ class AgentViewCompiler:
         self.store = store
         self.conditions = ConditionEngine()
         self.resources = ResourceLedger(store)
+        self.targets = TargetResolver(store)
 
     @staticmethod
     def _assign_choices(behaviors: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -246,20 +249,32 @@ class AgentViewCompiler:
             costs = []
             impacts = []
             action_unavailable = False
+            simulated_agent = copy.deepcopy(agent)
+            simulated_location = dict(current_location)
             for node in bt.get("nodes", []):
                 if node.get("type") != "action":
                     continue
                 action = action_defs.get(node.get("action_id"))
                 if not action:
                     continue
-                parameters = self._view_action_parameters(node.get("parameters") or {}, state, agent.get("inventory", {}) or {}, rules.get("food_items", []) or [])
-                if not self._action_available(agent, action, parameters, current_location, rules.get("food_items", []) or []):
+                simulated_state = simulated_agent.setdefault("initial_state", {})
+                parameters = self._view_action_parameters(node.get("parameters") or {}, simulated_state, simulated_agent.get("inventory", {}) or {}, rules.get("food_items", []) or [])
+                if not self._action_available(simulated_agent, action, parameters, simulated_location, rules.get("food_items", []) or []):
                     action_unavailable = True
                     break
                 view = _action_view(action)
                 steps.append(view["name"])
                 costs.extend(view["cost"])
                 impacts.extend(view["impact"][:1])
+                # Validate a sequential BT against the state produced by its
+                # earlier configured steps. This keeps a travel-then-service
+                # behavior executable without adding action-specific code.
+                if action.get("id") == "travel_to" and parameters.get("location_id"):
+                    simulated_state["location_id"] = str(parameters["location_id"])
+                    try:
+                        simulated_location = self.store.get_entity(str(parameters["location_id"]))
+                    except KeyError:
+                        simulated_location = {}
             if action_unavailable:
                 continue
             available.append({
@@ -395,7 +410,13 @@ class AgentViewCompiler:
             if recipe is None:
                 return False
             context["station_tags"] = list(recipe.get("station_tags", []) or [])
-        target = dict(parameters)
+        resolved_target, target_error = self.targets.resolve(agent, parameters)
+        if target_error:
+            return False
+        target = {**parameters, **(resolved_target or {})}
+        context["target"] = resolved_target or {}
+        context["target.visible"] = bool((resolved_target or {}).get("visible", False))
+        context["target.available"] = bool((resolved_target or {}).get("available", False))
         for predicate in action.get("preconditions", []) or []:
             if not self.conditions.evaluate(str(predicate), agent=agent, target=target, context=context, world=self.store.get_meta("world_properties", {}) or {}):
                 return False

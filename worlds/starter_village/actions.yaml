@@ -77,7 +77,7 @@ actions:
   - actor.food_withdrawal
   - location.food_store
   duration:
-    minutes: 1
+    minutes: 10
   costs:
     reserve:
       village_food: 1

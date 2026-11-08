@@ -252,14 +252,16 @@ def test_food_store_bt_supplies_agents_without_carried_food(tmp_path: Path):
     platform = Platform(db_path)
     try:
         view = platform.decision_view("liang_he")
-        assert any(item["ref"] == "behavior:get_food" for item in view["executable_behaviors"])
+        assert any(item["ref"] == "behavior:get_food_here" for item in view["executable_behaviors"])
         before = platform.store.get_entity("village_food")["amount"]
         result = platform.submit_behavior(BehaviorIntent(
-            actor_id="liang_he", behavior_ref="behavior:get_food", target={}, parameters={},
+            actor_id="liang_he", behavior_ref="behavior:get_food_here", target={}, parameters={},
             reason="Withdraw a ration before the next task.", confidence=0.9, intent_id="get-food-intent",
         ))
         assert result["status"] == "accepted"
-        platform.step()
+        assert result["remaining_minutes"] == 10
+        for _ in range(10):
+            platform.step()
         after = platform.store.get_agent("liang_he")
         assert after["inventory"]["rations"] == 1
         assert platform.store.get_entity("village_food")["amount"] == before - 1
@@ -477,7 +479,7 @@ def test_platform_rejects_equivalent_behavior_proposal(tmp_path: Path):
     try:
         result = platform.submit_behavior_proposal(
             "lu_xingzhou",
-            {"behavior_id": "new_explore", "agent_label": "Explore Greywood", "summary": "Explore Greywood", "goal": "Map Greywood", "action_ids": ["travel_to", "explore_area", "communicate"]},
+            {"behavior_id": "new_explore", "agent_label": "Explore Greywood", "summary": "Explore Greywood", "goal": "Map Greywood", "action_ids": ["travel_to", "explore_area"]},
         )
         assert result["status"] == "rejected"
         assert any("equivalent" in error for error in result["errors"])

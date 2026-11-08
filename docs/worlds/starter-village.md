@@ -70,7 +70,7 @@ LLM 看到的状态是精简摘要，例如“何砚，北门，受伤 20%，可
 
 完整的属性、元动作和基础 BT 清单见 [starter-village-catalog.md](starter-village-catalog.md)；给 LLM 的简明英文目录见 [starter-village-agent-catalog.md](starter-village-agent-catalog.md)。配置文件是 Platform 的规范输入；LLM 读取的是 Platform 根据当前状态过滤后的精简目录，不直接读取原始 YAML。AgentView 是运行时生成的临时投影，不作为世界事实文件保存。
 
-雾溪村中的 BT 用来组合通用能力：例如 `craft_meal` BT 调用 `craft_recipe` Action 读取 `cooked_meal` Recipe；`defend_village` BT 先报警，再选择防御或撤离；`explore_greywood` BT 组合移动、探索和沟通。Recipe 只描述材料和产物，Action 负责按分钟执行，BT 负责控制流，Platform 负责状态变化。
+雾溪村中的 BT 用来组合通用能力：例如 `craft_meal` BT 调用 `craft_recipe` Action 读取 `cooked_meal` Recipe；`defend_village` BT 先报警，再选择防御或撤离；`explore_greywood` BT 组合移动和探索，完成后由独立互动会话传播信息。取粮分为 `get_food`（先移动到粮仓）和 `get_food_here`（已在粮仓），避免隔空改变库存。Recipe 只描述材料和产物，Action 负责按分钟执行，BT 负责控制流，Platform 负责状态变化。
 
 配置包位于 `worlds/starter_village/`：
 

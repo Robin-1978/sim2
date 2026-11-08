@@ -1177,8 +1177,8 @@ class Platform:
             "station_tags": [],
             "current_location": current_location,
             "target": resolved_target or {},
-            "target.visible": (resolved_target or {}).get("visible", True),
-            "target.available": (resolved_target or {}).get("available", True),
+            "target.visible": (resolved_target or {}).get("visible", False),
+            "target.available": (resolved_target or {}).get("available", False),
         }
         if action_id == "craft_recipe":
             recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
@@ -1237,8 +1237,8 @@ class Platform:
             "station_tags": [],
             "current_location": current_location,
             "target": target or {},
-            "target.visible": (target or {}).get("visible", True),
-            "target.available": (target or {}).get("available", True),
+            "target.visible": (target or {}).get("visible", False),
+            "target.available": (target or {}).get("available", False),
         }
         if action_info.get("action_id") == "craft_recipe":
             recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)

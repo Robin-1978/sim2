@@ -31,19 +31,19 @@ This compact English catalog is generated from the world configuration. It is a 
 | Sound Alarm | You can sound an alarm and are at a watch post. | 6 minutes | Platform applies configured effects and records the result. |
 | Craft Recipe | You can craft; the recipe, station and inputs are available. | Recipe-defined | Platform applies configured effects and records the result. |
 | Consume Food | You carry `rations`, `ration`, or `cooked_meal`. | 1 minute | One item is reserved, consumed, and hunger satisfaction increases. |
-| Withdraw Food | You are at the configured food store. | 1 minute | One shared ration is reserved and added to inventory. |
+| Withdraw Food | You are at the configured food store. | 10 minutes | One shared ration is reserved and added to inventory. |
 
 ## Behavior Trees
 
 | Name | Purpose | Use when | Steps | Time | Success | Failure |
 |---|---|---|---|---:|---|---|
-| Govern Village | Review village risk and coordinate policy. | You are the village steward and a village decision is pending. | Inspect Object; Choose one offered branch | 144 | Village risk and policy are reviewed. | The council cannot reach an agreement. |
+| Govern Village | Review village risk and coordinate policy. | You are the village steward and a village decision is pending. | Inspect Object | 24 | Village risk and policy are reviewed. | The council cannot reach an agreement. |
 | Mediate Conflict | Resolve a conflict through conversation. | A nearby conflict needs mediation and you can communicate. | Communicate; Check the previous result | 48 | The conflict is resolved. | The conflict escalates or the other party refuses. |
 | Inspect Granary | Inspect the granary and report its stock. | Food stock needs review and the granary route is known. | Travel To; Inspect Object | 24 | A stock report is recorded. | The granary is locked or unreachable. |
 | Patrol Route | Inspect a known route for threats. | A security route needs inspection and you are a guard. | Travel To; Patrol Route | 96 | A patrol report is recorded. | A hostile event forces an emergency response. |
 | Manage Ration | Review food stock and coordinate rationing. | Food stock is low or a ration decision is pending. | Inspect Object; Communicate | 48 | A ration decision is recorded. | The stock report cannot be completed. |
 | Heal Target | Restore a target using available treatment. | A nearby target needs treatment and medicine is available. | Heal Target | 72 | The target becomes more stable. | Treatment cannot proceed. |
-| Explore Greywood | Map Greywood and share verified findings. | The area is not fully mapped and you can explore. | Travel To; Explore Area; Communicate | 240 | New discoveries are recorded. | The route is unsafe or the exploration is interrupted. |
+| Explore Greywood | Map Greywood and record verified findings. | The area is not fully mapped and you can explore. | Travel To; Explore Area | 241 | New discoveries are recorded. | The route is unsafe or the exploration is interrupted. |
 | Research Source | Study an accessible source and record a fact. | A relevant source is accessible and a fact is needed. | Research Source; Check the previous result | 192 | A verified fact is recorded. | The source is unavailable or damaged. |
 | Inspect Object | Inspect an accessible object or facility. | An object or facility is reachable and needs inspection. | Inspect Object | 24 | An inspection report is recorded. | Access is denied. |
 | Defend Village | Respond to a threat near the village. | A threat is active near the village and you are on watch. | Sound Alarm; Choose one offered branch | 48 | The threat is contained or civilians reach safety. | Defense breaks and retreat is required. |
@@ -55,7 +55,8 @@ This compact English catalog is generated from the world configuration. It is a 
 | Negotiate | Reach an agreement with another character. | A counterparty is available and an agreement is needed. | Negotiate | 12 | A contract or exchange is recorded. | Trust collapses or the offer is refused. |
 | Gather Resource | Collect a configured resource from a known node. | A known resource source is visible and supply is needed. | Gather Resource | 144 | Two source units enter inventory and the source decreases. | The source is empty or the actor cannot continue. |
 | Eat Food | You carry one configured food item and need to choose whether to restore hunger. | Consume Food(item_id) | 1 | Hunger satisfaction increases and the item is removed. | The food is unavailable. |
-| Get Food | You have food-withdrawal rights, are at the granary, and shared food remains. | Withdraw Food | 1 | One ration enters inventory. | The shared store is empty or you lack ration rights. |
+| Get Food | You have food-withdrawal rights and a known route to the granary. | Travel To; Withdraw Food | Route minutes + 10 | One ration enters inventory. | The route or shared store is unavailable. |
+| Get Food Here | You have food-withdrawal rights, are at the granary, and shared food remains. | Withdraw Food | 10 | One ration enters inventory. | The shared store is empty or you lack ration rights. |
 
 ## Output
 
