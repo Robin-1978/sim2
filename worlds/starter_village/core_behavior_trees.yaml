@@ -2,14 +2,14 @@ behavior_trees:
 - id: recover_at_safe_location
   version: 1
   scope: universal
-  summary: Move to a known safe location and recover energy.
-  description: Travel to the nearest configured safe location, then rest until ready.
-  entry_conditions: [actor.alive, actor.energy < 100]
+  summary: Move to a known safe location and restore readiness.
+  description: Travel to the nearest configured safe location, then rest until safe and ready.
+  entry_conditions: [actor.alive, actor.energy < 100 or not location.safe]
   requirements: ["A known route to a configured safe location."]
   goal_tags: [recovery, readiness, safety]
   drive_tags: [safety]
   interrupt_policy: pause
-  success_results: [energy_restored, readiness_restored]
+  success_results: [safe_location_reached, energy_restored, readiness_restored]
   failure_results: [no_safe_route, unsafe_location, interrupted]
   nodes:
   - type: action
