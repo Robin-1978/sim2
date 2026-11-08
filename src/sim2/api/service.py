@@ -42,6 +42,9 @@ class ControlService:
     def observer(self, event_limit: int = 20) -> dict[str, Any]:
         return self.platform.observer_view(event_limit=event_limit)
 
+    def timeline(self, event_limit: int = 100, after_event_id: int = 0, include_ticks: bool = False) -> dict[str, Any]:
+        return self.platform.timeline(limit=event_limit, after_event_id=after_event_id, include_ticks=include_ticks)
+
     def dialogue(self, speaker_id: str, listener_id: str, topic: str, message: str) -> dict[str, Any]:
         return self.platform.submit_dialogue(speaker_id, listener_id, topic, message)
 

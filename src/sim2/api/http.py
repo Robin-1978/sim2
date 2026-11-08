@@ -44,6 +44,12 @@ class _Handler(BaseHTTPRequestHandler):
                 query = parse_qs(urlparse(self.path).query)
                 limit = int(query.get("limit", [20])[0])
                 return self._write(200, self.server.control.observer(limit))
+            if path == "/timeline":
+                query = parse_qs(urlparse(self.path).query)
+                limit = int(query.get("limit", [100])[0])
+                after = int(query.get("after", [0])[0])
+                ticks = query.get("ticks", ["0"])[0].lower() in {"1", "true", "yes"}
+                return self._write(200, self.server.control.timeline(limit, after, ticks))
             if path == "/audit":
                 return self._write(200, self.server.control.audit())
             if path == "/evolution/tasks":

@@ -197,6 +197,53 @@ class Platform:
             "private_data": "excluded",
         }
 
+    def timeline(self, *, limit: int = 100, after_event_id: int = 0, include_ticks: bool = False) -> dict[str, Any]:
+        """Return a public, chronological third-person event projection."""
+
+        events = self.store.timeline_events(after_event_id=after_event_id, limit=limit, include_ticks=include_ticks)
+        names: dict[str, str] = {}
+        for event in events:
+            for key in ("actor_id", "target_id", "recipient_id", "offerer_id", "speaker_id", "listener_id", "location_id"):
+                value = event.get(key)
+                if value and str(value) not in names:
+                    try:
+                        names[str(value)] = str(self.store.get_entity(str(value)).get("name", value))
+                    except KeyError:
+                        names[str(value)] = str(value)
+        rendered = []
+        for event in events:
+            actor = names.get(str(event.get("actor_id")), "The world") if event.get("actor_id") else "The world"
+            event_type = str(event.get("event_type", "world.event"))
+            target = next((names.get(str(event.get(key))) for key in ("target_id", "recipient_id", "listener_id") if event.get(key)), None)
+            if event_type == "behavior.started":
+                sentence = f"{actor} began {event.get('expected', {}).get('summary', 'a behavior')}."
+            elif event_type == "behavior.completed":
+                sentence = f"{actor} completed a behavior: {event.get('result') or event.get('outcome', {}).get('result') or 'the expected result'}."
+            elif event_type in {"behavior.failed", "behavior.interrupted"}:
+                sentence = f"{actor}'s behavior {event_type.removeprefix('behavior.')} ({event.get('result') or 'without a stated result'})."
+            elif event_type == "action.started":
+                sentence = f"{actor} started the action {str(event.get('action_id', 'an action')).replace('_', ' ')}."
+            elif event_type == "action.completed":
+                sentence = f"{actor} completed the action {str(event.get('action_id', 'an action')).replace('_', ' ')}."
+            elif event_type == "dialogue.completed":
+                sentence = f"{actor} exchanged information{f' with {target}' if target else ''}."
+            elif event_type == "trade.offer_created":
+                sentence = f"{actor} offered a trade{f' to {target}' if target else ''}."
+            elif event_type == "trade.completed":
+                sentence = f"{actor} completed a trade{f' with {target}' if target else ''}."
+            elif event_type.startswith("world.change."):
+                summary = str(event.get("summary") or event_type.removeprefix("world.change.").replace("_", " ")).rstrip(".")
+                sentence = f"The world changed: {summary}."
+            elif event_type == "world.created":
+                sentence = "The world was created from its configured opening state."
+            elif event_type == "player.entered":
+                sentence = f"{actor} entered the world."
+            else:
+                summary = str(event.get("summary") or event.get("result") or event_type.replace(".", " ").replace("_", " ")).rstrip(".")
+                sentence = f"{actor}: {summary}."
+            rendered.append({"event_id": event["event_id"], "world_minute": event["world_minute"], "event_type": event_type, "narrative": sentence, "public": {key: value for key, value in event.items() if key not in {"actor_id", "target_id", "recipient_id", "offerer_id", "speaker_id", "listener_id", "location_id"}}})
+        return {"status": "ok", "world_id": self.store.get_meta("world_id"), "world_minute": int(self.store.get_meta("world_minute", 0)), "events": rendered, "next_after_event_id": events[-1]["event_id"] if events else after_event_id}
+
     def _reject_intent(self, intent_id: str, actor_id: str, intent_type: str, data: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():

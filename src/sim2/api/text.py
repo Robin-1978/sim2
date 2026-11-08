@@ -57,6 +57,11 @@ class TextWorldSession:
             self._require_observer()
             limit = int(args[0]) if args else 20
             return self._format_events(self.platform.observer_view(event_limit=limit)["recent_events"])
+        if command == "timeline":
+            self._require_observer()
+            limit = int(args[0]) if args else 50
+            timeline = self.platform.timeline(limit=limit)
+            return "\n".join(f"[{event['world_minute']}] {event['narrative']}" for event in timeline["events"]) or "No public timeline events."
         if command in {"look", "status"}:
             return self._look()
         if command == "wait":
@@ -139,7 +144,7 @@ class TextWorldSession:
 
     @staticmethod
     def _help() -> str:
-        return "Commands: look, status, move <known_location_id>, say <target> <topic> <message>, offer <target> <give:item=qty> <want:item=qty>, offers, accept <offer_id>, counter <offer_id> <give:item=qty> <want:item=qty>, reject <offer_id>, wait [minutes], world/events [limit] in observer mode, quit."
+        return "Commands: look, status, move <known_location_id>, say <target> <topic> <message>, offer <target> <give:item=qty> <want:item=qty>, offers, accept <offer_id>, counter <offer_id> <give:item=qty> <want:item=qty>, reject <offer_id>, wait [minutes], world/events/timeline [limit] in observer mode, quit."
 
     @staticmethod
     def _format_result(result: dict[str, object]) -> str:

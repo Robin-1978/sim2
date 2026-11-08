@@ -23,6 +23,8 @@ sim2 mud --db "$DB" --player-id player_one --origin courier --name Ari
 sim2 mud --db "$DB" --observer
 ```
 
+In observer mode, use `timeline 50` to read the latest public events as a chronological third-person account, or `events 50` for the compact technical event list. The HTTP equivalent is `GET /timeline?limit=50&after=0`; pass the returned `next_after_event_id` as `after` to continue without duplicates. A player enters through the same text interface without `--observer` and sees only their permitted local view.
+
 Start the local HTTP control API when another client needs status, stepping, events, dialogue, or trade operations:
 
 ```bash

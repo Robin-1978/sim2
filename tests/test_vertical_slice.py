@@ -1122,6 +1122,25 @@ def test_local_http_control_adapter_uses_platform(tmp_path: Path):
         thread.join(timeout=2)
 
 
+def test_observer_timeline_is_chronological_and_public(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "timeline-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        platform.inject_event("observer.signal", {"summary": "The fog reaches the north gate."})
+        timeline = platform.timeline(limit=20)
+        assert timeline["status"] == "ok"
+        assert timeline["events"]
+        assert [item["event_id"] for item in timeline["events"]] == sorted(item["event_id"] for item in timeline["events"])
+        signal = next(item for item in timeline["events"] if item["event_type"] == "observer.signal")
+        assert signal["narrative"] == "The world: The fog reaches the north gate."
+        assert "actor_id" not in signal["public"]
+        next_page = platform.timeline(limit=20, after_event_id=signal["event_id"])
+        assert all(item["event_id"] > signal["event_id"] for item in next_page["events"])
+    finally:
+        platform.close()
+
+
 def test_same_config_and_intent_replay_same_event_sequence(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     first_db = create_instance(config, "replay-a", tmp_path / "runtime")

@@ -495,6 +495,15 @@ class WorldStore:
         ).fetchall()
         return [{"event_id": row["event_id"], "event_type": row["event_type"], "actor_id": row["actor_id"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
 
+    def timeline_events(self, *, after_event_id: int = 0, limit: int = 100, include_ticks: bool = False) -> list[dict[str, Any]]:
+        event_filter = "" if include_ticks else " AND event_type <> 'world_minute.advanced'"
+        rows = self.connection.execute(
+            "SELECT event_id,event_type,actor_id,world_minute,data_json FROM event_log "
+            f"WHERE event_id>?{event_filter} ORDER BY event_id LIMIT ?",
+            (max(0, int(after_event_id)), max(1, min(int(limit), 500))),
+        ).fetchall()
+        return [{"event_id": row["event_id"], "event_type": row["event_type"], "actor_id": row["actor_id"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
+
     def event_type_counts(self) -> dict[str, int]:
         rows = self.connection.execute("SELECT event_type,COUNT(*) AS count FROM event_log GROUP BY event_type").fetchall()
         return {str(row["event_type"]): int(row["count"]) for row in rows}
