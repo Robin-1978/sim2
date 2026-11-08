@@ -125,7 +125,10 @@ class AgentEngine:
                 transcript.append({"step": "llm_error", "error": str(exc)})
                 context.setdefault("interaction_history", []).append({"kind": "llm_error", "error": str(exc)})
                 self._audit(actor_id, role, task_type, iteration, prompt, {"error": str(exc)}, "llm_error", usage=self._last_usage)
-                continue
+                # A provider/configuration failure is outside the model's
+                # ReAct loop. Retrying it immediately six times creates an
+                # error storm; the scheduler will retry after backoff.
+                return AgentTurn(role, task_type, last_response, last_result, iteration, transcript)
             last_response = response
             transcript.append({"step": "llm", "response": response})
             self._audit(actor_id, role, task_type, iteration, prompt, response, "response", usage=self._last_usage)

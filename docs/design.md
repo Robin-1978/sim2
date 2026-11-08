@@ -88,13 +88,16 @@ Platform 采用通用 `target_resolver`、`condition_engine`、`effect_pipeline`
 
 1. 应用世界时间和基础分钟效果，例如需求衰减、冷却、天气和关系衰减。
 2. 处理软事件、可中断事件和硬中断。
-3. 推进已有 BT 的当前 Action，结算每分钟成本、资源锁、检查点和完成条件。
-4. 对没有活动计划或进入语义决策节点的 Agent 生成可执行 BT 目录。
-5. 唤起 Decision Agent 选择 BT、分支、等待或提交新 BT 意图。
-6. Platform 校验并创建执行实例，失败时返回错误进入 ReAct。
-7. 在一个 SQLite 事务中写入事件和当前状态投影。
+3. 在当前世界快照中处理聊天、交易和遭遇等即时互动；影响世界的互动必须在本 tick 的 Platform 提交屏障内完成，不能让世界时间先进入下一 tick。
+4. 推进已有 BT 的当前 Action，结算每分钟成本、预锁资源、检查点和完成条件；普通互动不改变 BT 游标。
+5. 对没有活动计划或进入语义决策节点的 Agent 生成可执行 BT 目录。
+6. 唤起 Decision Agent 选择 BT、分支、等待或提交新 BT 意图。
+7. Platform 校验并创建执行实例，失败时返回错误进入 ReAct。
+8. 在一个 SQLite 事务中写入事件和当前状态投影。
 
 下一状态为：当前状态加分钟基础效果、Action 增量效果、环境效果和已接受意图效果。成本可以为零；时间、体力、资源、风险、注意力、声誉和冷却分别配置。Action 默认叠加分钟基础效果，显式配置的恢复或抵消效果可以降低需求和消耗。
+
+Action 启动时由 Platform 预锁定所需资源；暂停保留游标、进度和锁，取消或失败才按配置释放。只有配置了 `interaction_policy: allow` 的执行中 Action 才能与外部即时互动并行，移动和探索等行动默认拒绝互动。
 
 每个 Agent 的运行状态至少包含 `status`、`location_id`、`health`、`stamina`、`fatigue`、`hunger`、`injuries`、`conditions`、`active_bt_instance`、`active_action`、`action_progress`、`remaining_minutes`、`current_goal_id`、`inventory` 和 `last_platform_result`。Platform 在攻击、疾病、事故和环境事件后更新伤势与状态效果；伤势会降低能力或阻止相关 BT，治疗和恢复 Action 通过 Platform 消除或减轻伤势。
 

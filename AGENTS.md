@@ -1,32 +1,41 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
+## Project Structure
 
-This repository is currently an initial scaffold. Place application and library code under `src/`, keeping modules organized by feature or responsibility. Put design notes, API documentation, and contributor-facing material under `docs/`. Add tests in a dedicated `tests/` directory (or beside the code when the chosen framework convention requires it), and keep generated output in an ignored build directory such as `dist/` or `build/`. Do not commit generated artifacts, local credentials, or tool caches.
+- `src/sim2/` contains the Python package. Keep platform state changes in `platform/`, persistence in `persistence/`, Agent/ReAct logic in `agents/`, prompt projection in `agent_view/` and `prompting/`, and provider adapters in `llm/`.
+- `worlds/starter_village/` is an importable configuration package, not hard-coded game logic. Add new worlds as sibling configuration packages.
+- `tests/` contains vertical and integration coverage. `scripts/` contains benchmarks, model checks, and long-run verification. Design and world guides live under `docs/`.
 
-## Build, Test, and Development Commands
+## Development Commands
 
-No build system or runtime has been configured yet, so there are no repository-specific commands to run today. When adding one, document the canonical commands here and in the project README. Prefer a small, repeatable command set, for example:
+Install the editable package once:
 
-- `make build` — produce a clean production build.
-- `make test` — run the complete automated test suite.
-- `make lint` — run formatting and static-analysis checks.
-- `make dev` — start the local development workflow.
+```bash
+python -m pip install -e .
+```
 
-Commands should fail on errors and should not depend on undeclared global tools.
+Run the normal checks before submitting changes:
 
-## Coding Style & Naming Conventions
+```bash
+python -m pytest -q
+python -m compileall -q src scripts
+python scripts/benchmark_platform.py --agents 1000 --runs 5
+```
 
-Follow the formatter and linter selected for the implementation language; commit their configuration at the repository root. Use four spaces for Python and two spaces for JSON/YAML unless the language tool enforces another standard. Use `PascalCase` for types, `camelCase` for functions and variables, and `UPPER_SNAKE_CASE` for constants where those conventions fit the language. Name files after their primary module or feature, using lowercase kebab-case or the ecosystem’s standard.
+Use `python scripts/run_long_simulation.py --minutes 10080` for a deterministic one-week smoke run. Real-provider checks use `python scripts/verify_agent_models.py` and require `~/.sim2/llm.json`; the file stores provider metadata and environment-variable names only.
+
+## Style and Design Rules
+
+Use Python 3.10+, four-space indentation, type hints, and small focused modules. Keep names in `snake_case`, classes in `PascalCase`, and constants in `UPPER_SNAKE_CASE`. Prefer standard-library code and existing dependencies. Format prompts as compact, readable projections; keep tool schemas in JSON Schema. Do not add per-world `if/else` branches to Platform: actions, behavior trees, rules, and effects must remain configuration-driven. Agents submit intents; Platform alone mutates SQLite state.
 
 ## Testing Guidelines
 
-Add focused unit tests for new behavior and regression tests for fixed bugs. Keep test names descriptive, such as `test_rejects_expired_token`, and mirror the `src/` structure where practical. Run the full suite and lint checks before opening a pull request; record any required external services or environment variables in `docs/`.
+Add a focused regression test for each behavior change and keep tests deterministic with fixed configuration and provider responses. Cover transaction rollback, intent rejection, long-action progress, and Agent context boundaries when relevant. A green unit suite is not sufficient for Agent changes; inspect model outputs with the verification scripts without printing secrets or raw reasoning.
 
-## Commit & Pull Request Guidelines
+## Commits and Pull Requests
 
-Git history is not yet available, so use short, imperative commit subjects (for example, `Add token validation`) and keep unrelated changes separate. Pull requests should explain the behavior change, identify affected areas, link the relevant issue, and include test commands and results. Add screenshots or sample requests when changing a user-facing interface or API.
+Use short imperative commit subjects, matching the existing history (for example, `Add snapshot recovery`). Keep unrelated changes separate. Pull requests should explain behavior and affected modules, link an issue when available, list commands and results, and include a sample CLI/API interaction for user-facing changes. Update the relevant world or design documentation when schemas or configuration contracts change.
 
-## Security & Configuration
+## Security and Licensing
 
-Keep secrets in environment variables or an approved secret store, never in source or documentation. Provide safe `.env.example` entries when configuration is needed, and review dependencies and generated files before committing.
+Never commit API keys, `~/.sim2/llm.json`, SQLite runtime files, `artifacts/`, or generated caches. Reference secrets through environment variables. New source and documentation are released under [Apache License 2.0](LICENSE).

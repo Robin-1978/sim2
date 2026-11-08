@@ -66,3 +66,17 @@ class ResourceLedger:
         state[key] = float(state.get(key, 0)) + delta
         entity["initial_state"] = state
         self.store.put_entity(entity_id, entity["entity_type"], entity["name"], {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}})
+
+    def release(self, agent: dict[str, Any], reservations: list[dict[str, Any]]) -> None:
+        """Return resources held by a paused action that is cancelled or fails."""
+
+        for item in reservations:
+            amount = float(item.get("amount", 0) or 0)
+            if amount <= 0:
+                continue
+            if item.get("scope") == "agent":
+                key = str(item.get("key"))
+                value = float((agent.setdefault("inventory", {}).get(key, 0) or 0)) + amount
+                agent["inventory"][key] = int(value) if value.is_integer() else value
+            elif item.get("scope") == "world" and item.get("entity_id"):
+                self._change_world_resource(str(item["entity_id"]), amount)

@@ -16,6 +16,8 @@ class SimulationReport:
     reflections: int = 0
     god_sessions: int = 0
     waits: int = 0
+    llm_errors: int = 0
+    rejected_turns: int = 0
     event_types: dict[str, int] = field(default_factory=dict)
     selected_behaviors: dict[str, int] = field(default_factory=dict)
     degeneration_flags: list[str] = field(default_factory=list)
@@ -29,6 +31,8 @@ class SimulationReport:
             "reflections": self.reflections,
             "god_sessions": self.god_sessions,
             "waits": self.waits,
+            "llm_errors": self.llm_errors,
+            "rejected_turns": self.rejected_turns,
             "event_types": self.event_types,
             "selected_behaviors": self.selected_behaviors,
             "degeneration_flags": self.degeneration_flags,
@@ -39,11 +43,14 @@ class SimulationReport:
 class SimulationRunner:
     """Drive Platform minutes and invoke Agent phases only at boundaries."""
 
-    def __init__(self, platform: Platform, providers: dict[str, Any], *, wait_cooldown_minutes: int = 30):
+    def __init__(self, platform: Platform, providers: dict[str, Any], *, wait_cooldown_minutes: int = 30, llm_error_cooldown_minutes: int = 60):
         self.platform = platform
         self.providers = providers
         self.wait_cooldown_minutes = max(1, int(wait_cooldown_minutes))
+        self.llm_error_cooldown_minutes = max(1, int(llm_error_cooldown_minutes))
         self._decision_not_before: dict[str, int] = {}
+        self._llm_error_count: dict[str, int] = {}
+        self._llm_retry_until: dict[str, int] = {}
         self._failure_seen: dict[str, int] = {}
         self._interaction_events_seen: set[int] = set()
 
@@ -90,6 +97,7 @@ class SimulationRunner:
                     continue
                 turn = AgentEngine(self.platform, provider).run(role="agent_decision", actor_id=actor_id, task_type=f"instant:{event['event_type']}")
                 report.decisions += 1
+                self._record_turn(report, turn.result, actor_id)
                 if turn.result.get("status") == "wait":
                     report.waits += 1
 
@@ -101,7 +109,7 @@ class SimulationRunner:
         for agent in self.platform.store.list_agents():
             agent_id = agent["id"]
             state = agent.get("initial_state", {}) or {}
-            if state.get("status") in {"executing", "paused"} or minute < self._decision_not_before.get(agent_id, 0):
+            if state.get("status") in {"executing", "paused"} or minute < max(self._decision_not_before.get(agent_id, 0), self._llm_not_before(agent_id)):
                 continue
             outcomes = self.platform.store.recent_outcomes_for_actor(agent_id, limit=1)
             if outcomes and outcomes[0].get("event_type") == "behavior.failed":
@@ -112,14 +120,20 @@ class SimulationRunner:
                     continue
             turn = AgentEngine(self.platform, provider).run(role="agent_decision", actor_id=agent_id, task_type="agent_plan_selection")
             report.decisions += 1
+            self._record_turn(report, turn.result, agent_id)
             if turn.result.get("status") == "wait":
                 report.waits += 1
                 self._decision_not_before[agent_id] = minute + self.wait_cooldown_minutes
             elif turn.result.get("status") == "accepted":
+                self._llm_error_count.pop(agent_id, None)
                 # If a selected BT fails at its first boundary, avoid an
                 # unbounded same-minute retry loop while preserving prompt
                 # driven replanning at the next safe boundary.
                 self._decision_not_before[agent_id] = minute + 1
+            else:
+                # A rejected turn has already consumed its bounded ReAct
+                # budget. Let the world advance before trying again.
+                self._decision_not_before[agent_id] = minute + self.wait_cooldown_minutes
 
     def _run_due_evolution(self, report: SimulationReport) -> None:
         for task in list(self.platform.ready_evolution_tasks()):
@@ -136,7 +150,26 @@ class SimulationRunner:
                 report.god_sessions += 1
             else:
                 report.reflections += 1
+            self._record_turn(report, turn.result, actor_id)
             self.platform.complete_evolution_task(task["task_id"])
+
+    def _llm_not_before(self, agent_id: str) -> int:
+        return self._llm_retry_until.get(agent_id, 0)
+
+    def _record_turn(self, report: SimulationReport, result: dict[str, Any], actor_id: str) -> None:
+        if result.get("status") != "rejected":
+            return
+        report.rejected_turns += 1
+        if result.get("failed_check") != "llm_response":
+            return
+        report.llm_errors += 1
+        self._record_llm_failure(actor_id, int(self.platform.store.get_meta("world_minute", 0)))
+
+    def _record_llm_failure(self, actor_id: str, minute: int) -> None:
+        count = self._llm_error_count.get(actor_id, 0) + 1
+        self._llm_error_count[actor_id] = count
+        delay = min(1440, self.llm_error_cooldown_minutes * (2 ** min(count - 1, 4)))
+        self._llm_retry_until[actor_id] = minute + delay
 
     def _diversity(self, report: SimulationReport) -> dict[str, Any]:
         behavior_count = len(report.selected_behaviors)

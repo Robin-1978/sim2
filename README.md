@@ -1,6 +1,8 @@
 # sim2
 
-sim2 is a configuration-driven world simulation framework. A world package defines its setting, entities, actions, behavior trees, rules, memory seeds, evolution schedule, and player entry. Bootstrap creates one independent SQLite database per instance; after initialization, Platform is the only authority that changes world state.
+sim2 is a configuration-driven, text-first sandbox game and world simulation framework. A world package defines its setting, entities, actions, behavior trees, rules, memory seeds, evolution schedule, and player entry. Agents make decisions through the LLM boundary, while Platform validates intents and is the only authority that changes world state. Bootstrap creates one independent SQLite database per instance, so each run can evolve and be replayed independently.
+
+The first world is **Starter Village (雾溪村)**: a settlement at the edge of Greywood, built around a weakening pact and a hidden root gate. Food, water, health, patrols, trade, relationships, exploration, player choices, and world-level interventions can change the story. Its complete setting and extension map are in [the world guide](docs/worlds/starter-village.md); the importable package is [`worlds/starter_village/`](worlds/starter_village/), and the concise configuration catalog is [here](docs/worlds/starter-village-catalog.md).
 
 Each individual Agent has two phases: a short decision phase that selects a Platform-validated behavior or interaction, and a scheduled reflection/evolution phase that turns useful outcomes into memory, beliefs, goals, or new behavior proposals. Each world also has a God Agent that observes structured world outcomes and proposes validated world changes. Long actions continue in Platform without an LLM call every minute.
 
@@ -50,4 +52,4 @@ python scripts/verify_agent_models.py
 python scripts/verify_core_interaction.py --provider remote
 ```
 
-Licensed under Apache-2.0.
+Licensed under [Apache License 2.0](LICENSE).

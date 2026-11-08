@@ -18,6 +18,7 @@ from sim2.api.text import TextWorldSession
 from sim2.bootstrap.service import create_instance, validate_config
 from sim2.platform.runtime import Platform
 from sim2.prompting.renderer import render_context
+from sim2.simulation.runner import SimulationRunner
 
 
 class FakeProvider:
@@ -50,6 +51,16 @@ class MessageProvider:
         return dict(self.responses.pop(0))
 
 
+class FailingProvider:
+    def __init__(self, message="provider unavailable"):
+        self.message = message
+        self.calls = 0
+
+    def complete_json(self, *, system, context, tools=None, messages=None):
+        self.calls += 1
+        raise RuntimeError(self.message)
+
+
 def test_bootstrap_and_agent_intent(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "test-world", tmp_path / "runtime")
@@ -76,6 +87,27 @@ def test_bootstrap_and_agent_intent(tmp_path: Path):
         assert "actor.can" not in prompt
         assert "nodes" not in prompt.lower()
         assert "preconditions" not in prompt.lower()
+    finally:
+        platform.close()
+
+
+def test_provider_failure_is_bounded_and_backed_off(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "provider-failure-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    provider = FailingProvider()
+    try:
+        report = SimulationRunner(
+            platform,
+            {"agent_decision": provider},
+            wait_cooldown_minutes=30,
+            llm_error_cooldown_minutes=60,
+        ).run(60)
+        # One failed provider call per idle Agent is enough; the ReAct loop
+        # and minute loop must not amplify a configuration outage.
+        assert provider.calls == len(platform.store.list_agents())
+        assert report.llm_errors == provider.calls
+        assert report.rejected_turns == provider.calls
     finally:
         platform.close()
 
@@ -446,17 +478,54 @@ def test_platform_interrupt_updates_bt_and_action_instances(tmp_path: Path):
         reason="Explore", confidence=0.9, intent_id="interrupt-intent",
     )
     try:
+        starting_rations = platform.store.get_agent("lu_xingzhou")["inventory"]["rations"]
         platform.submit_behavior(intent)
         platform.advance(2)
+        assert platform.store.get_agent("lu_xingzhou")["inventory"]["rations"] == starting_rations - 1
         paused = platform.interrupt_behavior("lu_xingzhou", "urgent boundary signal", hard=False)
         assert paused["status"] == "paused"
         state = platform.store.get_agent("lu_xingzhou")["initial_state"]
         assert state["status"] == "paused"
+        remaining_before_resume = state["remaining_minutes"]
         row = platform.store.connection.execute("SELECT status FROM action_instance WHERE execution_id=? AND status=?", ("interrupt-intent", "paused")).fetchone()
         assert row is not None
+        resumed = platform.resume_behavior("lu_xingzhou")
+        assert resumed["status"] == "resumed"
+        assert platform.store.get_agent("lu_xingzhou")["initial_state"]["remaining_minutes"] == remaining_before_resume
+        platform.advance(1)
+        assert platform.store.get_agent("lu_xingzhou")["initial_state"]["remaining_minutes"] == remaining_before_resume - 1
         cancelled = platform.interrupt_behavior("lu_xingzhou", "threat confirmed", hard=True)
         assert cancelled["status"] == "cancelled"
         assert platform.store.get_agent("lu_xingzhou")["initial_state"]["status"] == "idle"
+        assert platform.store.get_agent("lu_xingzhou")["inventory"]["rations"] == starting_rations
+    finally:
+        platform.close()
+
+
+def test_direct_interaction_does_not_interrupt_active_behavior(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "interaction-boundary-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        listener = platform.store.get_agent("qiao_ning")
+        listener["initial_state"]["location_id"] = "granary"
+        with platform.store.transaction():
+            platform.store.update_agent("qiao_ning", listener)
+        intent = BehaviorIntent(
+            actor_id="liang_he", behavior_ref="behavior:craft_meal", target={}, parameters={},
+            reason="Prepare food before trading.", confidence=0.8, intent_id="interaction-boundary-intent",
+        )
+        assert platform.submit_behavior(intent)["status"] == "accepted"
+        platform.advance(1)
+        result = platform.submit_dialogue("liang_he", "qiao_ning", "trade", "Can we trade now?")
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "participant_busy"
+        trade = platform.create_trade_offer("liang_he", "qiao_ning", {"grain": 1}, {"medicine": 1})
+        assert trade["status"] == "rejected"
+        assert trade["failed_check"] == "participant_busy"
+        state = platform.store.get_agent("liang_he")["initial_state"]
+        assert state["status"] == "executing"
+        assert state["active_bt_instance"] == "interaction-boundary-intent"
     finally:
         platform.close()
 

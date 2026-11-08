@@ -319,6 +319,24 @@ class Platform:
         second_state = second.get("initial_state", {}) or {}
         return bool(first_state.get("location_id")) and first_state.get("location_id") == second_state.get("location_id")
 
+    def _available_for_instant_interaction(self, agent: dict[str, Any]) -> bool:
+        """Check interaction eligibility without interrupting an active BT."""
+
+        state = agent.get("initial_state", {}) or {}
+        if state.get("status", "idle") in {"unconscious", "dead"}:
+            return False
+        if state.get("status") != "executing":
+            return True
+        action_id = state.get("active_action")
+        if action_id == "parallel":
+            action_ids = [item.get("action_id") for item in (state.get("active_parallel_actions") or {}).values()]
+            definitions = {item["id"]: item for item in self.store.get_definitions("action_def")}
+            return bool(action_ids) and all(definitions.get(item, {}).get("interaction_policy") == "allow" for item in action_ids)
+        if not action_id:
+            return False
+        action = next((item for item in self.store.get_definitions("action_def") if item.get("id") == action_id), None)
+        return bool(action and action.get("interaction_policy") == "allow")
+
     def submit_dialogue(self, speaker_id: str, listener_id: str, topic: str, message: str) -> dict[str, Any]:
         """Record a direct, permission-checked text exchange."""
 
@@ -336,6 +354,8 @@ class Platform:
             return {"status": "rejected", "message": "Both participants must exist.", "failed_check": "participant", "retryable": False}
         if not self._same_public_location(speaker, listener):
             return {"status": "rejected", "message": "Both participants must be at the same location.", "failed_check": "location", "retryable": True}
+        if not self._available_for_instant_interaction(speaker) or not self._available_for_instant_interaction(listener):
+            return {"status": "rejected", "message": "A participant is busy with an action that does not allow instant interaction.", "failed_check": "participant_busy", "retryable": True}
         minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             self.store.create_intent(intent_id, speaker_id, "send_message", {"target_id": listener_id, "topic": topic, "message": message}, minute)
@@ -361,6 +381,8 @@ class Platform:
             return {"status": "rejected", "message": "Both traders must exist.", "failed_check": "participant", "retryable": False}
         if not self._same_public_location(offerer, recipient):
             return {"status": "rejected", "message": "Both traders must be at the same location.", "failed_check": "location", "retryable": True}
+        if not self._available_for_instant_interaction(offerer) or not self._available_for_instant_interaction(recipient):
+            return {"status": "rejected", "message": "A participant is busy with an action that does not allow instant trade.", "failed_check": "participant_busy", "retryable": True}
         if not self._has_inventory(offerer, give):
             return {"status": "rejected", "message": "The offerer lacks an offered item.", "failed_check": "offer_inventory", "retryable": True}
         minute = int(self.store.get_meta("world_minute", 0))
@@ -391,6 +413,8 @@ class Platform:
             return {"status": "rejected", "message": "Both traders must still exist.", "failed_check": "participant", "retryable": False}
         if not self._same_public_location(offerer, recipient):
             return {"status": "rejected", "message": "Both traders must still be at the same location.", "failed_check": "location", "retryable": True}
+        if not self._available_for_instant_interaction(offerer) or not self._available_for_instant_interaction(recipient):
+            return {"status": "rejected", "message": "A participant is busy with an action that does not allow instant trade.", "failed_check": "participant_busy", "retryable": True}
         if not self._has_inventory(offerer, offer["give"]):
             return {"status": "rejected", "message": "The offered items are no longer available.", "failed_check": "offer_inventory", "retryable": False}
         if not self._has_inventory(recipient, offer["want"]):
@@ -436,6 +460,8 @@ class Platform:
             return {"status": "rejected", "message": "Both traders must still exist.", "failed_check": "participant", "retryable": False}
         if not self._same_public_location(counterparty, original_offerer):
             return {"status": "rejected", "message": "Both traders must still be at the same location.", "failed_check": "location", "retryable": True}
+        if not self._available_for_instant_interaction(counterparty) or not self._available_for_instant_interaction(original_offerer):
+            return {"status": "rejected", "message": "A participant is busy with an action that does not allow instant trade.", "failed_check": "participant_busy", "retryable": True}
         if not self._has_inventory(counterparty, give):
             return {"status": "rejected", "message": "The counterparty lacks the counteroffer items.", "failed_check": "offer_inventory", "retryable": True}
         minute = int(self.store.get_meta("world_minute", 0))
@@ -1210,6 +1236,11 @@ class Platform:
         bt_row = self.store.connection.execute("SELECT data_json FROM bt_instance WHERE execution_id=?", (execution_id,)).fetchone()
         bt_data = json.loads(bt_row["data_json"]) if bt_row is not None else {}
         before = dict(bt_data.get("before") or {})
+        if status != "completed":
+            reservations = list(state.get("active_action_reservation") or [])
+            for item in (state.get("active_parallel_actions") or {}).values():
+                reservations.extend(item.get("reservation", []) or [])
+            self.resources.release(agent, reservations)
         after = self._execution_snapshot(agent)
         outcome = {
             "status": status,
@@ -1405,6 +1436,11 @@ class Platform:
             bt_row = self.store.connection.execute("SELECT behavior_id,data_json FROM bt_instance WHERE execution_id=?", (execution_id,)).fetchone()
             bt_data = json.loads(bt_row["data_json"]) if bt_row is not None else {}
             before = dict(bt_data.get("before") or {})
+            if hard:
+                reservations = list(state.get("active_action_reservation") or [])
+                for item in (state.get("active_parallel_actions") or {}).values():
+                    reservations.extend(item.get("reservation", []) or [])
+                self.resources.release(agent, reservations)
             outcome = {
                 "status": status,
                 "result": reason,
