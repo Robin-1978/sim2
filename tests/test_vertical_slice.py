@@ -989,6 +989,8 @@ def test_dialogue_trade_negotiation_and_observer_text_view(tmp_path: Path):
         assert "World minute" in world_text and "Characters:" in world_text
         assert "message" not in world_text
         assert session.execute("timeline 5")
+        assert "paused" in session.execute("pause")
+        assert "running" in session.execute("resume")
         try:
             session.execute("wait")
         except ValueError as exc:

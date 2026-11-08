@@ -15,6 +15,7 @@ actions:
     reserve: {}
     per_minute:
       fatigue: 0.5
+      exposure: 0.1
     on_success: {}
     on_failure: {}
     refund: {}

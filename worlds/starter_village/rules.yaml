@@ -22,6 +22,7 @@ minute_effects:
   every_minutes: 144
   effect:
     fog_level: 0.05
+route_minutes_per_hop: 1
 motivation_model:
   family: hybrid_need_utility_appraisal
   no_fixed_hierarchy: true

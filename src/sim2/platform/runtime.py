@@ -978,7 +978,31 @@ class Platform:
 
         return {key: resolve(value) for key, value in parameters.items()}
 
-    def _action_duration(self, action: dict[str, Any], parameters: dict[str, Any]) -> int:
+    def _route_distance(self, origin: str | None, destination: str | None) -> int:
+        """Return weighted route distance in configured route hops."""
+
+        if not origin or not destination or origin == destination:
+            return 0
+        hop_minutes = max(1, int((self.store.get_meta("rules", {}) or {}).get("route_minutes_per_hop", 1)))
+        queue: list[tuple[str, int]] = [(str(origin), 0)]
+        visited = {str(origin)}
+        while queue:
+            current, distance = queue.pop(0)
+            try:
+                location = self.store.get_entity(current)
+            except KeyError:
+                continue
+            for neighbor in location.get("routes", []) or []:
+                neighbor = str(neighbor)
+                if neighbor in visited:
+                    continue
+                if neighbor == str(destination):
+                    return (distance + 1) * hop_minutes
+                visited.add(neighbor)
+                queue.append((neighbor, distance + 1))
+        return hop_minutes
+
+    def _action_duration(self, action: dict[str, Any], parameters: dict[str, Any], origin_location: str | None = None) -> int:
         duration = action.get("duration") or {}
         minutes = duration.get("minutes")
         if isinstance(minutes, (int, float)):
@@ -989,6 +1013,8 @@ class Platform:
             recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == recipe_id), None)
             if recipe and isinstance(recipe.get("duration_minutes"), (int, float)):
                 return max(1, int(recipe["duration_minutes"]))
+        if mode == "route_distance":
+            return max(1, self._route_distance(origin_location, parameters.get("location_id") or parameters.get("destination_id")))
         configured = duration.get("default_minutes", action.get("default_minutes", 1))
         try:
             return max(1, int(configured))
@@ -1124,7 +1150,7 @@ class Platform:
         allowed, reason, reservation = self._reserve_action_costs(agent, action, parameters)
         if not allowed:
             return False, reason
-        duration = self._action_duration(action, parameters)
+        duration = self._action_duration(action, parameters, state.get("location_id"))
         action_instance_id = f"{execution_id}:{state.get('active_action_index', 0)}"
         state["active_action"] = action_id
         state["active_action_instance"] = action_instance_id
@@ -1185,7 +1211,7 @@ class Platform:
         allowed, reason, reservation = self._reserve_action_costs(probe, action, parameters, commit=False)
         if not allowed:
             return None, reason
-        return {"action": action, "parameters": parameters, "target": target, "duration": self._action_duration(action, parameters), "reservation": reservation}, ""
+        return {"action": action, "parameters": parameters, "target": target, "duration": self._action_duration(action, parameters, state.get("location_id")), "reservation": reservation}, ""
 
     def _progress_parallel_group(self, agent: dict[str, Any], execution_id: str, behavior_id: str, actions: list[dict[str, Any]], index: int, minute: int) -> None:
         state = dict(agent.get("initial_state") or {})
