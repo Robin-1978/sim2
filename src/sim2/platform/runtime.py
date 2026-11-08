@@ -226,8 +226,9 @@ class Platform:
                 canonical = self.targets.canonical_id(normalized_parameters[key])
                 if canonical:
                     normalized_parameters[key] = canonical
-        if "entity_id" in intent.target and "target_id" not in normalized_parameters:
-            normalized_parameters["target_id"] = intent.target["entity_id"]
+        for target_alias in ("entity_id", "id"):
+            if target_alias in intent.target and "target_id" not in normalized_parameters:
+                normalized_parameters["target_id"] = intent.target[target_alias]
         for alias in ("destination", "destination_id", "location"):
             if alias in normalized_parameters and "location_id" not in normalized_parameters:
                 normalized_parameters["location_id"] = normalized_parameters[alias]
