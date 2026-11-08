@@ -338,6 +338,20 @@ def test_research_attention_cost_fits_configured_capacity(tmp_path: Path):
         platform.close()
 
 
+def test_inspection_behaviors_have_configured_cooldowns(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "inspection-cooldown-world", tmp_path / "runtime"))
+    try:
+        intent = BehaviorIntent("su_wu", "behavior:inspect_object", {}, {}, "Check the current source.", 0.8, "inspection-cooldown")
+        assert platform.submit_behavior(intent)["status"] == "accepted"
+        step_n(platform, 24)
+        assert not any(item["ref"] == "behavior:inspect_object" for item in platform.decision_view("su_wu")["executable_behaviors"])
+        platform.store.set_meta("world_minute", 384)
+        assert any(item["ref"] == "behavior:inspect_object" for item in platform.decision_view("su_wu")["executable_behaviors"])
+    finally:
+        platform.close()
+
+
 def test_decision_context_explains_single_recovery_candidate(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "single-recovery-context", tmp_path / "runtime"))

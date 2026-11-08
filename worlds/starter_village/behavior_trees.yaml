@@ -88,6 +88,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_inspect_granary
   estimated_minutes: 25
+  cooldown_minutes: 720
   goal_tags: [food, reserve, winter]
   drive_tags: [safety]
   nodes:
@@ -135,6 +136,7 @@ behavior_trees:
   entry_conditions:
   - actor.is_granary_keeper
   estimated_minutes: 30
+  cooldown_minutes: 720
   goal_tags: [food, ration, winter]
   drive_tags: [safety, belonging]
   nodes:
@@ -228,6 +230,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_inspect
   estimated_minutes: 24
+  cooldown_minutes: 360
   nodes:
   - type: action
     action_id: inspect_object

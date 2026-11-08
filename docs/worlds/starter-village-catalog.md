@@ -71,13 +71,13 @@
 |---|---|---|---:|---|---|---|
 | `govern_village` | village_council | actor.is_steward；每 720 分钟最多一次 | 24 分钟 | inspect_object | rations_reviewed, risk_reviewed | council_blocked |
 | `mediate_conflict` | personal | conflict.available<br>actor.can_mediate | 48 分钟 | communicate → 条件 | — | — |
-| `inspect_granary` | personal | actor.can_inspect_granary | 24 分钟 | travel_to → inspect_object | — | — |
+| `inspect_granary` | personal | actor.can_inspect_granary；每 720 分钟最多一次 | 24 分钟 | travel_to → inspect_object | — | — |
 | `patrol_route` | village_watch | actor.is_guard | 96 分钟 | travel_to → patrol_route | patrol_reported, marks_classified | emergency |
-| `manage_ration` | personal | actor.is_granary_keeper | 48 分钟 | inspect_object → communicate | — | — |
+| `manage_ration` | personal | actor.is_granary_keeper；每 720 分钟最多一次 | 48 分钟 | inspect_object → communicate | — | — |
 | `heal_target` | personal | actor.is_healer<br>patient.available | 72 分钟 | heal_target | — | — |
 | `explore_greywood` | personal | actor.can_explore；目标区域尚未完成测绘 | 241 分钟 | travel_to → explore_area | 区域路线、账册线索和探索事实写入知识 | lost, injured, emergency |
 | `research_source` | root_keepers | actor.can_research；信息源仍有新事实 | 192 分钟 | research_source → 条件 | 根门契约衰退事实写入知识 | source_lost, belief_conflict |
-| `inspect_object` | personal | actor.can_inspect | 24 分钟 | inspect_object | — | — |
+| `inspect_object` | personal | actor.can_inspect；每 360 分钟最多一次 | 24 分钟 | inspect_object | — | — |
 | `defend_village` | village_watch | actor.is_guard<br>threat.at_village | 48 分钟 | sound_alarm → 选择[defend_position, flee_to_safety] | threat_contained, civilians_safe | defense_broken, retreat_required |
 | `defend_position` | personal | actor.can_defend<br>threat.reachable | 24 分钟 | defend → attack | — | — |
 | `flee_to_safety` | personal | actor.alive<br>threat.overwhelming | 96 分钟 | flee_to_safety | — | — |
