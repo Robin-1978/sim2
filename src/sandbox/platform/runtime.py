@@ -657,7 +657,7 @@ class Platform:
                 self.store.set_meta("world_properties", properties)
                 effect = {"world_property": str(proposal["property"]), "before": before_value, "after": proposal.get("value")}
             else:
-                effect = {"event_recorded": True}
+                effect = {"event_recorded": True, "state_changed": False}
             event_data = {
                 "intent_id": intent_id,
                 "change_type": change_type,
@@ -666,7 +666,7 @@ class Platform:
                 "effect": effect,
             }
             event_id = self.store.append_event(f"world.change.{change_type}", actor_id, world_minute, event_data)
-            result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "applied": True, "applied_effects": bool(effect), "change_type": change_type, "effect": effect}
+            result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "applied": True, "applied_effects": bool(effect.get("state_changed", True)), "change_type": change_type, "effect": effect}
             self.store.finish_intent(intent_id, "accepted", result)
         return result
 

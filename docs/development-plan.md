@@ -121,11 +121,11 @@ PYTHONPATH=src python scripts/benchmark_platform.py --agents 1000 --runs 5
 PYTHONPATH=src python scripts/verify_agent_models.py
 ```
 
-最近一次结果为 `42 passed`；1000 个 Agent、5 次非 LLM 模拟分钟的 p95 为约 `148 ms`。测试覆盖 ReAct 工具反馈与拒绝重试、SQLite 创世与回滚、长 Action/并行 BT/共享资源、中断恢复、探索沟通知识、聊天与两阶段交易、文本玩家/旁观者入口、记忆 FTS5 与激活、反思目标和能力历史、执行 outcome 复盘上下文、God 世界前后值复盘、HTTP 控制、快照恢复、确定性回放以及 Starter Village 端到端场景。
+最近一次结果为 `43 passed`；1000 个 Agent、5 次非 LLM 模拟分钟的 p95 为约 `148 ms`。测试覆盖 ReAct 工具反馈与拒绝重试、SQLite 创世与回滚、长 Action/并行 BT/共享资源、中断恢复、探索沟通知识、聊天与两阶段交易、文本玩家/旁观者入口、记忆 FTS5 与激活、反思目标和能力历史、执行 outcome 复盘上下文、God 世界前后值复盘、God 事件语义质量门、HTTP 控制、快照恢复、确定性回放以及 Starter Village 端到端场景。
 
 `verify_agent_models.py` 是真实模型验收入口：它不打印原始 reasoning 或密钥，只报告 Decision/Reflection/God 的会话步骤、最终 Intent、Platform 校验结果和质量布尔值；远程 Provider 使用 `~/.sim2/llm.json` 中的显式代理和环境变量引用。
 
-上下文缓存指标同时记录 Provider 返回的 `cached_tokens/prompt_tokens` 和结构化 Prompt 的稳定前缀复用率。最近一次 beam-free God 会话为 3 次模型调用，Provider 报告 `2560/4824` prompt tokens 命中，约 `53.07%`；稳定前缀复用率为 `66.67%`。本地确定性长跑没有 Provider token usage，但 1,585 次调用的稳定前缀复用率为 `99.81%`，说明动态内容已被放在稳定协议之后。
+上下文缓存指标同时记录 Provider 返回的 `cached_tokens/prompt_tokens` 和结构化 Prompt 的稳定前缀复用率。最近一次 beam-free God 会话为 6 次模型调用，Provider 报告 `7616/11123` prompt tokens 命中，约 `68.47%`；稳定前缀复用率为 `83.33%`。本地确定性长跑没有 Provider token usage，但 1,585 次调用的稳定前缀复用率为 `99.81%`，说明动态内容已被放在稳定协议之后。
 
 `PYTHONPATH=src python scripts/run_long_simulation.py --minutes 10080` 的一周确定性闭环 smoke test 完成 1,512 次决策、72 次日/周反思、1 次 God 周期会话；选出 5 种行为、产生 9 种事件类型、8 个不同位置，未触发单一行为支配、健康耗尽或无限重规划标记。该 smoke provider 的反思固定返回 `wait`，所以不会伪造记忆增长；真实模型验收仍由 `verify_agent_models.py` 完成。
 

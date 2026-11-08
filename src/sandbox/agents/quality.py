@@ -70,6 +70,12 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         elif name == "propose_world_change":
             checks.append(_check("god_world_change_has_summary", len(str(payload.get("summary", "")).strip()) >= 8, f"summary_length={len(str(payload.get('summary', '')))}"))
             checks.append(_check("god_world_change_applied", turn.result.get("status") == "accepted" and bool(turn.result.get("applied")), f"applied={turn.result.get('applied')}; effects={turn.result.get('applied_effects')}"))
+            change_type = str(payload.get("change_type", ""))
+            effects = " ".join(str(item).lower() for item in (payload.get("effects") or []))
+            direct_change_terms = ("increase", "decrease", "restore", "activate", "reduce", "raise", "lower", "set ", "change", "remain", " can ")
+            if change_type == "event" and not payload.get("property"):
+                checks.append(_check("god_event_does_not_claim_unapplied_state_change", not any(term in effects for term in direct_change_terms), "event is recorded only; structured property/rule/relationship/faction change is required for direct state mutation"))
+                checks.append(_check("god_event_has_structured_followup", False, "accepted as a recorded event, but no configured state effect was applied"))
         else:
             checks.append(_check("god_submission_is_known", name in {"propose_entity", "propose_world_change"}, f"submission={name}"))
     passed = all(item["passed"] for item in checks)
@@ -82,5 +88,10 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         else:
             grade = "accepted_needs_reflection"
     else:
-        grade = "grounded" if passed else "ungrounded_or_invalid"
+        if passed:
+            grade = "grounded"
+        elif turn.role == "god" and name == "propose_world_change" and turn.result.get("status") == "accepted":
+            grade = "accepted_needs_world_followup"
+        else:
+            grade = "ungrounded_or_invalid"
     return {"role": turn.role, "iterations": turn.iterations, "checks": checks, "grade": grade, "passed": passed}
