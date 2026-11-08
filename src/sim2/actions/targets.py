@@ -14,12 +14,33 @@ class TargetResolver:
     def __init__(self, store: "WorldStore"):
         self.store = store
 
+    @staticmethod
+    def _key(value: Any) -> str:
+        return "".join(str(value).casefold().split())
+
+    def canonical_id(self, value: Any) -> str | None:
+        """Resolve an id or an exact name without fuzzy guessing."""
+
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            return str(self.store.get_entity(text)["id"])
+        except KeyError:
+            pass
+        rows = self.store.connection.execute("SELECT id,name FROM entity WHERE name IS NOT NULL").fetchall()
+        matches = [str(row["id"]) for row in rows if self._key(row["name"]) == self._key(text)]
+        return matches[0] if len(matches) == 1 else None
+
     def resolve(self, agent: dict[str, Any], parameters: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
         target_id = next((parameters.get(key) for key in self.TARGET_KEYS if parameters.get(key)), None)
         if not target_id:
             return None, None
+        canonical_id = self.canonical_id(target_id)
+        if canonical_id is None:
+            return None, f"target does not exist or is ambiguous: {target_id}"
         try:
-            entity = self.store.get_entity(str(target_id))
+            entity = self.store.get_entity(canonical_id)
         except KeyError:
             return None, f"target does not exist: {target_id}"
         state = agent.get("initial_state", {})

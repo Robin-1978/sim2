@@ -872,7 +872,7 @@ def test_dialogue_trade_negotiation_and_observer_text_view(tmp_path: Path):
     db_path = create_instance(config, "interaction-world", tmp_path / "runtime")
     platform = Platform(db_path)
     try:
-        dialogue = platform.submit_dialogue("fei_lan", "yu_ge", "route", "The western road is open before dusk.")
+        dialogue = platform.submit_dialogue("fei_lan", "余歌", "route", "The western road is open before dusk.")
         assert dialogue["status"] == "accepted"
         testimony = platform.store.list_memories("yu_ge", limit=10)
         assert any(item.get("type") == "testimony" and item.get("message", "").startswith("The western road") for item in testimony)

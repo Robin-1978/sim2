@@ -221,6 +221,11 @@ class Platform:
         if "entity_id" in normalized_parameters and "target_id" not in normalized_parameters:
             normalized_parameters["target_id"] = normalized_parameters["entity_id"]
         normalized_parameters.pop("entity_id", None)
+        for key in ("target_id", "patient_id", "protected_target_id", "counterparty_id", "listener_id", "location_id"):
+            if normalized_parameters.get(key):
+                canonical = self.targets.canonical_id(normalized_parameters[key])
+                if canonical:
+                    normalized_parameters[key] = canonical
         if "entity_id" in intent.target and "target_id" not in normalized_parameters:
             normalized_parameters["target_id"] = intent.target["entity_id"]
         for alias in ("destination", "destination_id", "location"):
@@ -392,6 +397,7 @@ class Platform:
         """Record a direct, permission-checked text exchange."""
 
         intent_id = str(uuid4())
+        listener_id = self.targets.canonical_id(listener_id) or str(listener_id)
         topic = str(topic).strip()
         message = str(message).strip()
         if not listener_id or listener_id == speaker_id or not topic or not message:
@@ -423,6 +429,7 @@ class Platform:
 
         give = dict(give or {})
         want = dict(want or {})
+        recipient_id = self.targets.canonical_id(recipient_id) or str(recipient_id)
         if not recipient_id or recipient_id == offerer_id or not self._valid_transfer(give) or not self._valid_transfer(want):
             return {"status": "rejected", "message": "A trade needs two participants and positive give/want quantities.", "failed_check": "trade_schema", "retryable": True}
         try:
@@ -450,6 +457,7 @@ class Platform:
         return result
 
     def accept_trade_offer(self, recipient_id: str, offer_id: str) -> dict[str, Any]:
+        recipient_id = self.targets.canonical_id(recipient_id) or str(recipient_id)
         offer = self.store.get_trade_offer(offer_id)
         if offer is None:
             return {"status": "rejected", "message": "Trade offer does not exist.", "failed_check": "offer_id", "retryable": False}
@@ -495,6 +503,7 @@ class Platform:
     def counter_trade_offer(self, counterparty_id: str, offer_id: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
         """Close an offer and create the counterparty's next-round offer."""
 
+        counterparty_id = self.targets.canonical_id(counterparty_id) or str(counterparty_id)
         offer = self.store.get_trade_offer(offer_id)
         if offer is None or offer["status"] != "open" or offer["recipient_id"] != counterparty_id:
             return {"status": "rejected", "message": "Only the open offer recipient can counter it.", "failed_check": "offer", "retryable": False}
@@ -525,6 +534,7 @@ class Platform:
         return {"status": "accepted", "offer_id": counter_id, "parent_offer_id": offer_id, "trade_status": "open", "event_id": event_id}
 
     def reject_trade_offer(self, recipient_id: str, offer_id: str) -> dict[str, Any]:
+        recipient_id = self.targets.canonical_id(recipient_id) or str(recipient_id)
         offer = self.store.get_trade_offer(offer_id)
         if offer is None or offer["recipient_id"] != recipient_id or offer["status"] != "open":
             return {"status": "rejected", "message": "The trade offer cannot be rejected by this participant.", "failed_check": "offer", "retryable": False}
@@ -1009,6 +1019,10 @@ class Platform:
         resolved_target, target_error = self.targets.resolve(agent, parameters)
         if target_error:
             return False, target_error
+        if resolved_target:
+            for key in self.targets.TARGET_KEYS:
+                if parameters.get(key):
+                    parameters[key] = resolved_target["id"]
         current_location = {}
         location_id = state.get("location_id")
         if location_id:
@@ -1064,6 +1078,10 @@ class Platform:
         target, target_error = self.targets.resolve(agent, parameters)
         if target_error:
             return None, target_error
+        if target:
+            for key in self.targets.TARGET_KEYS:
+                if parameters.get(key):
+                    parameters[key] = target["id"]
         current_location = {}
         if state.get("location_id"):
             try:
