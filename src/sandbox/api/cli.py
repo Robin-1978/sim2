@@ -87,6 +87,8 @@ def main() -> None:
             TextWorldSession(platform, player_id=args.player_id, observer=args.observer).run()
         finally:
             platform.close()
+
+
         return
     if args.command in {"status", "pause", "resume", "step", "advance", "metrics", "audit", "snapshot", "restore", "enter-player", "inject"}:
         platform = Platform(args.db)
@@ -119,3 +121,7 @@ def main() -> None:
             print(json.dumps(result, ensure_ascii=False))
         finally:
             platform.close()
+
+
+if __name__ == "__main__":
+    main()
