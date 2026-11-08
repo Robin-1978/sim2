@@ -159,11 +159,11 @@ actions:
     item: context.resource_tag
     quantity: 2
   success:
-    condition: inventory.food >= 1
-    result: food_gathered
+    condition: resource.collected
+    result: resource_collected
   failure:
-    condition: actor.incapacitated
-    result: failed
+    condition: resource.empty or actor.incapacitated
+    result: gathering_failed
   interrupt_policy: pause
   definition_source: config
   kind: atomic
@@ -220,6 +220,10 @@ actions:
   - type: need_delta
     need: belonging
     delta: 0.2
+  effects:
+  - type: health_restore
+    amount: 30
+    target: target
   success:
     condition: patient.fever_reduced
     result: patient_stabilized
@@ -409,6 +413,7 @@ actions:
   effects:
   - type: damage
     formula: actor.attack_power + weapon.damage - target.defense
+    target: target
   - type: relationship_delta
     relation: hostility
     delta: 0.15

@@ -49,7 +49,7 @@
 |---|---|---|---:|---|---|---|
 | `travel_to` | 沿已知路线移动到目标地点 | {location_id: string} | route_distance 分钟 | route.known<br>actor.mobile<br>destination.reachable | per_minute: {fatigue: 0.5} | 成功：{condition: actor.location == target.location, result: arrived}<br>失败：{condition: actor.incapacitated, result: failed} |
 | `rest` | 在安全地点休息 | {location_id: string} | 48 分钟 | actor.at_location<br>location.safe | per_minute: {time: 1} | 成功：{condition: fatigue <= 20, result: rested}<br>失败：{condition: danger.detected, result: interrupted} |
-| `gather_resource` | 在可见资源节点采集指定类型资源 | {resource_tag: string, location_id: string} | 144 分钟 | actor.can_gather<br>location.has_food<br>route.known | reserve: {tool_durability: 1}<br>per_minute: {fatigue: 0.8} | 成功：{condition: inventory.food >= 1, result: food_gathered}<br>失败：{condition: actor.incapacitated, result: failed} |
+| `gather_resource` | 在可见资源节点采集指定类型资源 | {resource_tag: string, location_id: string} | 144 分钟 | actor.can_gather<br>location.resource_node<br>route.known | reserve: {resource_parameter: resource_tag, resource_amount: 2}<br>per_minute: {fatigue: 0.8} | 成功：{condition: resource.collected, result: resource_collected}<br>失败：{condition: resource.empty or actor.incapacitated, result: gathering_failed} |
 | `patrol_route` | 巡逻已知路线并记录发现 | {route_id: string} | 96 分钟 | actor.is_guard<br>route.known | per_minute: {fatigue: 0.6, exposure: 0.2} | 成功：{condition: route.completed, result: patrol_reported}<br>失败：{condition: hostile_contact, result: emergency} |
 | `heal_target` | 使用可用治疗资源恢复目标状态 | {target_id: string} | 72 分钟 | actor.is_healer<br>patient.in_clinic<br>medicine.available | reserve: {medicine: 1}<br>per_minute: {fatigue: 0.4} | 成功：{condition: patient.fever_reduced, result: patient_stabilized}<br>失败：{condition: medicine.failed, result: failed} |
 | `explore_area` | 探索一块尚未充分了解的区域并记录发现 | {area_id: string} | 240 分钟 | actor.can_explore<br>route.known<br>area.not_fully_mapped | reserve: {rations: 1}<br>per_minute: {fatigue: 0.7, exposure: 0.4} | 成功：{condition: area.survey_complete, result: exploration_completed}<br>失败：{condition: actor.incapacitated, result: failed} |
@@ -85,7 +85,7 @@
 | `craft_meal` | personal | actor.can_craft<br>recipe.available<br>inputs.available | 60 分钟 | craft_recipe | food_created, capability_improved | crafting_failed |
 | `communicate` | personal | actor.can_communicate<br>target.available | 12 分钟 | communicate | — | — |
 | `negotiate` | personal | actor.can_communicate<br>target.available | 12 分钟 | negotiate | — | — |
-| `gather_resource` | personal | actor.can_gather<br>resource.available | 120 分钟 | gather_resource | action_completed | action_failed |
+| `gather_resource` | personal | actor.can_gather<br>resource.available | 144 分钟 | gather_resource | resource_collected | gathering_failed |
 | `eat_food` | universal | actor.alive<br>actor.has_food | 1 分钟 | consume_food(item_id) | ate_food | eating_failed |
 | `get_food` | universal | actor.alive<br>actor.food_withdrawal<br>location.food_store | 1 分钟 | withdraw_food | ration_received | ration_unavailable |
 

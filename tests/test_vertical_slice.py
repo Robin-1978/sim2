@@ -680,6 +680,24 @@ def test_finite_resource_depletion_hides_gather_until_regeneration(tmp_path: Pat
         platform.close()
 
 
+def test_target_effects_update_target_health_not_actor(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "target-effects-world", tmp_path / "runtime"))
+    try:
+        attacker = platform.store.get_agent("he_yan")
+        target = platform.store.get_agent("lu_xingzhou")
+        target["initial_state"]["health"] = 70
+        platform.store.update_agent("lu_xingzhou", target)
+        platform.store.connection.commit()
+        attack = next(item for item in platform.store.get_definitions("action_def") if item["id"] == "attack")
+        with platform.store.transaction():
+            platform._apply_success_effects(attacker, attack, {"weapon_id": "spear"}, 0, target={"id": "lu_xingzhou", "defense": 4})
+        assert platform.store.get_agent("he_yan")["initial_state"]["health"] == 100
+        assert platform.store.get_agent("lu_xingzhou")["initial_state"]["health"] == 63
+    finally:
+        platform.close()
+
+
 def test_step_commits_each_tick_before_a_later_tick_fails(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "tick-commit-world", tmp_path / "runtime")

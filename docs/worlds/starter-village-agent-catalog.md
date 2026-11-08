@@ -17,7 +17,7 @@ This compact English catalog is generated from the world configuration. It is a 
 |---|---|---|---|
 | Travel To | Platform confirms the actor, target, route, resources and safety rules. | Route-dependent | Platform applies configured effects and records the result. |
 | Rest | The location is safe. | 48 minutes | Platform applies configured effects and records the result. |
-| Gather Resource | You have gathering ability and a visible resource source has supply. | 144 minutes | Platform applies configured effects and records the result. |
+| Gather Resource | You have gathering ability and a visible resource source has supply. | 144 minutes; fatigue 0.8/min; two source units reserved | Two source units enter inventory when the action completes. |
 | Patrol Route | You are a guard and the route is known. | 96 minutes | Platform applies configured effects and records the result. |
 | Heal Target | You can heal and the target and treatment are available. | 72 minutes | Platform applies configured effects and records the result. |
 | Explore Area | You can explore and the area is not fully mapped. | 240 minutes | Platform applies configured effects and records the result. |
@@ -53,7 +53,7 @@ This compact English catalog is generated from the world configuration. It is a 
 | Craft Meal | Craft food from available inputs. | A cooking station and recipe inputs are available. | Craft Recipe | 60 | Food is created and cooking skill improves. | Inputs are missing or the station is damaged. |
 | Communicate | Exchange information with another character. | Another character is available and information exchange is relevant. | Communicate | 12 | The conversation becomes testimony. | The other character refuses or leaves. |
 | Negotiate | Reach an agreement with another character. | A counterparty is available and an agreement is needed. | Negotiate | 12 | A contract or exchange is recorded. | Trust collapses or the offer is refused. |
-| Gather Resource | Collect a configured resource from a known node. | A known resource source is visible and supply is needed. | Gather Resource | 120 | The resource enters inventory or storage. | The source is empty or the actor cannot continue. |
+| Gather Resource | Collect a configured resource from a known node. | A known resource source is visible and supply is needed. | Gather Resource | 144 | Two source units enter inventory and the source decreases. | The source is empty or the actor cannot continue. |
 | Eat Food | You carry one configured food item and need to choose whether to restore hunger. | Consume Food(item_id) | 1 | Hunger satisfaction increases and the item is removed. | The food is unavailable. |
 | Get Food | You have food-withdrawal rights, are at the granary, and shared food remains. | Withdraw Food | 1 | One ration enters inventory. | The shared store is empty or you lack ration rights. |
 

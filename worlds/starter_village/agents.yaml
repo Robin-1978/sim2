@@ -123,6 +123,7 @@ agents:
   combat_stats:
     attack_power: 8
     defense: 6
+    weapon_damage: {spear: 3}
 - id: liang_he
   name: 梁禾
   role: granary_keeper
@@ -370,6 +371,7 @@ agents:
   combat_stats:
     attack_power: 7
     defense: 4
+    weapon_damage: {bow: 4}
 - id: yu_ge
   name: 余歌
   role: innkeeper_information_broker

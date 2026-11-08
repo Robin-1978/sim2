@@ -13,7 +13,7 @@ class EffectPipeline:
     can execute arbitrary code through an effect definition.
     """
 
-    def apply(self, agent: dict[str, Any], effect: dict[str, Any], *, target: dict[str, Any] | None = None) -> dict[str, Any]:
+    def apply(self, agent: dict[str, Any], effect: dict[str, Any], *, target: dict[str, Any] | None = None, formula_agent: dict[str, Any] | None = None) -> dict[str, Any]:
         target = target or {}
         effect_type = effect.get("type") or effect.get("op")
         state = dict(agent.get("initial_state") or {})
@@ -54,7 +54,7 @@ class EffectPipeline:
             state["conditions"] = [item for item in state.get("conditions", []) if item != status]
             result.update({"applied": True, "status": status})
         elif effect_type in {"damage", "health_delta"}:
-            amount = self._formula(effect.get("formula"), agent, target) if effect.get("formula") else float(effect.get("amount", effect.get("delta", 0)))
+            amount = self._formula(effect.get("formula"), formula_agent or agent, target) if effect.get("formula") else float(effect.get("amount", effect.get("delta", 0)))
             state["health"] = max(0.0, min(100.0, float(state.get("health", 100)) - amount if effect_type == "damage" else float(state.get("health", 100)) + amount))
             result.update({"applied": True, "health": state["health"]})
         elif effect_type in {"heal", "health_restore"}:

@@ -1415,7 +1415,20 @@ class Platform:
                 key: parameters.get(value.removeprefix("context."), value) if isinstance(value, str) and value.startswith("context.") else value
                 for key, value in effect.items()
             }
-            self.effects.apply(agent, resolved_effect, target=target or parameters)
+            effect_target = target or parameters
+            receiver = agent
+            if effect.get("target") == "target" and target and target.get("id"):
+                try:
+                    receiver = self.store.get_agent(str(target["id"]))
+                except KeyError:
+                    receiver = agent
+            if effect.get("type") == "damage" and parameters.get("weapon_id"):
+                combat = agent.get("combat_stats", {}) or {}
+                weapon_damage = (combat.get("weapon_damage", {}) or {}).get(str(parameters["weapon_id"]), 0)
+                effect_target = {**effect_target, "weapon": {"damage": weapon_damage}}
+            self.effects.apply(receiver, resolved_effect, target=effect_target, formula_agent=agent)
+            if receiver is not agent:
+                self.store.update_agent(receiver["id"], receiver)
             if effect.get("type") in {"capability_xp", "capability.add_xp"} or effect.get("op") == "capability.add_xp":
                 capability = effect.get("capability")
                 if capability:
