@@ -218,6 +218,11 @@ class Platform:
             return {"status": "rejected", "message": "The actor does not exist.", "failed_check": "actor", "retryable": False}
         behavior_id = intent.behavior_ref.removeprefix("behavior:")
         normalized_parameters = dict(intent.parameters or {})
+        if "entity_id" in normalized_parameters and "target_id" not in normalized_parameters:
+            normalized_parameters["target_id"] = normalized_parameters["entity_id"]
+        normalized_parameters.pop("entity_id", None)
+        if "entity_id" in intent.target and "target_id" not in normalized_parameters:
+            normalized_parameters["target_id"] = intent.target["entity_id"]
         for alias in ("destination", "destination_id", "location"):
             if alias in normalized_parameters and "location_id" not in normalized_parameters:
                 normalized_parameters["location_id"] = normalized_parameters[alias]
