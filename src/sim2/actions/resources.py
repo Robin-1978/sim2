@@ -30,6 +30,13 @@ class ResourceLedger:
                 item_id = parameters.get(str(value))
                 if item_id:
                     required.append((str(item_id), 1.0))
+            elif key == "resource_parameter":
+                resource_id = parameters.get(str(value))
+                amount = float((action.get("costs", {}).get("reserve", {}) or {}).get("resource_amount", 1) or 1)
+                if resource_id:
+                    required.append((str(resource_id), amount))
+            elif key == "resource_amount":
+                continue
             elif isinstance(value, (int, float)):
                 required.append((str(key), float(value)))
         inventory = dict(agent.get("inventory") or {})
@@ -61,7 +68,9 @@ class ResourceLedger:
         except KeyError:
             return None
         data = entity.get("initial_state", {}) if isinstance(entity.get("initial_state"), dict) else {}
-        amount = entity.get("amount", data.get("quantity", data.get("amount")))
+        amount = entity.get("amount")
+        if amount is None:
+            amount = data.get("quantity", data.get("amount"))
         if not isinstance(amount, (int, float)):
             return None
         return {"entity_id": key, "amount": float(amount)}

@@ -5,6 +5,7 @@ from typing import Any
 from ..actions.conditions import ConditionEngine
 from ..actions.resources import ResourceLedger
 from ..agents.tools import tools_for_role
+from ..behavior.estimator import BehaviorDurationEstimator
 from ..persistence.store import WorldStore
 from ..world.drives import DriveCalculator
 
@@ -215,6 +216,8 @@ class AgentViewCompiler:
             raise
         bt_defs = {x["id"]: x for x in self.store.get_definitions("bt_def")}
         action_defs = {x["id"]: x for x in self.store.get_definitions("action_def")}
+        recipe_defs = {x["id"]: x for x in self.store.get_definitions("recipe_def")}
+        estimator = BehaviorDurationEstimator(action_defs, bt_defs, recipe_defs, self._route_distance)
         available = []
         fallback_ids = (self.store.get_meta("rules", {}) or {}).get("fallback_behavior_ids", [])
         catalog_ids = list(dict.fromkeys(list(agent.get("initial_bt_ids", [])) + list(fallback_ids)))
@@ -271,7 +274,7 @@ class AgentViewCompiler:
                 "requires": bt.get("requirements") or bt.get("requirement_descriptions") or [_predicate_text(item) for item in bt.get("entry_conditions", [])] or ["Platform confirms all step requirements."],
                 "target": "Platform resolves permitted targets from the current view.",
                 "steps": steps[:5],
-                "time": f"{bt.get('estimated_minutes', 'variable')} minutes",
+                "time": f"{estimator.behavior_minutes(bt_id, {}, location_id)} minutes",
                 "cost": list(dict.fromkeys(costs))[:6] or ["Costs are defined by the selected steps."],
                 "impact": list(dict.fromkeys(impacts))[:3] or ["Platform applies configured effects and records events."],
                 "success": [str(item).replace("_", " ") for item in bt.get("success_results", [])] or ["Platform reports the configured success result."],
@@ -349,7 +352,32 @@ class AgentViewCompiler:
                 resolved[key] = value
         return resolved
 
+    def _route_distance(self, origin: str | None, destination: str | None) -> int:
+        if not origin or not destination or origin == destination:
+            return 0
+        hop_minutes = max(1, int((self.store.get_meta("rules", {}) or {}).get("route_minutes_per_hop", 1)))
+        queue: list[tuple[str, int]] = [(str(origin), 0)]
+        visited = {str(origin)}
+        while queue:
+            current, distance = queue.pop(0)
+            try:
+                location = self.store.get_entity(current)
+            except KeyError:
+                continue
+            for neighbor in location.get("routes", []) or []:
+                neighbor = str(neighbor)
+                if neighbor in visited:
+                    continue
+                if neighbor == str(destination):
+                    return (distance + 1) * hop_minutes
+                visited.add(neighbor)
+                queue.append((neighbor, distance + 1))
+        return hop_minutes
+
     def _action_available(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], location: dict[str, Any], food_items: list[str]) -> bool:
+        if action.get("id") == "gather_resource" and parameters.get("resource_tag") == "context.resource_tag":
+            source = next((item for item in self.store.entities_at_location((agent.get("initial_state") or {}).get("location_id")) if item.get("entity_type") in {"resource", "material"} and not (item.get("initial_state") or {}).get("protected") and self._entity_quantity(item) > 0), None)
+            parameters["resource_tag"] = source.get("id") if source else parameters.get("resource_tag")
         if action.get("requires_destination") and parameters.get("location_id") == (agent.get("initial_state") or {}).get("location_id"):
             return False
         context = {
@@ -373,6 +401,14 @@ class AgentViewCompiler:
                 return False
         allowed, _, _ = self.resources.reserve(agent, action, parameters, commit=False)
         return allowed
+
+    @staticmethod
+    def _entity_quantity(entity: dict[str, Any]) -> float:
+        state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
+        value = entity.get("amount")
+        if value is None:
+            value = state.get("quantity", state.get("amount", 0))
+        return float(value or 0)
 
     def _build_world_view(self, actor_id: str, role: str) -> dict[str, Any]:
         minute = self.store.get_meta("world_minute", 0)

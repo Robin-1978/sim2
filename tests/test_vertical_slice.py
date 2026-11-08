@@ -652,6 +652,34 @@ def test_platform_advances_persisted_action_progress_without_llm(tmp_path: Path)
         platform.close()
 
 
+def test_route_duration_is_derived_from_configured_route_distance(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "route-duration-world", tmp_path / "runtime"))
+    try:
+        result = platform.submit_behavior(BehaviorIntent("lu_xingzhou", "behavior:travel", {"location": "inn"}, {}, "Travel to the inn.", 0.8, "route-duration"))
+        assert result["status"] == "accepted"
+        assert result["remaining_minutes"] == 3
+    finally:
+        platform.close()
+
+
+def test_finite_resource_depletion_hides_gather_until_regeneration(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "resource-cycle-world", tmp_path / "runtime"))
+    try:
+        grain = platform.store.get_entity("grain")
+        grain["initial_state"]["quantity"] = 0
+        platform.store.put_entity("grain", "material", "谷物", {key: value for key, value in grain.items() if key not in {"id", "entity_type", "name"}})
+        platform.store.connection.commit()
+        assert not any(item["ref"] == "behavior:gather_resource" for item in platform.decision_view("liang_he")["executable_behaviors"])
+        for _ in range(1440):
+            platform.step()
+        assert platform.store.get_entity("grain")["initial_state"]["quantity"] == 20.0
+        assert any(item["ref"] == "behavior:gather_resource" for item in platform.decision_view("liang_he")["executable_behaviors"])
+    finally:
+        platform.close()
+
+
 def test_step_commits_each_tick_before_a_later_tick_fails(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "tick-commit-world", tmp_path / "runtime")

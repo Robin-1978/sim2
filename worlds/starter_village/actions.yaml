@@ -139,13 +139,16 @@ actions:
     location_id: string
   preconditions:
   - actor.can_gather
-  - location.has_food
+  - location.resource_node
   - route.known
+  parameter_defaults:
+    resource_tag: first_available_resource
   duration:
     minutes: 144
   costs:
     reserve:
-      {}
+      resource_parameter: resource_tag
+      resource_amount: 2
     per_minute:
       fatigue: 0.8
     on_success: {}

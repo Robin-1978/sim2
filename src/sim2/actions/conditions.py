@@ -131,6 +131,9 @@ class ConditionEngine:
         if path == "location.has_food":
             location = context.get("current_location", {}) or {}
             return "food" in (location.get("tags", []) or []) or bool(context.get("food_available", False))
+        if path == "location.resource_node":
+            location = context.get("current_location", {}) or {}
+            return bool(set(location.get("tags", []) or []) & {"food", "resource", "water", "mine", "forest"})
         if path == "location.food_store":
             location = context.get("current_location", {}) or {}
             tags = set(location.get("tags", []) or [])

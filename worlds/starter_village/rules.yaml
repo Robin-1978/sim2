@@ -23,6 +23,23 @@ minute_effects:
   effect:
     fog_level: 0.05
 route_minutes_per_hop: 1
+resource_regeneration:
+- resource_id: grain
+  every_minutes: 1440
+  amount: 20
+  cap: 80
+- resource_id: herb_bundle
+  every_minutes: 1440
+  amount: 8
+  cap: 40
+- resource_id: clean_water
+  every_minutes: 1440
+  amount: 20
+  cap: 100
+- resource_id: iron_ore
+  every_minutes: 10080
+  amount: 4
+  cap: 80
 motivation_model:
   family: hybrid_need_utility_appraisal
   no_fixed_hierarchy: true

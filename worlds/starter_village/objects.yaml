@@ -39,6 +39,11 @@ objects:
     name: 谷物
     initial_state: {quantity: 80, location_id: granary}
     tags: [food_input, craft_material]
+  - id: herb_bundle
+    type: material
+    name: 草药束
+    initial_state: {quantity: 40, location_id: river_bank}
+    tags: [medical_input, resource]
   - id: cooked_meal
     type: consumable
     name: 熟食

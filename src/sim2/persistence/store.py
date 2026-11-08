@@ -461,7 +461,15 @@ class WorldStore:
             data = json.loads(row["data_json"])
             state = data.get("initial_state", {})
             if state.get("location_id") == location_id:
-                result.append({"id": row["id"], "type": row["entity_type"], "name": row["name"], "summary": data.get("role", data.get("type", row["entity_type"]))})
+                result.append({
+                    "id": row["id"],
+                    "type": row["entity_type"],
+                    "entity_type": row["entity_type"],
+                    "name": row["name"],
+                    "summary": data.get("role", data.get("type", row["entity_type"])),
+                    "initial_state": state,
+                    "amount": data.get("amount"),
+                })
         return result
 
     def entities_of_type(self, entity_type: str) -> list[dict[str, Any]]:

@@ -12,6 +12,7 @@ from ..actions.effects import EffectPipeline
 from ..actions.targets import TargetResolver
 from ..actions.resources import ResourceLedger
 from ..agent_view.compiler import AgentViewCompiler
+from ..behavior.estimator import BehaviorDurationEstimator
 from ..intents.models import BehaviorIntent
 from ..memory.service import MemoryService
 from ..perception.service import PerceptionService
@@ -323,10 +324,13 @@ class Platform:
                 "status": "rejected", "message": "The actor already has an active behavior; wait for its result or an interrupt.", "failed_check": "active_behavior", "retryable": False,
             })
         bt = available_defs[behavior_id]
-        try:
-            remaining_minutes = int(bt.get("estimated_minutes", 0))
-        except (TypeError, ValueError):
-            remaining_minutes = 0
+        estimator = BehaviorDurationEstimator(
+            {item["id"]: item for item in self.store.get_definitions("action_def")},
+            available_defs,
+            {item["id"]: item for item in self.store.get_definitions("recipe_def")},
+            self._route_distance,
+        )
+        remaining_minutes = estimator.behavior_minutes(behavior_id, {**normalized_parameters, **intent.target}, state.get("location_id"))
         world_minute = int(self.store.get_meta("world_minute", 0))
         expected = {
             "summary": bt.get("summary") or bt.get("description") or behavior_id,
@@ -1032,7 +1036,20 @@ class Platform:
                 continue
             if default == "first_food":
                 result[key] = next((item for item in food_items if float((agent.get("inventory") or {}).get(item, 0) or 0) >= 1), value)
+            elif default == "first_available_resource":
+                location_id = (agent.get("initial_state") or {}).get("location_id")
+                sources = self.store.entities_at_location(location_id) if location_id else []
+                source = next((item for item in sources if item.get("entity_type") in {"resource", "material"} and not (item.get("initial_state") or {}).get("protected") and self._entity_quantity(item) > 0), None)
+                result[key] = source.get("id") if source else value
         return result
+
+    @staticmethod
+    def _entity_quantity(entity: dict[str, Any]) -> float:
+        state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
+        value = entity.get("amount")
+        if value is None:
+            value = state.get("quantity", state.get("amount", 0))
+        return float(value or 0)
 
     def _reserve_action_costs(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], *, commit: bool = True) -> tuple[bool, str, list[dict[str, Any]]]:
         return self.resources.reserve(agent, action, parameters, commit=commit)
@@ -1061,6 +1078,29 @@ class Platform:
 
     def _apply_minute_effects(self, minute: int) -> None:
         rules = self.store.get_meta("rules", {}) or {}
+        for regeneration in rules.get("resource_regeneration", []) or []:
+            every = max(1, int(regeneration.get("every_minutes", 1)))
+            if minute % every != 0:
+                continue
+            try:
+                entity = self.store.get_entity(str(regeneration["resource_id"]))
+            except KeyError:
+                continue
+            state = dict(entity.get("initial_state") or {})
+            key = "amount" if isinstance(entity.get("amount"), (int, float)) else "quantity"
+            before = float(entity.get("amount") if key == "amount" else state.get("quantity", 0) or 0)
+            cap = float(regeneration.get("cap", before) or before)
+            after = min(cap, before + float(regeneration.get("amount", 0) or 0))
+            if after <= before:
+                continue
+            if key == "amount":
+                entity["amount"] = after
+            else:
+                state[key] = after
+                entity["initial_state"] = state
+            payload = {name: value for name, value in entity.items() if name not in {"id", "entity_type", "name"}}
+            self.store.put_entity(entity["id"], entity["entity_type"], entity["name"], payload)
+            self.store.append_event("resource.regenerated", None, minute, {"resource_id": entity["id"], "amount": after - before, "total": after})
         for effect in rules.get("minute_effects", []) or []:
             every = max(1, int(effect.get("every_minutes", 1)))
             if minute % every != 0:

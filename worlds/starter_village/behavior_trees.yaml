@@ -44,7 +44,7 @@ behavior_trees:
   scope: village_council
   entry_conditions:
   - actor.is_steward
-  estimated_minutes: 144
+  estimated_minutes: 30
   goal_tags: [autonomy, stability, population]
   drive_tags: [safety, belonging, esteem]
   interrupt_policy: interruptible
@@ -69,7 +69,7 @@ behavior_trees:
   entry_conditions:
   - conflict.available
   - actor.can_mediate
-  estimated_minutes: 48
+  estimated_minutes: 6
   nodes:
   - type: action
     action_id: communicate
@@ -85,7 +85,7 @@ behavior_trees:
   scope: personal
   entry_conditions:
   - actor.can_inspect_granary
-  estimated_minutes: 24
+  estimated_minutes: 25
   goal_tags: [food, reserve, winter]
   drive_tags: [safety]
   nodes:
@@ -104,7 +104,7 @@ behavior_trees:
   scope: village_watch
   entry_conditions:
   - actor.is_guard
-  estimated_minutes: 96
+  estimated_minutes: 97
   interrupt_policy: pause
   success_results:
   - patrol_reported
@@ -129,7 +129,7 @@ behavior_trees:
   scope: personal
   entry_conditions:
   - actor.is_granary_keeper
-  estimated_minutes: 48
+  estimated_minutes: 30
   goal_tags: [food, ration, winter]
   drive_tags: [safety, belonging]
   nodes:
@@ -167,7 +167,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_explore
   - area.unknown
-  estimated_minutes: 240
+  estimated_minutes: 247
   interrupt_policy: pause
   success_results:
   - exploration_completed
@@ -236,7 +236,7 @@ behavior_trees:
   entry_conditions:
   - actor.is_guard
   - threat.at_village
-  estimated_minutes: 48
+  estimated_minutes: 36
   interrupt_policy: interruptible
   success_results:
   - threat_contained
@@ -262,7 +262,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_defend
   - threat.reachable
-  estimated_minutes: 24
+  estimated_minutes: 30
   interrupt_policy: interruptible
   nodes:
   - type: action
@@ -327,7 +327,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_communicate
   - target.available
-  estimated_minutes: 12
+  estimated_minutes: 6
   nodes:
   - type: action
     action_id: communicate
@@ -343,7 +343,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_communicate
   - target.available
-  estimated_minutes: 12
+  estimated_minutes: 36
   nodes:
   - type: action
     action_id: negotiate
@@ -359,7 +359,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_gather
   - resource.available
-  estimated_minutes: 120
+  estimated_minutes: 144
   interrupt_policy: pause
   success_results:
   - action_completed
