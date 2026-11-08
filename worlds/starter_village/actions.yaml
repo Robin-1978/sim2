@@ -34,7 +34,7 @@ actions:
   executor: effect_pipeline
 - id: consume_food
   version: 1
-  description: Consume one available food item and restore hunger.
+  description: Consume one available food item and restore satiety.
   parameters:
     item_id: string
   parameter_defaults:
@@ -56,7 +56,7 @@ actions:
     item: context.item_id
     quantity: 1
   - type: need_delta
-    need: hunger
+    need: satiety
     delta: 30
   success:
     condition: food.consumed
@@ -120,6 +120,12 @@ actions:
   - type: need_delta
     need: energy
     delta: 1.5
+  - type: state_delta
+    state: exposure
+    delta: -1
+  - type: state_delta
+    state: attention
+    delta: -2
   success:
     condition: actor.energy >= 80
     result: rested
@@ -233,6 +239,38 @@ actions:
   interrupt_policy: pause
   interaction_policy: allow
   definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: heal_self
+  version: 1
+  description: Receive treatment at a configured health service.
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.health_service
+  - medicine.available
+  duration:
+    minutes: 72
+  costs:
+    reserve:
+      medicine: 1
+    per_minute:
+      energy: 0.2
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: health_restore
+    amount: 30
+  success:
+    condition: treatment.completed
+    result: self_stabilized
+  failure:
+    condition: medicine.failed
+    result: treatment_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  definition_source: core_catalog
   kind: atomic
   executor: effect_pipeline
 - id: explore_area

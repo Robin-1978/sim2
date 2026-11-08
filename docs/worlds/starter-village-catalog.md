@@ -62,7 +62,7 @@
 | `flee_to_safety` | 沿已知路线撤离到安全地点 | {destination_id: string} | route_distance 分钟 | actor.alive<br>route.known<br>destination.safe_or_defensible | per_minute: {energy: 2.0} | 成功：{condition: actor.at_safe_location, result: escaped}<br>失败：{condition: actor.exhausted, result: collapsed} |
 | `sound_alarm` | 向村庄广播边界或战斗警报 | {alarm_type: string, location_id: string} | 6 分钟 | actor.can_sound_alarm<br>location.watch_post | per_minute: {attention: 0.2} | 成功：{condition: alarm.broadcast, result: alarm_raised}<br>失败：{condition: alarm_device.broken, result: failed} |
 | `craft_recipe` | 在可用工作站按配方制作物品 | {recipe_id: string, station_id: string} | recipe_duration 分钟 | actor.can_craft<br>recipe.available<br>station.available<br>inputs.available | reserve: {recipe_inputs: 1}<br>per_minute: {energy: 0.4, attention: 0.5} | 成功：{condition: outputs.created, result: recipe_completed}<br>失败：{condition: inputs.lost or station.damaged, result: crafting_failed} |
-| `consume_food` | 消耗一份携带的食物恢复饥饿满足度 | {item_id: string} | 1 分钟 | actor.alive<br>actor.has_food | reserve: {item_parameter: item_id} | 成功：{result: ate_food, hunger: +30}<br>失败：{result: eating_failed} |
+| `consume_food` | 消耗一份携带的食物恢复饱腹度 | {item_id: string} | 1 分钟 | actor.alive<br>actor.has_food | reserve: {item_parameter: item_id} | 成功：{result: ate_food, satiety: +30}<br>失败：{result: eating_failed} |
 | `withdraw_food` | 在粮仓按配给权从共享库存领取一份口粮 | {} | 10 分钟 | actor.alive<br>actor.food_withdrawal<br>location.food_store | reserve: {village_food: 1} | 成功：{result: ration_received, inventory.rations: +1}<br>失败：{result: ration_unavailable} |
 
 ## 基础 BT

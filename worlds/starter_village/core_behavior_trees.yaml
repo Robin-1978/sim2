@@ -1,0 +1,64 @@
+behavior_trees:
+- id: recover_at_safe_location
+  version: 1
+  scope: universal
+  summary: Move to a known safe location and recover energy.
+  description: Travel to the nearest configured safe location, then rest until ready.
+  entry_conditions: [actor.alive, actor.energy < 100]
+  requirements: ["A known route to a configured safe location."]
+  goal_tags: [recovery, readiness, safety]
+  drive_tags: [safety]
+  interrupt_policy: pause
+  success_results: [energy_restored, readiness_restored]
+  failure_results: [no_safe_route, unsafe_location, interrupted]
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: context.safe_location_id}
+  - type: action
+    action_id: rest
+    parameters: {location_id: context.location_id}
+  definition_source: core_catalog
+  kind: fallback
+- id: seek_treatment
+  version: 1
+  scope: universal
+  summary: Move to a health service and recover health.
+  description: Travel to the nearest configured clinic or health service, then receive treatment.
+  entry_conditions: [actor.alive, actor.health < 100]
+  requirements: ["A reachable health service and available medicine."]
+  goal_tags: [health, recovery, safety]
+  drive_tags: [safety, belonging]
+  interrupt_policy: pause
+  success_results: [health_restored, self_stabilized]
+  failure_results: [no_health_service, treatment_failed, interrupted]
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: context.health_location_id}
+  - type: action
+    action_id: heal_self
+    parameters: {}
+  definition_source: core_catalog
+  kind: fallback
+- id: gather_at_known_node
+  version: 1
+  scope: universal
+  summary: Travel to a known resource node and collect its resource.
+  description: Move to the nearest configured resource node, then gather the available resource.
+  entry_conditions: [actor.can_gather]
+  requirements: ["A reachable, non-protected resource node with supply."]
+  goal_tags: [food, materials, production, autonomy]
+  drive_tags: [autonomy, safety]
+  interrupt_policy: pause
+  success_results: [resource_collected]
+  failure_results: [resource_empty, route_unknown, gathering_failed]
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: context.resource_location_id}
+  - type: action
+    action_id: gather_resource
+    parameters: {resource_tag: context.resource_tag, location_id: context.location_id}
+  definition_source: core_catalog
+  kind: base

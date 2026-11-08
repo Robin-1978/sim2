@@ -60,6 +60,31 @@ def _history_line(item: dict[str, Any]) -> str:
     return f"{kind}: {_plain(item)}"
 
 
+def _memory_line(item: dict[str, Any]) -> str:
+    """Keep durable memory useful without copying a raw transcript into context."""
+
+    summary = (
+        item.get("summary")
+        or item.get("lesson")
+        or item.get("fact")
+        or item.get("topic")
+        or item.get("message")
+        or "unlabeled experience"
+    )
+    summary = " ".join(str(summary).split())
+    if len(summary) > 360:
+        summary = summary[:357] + "..."
+    metadata: list[str] = []
+    source = item.get("source_type") or item.get("source")
+    if source:
+        metadata.append(f"source={_plain(source)}")
+    confidence = item.get("confidence")
+    if isinstance(confidence, (int, float)):
+        metadata.append(f"confidence={float(confidence):.2f}")
+    suffix = f" [{'; '.join(metadata)}]" if metadata else ""
+    return f"memory ({item.get('type', 'memory')}): {summary}{suffix}"
+
+
 def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000) -> str:
     """Render a stable XML-like prefix followed by dynamic Agent state.
 
@@ -101,7 +126,12 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         "<state_attributes>",
     ])
     attributes = self_state.get("attributes") or []
-    lines.extend([f"  - {item.get('label', 'attribute')}: {_line(item.get('value'))} {item.get('unit', '')}".rstrip() for item in attributes] or ["  - none"])
+    lines.extend([
+        f"  - {item.get('label', 'attribute')}: {_line(item.get('value'))} {item.get('unit', '')}"
+        f"; meaning: {item.get('meaning')}" if item.get("meaning") else
+        f"  - {item.get('label', 'attribute')}: {_line(item.get('value'))} {item.get('unit', '')}"
+        for item in attributes
+    ] or ["  - none"])
     lines.extend([
         "</state_attributes>",
         "<identity>",
@@ -112,7 +142,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         f"  goal_tags: {_line(context.get('goal_tags'))}",
         "</identity>",
         "<needs_and_state>",
-        f"  needs: {_line(context.get('needs'))}",
+        "  needs: see the named attributes above",
         f"  inventory: {_line(context.get('inventory'))}",
         f"  injuries_and_conditions: {_line(context.get('injuries'))}",
         "</needs_and_state>",
@@ -147,7 +177,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     facts = context.get("known_facts") or []
     lines.extend([f"    fact: {item if isinstance(item, str) else item.get('fact', 'unknown fact')}" for item in facts[:8]] or ["    fact: none relevant"])
     memories = context.get("memories") or []
-    lines.extend([f"    memory ({item.get('type', 'memory')}): {item.get('summary') or item.get('fact') or item.get('message') or item.get('topic') or item.get('offer_id', 'unlabeled experience')}" for item in memories[:5]] or ["    memory: none recent"])
+    lines.extend([f"    {_memory_line(item)}" for item in memories[:5]] or ["    memory: none recent"])
     lines.append("  </knowledge_and_memory>")
     lines.append("<recent_actions>")
     recent_actions = context.get("recent_actions") or []
@@ -158,6 +188,12 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     offers = context.get("open_trade_offers") or []
     lines.extend([f"  - choice: {item.get('choice')}; {item.get('summary', 'open offer')}" for item in offers[:5]] or ["  - none"])
     lines.append("</open_trade_offers>")
+
+    constraints = context.get("decision_constraints") or []
+    if constraints:
+        lines.append("<decision_constraints>")
+        lines.extend([f"  - {item}" for item in constraints[:5]])
+        lines.append("</decision_constraints>")
 
     if role == "agent_reflection":
         lines.append("<outcome_review>")
@@ -183,8 +219,10 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         if changes:
             for item in changes[:6]:
                 effect = item.get("effect") or {}
+                expected = item.get("expected_effects") or item.get("effects") or []
                 lines.append(
                     f"  - {item.get('event_type', 'world.change')}: {item.get('summary', 'proposal applied')}; "
+                    f"expected={_plain(expected) if expected else 'not stated'}; "
                     f"observed={_plain(effect) if effect else 'event recorded'} at minute {item.get('world_minute', 'unknown')}"
                 )
         else:

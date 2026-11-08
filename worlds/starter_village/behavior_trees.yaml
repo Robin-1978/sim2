@@ -26,6 +26,7 @@ behavior_trees:
   description: Recover energy and regain readiness before choosing another task.
   entry_conditions:
   - actor.alive
+  - actor.energy < 100
   estimated_minutes: 48
   interrupt_policy: pause
   goal_tags: [recovery, readiness]
@@ -53,6 +54,9 @@ behavior_trees:
   - risk_reviewed
   failure_results:
   - council_blocked
+  outcome_effects:
+  - {type: need_delta, need: esteem, delta: 0.5}
+  - {type: need_delta, need: belonging, delta: 0.2}
   nodes:
   - type: action
     action_id: inspect_object
@@ -108,6 +112,9 @@ behavior_trees:
   - marks_classified
   failure_results:
   - emergency
+  outcome_effects:
+  - {type: need_delta, need: safety, delta: 0.3}
+  - {type: need_delta, need: esteem, delta: 0.4}
   goal_tags: [safety, warning, patrol]
   drive_tags: [safety, esteem]
   nodes:
@@ -173,6 +180,9 @@ behavior_trees:
   - lost
   - injured
   - emergency
+  outcome_effects:
+  - {type: need_delta, need: self_actualization, delta: 0.8}
+  - {type: need_delta, need: esteem, delta: 0.2}
   goal_tags: [exploration, map, knowledge, missing_person]
   drive_tags: [self_actualization, esteem]
   nodes:
@@ -200,6 +210,8 @@ behavior_trees:
   failure_results:
   - source_lost
   - belief_conflict
+  outcome_effects:
+  - {type: need_delta, need: self_actualization, delta: 0.8}
   nodes:
   - type: action
     action_id: research_source
@@ -307,6 +319,9 @@ behavior_trees:
   - capability_improved
   failure_results:
   - crafting_failed
+  outcome_effects:
+  - {type: need_delta, need: esteem, delta: 0.2}
+  - {type: need_delta, need: self_actualization, delta: 0.3}
   nodes:
   - type: action
     action_id: craft_recipe
@@ -370,10 +385,11 @@ behavior_trees:
   version: 1
   scope: universal
   summary: Eat one available food item.
-  description: Consume one carried food item to restore hunger before choosing another task.
+  description: Consume one carried food item to restore satiety before choosing another task.
   entry_conditions:
   - actor.alive
   - actor.has_food
+  - actor.satiety <= 80
   estimated_minutes: 1
   requirements: ["Carry one food item: rations, ration, or cooked_meal."]
   goal_tags: [food, recovery, readiness]
@@ -397,6 +413,7 @@ behavior_trees:
   - actor.alive
   - actor.food_withdrawal
   - route.known
+  - actor.satiety <= 80
   requirements: ["A known route to the granary and permission to withdraw food."]
   goal_tags: [food, reserve, survival]
   drive_tags: [physiological_homeostasis, safety]
@@ -422,6 +439,7 @@ behavior_trees:
   - actor.alive
   - actor.food_withdrawal
   - location.food_store
+  - actor.satiety <= 80
   requirements: ["You are at the granary and the shared food store has supply."]
   goal_tags: [food, reserve, survival]
   drive_tags: [physiological_homeostasis, safety]

@@ -68,6 +68,8 @@ Decision Agent 只选择 Platform 已经注册、校验并过滤过的行为。�
 
 `available_behaviors` 只包含 Platform 已经验证过的 BT 或 Action。实体、地点、物体和规则也使用相同的简洁视图：`ref`、`name`、`type`、`summary`、`known_state`、`distance`、`visibility` 和 `constraints`。隐藏真相、完整数据库和其他 Agent 的私有记忆不进入视图。
 
+候选资格必须在两个边界重新计算：编译 AgentView 时按当前需求阈值、状态、入口条件和资源过滤；提交选择时 Platform 再按同一套配置条件校验一次。这样“进食”“取粮”“休息”等 fallback BT 不会在需求已经满足时继续出现，旧上下文或模型直接提交过期选择也只能得到可重试的 `entry_condition` 拒绝，不会启动无意义行为。
+
 这里的 `ref` 是 Platform 内部字段；渲染给 Agent 的视图只保留 `name`/`choice` 等可读名称。工具 schema 同样使用 `entity`、`recipient`、`record` 和 `offer` 这类名称字段，Platform 在权限范围内解析为内部引用。
 
 这段 JSON 是 Platform 内部的单个决策切片，不是发送给 LLM 的完整 Prompt。发送时它被渲染为简短文本；函数名和参数只通过 API 的 JSON Schema 工具通道提供。Context Compiler 默认只保留：当前 Agent、当前地点、当前事件、最高的 3 个驱动、直接关系、最相关的 3 到 8 条知识或记忆、最多 5 个可执行候选和最近一次 Platform 结果。God Agent 使用世界级摘要和按需查询；WorldBuilder Agent 分阶段处理世界模板。上下文预算先保证当前错误、活动任务、直接关系和候选行为，再压缩长期摘要和低相关信息。
@@ -153,6 +155,18 @@ AgentView + task
 工具错误和 Platform 拒绝都必须返回 `status`、`failed_check`、简短 `message` 和 `retryable`（适用时）。相同工具参数超过会话预算后停止重复调用。Intent 只有在 Platform 返回 `accepted` 或 `wait` 时结束会话；会话达到调用上限后返回 `budget_exhausted`，不产生副作用。原生 OpenAI-compatible `tool_calls` 与本地模型输出的 JSON `tool_call` 使用同一内部信封。决策 Agent 若已经有活动 BT，Engine 直接跳过 LLM，会话只在完成、失败或中断边界重新开启。
 
 上下文生命周期是一次唤醒一次快照：每次 Decision、Reflection 或 God Agent 被唤醒时，Platform 从 SQLite 当前投影、记忆和相关事件重新编译 AgentView。只有当前 ReAct 会话保留 assistant/tool/result 消息并追加交互结果；会话结束后丢弃消息历史，下一次唤醒不会继承上一会话的完整 Prompt，只会重新获得当前世界状态和持久化摘要。
+
+## 记忆、经验与三类上下文
+
+记忆会进入上下文，但不会以“全部历史”的形式进入。Platform 始终记录权威事件、Action/BT 的预期与实际结果、对话和探索结果；这些原始记录不等于经验。反思阶段只在发现内容新颖、稳定且能改变未来选择时提交 `remember_episode` 或摘要 Intent，Platform 负责去重、来源、置信度、重要性和激活次数。没有可复用结论时返回 `wait`，不生成每日流水账。
+
+| 唤醒阶段 | 必须提供的动态内容 | 记忆/经验策略 | 不提供 |
+|---|---|---|---|
+| Decision | 当前时间、地点、状态/需求/驱动、目标、可见事实、直接关系、活动 BT、已过滤的可执行 BT 及成本/时间/结果、最近一次 Platform 结果 | 只检索与当前目标、地点或候选行为相关的少量知识和经验摘要（通常 3–8 条），附来源和置信度；必要时用 `recall` 追加查询 | 全量记忆、完整事件日志、隐藏事实、目录外 BT、其他角色私有记忆 |
+| Reflection / Evolution | 上次反思窗口以来的完成/失败/中断 outcome 摘要，expected 与 observed delta，相关对话/探索，当前信念、目标、能力和已有经验 | 先看窗口内的有限结果摘要，必要时用只读查询取回更早结果；再检索相关长期经验，并显示重复/相似提示，避免重复写入。输出只能是经验、信念、目标或 BT/技能提案，均需 Platform 接受 | 直接修改资源、关系或世界；把每次成功动作都写成经验 |
+| God | 世界时间、公开世界属性和规则版本、势力/资源/风险聚合、近期公共事件、已提交世界提案及其 expected/observed 结果、长期趋势和待处理触发器 | 不读取角色私有记忆；只看公开结果和聚合指标。每次只提出一个可验证的实体、规则、关系或事件提案，下一窗口比较效果后再决定是否调整 | 角色私密对话/记忆、未授权状态、没有结果证据的因果结论 |
+
+三类上下文都遵循同一顺序：稳定协议和角色政策 → 工具 Schema → 稳定身份/世界规则 → 本次唤醒的动态切片 → 当前任务；只有当前 ReAct 的工具调用和错误结果继续追加。SQLite 中的长期记录通过检索重新注入，而不是跨会话保留整段 Prompt。这样“选择/执行 → 结果 → 反思或 God 评估 → 记忆或世界提案 → 下一次选择”形成闭环，同时保持上下文短而可审查。
 
 ## LLM 创建新世界模板
 

@@ -1,9 +1,9 @@
 minute_effects:
-- id: hunger_decay
+- id: satiety_decay
   scope: agent
   every_minutes: 1
   effect:
-    need: hunger
+    need: satiety
     delta: -0.02
 - id: energy_recovery_idle
   scope: agent
@@ -12,6 +12,20 @@ minute_effects:
   effect:
     need: energy
     delta: 0.5
+- id: exposure_recovery_idle
+  scope: agent
+  every_minutes: 1
+  condition: action.none
+  effect:
+    state: exposure
+    delta: -0.2
+- id: attention_recovery_idle
+  scope: agent
+  every_minutes: 1
+  condition: action.none
+  effect:
+    state: attention
+    delta: -1
 - id: relation_decay
   scope: relationship
   every_minutes: 144
@@ -52,12 +66,15 @@ motivation_model:
   - meaning_and_goal_progress
   - novelty
   - social_norms_and_external_pressure
-fallback_behavior_ids: [rest_and_recover, eat_food, get_food, get_food_here, travel]
-agent_view:
-  priority_goal_tags: [food, survival]
+fallback_behavior_ids: [rest_and_recover, recover_at_safe_location, seek_treatment, eat_food, get_food, get_food_here, gather_at_known_node, travel]
 food_items: [rations, ration, cooked_meal]
+need_effects:
+  dialogue.completed:
+    belonging: 1
+  trade.completed:
+    belonging: 0.5
 needs:
-- id: hunger
+- id: satiety
   target: 80
   minimum: 0
   gamma: 1.8
@@ -92,7 +109,7 @@ need_gates:
   to: self_actualization
   threshold: 0.8
   multiplier: 0.25
-- from: hunger
+- from: satiety
   to: esteem
   threshold: 0.85
   multiplier: 0.4

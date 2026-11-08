@@ -10,6 +10,7 @@ from ..agents.tools import tools_for_role
 from ..behavior.estimator import BehaviorDurationEstimator
 from ..persistence.store import WorldStore
 from ..world.drives import DriveCalculator
+from ..world.navigation import nearest_location_with_tag, nearest_resource_node, nearest_safe_location, reachable_locations
 
 
 def _label(value: str) -> str:
@@ -122,7 +123,7 @@ class AgentViewCompiler:
                 value = sum(float(inventory.get(item, 0) or 0) for item in definition.get("items", []) or [])
             else:
                 continue
-            values.append({"label": definition.get("label", definition["id"]), "value": value, "unit": definition.get("unit", ""), "kind": kind})
+            values.append({"label": definition.get("label", definition["id"]), "value": value, "unit": definition.get("unit", ""), "kind": kind, "meaning": definition.get("prompt", "")})
         return values
 
     @staticmethod
@@ -257,6 +258,10 @@ class AgentViewCompiler:
         catalog_ids = list(dict.fromkeys(list(agent.get("initial_bt_ids", [])) + list(fallback_ids)))
         state = agent.get("initial_state", {})
         location_id = state.get("location_id")
+        safe_location_id = nearest_safe_location(self.store, location_id)
+        resource_node = nearest_resource_node(self.store, location_id)
+        health_location_id = nearest_location_with_tag(self.store, location_id, {"health", "clinic"})
+        known_route_destinations = reachable_locations(self.store, location_id)
         current_location = {}
         if location_id:
             try:
@@ -271,6 +276,11 @@ class AgentViewCompiler:
             condition_context = {
                 "current_location": current_location,
                 "location_id": location_id,
+                "safe_location_id": safe_location_id,
+                "resource_location_id": (resource_node or {}).get("location_id"),
+                "resource_tag": (resource_node or {}).get("resource_tag"),
+                "health_location_id": health_location_id,
+                "known_route_destinations": known_route_destinations,
                 "inventory": agent.get("inventory", {}) or {},
                 "food_items": rules.get("food_items", []) or [],
             }
@@ -289,7 +299,7 @@ class AgentViewCompiler:
                 if not action:
                     continue
                 simulated_state = simulated_agent.setdefault("initial_state", {})
-                parameters = self._view_action_parameters(node.get("parameters") or {}, simulated_state, simulated_agent.get("inventory", {}) or {}, rules.get("food_items", []) or [])
+                parameters = self._view_action_parameters(node.get("parameters") or {}, simulated_state, simulated_agent.get("inventory", {}) or {}, rules.get("food_items", []) or [], safe_location_id=safe_location_id, resource_node=resource_node, health_location_id=health_location_id)
                 action_minutes = estimator._action_minutes(action, parameters, simulated_state.get("location_id"))
                 if not self._action_available(simulated_agent, action, parameters, simulated_location, rules.get("food_items", []) or [], action_minutes):
                     action_unavailable = True
@@ -324,7 +334,7 @@ class AgentViewCompiler:
                 "requires": bt.get("requirements") or bt.get("requirement_descriptions") or [_predicate_text(item) for item in bt.get("entry_conditions", [])] or ["Platform confirms all step requirements."],
                 "target": "Platform resolves permitted targets from the current view.",
                 "steps": steps[:5],
-                "time": f"{estimator.behavior_minutes(bt_id, {}, location_id)} minutes",
+                "time": f"{estimator.behavior_minutes(bt_id, {'safe_location_id': safe_location_id} if safe_location_id else {}, location_id)} minutes",
                 "cost": list(dict.fromkeys(costs))[:6] or ["Costs are defined by the selected steps."],
                 "impact": list(dict.fromkeys(impacts))[:3] or ["Platform applies configured effects and records events."],
                 "success": [str(item).replace("_", " ") for item in bt.get("success_results", [])] or ["Platform reports the configured success result."],
@@ -334,9 +344,8 @@ class AgentViewCompiler:
                 "goal_tags": bt.get("goal_tags", []),
                 "drive_tags": bt.get("drive_tags", []),
             })
-        priority_tags = set((self.store.get_meta("rules", {}) or {}).get("agent_view", {}).get("priority_goal_tags", []) or [])
-        if priority_tags:
-            available.sort(key=lambda item: 0 if set(item.get("goal_tags", [])) & priority_tags else 1)
+        # Long-term goal tags are context only.  They must not promote a
+        # behavior whose current drive, need, or resource conditions are weak.
         nearby = [item for item in (self.store.entities_at_location(location_id) if location_id else []) if item.get("id") != agent_id]
         known_routes = []
         for route_id in (current_location.get("routes", []) if isinstance(current_location, dict) else []):
@@ -373,6 +382,21 @@ class AgentViewCompiler:
         recent_actions = actor_events[:2]
         recent_outcomes = self.store.recent_outcomes_for_actor(agent_id, limit=3)
         prompt_protocol, platform_rules = self._prompt_sections(role)
+        decision_constraints: list[str] = []
+        satiety = float((agent.get("needs", {}) or {}).get("satiety", 0) or 0)
+        satiety_target = next((float(item.get("target", 80)) for item in (rules.get("needs", []) or []) if item.get("id") == "satiety"), 80.0)
+        if satiety > satiety_target:
+            decision_constraints.append(f"Satiety is {satiety:g}/100; food BTs require Satiety at or below {satiety_target:g}.")
+        energy = float(state.get("energy", 100) or 0)
+        decision_constraints.append(f"Energy is {energy:g}/100; Platform hides any BT whose configured energy cost exceeds current Energy.")
+        if location_id and safe_location_id and safe_location_id != location_id:
+            decision_constraints.append("The current location is not safe for rest; the recovery BT moves to a configured safe location first.")
+        elif location_id and not safe_location_id:
+            decision_constraints.append("No configured safe location is reachable from the current location.")
+        if len(available) == 1:
+            decision_constraints.append("Exactly one BT is executable in this state; choose it only if its stated purpose fits the current goal.")
+        elif not available:
+            decision_constraints.append("No BT is executable in this state; return wait.")
         return {
             "context_version": "1", "role": role,
             "prompt_protocol": prompt_protocol,
@@ -387,16 +411,24 @@ class AgentViewCompiler:
             "active_task": {"bt": active_behavior.get("summary") or ("in progress" if active_behavior_id else None), "action": active_action.get("description") or (_label(str(active_action_id)) if active_action_id else None), "remaining_minutes": state.get("remaining_minutes", 0)},
             "open_trade_offers": self._trade_offer_view(agent_id),
             "available_actions": available_actions if role == "agent_reflection" else [],
-            "executable_behaviors": self._assign_choices(available[:5]), "last_platform_result": state.get("last_platform_result"), "tools": tools_for_role(role),
+            "executable_behaviors": self._assign_choices(available[:5]), "decision_constraints": decision_constraints, "last_platform_result": state.get("last_platform_result"), "tools": tools_for_role(role),
         }
 
     @staticmethod
-    def _view_action_parameters(parameters: dict[str, Any], state: dict[str, Any], inventory: dict[str, Any], food_items: list[str]) -> dict[str, Any]:
+    def _view_action_parameters(parameters: dict[str, Any], state: dict[str, Any], inventory: dict[str, Any], food_items: list[str], *, safe_location_id: str | None = None, resource_node: dict[str, str] | None = None, health_location_id: str | None = None) -> dict[str, Any]:
         resolved = {}
         first_food = next((item for item in food_items if float(inventory.get(item, 0) or 0) >= 1), None)
         for key, value in parameters.items():
             if value == "context.location_id" or value == "context.station_id":
                 resolved[key] = state.get("location_id")
+            elif value == "context.safe_location_id":
+                resolved[key] = safe_location_id
+            elif value == "context.resource_location_id":
+                resolved[key] = (resource_node or {}).get("location_id")
+            elif value == "context.resource_tag":
+                resolved[key] = (resource_node or {}).get("resource_tag")
+            elif value == "context.health_location_id":
+                resolved[key] = health_location_id
             elif value == "context.item_id":
                 resolved[key] = first_food
             else:
@@ -440,6 +472,7 @@ class AgentViewCompiler:
             "inventory": agent.get("inventory", {}) or {},
             "food_items": food_items,
             "station_tags": [],
+            "known_route_destinations": reachable_locations(self.store, (agent.get("initial_state") or {}).get("location_id")),
         }
         if action.get("id") == "craft_recipe":
             recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)

@@ -64,6 +64,10 @@ class ConditionEngine:
             return float(state.get("health", 100)) <= 0 or "incapacitated" in state.get("conditions", [])
         if path == "actor.energy":
             return float(state.get("energy", 100))
+        if path == "actor.health":
+            return float(state.get("health", 100))
+        if path == "actor.satiety":
+            return float((agent.get("needs", {}) or {}).get("satiety", state.get("satiety", 0)))
         if path == "actor.mobile":
             return self._value("actor.alive", agent, target, world, context)
         if path == "actor.has_food":
@@ -110,6 +114,9 @@ class ConditionEngine:
             destination = target.get("location_id") or context.get("location_id") or context.get("destination_id")
             if not destination:
                 return True
+            known_destinations = context.get("known_route_destinations")
+            if known_destinations is not None:
+                return str(destination) in {str(item) for item in known_destinations}
             location = context.get("current_location", {})
             return destination in (location.get("routes", []) if isinstance(location, dict) else []) or destination == state.get("location_id")
         if path == "destination.reachable":
@@ -143,13 +150,16 @@ class ConditionEngine:
             location = context.get("current_location", {}) or {}
             tags = set(location.get("tags", []) or [])
             return {"food", "resource"}.issubset(tags)
+        if path == "location.health_service":
+            location = context.get("current_location", {}) or {}
+            return bool(set(location.get("tags", []) or []) & {"health", "clinic"})
         if path == "station.available":
             required = set(context.get("station_tags", []) or [])
             current = set((context.get("current_location", {}) or {}).get("tags", []) or [])
             return not required or bool(required & current)
         if path in {"patient.available", "counterparty.available"}:
             return bool(context.get(path, target.get("available", False)))
-        if path in {"location.safe", "destination.safe_or_defensible", "target.available", "patient.in_clinic", "source.accessible", "resource.available", "inputs.available", "recipe.available", "communication.channel_open", "location.reachable"}:
+        if path in {"location.safe", "destination.safe_or_defensible", "target.available", "patient.in_clinic", "source.accessible", "resource.available", "inputs.available", "recipe.available", "medicine.available", "communication.channel_open", "location.reachable"}:
             if path == "location.safe":
                 location = context.get("current_location", {})
                 return bool(location.get("safe", False) or location.get("public", False) is True or "safe" in location.get("tags", []))

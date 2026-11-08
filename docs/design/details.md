@@ -110,10 +110,10 @@ flowchart LR
 
 ```yaml
 world_minute_effects:
-  - id: hunger_decay
+  - id: satiety_decay
     scope: agent
     every_minutes: 1
-    effect: {need: hunger, delta: -0.02}
+    effect: {need: satiety, delta: -0.02}
   - id: weather_cycle
     scope: world
     every_minutes: 60
@@ -172,6 +172,18 @@ interrupt_policy: pause
 #### 6. 行为树模块
 
 `behavior` 负责 BT AST、节点 Schema、版本注册、可执行目录、实例游标和结果传播。节点包含条件、顺序、选择、并行、动作、等待和装饰器；每个决策节点声明候选子节点、进入条件、成功结果和失败结果。Platform 先过滤候选，`Decision Agent` 再在候选中作语义选择；没有语义分歧时只推进唯一节点。长时动作由 `actions` 执行，BT 实例只保存当前节点、上下文、检查点和下一次决策边界。
+
+决策上下文只暴露已验证 BT，不暴露可直接提交的元动作。元动作是 BT 的构件，反思/创新阶段和 Platform 的 BT 校验器可以读取其名称、参数、成本和效果契约；Decision Agent 只能选择已经把移动、恢复、采集、制作等步骤串好的 BT。故事包必须为基本生存能力提供通用组合树，例如“寻找已知安全地点 → 移动 → 休息”；安全地点和路线来自配置与 Agent 知识，不能在 Python 中写死具体地点。若当前状态存在明显恢复驱动但目录没有可执行恢复 BT，Platform 写入 `capability_gap` 并触发修复任务，不能把无关的进食或取粮树当作替代品。
+
+核心 BT 包位于故事包的 `core_behavior_trees.yaml`，按能力分组而不是按故事地点分组。每个故事包可以启用、覆盖或补充这些声明式模板：
+
+- 生存：`recover_at_safe_location`、`eat_available_food`、`acquire_food_from_store`；
+- 生产：`gather_at_known_node`、`craft_configured_recipe`、`gather_and_craft_for_stock`；
+- 健康：`seek_treatment`、`heal_self` 或配置的医疗服务树；
+- 安全：`flee_to_safe_location`、`defend_protected_target`、`raise_alarm`；
+- 社会与成长：`communicate`、`negotiate`、`explore_unknown_area`、`research_source`。
+
+这些模板只引用配置的 Action、路线、地点属性、资源和配方。模板缺少必要 Action 或效果时，Bootstrap 报告能力缺口；它不会让 Decision Agent 直接选择底层元动作来绕过 BT。
 
 #### 7. Intent 意图网关模块
 
@@ -443,6 +455,8 @@ Prompt 采用“共享前缀优先”的排列，最大化跨 Agent 和跨 模�
 
 ReAct 在本系统中表示“观察、比较候选行为树、读取工具结果、确认计划”的有限循环。LLM 输出不保存隐藏思维链，只保存 `decision_summary`、函数调用、函数结果摘要和最终行为树选择。行为树内部的 Action 由运行时函数注册表执行，LLM 不逐 模拟分钟 调用 Action 函数。函数调用使用 JSON Schema，示例如下：
 
+Provider 适配层允许少量无歧义的协议别名，例如把 `intent: wait` 归一化为 `wait`，把反思阶段只含 `summary` 的响应归一化为 `record_experience` 并绑定最近 outcome。该层只修复信封，不替模型选择行为或编造状态；内容仍由 Platform 的 Intent 校验、重复检查和结果审计决定。
+
 ```json
 {
   "name": "submit_behavior_intent",
@@ -466,7 +480,9 @@ ReAct 在本系统中表示“观察、比较候选行为树、读取工具结�
 
 Platform 对每次意图返回 `IntentResult`。成功结果包含 `intent_id`、`status: accepted`、`execution_id`、`started_minute` 和 `expected_completion`；拒绝结果包含 `status: rejected`、`error_code`、`error_path`、`current_state_digest` 和 `repair_context`。拒绝结果作为下一轮 ReAct 输入，Agent 可以修改参数、改选目录中的行为树或提交新的 BT 提案；没有新的有效意图时停止循环。
 
-`ReflectionResponse` 必须包含 `reflection_id`、`period`、`intents`、`memory_updates`、`belief_updates`、`goal_updates`、`evolution_candidates` 和 `confidence`；这些字段只能转换为 `IntentEnvelope`，由 Platform 校验后写入 Agent 状态。`GodResponse` 必须包含 `intervention_id`、`scope`、`trigger`、`world_intents`、`affected_entities`、`expected_effects` 和 `rollback_plan`；世界意图只能在结算窗口作为原子事件批次提交。
+行为树选择在 AgentView 生成时按入口条件、需求阈值和资源过滤，Platform 接受选择时必须再次校验同一条件，避免旧上下文启动已经失效的 fallback 行为。低频反思或 God 会话若因模型错误或协议拒绝结束，调度器记录 `evolution.task_retry` 并延后重试，不能把未执行的周期任务直接标记完成。
+
+`ReflectionResponse` 必须包含 `reflection_id`、`period`、`intents`、`memory_updates`、`belief_updates`、`goal_updates`、`evolution_candidates` 和 `confidence`；这些字段只能转换为 `IntentEnvelope`，由 Platform 校验后写入 Agent 状态。`GodResponse` 必须包含 `intervention_id`、`scope`、`trigger`、`world_intents`、`affected_entities`、`expected_effects` 和 `rollback_plan`；Platform 将提案的条件、预期效果和实际效果一同写入世界事件，下一次 God 上下文据此比较结果；世界意图只能在结算窗口作为原子事件批次提交。
 
 ### 5. 感知、记忆与创新函数
 
@@ -548,7 +564,7 @@ SQLite 使用 WAL 模式、外键约束、忙等待超时和单写入队列；�
 | 世界实体创建 | God Agent 提交地点、Agent、物品和非法引用实体意图 | 合法实体生成 `entity.created` 事件并进入 SQLite；非法意图无状态变化并返回错误 |
 | ReAct 失败 | 模拟超时、解析错误和工具拒绝 | 不产生部分副作用，并执行安全回退 |
 | 模拟分钟 与 Action 消耗 | 运行无 Action、采集 Action、睡眠 Action 和资源不足场景 | 基础 模拟分钟 效果始终按配置结算，Action 成本按契约叠加，事务不会重复扣费 |
-| 需求临界行为 | 将饥饿、安全和归属需求逐步推过配置阈值 | 驱动值在临界区非线性上升并受门控影响，极值保持在 0 到 1 |
+| 需求临界行为 | 将饱腹度、安全和归属需求逐步推过配置阈值 | 驱动值在临界区非线性上升并受门控影响，极值保持在 0 到 1 |
 | 紧急中断 | 在可暂停、不可暂停和硬中断 Action 中注入事件 | 按中断策略暂停、继续或取消，资源和事件状态保持一致 |
 | 周期任务 | 执行跨越多个游戏日、周和月的时间线 | Agent 每日反思一次，个人和世界创新按周期执行且不打断不可中断 Action |
 | 记忆检索 | 写入不同时间、地点和来源的记忆后检索 | 只返回可见且相关的记忆，超过预算会摘要 |

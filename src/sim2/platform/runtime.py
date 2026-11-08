@@ -17,6 +17,7 @@ from ..intents.models import BehaviorIntent
 from ..memory.service import MemoryService
 from ..perception.service import PerceptionService
 from ..persistence.store import WorldStore
+from ..world.navigation import nearest_location_with_tag, nearest_resource_node, nearest_safe_location, reachable_locations
 
 
 class Platform:
@@ -328,13 +329,44 @@ class Platform:
                 "status": "rejected", "message": "The actor already has an active behavior; wait for its result or an interrupt.", "failed_check": "active_behavior", "retryable": False,
             })
         bt = available_defs[behavior_id]
+        runtime_parameters = dict(normalized_parameters)
+        if behavior_id == "recover_at_safe_location":
+            safe_location_id = nearest_safe_location(self.store, state.get("location_id"))
+            if safe_location_id:
+                runtime_parameters.setdefault("safe_location_id", safe_location_id)
+        if behavior_id == "gather_at_known_node":
+            resource = nearest_resource_node(self.store, state.get("location_id"))
+            if resource:
+                runtime_parameters.setdefault("resource_tag", resource["resource_tag"])
+                runtime_parameters.setdefault("resource_location_id", resource["location_id"])
+        if behavior_id == "seek_treatment":
+            health_location_id = nearest_location_with_tag(self.store, state.get("location_id"), {"health", "clinic"})
+            if health_location_id:
+                runtime_parameters.setdefault("health_location_id", health_location_id)
+        entry_context = self._behavior_condition_context(agent, runtime_parameters, intent.target)
+        entry_target = {**runtime_parameters, **intent.target, **(entry_context.get("target") or {})}
+        for predicate in bt.get("entry_conditions", []) or []:
+            if not self.conditions.evaluate(
+                str(predicate),
+                agent=agent,
+                target=entry_target,
+                context=entry_context,
+                world=self.store.get_meta("world_properties", {}) or {},
+            ):
+                return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+                    "status": "rejected",
+                    "message": "The selected behavior is no longer executable in the current state.",
+                    "failed_check": "entry_condition",
+                    "condition": str(predicate),
+                    "retryable": True,
+                })
         estimator = BehaviorDurationEstimator(
             {item["id"]: item for item in self.store.get_definitions("action_def")},
             available_defs,
             {item["id"]: item for item in self.store.get_definitions("recipe_def")},
             self._route_distance,
         )
-        remaining_minutes = estimator.behavior_minutes(behavior_id, {**normalized_parameters, **intent.target}, state.get("location_id"))
+        remaining_minutes = estimator.behavior_minutes(behavior_id, {**runtime_parameters, **intent.target}, state.get("location_id"))
         world_minute = int(self.store.get_meta("world_minute", 0))
         expected = {
             "summary": bt.get("summary") or bt.get("description") or behavior_id,
@@ -352,7 +384,7 @@ class Platform:
             state["active_action"] = None
             state["remaining_minutes"] = remaining_minutes
             state["active_action_index"] = 0
-            state["active_parameters"] = {**normalized_parameters, **intent.target}
+            state["active_parameters"] = {**runtime_parameters, **intent.target}
             state["last_platform_result"] = {"status": "accepted", "behavior_ref": intent.behavior_ref}
             agent["initial_state"] = state
             self.store.update_agent(intent.actor_id, agent)
@@ -364,7 +396,7 @@ class Platform:
                 0,
                 {
                     "target": intent.target,
-                    "parameters": intent.parameters,
+                    "parameters": runtime_parameters,
                     "actions": self._compile_behavior_actions(behavior_id),
                     "expected": expected,
                     "decision": {"reason": intent.reason, "confidence": intent.confidence},
@@ -386,6 +418,32 @@ class Platform:
             }
             self.store.finish_intent(intent.intent_id, "accepted", result)
         return result
+
+    def _behavior_condition_context(self, agent: dict[str, Any], parameters: dict[str, Any], target: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Build the small declarative context used to recheck BT entry rules."""
+
+        state = agent.get("initial_state", {}) or {}
+        location_id = state.get("location_id")
+        location = {}
+        if location_id:
+            try:
+                location = self.store.get_entity(str(location_id))
+            except KeyError:
+                location = {}
+        resolved_target, _ = self.targets.resolve(agent, {**parameters, **(target or {})})
+        return {
+            "location_id": location_id,
+            "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
+            "area_id": parameters.get("area_id"),
+            "item_id": parameters.get("item_id"),
+            "inventory": agent.get("inventory", {}) or {},
+            "food_items": (self.store.get_meta("rules", {}) or {}).get("food_items", []) or [],
+            "current_location": location,
+            "target": resolved_target or {},
+            "target.visible": bool((resolved_target or {}).get("visible", False)),
+            "target.available": bool((resolved_target or {}).get("available", False)),
+            "known_route_destinations": reachable_locations(self.store, location_id),
+        }
 
     def submit_experience(self, actor_id: str, event_ref: str, summary: str, confidence: float) -> dict[str, Any]:
         summary = str(summary).strip()
@@ -487,10 +545,24 @@ class Platform:
             exchange_id = self.store.put_dialogue_exchange(speaker_id, listener_id, topic, minute, {"message": message, "source": "direct_text"})
             self.store.put_memory(speaker_id, "dialogue", {"topic": topic, "message": message, "target_id": listener_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.35})
             self.store.put_memory(listener_id, "testimony", {"topic": topic, "message": message, "speaker_id": speaker_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.45, "pending_decision": True})
+            self._apply_configured_need_effect(speaker, "dialogue.completed")
+            self._apply_configured_need_effect(listener, "dialogue.completed")
+            self.store.update_agent(speaker_id, speaker)
+            self.store.update_agent(listener_id, listener)
             event_id = self.store.append_event("dialogue.completed", speaker_id, minute, {"dialogue_id": exchange_id, "target_id": listener_id, "topic": topic, "summary": "A direct exchange was recorded.", "activation": "recipient_next_decision_or_reflection", "duration_minutes": 0, "priority": "normal"})
             result = {"status": "accepted", "intent_id": intent_id, "dialogue_id": exchange_id, "event_id": event_id, "topic": topic}
             self.store.finish_intent(intent_id, "accepted", result)
         return result
+
+    def _apply_configured_need_effect(self, agent: dict[str, Any], event_type: str) -> None:
+        """Apply package-declared social/interaction need outcomes."""
+
+        rules = self.store.get_meta("rules", {}) or {}
+        effects = (rules.get("need_effects", {}) or {}).get(event_type, [])
+        if isinstance(effects, dict):
+            effects = [{"type": "need_delta", "need": key, "delta": value} for key, value in effects.items()]
+        for effect in effects or []:
+            self.effects.apply(agent, dict(effect))
 
     def create_trade_offer(self, offerer_id: str, recipient_id: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
         """Create a two-phase item offer; no inventory moves until acceptance."""
@@ -556,6 +628,8 @@ class Platform:
             for item, quantity in offer["want"].items():
                 recipient.setdefault("inventory", {})[item] = recipient["inventory"].get(item, 0) - quantity
                 offerer.setdefault("inventory", {})[item] = offerer["inventory"].get(item, 0) + quantity
+            self._apply_configured_need_effect(offerer, "trade.completed")
+            self._apply_configured_need_effect(recipient, "trade.completed")
             self.store.update_agent(offerer_id := offer["offerer_id"], offerer)
             self.store.update_agent(recipient_id, recipient)
             result = {"status": "accepted", "offer_id": offer_id, "trade_status": "completed", "give": offer["give"], "want": offer["want"]}
@@ -843,10 +917,13 @@ class Platform:
                 "change_type": change_type,
                 "summary": str(proposal.get("summary", "")),
                 "scope": str(proposal.get("scope", "world")),
+                "conditions": list(proposal.get("conditions") or []),
+                "effects": list(proposal.get("effects") or []),
+                "expected_effects": list(proposal.get("expected_effects") or proposal.get("effects") or []),
                 "effect": effect,
             }
             event_id = self.store.append_event(f"world.change.{change_type}", actor_id, world_minute, event_data)
-            result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "applied": True, "applied_effects": bool(effect.get("state_changed", True)), "change_type": change_type, "effect": effect}
+            result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "applied": True, "applied_effects": bool(effect.get("state_changed", True)), "change_type": change_type, "effect": effect, "expected_effects": event_data["expected_effects"]}
             self.store.finish_intent(intent_id, "accepted", result)
         return result
 
@@ -1169,6 +1246,11 @@ class Platform:
                 needs = dict(agent.get("needs") or {})
                 needs[key] = max(0.0, min(100.0, float(needs.get(key, 0)) + float(effect.get("delta", 0))))
                 agent["needs"] = needs
+        elif effect.get("state"):
+            state = dict(agent.get("initial_state") or {})
+            key = str(effect["state"])
+            state[key] = max(0.0, min(100.0, float(state.get(key, 0)) + float(effect.get("delta", 0))))
+            agent["initial_state"] = state
 
     def _start_action(self, agent: dict[str, Any], execution_id: str, action_info: dict[str, Any], minute: int) -> tuple[bool, str]:
         action_defs = {item["id"]: item for item in self.store.get_definitions("action_def")}
@@ -1207,6 +1289,7 @@ class Platform:
             "target": resolved_target or {},
             "target.visible": (resolved_target or {}).get("visible", False),
             "target.available": (resolved_target or {}).get("available", False),
+            "known_route_destinations": reachable_locations(self.store, location_id),
         }
         if action_id == "craft_recipe":
             recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
@@ -1270,6 +1353,7 @@ class Platform:
             "target": target or {},
             "target.visible": (target or {}).get("visible", False),
             "target.available": (target or {}).get("available", False),
+            "known_route_destinations": reachable_locations(self.store, state.get("location_id")),
         }
         if action_info.get("action_id") == "craft_recipe":
             recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
@@ -1552,6 +1636,10 @@ class Platform:
                 action_row = self.store.connection.execute("SELECT elapsed_minutes,remaining_minutes,data_json FROM action_instance WHERE action_instance_id=?", (entry.get("action_instance_id"),)).fetchone()
                 if action_row is not None and action_row["remaining_minutes"] > 0:
                     self.store.update_action_instance(entry["action_instance_id"], status="failed", elapsed_minutes=action_row["elapsed_minutes"], remaining_minutes=action_row["remaining_minutes"], data=json.loads(action_row["data_json"]), updated_minute=minute)
+        if status == "completed":
+            behavior_definition = next((item for item in self.store.get_definitions("bt_def") if item.get("id") == behavior_id), {})
+            for effect in behavior_definition.get("outcome_effects", []) or []:
+                self.effects.apply(agent, dict(effect))
         state["status"] = "idle" if status == "completed" else "failed"
         state["active_bt_instance"] = None
         state["active_behavior_id"] = None
@@ -1632,6 +1720,19 @@ class Platform:
         minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             self.store.complete_evolution_task(task_id, minute)
+
+    def retry_evolution_task(self, task_id: str, retry_minute: int, reason: str) -> None:
+        """Return a failed low-frequency task to the scheduler with an audit event."""
+
+        minute = int(self.store.get_meta("world_minute", 0))
+        with self.store.transaction():
+            self.store.reschedule_evolution_task(task_id, max(minute + 1, int(retry_minute)))
+            self.store.append_event(
+                "evolution.task_retry",
+                None,
+                minute,
+                {"task_id": task_id, "retry_minute": max(minute + 1, int(retry_minute)), "reason": str(reason)},
+            )
 
     def step(self) -> dict[str, Any]:
         """Commit exactly one world-minute tick."""

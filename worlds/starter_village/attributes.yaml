@@ -13,10 +13,52 @@ attributes:
     min: 0
     max: 100
     prompt: Combined action capacity and accumulated load.
-  - id: hunger
-    kind: need
-    label: Hunger satisfaction
+  - id: exposure
+    kind: state
+    label: Exposure
     unit: points
     min: 0
     max: 100
-    prompt: Declines by world rules and rises when food is eaten.
+    prompt: Higher value means more environmental exposure; 0 means sheltered; 100 means highly exposed.
+  - id: attention
+    kind: state
+    label: Attention load
+    unit: points
+    min: 0
+    max: 100
+    prompt: Higher value means more occupied attention; 0 means fully available.
+  - id: satiety
+    kind: need
+    label: Satiety
+    unit: points
+    min: 0
+    max: 100
+    prompt: Higher value means more full; 100 means full; 0 means starving. World time lowers it and food raises it.
+  - id: safety
+    kind: need
+    label: Safety
+    unit: points
+    min: 0
+    max: 100
+    prompt: Higher value means more secure; 100 means secure; 0 means threatened.
+  - id: belonging
+    kind: need
+    label: Belonging
+    unit: points
+    min: 0
+    max: 100
+    prompt: Higher value means stronger social connection; 100 means connected; 0 means isolated.
+  - id: esteem
+    kind: need
+    label: Esteem
+    unit: points
+    min: 0
+    max: 100
+    prompt: Higher value means more recognized competence; 100 means respected; 0 means unrecognized.
+  - id: self_actualization
+    kind: need
+    label: Self-actualization
+    unit: points
+    min: 0
+    max: 100
+    prompt: Higher value means more meaningful goal fulfillment; 100 means fulfilled; 0 means no progress.

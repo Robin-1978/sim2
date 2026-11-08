@@ -94,7 +94,6 @@ def test_bootstrap_and_agent_intent(tmp_path: Path):
         assert provider.calls
         prompt = provider.calls[0][1]
         assert "<executable_behaviors>" in prompt
-        assert "collect" not in prompt.lower()
         assert "actor.can" not in prompt
         assert "nodes" not in prompt.lower()
         assert "preconditions" not in prompt.lower()
@@ -121,6 +120,19 @@ def test_agent_selects_human_readable_choice_and_prompt_hides_behavior_ref(tmp_p
         assert "choice: Explore Greywood" in prompt
         assert "behavior:explore_greywood" not in prompt
         assert 'ref="' not in prompt
+    finally:
+        platform.close()
+
+
+def test_decision_alias_wait_ends_without_repeated_model_calls(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "wait-alias-world", tmp_path / "runtime"))
+    provider = FakeProvider({"intent": "wait", "reason": "No suitable behavior is available now."})
+    try:
+        turn = AgentEngine(platform, provider).run(role="agent_decision", actor_id="lu_xingzhou")
+        assert turn.result["status"] == "wait"
+        assert turn.iterations == 1
+        assert len(provider.calls) == 1
     finally:
         platform.close()
 
@@ -219,7 +231,7 @@ def test_simulation_report_counts_behavior_events_beyond_recent_event_window(tmp
         platform.close()
 
 
-def test_food_bt_is_available_with_food_and_closes_hunger_loop(tmp_path: Path):
+def test_food_bt_is_available_with_food_and_closes_satiety_loop(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "food-loop-world", tmp_path / "runtime")
     platform = Platform(db_path)
@@ -240,8 +252,8 @@ def test_food_bt_is_available_with_food_and_closes_hunger_loop(tmp_path: Path):
         platform.step()
         after = platform.store.get_agent("lu_xingzhou")
         assert after["inventory"]["rations"] == before["inventory"]["rations"] - 1
-        assert before["needs"]["hunger"] == 80
-        assert after["needs"]["hunger"] == min(100, before["needs"]["hunger"] + 30)
+        assert before["needs"]["satiety"] == 80
+        assert after["needs"]["satiety"] == min(100, before["needs"]["satiety"] + 30)
         assert after["initial_state"]["status"] == "idle"
     finally:
         platform.close()
@@ -266,6 +278,121 @@ def test_food_store_bt_supplies_agents_without_carried_food(tmp_path: Path):
         after = platform.store.get_agent("liang_he")
         assert after["inventory"]["rations"] == 1
         assert platform.store.get_entity("village_food")["amount"] == before - 1
+    finally:
+        platform.close()
+
+
+def test_food_and_rest_fallbacks_disappear_when_needs_are_satisfied(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "satisfied-needs-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        liang = platform.store.get_agent("liang_he")
+        liang["needs"]["satiety"] = 100
+        platform.store.update_agent("liang_he", liang)
+        platform.store.connection.commit()
+        offered = {item["ref"] for item in platform.decision_view("liang_he")["executable_behaviors"]}
+        assert "behavior:eat_food" not in offered
+        assert "behavior:get_food_here" not in offered
+
+        smith = platform.store.get_agent("tian_yan")
+        smith["initial_state"]["energy"] = 100
+        platform.store.update_agent("tian_yan", smith)
+        platform.store.connection.commit()
+        offered = {item["ref"] for item in platform.decision_view("tian_yan")["executable_behaviors"]}
+        assert "behavior:rest_and_recover" not in offered
+    finally:
+        platform.close()
+
+
+def test_decision_context_explains_single_recovery_candidate(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "single-recovery-context", tmp_path / "runtime"))
+    try:
+        liang = platform.store.get_agent("liang_he")
+        liang["initial_state"]["energy"] = 6.5
+        liang["needs"]["satiety"] = 100
+        platform.store.update_agent("liang_he", liang)
+        platform.store.connection.commit()
+        view = platform.decision_view("liang_he")
+        assert len(view["executable_behaviors"]) == 1
+        assert view["executable_behaviors"][0]["ref"] == "behavior:recover_at_safe_location"
+        assert any("Satiety is 100/100" in item for item in view["decision_constraints"])
+        assert any("Energy is 6.5/100" in item for item in view["decision_constraints"])
+        assert any("not safe for rest" in item for item in view["decision_constraints"])
+        prompt = render_context(view, "Choose one behavior.")
+        assert "<decision_constraints>" in prompt
+        assert "food BTs require Satiety" in prompt
+    finally:
+        platform.close()
+
+
+def test_core_gather_bt_travels_to_nearest_resource_node(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "gather-core-world", tmp_path / "runtime"))
+    try:
+        liang = platform.store.get_agent("liang_he")
+        liang["initial_state"]["location_id"] = "village_square"
+        liang["initial_state"]["energy"] = 100
+        platform.store.update_agent("liang_he", liang)
+        platform.store.connection.commit()
+        view = platform.decision_view("liang_he")
+        assert any(item["ref"] == "behavior:gather_at_known_node" for item in view["executable_behaviors"])
+        result = platform.submit_behavior(BehaviorIntent(
+            "liang_he", "behavior:gather_at_known_node", {}, {}, "Collect available grain for production.", 0.8, "gather-core-intent"
+        ))
+        assert result["status"] == "accepted"
+        platform.step()
+        assert platform.store.get_agent("liang_he")["initial_state"]["location_id"] == "granary"
+    finally:
+        platform.close()
+
+
+def test_core_treatment_bt_travels_to_health_service_and_restores_health(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "health-core-world", tmp_path / "runtime"))
+    try:
+        qiao = platform.store.get_agent("qiao_ning")
+        qiao["initial_state"]["location_id"] = "village_square"
+        qiao["initial_state"]["health"] = 70
+        qiao["inventory"]["medicine"] = 1
+        platform.store.update_agent("qiao_ning", qiao)
+        platform.store.connection.commit()
+        view = platform.decision_view("qiao_ning")
+        assert any(item["ref"] == "behavior:seek_treatment" for item in view["executable_behaviors"])
+        result = platform.submit_behavior(BehaviorIntent(
+            "qiao_ning", "behavior:seek_treatment", {}, {}, "Recover from an injury.", 0.9, "health-core-intent"
+        ))
+        assert result["status"] == "accepted"
+        step_n(platform, 76)
+        healed = platform.store.get_agent("qiao_ning")
+        assert healed["initial_state"]["health"] == 100
+        assert healed["inventory"]["medicine"] == 0
+    finally:
+        platform.close()
+
+
+def test_platform_rechecks_behavior_entry_condition_after_context_changes(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "stale-food-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        liang = platform.store.get_agent("liang_he")
+        liang["needs"]["satiety"] = 100
+        platform.store.update_agent("liang_he", liang)
+        platform.store.connection.commit()
+        result = platform.submit_behavior(BehaviorIntent(
+            actor_id="liang_he",
+            behavior_ref="behavior:get_food_here",
+            target={},
+            parameters={},
+            reason="Use a stale candidate.",
+            confidence=0.5,
+            intent_id="stale-food-intent",
+        ))
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "entry_condition"
+        assert result["retryable"] is True
     finally:
         platform.close()
 
@@ -304,16 +431,48 @@ def test_context_uses_role_tools_and_plain_sections():
     assert "A fresh mark is visible." in prompt
 
 
+def test_context_compacts_raw_memory_messages_and_keeps_provenance():
+    context = {
+        "self": {"name": "A", "role": "watcher", "status": "idle", "location": "gate", "goal": "protect"},
+        "drives": [],
+        "known_facts": [],
+        "memories": [{"type": "testimony", "message": "A long transcript " * 100, "source_type": "dialogue", "confidence": 0.6}],
+        "direct_relationships": [],
+        "active_task": {},
+        "available_behaviors": [],
+    }
+    prompt = render_context(context, "Choose a behavior.")
+    assert "source=dialogue" in prompt
+    assert "confidence=0.60" in prompt
+    assert len(prompt.split("memory (testimony):", 1)[1].split("\n", 1)[0]) <= 410
+
+
 def test_attribute_context_comes_from_config_and_food_stays_inventory(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "attribute-world", tmp_path / "runtime"))
     try:
         view = platform.decision_view("lu_xingzhou")
         labels = {item["label"] for item in view["self"]["attributes"]}
-        assert labels == {"Health", "Energy", "Hunger satisfaction"}
+        assert labels == {"Health", "Energy", "Exposure", "Attention load", "Satiety", "Safety", "Belonging", "Esteem", "Self-actualization"}
         assert "food" not in {label.casefold() for label in labels}
         assert "rations" in view["inventory"]
         assert any("Only listed BTs" in rule for rule in view["platform_rules"])
+    finally:
+        platform.close()
+
+
+def test_all_configured_needs_have_direct_agent_facing_attribute_meanings(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "attribute-meaning-world", tmp_path / "runtime"))
+    try:
+        definitions = {item["id"]: item for item in platform.store.get_meta("attributes", [])}
+        needs = {item["id"] for item in (platform.store.get_meta("rules", {}) or {}).get("needs", [])}
+        assert needs <= set(definitions)
+        for need_id in needs:
+            meaning = str(definitions[need_id].get("prompt", ""))
+            assert "100" in meaning and "0" in meaning
+        prompt = render_context(platform.decision_view("liang_he"), "Choose one behavior.")
+        assert "Satiety" in prompt and "higher means more full" in prompt
     finally:
         platform.close()
 
@@ -456,6 +615,22 @@ def test_reflection_intent_is_committed_by_platform(tmp_path: Path):
         memories = platform.store.list_memories("lu_xingzhou")
         assert memories[0]["summary"].startswith("The first observation")
         assert "memory (experience)" in provider.calls[0]["context"]
+    finally:
+        platform.close()
+
+
+def test_reflection_summary_alias_is_committed_once(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "reflection-summary-world", tmp_path / "runtime"))
+    try:
+        intent = BehaviorIntent("lin_bo", "behavior:rest_and_recover", {}, {}, "Recover readiness.", 0.8, "reflection-summary-outcome")
+        assert platform.submit_behavior(intent)["status"] == "accepted"
+        step_n(platform, 48)
+        provider = FakeProvider({"summary": "Rest restored energy while satiety continued to decline."})
+        turn = AgentEngine(platform, provider).run(role="agent_reflection", actor_id="lin_bo", task_type="daily_reflection")
+        assert turn.result["status"] == "accepted"
+        assert turn.iterations == 1
+        assert platform.store.list_memories("lin_bo", limit=1)[0]["type"] == "experience"
     finally:
         platform.close()
 
@@ -822,6 +997,21 @@ def test_behavior_outcome_is_available_to_nightly_reflection(tmp_path: Path):
         platform.close()
 
 
+def test_configured_behavior_outcome_updates_social_and_growth_needs(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "need-outcome-world", tmp_path / "runtime"))
+    try:
+        before = platform.store.get_agent("lin_bo")["needs"]
+        intent = BehaviorIntent("lin_bo", "behavior:govern_village", {}, {}, "Review village stability.", 0.9, "need-outcome-intent")
+        assert platform.submit_behavior(intent)["status"] == "accepted"
+        step_n(platform, 24)
+        after = platform.store.get_agent("lin_bo")["needs"]
+        assert after["esteem"] == before["esteem"] + 0.5
+        assert after["belonging"] == before["belonging"] + 0.2
+    finally:
+        platform.close()
+
+
 def test_parallel_bt_runs_action_instances_concurrently(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "parallel-world", tmp_path / "runtime")
@@ -935,9 +1125,11 @@ def test_god_world_change_and_trigger_create_platform_state(tmp_path: Path):
     db_path = create_instance(config, "evolution-trigger-world", tmp_path / "runtime")
     platform = Platform(db_path)
     try:
-        change = platform.submit_world_change("god", {"change_type": "world_property", "summary": "Adjust fog pressure.", "property": "fog_pressure", "value": 0.4})
+        change = platform.submit_world_change("god", {"change_type": "world_property", "summary": "Adjust fog pressure.", "property": "fog_pressure", "value": 0.4, "expected_effects": ["Fog pressure is recorded as 0.4."]})
         assert change["status"] == "accepted"
         assert platform.store.get_meta("world_properties")["fog_pressure"] == 0.4
+        world_change = platform.store.recent_world_change_events(limit=1)[0]
+        assert world_change["expected_effects"] == ["Fog pressure is recorded as 0.4."]
         resource = platform.store.get_entity("village_food")
         resource["amount"] = 100
         with platform.store.transaction():
@@ -964,6 +1156,24 @@ def test_god_reacts_after_event_effect_rejection(tmp_path: Path):
         assert turn.result["status"] == "accepted"
         assert len(provider.calls) == 2
         assert quality["passed"] is True
+    finally:
+        platform.close()
+
+
+def test_god_trigger_rejects_narrative_only_change_before_platform_commit(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "god-trigger-quality-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    provider = SequenceProvider([
+        {"tool_call": {"name": "propose_world_change", "arguments": {"change_type": "event", "summary": "A bell sounds.", "effects": ["People notice the bell."]}}},
+        {"tool_call": {"name": "propose_world_change", "arguments": {"change_type": "world_property", "summary": "Lower food crisis pressure.", "property": "food_crisis_response", "value": "ration_reviewed", "expected_effects": ["The crisis response is recorded."]}}},
+    ])
+    try:
+        turn = AgentEngine(platform, provider).run(role="god", actor_id="god", task_type="trigger:food_crisis")
+        assert turn.result["status"] == "accepted"
+        assert len(provider.calls) == 2
+        assert not platform.store.connection.execute("SELECT 1 FROM event_log WHERE event_type='world.change.event'").fetchone()
+        assert platform.store.get_meta("world_properties")["food_crisis_response"] == "ration_reviewed"
     finally:
         platform.close()
 

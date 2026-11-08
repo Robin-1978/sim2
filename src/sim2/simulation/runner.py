@@ -155,13 +155,24 @@ class SimulationRunner:
             claimed = self.platform.claim_evolution_task(task["task_id"])
             if claimed is None:
                 continue
-            turn = AgentEngine(self.platform, provider).run(role=role, actor_id=actor_id, task_type=task.get("task_type", "evolution"))
+            task_type = str(task.get("task_type", "evolution"))
+            if task.get("trigger_id"):
+                task_type = f"trigger:{task.get('trigger_id')}"
+            turn = AgentEngine(self.platform, provider).run(role=role, actor_id=actor_id, task_type=task_type)
             if role == "god":
                 report.god_sessions += 1
             else:
                 report.reflections += 1
             self._record_turn(report, turn.result, actor_id)
-            self.platform.complete_evolution_task(task["task_id"])
+            if turn.result.get("status") in {"accepted", "wait"}:
+                self.platform.complete_evolution_task(task["task_id"])
+            else:
+                retry_delay = self.llm_error_cooldown_minutes if turn.result.get("failed_check") == "llm_response" else 60
+                self.platform.retry_evolution_task(
+                    task["task_id"],
+                    int(self.platform.store.get_meta("world_minute", 0)) + retry_delay,
+                    str(turn.result.get("message") or turn.result.get("failed_check") or "evolution session rejected"),
+                )
 
     def _llm_not_before(self, agent_id: str) -> int:
         return self._llm_retry_until.get(agent_id, 0)

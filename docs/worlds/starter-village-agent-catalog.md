@@ -30,7 +30,7 @@ This compact English catalog is generated from the world configuration. It is a 
 | Flee To Safety | You are alive and a known route leads to safety. | Route-dependent | Platform applies configured effects and records the result. |
 | Sound Alarm | You can sound an alarm and are at a watch post. | 6 minutes | Platform applies configured effects and records the result. |
 | Craft Recipe | You can craft; the recipe, station and inputs are available. | Recipe-defined | Platform applies configured effects and records the result. |
-| Consume Food | You carry `rations`, `ration`, or `cooked_meal`. | 1 minute | One item is reserved, consumed, and hunger satisfaction increases. |
+| Consume Food | You carry `rations`, `ration`, or `cooked_meal`; Satiety is low enough to eat. | 1 minute | One item is reserved, consumed, and Satiety increases. |
 | Withdraw Food | You are at the configured food store. | 10 minutes | One shared ration is reserved and added to inventory. |
 
 ## Behavior Trees
@@ -54,7 +54,7 @@ This compact English catalog is generated from the world configuration. It is a 
 | Communicate | Exchange information with another character. | Another character is available and information exchange is relevant. | Communicate | 12 | The conversation becomes testimony. | The other character refuses or leaves. |
 | Negotiate | Reach an agreement with another character. | A counterparty is available and an agreement is needed. | Negotiate | 12 | A contract or exchange is recorded. | Trust collapses or the offer is refused. |
 | Gather Resource | Collect a configured resource from a known node. | A known resource source is visible and supply is needed. | Gather Resource | 144 | Two source units enter inventory and the source decreases. | The source is empty or the actor cannot continue. |
-| Eat Food | You carry one configured food item and need to choose whether to restore hunger. | Consume Food(item_id) | 1 | Hunger satisfaction increases and the item is removed. | The food is unavailable. |
+| Eat Food | You carry one configured food item and Satiety is at or below the configured eating threshold. | Consume Food(item_id) | 1 | Satiety increases and the item is removed. | The food is unavailable. |
 | Get Food | You have food-withdrawal rights and a known route to the granary. | Travel To; Withdraw Food | Route minutes + 10 | One ration enters inventory. | The route or shared store is unavailable. |
 | Get Food Here | You have food-withdrawal rights, are at the granary, and shared food remains. | Withdraw Food | 10 | One ration enters inventory. | The shared store is empty or you lack ration rights. |
 

@@ -99,7 +99,7 @@ Platform 采用通用 `target_resolver`、`condition_engine`、`effect_pipeline`
 
 Action 启动时由 Platform 预锁定所需资源；暂停保留游标、进度和锁，取消或失败才按配置释放。只有配置了 `interaction_policy: allow` 的执行中 Action 才能与外部即时互动并行，移动和探索等行动默认拒绝互动。
 
-每个 Agent 的运行状态至少包含 `status`、`location_id`、`health`、`energy`、`hunger`、`injuries`、`conditions`、`active_bt_instance`、`active_action`、`action_progress`、`remaining_minutes`、`current_goal_id`、`inventory` 和 `last_platform_result`。Platform 在攻击、疾病、事故和环境事件后更新伤势与状态效果；伤势会降低能力或阻止相关 BT，治疗和恢复 Action 通过 Platform 消除或减轻伤势。
+每个 Agent 的运行状态至少包含 `status`、`location_id`、`health`、`energy`、`satiety`、`injuries`、`conditions`、`active_bt_instance`、`active_action`、`action_progress`、`remaining_minutes`、`current_goal_id`、`inventory` 和 `last_platform_result`。Platform 在攻击、疾病、事故和环境事件后更新伤势与状态效果；伤势会降低能力或阻止相关 BT，治疗和恢复 Action 通过 Platform 消除或减轻伤势。
 
 ### Agent 与上下文
 

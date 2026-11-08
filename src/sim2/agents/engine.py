@@ -170,6 +170,8 @@ class AgentEngine:
                         tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "read_budget", "message": "Read budget exhausted; use the facts already collected and submit one final Intent."}
                     elif repeated[signature_key] > self.max_repeated_tool_calls:
                         tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "repeated_tool_call", "message": "The same tool request was repeated; use the previous result or choose the previous result."}
+                    elif role == "god" and str(task_type).startswith("trigger:") and tool_name == "propose_world_change" and arguments.get("change_type") == "event" and not arguments.get("property"):
+                        tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "trigger_requires_state_change", "retryable": True, "message": "This trigger requires a direct state-changing proposal; a narrative-only event does not resolve it."}
                     else:
                         tool_result = executor.execute(tool_name, arguments)
                     model_tool_result = tool_result
@@ -198,7 +200,7 @@ class AgentEngine:
                     return AgentTurn(role, task_type, last_response, accepted_result, iteration, transcript)
                 continue
 
-            result = self._submit_response(role, actor_id, response)
+            result = self._submit_response(role, actor_id, response, context=context, task_type=task_type)
             transcript.append({"step": "intent", "response": response, "result": result})
             conversation_messages.append({"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
             conversation_messages.append({"role": "user", "content": f"Platform result: {json.dumps(result, ensure_ascii=False)}"})
@@ -239,18 +241,51 @@ class AgentEngine:
         if role == "agent_reflection":
             return f"Task type: {task_type}. Review the latest behavior outcome and existing memories. Submit one new durable lesson or evolution proposal only if it improves a future decision; otherwise wait."
         if role == "god":
-            return f"Task type: {task_type}. Review the world signal and submit one validated world proposal if needed."
+            if str(task_type).startswith("trigger:"):
+                return f"Task type: {task_type}. A world trigger is active. Submit one validated direct state-changing proposal that resolves the trigger; a narrative-only event does not resolve it. State the short observable expected_effects."
+            return f"Task type: {task_type}. Review the world signal and submit one validated world proposal if needed. State the short observable expected_effects."
         return f"Task type: {task_type}. Produce or refine one declarative world template."
 
-    def _submit_response(self, role: str, actor_id: str, response: dict[str, Any]) -> dict[str, Any]:
+    def _submit_response(self, role: str, actor_id: str, response: dict[str, Any], *, context: dict[str, Any] | None = None, task_type: str = "") -> dict[str, Any]:
         data = response.get("intent") if isinstance(response.get("intent"), dict) else dict(response)
         if not isinstance(data, dict):
             return {"status": "rejected", "failed_check": "intent_schema", "retryable": True, "message": "Intent must be an object."}
         if data.get("type") == "intent":
             data.pop("type", None)
         intent_type_value = data.get("intent_type") or data.get("kind")
-        if not intent_type_value and role != "agent_decision" and isinstance(data.get("intent"), str):
-            intent_type_value = data.get("intent")
+        if not intent_type_value and isinstance(data.get("intent"), str):
+            # Providers sometimes emit the visible action as ``intent``.  The
+            # alias is accepted only at this protocol boundary; Platform still
+            # validates the resulting Intent and all side effects.
+            aliases = {
+                "request_behavior": "select_behavior",
+                "select_behavior": "select_behavior",
+                "send_message": "send_message",
+                "create_trade_offer": "create_trade_offer",
+                "accept_trade_offer": "accept_trade_offer",
+                "counter_trade_offer": "counter_trade_offer",
+                "reject_trade_offer": "reject_trade_offer",
+                "record_experience": "record_experience",
+                "update_belief": "update_belief",
+                "update_goal": "update_goal",
+                "propose_behavior": "propose_behavior",
+                "propose_entity": "propose_entity",
+                "propose_world_change": "propose_world_change",
+                "wait": "wait",
+            }
+            intent_type_value = aliases.get(str(data.get("intent")).casefold())
+        # A reflection response containing only a concise lesson is an
+        # unambiguous record-experience proposal.  Use the latest visible
+        # outcome as its audit reference; the Platform still performs all
+        # duplicate and length checks.
+        if role == "agent_reflection" and not intent_type_value and data.get("summary"):
+            intent_type_value = "record_experience"
+            recent_outcomes = (context or {}).get("recent_outcomes") or []
+            if recent_outcomes:
+                latest = recent_outcomes[0]
+                data.setdefault("event_ref", f"{latest.get('event_type', 'behavior.outcome')} at world minute {latest.get('world_minute', 'unknown')}")
+            else:
+                data.setdefault("event_ref", "reflection")
         intent_type = str(intent_type_value or ("select_behavior" if data.get("choice") or data.get("behavior_ref") or data.get("behavior_id") or data.get("behavior") else ""))
         if data.get("wait") is True:
             intent_type = "wait"
@@ -316,7 +351,15 @@ class AgentEngine:
             if intent_type == "propose_world_change":
                 proposal = dict(data)
                 proposal.pop("intent_type", None)
-                return self.platform.submit_world_change(actor_id, proposal)
+                if str(task_type).startswith("trigger:") and proposal.get("change_type") == "event" and not proposal.get("property"):
+                    return {
+                        "status": "rejected",
+                        "failed_check": "trigger_requires_state_change",
+                        "retryable": True,
+                        "message": "This trigger requires a direct state-changing proposal; a narrative-only event does not resolve it.",
+                    }
+                result = self.platform.submit_world_change(actor_id, proposal)
+                return result
             if intent_type == "submit_world_template":
                 return self.platform.submit_world_template(actor_id, data.get("template") or {})
         except (TypeError, ValueError, KeyError) as exc:

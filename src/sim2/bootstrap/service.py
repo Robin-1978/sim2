@@ -70,6 +70,11 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
             errors.append(f"{filename}.{key} must be a list")
             values = []
         data[key] = values
+    core_behaviors = load_yaml(config_dir, "core_behavior_trees.yaml", {}).get("behavior_trees", [])
+    if not isinstance(core_behaviors, list):
+        errors.append("core_behavior_trees.yaml.behavior_trees must be a list")
+        core_behaviors = []
+    data["behavior_trees"] = list(core_behaviors) + data["behavior_trees"]
     ids_by_key = {key: _ids(values, key, errors) for key, values in data.items()}
 
     location_ids = ids_by_key["locations"]
@@ -218,7 +223,10 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                 ("recipe_def", "recipes.yaml", "recipes"),
                 ("capability_def", "capabilities.yaml", "capabilities"),
             ]:
-                for definition in load_yaml(config_dir, filename, {}).get(key, []):
+                definitions = load_yaml(config_dir, filename, {}).get(key, [])
+                if filename == "behavior_trees.yaml":
+                    definitions = list(load_yaml(config_dir, "core_behavior_trees.yaml", {}).get("behavior_trees", []) or []) + list(definitions)
+                for definition in definitions:
                     store.put_definition(table, definition["id"], definition)
             prompt_dir = config_dir / "prompts"
             if prompt_dir.is_dir():
