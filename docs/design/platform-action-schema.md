@@ -53,7 +53,7 @@ ActionInstance
 
 LLM 在决策边界通常选择 BT；BT 执行器再按分钟推进 Action。只有一个短小且没有控制流的任务可以直接提交 Action Intent。复杂能力由 BT 组合原子 Action，Platform 仍然是每一步的唯一执行者。
 
-Decision Agent 只选择 Platform 提供的已验证 BT。它收到的是少量 `ref`、名称、适用条件、时长、成本摘要和结果摘要，返回选择引用。BT 草案只由反思、世界演化或模板创建任务提出；Platform 校验成功后才注册并加入候选目录。
+Decision Agent 只选择 Platform 提供的已验证 BT。它收到的是少量人类可读选择名称、适用条件、时长、成本摘要和结果摘要，返回当前视图中的 `choice`。SQLite 内部 `ref` 只用于 Platform 执行、审计和重放，不进入模型协议。BT 草案只由反思、世界演化或模板创建任务提出；Platform 校验成功后才注册并加入候选目录。
 
 例如“制作熟食”不是一个硬编码的 `cook_food` 函数：
 

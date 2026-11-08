@@ -29,10 +29,10 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "parameters": {
             "type": "object",
             "properties": {
-                "entity_id": {"type": "string"},
+                "entity": {"type": "string", "description": "The visible or known entity name."},
                 "question": {"type": "string", "description": "The detail you need."},
             },
-            "required": ["entity_id"],
+            "required": ["entity"],
             "additionalProperties": False,
         },
     },
@@ -52,11 +52,11 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "parameters": {
             "type": "object",
             "properties": {
-                "target_id": {"type": "string"},
+                "recipient": {"type": "string", "description": "The visible participant name."},
                 "topic": {"type": "string"},
                 "message": {"type": "string", "maxLength": 1000},
             },
-            "required": ["target_id", "topic", "message"],
+            "required": ["recipient", "topic", "message"],
             "additionalProperties": False,
         },
     },
@@ -66,11 +66,11 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "parameters": {
             "type": "object",
             "properties": {
-                "recipient_id": {"type": "string"},
+                "recipient": {"type": "string", "description": "The visible participant name."},
                 "give": {"type": "object", "description": "item to positive quantity"},
                 "want": {"type": "object", "description": "item to positive quantity"},
             },
-            "required": ["recipient_id", "give", "want"],
+            "required": ["recipient", "give", "want"],
             "additionalProperties": False,
         },
     },
@@ -79,8 +79,8 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "kind": "intent",
         "parameters": {
             "type": "object",
-            "properties": {"offer_id": {"type": "string"}},
-            "required": ["offer_id"],
+            "properties": {"offer": {"type": "string", "description": "The exact open offer choice from the current interaction list."}},
+            "required": ["offer"],
             "additionalProperties": False,
         },
     },
@@ -89,8 +89,8 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "kind": "intent",
         "parameters": {
             "type": "object",
-            "properties": {"offer_id": {"type": "string"}, "give": {"type": "object"}, "want": {"type": "object"}},
-            "required": ["offer_id", "give", "want"],
+            "properties": {"offer": {"type": "string", "description": "The exact open offer choice from the current interaction list."}, "give": {"type": "object"}, "want": {"type": "object"}},
+            "required": ["offer", "give", "want"],
             "additionalProperties": False,
         },
     },
@@ -99,8 +99,8 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "kind": "intent",
         "parameters": {
             "type": "object",
-            "properties": {"offer_id": {"type": "string"}},
-            "required": ["offer_id"],
+            "properties": {"offer": {"type": "string", "description": "The exact open offer choice from the current interaction list."}},
+            "required": ["offer"],
             "additionalProperties": False,
         },
     },
@@ -109,8 +109,8 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "kind": "read",
         "parameters": {
             "type": "object",
-            "properties": {"entity_id": {"type": "string"}, "question": {"type": "string"}},
-            "required": ["entity_id"],
+            "properties": {"record": {"type": "string", "description": "The visible public record name."}, "question": {"type": "string"}},
+            "required": ["record"],
             "additionalProperties": False,
         },
     },
@@ -143,10 +143,10 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "parameters": {
             "type": "object",
             "properties": {
-                "behavior_ref": {"type": "string"},
-                "target": {"type": "object"},
+                "choice": {"type": "string", "description": "The exact visible behavior name from the current executable list."},
+                "target": {"type": "object", "description": "Optional target details using visible names, never database identifiers."},
             },
-            "required": ["behavior_ref"],
+            "required": ["choice"],
             "additionalProperties": False,
         },
     },
@@ -156,13 +156,13 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "parameters": {
             "type": "object",
             "properties": {
-                "behavior_ref": {"type": "string"},
-                "target": {"type": "object"},
-                "parameters": {"type": "object"},
+                "choice": {"type": "string", "description": "The exact visible behavior name from the current executable list."},
+                "target": {"type": "object", "description": "Optional target details using visible names, never database identifiers."},
+                "parameters": {"type": "object", "description": "Only configured user-facing parameters; use visible names."},
                 "reason": {"type": "string"},
                 "confidence": {"type": "number", "minimum": 0, "maximum": 1},
             },
-            "required": ["behavior_ref"],
+            "required": ["choice"],
             "additionalProperties": False,
         },
     },
@@ -172,7 +172,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "parameters": {
             "type": "object",
             "properties": {
-                "event_ref": {"type": "string"},
+                "event": {"type": "string", "description": "A short visible description of the experience being reviewed."},
                 "summary": {"type": "string", "maxLength": 500},
                 "confidence": {"type": "number", "minimum": 0, "maximum": 1},
             },
@@ -186,7 +186,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "parameters": {
             "type": "object",
             "properties": {
-                "belief_id": {"type": "string"},
+                "belief": {"type": "string", "description": "The belief statement to create or update."},
                 "statement": {"type": "string"},
                 "confidence": {"type": "number", "minimum": 0, "maximum": 1},
                 "reason": {"type": "string"},
@@ -201,7 +201,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "parameters": {
             "type": "object",
             "properties": {
-                "goal_id": {"type": "string"},
+                "goal": {"type": "string", "description": "The goal statement to create or update."},
                 "statement": {"type": "string"},
                 "status": {"type": "string"},
                 "priority": {"type": "number", "minimum": 0, "maximum": 1},
@@ -216,15 +216,15 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "parameters": {
             "type": "object",
             "properties": {
-                "behavior_id": {"type": "string"},
+                "name": {"type": "string", "description": "A short human-readable name for the proposed behavior."},
                 "summary": {"type": "string"},
                 "goal": {"type": "string"},
-                "action_ids": {"type": "array", "items": {"type": "string"}},
+                "actions": {"type": "array", "items": {"type": "string"}, "description": "Visible action names in execution order."},
                 "entry_conditions": {"type": "array", "items": {"type": "string"}},
                 "success_results": {"type": "array", "items": {"type": "string"}},
                 "failure_results": {"type": "array", "items": {"type": "string"}},
             },
-            "required": ["goal", "action_ids"],
+            "required": ["goal", "actions"],
             "additionalProperties": False,
         },
     },
@@ -234,10 +234,9 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "parameters": {
             "type": "object",
             "properties": {
-                "entity_id": {"type": "string"},
                 "entity_type": {"type": "string"},
                 "name": {"type": "string"},
-                "location_id": {"type": "string"},
+                "location": {"type": "string", "description": "A visible location name."},
                 "state": {"type": "object"},
                 "description": {"type": "string"},
             },
@@ -258,9 +257,9 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "effects": {"type": "array", "items": {"type": "string"}},
                 "property": {"type": "string"},
                 "value": {},
-                "rule": {"type": "object"},
-                "relationship": {"type": "object"},
-                "faction": {"type": "object"},
+                "rule": {"type": "object", "description": "Use visible names and configured natural-language conditions."},
+                "relationship": {"type": "object", "description": "Use visible participant names, never database identifiers."},
+                "faction": {"type": "object", "description": "Use visible member or location names, never database identifiers."},
             },
             "required": ["change_type", "summary"],
             "additionalProperties": False,
@@ -271,7 +270,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "kind": "read",
         "parameters": {
             "type": "object",
-            "properties": {"template": {"type": "object"}},
+            "properties": {"template": {"type": "object", "description": "Use human-readable names; Platform assigns internal identifiers."}},
             "required": ["template"],
             "additionalProperties": False,
         },
@@ -281,7 +280,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "kind": "intent",
         "parameters": {
             "type": "object",
-            "properties": {"template": {"type": "object"}},
+            "properties": {"template": {"type": "object", "description": "Use human-readable names; Platform assigns internal identifiers."}},
             "required": ["template"],
             "additionalProperties": False,
         },
@@ -382,6 +381,27 @@ class AgentToolExecutor:
         if name not in TOOL_DEFINITIONS:
             return {"status": "rejected", "tool": name, "message": "Unknown tool."}
         args = dict(arguments or {})
+        # Compatibility for older callers.  These aliases are intentionally
+        # absent from the model-facing JSON Schemas.
+        legacy_aliases = {
+            "inspect_entity": {"entity_id": "entity"},
+            "read_public_record": {"entity_id": "record"},
+            "send_message": {"target_id": "recipient"},
+            "create_trade_offer": {"recipient_id": "recipient"},
+            "accept_trade_offer": {"offer_id": "offer"},
+            "counter_trade_offer": {"offer_id": "offer"},
+            "reject_trade_offer": {"offer_id": "offer"},
+            "record_experience": {"event_ref": "event"},
+            "update_belief": {"belief_id": "belief"},
+            "update_goal": {"goal_id": "goal"},
+            "propose_behavior": {"behavior_id": "name", "action_ids": "actions"},
+            "propose_entity": {"entity_id": "name", "location_id": "location"},
+        }
+        for old, current in legacy_aliases.get(name, {}).items():
+            if old in args:
+                if current not in args:
+                    args[current] = args[old]
+                args.pop(old)
         validation_errors = validate_tool_arguments(name, args)
         if validation_errors:
             return {
@@ -398,7 +418,20 @@ class AgentToolExecutor:
         if not isinstance(result, dict):
             return {"status": "ok", "tool": name, "result": result}
         result.setdefault("tool", name)
-        return result
+        return self._publicize(result)
+
+    @classmethod
+    def _publicize(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: cls._publicize(item)
+                for key, item in value.items()
+                if key not in {"id", "ref", "behavior_ref", "intent_id", "event_id"}
+                and not key.endswith("_id")
+            }
+        if isinstance(value, list):
+            return [cls._publicize(item) for item in value]
+        return value
 
     def _agent(self) -> dict[str, Any]:
         return self.platform.store.get_agent(self.actor_id)
@@ -406,29 +439,57 @@ class AgentToolExecutor:
     def _observe_nearby(self, question: str = "") -> dict[str, Any]:
         return self.platform.perception.observe_nearby(self.actor_id, question)
 
-    def _inspect_entity(self, entity_id: str, question: str = "") -> dict[str, Any]:
-        return self.platform.perception.inspect_entity(self.actor_id, entity_id, question, global_scope=self.role in {"god", "world_builder"})
+    def _resolve_entity(self, value: str) -> tuple[str | None, dict[str, Any] | None]:
+        resolved = self.platform.targets.canonical_id(value)
+        if resolved:
+            return resolved, None
+        return None, {"status": "rejected", "failed_check": "entity_name", "retryable": True, "message": "Choose an exact visible or known entity name."}
+
+    def _inspect_entity(self, entity: str, question: str = "") -> dict[str, Any]:
+        entity_id, error = self._resolve_entity(entity)
+        return error or self.platform.perception.inspect_entity(self.actor_id, str(entity_id), question, global_scope=self.role in {"god", "world_builder"})
 
     def _listen(self, question: str = "", limit: int = 5) -> dict[str, Any]:
         return self.platform.perception.listen(self.actor_id, question, limit)
 
-    def _send_message(self, target_id: str, topic: str, message: str) -> dict[str, Any]:
-        return self.platform.submit_dialogue(self.actor_id, target_id, topic, message)
+    def _send_message(self, recipient: str, topic: str, message: str) -> dict[str, Any]:
+        return self.platform.submit_dialogue(self.actor_id, recipient, topic, message)
 
-    def _create_trade_offer(self, recipient_id: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
-        return self.platform.create_trade_offer(self.actor_id, recipient_id, give, want)
+    def _create_trade_offer(self, recipient: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
+        result = self.platform.create_trade_offer(self.actor_id, recipient, give, want)
+        return self._trade_result_with_choice(result)
 
-    def _accept_trade_offer(self, offer_id: str) -> dict[str, Any]:
-        return self.platform.accept_trade_offer(self.actor_id, offer_id)
+    def _resolve_offer(self, offer: str) -> tuple[str | None, dict[str, Any] | None]:
+        resolved, error = self.platform.view.resolve_trade_offer_choice(self.actor_id, offer)
+        return (str(resolved["offer_id"]), None) if resolved else (None, error)
 
-    def _counter_trade_offer(self, offer_id: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
-        return self.platform.counter_trade_offer(self.actor_id, offer_id, give, want)
+    def _accept_trade_offer(self, offer: str) -> dict[str, Any]:
+        offer_id, error = self._resolve_offer(offer)
+        return error or self.platform.accept_trade_offer(self.actor_id, str(offer_id))
 
-    def _reject_trade_offer(self, offer_id: str) -> dict[str, Any]:
-        return self.platform.reject_trade_offer(self.actor_id, offer_id)
+    def _counter_trade_offer(self, offer: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
+        offer_id, error = self._resolve_offer(offer)
+        if error:
+            return error
+        return self._trade_result_with_choice(self.platform.counter_trade_offer(self.actor_id, str(offer_id), give, want))
 
-    def _read_public_record(self, entity_id: str, question: str = "") -> dict[str, Any]:
-        return self.platform.perception.read_public_record(self.actor_id, entity_id, question, global_scope=self.role == "god")
+    def _reject_trade_offer(self, offer: str) -> dict[str, Any]:
+        offer_id, error = self._resolve_offer(offer)
+        return error or self.platform.reject_trade_offer(self.actor_id, str(offer_id))
+
+    def _trade_result_with_choice(self, result: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(result, dict) or not result.get("offer_id"):
+            return result
+        offer_view = next((item for item in self.platform.view._trade_offer_view(self.actor_id) if item.get("offer_id") == result.get("offer_id")), None)
+        public = dict(result)
+        if offer_view:
+            public["offer"] = offer_view.get("choice")
+        public.pop("offer_id", None)
+        return public
+
+    def _read_public_record(self, record: str, question: str = "") -> dict[str, Any]:
+        entity_id, error = self._resolve_entity(record)
+        return error or self.platform.perception.read_public_record(self.actor_id, str(entity_id), question, global_scope=self.role == "god")
 
     def _query_known_fact(self, query: str = "", limit: int = 8) -> dict[str, Any]:
         return self.platform.perception.query_known_fact(self.actor_id, query, limit)
@@ -436,56 +497,87 @@ class AgentToolExecutor:
     def _recall_memory(self, question: str = "", limit: int = 8) -> dict[str, Any]:
         return self.platform.memory.recall(self.actor_id, question, limit)
 
-    def _preview_behavior(self, behavior_ref: str, target: dict[str, Any] | None = None) -> dict[str, Any]:
-        view = self.platform.view.build_decision_view(self.actor_id, role=self.role)
-        for behavior in view.get("executable_behaviors", []):
-            if behavior.get("ref") == behavior_ref:
-                return {"status": "ok", "behavior": behavior, "target": target or {}}
-        return {"status": "rejected", "message": "The behavior is not offered to this agent."}
+    def _preview_behavior(self, choice: str, target: dict[str, Any] | None = None) -> dict[str, Any]:
+        behavior, error = self.platform.view.resolve_behavior_choice(self.actor_id, choice)
+        if error:
+            return error
+        # Do not echo the internal reference in a model-facing tool result.
+        public = {key: value for key, value in (behavior or {}).items() if key != "ref"}
+        return {"status": "ok", "behavior": public, "target": target or {}}
 
     def _request_behavior(
         self,
-        behavior_ref: str,
+        choice: str,
         target: dict[str, Any] | None = None,
         parameters: dict[str, Any] | None = None,
         reason: str = "",
         confidence: float = 0.0,
     ) -> dict[str, Any]:
+        behavior, error = self.platform.view.resolve_behavior_choice(self.actor_id, choice)
+        if error:
+            return error
         intent = BehaviorIntent(
             actor_id=self.actor_id,
-            behavior_ref=behavior_ref,
+            behavior_ref=str((behavior or {}).get("ref")),
             target=dict(target or {}),
             parameters=dict(parameters or {}),
             reason=reason,
             confidence=float(confidence),
             intent_id=str(uuid4()),
         )
-        return self.platform.submit_behavior(intent)
+        result = self.platform.submit_behavior(intent)
+        if isinstance(result, dict) and result.get("behavior_ref"):
+            # Keep canonical refs in Platform/audit storage, but return the
+            # visible choice to the model so it never has to learn an ID.
+            result = dict(result)
+            result["choice"] = (behavior or {}).get("choice") or (behavior or {}).get("name")
+            result.pop("behavior_ref", None)
+        return result
 
-    def _record_experience(self, summary: str, event_ref: str = "", confidence: float = 1.0) -> dict[str, Any]:
-        return self.platform.submit_experience(self.actor_id, event_ref, summary, float(confidence))
+    def _record_experience(self, summary: str, event: str = "", confidence: float = 1.0) -> dict[str, Any]:
+        return self.platform.submit_experience(self.actor_id, event, summary, float(confidence))
 
-    def _update_belief(self, confidence: float, belief_id: str = "", statement: str = "", reason: str = "") -> dict[str, Any]:
-        return self.platform.submit_belief_update(self.actor_id, belief_id, statement, float(confidence), reason)
+    def _update_belief(self, confidence: float, belief: str = "", statement: str = "", reason: str = "") -> dict[str, Any]:
+        return self.platform.submit_belief_update(self.actor_id, "", statement or belief, float(confidence), reason)
 
-    def _update_goal(self, statement: str, goal_id: str = "ultimate_goal", status: str = "active", priority: float = 1.0) -> dict[str, Any]:
-        return self.platform.submit_goal_update(self.actor_id, goal_id, statement, status, float(priority))
+    def _update_goal(self, statement: str, goal: str = "", status: str = "active", priority: float = 1.0) -> dict[str, Any]:
+        return self.platform.submit_goal_update(self.actor_id, "ultimate_goal", statement or goal, status, float(priority))
 
     def _propose_behavior(
         self,
         goal: str,
-        action_ids: list[str],
-        behavior_id: str = "",
+        actions: list[str],
+        name: str = "",
         summary: str = "",
         entry_conditions: list[str] | None = None,
         success_results: list[str] | None = None,
         failure_results: list[str] | None = None,
     ) -> dict[str, Any]:
+        action_defs = self.platform.store.get_definitions("action_def")
+        resolved_actions: list[str] = []
+        unknown_actions: list[str] = []
+        for action in actions:
+            key = "".join(char for char in str(action).casefold() if char.isalnum())
+            matches = [item["id"] for item in action_defs if key in {"".join(char for char in str(item.get("id", "")).casefold() if char.isalnum()), "".join(char for char in str(item.get("description", "")).casefold() if char.isalnum())}]
+            if len(matches) == 1:
+                resolved_actions.append(matches[0])
+            else:
+                unknown_actions.append(str(action))
+        if unknown_actions:
+            return {
+                "status": "rejected",
+                "failed_check": "action_name",
+                "retryable": True,
+                "message": "Use exact names from the registered action list.",
+                "unknown_actions": unknown_actions,
+                "available_actions": [str(item.get("id", "action")).replace("_", " ").title() for item in action_defs],
+            }
         proposal = {
-            "behavior_id": behavior_id,
+            "behavior_id": "",
+            "agent_label": name,
             "summary": summary or goal,
             "goal": goal,
-            "action_ids": list(action_ids),
+            "action_ids": resolved_actions,
             "entry_conditions": list(entry_conditions or []),
             "success_results": list(success_results or []),
             "failure_results": list(failure_results or []),
@@ -496,13 +588,15 @@ class AgentToolExecutor:
         self,
         entity_type: str,
         name: str,
-        entity_id: str = "",
-        location_id: str = "",
+        location: str = "",
         state: dict[str, Any] | None = None,
         description: str = "",
     ) -> dict[str, Any]:
+        location_id = self.platform.targets.canonical_id(location) if location else ""
+        if location and not location_id:
+            return {"status": "rejected", "failed_check": "location_name", "retryable": True, "message": "Choose an exact visible location name."}
         proposal = {
-            "entity_id": entity_id,
+            "entity_id": "",
             "entity_type": entity_type,
             "name": name,
             "location_id": location_id,

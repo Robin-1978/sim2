@@ -16,7 +16,9 @@ def _plain(value: Any) -> str:
     if value is None or value == "":
         return "unknown"
     if isinstance(value, dict):
-        return "; ".join(f"{key}={_plain(item)}" for key, item in value.items()) or "none"
+        hidden = {"id", "ref", "behavior_ref", "intent_id", "event_id", "entity_id", "actor_id", "target_id", "location_id", "offer_id"}
+        visible = ((key, item) for key, item in value.items() if key not in hidden and not key.endswith("_id"))
+        return "; ".join(f"{key}={_plain(item)}" for key, item in visible) or "none"
     if isinstance(value, (list, tuple, set)):
         separator = " | " if any(isinstance(item, dict) for item in value) else ", "
         return separator.join(_plain(item) for item in value) or "none"
@@ -29,7 +31,9 @@ def _result_line(result: Any) -> str:
     if not isinstance(result, dict):
         return _plain(result)
     parts: list[str] = []
-    for key in ("status", "behavior_ref", "result", "reason", "event_type", "failed_check", "message"):
+    # Canonical IDs are Platform/audit data.  The model receives the visible
+    # choice or name instead of an implementation reference.
+    for key in ("status", "choice", "behavior_choice", "result", "reason", "event_type", "failed_check", "message", "available_choices"):
         if result.get(key) not in (None, ""):
             parts.append(f"{key}={_plain(result[key])}")
     outcome = result.get("outcome")
@@ -60,11 +64,11 @@ def _protocol(role: str) -> list[str]:
     if role == "agent_decision":
         return [
             "Select exactly one allowed intent: request_behavior, send_message, create_trade_offer, accept_trade_offer, counter_trade_offer, reject_trade_offer, or wait.",
-            "Return wait when no behavior is suitable. Do not invent behavior names or fill duration, cost, or effects.",
+            "Return wait when no behavior is suitable. Use the exact visible choice/name; never output an internal ID. Do not invent behavior names or fill duration, cost, or effects.",
             "The Platform owns all state changes and continues long actions after this session ends.",
         ]
     if role == "agent_reflection":
-        return ["Compare expected and observed results. Keep only a new, durable lesson; if there is no useful change, return wait. Platform owns every state change."]
+        return ["Compare expected and observed results. Keep only a new, durable lesson; if there is no useful change, return wait. Use visible names and statements, never internal IDs. Platform owns every state change."]
     if role == "god":
         return ["Use the listed tools to submit one validated entity or world proposal. Platform owns every state change."]
     return ["Use validate_world_template before submit_world_template. Do not execute code or write files."]
@@ -147,8 +151,13 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     lines.append("  </knowledge_and_memory>")
     lines.append("<recent_actions>")
     recent_actions = context.get("recent_actions") or []
-    lines.extend([f"  - {item.get('event_type')}: {item.get('result') or item.get('behavior_id') or item.get('action_id') or 'completed'} at world minute {item.get('world_minute', 'unknown')}" for item in recent_actions[:2]] or ["  - none"])
+    lines.extend([f"  - {item.get('event_type')}: {item.get('result') or item.get('summary') or 'completed'} at world minute {item.get('world_minute', 'unknown')}" for item in recent_actions[:2]] or ["  - none"])
     lines.append("</recent_actions>")
+
+    lines.append("<open_trade_offers>")
+    offers = context.get("open_trade_offers") or []
+    lines.extend([f"  - choice: {item.get('choice')}; {item.get('summary', 'open offer')}" for item in offers[:5]] or ["  - none"])
+    lines.append("</open_trade_offers>")
 
     if role == "agent_reflection":
         lines.append("<outcome_review>")
@@ -165,7 +174,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 )
         else:
             lines.append("  - no completed or interrupted behavior needs review")
-        lines.append("  Keep an experience only when it is new, durable, and useful for a future decision; otherwise return wait.")
+        lines.append("  Keep an experience only when it is new, durable, and useful for a future decision; otherwise return wait. Write one to three concise sentences, under 500 characters.")
         lines.append("</outcome_review>")
 
     if role == "god":
@@ -200,17 +209,24 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     ])
     behaviors = context.get("executable_behaviors") or context.get("available_behaviors") or []
     for behavior in behaviors[:5]:
-        lines.append(f"    <behavior ref=\"{behavior.get('ref')}\">")
+        lines.append("    <behavior>")
         for label in ("name", "summary", "purpose", "when", "requires", "target", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "tags"):
             value = behavior.get(label)
             if value:
                 if isinstance(value, list):
                     value = "; ".join(str(item) for item in value)
                 lines.append(f"      {label}: {value}")
+        lines.append(f"      choice: {behavior.get('choice') or behavior.get('name') or 'unnamed behavior'}")
         lines.append("    </behavior>")
     if not behaviors:
         lines.append("    - none; return wait")
     lines.append("  </executable_behaviors>")
+
+    if role == "agent_reflection":
+        lines.append("  <registered_actions>")
+        actions = context.get("available_actions") or []
+        lines.extend([f"    - choice: {item.get('choice')}; {item.get('summary', 'configured action')}" for item in actions[:24]] or ["    - none"])
+        lines.append("  </registered_actions>")
 
     lines.extend(["  <decision>", f"    {task}", "  </decision>"])
     lines.extend(["  <interaction_history>"])

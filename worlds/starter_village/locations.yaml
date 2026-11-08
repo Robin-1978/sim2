@@ -35,6 +35,7 @@ locations:
   - id: smithy
     name: 铁匠铺
     public: restricted
+    safe: true
     tags: [craft, resource]
     routes: [village_square, old_quarry]
   - id: watchtower

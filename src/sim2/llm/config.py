@@ -21,6 +21,8 @@ class ProviderConfig:
     proxy: str | None = None
     session_header: str | None = None
     timeout_seconds: float = 120.0
+    max_retries: int = 2
+    retry_backoff_seconds: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,8 @@ class LLMConfig:
                 proxy=value.get("proxy"),
                 session_header=value.get("session_header"),
                 timeout_seconds=float(value.get("timeout_seconds", 120)),
+                max_retries=max(0, int(value.get("max_retries", 2))),
+                retry_backoff_seconds=max(0.0, float(value.get("retry_backoff_seconds", 1.0))),
             )
         if not providers:
             raise ValueError(f"No LLM providers configured in {config_path}")

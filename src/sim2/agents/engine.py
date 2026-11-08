@@ -20,10 +20,10 @@ from .tools import (
 
 
 ROLE_POLICIES = {
-    "agent_decision": """You are the decision phase of one individual Agent. This is one bounded session: use an allowed read tool when a fact is missing, then choose one offered behavior, reply to an interaction, accept/counter/reject a trade, or wait. You may only express intent; Platform owns every state change. Never invent hidden facts or references. A long behavior continues in Platform after this session ends.""",
-    "agent_reflection": """You are the Reflection and Evolution phase of one individual Agent. Compare the selected behavior's expected and observed result. Keep an experience only when it is new, durable, and useful for a future decision; otherwise wait. You may submit a belief, goal, or behavior proposal, but Platform validates every proposal and you never edit state directly.""",
-    "god": """You are the God Agent for one world. Read only the few facts needed for one decision (at most 8 read calls), then submit exactly one entity or world change proposal. For a world change, change_type must be exactly one of world_property, rule, relationship, faction, or event. Use world_property/rule/relationship/faction when you claim a direct state change with a concrete value. Use event only for a narrative signal whose effects are handled by a configured rule; never claim an event alone changed an Agent's ability, resource, or condition. Do not enumerate the whole world. Platform validates and applies every side effect; never edit state directly.""",
-    "world_builder": """You are the World Builder Agent. Draft a declarative world template, validate it, and submit it only after validation succeeds. Do not execute code or create a database directly.""",
+    "agent_decision": """You are the decision phase of one individual Agent. This is one bounded session: use an allowed read tool when a fact is missing, then choose one offered behavior, reply to an interaction, accept/counter/reject a trade, or wait. Use only visible choice and name fields; never output database IDs or internal references. You may only express intent; Platform owns every state change. Never invent hidden facts. A long behavior continues in Platform after this session ends.""",
+    "agent_reflection": """You are the Reflection and Evolution phase of one individual Agent. Compare the selected behavior's expected and observed result. Keep an experience only when it is new, durable, and useful for a future decision; otherwise wait. Write an experience in one to three concise sentences and stay under 500 characters. Use visible action names and statements, never database IDs. You may submit a belief, goal, or behavior proposal, but Platform validates every proposal and you never edit state directly.""",
+    "god": """You are the God Agent for one world. Read only the few facts needed for one decision (at most 8 read calls), then submit exactly one entity or world change proposal. Use visible names, never database IDs or internal references. For a world change, change_type must be exactly one of world_property, rule, relationship, faction, or event. Use world_property/rule/relationship/faction when you claim a direct state change with a concrete value. Use event only for a narrative signal whose effects are handled by a configured rule; never claim an event alone changed an Agent's ability, resource, or condition. Do not enumerate the whole world. Platform validates and applies every side effect; never edit state directly.""",
+    "world_builder": """You are the World Builder Agent. Draft a declarative world template using human-readable names, validate it, and submit it only after validation succeeds. Do not output database IDs, execute code, or create a database directly.""",
 }
 
 ROLE_INTENTS = {
@@ -169,18 +169,20 @@ class AgentEngine:
                         tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "repeated_tool_call", "message": "The same tool request was repeated; use the previous result or choose the previous result."}
                     else:
                         tool_result = executor.execute(tool_name, arguments)
-                    transcript.append({"step": "tool", "name": tool_name, "arguments": arguments, "result": tool_result})
+                    model_tool_result = tool_result
+                    internal_tool_result = self._restore_internal_tool_result(tool_name, arguments, tool_result)
+                    transcript.append({"step": "tool", "name": tool_name, "arguments": arguments, "result": internal_tool_result})
                     context.setdefault("interaction_history", []).extend([
                         {"kind": "assistant_tool_call", "name": tool_name, "arguments": arguments},
-                        {"kind": "tool_result", "name": tool_name, "result": tool_result},
+                        {"kind": "tool_result", "name": tool_name, "result": model_tool_result},
                     ])
-                    context.setdefault("tool_results", []).append({"tool": tool_name, "result": tool_result})
-                    context["last_platform_result"] = tool_result
-                    last_result = tool_result
+                    context.setdefault("tool_results", []).append({"tool": tool_name, "result": model_tool_result})
+                    context["last_platform_result"] = model_tool_result
+                    last_result = internal_tool_result
                     if native_call is not None:
-                        conversation_messages.append({"role": "tool", "tool_call_id": native_call.get("id", "tool_call"), "name": tool_name, "content": json.dumps(tool_result, ensure_ascii=False)})
-                    if TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "intent" and tool_result.get("status") in {"accepted", "wait"}:
-                        accepted_result = tool_result
+                        conversation_messages.append({"role": "tool", "tool_call_id": native_call.get("id", "tool_call"), "name": tool_name, "content": json.dumps(model_tool_result, ensure_ascii=False)})
+                    if TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "intent" and model_tool_result.get("status") in {"accepted", "wait"}:
+                        accepted_result = internal_tool_result
                 if native_tool_calls:
                     # Native tool results are not enough by themselves: feed
                     # the compact, updated world view back as the next user
@@ -188,7 +190,7 @@ class AgentEngine:
                     conversation_messages.append({"role": "user", "content": render_context(context, task)})
                 else:
                     conversation_messages.append({"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
-                    conversation_messages.append({"role": "user", "content": f"Tool results: {json.dumps(last_result, ensure_ascii=False)}"})
+                    conversation_messages.append({"role": "user", "content": f"Tool results: {json.dumps(model_tool_result, ensure_ascii=False)}"})
                 if accepted_result is not None:
                     return AgentTurn(role, task_type, last_response, accepted_result, iteration, transcript)
                 continue
@@ -208,6 +210,23 @@ class AgentEngine:
 
         return AgentTurn(role, task_type, last_response, last_result, self.max_iterations, transcript)
 
+    def _restore_internal_tool_result(self, tool_name: str, arguments: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+        """Keep internal audit details on AgentTurn without exposing them to the model."""
+
+        if tool_name != "propose_entity" or result.get("status") != "accepted" or result.get("entity_id"):
+            return result
+        name = str(arguments.get("name") or "").strip()
+        if not name:
+            return result
+        row = self.platform.store.connection.execute(
+            "SELECT id FROM entity WHERE name=? ORDER BY rowid DESC LIMIT 1", (name,)
+        ).fetchone()
+        if row is None:
+            return result
+        restored = dict(result)
+        restored["entity_id"] = row["id"]
+        return restored
+
     @staticmethod
     def _task_text(role: str, task_type: str) -> str:
         if role == "agent_decision":
@@ -226,7 +245,7 @@ class AgentEngine:
             return {"status": "rejected", "failed_check": "intent_schema", "retryable": True, "message": "Intent must be an object."}
         if data.get("type") == "intent":
             data.pop("type", None)
-        intent_type = str(data.get("intent_type") or data.get("kind") or ("select_behavior" if data.get("behavior_ref") or data.get("behavior_id") or data.get("behavior") else ""))
+        intent_type = str(data.get("intent_type") or data.get("kind") or ("select_behavior" if data.get("choice") or data.get("behavior_ref") or data.get("behavior_id") or data.get("behavior") else ""))
         if data.get("wait") is True:
             intent_type = "wait"
         if intent_type not in ROLE_INTENTS.get(role, set()):
@@ -235,30 +254,58 @@ class AgentEngine:
             return {"status": "wait", "reason": str(data.get("reason") or data.get("message") or "No suitable behavior now.")}
         try:
             if intent_type == "select_behavior":
+                # The model-facing contract uses a visible choice name.  The
+                # canonical ref is resolved from the current Platform view
+                # immediately before submission and never guessed by the LLM.
+                if data.get("choice") and not data.get("behavior_ref"):
+                    behavior, error = self.view.resolve_behavior_choice(actor_id, data.get("choice"))
+                    if error:
+                        return error
+                    data = dict(data)
+                    data["behavior_ref"] = behavior["ref"]
                 return self.platform.submit_behavior(BehaviorIntent.from_json(data, actor_id=actor_id))
             if intent_type == "send_message":
-                return self.platform.submit_dialogue(actor_id, str(data.get("target_id") or ""), str(data.get("topic") or "general"), str(data.get("message") or ""))
+                return self.platform.submit_dialogue(actor_id, str(data.get("recipient") or data.get("target_id") or ""), str(data.get("topic") or "general"), str(data.get("message") or ""))
             if intent_type == "create_trade_offer":
-                return self.platform.create_trade_offer(actor_id, str(data.get("recipient_id") or ""), dict(data.get("give") or {}), dict(data.get("want") or {}))
+                return self.platform.create_trade_offer(actor_id, str(data.get("recipient") or data.get("recipient_id") or ""), dict(data.get("give") or {}), dict(data.get("want") or {}))
             if intent_type == "accept_trade_offer":
-                return self.platform.accept_trade_offer(actor_id, str(data.get("offer_id") or ""))
+                offer, error = self.view.resolve_trade_offer_choice(actor_id, data.get("offer") or data.get("offer_id"))
+                if error:
+                    return error
+                return self.platform.accept_trade_offer(actor_id, str(offer["offer_id"]))
             if intent_type == "counter_trade_offer":
-                return self.platform.counter_trade_offer(actor_id, str(data.get("offer_id") or ""), dict(data.get("give") or {}), dict(data.get("want") or {}))
+                offer, error = self.view.resolve_trade_offer_choice(actor_id, data.get("offer") or data.get("offer_id"))
+                if error:
+                    return error
+                return self.platform.counter_trade_offer(actor_id, str(offer["offer_id"]), dict(data.get("give") or {}), dict(data.get("want") or {}))
             if intent_type == "reject_trade_offer":
-                return self.platform.reject_trade_offer(actor_id, str(data.get("offer_id") or ""))
+                offer, error = self.view.resolve_trade_offer_choice(actor_id, data.get("offer") or data.get("offer_id"))
+                if error:
+                    return error
+                return self.platform.reject_trade_offer(actor_id, str(offer["offer_id"]))
             if intent_type == "record_experience":
-                return self.platform.submit_experience(actor_id, str(data.get("event_ref") or ""), str(data.get("summary") or ""), float(data.get("confidence", 1.0)))
+                return self.platform.submit_experience(actor_id, str(data.get("event") or data.get("event_ref") or ""), str(data.get("summary") or ""), float(data.get("confidence", 1.0)))
             if intent_type == "update_belief":
-                return self.platform.submit_belief_update(actor_id, str(data.get("belief_id") or ""), str(data.get("statement") or ""), float(data.get("confidence", 0.0)), str(data.get("reason") or ""))
+                return self.platform.submit_belief_update(actor_id, "", str(data.get("statement") or data.get("belief") or ""), float(data.get("confidence", 0.0)), str(data.get("reason") or ""))
             if intent_type == "update_goal":
-                return self.platform.submit_goal_update(actor_id, str(data.get("goal_id") or "ultimate_goal"), str(data.get("statement") or ""), str(data.get("status") or "active"), float(data.get("priority", 1.0)))
+                return self.platform.submit_goal_update(actor_id, "ultimate_goal", str(data.get("statement") or data.get("goal") or ""), str(data.get("status") or "active"), float(data.get("priority", 1.0)))
             if intent_type == "propose_behavior":
                 proposal = dict(data)
                 proposal.pop("intent_type", None)
+                if not proposal.get("action_ids") and proposal.get("actions"):
+                    proposal["action_ids"] = self._resolve_action_names(proposal.pop("actions"))
+                proposal["behavior_id"] = ""
+                proposal["agent_label"] = str(proposal.pop("name", "") or "")
                 return self.platform.submit_behavior_proposal(actor_id, proposal)
             if intent_type == "propose_entity":
                 proposal = dict(data)
                 proposal.pop("intent_type", None)
+                proposal["entity_id"] = ""
+                if proposal.get("location") and not proposal.get("location_id"):
+                    location = proposal.pop("location")
+                    proposal["location_id"] = self.platform.targets.canonical_id(location)
+                    if not proposal["location_id"]:
+                        return {"status": "rejected", "failed_check": "location_name", "retryable": True, "message": "Choose an exact visible location name."}
                 return self.platform.submit_entity_proposal(actor_id, proposal)
             if intent_type == "propose_world_change":
                 proposal = dict(data)
@@ -269,6 +316,23 @@ class AgentEngine:
         except (TypeError, ValueError, KeyError) as exc:
             return {"status": "rejected", "failed_check": "intent_schema", "message": str(exc)}
         return {"status": "rejected", "failed_check": "intent_type", "message": "Intent was not handled."}
+
+    def _resolve_action_names(self, actions: Any) -> list[str]:
+        definitions = self.platform.store.get_definitions("action_def")
+        resolved: list[str] = []
+        for value in list(actions or []):
+            key = "".join(char for char in str(value).casefold() if char.isalnum())
+            matches = []
+            for item in definitions:
+                candidates = {
+                    "".join(char for char in str(item.get("id", "")).casefold() if char.isalnum()),
+                    "".join(char for char in str(item.get("description", "")).casefold() if char.isalnum()),
+                }
+                if key in candidates:
+                    matches.append(str(item["id"]))
+            if len(matches) == 1:
+                resolved.append(matches[0])
+        return resolved
 
     def _audit(
         self,

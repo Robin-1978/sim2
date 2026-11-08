@@ -33,7 +33,9 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
     if turn.role == "agent_decision":
         behaviors = view.get("executable_behaviors") or view.get("available_behaviors", [])
         refs = {item.get("ref") for item in behaviors}
-        behavior_ref = payload.get("behavior_ref") or turn.result.get("behavior_ref")
+        choice = payload.get("choice")
+        selected_by_choice = next((item for item in behaviors if str(item.get("choice") or item.get("name", "")).casefold() == str(choice or "").casefold()), None)
+        behavior_ref = payload.get("behavior_ref") or turn.result.get("behavior_ref") or (selected_by_choice or {}).get("ref")
         if behavior_ref and not str(behavior_ref).startswith("behavior:"):
             behavior_ref = f"behavior:{behavior_ref}"
         checks.append(_check("behavior_is_offered", behavior_ref in refs, f"selected={behavior_ref}; offered={sorted(refs)}"))
@@ -41,7 +43,7 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         checks.append(_check("decision_reason_advisory", True, f"reason_length={len(reason.strip())}; detailed rationale is optional and reviewed by Reflection"))
         parameters = payload.get("parameters") or {}
         checks.append(_check("decision_does_not_fill_execution_costs", not any(key in parameters for key in {"duration", "fatigue", "exposure", "cost", "effects"}), f"parameter_keys={sorted(parameters)}"))
-        selected = next((item for item in behaviors if item.get("ref") == behavior_ref), {})
+        selected = next((item for item in behaviors if item.get("ref") == behavior_ref), selected_by_choice or {})
         drive_ids = {item.get("id") for item in (view.get("drives") or [])[:3]}
         goal_tags = set(view.get("goal_tags") or [])
         alignment = (goal_tags & set(selected.get("goal_tags") or [])) | (drive_ids & set(selected.get("drive_tags") or []))
@@ -72,8 +74,14 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         elif name == "update_goal" or payload.get("intent_type") == "update_goal":
             statement = str(payload.get("statement") or "")
             checks.append(_check("reflection_goal_is_specific", len(statement) >= 12, f"statement_length={len(statement)}"))
+        elif name == "update_belief" or payload.get("intent_type") == "update_belief":
+            statement = str(payload.get("statement") or payload.get("belief") or "")
+            confidence = payload.get("confidence")
+            checks.append(_check("reflection_belief_is_specific", len(statement.strip()) >= 12, f"statement_length={len(statement)}"))
+            checks.append(_check("reflection_belief_confidence_is_valid", isinstance(confidence, (int, float)) and 0 <= confidence <= 1, f"confidence={confidence}"))
         elif name == "propose_behavior" or payload.get("intent_type") == "propose_behavior":
-            checks.append(_check("reflection_behavior_proposal_has_actions", bool(payload.get("action_ids")), f"action_ids={payload.get('action_ids')}"))
+            actions = payload.get("action_ids") or payload.get("actions")
+            checks.append(_check("reflection_behavior_proposal_has_actions", bool(actions), f"actions={actions}"))
         else:
             checks.append(_check("reflection_intent_is_known", name in {"record_experience", "update_belief", "update_goal", "propose_behavior"}, f"submission={name}"))
     elif turn.role == "god":

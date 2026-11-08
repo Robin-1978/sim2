@@ -8,6 +8,7 @@ actions:
   - route.known
   - actor.mobile
   - destination.reachable
+  requires_destination: true
   duration:
     mode: route_distance
   costs:

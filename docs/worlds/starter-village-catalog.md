@@ -91,6 +91,6 @@
 
 ## Platform 执行边界
 
-动作和 BT 配置只声明目标、条件、成本、时长、效果和结果。Platform 使用通用 `target_resolver`、`condition_engine`、`effect_pipeline` 和 `event_writer` 执行；LLM 只提交 AgentView 中的稳定引用、目标和参数。
+动作和 BT 配置只声明目标、条件、成本、时长、效果和结果。Platform 使用通用 `target_resolver`、`condition_engine`、`effect_pipeline` 和 `event_writer` 执行；LLM 只提交 AgentView 中的可读 `choice`、目标名称和参数，内部引用由 Platform 映射。
 
 执行中的 Action 默认不接受外部即时互动；需要在同一 tick 继续聊天或交易的 Action 显式声明 `interaction_policy: allow`。雾溪村允许休息、巡逻、治疗、检查、防御和报警期间互动；移动、探索、制作、攻击、逃跑和研究期间不允许互动。暂停保留游标和资源锁，取消才释放资源并结束当前 BT。

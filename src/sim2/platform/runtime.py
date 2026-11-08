@@ -615,6 +615,14 @@ class Platform:
         behavior_id = str(proposal.get("behavior_id") or f"proposed_{uuid4().hex[:10]}")
         if any(x["id"] == behavior_id for x in self.store.get_definitions("bt_def")):
             errors.append(f"behavior already exists: {behavior_id}")
+        proposed_label = str(proposal.get("agent_label") or proposal.get("summary") or proposal.get("goal") or "").casefold()
+        proposed_actions = list(action_ids)
+        for existing in self.store.get_definitions("bt_def"):
+            existing_label = str(existing.get("agent_label") or existing.get("summary") or existing.get("id", "").replace("_", " ")).casefold()
+            existing_actions = [node.get("action_id") for node in existing.get("nodes", []) if node.get("type") == "action"]
+            if proposed_label and existing_label == proposed_label and existing_actions == proposed_actions:
+                errors.append("an equivalent behavior is already registered")
+                break
         data = {**proposal, "behavior_id": behavior_id, "actor_id": actor_id}
         if errors:
             return self._reject_intent(intent_id, actor_id, "propose_behavior", data, {"status": "rejected", "message": "Behavior proposal failed validation.", "errors": errors, "retryable": True})
@@ -630,6 +638,7 @@ class Platform:
             nodes.append({"type": "action", "action_id": action_id})
         definition = {
             "id": behavior_id, "version": 1, "scope": "personal", "summary": proposal.get("summary") or proposal["goal"],
+            "agent_label": proposal.get("agent_label") or proposal.get("summary") or proposal["goal"],
             "entry_conditions": proposal.get("entry_conditions", []), "estimated_minutes": estimated,
             "success_results": proposal.get("success_results", []), "failure_results": proposal.get("failure_results", []),
             "nodes": nodes, "definition_source": "agent_proposal", "kind": "proposed", "validation_status": "validated",
@@ -1017,6 +1026,8 @@ class Platform:
         state = dict(agent.get("initial_state") or {})
         parameters = self._resolve_parameters(dict(action_info.get("parameters") or {}), state)
         parameters = self._apply_action_parameter_defaults(agent, action, parameters)
+        if action.get("requires_destination") and parameters.get("location_id") == state.get("location_id"):
+            return False, "a different destination is required"
         resolved_target, target_error = self.targets.resolve(agent, parameters)
         if target_error:
             return False, target_error
@@ -1076,6 +1087,8 @@ class Platform:
         state = dict(agent.get("initial_state") or {})
         parameters = self._resolve_parameters(dict(action_info.get("parameters") or {}), state)
         parameters = self._apply_action_parameter_defaults(agent, action, parameters)
+        if action.get("requires_destination") and parameters.get("location_id") == state.get("location_id"):
+            return None, "a different destination is required"
         target, target_error = self.targets.resolve(agent, parameters)
         if target_error:
             return None, target_error

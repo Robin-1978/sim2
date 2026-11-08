@@ -69,6 +69,8 @@ Decision Agent 只选择 Platform 已经注册、校验并过滤过的行为。�
 
 `available_behaviors` 只包含 Platform 已经验证过的 BT 或 Action。实体、地点、物体和规则也使用相同的简洁视图：`ref`、`name`、`type`、`summary`、`known_state`、`distance`、`visibility` 和 `constraints`。隐藏真相、完整数据库和其他 Agent 的私有记忆不进入视图。
 
+这里的 `ref` 是 Platform 内部字段；渲染给 Agent 的视图只保留 `name`/`choice` 等可读名称。工具 schema 同样使用 `entity`、`recipient`、`record` 和 `offer` 这类名称字段，Platform 在权限范围内解析为内部引用。
+
 这段 JSON 是 Platform 内部的单个决策切片，不是发送给 LLM 的完整 Prompt。发送时它被渲染为简短文本；函数名和参数只通过 API 的 JSON Schema 工具通道提供。Context Compiler 默认只保留：当前 Agent、当前地点、当前事件、最高的 3 个驱动、直接关系、最相关的 3 到 8 条知识或记忆、最多 5 个可执行候选和最近一次 Platform 结果。God Agent 使用世界级摘要和按需查询；WorldBuilder Agent 分阶段处理世界模板。上下文预算先保证当前错误、活动任务、直接关系和候选行为，再压缩长期摘要和低相关信息。
 
 关系使用人类可读摘要表达：
@@ -87,14 +89,19 @@ Agent 需要更远或更详细的信息时，通过 `observe_nearby`、`recall_m
 
 ## ActionView 与 BTView
 
-LLM 永远不接收 BT JSON/AST、节点类型、内部 predicate 或 Action handler。Bootstrap 将 BT 定义存入 SQLite；AgentViewCompiler 只把当前可执行 BT 翻译成简短自然语言：目的、何时适用、需要满足的条件、步骤名称、预计时间、成本、影响、成功/失败结果和中断方式。Agent 只回传稳定的 `behavior_ref`，Platform 再用 SQLite 中的原始 BT 执行。
+LLM 永远不接收 BT JSON/AST、节点类型、内部 predicate 或 Action handler。Bootstrap 将 BT 定义存入 SQLite；AgentViewCompiler 只把当前可执行 BT 翻译成简短自然语言：目的、何时适用、需要满足的条件、步骤名称、预计时间、成本、影响、成功/失败结果和中断方式。Agent 只提交当前视图中的人类可读 `choice`（例如 `Explore Greywood`），Platform 在同一份候选视图中做规范化的精确映射，再用 SQLite 中的原始 BT 执行。
+
+`behavior_ref`（例如 `behavior:explore_greywood`）仍然是 Platform、SQLite、审计和重放使用的内部键，不进入模型可见的上下文、工具参数或工具结果。选择映射不做模糊搜索：大小写、空格和标点归一化后必须唯一匹配；未知、重名或已经过期的 choice 会被拒绝，并返回当前可选名称。配置可为重名行为声明 `agent_label`；如果仍重名，编译器只添加人类可读的 `(option 1)` 后缀。旧集成可以在 Platform 边界暂时提交内部 ref，但它不是 Agent 协议。
+
+同一规则适用于可见地点、人物、物体和交互对象：上下文显示名称，Agent 提交名称，Platform 只在当前权限和可见范围内做精确解析。两个实体同名时返回歧义错误和带上下文的可选名称；Platform 不做模糊猜测，也不接受 Agent 自己填写的数据库 ID。交易 offer 使用当前互动会话中的人类可读描述，内部 offer ID 只留在 Platform 事务和审计中。
 
 每个元动作和 BT 都必须生成以下英文视图字段：
 
 | 字段 | 含义 |
 |---|---|
-| `ref` | Platform 稳定引用，LLM 原样回传 |
-| `name` | 人类可读名称 |
+| `choice` | 当前视图中供 Agent 选择的简短名称；Agent 原样回传 |
+| `ref` | Platform 内部稳定引用；仅用于 SQLite、审计和执行，不渲染给 LLM |
+| `name` | 人类可读名称（通常与 `choice` 相同） |
 | `summary` | 一句话目的 |
 | `when` | 简短自然语言条件 |
 | `purpose` | 行为的目标 |
@@ -118,8 +125,8 @@ Decision Agent 返回选择 Intent，而不是完整状态或 BT 定义：
 {
   "intent_type": "select_behavior",
   "actor_id": "he_yan",
-  "behavior_ref": "behavior:sound_alarm",
-  "target": {"location_id": "north_gate"},
+  "choice": "Raise warning alarm",
+  "target": {"location": "North Gate"},
   "parameters": {"alarm_type": "boundary"},
   "reason": "The threat is high and the watch post is available.",
   "confidence": 0.87

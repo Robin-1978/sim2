@@ -42,6 +42,8 @@ def validate_agent_view(view: dict[str, Any], *, role: str | None = None) -> lis
             elif ref in refs:
                 errors.append(f"duplicate behavior ref: {ref}")
             refs.add(ref)
+            if not isinstance(behavior.get("choice"), str) or not behavior.get("choice", "").strip():
+                errors.append(f"behavior {ref or '<unknown>'} is missing choice")
             for field in ("purpose", "when", "requires", "time", "cost", "impact", "success", "failure"):
                 if not behavior.get(field):
                     errors.append(f"behavior {ref or '<unknown>'} is missing {field}")

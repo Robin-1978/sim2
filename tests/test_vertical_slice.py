@@ -2,11 +2,13 @@ from pathlib import Path
 import pytest
 import json
 import threading
+import httpx
 from urllib.request import Request, urlopen
 from sim2.intents.models import BehaviorIntent
 
 from sim2.agents.engine import AgentEngine
 from sim2.agents.tools import AgentToolExecutor
+from sim2.agents.tools import tool_schemas_for_role
 from sim2.agents.quality import evaluate_turn
 from sim2.agent_view.validator import validate_agent_view
 from sim2.actions.conditions import ConditionEngine
@@ -19,6 +21,8 @@ from sim2.bootstrap.service import create_instance, validate_config
 from sim2.platform.runtime import Platform
 from sim2.prompting.renderer import render_context
 from sim2.simulation.runner import SimulationRunner
+from sim2.llm.config import ProviderConfig
+from sim2.llm.gateway import OpenAICompatibleProvider
 
 
 class FakeProvider:
@@ -98,6 +102,55 @@ def test_bootstrap_and_agent_intent(tmp_path: Path):
         platform.close()
 
 
+def test_agent_selects_human_readable_choice_and_prompt_hides_behavior_ref(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "choice-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    provider = FakeProvider(
+        {
+            "choice": "Explore Greywood",
+            "reason": "The area is unknown and exploration supports the map goal.",
+            "confidence": 0.9,
+        }
+    )
+    try:
+        turn = AgentEngine(platform, provider).run(role="agent_decision", actor_id="lu_xingzhou")
+        assert turn.result["status"] == "accepted"
+        assert turn.result["behavior_ref"] == "behavior:explore_greywood"
+        prompt = provider.calls[0][1]
+        assert "choice: Explore Greywood" in prompt
+        assert "behavior:explore_greywood" not in prompt
+        assert 'ref="' not in prompt
+    finally:
+        platform.close()
+
+
+def test_model_tool_schemas_use_visible_names_instead_of_ids():
+    for role in ("agent_decision", "agent_reflection", "god"):
+        schemas = tool_schemas_for_role(role)
+        for schema in schemas:
+            properties = schema["function"]["parameters"].get("properties", {})
+            assert not any(key == "id" or key.endswith("_id") for key in properties)
+
+
+def test_provider_retries_transient_disconnect_without_logging_credentials(monkeypatch):
+    responses = [httpx.RemoteProtocolError("disconnect"), httpx.Response(200, request=httpx.Request("POST", "http://example.test"), json={"choices": [{"message": {"content": '{"intent_type":"wait"}'}}]})]
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append(kwargs)
+        value = responses.pop(0)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    monkeypatch.setattr("sim2.llm.gateway.httpx.post", fake_post)
+    provider = OpenAICompatibleProvider(ProviderConfig("test", "openai_compatible", "http://example.test/v1", "test", max_retries=1, retry_backoff_seconds=0))
+    result = provider.complete_json(system="system", context="context")
+    assert result["intent_type"] == "wait"
+    assert len(calls) == 2
+
+
 def test_provider_failure_is_bounded_and_backed_off(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "provider-failure-world", tmp_path / "runtime")
@@ -132,6 +185,19 @@ def test_platform_run_owns_autonomous_scheduler(tmp_path: Path):
         assert report.end_minute == 1
         assert platform.status()["world_minute"] == 1
         assert provider.calls
+    finally:
+        platform.close()
+
+
+def test_simulation_report_counts_behavior_events_beyond_recent_event_window(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "report-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    provider = FakeProvider({"behavior_ref": "behavior:rest_and_recover", "reason": "Recover readiness.", "confidence": 0.8})
+    try:
+        report = SimulationRunner(platform, {"agent_decision": provider}).run(1)
+        assert report.selected_behaviors
+        assert report.diversity["unique_behaviors"] >= 1
     finally:
         platform.close()
 
@@ -184,14 +250,14 @@ def test_food_store_bt_supplies_agents_without_carried_food(tmp_path: Path):
         platform.close()
 
 
-def test_agent_view_filters_unavailable_recipe_and_keeps_travel_fallback(tmp_path: Path):
+def test_agent_view_filters_unavailable_recipe_and_noop_travel(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "agent-view-filter-world", tmp_path / "runtime")
     platform = Platform(db_path)
     try:
         blacksmith = {item["ref"] for item in platform.decision_view("tian_yan")["executable_behaviors"]}
         assert "behavior:craft_meal" not in blacksmith
-        assert "behavior:travel" in blacksmith
+        assert "behavior:travel" not in blacksmith
         assert all(platform.decision_view(agent["id"])["executable_behaviors"] for agent in platform.store.list_agents())
     finally:
         platform.close()
@@ -383,6 +449,21 @@ def test_validated_behavior_proposal_enters_agent_executable_catalog(tmp_path: P
         view = platform.decision_view("lu_xingzhou")
         proposed = next(item for item in view["executable_behaviors"] if item["ref"] == "behavior:survey_then_explore")
         assert proposed["registration"] == "platform_validated"
+    finally:
+        platform.close()
+
+
+def test_platform_rejects_equivalent_behavior_proposal(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "duplicate-bt-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        result = platform.submit_behavior_proposal(
+            "lu_xingzhou",
+            {"behavior_id": "new_explore", "agent_label": "Explore Greywood", "summary": "Explore Greywood", "goal": "Map Greywood", "action_ids": ["travel_to", "explore_area", "communicate"]},
+        )
+        assert result["status"] == "rejected"
+        assert any("equivalent" in error for error in result["errors"])
     finally:
         platform.close()
 
@@ -667,7 +748,7 @@ def test_parallel_bt_runs_action_instances_concurrently(tmp_path: Path):
     platform = Platform(db_path)
     try:
         with platform.store.transaction():
-            platform.store.put_definition("bt_def", "parallel_test", {"id": "parallel_test", "version": 1, "summary": "Run two independent tasks", "estimated_minutes": 48, "nodes": [{"type": "parallel", "children": [{"type": "action", "action_id": "rest", "parameters": {"location_id": "context.location_id"}}, {"type": "action", "action_id": "travel_to", "parameters": {"location_id": "context.location_id"}}]}]})
+            platform.store.put_definition("bt_def", "parallel_test", {"id": "parallel_test", "version": 1, "summary": "Run two independent tasks", "estimated_minutes": 48, "nodes": [{"type": "parallel", "children": [{"type": "action", "action_id": "rest", "parameters": {"location_id": "context.location_id"}}, {"type": "action", "action_id": "travel_to", "parameters": {"location_id": "watchtower"}}]}]})
             agent = platform.store.get_agent("lu_xingzhou")
             agent["initial_state"]["location_id"] = "village_square"
             agent["initial_bt_ids"].append("parallel_test")

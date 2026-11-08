@@ -491,9 +491,21 @@ class WorldStore:
     def recent_events(self, *, limit: int = 20) -> list[dict[str, Any]]:
         rows = self.connection.execute(
             "SELECT event_id,event_type,actor_id,world_minute,data_json FROM event_log ORDER BY event_id DESC LIMIT ?",
-            (max(1, min(int(limit), 100)),),
+            (max(1, min(int(limit), 10000)),),
         ).fetchall()
         return [{"event_id": row["event_id"], "event_type": row["event_type"], "actor_id": row["actor_id"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
+
+    def event_type_counts(self) -> dict[str, int]:
+        rows = self.connection.execute("SELECT event_type,COUNT(*) AS count FROM event_log GROUP BY event_type").fetchall()
+        return {str(row["event_type"]): int(row["count"]) for row in rows}
+
+    def behavior_start_counts(self) -> dict[str, int]:
+        rows = self.connection.execute(
+            "SELECT json_extract(data_json,'$.behavior_id') AS behavior_id,COUNT(*) AS count "
+            "FROM event_log WHERE event_type='behavior.started' "
+            "AND json_extract(data_json,'$.behavior_id') IS NOT NULL GROUP BY behavior_id"
+        ).fetchall()
+        return {str(row["behavior_id"]): int(row["count"]) for row in rows}
 
     def recent_events_for_actor(self, actor_id: str, *, limit: int = 2) -> list[dict[str, Any]]:
         rows = self.connection.execute(

@@ -12,14 +12,18 @@
       "base_url": "http://127.0.0.1:8192/v1",
       "model": "local-model",
       "api_key_env": null,
-      "timeout_seconds": 120
+      "timeout_seconds": 120,
+      "max_retries": 2,
+      "retry_backoff_seconds": 1.0
     },
     "remote": {
       "type": "openai_compatible",
       "base_url": "https://opencode.ai/inference/go/openai/v1",
       "model": "beam-free",
-      "api_key_env": "BEAM_API_KEY",
-      "timeout_seconds": 120
+      "api_key_env": "MY_MY_API",
+      "timeout_seconds": 120,
+      "max_retries": 2,
+      "retry_backoff_seconds": 1.0
     }
   }
 }

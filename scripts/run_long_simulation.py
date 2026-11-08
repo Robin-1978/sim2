@@ -35,11 +35,12 @@ class DeterministicProvider:
                 "scope": "world",
                 "effects": ["record a new public signal"],
             }
-        refs = re.findall(r'<behavior ref="([^"]+)">', context)
-        if not refs:
+        behavior_section = context.split("<executable_behaviors>", 1)[-1].split("</executable_behaviors>", 1)[0]
+        choices = re.findall(r"^\s+choice: (.+)$", behavior_section, flags=re.MULTILINE)
+        if not choices:
             return {"intent_type": "wait", "reason": "No executable behavior."}
-        ref = refs[(self.calls - 1) % len(refs)]
-        return {"behavior_ref": ref, "reason": "Choose an offered behavior for the current state.", "confidence": 0.7}
+        choice = choices[(self.calls - 1) % len(choices)]
+        return {"choice": choice, "reason": "Choose an offered behavior for the current state.", "confidence": 0.7}
 
 
 def main() -> int:

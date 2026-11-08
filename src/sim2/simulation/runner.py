@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -71,11 +70,8 @@ class SimulationRunner:
             self._run_due_evolution(report)
             self._run_idle_decisions(report)
         report.end_minute = int(self.platform.store.get_meta("world_minute", 0))
-        report.event_types = dict(Counter(event["event_type"] for event in self.platform.store.recent_events(limit=10000)))
-        report.selected_behaviors = dict(Counter(
-            event.get("behavior_id") for event in self.platform.store.recent_events(limit=10000)
-            if event.get("event_type") == "behavior.started" and event.get("behavior_id")
-        ))
+        report.event_types = self.platform.store.event_type_counts()
+        report.selected_behaviors = self.platform.store.behavior_start_counts()
         report.diversity = self._diversity(report)
         report.degeneration_flags = self._degeneration_flags(report)
         return report

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import uuid4
@@ -32,6 +33,40 @@ class OpenAICompatibleProvider:
     config: ProviderConfig
     session_id: str = ""
 
+    def _post(self, url: str, *, headers: dict[str, str], payload: dict[str, Any]) -> httpx.Response:
+        """Perform a bounded retry for transport and transient upstream errors."""
+
+        retry_statuses = {408, 425, 429, 500, 502, 503, 504}
+        attempts = max(0, int(self.config.max_retries))
+        for attempt in range(attempts + 1):
+            try:
+                response = httpx.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=self.config.timeout_seconds,
+                    proxy=self.config.proxy,
+                    trust_env=False,
+                )
+            except httpx.RequestError:
+                if attempt >= attempts:
+                    raise
+                delay = min(8.0, self.config.retry_backoff_seconds * (2 ** attempt))
+                if delay:
+                    time.sleep(delay)
+                continue
+            if response.status_code not in retry_statuses or attempt >= attempts:
+                return response
+            retry_after = response.headers.get("retry-after", "")
+            try:
+                server_delay = max(0.0, float(retry_after))
+            except ValueError:
+                server_delay = 0.0
+            delay = min(30.0, max(server_delay, self.config.retry_backoff_seconds * (2 ** attempt)))
+            if delay:
+                time.sleep(delay)
+        raise RuntimeError("LLM request retry loop ended unexpectedly")
+
     def complete_json(self, *, system: str, context: str, tools: list[dict[str, Any]] | None = None, messages: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         headers = {"content-type": "application/json"}
         if not self.session_id:
@@ -59,7 +94,7 @@ class OpenAICompatibleProvider:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
         url = f"{self.config.base_url}/chat/completions"
-        response = httpx.post(url, headers=headers, json=payload, timeout=self.config.timeout_seconds, proxy=self.config.proxy, trust_env=False)
+        response = self._post(url, headers=headers, payload=payload)
         # Some local OpenAI-compatible servers accept JSON mode but reject the
         # optional native tools fields.  Retry the same read-only completion
         # without those hints; the prompt-level tool envelope remains usable.
@@ -67,13 +102,13 @@ class OpenAICompatibleProvider:
             fallback = dict(payload)
             fallback.pop("tools", None)
             fallback.pop("tool_choice", None)
-            response = httpx.post(url, headers=headers, json=fallback, timeout=self.config.timeout_seconds, proxy=self.config.proxy, trust_env=False)
+            response = self._post(url, headers=headers, payload=fallback)
         if response.status_code in {400, 422} and "response_format" in payload:
             fallback = dict(payload)
             fallback.pop("response_format", None)
             fallback.pop("tools", None)
             fallback.pop("tool_choice", None)
-            response = httpx.post(url, headers=headers, json=fallback, timeout=self.config.timeout_seconds, proxy=self.config.proxy, trust_env=False)
+            response = self._post(url, headers=headers, payload=fallback)
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
