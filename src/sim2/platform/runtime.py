@@ -219,6 +219,9 @@ class Platform:
         behavior_id = intent.behavior_ref.removeprefix("behavior:")
         normalized_parameters = dict(intent.parameters or {})
         for alias in ("destination", "destination_id", "location"):
+            if alias in normalized_parameters and "location_id" not in normalized_parameters:
+                normalized_parameters["location_id"] = normalized_parameters[alias]
+            normalized_parameters.pop(alias, None)
             if alias in intent.target and "location_id" not in normalized_parameters:
                 normalized_parameters["location_id"] = intent.target[alias]
         intent_data = {
