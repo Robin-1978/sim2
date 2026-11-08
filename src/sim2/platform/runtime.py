@@ -904,6 +904,19 @@ class Platform:
         except (TypeError, ValueError):
             return 1
 
+    def _apply_action_parameter_defaults(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any]) -> dict[str, Any]:
+        """Resolve declarative defaults without making the LLM fill hidden plumbing."""
+
+        result = dict(parameters)
+        food_items = (self.store.get_meta("rules", {}) or {}).get("food_items", []) or []
+        for key, default in (action.get("parameter_defaults", {}) or {}).items():
+            value = result.get(key)
+            if value not in (None, "") and not (isinstance(value, str) and value.startswith("context.")):
+                continue
+            if default == "first_food":
+                result[key] = next((item for item in food_items if float((agent.get("inventory") or {}).get(item, 0) or 0) >= 1), value)
+        return result
+
     def _reserve_action_costs(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], *, commit: bool = True) -> tuple[bool, str, list[dict[str, Any]]]:
         return self.resources.reserve(agent, action, parameters, commit=commit)
 
@@ -980,6 +993,7 @@ class Platform:
             return False, f"action is not registered: {action_id}"
         state = dict(agent.get("initial_state") or {})
         parameters = self._resolve_parameters(dict(action_info.get("parameters") or {}), state)
+        parameters = self._apply_action_parameter_defaults(agent, action, parameters)
         resolved_target, target_error = self.targets.resolve(agent, parameters)
         if target_error:
             return False, target_error
@@ -1034,6 +1048,7 @@ class Platform:
             return None, f"action is not registered: {action_info.get('action_id')}"
         state = dict(agent.get("initial_state") or {})
         parameters = self._resolve_parameters(dict(action_info.get("parameters") or {}), state)
+        parameters = self._apply_action_parameter_defaults(agent, action, parameters)
         target, target_error = self.targets.resolve(agent, parameters)
         if target_error:
             return None, target_error

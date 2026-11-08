@@ -35,6 +35,8 @@ actions:
   description: Consume one available food item and restore hunger.
   parameters:
     item_id: string
+  parameter_defaults:
+    item_id: first_food
   preconditions:
   - actor.alive
   - actor.has_food

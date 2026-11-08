@@ -148,7 +148,7 @@ def test_food_bt_is_available_with_food_and_closes_hunger_loop(tmp_path: Path):
             actor_id="lu_xingzhou",
             behavior_ref="behavior:eat_food",
             target={},
-            parameters={"item_id": "rations"},
+            parameters={},
             reason="Eat carried food before taking another task.",
             confidence=0.9,
             intent_id="eat-food-intent",
