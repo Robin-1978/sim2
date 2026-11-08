@@ -44,4 +44,5 @@ recipes:
     effects:
       - {op: inventory.consume_inputs}
       - {op: inventory.add_outputs}
+      - {op: entity.state_set, entity_id: dawn_bell, state: created, value: true}
       - {op: capability.add_xp, capability: forging, value: 0.02}

@@ -1087,6 +1087,7 @@ def test_role_goal_paths_produce_medicine_and_dawn_bell(tmp_path: Path):
             platform.step()
         assert platform.store.get_agent("qiao_ning")["inventory"].get("medicine", 0) == 1
         assert platform.store.get_agent("tian_yan")["inventory"].get("dawn_bell", 0) == 1
+        assert platform.store.get_entity("dawn_bell")["initial_state"]["created"] is True
         assert not any(item["ref"] == "behavior:craft_dawn_bell" for item in platform.decision_view("tian_yan")["executable_behaviors"])
     finally:
         platform.close()

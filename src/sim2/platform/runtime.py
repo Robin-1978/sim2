@@ -1688,7 +1688,29 @@ class Platform:
             item = str(output.get("item"))
             agent.setdefault("inventory", {})[item] = agent["inventory"].get(item, 0) + output.get("quantity", 0)
         for effect in recipe.get("effects", []) or []:
-            if effect.get("op") == "capability.add_xp":
+            effect_type = str(effect.get("type") or effect.get("op") or "")
+            if effect_type in {"entity_state_set", "entity.state_set"}:
+                entity_id = effect.get("entity_id") or effect.get("target_entity")
+                state_key = effect.get("state") or effect.get("property")
+                if entity_id and state_key:
+                    try:
+                        entity = self.store.get_entity(str(entity_id))
+                    except KeyError:
+                        entity = None
+                    if entity is not None:
+                        entity_state = dict(entity.get("initial_state") or {})
+                        before_value = entity_state.get(str(state_key))
+                        entity_state[str(state_key)] = effect.get("value")
+                        entity["initial_state"] = entity_state
+                        self.store.put_entity(
+                            entity["id"], entity["entity_type"], entity["name"],
+                            {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}},
+                        )
+                        self.store.append_event(
+                            "entity.state_changed", agent["id"], minute,
+                            {"entity_id": entity["id"], "state": str(state_key), "before": before_value, "after": entity_state[str(state_key)], "action_id": f"recipe:{recipe_id}"},
+                        )
+            elif effect_type == "capability.add_xp":
                 capability = effect.get("capability")
                 if capability:
                     self._add_capability_progress(agent, capability, float(effect.get("value", 0)), f"recipe:{recipe_id}", minute)

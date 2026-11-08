@@ -97,6 +97,6 @@
 
 ## Platform 执行边界
 
-动作和 BT 配置只声明目标、条件、成本、时长、效果和结果。Platform 使用通用 `target_resolver`、`condition_engine`、`effect_pipeline` 和 `event_writer` 执行；LLM 只提交 AgentView 中的可读 `choice`、目标名称和参数，内部引用由 Platform 映射。探索发现可在配置中声明 `unlocks`；Platform 会在事实写入同一事务时把后续 BT 加入执行者的解锁目录，完成后续行为再由条件和资源校验。
+动作、BT 和 Recipe 配置只声明目标、条件、成本、时长、效果和结果。Recipe 的 `limits.max_total` 限制独特产物总量，`entity.state_set` 可同步世界实体状态。Platform 使用通用 `target_resolver`、`condition_engine`、`effect_pipeline` 和 `event_writer` 执行；LLM 只提交 AgentView 中的可读 `choice`、目标名称和参数，内部引用由 Platform 映射。探索发现可在配置中声明 `unlocks`；Platform 会在事实写入同一事务时把后续 BT 加入执行者的解锁目录，完成后续行为再由条件和资源校验。
 
 执行中的 Action 默认不接受外部即时互动；需要在同一 tick 继续聊天或交易的 Action 显式声明 `interaction_policy: allow`。雾溪村允许休息、巡逻、治疗、检查、防御和报警期间互动；移动、探索、制作、攻击、逃跑和研究期间不允许互动。暂停保留游标和资源锁，取消才释放资源并结束当前 BT。
