@@ -121,7 +121,7 @@ python scripts/benchmark_platform.py --agents 1000 --runs 5
 python scripts/verify_agent_models.py
 ```
 
-最近一次结果为 `55 passed`；1000 个 Agent、5 次非 LLM 模拟分钟的 p95 为约 `169 ms`。测试覆盖 ReAct 工具反馈与拒绝重试、SQLite 创世与回滚、长 Action/并行 BT/共享资源、中断恢复、探索沟通知识、聊天与两阶段交易、文本玩家/旁观者入口、记忆 FTS5 与激活、反思目标和能力历史、执行 outcome 复盘上下文、God 世界前后值复盘、God 事件语义质量门、HTTP 控制、快照恢复、确定性回放、可读名称映射、重复 BT 提案质量门、Provider 短暂断连重试以及 Starter Village 端到端场景。
+最近一次结果为 `55 passed`；1000 个 Agent、5 次非 LLM 模拟分钟的 p95 为约 `169 ms`。测试覆盖 ReAct 工具反馈与拒绝重试、SQLite 创世与回滚、长 Action/并行 BT/共享资源、中断恢复、探索沟通知识、聊天与两阶段交易、文本玩家/旁观者入口、记忆 FTS5 与激活、反思目标和能力历史、执行 outcome 复盘上下文、God 世界前后值复盘、God 事件语义质量门、HTTP 控制、快照恢复、确定性回放、可读名称映射、重复 BT 提案质量门、Provider 短暂断连重试与限流 cooldown 以及 Starter Village 端到端场景。
 
 `verify_agent_models.py` 是真实模型验收入口：它不打印原始 reasoning 或密钥，只报告 Decision/Reflection/God 的会话步骤、最终 Intent、Platform 校验结果和质量布尔值；远程 Provider 使用 `~/.sim2/llm.json` 中的显式代理和环境变量引用。
 

@@ -32,11 +32,15 @@ def _json_from_text(text: str) -> dict[str, Any]:
 class OpenAICompatibleProvider:
     config: ProviderConfig
     session_id: str = ""
+    _cooldown_until: float = 0.0
 
     def _post(self, url: str, *, headers: dict[str, str], payload: dict[str, Any]) -> httpx.Response:
         """Perform a bounded retry for transport and transient upstream errors."""
 
         retry_statuses = {408, 425, 429, 500, 502, 503, 504}
+        remaining = self._cooldown_until - time.monotonic()
+        if remaining > 0:
+            raise RuntimeError(f"LLM provider cooldown active; retry after {remaining:.1f}s")
         attempts = max(0, int(self.config.max_retries))
         for attempt in range(attempts + 1):
             try:
@@ -50,12 +54,20 @@ class OpenAICompatibleProvider:
                 )
             except httpx.RequestError:
                 if attempt >= attempts:
+                    self._cooldown_until = time.monotonic() + min(30.0, max(1.0, self.config.retry_backoff_seconds * (2 ** attempt)))
                     raise
                 delay = min(8.0, self.config.retry_backoff_seconds * (2 ** attempt))
                 if delay:
                     time.sleep(delay)
                 continue
             if response.status_code not in retry_statuses or attempt >= attempts:
+                if response.status_code in retry_statuses:
+                    retry_after = response.headers.get("retry-after", "")
+                    try:
+                        server_delay = max(0.0, float(retry_after))
+                    except ValueError:
+                        server_delay = 0.0
+                    self._cooldown_until = time.monotonic() + min(30.0, max(server_delay, self.config.retry_backoff_seconds * (2 ** attempt), 1.0))
                 return response
             retry_after = response.headers.get("retry-after", "")
             try:

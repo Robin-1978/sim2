@@ -151,6 +151,23 @@ def test_provider_retries_transient_disconnect_without_logging_credentials(monke
     assert len(calls) == 2
 
 
+def test_provider_cooldown_stops_repeated_transient_requests(monkeypatch):
+    response = httpx.Response(429, request=httpx.Request("POST", "http://example.test"), json={"error": {"message": "rate limited"}})
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append(kwargs)
+        return response
+
+    monkeypatch.setattr("sim2.llm.gateway.httpx.post", fake_post)
+    provider = OpenAICompatibleProvider(ProviderConfig("test", "openai_compatible", "http://example.test/v1", "test", max_retries=0, retry_backoff_seconds=0))
+    with pytest.raises(RuntimeError, match="LLM HTTP 429"):
+        provider.complete_json(system="system", context="context")
+    with pytest.raises(RuntimeError, match="cooldown"):
+        provider.complete_json(system="system", context="context")
+    assert len(calls) == 1
+
+
 def test_provider_failure_is_bounded_and_backed_off(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "provider-failure-world", tmp_path / "runtime")
