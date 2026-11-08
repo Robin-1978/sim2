@@ -314,7 +314,11 @@ class Platform:
             return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                 "status": "rejected", "message": "The selected behavior is not registered.", "failed_check": "behavior_ref", "retryable": True,
             })
-        allowed = set(agent.get("initial_bt_ids", [])) | set((self.store.get_meta("rules", {}) or {}).get("fallback_behavior_ids", []))
+        allowed = (
+            set(agent.get("initial_bt_ids", []))
+            | set(agent.get("unlocked_bt_ids", []))
+            | set((self.store.get_meta("rules", {}) or {}).get("fallback_behavior_ids", []))
+        )
         if behavior_id not in allowed:
             return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                 "status": "rejected", "message": "This behavior is not available to this character.", "failed_check": "capability", "retryable": True,
@@ -455,9 +459,11 @@ class Platform:
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "area_id": parameters.get("area_id"),
             "item_id": parameters.get("item_id"),
+            "object_id": parameters.get("object_id"),
             "inventory": agent.get("inventory", {}) or {},
             "food_items": (self.store.get_meta("rules", {}) or {}).get("food_items", []) or [],
             "current_location": location,
+            "current_object": self._entity_for_context(parameters.get("object_id")),
             "mapped_areas": self.store.explored_areas(agent["id"]),
             "researched_sources": self.store.researched_sources(agent["id"]),
             "target": resolved_target or {},
@@ -465,6 +471,16 @@ class Platform:
             "target.available": bool((resolved_target or {}).get("available", False)),
             "known_route_destinations": reachable_locations(self.store, location_id),
         }
+
+    def _entity_for_context(self, entity_id: Any) -> dict[str, Any]:
+        """Return a configured entity for a declarative condition context."""
+
+        if not entity_id:
+            return {}
+        try:
+            return self.store.get_entity(str(entity_id))
+        except KeyError:
+            return {}
 
     def submit_experience(self, actor_id: str, event_ref: str, summary: str, confidence: float) -> dict[str, Any]:
         summary = str(summary).strip()
@@ -1297,10 +1313,12 @@ class Platform:
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "area_id": parameters.get("area_id"),
             "item_id": parameters.get("item_id"),
+            "object_id": parameters.get("object_id"),
             "inventory": agent.get("inventory", {}) or {},
             "food_items": (self.store.get_meta("rules", {}) or {}).get("food_items", []) or [],
             "station_tags": [],
             "current_location": current_location,
+            "current_object": self._entity_for_context(parameters.get("object_id")),
             "mapped_areas": self.store.explored_areas(agent["id"]),
             "researched_sources": self.store.researched_sources(agent["id"]),
             "target": resolved_target or {},
@@ -1363,10 +1381,12 @@ class Platform:
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "area_id": parameters.get("area_id"),
             "item_id": parameters.get("item_id"),
+            "object_id": parameters.get("object_id"),
             "inventory": agent.get("inventory", {}) or {},
             "food_items": (self.store.get_meta("rules", {}) or {}).get("food_items", []) or [],
             "station_tags": [],
             "current_location": current_location,
+            "current_object": self._entity_for_context(parameters.get("object_id")),
             "mapped_areas": self.store.explored_areas(agent["id"]),
             "researched_sources": self.store.researched_sources(agent["id"]),
             "target": target or {},
@@ -1584,6 +1604,27 @@ class Platform:
                     properties = dict(self.store.get_meta("world_properties", {}) or {})
                     properties[property_id] = float(properties.get(property_id, 0) or 0) + float(effect.get("delta", effect.get("value", 0)) or 0)
                     self.store.set_meta("world_properties", properties)
+            elif effect_type in {"entity_state_set", "entity.state_set"}:
+                entity_id = resolved_effect.get("entity_id") or resolved_effect.get("target_entity")
+                state_key = resolved_effect.get("state") or resolved_effect.get("property")
+                if entity_id and state_key:
+                    try:
+                        entity = self.store.get_entity(str(entity_id))
+                    except KeyError:
+                        entity = None
+                    if entity is not None:
+                        entity_state = dict(entity.get("initial_state") or {})
+                        before_value = entity_state.get(str(state_key))
+                        entity_state[str(state_key)] = resolved_effect.get("value")
+                        entity["initial_state"] = entity_state
+                        self.store.put_entity(
+                            entity["id"], entity["entity_type"], entity["name"],
+                            {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}},
+                        )
+                        self.store.append_event(
+                            "entity.state_changed", agent["id"], minute,
+                            {"entity_id": entity["id"], "state": str(state_key), "before": before_value, "after": entity_state[str(state_key)], "action_id": action.get("id")},
+                        )
             else:
                 self.effects.apply(receiver, resolved_effect, target=effect_target, formula_agent=agent)
             if receiver is not agent:
@@ -1681,6 +1722,19 @@ class Platform:
                     discovery_id = str(discovery.get("id") or f"explored:{area_id}")
                     fact = str(discovery.get("fact") or f"Area {area_id} was explored.")
                     self.store.merge_knowledge_fact(agent["id"], discovery_id, {"fact": fact, "source_type": "exploration", "source_id": result_id, "confidence": 0.8, "observed_at": minute})
+                    unlocks = discovery.get("unlocks", []) if isinstance(discovery, dict) else []
+                    for unlock in unlocks or []:
+                        behavior_id = str(unlock.get("behavior_id") if isinstance(unlock, dict) else unlock)
+                        if not behavior_id:
+                            continue
+                        registered = any(item.get("id") == behavior_id for item in self.store.get_definitions("bt_def"))
+                        if not registered:
+                            continue
+                        unlocked = list(agent.get("unlocked_bt_ids", []) or [])
+                        if behavior_id not in unlocked:
+                            unlocked.append(behavior_id)
+                            agent["unlocked_bt_ids"] = unlocked
+                            self.store.append_event("behavior.unlocked", agent["id"], minute, {"behavior_id": behavior_id, "discovery_id": discovery_id, "source": "exploration"})
                 self.store.append_event("exploration.completed", agent["id"], minute, {"area_id": area_id, "result_id": result_id, "discoveries": [str(item.get("id")) for item in discoveries]})
         if source_id:
             source_id = str(source_id)
@@ -1691,6 +1745,21 @@ class Platform:
                 fact = str(discovery.get("fact") or f"Source {source_id} was researched.")
                 self.store.merge_knowledge_fact(agent["id"], fact_key, {"fact": fact, "source_type": "research", "confidence": 0.8, "observed_at": minute})
                 self.store.append_event("research.completed", agent["id"], minute, {"source_id": source_id, "fact": fact})
+        object_id = parameters.get("object_id") or information.get("object_parameter") and parameters.get(information["object_parameter"])
+        if object_id and information.get("record_object_discovery", True):
+            object_id = str(object_id)
+            try:
+                discovered_object = self.store.get_entity(object_id)
+            except KeyError:
+                discovered_object = {}
+            discovery = (discovered_object.get("recovery_discovery") or {}) if isinstance(discovered_object, dict) else {}
+            fact_key = str(discovery.get("id") or f"recovered:{object_id}")
+            fact = str(discovery.get("fact") or f"Object {object_id} was recovered.")
+            self.store.merge_knowledge_fact(
+                agent["id"], fact_key,
+                {"fact": fact, "source_type": "recovery", "source_id": object_id, "confidence": 0.9, "observed_at": minute},
+            )
+            self.store.append_event("object.recovered", agent["id"], minute, {"object_id": object_id, "fact": fact})
         if target_id and topic:
             target_id = str(target_id)
             try:

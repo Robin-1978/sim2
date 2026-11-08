@@ -23,7 +23,7 @@ recipes:
       - {op: capability.add_xp, capability: cooking, value: 0.03}
   - id: herbal_medicine
     name: 草药药剂
-    station_tags: [clinic]
+    station_tags: [health]
     inputs: [{item: herb_bundle, quantity: 2}, {item: clean_water, quantity: 1}]
     outputs: [{item: medicine, quantity: 1}]
     requires: [{capability: herbalism, min_level: 0.40}]
@@ -32,3 +32,14 @@ recipes:
       - {op: inventory.consume_inputs}
       - {op: inventory.add_outputs}
       - {op: capability.add_xp, capability: herbalism, value: 0.03}
+  - id: dawn_bell
+    name: 晨钟
+    station_tags: [craft]
+    inputs: [{item: iron_ore, quantity: 2}]
+    outputs: [{item: dawn_bell, quantity: 1}]
+    requires: [{capability: forging, min_level: 0.80}]
+    duration_minutes: 120
+    effects:
+      - {op: inventory.consume_inputs}
+      - {op: inventory.add_outputs}
+      - {op: capability.add_xp, capability: forging, value: 0.02}

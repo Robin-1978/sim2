@@ -578,3 +578,47 @@ actions:
   definition_source: config
   kind: atomic
   executor: effect_pipeline
+- id: recover_object
+  version: 1
+  description: Recover a discovered object from its configured location.
+  parameters:
+    object_id: string
+  preconditions:
+  - actor.alive
+  - actor.can_investigate
+  - object.available
+  duration:
+    minutes: 180
+  costs:
+    reserve:
+      rations: 1
+    per_minute:
+      energy: 0.1
+      exposure: 0.01
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: entity_state_set
+    entity_id: context.object_id
+    state: recovered
+    value: true
+  - type: world_property_delta
+    property: public_trust
+    delta: 0.04
+  - type: public_event
+    event: trade.ledger_recovered
+  success:
+    condition: object.recovered
+    result: object_recovered
+  failure:
+    condition: actor.incapacitated
+    result: recovery_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  information:
+    object_parameter: object_id
+    record_object_discovery: true
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline

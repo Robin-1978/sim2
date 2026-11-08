@@ -81,14 +81,19 @@ class ConditionEngine:
             return any(float(inventory.get(str(item), 0) or 0) >= 1 for item in food_items)
         if path.startswith("actor.can_"):
             capability = path.removeprefix("actor.can_")
-            aliases = {"explore": "exploration", "speak": "conversation", "communicate": "conversation", "craft": "cooking", "attack": "combat", "defend": "defense", "gather": "gather", "research": "research", "inspect": "investigation", "inspect_granary": "accounting", "negotiate": "conversation", "sound_alarm": "alarm", "mediate": "conversation"}
-            value = agent.get("capabilities", {}).get(aliases.get(capability, capability), 0)
+            aliases = {"explore": "exploration", "speak": "conversation", "communicate": "conversation", "craft": "cooking", "attack": "combat", "defend": "defense", "gather": "gather", "research": "research", "inspect": "investigation", "investigate": "investigation", "inspect_granary": "accounting", "negotiate": "conversation", "sound_alarm": "alarm", "mediate": "conversation"}
+            if capability == "craft":
+                value = max((agent.get("capabilities", {}).get(item, 0) for item in ("cooking", "herbalism", "forging")), default=0)
+            else:
+                value = agent.get("capabilities", {}).get(aliases.get(capability, capability), 0)
             if not value and capability == "inspect":
                 value = max((agent.get("capabilities", {}).get(item, 0) for item in ("investigation", "lore", "accounting", "governance")), default=0)
             if not value and capability == "inspect_granary":
                 value = max((agent.get("capabilities", {}).get(item, 0) for item in ("accounting", "governance")), default=0)
             if not value and capability == "gather":
                 value = max((agent.get("capabilities", {}).get(item, 0) for item in ("gather", "farming", "hunting", "foraging")), default=0)
+            if not value and capability == "investigate":
+                value = max((agent.get("capabilities", {}).get(item, 0) for item in ("investigation", "tracking", "lore", "rumor_assessment")), default=0)
             return float(value or 0) > 0
         if path == "actor.faction_id":
             factions = agent.get("faction_ids", [])
@@ -127,6 +132,12 @@ class ConditionEngine:
             mapped = set(context.get("mapped_areas", []))
             area_id = target.get("area_id") or context.get("area_id")
             return not area_id or area_id not in mapped
+        if path == "object.available":
+            obj = context.get("current_object", {}) or {}
+            obj_state = obj.get("initial_state", {}) if isinstance(obj, dict) else {}
+            object_location = obj_state.get("location_id")
+            current_location = state.get("location_id")
+            return bool(obj and object_location == current_location and not obj_state.get("recovered", False))
         if path == "research.new_fact_available":
             source_id = target.get("source_id") or context.get("source_id")
             return bool(source_id) and str(source_id) not in {str(item) for item in context.get("researched_sources", [])}

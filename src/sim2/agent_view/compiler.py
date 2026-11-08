@@ -34,6 +34,7 @@ def _predicate_text(predicate: str) -> str:
         "actor can craft": "You have crafting capability",
         "actor can communicate": "You can communicate",
         "actor can research": "You have research capability",
+        "actor can investigate": "You have investigation capability",
         "actor is guard": "You are a guard",
         "actor is healer": "You are a healer",
         "actor alive": "You are alive",
@@ -46,6 +47,7 @@ def _predicate_text(predicate: str) -> str:
         "patient available": "A patient is available",
         "inputs available": "Required inputs are available",
         "recipe available": "A recipe is available",
+        "object available": "The discovered object is at this location",
     }
     return replacements.get(text, text[:1].upper() + text[1:] + ".")
 
@@ -256,7 +258,11 @@ class AgentViewCompiler:
         estimator = BehaviorDurationEstimator(action_defs, bt_defs, recipe_defs, self._route_distance)
         available = []
         fallback_ids = (self.store.get_meta("rules", {}) or {}).get("fallback_behavior_ids", [])
-        catalog_ids = list(dict.fromkeys(list(agent.get("initial_bt_ids", [])) + list(fallback_ids)))
+        catalog_ids = list(dict.fromkeys(
+            list(agent.get("initial_bt_ids", []))
+            + list(agent.get("unlocked_bt_ids", []))
+            + list(fallback_ids)
+        ))
         state = agent.get("initial_state", {})
         location_id = state.get("location_id")
         safe_location_id = nearest_safe_location(self.store, location_id)
@@ -497,6 +503,8 @@ class AgentViewCompiler:
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "area_id": parameters.get("area_id"),
             "item_id": parameters.get("item_id"),
+            "object_id": parameters.get("object_id"),
+            "current_object": {},
             "inventory": agent.get("inventory", {}) or {},
             "food_items": food_items,
             "station_tags": [],
@@ -504,6 +512,11 @@ class AgentViewCompiler:
             "mapped_areas": self.store.explored_areas(str(agent.get("id", ""))),
             "researched_sources": self.store.researched_sources(str(agent.get("id", ""))),
         }
+        if parameters.get("object_id"):
+            try:
+                context["current_object"] = self.store.get_entity(str(parameters["object_id"]))
+            except KeyError:
+                return False
         if action.get("id") == "craft_recipe":
             recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
             if recipe is None:

@@ -23,7 +23,7 @@
 | `liang_he` 梁禾 | granary_keeper | 让村庄安全度过冬季且不发生饥荒 | `granary` | idle，生命 100，体力 100 | manage_ration, gather_resource, inspect_granary, craft_meal |
 | `qiao_ning` 乔宁 | herbalist | 找到灰热病的稳定疗法并恢复河水安全 | `clinic` | idle，生命 100，体力 100 | heal_target, gather_resource, research_source |
 | `tian_yan` 田岩 | blacksmith | 在深雾前完成晨钟并为村庄建立可靠的预警工具 | `smithy` | idle，生命 100，体力 100 | craft_meal, gather_resource |
-| `lu_xingzhou` 陆行舟 | hunter_mapper | 完成灰林地图并找到失踪的妹妹陆素 | `north_gate` | idle，生命 100，体力 100 | explore_greywood, patrol_route, defend_position, flee_to_safety |
+| `lu_xingzhou` 陆行舟 | hunter_mapper | 完成灰林地图并找到失踪的妹妹陆素 | `north_gate` | idle，生命 100，体力 100 | explore_greywood, patrol_route, defend_position, flee_to_safety；发现账册后解锁 recover_caravan_ledger |
 | `yu_ge` 余歌 | innkeeper_information_broker | 把旅店变成各方都能安全交换信息的中立场所 | `inn` | idle，生命 100，体力 100 | communicate, mediate_conflict |
 | `fei_lan` 费兰 | traveling_merchant | 恢复商路并找回失踪车队的账册 | `inn` | idle，生命 100，体力 100 | communicate, negotiate, explore_greywood |
 | `su_wu` 苏巫 | pact_scholar | 理解根门并决定续约、改约或终止契约 | `old_well` | idle，生命 100，体力 100 | research_source, inspect_object, craft_meal |
@@ -64,6 +64,7 @@
 | `craft_recipe` | 在可用工作站按配方制作物品 | {recipe_id: string, station_id: string} | recipe_duration 分钟 | actor.can_craft<br>recipe.available<br>station.available<br>inputs.available | reserve: {recipe_inputs: 1}<br>per_minute: {energy: 0.4, attention: 0.5} | 成功：{condition: outputs.created, result: recipe_completed}<br>失败：{condition: inputs.lost or station.damaged, result: crafting_failed} |
 | `consume_food` | 消耗一份携带的食物恢复饱腹度 | {item_id: string} | 1 分钟 | actor.alive<br>actor.has_food | reserve: {item_parameter: item_id} | 成功：{result: ate_food, satiety: +30}<br>失败：{result: eating_failed} |
 | `withdraw_food` | 在粮仓按配给权从共享库存领取一份口粮 | {} | 10 分钟 | actor.alive<br>actor.food_withdrawal<br>location.food_store | reserve: {village_food: 1} | 成功：{result: ration_received, inventory.rations: +1}<br>失败：{result: ration_unavailable} |
+| `recover_object` | 回收探索发现的物体并登记证据 | {object_id: string} | 180 分钟 | actor.alive<br>actor.can_investigate<br>object.available | reserve: {rations: 1}<br>per_minute: {energy: 0.1, exposure: 0.01} | 成功：物体标记为 recovered，记录事实并提高配置的 public_trust；失败：{result: recovery_failed} |
 
 ## 基础 BT
 
@@ -89,9 +90,10 @@
 | `eat_food` | universal | actor.alive<br>actor.has_food | 1 分钟 | consume_food(item_id) | ate_food | eating_failed |
 | `get_food` | universal | actor.alive<br>actor.food_withdrawal<br>route.known | 路线分钟 + 10 分钟 | travel_to granary → withdraw_food | ration_received | ration_unavailable |
 | `get_food_here` | universal | actor.alive<br>actor.food_withdrawal<br>location.food_store | 10 分钟 | withdraw_food | ration_received | ration_unavailable |
+| `recover_caravan_ledger` | personal | 灰林探索发现账册线索后，且 Agent 有调查能力 | 180 分钟 | recover_object(caravan_ledger) | ledger_recovered, trade_route_evidence | recovery_failed, interrupted |
 
 ## Platform 执行边界
 
-动作和 BT 配置只声明目标、条件、成本、时长、效果和结果。Platform 使用通用 `target_resolver`、`condition_engine`、`effect_pipeline` 和 `event_writer` 执行；LLM 只提交 AgentView 中的可读 `choice`、目标名称和参数，内部引用由 Platform 映射。
+动作和 BT 配置只声明目标、条件、成本、时长、效果和结果。Platform 使用通用 `target_resolver`、`condition_engine`、`effect_pipeline` 和 `event_writer` 执行；LLM 只提交 AgentView 中的可读 `choice`、目标名称和参数，内部引用由 Platform 映射。探索发现可在配置中声明 `unlocks`；Platform 会在事实写入同一事务时把后续 BT 加入执行者的解锁目录，完成后续行为再由条件和资源校验。
 
 执行中的 Action 默认不接受外部即时互动；需要在同一 tick 继续聊天或交易的 Action 显式声明 `interaction_policy: allow`。雾溪村允许休息、巡逻、治疗、检查、防御和报警期间互动；移动、探索、制作、攻击、逃跑和研究期间不允许互动。暂停保留游标和资源锁，取消才释放资源并结束当前 BT。

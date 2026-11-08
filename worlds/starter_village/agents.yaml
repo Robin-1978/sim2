@@ -216,11 +216,13 @@ agents:
   initial_bt_ids:
   - heal_target
   - gather_resource
-  - research_source
+  - research_water
+  - craft_medicine
   capabilities:
     healing: 0.91
     herbalism: 0.82
     water_testing: 0.7
+    research: 0.8
   initial_state:
     location_id: clinic
     health: 100
@@ -272,6 +274,7 @@ agents:
   - public:old_quarry
   - resource:star_metal_hint
   initial_bt_ids:
+  - craft_dawn_bell
   - craft_meal
   - gather_resource
   capabilities:
@@ -461,6 +464,7 @@ agents:
     negotiation: 0.89
     route_planning: 0.77
     conversation: 0.85
+    investigation: 0.6
   initial_state:
     location_id: inn
     health: 100

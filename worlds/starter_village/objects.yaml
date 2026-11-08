@@ -20,6 +20,7 @@ objects:
     name: 失踪车队账册
     initial_state: {location_id: greywood_edge, recovered: false}
     tags: [trade, evidence]
+    recovery_discovery: {id: recovered:caravan_ledger, fact: "The recovered ledger confirms the caravan route can reopen if the northern boundary is safe."}
   - id: water_test_kit
     type: tool
     name: 水样检测盒

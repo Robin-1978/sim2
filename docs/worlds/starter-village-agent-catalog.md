@@ -24,6 +24,7 @@ This compact English catalog is generated from the world configuration. It is a 
 | Communicate | You can communicate and the target is available. | 6 minutes | Platform applies configured effects and records the result. |
 | Research Source | You can research and the source is accessible. | 192 minutes | Platform applies configured effects and records the result. |
 | Inspect Object | You can inspect and the object is accessible. | 24 minutes | Platform applies configured effects and records the result. |
+| Recover Object | You can investigate and a discovered object is here and not recovered. | 180 minutes; one ration reserved; energy 0.1/min; exposure 0.01/min | The object is marked recovered, its configured fact is recorded, and configured world effects are applied. |
 | Negotiate | You can negotiate and the target is available. | 36 minutes | Platform applies configured effects and records the result. |
 | Attack | You are alive; the target is visible, reachable and hostile. | 6 minutes | Platform applies configured effects and records the result. |
 | Defend | You are alive and can protect the target. | 24 minutes | Platform applies configured effects and records the result. |
@@ -57,7 +58,8 @@ This compact English catalog is generated from the world configuration. It is a 
 | Eat Food | You carry one configured food item and Satiety is at or below the configured eating threshold. | Consume Food(item_id) | 1 | Satiety increases and the item is removed. | The food is unavailable. |
 | Get Food | You have food-withdrawal rights and a known route to the granary. | Travel To; Withdraw Food | Route minutes + 10 | One ration enters inventory. | The route or shared store is unavailable. |
 | Get Food Here | You have food-withdrawal rights, are at the granary, and shared food remains. | Withdraw Food | 10 | One ration enters inventory. | The shared store is empty or you lack ration rights. |
+| Recover Caravan Ledger | The Greywood survey revealed the ledger clue and the ledger is still recoverable. | Recover Object(caravan ledger) | 180 | The ledger is marked recovered; a trade-route fact is recorded; configured public-trust effects are applied. | Recovery fails or is interrupted. |
 
 ## Output
 
-The LLM returns only the exact visible behavior name in `choice`, a target, optional parameters, a short reason and confidence. Platform maps that choice to its internal behavior reference, then recomputes every condition, cost and effect from SQLite. Internal IDs are never required in the model-facing catalog.
+The LLM returns only the exact visible behavior name in `choice`, a target, optional parameters, a short reason and confidence. Platform maps that choice to its internal behavior reference, then recomputes every condition, cost and effect from SQLite. Internal IDs are never required in the model-facing catalog. Exploration is a transition, not an ending: a configured discovery can unlock a validated follow-up behavior, and that behavior must still pass location, object, resource and capacity checks at execution time.

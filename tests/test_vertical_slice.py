@@ -992,6 +992,36 @@ def test_action_failure_condition_is_evaluated_at_completion(tmp_path: Path):
         platform.close()
 
 
+def test_role_goal_paths_produce_medicine_and_dawn_bell(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "goal-production-world", tmp_path / "runtime"))
+    try:
+        medicine = platform.submit_behavior(BehaviorIntent("qiao_ning", "behavior:craft_medicine", {}, {}, "Prepare medicine for the fever cases.", 0.9, "medicine-goal"))
+        bell = platform.submit_behavior(BehaviorIntent("tian_yan", "behavior:craft_dawn_bell", {}, {}, "Forge the warning bell before the fog cycle.", 0.9, "bell-goal"))
+        assert medicine["status"] == "accepted"
+        assert bell["status"] == "accepted"
+        for _ in range(120):
+            platform.step()
+        assert platform.store.get_agent("qiao_ning")["inventory"].get("medicine", 0) == 1
+        assert platform.store.get_agent("tian_yan")["inventory"].get("dawn_bell", 0) == 1
+    finally:
+        platform.close()
+
+
+def test_water_research_path_records_a_specific_fact(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "water-research-world", tmp_path / "runtime"))
+    try:
+        result = platform.submit_behavior(BehaviorIntent("qiao_ning", "behavior:research_water", {}, {}, "Test the river water for the fever investigation.", 0.9, "water-research"))
+        assert result["status"] == "accepted"
+        for _ in range(result["remaining_minutes"]):
+            platform.step()
+        facts = platform.store.list_knowledge_facts("qiao_ning", limit=30)
+        assert any(item["fact_key"] == "researched:clean_water:contamination" for item in facts)
+    finally:
+        platform.close()
+
+
 def test_step_commits_each_tick_before_a_later_tick_fails(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "tick-commit-world", tmp_path / "runtime")
@@ -1197,6 +1227,34 @@ def test_completed_exploration_is_not_offered_again_and_keeps_discoveries(tmp_pa
         facts = platform.store.list_knowledge_facts("lu_xingzhou", limit=20)
         assert any(item["fact_key"] == "explored:greywood_edge:route" for item in facts)
         assert not any(item["ref"] == "behavior:explore_greywood" for item in platform.decision_view("lu_xingzhou")["executable_behaviors"])
+    finally:
+        platform.close()
+
+
+def test_exploration_unlocks_a_concrete_follow_up_and_changes_the_world(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "exploration-follow-up-world", tmp_path / "runtime"))
+    try:
+        before_trust = float((platform.store.get_meta("world_properties", {}) or {})["public_trust"])
+        assert not any(item["ref"] == "behavior:recover_caravan_ledger" for item in platform.decision_view("lu_xingzhou")["executable_behaviors"])
+        assert platform.submit_behavior(BehaviorIntent(
+            "lu_xingzhou", "behavior:explore_greywood", {}, {}, "Survey the unknown edge.", 0.9, "exploration-follow-up"
+        ))["status"] == "accepted"
+        step_n(platform, 241)
+        offered = {item["ref"] for item in platform.decision_view("lu_xingzhou")["executable_behaviors"]}
+        assert "behavior:recover_caravan_ledger" in offered
+        assert platform.submit_behavior(BehaviorIntent(
+            "lu_xingzhou", "behavior:recover_caravan_ledger", {}, {}, "Recover the ledger found during the survey.", 0.9, "recover-ledger"
+        ))["status"] == "accepted"
+        step_n(platform, 180)
+        ledger = platform.store.get_entity("caravan_ledger")
+        assert ledger["initial_state"]["recovered"] is True
+        after_trust = float((platform.store.get_meta("world_properties", {}) or {})["public_trust"])
+        assert after_trust > before_trust
+        facts = platform.store.list_knowledge_facts("lu_xingzhou", limit=30)
+        assert any(item["fact_key"] == "recovered:caravan_ledger" for item in facts)
+        assert not any(item["ref"] == "behavior:recover_caravan_ledger" for item in platform.decision_view("lu_xingzhou")["executable_behaviors"])
+        assert any(item["event_type"] == "object.recovered" for item in platform.store.recent_events(limit=30))
     finally:
         platform.close()
 

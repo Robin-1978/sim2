@@ -168,6 +168,70 @@ behavior_trees:
       patient_id: context.patient_id
   definition_source: config
   kind: base
+- id: craft_medicine
+  version: 1
+  scope: personal
+  entry_conditions:
+  - actor.can_craft
+  - recipe.available
+  - inputs.available
+  estimated_minutes: 120
+  goal_tags: [health, medicine, water]
+  drive_tags: [safety, self_actualization]
+  interrupt_policy: pause
+  success_results: [medicine_created, capability_improved]
+  failure_results: [crafting_failed]
+  nodes:
+  - type: action
+    action_id: craft_recipe
+    parameters:
+      recipe_id: herbal_medicine
+      station_id: context.station_id
+  definition_source: config
+  kind: base
+- id: research_water
+  version: 1
+  scope: personal
+  entry_conditions:
+  - actor.can_research
+  estimated_minutes: 194
+  goal_tags: [health, water, research]
+  drive_tags: [safety, self_actualization]
+  interrupt_policy: pause
+  success_results: [water_fact_found]
+  failure_results: [source_lost, belief_conflict]
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: river_bank
+  - type: action
+    action_id: research_source
+    parameters:
+      source_id: clean_water
+  definition_source: config
+  kind: base
+- id: craft_dawn_bell
+  version: 1
+  scope: personal
+  entry_conditions:
+  - actor.can_craft
+  - recipe.available
+  - inputs.available
+  estimated_minutes: 120
+  goal_tags: [crafting, defense, warning]
+  drive_tags: [safety, esteem, self_actualization]
+  interrupt_policy: pause
+  success_results: [dawn_bell_created, capability_improved]
+  failure_results: [crafting_failed]
+  nodes:
+  - type: action
+    action_id: craft_recipe
+    parameters:
+      recipe_id: dawn_bell
+      station_id: context.station_id
+  definition_source: config
+  kind: base
 - id: explore_greywood
   version: 1
   scope: personal
@@ -455,3 +519,25 @@ behavior_trees:
     action_id: withdraw_food
   definition_source: config
   kind: fallback
+- id: recover_caravan_ledger
+  version: 1
+  scope: personal
+  summary: Recover the missing caravan ledger.
+  description: Search the explored Greywood edge and recover the ledger that can reopen the trade route.
+  entry_conditions:
+  - actor.alive
+  - actor.can_investigate
+  estimated_minutes: 180
+  requirements: ["The Greywood ledger clue has been discovered and you can investigate." ]
+  goal_tags: [trade, knowledge, route, autonomy]
+  drive_tags: [autonomy, esteem, self_actualization]
+  interrupt_policy: pause
+  success_results: [ledger_recovered, trade_route_evidence]
+  failure_results: [recovery_failed, interrupted]
+  nodes:
+  - type: action
+    action_id: recover_object
+    parameters:
+      object_id: caravan_ledger
+  definition_source: config
+  kind: unlocked

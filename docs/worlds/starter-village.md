@@ -60,7 +60,8 @@ LLM 看到的状态是精简摘要，例如“何砚，北门，受伤 20%，可
 | 玩家进入 | 在河桥创建玩家 | 玩家只获得公开知识，不获得根门和 Agent 私有记忆 |
 | 长时行动 | 陆行舟执行灰林测绘或田岩锻造 | 数百至上千分钟只推进 Action，完成时产生结果事件 |
 | 战斗与中断 | 北门威胁触发攻击、防御、撤离和报警 | Platform 结算伤害、体力、威胁、关系和紧急中断 |
-| 探索发现 | 玩家或猎人探索灰林边缘 | 产生 `exploration.completed`，执行者获得路线、账册线索和带证据/置信度的知识；同一已知区域不再重复出现 |
+| 探索发现 | 玩家或猎人探索灰林边缘 | 产生 `exploration.completed`，执行者获得路线、账册线索和带证据/置信度的知识；同一已知区域不再重复出现；账册线索会解锁回收行为 |
+| 探索后推进 | 执行者在灰林边缘回收账册 | `recover_caravan_ledger` 只在账册线索存在且物体仍可回收时出现；完成后登记账册事实、标记物体已回收、提高配置的公共信任，并产生贸易路线证据 |
 | 研究事实 | 苏巫研究旧契约石板 | 产生“根门稳定性正在下降”的配置事实；来源已研究后 BT 隐藏，新的来源由世界演化提供 |
 | 沟通传播 | 玩家从余歌处询问北门异常，再向何砚求证 | 形成两条带来源的 testimony，Agent 置信度可以不同 |
 | 需求冲突 | 粮食减少且灰热病扩散 | 粮仓、守卫、草药师和村长的非线性驱动进入不同临界区 |
@@ -71,7 +72,7 @@ LLM 看到的状态是精简摘要，例如“何砚，北门，受伤 20%，可
 
 完整的属性、元动作和基础 BT 清单见 [starter-village-catalog.md](starter-village-catalog.md)；给 LLM 的简明英文目录见 [starter-village-agent-catalog.md](starter-village-agent-catalog.md)。配置文件是 Platform 的规范输入；LLM 读取的是 Platform 根据当前状态过滤后的精简目录，不直接读取原始 YAML。AgentView 是运行时生成的临时投影，不作为世界事实文件保存。
 
-雾溪村中的 BT 用来组合通用能力：例如 `craft_meal` BT 调用 `craft_recipe` Action 读取 `cooked_meal` Recipe；`defend_village` BT 先报警，再选择防御或撤离；`explore_greywood` BT 组合移动和探索，完成后由独立互动会话传播信息。取粮分为 `get_food`（先移动到粮仓）和 `get_food_here`（已在粮仓），避免隔空改变库存。Recipe 只描述材料和产物，Action 负责按分钟执行，BT 负责控制流，Platform 负责状态变化。
+雾溪村中的 BT 用来组合通用能力：例如 `craft_meal` BT 调用 `craft_recipe` Action 读取 `cooked_meal` Recipe；`defend_village` BT 先报警，再选择防御或撤离；`explore_greywood` BT 组合移动和探索，完成后由配置的发现条目解锁后续 BT；`recover_caravan_ledger` 使用通用 `recover_object` Action，把探索结果转成物品状态、知识和公共事件。取粮分为 `get_food`（先移动到粮仓）和 `get_food_here`（已在粮仓），避免隔空改变库存。Recipe 只描述材料和产物，Action 负责按分钟执行，BT 负责控制流，Platform 负责状态变化。
 
 配置包位于 `worlds/starter_village/`：
 
