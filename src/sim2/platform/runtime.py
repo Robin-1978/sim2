@@ -1564,7 +1564,20 @@ class Platform:
                 combat = agent.get("combat_stats", {}) or {}
                 weapon_damage = (combat.get("weapon_damage", {}) or {}).get(str(parameters["weapon_id"]), 0)
                 effect_target = {**effect_target, "weapon": {"damage": weapon_damage}}
-            self.effects.apply(receiver, resolved_effect, target=effect_target, formula_agent=agent)
+            effect_type = str(effect.get("type") or effect.get("op") or "")
+            if effect_type in {"relationship_delta", "relationship.delta"}:
+                self._apply_relationship_effect(agent, target or effect_target, effect, minute)
+            elif effect_type in {"public_event", "event.public"}:
+                event_type = str(effect.get("event") or "public.event")
+                self.store.append_event(event_type, agent["id"], minute, {"action_id": action.get("id"), "parameters": parameters})
+            elif effect_type in {"world_property_delta", "world.property_delta"}:
+                property_id = str(effect.get("property") or effect.get("world_property") or "")
+                if property_id:
+                    properties = dict(self.store.get_meta("world_properties", {}) or {})
+                    properties[property_id] = float(properties.get(property_id, 0) or 0) + float(effect.get("delta", effect.get("value", 0)) or 0)
+                    self.store.set_meta("world_properties", properties)
+            else:
+                self.effects.apply(receiver, resolved_effect, target=effect_target, formula_agent=agent)
             if receiver is not agent:
                 self.store.update_agent(receiver["id"], receiver)
             if effect.get("type") in {"capability_xp", "capability.add_xp"} or effect.get("op") == "capability.add_xp":
@@ -1589,6 +1602,20 @@ class Platform:
                 capability = effect.get("capability")
                 if capability:
                     self._add_capability_progress(agent, capability, float(effect.get("value", 0)), f"recipe:{recipe_id}", minute)
+
+    def _apply_relationship_effect(self, agent: dict[str, Any], target: dict[str, Any], effect: dict[str, Any], minute: int) -> None:
+        target_id = str(target.get("id") or target.get("entity_id") or "") if isinstance(target, dict) else ""
+        if not target_id or target_id == agent["id"]:
+            return
+        relation_type = str(effect.get("relation") or "related")
+        delta = float(effect.get("delta", effect.get("value", 0)) or 0)
+        current = next((item for item in self.store.list_relationships() if item.get("from") == agent["id"] and item.get("to") == target_id and item.get("type") == relation_type), None)
+        data = dict(current or {})
+        for key in ("from", "to", "type"):
+            data.pop(key, None)
+        data["relation_strength"] = max(-1.0, min(1.0, float(data.get("relation_strength", 0) or 0) + delta))
+        self.store.put_relationship(agent["id"], target_id, relation_type, data)
+        self.store.append_event("relationship.changed", agent["id"], minute, {"target_id": target_id, "relation": relation_type, "delta": delta, "relation_strength": data["relation_strength"]})
 
     def _record_information_result(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> None:
         """Persist information produced by configured information channels."""

@@ -933,6 +933,24 @@ def test_target_effects_update_target_health_not_actor(tmp_path: Path):
             platform._apply_success_effects(attacker, attack, {"weapon_id": "spear"}, 0, target={"id": "lu_xingzhou", "defense": 4})
         assert platform.store.get_agent("he_yan")["initial_state"]["health"] == 100
         assert platform.store.get_agent("lu_xingzhou")["initial_state"]["health"] == 63
+        relationship = next(item for item in platform.store.list_relationships() if item["from"] == "he_yan" and item["to"] == "lu_xingzhou" and item["type"] == "hostility")
+        assert relationship["relation_strength"] > 0
+    finally:
+        platform.close()
+
+
+def test_public_event_and_world_property_effects_commit_through_platform(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "effect-contract-world", tmp_path / "runtime"))
+    try:
+        action = {"id": "signal", "effects": [
+            {"type": "public_event", "event": "signal.raised"},
+            {"type": "world_property_delta", "property": "north_gate_threat_level", "delta": 0.1},
+        ]}
+        with platform.store.transaction():
+            platform._apply_success_effects(platform.store.get_agent("he_yan"), action, {}, 0)
+        assert platform.store.get_meta("world_properties")["north_gate_threat_level"] == 0.32
+        assert any(item["event_type"] == "signal.raised" for item in platform.store.recent_events(limit=10))
     finally:
         platform.close()
 

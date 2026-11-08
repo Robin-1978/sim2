@@ -29,11 +29,15 @@ class EffectPipeline:
             else:
                 needs[key] = value
             result.update({"applied": True, "need": key, "value": value})
-        elif effect_type in {"state_delta", "state.delta"}:
-            key = str(effect.get("state"))
+        elif effect_type in {"state_delta", "state.delta", "threat_delta"}:
+            key = "threat_level" if effect_type == "threat_delta" else str(effect.get("state"))
             value = max(0.0, min(100.0, float(state.get(key, 0)) + float(effect.get("delta", effect.get("value", 0)))))
             state[key] = value
             result.update({"applied": True, "state": key, "value": value})
+        elif effect_type in {"public_event", "event.public"}:
+            result.update({"applied": True, "event": str(effect.get("event") or "public.event")})
+        elif effect_type in {"relationship_delta", "relationship.delta"}:
+            result.update({"applied": True, "relation": str(effect.get("relation") or "related"), "delta": float(effect.get("delta", effect.get("value", 0)) or 0)})
         elif effect_type in {"inventory_add", "inventory.add", "add_item"}:
             item = str(effect.get("item"))
             amount = float(effect.get("quantity", effect.get("amount", 1)))
