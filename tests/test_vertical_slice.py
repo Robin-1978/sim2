@@ -469,6 +469,29 @@ def test_platform_advances_persisted_action_progress_without_llm(tmp_path: Path)
         platform.close()
 
 
+def test_advance_commits_each_tick_before_a_later_tick_fails(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "tick-commit-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    original = platform._apply_minute_effects
+
+    def fail_on_second_tick(minute: int):
+        if minute == 2:
+            raise RuntimeError("synthetic tick failure")
+        return original(minute)
+
+    platform._apply_minute_effects = fail_on_second_tick
+    try:
+        with pytest.raises(RuntimeError, match="synthetic tick failure"):
+            platform.advance(3)
+        assert platform.store.get_meta("world_minute") == 1
+        event = platform.store.recent_events(limit=5)
+        assert any(item["event_type"] == "world_minute.advanced" and item["world_minute"] == 1 for item in event)
+        assert not any(item["event_type"] == "world_minute.advanced" and item["world_minute"] == 2 for item in event)
+    finally:
+        platform.close()
+
+
 def test_platform_interrupt_updates_bt_and_action_instances(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "interrupt-world", tmp_path / "runtime")

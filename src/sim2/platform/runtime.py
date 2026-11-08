@@ -1349,7 +1349,7 @@ class Platform:
             self.store.complete_evolution_task(task_id, minute)
 
     def advance(self, minutes: int = 1, *, force: bool = False) -> dict[str, Any]:
-        """Advance world time and active Action/BT instances deterministically."""
+        """Advance sequential world ticks, committing each minute separately."""
 
         minutes = int(minutes)
         if minutes < 1:
@@ -1359,9 +1359,12 @@ class Platform:
         start = int(self.store.get_meta("world_minute", 0))
         completed: list[str] = []
         failed: list[str] = []
-        with self.store.transaction():
-            for offset in range(1, minutes + 1):
-                minute = start + offset
+        processed = 0
+        for _ in range(minutes):
+            if not force and self.store.get_meta("runtime_status", "running") != "running":
+                break
+            minute = int(self.store.get_meta("world_minute", start)) + 1
+            with self.store.transaction():
                 self._apply_minute_effects(minute)
                 for agent in self.store.list_agents():
                     before = agent.get("initial_state", {}).get("active_bt_instance")
@@ -1378,7 +1381,9 @@ class Platform:
                 self.store.append_event("world_minute.advanced", None, minute, {"minute": minute})
                 self._emit_evolution_triggers(minute)
                 self._emit_due_evolution_tasks(minute)
-        return {"status": "advanced", "from_minute": start, "to_minute": start + minutes, "completed_agents": sorted(set(completed)), "failed_agents": sorted(set(failed))}
+            processed += 1
+        status = "advanced" if processed == minutes else "paused"
+        return {"status": status, "from_minute": start, "to_minute": int(self.store.get_meta("world_minute", start)), "completed_agents": sorted(set(completed)), "failed_agents": sorted(set(failed))}
 
     def step(self) -> dict[str, Any]:
         return self.advance(1, force=True)

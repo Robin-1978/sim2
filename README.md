@@ -28,6 +28,12 @@ Run the automatic Agent/Platform loop after configuring providers in `~/.sim2/ll
 sim2 simulate --db "$DB" --minutes 1440
 ```
 
+For a real-provider run using one configured provider for every Agent role, use `--provider remote` (the value is a provider name, never an API key):
+
+```bash
+sim2 simulate --db "$DB" --minutes 1440 --provider remote
+```
+
 The text interface supports movement, messages, offers, counteroffers, acceptance/rejection, waiting, and public world telemetry. HTTP exposes the same Platform operations for another client.
 
 ## Worlds and extension
@@ -35,6 +41,8 @@ The text interface supports movement, messages, offers, counteroffers, acceptanc
 The first validation world is [Starter Village](docs/worlds/starter-village.md), with its importable package in [`worlds/starter_village`](worlds/starter_village/). It is a small settlement around a failing pact, with food, water, health, patrol, exploration, trade, relationships, hidden locations, scheduled reflection, and God-led world change.
 
 To add a world, provide a package with `manifest.yaml`, setting and world state, locations, objects, factions, agents, actions, behavior trees, rules, evolution schedule, player template, and optional prompts. `manifest.config_version` is recorded in the new SQLite instance. Reusing an instance ID is rejected; initialize a new ID for every world instance.
+
+The planned multi-region expansion is described in [Large World Expansion Plan](docs/worlds/large-world-plan.md). It keeps Starter Village as a region and adds declarative region, route, calendar, ecosystem, market, and cross-region event data without adding world-specific runtime branches.
 
 ## Development
 

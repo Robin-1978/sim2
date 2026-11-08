@@ -111,5 +111,21 @@ class LLMRouter:
     def provider_for_role(self, role: str) -> LLMProvider:
         return self.providers[self.config.provider_name_for(role)]
 
+    def provider_for_name(self, name: str) -> LLMProvider:
+        """Return the configured provider instance for an explicit override."""
+
+        try:
+            return self.providers[name]
+        except KeyError as exc:
+            raise ValueError(f"Unknown LLM provider: {name}") from exc
+
+    def new_provider_for_name(self, name: str) -> LLMProvider:
+        """Create an isolated provider session for a shared role override."""
+
+        try:
+            return OpenAICompatibleProvider(self.config.providers[name])
+        except KeyError as exc:
+            raise ValueError(f"Unknown LLM provider: {name}") from exc
+
     def complete_json(self, *, role: str, system: str, context: str, tools: list[dict[str, Any]] | None = None, messages: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         return self.provider_for_role(role).complete_json(system=system, context=context, tools=tools, messages=messages)

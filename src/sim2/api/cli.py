@@ -37,6 +37,8 @@ def main() -> None:
     simulate.add_argument("--db", type=Path, required=True)
     simulate.add_argument("--minutes", type=int, required=True)
     simulate.add_argument("--wait-cooldown", type=int, default=30)
+    simulate.add_argument("--llm-error-cooldown", type=int, default=60)
+    simulate.add_argument("--provider", help="override all Agent roles with one configured provider (for example: remote)")
 
     for name, help_text in [("status", "show instance status"), ("pause", "pause world advancement"), ("resume", "resume world advancement"), ("step", "advance one world minute"), ("metrics", "show runtime metrics"), ("audit", "export event and Agent audit")]:
         command = sub.add_parser(name, help=help_text)
@@ -100,12 +102,23 @@ def main() -> None:
         platform = Platform(args.db)
         try:
             router = LLMRouter.from_default_config()
-            providers = {
-                "agent_decision": router.provider_for_role("agent_decision"),
-                "agent_reflection": router.provider_for_role("agent_reflection"),
-                "god": router.provider_for_role("god"),
-            }
-            report = SimulationRunner(platform, providers, wait_cooldown_minutes=args.wait_cooldown).run(args.minutes)
+            if args.provider:
+                providers = {
+                    role: router.new_provider_for_name(args.provider)
+                    for role in ("agent_decision", "agent_reflection", "god")
+                }
+            else:
+                providers = {
+                    "agent_decision": router.provider_for_role("agent_decision"),
+                    "agent_reflection": router.provider_for_role("agent_reflection"),
+                    "god": router.provider_for_role("god"),
+                }
+            report = SimulationRunner(
+                platform,
+                providers,
+                wait_cooldown_minutes=args.wait_cooldown,
+                llm_error_cooldown_minutes=args.llm_error_cooldown,
+            ).run(args.minutes)
             print(json.dumps({"report": report.as_dict(), "metrics": platform.metrics()}, ensure_ascii=False))
         finally:
             platform.close()
