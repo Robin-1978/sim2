@@ -42,9 +42,8 @@ agents:
   initial_state:
     location_id: village_square
     health: 100
-    fatigue: 10
     reputation: 0
-    stamina: 100
+    energy: 90
     threat_level: 0
     status: idle
     injuries: []
@@ -104,9 +103,8 @@ agents:
   initial_state:
     location_id: watchtower
     health: 100
-    fatigue: 10
     reputation: 0
-    stamina: 100
+    energy: 90
     threat_level: 0
     status: idle
     injuries: []
@@ -168,9 +166,8 @@ agents:
   initial_state:
     location_id: granary
     health: 100
-    fatigue: 10
     reputation: 0
-    stamina: 100
+    energy: 90
     threat_level: 0
     status: idle
     injuries: []
@@ -227,9 +224,8 @@ agents:
   initial_state:
     location_id: clinic
     health: 100
-    fatigue: 10
     reputation: 0
-    stamina: 100
+    energy: 90
     threat_level: 0
     status: idle
     injuries: []
@@ -286,9 +282,8 @@ agents:
   initial_state:
     location_id: smithy
     health: 100
-    fatigue: 10
     reputation: 0
-    stamina: 100
+    energy: 90
     threat_level: 0
     status: idle
     injuries: []
@@ -351,9 +346,8 @@ agents:
   initial_state:
     location_id: north_gate
     health: 100
-    fatigue: 10
     reputation: 0
-    stamina: 100
+    energy: 90
     threat_level: 0
     status: idle
     injuries: []
@@ -411,9 +405,8 @@ agents:
   initial_state:
     location_id: inn
     health: 100
-    fatigue: 10
     reputation: 0
-    stamina: 100
+    energy: 90
     threat_level: 0
     status: idle
     injuries: []
@@ -471,9 +464,8 @@ agents:
   initial_state:
     location_id: inn
     health: 100
-    fatigue: 10
     reputation: 0
-    stamina: 100
+    energy: 90
     threat_level: 0
     status: idle
     injuries: []
@@ -532,9 +524,8 @@ agents:
   initial_state:
     location_id: old_well
     health: 100
-    fatigue: 10
     reputation: 0
-    stamina: 100
+    energy: 90
     threat_level: 0
     status: idle
     injuries: []

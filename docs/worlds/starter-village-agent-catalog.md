@@ -17,7 +17,7 @@ This compact English catalog is generated from the world configuration. It is a 
 |---|---|---|---|
 | Travel To | Platform confirms the actor, target, route, resources and safety rules. | Route-dependent | Platform applies configured effects and records the result. |
 | Rest | The location is safe. | 48 minutes | Platform applies configured effects and records the result. |
-| Gather Resource | You have gathering ability and a visible resource source has supply. | 144 minutes; fatigue 0.8/min; two source units reserved | Two source units enter inventory when the action completes. |
+| Gather Resource | You have gathering ability and a visible resource source has supply. | 144 minutes; energy 0.8/min; two source units reserved | Two source units enter inventory when the action completes. |
 | Patrol Route | You are a guard and the route is known. | 96 minutes | Platform applies configured effects and records the result. |
 | Heal Target | You can heal and the target and treatment are available. | 72 minutes | Platform applies configured effects and records the result. |
 | Explore Area | You can explore and the area is not fully mapped. | 240 minutes | Platform applies configured effects and records the result. |

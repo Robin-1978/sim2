@@ -35,8 +35,7 @@ Decision Agent 只选择 Platform 已经注册、校验并过滤过的行为。�
     "status": "injured",
     "location": "north_gate",
     "health": 72,
-    "stamina": 44,
-    "fatigue": 61,
+    "energy": 44,
     "goal": "Build a reliable warning and patrol system"
   },
   "drives": [

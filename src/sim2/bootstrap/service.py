@@ -19,6 +19,7 @@ CONFIG_COLLECTIONS = {
     "behavior_trees.yaml": "behavior_trees",
     "recipes.yaml": "recipes",
     "capabilities.yaml": "capabilities",
+    "attributes.yaml": "attributes",
     "opening_events.yaml": "opening_events",
 }
 
@@ -158,7 +159,14 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
             store.set_meta("setting", setting)
             world_state = load_yaml(config_dir, "world_state.yaml", {}).get("world_state", {})
             store.set_meta("world_properties", world_state.get("properties", {}))
-            store.set_meta("rules", load_yaml(config_dir, "rules.yaml", {}))
+            rules = load_yaml(config_dir, "rules.yaml", {})
+            store.set_meta("rules", rules)
+            store.set_meta("attributes", load_yaml(config_dir, "attributes.yaml", {}).get("attributes", []))
+            default_needs = {
+                str(item["id"]): float(item.get("target", 100))
+                for item in (rules.get("needs", []) or [])
+                if isinstance(item, dict) and item.get("id")
+            }
             evolution = load_yaml(config_dir, "evolution.yaml", {})
             store.set_meta("evolution", evolution)
             store.set_meta("player_template", load_yaml(config_dir, "player_template.yaml", {}))
@@ -174,6 +182,10 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                 store.put_entity(faction["id"], "faction", faction.get("name", faction["id"]), faction)
             for agent in load_yaml(config_dir, "agents.yaml", {}).get("agents", []):
                 state = dict(agent)
+                needs = dict(state.get("needs") or {})
+                for need_id, value in default_needs.items():
+                    needs.setdefault(need_id, value)
+                state["needs"] = needs
                 store.put_agent(agent["id"], state, agent.get("name", agent["id"]))
                 for knowledge in agent.get("knowledge_seed", []):
                     fact_key = str(knowledge)

@@ -22,15 +22,15 @@ behavior_trees:
 - id: rest_and_recover
   version: 1
   scope: universal
-  summary: Recover fatigue at the current safe location.
-  description: Recover fatigue and regain readiness before choosing another task.
+  summary: Recover energy at the current safe location.
+  description: Recover energy and regain readiness before choosing another task.
   entry_conditions:
   - actor.alive
   estimated_minutes: 48
   interrupt_policy: pause
   goal_tags: [recovery, readiness]
   drive_tags: [safety]
-  success_results: [fatigue_reduced, readiness_restored]
+  success_results: [energy_restored, readiness_restored]
   failure_results: [unsafe_location, interrupted]
   nodes:
   - type: action

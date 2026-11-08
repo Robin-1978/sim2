@@ -14,7 +14,7 @@ actions:
   costs:
     reserve: {}
     per_minute:
-      fatigue: 0.5
+      energy: 0.5
       exposure: 0.1
     on_success: {}
     on_failure: {}
@@ -118,10 +118,10 @@ actions:
     refund: {}
   progress_effects:
   - type: need_delta
-    need: fatigue
-    delta: -1.2
+    need: energy
+    delta: 1.5
   success:
-    condition: fatigue <= 20
+    condition: actor.energy >= 80
     result: rested
   failure:
     condition: danger.detected
@@ -150,7 +150,7 @@ actions:
       resource_parameter: resource_tag
       resource_amount: 2
     per_minute:
-      fatigue: 0.8
+      energy: 0.8
     on_success: {}
     on_failure: {}
     refund: {}
@@ -181,7 +181,7 @@ actions:
   costs:
     reserve: {}
     per_minute:
-      fatigue: 0.6
+      energy: 0.6
       exposure: 0.2
     on_success: {}
     on_failure: {}
@@ -212,7 +212,7 @@ actions:
     reserve:
       medicine: 1
     per_minute:
-      fatigue: 0.4
+      energy: 0.4
     on_success: {}
     on_failure: {}
     refund: {}
@@ -250,7 +250,7 @@ actions:
     reserve:
       rations: 1
     per_minute:
-      fatigue: 0.7
+      energy: 0.7
       exposure: 0.4
     on_success: {}
     on_failure: {}
@@ -307,7 +307,7 @@ actions:
   costs:
     reserve: {}
     per_minute:
-      fatigue: 0.3
+      energy: 0.3
       attention: 0.8
     on_success: {}
     on_failure: {}
@@ -396,7 +396,7 @@ actions:
     reserve:
       weapon_durability: 0.1
     per_minute:
-      stamina: 1.0
+      energy: 1.0
       attention: 0.3
     on_success: {}
     on_failure: {}
@@ -433,7 +433,7 @@ actions:
   costs:
     reserve: {}
     per_minute:
-      stamina: 0.3
+      energy: 0.3
       attention: 0.4
     on_success: {}
     on_failure: {}
@@ -465,8 +465,7 @@ actions:
   costs:
     reserve: {}
     per_minute:
-      stamina: 1.2
-      fatigue: 0.8
+      energy: 2.0
     on_success: {}
     on_failure: {}
     refund: {}
@@ -525,7 +524,7 @@ actions:
     reserve:
       recipe_inputs: 1
     per_minute:
-      fatigue: 0.4
+      energy: 0.4
       attention: 0.5
     on_success: {}
     on_failure: {}

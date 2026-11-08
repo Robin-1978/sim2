@@ -146,12 +146,12 @@ preconditions:
 duration:
   minutes: 1000
 progress_effects:
-  - type: fatigue_delta
+  - type: energy_delta
     value: 1
 costs:
   reserve: {}
   per_minute:
-    fatigue: 1
+    energy: 1
   on_success: {}
   on_failure: {}
   refund: {}

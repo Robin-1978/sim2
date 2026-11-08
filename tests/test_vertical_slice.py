@@ -240,7 +240,8 @@ def test_food_bt_is_available_with_food_and_closes_hunger_loop(tmp_path: Path):
         platform.step()
         after = platform.store.get_agent("lu_xingzhou")
         assert after["inventory"]["rations"] == before["inventory"]["rations"] - 1
-        assert after["needs"]["hunger"] == before.get("needs", {}).get("hunger", 0) + 30
+        assert before["needs"]["hunger"] == 80
+        assert after["needs"]["hunger"] == min(100, before["needs"]["hunger"] + 30)
         assert after["initial_state"]["status"] == "idle"
     finally:
         platform.close()
@@ -301,6 +302,20 @@ def test_context_uses_role_tools_and_plain_sections():
     assert "request_behavior" in prompt
     assert "arguments:" not in prompt
     assert "A fresh mark is visible." in prompt
+
+
+def test_attribute_context_comes_from_config_and_food_stays_inventory(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "attribute-world", tmp_path / "runtime"))
+    try:
+        view = platform.decision_view("lu_xingzhou")
+        labels = {item["label"] for item in view["self"]["attributes"]}
+        assert labels == {"Health", "Energy", "Hunger satisfaction"}
+        assert "food" not in {label.casefold() for label in labels}
+        assert "rations" in view["inventory"]
+        assert any("Only listed BTs" in rule for rule in view["platform_rules"])
+    finally:
+        platform.close()
 
 
 def test_agent_view_contract_and_native_react_messages(tmp_path: Path):
@@ -832,7 +847,7 @@ def test_parallel_bt_runs_action_instances_concurrently(tmp_path: Path):
 
 
 def test_generic_condition_and_effect_components():
-    agent = {"role": "pathfinder", "capabilities": {"exploration": 0.8}, "initial_state": {"health": 100, "stamina": 20, "conditions": []}, "inventory": {}}
+    agent = {"role": "pathfinder", "capabilities": {"exploration": 0.8}, "initial_state": {"health": 100, "energy": 20, "conditions": []}, "inventory": {}}
     conditions = ConditionEngine()
     assert conditions.evaluate("actor.alive and actor.can_explore", agent=agent)
     assert not conditions.evaluate("actor.can_fly", agent=agent)
@@ -842,8 +857,8 @@ def test_generic_condition_and_effect_components():
     result = effects.apply(agent, {"type": "inventory_add", "item": "map", "quantity": 1})
     assert result["applied"] is True
     assert agent["inventory"]["map"] == 1
-    effects.apply(agent, {"type": "need_delta", "need": "fatigue", "delta": 5})
-    assert agent["initial_state"]["fatigue"] == 5
+    effects.apply(agent, {"type": "need_delta", "need": "energy", "delta": 5})
+    assert agent["initial_state"]["energy"] == 25
     target = {"id": "target", "name": "Target", "entity_type": "agent", "initial_state": {"location_id": "entry", "health": 100}, "combat_stats": {"defense": 2}}
     # TargetResolver is store-backed in production; the formula behavior is
     # validated separately here with the same public projection shape.

@@ -19,12 +19,14 @@ from .tools import (
 )
 
 
-ROLE_POLICIES = {
-    "agent_decision": """You are the decision phase of one individual Agent. This is one bounded session: use an allowed read tool when a fact is missing, then choose one offered behavior, reply to an interaction, accept/counter/reject a trade, or wait. Use only visible choice and name fields; never output database IDs or internal references. You may only express intent; Platform owns every state change. Never invent hidden facts. A long behavior continues in Platform after this session ends.""",
-    "agent_reflection": """You are the Reflection and Evolution phase of one individual Agent. Compare the selected behavior's expected and observed result. Keep an experience only when it is new, durable, and useful for a future decision; otherwise wait. Write an experience in one to three concise sentences and stay under 500 characters. Use visible action names and statements, never database IDs. You may submit a belief, goal, or behavior proposal, but Platform validates every proposal and you never edit state directly.""",
-    "god": """You are the God Agent for one world. Read only the few facts needed for one decision (at most 8 read calls), then submit exactly one entity or world change proposal. Use visible names, never database IDs or internal references. For a world change, change_type must be exactly one of world_property, rule, relationship, faction, or event. Use world_property/rule/relationship/faction when you claim a direct state change with a concrete value. Use event only for a narrative signal whose effects are handled by a configured rule; never claim an event alone changed an Agent's ability, resource, or condition. Do not enumerate the whole world. Platform validates and applies every side effect; never edit state directly.""",
-    "world_builder": """You are the World Builder Agent. Draft a declarative world template using human-readable names, validate it, and submit it only after validation succeeds. Do not output database IDs, execute code, or create a database directly.""",
-}
+ROLE_NAMES = {"agent_decision", "agent_reflection", "god", "world_builder"}
+
+
+def role_policy(platform: Platform, role: str) -> str:
+    prompt = platform.store.get_prompt("agent", {}) or {}
+    prompt = prompt.get("agent_prompt", prompt) if isinstance(prompt, dict) else {}
+    policies = prompt.get("role_policies", {}) if isinstance(prompt, dict) else {}
+    return str(policies.get(role) or "")
 
 ROLE_INTENTS = {
     "agent_decision": {"select_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "wait"},
@@ -84,7 +86,7 @@ class AgentEngine:
         return response
 
     def run(self, *, role: str, actor_id: str, task_type: str = "decision") -> AgentTurn:
-        if role not in ROLE_POLICIES:
+        if role not in ROLE_NAMES:
             raise ValueError(f"unknown agent role: {role}")
         if role == "agent_decision":
             try:
@@ -107,8 +109,9 @@ class AgentEngine:
         repeated: dict[str, int] = {}
         tool_calls_used = 0
         read_tool_calls = 0
+        system_policy = role_policy(self.platform, role)
         conversation_messages: list[dict[str, Any]] = [
-            {"role": "system", "content": ROLE_POLICIES[role]},
+            {"role": "system", "content": system_policy},
             {"role": "user", "content": render_context(context, task)},
         ]
 
@@ -116,7 +119,7 @@ class AgentEngine:
             prompt = render_context(context, task)
             try:
                 self._last_usage = {}
-                response = self._complete(role=role, system=ROLE_POLICIES[role], context=prompt, messages=conversation_messages)
+                response = self._complete(role=role, system=system_policy, context=prompt, messages=conversation_messages)
                 if not isinstance(response, dict):
                     raise ValueError("LLM response must be a JSON object")
             except Exception as exc:

@@ -146,11 +146,15 @@ class Platform:
             "traits": dict(origin.get("traits") or {}),
             "ultimate_goal": origin.get("starting_goal", "Find a meaningful place in this world."),
             "beliefs": [],
-            "needs": {},
+            "needs": {
+                str(item["id"]): float(item.get("target", 100))
+                for item in ((self.store.get_meta("rules", {}) or {}).get("needs", []) or [])
+                if isinstance(item, dict) and item.get("id")
+            },
             "knowledge_seed": list(template.get("knowledge_seed") or []),
             "initial_bt_ids": list(template.get("initial_bt_ids") or []),
             "capabilities": {},
-            "initial_state": {"location_id": location_id, "health": 100, "stamina": 100, "fatigue": 0, "status": "idle", "injuries": [], "conditions": [], "active_bt_instance": None, "active_action": None, "remaining_minutes": 0},
+            "initial_state": {"location_id": location_id, "health": 100, "energy": 100, "status": "idle", "injuries": [], "conditions": [], "active_bt_instance": None, "active_action": None, "remaining_minutes": 0},
             "inventory": {},
         }
         minute = int(self.store.get_meta("world_minute", 0))
@@ -938,8 +942,7 @@ class Platform:
         return {
             "location": state.get("location_id"),
             "health": state.get("health"),
-            "stamina": state.get("stamina"),
-            "fatigue": state.get("fatigue"),
+            "energy": state.get("energy"),
             "needs": dict(agent.get("needs") or {}),
             "inventory": dict(agent.get("inventory") or {}),
             "capabilities": dict(agent.get("capabilities") or {}),
@@ -950,7 +953,7 @@ class Platform:
         """Describe only changed values so the next Agent sees consequences."""
 
         delta: dict[str, Any] = {}
-        for key in ("location", "health", "stamina", "fatigue"):
+        for key in ("location", "health", "energy"):
             if before.get(key) != after.get(key):
                 delta[key] = {"before": before.get(key), "after": after.get(key)}
         for group in ("needs", "inventory", "capabilities"):
@@ -1063,9 +1066,9 @@ class Platform:
                     state["attention"] = float(state.get("attention", 0)) + float(value or 0)
                 continue
             numeric = float(value)
-            if key in {"fatigue", "exposure", "attention"}:
+            if key in {"exposure", "attention"}:
                 state[key] = max(0.0, min(100.0, float(state.get(key, 0)) + numeric))
-            elif key in {"stamina", "health"}:
+            elif key in {"energy", "health"}:
                 state[key] = max(0.0, min(100.0, float(state.get(key, 0)) - numeric))
             elif key in needs:
                 needs[key] = max(0.0, float(needs.get(key, 0)) - numeric)
@@ -1133,8 +1136,8 @@ class Platform:
     def _apply_simple_effect(agent: dict[str, Any], effect: dict[str, Any]) -> None:
         if effect.get("need"):
             key = str(effect["need"])
-            if key == "fatigue":
-                state = dict(agent.get("initial_state") or {})
+            state = dict(agent.get("initial_state") or {})
+            if key in state:
                 state[key] = max(0.0, min(100.0, float(state.get(key, 0)) + float(effect.get("delta", 0))))
                 agent["initial_state"] = state
             else:

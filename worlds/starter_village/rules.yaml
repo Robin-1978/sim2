@@ -5,13 +5,13 @@ minute_effects:
   effect:
     need: hunger
     delta: -0.02
-- id: fatigue_recovery_idle
+- id: energy_recovery_idle
   scope: agent
   every_minutes: 1
   condition: action.none
   effect:
-    need: fatigue
-    delta: -0.1
+    need: energy
+    delta: 0.5
 - id: relation_decay
   scope: relationship
   every_minutes: 144
@@ -53,6 +53,8 @@ motivation_model:
   - novelty
   - social_norms_and_external_pressure
 fallback_behavior_ids: [rest_and_recover, eat_food, get_food, get_food_here, travel]
+agent_view:
+  priority_goal_tags: [food, survival]
 food_items: [rations, ration, cooked_meal]
 needs:
 - id: hunger

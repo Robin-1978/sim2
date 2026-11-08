@@ -60,20 +60,6 @@ def _history_line(item: dict[str, Any]) -> str:
     return f"{kind}: {_plain(item)}"
 
 
-def _protocol(role: str) -> list[str]:
-    if role == "agent_decision":
-        return [
-            "Select exactly one allowed intent: request_behavior, send_message, create_trade_offer, accept_trade_offer, counter_trade_offer, reject_trade_offer, or wait.",
-            "Return wait when no behavior is suitable. Use the exact visible choice/name; never output an internal ID. Do not invent behavior names or fill duration, cost, or effects.",
-            "The Platform owns all state changes and continues long actions after this session ends.",
-        ]
-    if role == "agent_reflection":
-        return ["Compare expected and observed results. Keep only a new, durable lesson; if there is no useful change, return wait. Use visible names and statements, never internal IDs. Platform owns every state change."]
-    if role == "god":
-        return ["Use the listed tools to submit one validated entity or world proposal. Platform owns every state change."]
-    return ["Use validate_world_template before submit_world_template. Do not execute code or write files."]
-
-
 def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000) -> str:
     """Render a stable XML-like prefix followed by dynamic Agent state.
 
@@ -85,12 +71,23 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     role = context.get("role", "agent_decision")
     self_state = context.get("self", {})
     lines = ["<protocol>"]
-    lines.extend(f"    - {item}" for item in _protocol(role))
+    lines.extend(f"    - {item}" for item in (context.get("prompt_protocol") or []))
     lines.extend(["</protocol>", "", "<world_state>"])
     world_time = context.get("world_time") or {}
     lines.append(f"  time: {world_time.get('label', world_time.get('minute', 'unknown'))}")
     lines.append(f"  minute: {world_time.get('minute', 'unknown')}")
     lines.append("</world_state>")
+
+    platform_rules = context.get("platform_rules") or []
+    if platform_rules:
+        lines.extend(["<platform_rules>", *[f"  - {item}" for item in platform_rules], "</platform_rules>"])
+    tools = context.get("tools") or []
+    if tools:
+        lines.append("<allowed_intents_and_tools>")
+        for tool in tools:
+            if isinstance(tool, dict) and tool.get("name"):
+                lines.append(f"  - {tool['name']}")
+        lines.append("</allowed_intents_and_tools>")
 
     lines.extend([
         "<self>",
@@ -99,11 +96,14 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         f"  status: {_line(self_state.get('status'))}",
         f"  location: {_line(self_state.get('location'))}",
         f"  known_routes: {_line(self_state.get('known_routes'))}",
-        f"  health: {_line(self_state.get('health'))}",
-        f"  stamina: {_line(self_state.get('stamina'))}",
-        f"  fatigue: {_line(self_state.get('fatigue'))}",
         f"  long_term_goal: {_line(self_state.get('goal'))}",
         "</self>",
+        "<state_attributes>",
+    ])
+    attributes = self_state.get("attributes") or []
+    lines.extend([f"  - {item.get('label', 'attribute')}: {_line(item.get('value'))} {item.get('unit', '')}".rstrip() for item in attributes] or ["  - none"])
+    lines.extend([
+        "</state_attributes>",
         "<identity>",
         f"  traits: {_line(context.get('identity', {}).get('traits'))}",
         f"  beliefs: {_line(context.get('identity', {}).get('beliefs'))}",

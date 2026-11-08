@@ -24,7 +24,7 @@ class EffectPipeline:
             key = str(effect.get("need"))
             value = float(needs.get(key, state.get(key, 0))) + float(effect.get("delta", effect.get("value", 0)))
             value = max(0.0, min(100.0, value))
-            if key in state or key == "fatigue":
+            if key in state:
                 state[key] = value
             else:
                 needs[key] = value

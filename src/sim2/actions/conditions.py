@@ -62,6 +62,8 @@ class ConditionEngine:
             return float(state.get("health", 100)) > 0
         if path == "actor.incapacitated":
             return float(state.get("health", 100)) <= 0 or "incapacitated" in state.get("conditions", [])
+        if path == "actor.energy":
+            return float(state.get("energy", 100))
         if path == "actor.mobile":
             return self._value("actor.alive", agent, target, world, context)
         if path == "actor.has_food":
@@ -119,7 +121,7 @@ class ConditionEngine:
         if path == "secret.source_available":
             return any(str(item).startswith("secret:") for item in agent.get("knowledge_seed", []))
         if path in {"actor.exhausted", "actor.stunned"}:
-            return float(state.get("stamina", 100)) <= 0 or path.removeprefix("actor.") in state.get("conditions", [])
+            return float(state.get("energy", 100)) <= 0 or path.removeprefix("actor.") in state.get("conditions", [])
         if path.startswith("target."):
             if path == "target.available":
                 # A target-dependent action is not executable until Platform

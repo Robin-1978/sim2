@@ -299,6 +299,10 @@ class WorldStore:
     def put_prompt(self, prompt_id: str, data: dict[str, Any]) -> None:
         self.connection.execute("INSERT OR REPLACE INTO prompt_def(id,data_json) VALUES (?,?)", (prompt_id, json_dumps(data)))
 
+    def get_prompt(self, prompt_id: str, default: Any = None) -> Any:
+        row = self.connection.execute("SELECT data_json FROM prompt_def WHERE id=?", (prompt_id,)).fetchone()
+        return default if row is None else json.loads(row["data_json"])
+
     def put_bt_instance(self, execution_id: str, actor_id: str, behavior_id: str, status: str, current_node: int, data: dict[str, Any], started_minute: int, updated_minute: int) -> None:
         self.connection.execute(
             "INSERT OR REPLACE INTO bt_instance(execution_id,actor_id,behavior_id,status,current_node,data_json,started_minute,updated_minute) VALUES (?,?,?,?,?,?,?,?)",

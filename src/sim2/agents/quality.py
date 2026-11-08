@@ -42,7 +42,7 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         reason = str(payload.get("reason") or "")
         checks.append(_check("decision_reason_advisory", True, f"reason_length={len(reason.strip())}; detailed rationale is optional and reviewed by Reflection"))
         parameters = payload.get("parameters") or {}
-        checks.append(_check("decision_does_not_fill_execution_costs", not any(key in parameters for key in {"duration", "fatigue", "exposure", "cost", "effects"}), f"parameter_keys={sorted(parameters)}"))
+        checks.append(_check("decision_does_not_fill_execution_costs", not any(key in parameters for key in {"duration", "energy", "exposure", "cost", "effects"}), f"parameter_keys={sorted(parameters)}"))
         selected = next((item for item in behaviors if item.get("ref") == behavior_ref), selected_by_choice or {})
         drive_ids = {item.get("id") for item in (view.get("drives") or [])[:3]}
         goal_tags = set(view.get("goal_tags") or [])

@@ -136,7 +136,7 @@ requires:
 duration_minutes: 144
 costs:
   reserve: [{path: actor.inventory.tool_durability, amount: 1}]
-  per_minute: [{path: actor.fatigue, op: add, value: 0.8}]
+  per_minute: [{path: actor.energy, op: add, value: 0.8}]
 progress_effects:
   - op: resource.consume
     target: target
@@ -194,7 +194,7 @@ requires:
   conditions: [actor.alive, target.visible, target.reachable]
 duration_minutes: 6
 costs:
-  per_minute: [{path: actor.stamina, op: add, value: -1.0}]
+  per_minute: [{path: actor.energy, op: add, value: -1.0}]
   reserve: [{path: weapon.durability, amount: 0.1}]
 success:
   condition: attack.resolved

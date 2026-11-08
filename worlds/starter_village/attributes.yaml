@@ -1,0 +1,22 @@
+attributes:
+  - id: health
+    kind: state
+    label: Health
+    unit: points
+    min: 0
+    max: 100
+    prompt: Physical integrity; zero means incapacitated.
+  - id: energy
+    kind: state
+    label: Energy
+    unit: points
+    min: 0
+    max: 100
+    prompt: Combined action capacity and accumulated load.
+  - id: hunger
+    kind: need
+    label: Hunger satisfaction
+    unit: points
+    min: 0
+    max: 100
+    prompt: Declines by world rules and rises when food is eaten.

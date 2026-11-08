@@ -83,6 +83,7 @@ LLM 看到的状态是精简摘要，例如“何砚，北门，受伤 20%，可
 - `agents.yaml`：Agent 身份、终极目标、信念、需求、知识种子、关系和初始 BT。
 - `actions.yaml`：元动作契约、目标、条件、成本、持续时间、效果和 Platform effect pipeline。
 - `capabilities.yaml`：采集、农作、烹饪、锻造、战斗、探索、沟通和研究能力定义。
+- `attributes.yaml`：健康、能量和需求属性的显示名称、单位、范围和 Agent 说明；食物仍由物品、库存和共享资源定义。
 - `recipes.yaml`：熟食、口粮和药剂等输入、输出、工作站和能力要求。
 - `behavior_trees.yaml`：BT 定义、条件、节点和结果契约。
 - `rules.yaml`：分钟效果、需求曲线、社会规则和世界约束。

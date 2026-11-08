@@ -9,6 +9,7 @@ files:
 - objects.yaml
 - factions.yaml
 - capabilities.yaml
+- attributes.yaml
 - recipes.yaml
 - agents.yaml
 - actions.yaml
@@ -17,6 +18,7 @@ files:
 - opening_events.yaml
 - player_template.yaml
 - prompts/world.yaml
+- prompts/agent.yaml
 - evolution.yaml
 time_unit: minute
 start_world_minute: 0

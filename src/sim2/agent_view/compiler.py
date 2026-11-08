@@ -50,7 +50,6 @@ def _predicate_text(predicate: str) -> str:
 
 def _cost_text(action: dict[str, Any]) -> list[str]:
     costs = action.get("costs", {})
-    labels = {"fatigue": "Fatigue", "stamina": "Stamina", "attention": "Attention", "exposure": "Exposure", "tool_durability": "Tool durability", "rations": "Rations", "medicine": "Medicine", "iron_ore": "Iron ore", "star_metal": "Star metal", "trade_goods": "Trade goods", "ritual_material": "Ritual material"}
     out: list[str] = []
     for phase, values in costs.items():
         if not values:
@@ -61,7 +60,7 @@ def _cost_text(action: dict[str, Any]) -> list[str]:
                     out.append(f"Required item ({phase.replace('_', ' ')})")
                     continue
                 shown_value = "the selected target" if str(value).endswith("_id") else value
-                out.append(f"{labels.get(key, _label(str(key)))} {shown_value} ({phase.replace('_', ' ')})")
+                out.append(f"{_label(str(key))} {shown_value} ({phase.replace('_', ' ')})")
         else:
             out.append(f"{phase.replace('_', ' ')}: {values}")
     return out or ["No direct resource cost."]
@@ -93,6 +92,38 @@ class AgentViewCompiler:
         self.conditions = ConditionEngine()
         self.resources = ResourceLedger(store)
         self.targets = TargetResolver(store)
+
+    def _prompt_sections(self, role: str) -> tuple[list[str], list[str]]:
+        prompt = self.store.get_prompt("agent", {}) or {}
+        prompt = prompt.get("agent_prompt", prompt) if isinstance(prompt, dict) else {}
+        protocol = prompt.get("protocol", {}) if isinstance(prompt, dict) else {}
+        protocol_lines = list(protocol.get(role, []) or []) if isinstance(protocol, dict) else []
+        rules = list(prompt.get("platform_rules", []) or []) if isinstance(prompt, dict) else []
+        attributes = self.store.get_meta("attributes", []) or []
+        attribute_rules = [
+            f"{item.get('label', item.get('id'))}: {item.get('prompt')}"
+            for item in attributes
+            if isinstance(item, dict) and item.get("prompt")
+        ]
+        return protocol_lines, rules + attribute_rules
+
+    def _attribute_values(self, agent: dict[str, Any], state: dict[str, Any]) -> list[dict[str, Any]]:
+        values: list[dict[str, Any]] = []
+        inventory = agent.get("inventory", {}) or {}
+        for definition in self.store.get_meta("attributes", []) or []:
+            if not isinstance(definition, dict) or not definition.get("id"):
+                continue
+            kind = definition.get("kind")
+            if kind == "state":
+                value = state.get(definition["id"])
+            elif kind == "need":
+                value = (agent.get("needs", {}) or {}).get(definition["id"])
+            elif kind == "inventory_group":
+                value = sum(float(inventory.get(item, 0) or 0) for item in definition.get("items", []) or [])
+            else:
+                continue
+            values.append({"label": definition.get("label", definition["id"]), "value": value, "unit": definition.get("unit", ""), "kind": kind})
+        return values
 
     @staticmethod
     def _assign_choices(behaviors: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -299,11 +330,9 @@ class AgentViewCompiler:
                 "goal_tags": bt.get("goal_tags", []),
                 "drive_tags": bt.get("drive_tags", []),
             })
-        # Keep the context small, but never hide a configured food/survival
-        # choice behind a character's first five unrelated BTs.
-        available.sort(
-            key=lambda item: 0 if set(item.get("goal_tags", [])) & {"food", "survival"} else 1
-        )
+        priority_tags = set((self.store.get_meta("rules", {}) or {}).get("agent_view", {}).get("priority_goal_tags", []) or [])
+        if priority_tags:
+            available.sort(key=lambda item: 0 if set(item.get("goal_tags", [])) & priority_tags else 1)
         nearby = [item for item in (self.store.entities_at_location(location_id) if location_id else []) if item.get("id") != agent_id]
         known_routes = []
         for route_id in (current_location.get("routes", []) if isinstance(current_location, dict) else []):
@@ -339,10 +368,13 @@ class AgentViewCompiler:
         actor_events = self.store.recent_events_for_actor(agent_id, limit=8)
         recent_actions = actor_events[:2]
         recent_outcomes = self.store.recent_outcomes_for_actor(agent_id, limit=3)
+        prompt_protocol, platform_rules = self._prompt_sections(role)
         return {
             "context_version": "1", "role": role,
+            "prompt_protocol": prompt_protocol,
+            "platform_rules": platform_rules,
             "world_time": {"minute": self.store.get_meta("world_minute", 0), "label": f"World minute {self.store.get_meta('world_minute', 0)}"},
-            "self": {"id": agent_id, "name": agent.get("name", agent_id), "role": agent.get("role", "agent"), "status": state.get("status", "idle"), "location": current_location.get("name", location_id) if isinstance(current_location, dict) else location_id, "known_routes": known_routes, "health": state.get("health"), "stamina": state.get("stamina"), "fatigue": state.get("fatigue"), "goal": agent.get("ultimate_goal")},
+            "self": {"id": agent_id, "name": agent.get("name", agent_id), "role": agent.get("role", "agent"), "status": state.get("status", "idle"), "location": current_location.get("name", location_id) if isinstance(current_location, dict) else location_id, "known_routes": known_routes, "health": state.get("health"), "energy": state.get("energy"), "attributes": self._attribute_values(agent, state), "goal": agent.get("ultimate_goal")},
             "identity": {"traits": agent.get("traits", {}), "beliefs": agent.get("beliefs", []), "capabilities": agent.get("capabilities", {})},
             "goal_tags": agent.get("goal_tags", []),
             "capability_history": self.store.list_capability_progress(agent_id, limit=5),
@@ -443,9 +475,12 @@ class AgentViewCompiler:
         )
         world_properties = self.store.get_meta("world_properties", {}) or {}
         world_summary = "; ".join(f"{key}={value}" for key, value in world_properties.items()) or "none"
+        prompt_protocol, platform_rules = self._prompt_sections(role)
         return {
             "context_version": "1",
             "role": role,
+            "prompt_protocol": prompt_protocol,
+            "platform_rules": platform_rules,
             "world_time": {"minute": minute, "label": f"World minute {minute}"},
             "self": {"id": actor_id, "name": actor_id, "role": role, "status": "ready", "location": "world", "goal": "preserve a coherent, evolving world"},
             "identity": {"traits": {}, "beliefs": [], "capabilities": {"world_scope": True}},
