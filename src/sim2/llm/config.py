@@ -23,6 +23,8 @@ class ProviderConfig:
     timeout_seconds: float = 120.0
     max_retries: int = 2
     retry_backoff_seconds: float = 1.0
+    adapter: str | None = None
+    extra_body: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -53,6 +55,8 @@ class LLMConfig:
                 timeout_seconds=float(value.get("timeout_seconds", 120)),
                 max_retries=max(0, int(value.get("max_retries", 2))),
                 retry_backoff_seconds=max(0.0, float(value.get("retry_backoff_seconds", 1.0))),
+                adapter=value.get("adapter"),
+                extra_body=dict(value.get("extra_body") or {}),
             )
         if not providers:
             raise ValueError(f"No LLM providers configured in {config_path}")

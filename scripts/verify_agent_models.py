@@ -83,6 +83,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-remote", action="store_true")
     parser.add_argument("--skip-local", action="store_true")
+    parser.add_argument("--remote-model", default=None)
     args = parser.parse_args()
     config = LLMConfig.load()
     world_config = Path(__file__).parents[1] / "worlds" / "starter_village"
@@ -102,6 +103,8 @@ def main() -> int:
                 if remote.api_key_env and not __import__("os").environ.get(remote.api_key_env):
                     reports.append({"provider": "remote", "model": remote.model, "status": "blocked", "reason": "configured API key environment variable is not available to this process", "quality": False})
                 else:
+                    if args.remote_model:
+                        remote = ProviderConfig(**{**remote.__dict__, "model": args.remote_model})
                     remote_provider = OpenAICompatibleProvider(remote)
                     reports.append({"provider": "remote", "model": remote.model, **run_session(platform, remote_provider, "god", "god")})
         finally:

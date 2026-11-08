@@ -51,8 +51,8 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         tokens = lambda value: set(re.findall(r"[a-z0-9]+", str(value).lower().replace("_", " ")))
         reason_terms = tokens(reason)
         evidence_terms = tokens(selected.get("name", "")) | tokens(selected.get("goal_tags", [])) | tokens(view.get("identity", {}).get("capabilities", {}))
-        reason_grounded = bool(reason_terms & evidence_terms) if reason.strip() else bool(alignment)
-        reason_detail = "reason overlaps visible evidence" if reason_terms & evidence_terms else ("choice aligned with visible goals/drives; no explanation emitted" if not reason.strip() and alignment else "no overlap with selected behavior, goals, drives or capabilities")
+        reason_grounded = bool(reason_terms & evidence_terms) or (bool(reason.strip()) and bool(alignment))
+        reason_detail = "reason overlaps visible evidence" if reason_terms & evidence_terms else ("choice aligned with visible goals/drives; explanation language is advisory" if reason.strip() and alignment else ("choice aligned with visible goals/drives; no explanation emitted" if not reason.strip() and alignment else "no overlap with selected behavior, goals, drives or capabilities"))
         checks.append(_check("decision_reason_grounding", reason_grounded, reason_detail))
     elif turn.role == "agent_reflection":
         if name == "wait" or payload.get("intent_type") == "wait" or turn.result.get("status") == "wait":

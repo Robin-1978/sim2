@@ -248,7 +248,10 @@ class AgentEngine:
             return {"status": "rejected", "failed_check": "intent_schema", "retryable": True, "message": "Intent must be an object."}
         if data.get("type") == "intent":
             data.pop("type", None)
-        intent_type = str(data.get("intent_type") or data.get("kind") or ("select_behavior" if data.get("choice") or data.get("behavior_ref") or data.get("behavior_id") or data.get("behavior") else ""))
+        intent_type_value = data.get("intent_type") or data.get("kind")
+        if not intent_type_value and role != "agent_decision" and isinstance(data.get("intent"), str):
+            intent_type_value = data.get("intent")
+        intent_type = str(intent_type_value or ("select_behavior" if data.get("choice") or data.get("behavior_ref") or data.get("behavior_id") or data.get("behavior") else ""))
         if data.get("wait") is True:
             intent_type = "wait"
         if intent_type not in ROLE_INTENTS.get(role, set()):

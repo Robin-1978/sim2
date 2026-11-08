@@ -11,6 +11,7 @@ from uuid import uuid4
 import httpx
 
 from .config import LLMConfig, ProviderConfig
+from .adapters import ModelProtocolError, resolve_adapter
 
 
 class LLMProvider(Protocol):
@@ -22,7 +23,25 @@ def _json_from_text(text: str) -> dict[str, Any]:
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
-    value = json.loads(text)
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as original:
+        # Some reasoning models wrap the JSON object in a short preamble or
+        # trailing sentence. Recover only a complete object; never guess keys.
+        decoder = json.JSONDecoder()
+        value = None
+        for index, char in enumerate(text):
+            if char != "{":
+                continue
+            try:
+                candidate, _ = decoder.raw_decode(text[index:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(candidate, dict):
+                value = candidate
+                break
+        if value is None:
+            raise original
     if not isinstance(value, dict):
         raise ValueError("LLM response must be a JSON object")
     return value
@@ -33,6 +52,9 @@ class OpenAICompatibleProvider:
     config: ProviderConfig
     session_id: str = ""
     _cooldown_until: float = 0.0
+
+    def __post_init__(self) -> None:
+        self.adapter = resolve_adapter(self.config.provider_type, self.config.base_url, self.config.model, self.config.adapter)
 
     def _post(self, url: str, *, headers: dict[str, str], payload: dict[str, Any]) -> httpx.Response:
         """Perform a bounded retry for transport and transient upstream errors."""
@@ -102,15 +124,18 @@ class OpenAICompatibleProvider:
             "temperature": 0.2,
             "response_format": {"type": "json_object"},
         }
-        if tools:
+        if self.config.extra_body:
+            payload.update(self.config.extra_body)
+        if tools and self.adapter.native_tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
+        payload = self.adapter.prepare_payload(payload)
         url = f"{self.config.base_url}/chat/completions"
         response = self._post(url, headers=headers, payload=payload)
         # Some local OpenAI-compatible servers accept JSON mode but reject the
         # optional native tools fields.  Retry the same read-only completion
         # without those hints; the prompt-level tool envelope remains usable.
-        if response.status_code in {400, 422} and tools:
+        if response.status_code in {400, 422} and tools and self.adapter.native_tools:
             fallback = dict(payload)
             fallback.pop("tools", None)
             fallback.pop("tool_choice", None)
@@ -121,26 +146,34 @@ class OpenAICompatibleProvider:
             fallback.pop("tools", None)
             fallback.pop("tool_choice", None)
             response = self._post(url, headers=headers, payload=fallback)
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            detail = response.text[:800].replace("authorization", "auth")
-            raise RuntimeError(f"LLM HTTP {response.status_code}: {detail}") from exc
-        data = response.json()
-        message = data["choices"][0]["message"]
-        usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
-        # Native tool calls are normalized to the same compact envelope used
-        # by local llama.cpp models that return a JSON object in content.
-        if message.get("tool_calls"):
-            result = {"tool_calls": message["tool_calls"]}
-        elif message.get("function_call"):
-            result = {"function_call": message["function_call"]}
-        else:
-            content = message.get("content") or ""
-            result = _json_from_text(content)
-        if usage:
-            result["_usage"] = usage
-        return result
+        for protocol_attempt in range(2):
+            try:
+                response.raise_for_status()
+                data = response.json()
+                message = data["choices"][0]["message"]
+                usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
+                # Native tool calls are normalized to the same compact envelope used
+                # by local llama.cpp models that return a JSON object in content.
+                if message.get("tool_calls"):
+                    result = {"tool_calls": message["tool_calls"]}
+                elif message.get("function_call"):
+                    result = {"function_call": message["function_call"]}
+                else:
+                    content = message.get("content") or ""
+                    if not isinstance(content, str) or not content.strip():
+                        raise ModelProtocolError("model returned no content or tool call")
+                    result = _json_from_text(content)
+                if usage:
+                    result["_usage"] = usage
+                return result
+            except httpx.HTTPStatusError as exc:
+                detail = response.text[:800].replace("authorization", "auth")
+                raise RuntimeError(f"LLM HTTP {response.status_code}: {detail}") from exc
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError, ModelProtocolError):
+                if protocol_attempt >= 1:
+                    raise
+                response = self._post(url, headers=headers, payload=payload)
+        raise ModelProtocolError("model response normalization failed")
 
 
 class LLMRouter:
