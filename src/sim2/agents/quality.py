@@ -93,10 +93,11 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
             checks.append(_check("god_world_change_applied", turn.result.get("status") == "accepted" and bool(turn.result.get("applied")), f"applied={turn.result.get('applied')}; effects={turn.result.get('applied_effects')}"))
             change_type = str(payload.get("change_type", ""))
             effects = " ".join(str(item).lower() for item in (payload.get("effects") or []))
-            direct_change_terms = ("increase", "decrease", "restore", "activate", "reduce", "raise", "lower", "set ", "change", "remain", " can ")
+            direct_change_terms = ("increase", "decrease", "restore", "activate", "stabilize", "reduce", "raise", "lower", "set ", "change", "remain", " can ")
             if change_type == "event" and not payload.get("property"):
-                checks.append(_check("god_event_does_not_claim_unapplied_state_change", not any(term in effects for term in direct_change_terms), "event is recorded only; structured property/rule/relationship/faction change is required for direct state mutation"))
-                checks.append(_check("god_event_has_structured_followup", False, "accepted as a recorded event, but no configured state effect was applied"))
+                direct_claim = any(term in effects for term in direct_change_terms)
+                checks.append(_check("god_event_does_not_claim_unapplied_state_change", not direct_claim, "event is narrative only" if not direct_claim else "direct state mutation requires a structured property/rule/relationship/faction proposal"))
+                checks.append(_check("god_event_is_valid_narrative_signal", not direct_claim, "narrative event can be handled by a configured world rule" if not direct_claim else "event effects claim a direct state change"))
         else:
             checks.append(_check("god_submission_is_known", name in {"propose_entity", "propose_world_change"}, f"submission={name}"))
     passed = all(item["passed"] for item in checks)
