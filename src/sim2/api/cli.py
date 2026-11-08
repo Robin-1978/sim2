@@ -6,8 +6,10 @@ from pathlib import Path
 
 from ..agents.engine import AgentEngine
 from ..bootstrap.service import create_instance
+from ..llm.gateway import LLMRouter
 from ..platform.runtime import Platform
 from .text import TextWorldSession
+from .http import ControlHTTPServer
 
 
 def main() -> None:
@@ -37,6 +39,11 @@ def main() -> None:
     simulate.add_argument("--wait-cooldown", type=int, default=30)
     simulate.add_argument("--llm-error-cooldown", type=int, default=60)
     simulate.add_argument("--provider", help="override all Agent roles with one configured provider (for example: remote)")
+
+    serve = sub.add_parser("serve", help="start the local HTTP control API")
+    serve.add_argument("--db", type=Path, required=True)
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8080)
 
     for name, help_text in [("status", "show instance status"), ("pause", "pause world advancement"), ("resume", "resume world advancement"), ("step", "advance one world minute"), ("metrics", "show runtime metrics"), ("audit", "export event and Agent audit")]:
         command = sub.add_parser(name, help=help_text)
@@ -105,6 +112,15 @@ def main() -> None:
             print(json.dumps({"report": report.as_dict(), "metrics": platform.metrics()}, ensure_ascii=False))
         finally:
             platform.close()
+        return
+    if args.command == "serve":
+        server = ControlHTTPServer((args.host, args.port), args.db)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            return
+        finally:
+            server.close()
         return
     if args.command in {"status", "pause", "resume", "step", "metrics", "audit", "snapshot", "restore", "enter-player", "inject"}:
         platform = Platform(args.db)

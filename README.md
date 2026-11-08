@@ -22,6 +22,12 @@ sim2 mud --db "$DB" --player-id player_one --origin courier --name Ari
 sim2 mud --db "$DB" --observer
 ```
 
+Start the local HTTP control API when another client needs status, stepping, events, dialogue, or trade operations:
+
+```bash
+sim2 serve --db "$DB" --host 127.0.0.1 --port 8080
+```
+
 Run the autonomous Platform runtime after configuring providers in `~/.sim2/llm.json`:
 
 ```bash
