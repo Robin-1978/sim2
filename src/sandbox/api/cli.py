@@ -8,6 +8,7 @@ from ..agents.engine import AgentEngine
 from ..bootstrap.service import create_instance
 from ..llm.gateway import LLMRouter
 from ..platform.runtime import Platform
+from ..simulation.runner import SimulationRunner
 from .text import TextWorldSession
 
 
@@ -31,6 +32,11 @@ def main() -> None:
     mud.add_argument("--origin")
     mud.add_argument("--name")
     mud.add_argument("--observer", action="store_true")
+
+    simulate = sub.add_parser("simulate", help="run the automatic Agent/Platform loop")
+    simulate.add_argument("--db", type=Path, required=True)
+    simulate.add_argument("--minutes", type=int, required=True)
+    simulate.add_argument("--wait-cooldown", type=int, default=30)
 
     for name, help_text in [("status", "show instance status"), ("pause", "pause world advancement"), ("resume", "resume world advancement"), ("step", "advance one world minute"), ("metrics", "show runtime metrics"), ("audit", "export event and Agent audit")]:
         command = sub.add_parser(name, help=help_text)
@@ -89,6 +95,20 @@ def main() -> None:
             platform.close()
 
 
+        return
+    if args.command == "simulate":
+        platform = Platform(args.db)
+        try:
+            router = LLMRouter.from_default_config()
+            providers = {
+                "agent_decision": router.provider_for_role("agent_decision"),
+                "agent_reflection": router.provider_for_role("agent_reflection"),
+                "god": router.provider_for_role("god"),
+            }
+            report = SimulationRunner(platform, providers, wait_cooldown_minutes=args.wait_cooldown).run(args.minutes)
+            print(json.dumps({"report": report.as_dict(), "metrics": platform.metrics()}, ensure_ascii=False))
+        finally:
+            platform.close()
         return
     if args.command in {"status", "pause", "resume", "step", "advance", "metrics", "audit", "snapshot", "restore", "enter-player", "inject"}:
         platform = Platform(args.db)
