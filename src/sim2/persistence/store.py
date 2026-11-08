@@ -296,6 +296,29 @@ class WorldStore:
         ).fetchall()
         return [{"id": row["id"], "fact_key": row["fact_key"], **json.loads(row["data_json"])} for row in rows]
 
+    def explored_areas(self, agent_id: str) -> set[str]:
+        rows = self.connection.execute(
+            "SELECT DISTINCT area_id FROM exploration_result WHERE agent_id=?",
+            (agent_id,),
+        ).fetchall()
+        return {str(row["area_id"]) for row in rows if row["area_id"]}
+
+    def researched_sources(self, agent_id: str) -> set[str]:
+        rows = self.connection.execute(
+            "SELECT fact_key FROM knowledge_fact WHERE agent_id=? AND fact_key LIKE 'researched:%'",
+            (agent_id,),
+        ).fetchall()
+        return {str(row["fact_key"]).removeprefix("researched:").split(":", 1)[0] for row in rows}
+
+    def last_behavior_minute(self, actor_id: str, behavior_id: str) -> int | None:
+        row = self.connection.execute(
+            "SELECT MAX(world_minute) AS minute FROM event_log "
+            "WHERE actor_id=? AND event_type='behavior.completed' "
+            "AND json_extract(data_json,'$.behavior_id')=?",
+            (actor_id, behavior_id),
+        ).fetchone()
+        return int(row["minute"]) if row and row["minute"] is not None else None
+
     def put_prompt(self, prompt_id: str, data: dict[str, Any]) -> None:
         self.connection.execute("INSERT OR REPLACE INTO prompt_def(id,data_json) VALUES (?,?)", (prompt_id, json_dumps(data)))
 

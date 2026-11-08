@@ -340,13 +340,14 @@ actions:
   preconditions:
   - actor.can_research
   - source.accessible
+  - research.new_fact_available
   duration:
     minutes: 192
   costs:
     reserve: {}
     per_minute:
       energy: 0.2
-      attention: 0.8
+      attention: 0.4
     on_success: {}
     on_failure: {}
     refund: {}

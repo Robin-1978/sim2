@@ -68,6 +68,9 @@ locations:
     public: restricted
     tags: [exploration, danger, forest]
     routes: [river_bridge, farm_fields, north_gate, river_bank, old_quarry]
+    discoveries:
+      - {id: explored:greywood_edge:route, fact: "A usable route from Greywood edge reaches the old quarry."}
+      - {id: explored:greywood_edge:ledger, fact: "A damaged caravan ledger was last seen near Greywood edge."}
   - id: hidden_root_gate
     name: 根门
     public: hidden

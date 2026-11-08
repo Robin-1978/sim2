@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from ..actions.conditions import ConditionEngine
+from ..actions.capacity import check_action_capacity
 from ..actions.effects import EffectPipeline
 from ..actions.targets import TargetResolver
 from ..actions.resources import ResourceLedger
@@ -360,6 +361,25 @@ class Platform:
                     "condition": str(predicate),
                     "retryable": True,
                 })
+        cooldown_minutes = max(0, int(bt.get("cooldown_minutes", 0) or 0))
+        world_minute = int(self.store.get_meta("world_minute", 0))
+        if cooldown_minutes:
+            last_minute = self.store.last_behavior_minute(intent.actor_id, behavior_id)
+            if last_minute is not None and world_minute - last_minute < cooldown_minutes:
+                return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+                    "status": "rejected", "message": "This behavior is cooling down after its last completion.", "failed_check": "cooldown", "retryable": True,
+                    "retry_after_minute": last_minute + cooldown_minutes,
+                })
+        # A choice made from an old view must be checked against the current
+        # executable catalog before it can reserve anything. Explicit target
+        # parameters are retained for player/API commands whose destination is
+        # supplied outside the catalog; ordinary Agent choices have neither.
+        if not intent.target and not intent.parameters:
+            current_view = self.view.build_decision_view(intent.actor_id, role="agent_decision")
+            if behavior_id not in {str(item.get("ref", "")).removeprefix("behavior:") for item in current_view.get("executable_behaviors", [])}:
+                return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+                    "status": "rejected", "message": "The selected behavior is no longer executable in the current state.", "failed_check": "behavior_unavailable", "retryable": True,
+                })
         estimator = BehaviorDurationEstimator(
             {item["id"]: item for item in self.store.get_definitions("action_def")},
             available_defs,
@@ -367,7 +387,6 @@ class Platform:
             self._route_distance,
         )
         remaining_minutes = estimator.behavior_minutes(behavior_id, {**runtime_parameters, **intent.target}, state.get("location_id"))
-        world_minute = int(self.store.get_meta("world_minute", 0))
         expected = {
             "summary": bt.get("summary") or bt.get("description") or behavior_id,
             "success": list(bt.get("success_results", []) or []),
@@ -439,6 +458,8 @@ class Platform:
             "inventory": agent.get("inventory", {}) or {},
             "food_items": (self.store.get_meta("rules", {}) or {}).get("food_items", []) or [],
             "current_location": location,
+            "mapped_areas": self.store.explored_areas(agent["id"]),
+            "researched_sources": self.store.researched_sources(agent["id"]),
             "target": resolved_target or {},
             "target.visible": bool((resolved_target or {}).get("visible", False)),
             "target.available": bool((resolved_target or {}).get("available", False)),
@@ -1150,14 +1171,8 @@ class Platform:
     def _reserve_action_costs(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], *, commit: bool = True) -> tuple[bool, str, list[dict[str, Any]]]:
         return self.resources.reserve(agent, action, parameters, commit=commit)
 
-    @staticmethod
-    def _check_action_energy(agent: dict[str, Any], action: dict[str, Any], duration: int) -> tuple[bool, str]:
-        rate = float((action.get("costs", {}).get("per_minute", {}) or {}).get("energy", 0) or 0)
-        required = max(0.0, rate * max(1, int(duration)))
-        available = float((agent.get("initial_state") or {}).get("energy", 100) or 0)
-        if required > available + 1e-9:
-            return False, f"energy cost {required:g} exceeds available energy {available:g}"
-        return True, ""
+    def _check_action_capacity(self, agent: dict[str, Any], action: dict[str, Any], duration: int) -> tuple[bool, str]:
+        return check_action_capacity(agent, action, duration, self.store.get_meta("attributes", []) or [])
 
     def _apply_action_progress(self, agent: dict[str, Any], action: dict[str, Any]) -> None:
         state = dict(agent.get("initial_state") or {})
@@ -1286,6 +1301,8 @@ class Platform:
             "food_items": (self.store.get_meta("rules", {}) or {}).get("food_items", []) or [],
             "station_tags": [],
             "current_location": current_location,
+            "mapped_areas": self.store.explored_areas(agent["id"]),
+            "researched_sources": self.store.researched_sources(agent["id"]),
             "target": resolved_target or {},
             "target.visible": (resolved_target or {}).get("visible", False),
             "target.available": (resolved_target or {}).get("available", False),
@@ -1299,9 +1316,9 @@ class Platform:
             if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=condition_context, world=self.store.get_meta("world_properties", {}) or {}):
                 return False, f"precondition failed: {predicate}"
         duration = self._action_duration(action, parameters, state.get("location_id"))
-        enough_energy, energy_reason = self._check_action_energy(agent, action, duration)
-        if not enough_energy:
-            return False, energy_reason
+        capacity_ok, capacity_reason = self._check_action_capacity(agent, action, duration)
+        if not capacity_ok:
+            return False, capacity_reason
         allowed, reason, reservation = self._reserve_action_costs(agent, action, parameters)
         if not allowed:
             return False, reason
@@ -1350,6 +1367,8 @@ class Platform:
             "food_items": (self.store.get_meta("rules", {}) or {}).get("food_items", []) or [],
             "station_tags": [],
             "current_location": current_location,
+            "mapped_areas": self.store.explored_areas(agent["id"]),
+            "researched_sources": self.store.researched_sources(agent["id"]),
             "target": target or {},
             "target.visible": (target or {}).get("visible", False),
             "target.available": (target or {}).get("available", False),
@@ -1363,9 +1382,9 @@ class Platform:
             if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=context, world=self.store.get_meta("world_properties", {}) or {}):
                 return None, f"precondition failed: {predicate}"
         duration = self._action_duration(action, parameters, state.get("location_id"))
-        enough_energy, energy_reason = self._check_action_energy(agent, action, duration)
-        if not enough_energy:
-            return None, energy_reason
+        capacity_ok, capacity_reason = self._check_action_capacity(agent, action, duration)
+        if not capacity_ok:
+            return None, capacity_reason
         probe = copy.deepcopy(agent)
         allowed, reason, reservation = self._reserve_action_costs(probe, action, parameters, commit=False)
         if not allowed:
@@ -1581,13 +1600,25 @@ class Platform:
         topic = parameters.get("topic")
         if area_id:
             area_id = str(area_id)
-            result_id = self.store.put_exploration_result(agent["id"], area_id, minute, {"source": action.get("id"), "parameters": parameters})
-            self.store.merge_knowledge_fact(agent["id"], f"explored:{area_id}", {"fact": f"Area {area_id} was explored.", "source_type": "exploration", "source_id": result_id, "confidence": 0.8, "observed_at": minute})
-            self.store.append_event("exploration.completed", agent["id"], minute, {"area_id": area_id, "result_id": result_id})
+            if area_id not in self.store.explored_areas(agent["id"]):
+                result_id = self.store.put_exploration_result(agent["id"], area_id, minute, {"source": action.get("id"), "parameters": parameters})
+                area = self.store.get_entity(area_id) if area_id else {}
+                discoveries = list(area.get("discoveries", []) or []) if isinstance(area, dict) else []
+                discoveries = [{"id": f"explored:{area_id}", "fact": f"Area {area_id} was explored."}, *discoveries]
+                for discovery in discoveries:
+                    discovery_id = str(discovery.get("id") or f"explored:{area_id}")
+                    fact = str(discovery.get("fact") or f"Area {area_id} was explored.")
+                    self.store.merge_knowledge_fact(agent["id"], discovery_id, {"fact": fact, "source_type": "exploration", "source_id": result_id, "confidence": 0.8, "observed_at": minute})
+                self.store.append_event("exploration.completed", agent["id"], minute, {"area_id": area_id, "result_id": result_id, "discoveries": [str(item.get("id")) for item in discoveries]})
         if source_id:
             source_id = str(source_id)
-            self.store.merge_knowledge_fact(agent["id"], f"researched:{source_id}", {"fact": f"Source {source_id} was researched.", "source_type": "research", "confidence": 0.8, "observed_at": minute})
-            self.store.append_event("research.completed", agent["id"], minute, {"source_id": source_id})
+            if source_id not in self.store.researched_sources(agent["id"]):
+                source = self.store.get_entity(source_id) if source_id else {}
+                discovery = (source.get("research_discovery") or {}) if isinstance(source, dict) else {}
+                fact_key = str(discovery.get("id") or f"researched:{source_id}")
+                fact = str(discovery.get("fact") or f"Source {source_id} was researched.")
+                self.store.merge_knowledge_fact(agent["id"], fact_key, {"fact": fact, "source_type": "research", "confidence": 0.8, "observed_at": minute})
+                self.store.append_event("research.completed", agent["id"], minute, {"source_id": source_id, "fact": fact})
         if target_id and topic:
             target_id = str(target_id)
             try:

@@ -14,6 +14,7 @@ objects:
     name: 旧契约石板
     initial_state: {location_id: hidden_root_gate, readable: false}
     tags: [secret, lore]
+    research_discovery: {id: researched:old_pact_tablet:origin, fact: "The old pact was made to keep the root gate stable, and its stability is now declining."}
   - id: caravan_ledger
     type: document
     name: 失踪车队账册

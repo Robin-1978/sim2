@@ -52,9 +52,9 @@
 | `gather_resource` | 在可见资源节点采集指定类型资源 | {resource_tag: string, location_id: string} | 144 分钟 | actor.can_gather<br>location.resource_node<br>route.known | reserve: {resource_parameter: resource_tag, resource_amount: 2}<br>per_minute: {energy: 0.8} | 成功：{condition: resource.collected, result: resource_collected}<br>失败：{condition: resource.empty or actor.incapacitated, result: gathering_failed} |
 | `patrol_route` | 巡逻已知路线并记录发现 | {route_id: string} | 96 分钟 | actor.is_guard<br>route.known | per_minute: {energy: 0.6, exposure: 0.2} | 成功：{condition: route.completed, result: patrol_reported}<br>失败：{condition: hostile_contact, result: emergency} |
 | `heal_target` | 使用可用治疗资源恢复目标状态 | {target_id: string} | 72 分钟 | actor.is_healer<br>patient.in_clinic<br>medicine.available | reserve: {medicine: 1}<br>per_minute: {energy: 0.4} | 成功：{condition: patient.fever_reduced, result: patient_stabilized}<br>失败：{condition: medicine.failed, result: failed} |
-| `explore_area` | 探索一块尚未充分了解的区域并记录发现 | {area_id: string} | 240 分钟 | actor.can_explore<br>route.known<br>area.not_fully_mapped | reserve: {rations: 1}<br>per_minute: {energy: 0.7, exposure: 0.4} | 成功：{condition: area.survey_complete, result: exploration_completed}<br>失败：{condition: actor.incapacitated, result: failed} |
+| `explore_area` | 探索一块尚未充分了解的区域并记录发现 | {area_id: string} | 240 分钟 | actor.can_explore<br>route.known<br>area.not_fully_mapped | reserve: {rations: 1}<br>per_minute: {energy: 0.25, exposure: 0.4} | 成功：记录区域事实、路线和配置发现；同一 Agent 不会重复探索已知区域 |
 | `communicate` | 与目标角色沟通并记录可传播信息 | {target_id: string, topic: string} | 6 分钟 | actor.can_speak<br>target.available<br>communication.channel_open | per_minute: {attention: 1} | 成功：{condition: dialogue.completed, result: dialogue_recorded}<br>失败：{condition: target.refused, result: conversation_refused} |
-| `research_source` | 研究可访问的信息源并记录事实 | {source_id: string} | 192 分钟 | actor.can_research<br>source.accessible | per_minute: {energy: 0.3, attention: 0.8} | 成功：{condition: research.new_fact_found, result: research_completed}<br>失败：{condition: source.destroyed, result: failed} |
+| `research_source` | 研究可访问的信息源并记录事实 | {source_id: string} | 192 分钟 | actor.can_research<br>source.accessible<br>research.new_fact_available | per_minute: {energy: 0.2, attention: 0.4} | 成功：写入配置的研究事实；同一信息源已知后不再显示 |
 | `inspect_object` | 检查可访问的物体、库存或设施 | {object_id: string} | 24 分钟 | actor.can_inspect<br>location.reachable | per_minute: {attention: 0.2} | 成功：{condition: inventory.read_complete, result: stock_reported}<br>失败：{condition: location.locked, result: denied} |
 | `negotiate` | 与目标角色协商交换或契约 | {target_id: string, topic: string} | 36 分钟 | actor.can_negotiate<br>counterparty.available | per_minute: {attention: 0.6} | 成功：{condition: contract.signed, result: contract_signed}<br>失败：{condition: trust.collapsed, result: negotiation_failed} |
 | `attack` | 使用指定武器攻击可达目标 | {target_id: string, weapon_id: string} | 6 分钟 | actor.alive<br>actor.can_attack<br>target.visible<br>target.reachable<br>combat.allowed | reserve: {weapon_durability: 0.1}<br>per_minute: {energy: 1.0, attention: 0.3} | 成功：{condition: attack.resolved, result: attack_completed}<br>失败：{condition: target.out_of_range, result: attack_blocked} |
@@ -69,14 +69,14 @@
 
 | ID | 作用域 | 入口条件 | 时长 | 节点 | 成功 | 失败 |
 |---|---|---|---:|---|---|---|
-| `govern_village` | village_council | actor.is_steward | 24 分钟 | inspect_object | rations_reviewed, risk_reviewed | council_blocked |
+| `govern_village` | village_council | actor.is_steward；每 720 分钟最多一次 | 24 分钟 | inspect_object | rations_reviewed, risk_reviewed | council_blocked |
 | `mediate_conflict` | personal | conflict.available<br>actor.can_mediate | 48 分钟 | communicate → 条件 | — | — |
 | `inspect_granary` | personal | actor.can_inspect_granary | 24 分钟 | travel_to → inspect_object | — | — |
 | `patrol_route` | village_watch | actor.is_guard | 96 分钟 | travel_to → patrol_route | patrol_reported, marks_classified | emergency |
 | `manage_ration` | personal | actor.is_granary_keeper | 48 分钟 | inspect_object → communicate | — | — |
 | `heal_target` | personal | actor.is_healer<br>patient.available | 72 分钟 | heal_target | — | — |
-| `explore_greywood` | personal | actor.can_explore<br>area.unknown | 241 分钟 | travel_to → explore_area | exploration_completed, knowledge_updated | lost, injured, emergency |
-| `research_source` | root_keepers | actor.can_research<br>secret.source_available | 192 分钟 | research_source → 条件 | new_pact_fact, ritual_candidate | source_lost, belief_conflict |
+| `explore_greywood` | personal | actor.can_explore；目标区域尚未完成测绘 | 241 分钟 | travel_to → explore_area | 区域路线、账册线索和探索事实写入知识 | lost, injured, emergency |
+| `research_source` | root_keepers | actor.can_research；信息源仍有新事实 | 192 分钟 | research_source → 条件 | 根门契约衰退事实写入知识 | source_lost, belief_conflict |
 | `inspect_object` | personal | actor.can_inspect | 24 分钟 | inspect_object | — | — |
 | `defend_village` | village_watch | actor.is_guard<br>threat.at_village | 48 分钟 | sound_alarm → 选择[defend_position, flee_to_safety] | threat_contained, civilians_safe | defense_broken, retreat_required |
 | `defend_position` | personal | actor.can_defend<br>threat.reachable | 24 分钟 | defend → attack | — | — |

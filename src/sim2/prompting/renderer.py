@@ -248,7 +248,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     behaviors = context.get("executable_behaviors") or context.get("available_behaviors") or []
     for behavior in behaviors[:5]:
         lines.append("    <behavior>")
-        for label in ("name", "summary", "purpose", "when", "requires", "target", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "tags"):
+        for label in ("name", "summary", "purpose", "when", "requires", "target", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "cooldown_minutes", "tags"):
             value = behavior.get(label)
             if value:
                 if isinstance(value, list):

@@ -125,6 +125,9 @@ class ConditionEngine:
             mapped = set(context.get("mapped_areas", []))
             area_id = target.get("area_id") or context.get("area_id")
             return not area_id or area_id not in mapped
+        if path == "research.new_fact_available":
+            source_id = target.get("source_id") or context.get("source_id")
+            return bool(source_id) and str(source_id) not in {str(item) for item in context.get("researched_sources", [])}
         if path == "secret.source_available":
             return any(str(item).startswith("secret:") for item in agent.get("knowledge_seed", []))
         if path in {"actor.exhausted", "actor.stunned"}:

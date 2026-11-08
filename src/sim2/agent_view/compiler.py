@@ -4,6 +4,7 @@ import copy
 from typing import Any
 
 from ..actions.conditions import ConditionEngine
+from ..actions.capacity import check_action_capacity
 from ..actions.resources import ResourceLedger
 from ..actions.targets import TargetResolver
 from ..agents.tools import tools_for_role
@@ -262,6 +263,8 @@ class AgentViewCompiler:
         resource_node = nearest_resource_node(self.store, location_id)
         health_location_id = nearest_location_with_tag(self.store, location_id, {"health", "clinic"})
         known_route_destinations = reachable_locations(self.store, location_id)
+        mapped_areas = self.store.explored_areas(agent_id)
+        researched_sources = self.store.researched_sources(agent_id)
         current_location = {}
         if location_id:
             try:
@@ -281,11 +284,19 @@ class AgentViewCompiler:
                 "resource_tag": (resource_node or {}).get("resource_tag"),
                 "health_location_id": health_location_id,
                 "known_route_destinations": known_route_destinations,
+                "mapped_areas": mapped_areas,
+                "researched_sources": researched_sources,
                 "inventory": agent.get("inventory", {}) or {},
                 "food_items": rules.get("food_items", []) or [],
             }
             if any(not self.conditions.evaluate(str(predicate), agent=agent, target={}, context=condition_context, world=self.store.get_meta("world_properties", {}) or {}) for predicate in bt.get("entry_conditions", []) or []):
                 continue
+            cooldown_minutes = max(0, int(bt.get("cooldown_minutes", 0) or 0))
+            if cooldown_minutes:
+                last_minute = self.store.last_behavior_minute(agent_id, bt_id)
+                current_minute = int(self.store.get_meta("world_minute", 0))
+                if last_minute is not None and current_minute - last_minute < cooldown_minutes:
+                    continue
             steps = []
             costs = []
             impacts = []
@@ -356,6 +367,7 @@ class AgentViewCompiler:
                 "success": [str(item).replace("_", " ") for item in bt.get("success_results", [])] or ["Platform reports the configured success result."],
                 "failure": [str(item).replace("_", " ") for item in bt.get("failure_results", [])] or ["Platform reports a failed or interrupted step."],
                 "interrupt": bt.get("interrupt_policy", "cancel"),
+                "cooldown_minutes": cooldown_minutes,
                 "tags": bt.get("tags", []),
                 "goal_tags": bt.get("goal_tags", []),
                 "drive_tags": bt.get("drive_tags", []),
@@ -489,6 +501,8 @@ class AgentViewCompiler:
             "food_items": food_items,
             "station_tags": [],
             "known_route_destinations": reachable_locations(self.store, (agent.get("initial_state") or {}).get("location_id")),
+            "mapped_areas": self.store.explored_areas(str(agent.get("id", ""))),
+            "researched_sources": self.store.researched_sources(str(agent.get("id", ""))),
         }
         if action.get("id") == "craft_recipe":
             recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
@@ -505,8 +519,13 @@ class AgentViewCompiler:
         for predicate in action.get("preconditions", []) or []:
             if not self.conditions.evaluate(str(predicate), agent=agent, target=target, context=context, world=self.store.get_meta("world_properties", {}) or {}):
                 return False
-        energy_rate = float((action.get("costs", {}).get("per_minute", {}) or {}).get("energy", 0) or 0)
-        if energy_rate > 0 and float((agent.get("initial_state") or {}).get("energy", 100) or 0) < energy_rate * max(1, int(duration_minutes or 1)):
+        capacity_ok, _ = check_action_capacity(
+            agent,
+            action,
+            max(1, int(duration_minutes or 1)),
+            self.store.get_meta("attributes", []) or [],
+        )
+        if not capacity_ok:
             return False
         allowed, _, _ = self.resources.reserve(agent, action, parameters, commit=False)
         return allowed

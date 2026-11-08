@@ -46,6 +46,7 @@ behavior_trees:
   entry_conditions:
   - actor.is_steward
   estimated_minutes: 30
+  cooldown_minutes: 720
   goal_tags: [autonomy, stability, population]
   drive_tags: [safety, belonging, esteem]
   interrupt_policy: interruptible
@@ -170,7 +171,7 @@ behavior_trees:
   scope: personal
   entry_conditions:
   - actor.can_explore
-  - area.unknown
+  - actor.alive
   estimated_minutes: 247
   interrupt_policy: pause
   success_results:

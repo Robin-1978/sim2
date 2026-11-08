@@ -305,6 +305,39 @@ def test_food_and_rest_fallbacks_disappear_when_needs_are_satisfied(tmp_path: Pa
         platform.close()
 
 
+def test_attention_capacity_filters_catalog_and_rejects_stale_choice(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "attention-capacity-world", tmp_path / "runtime"))
+    try:
+        steward = platform.store.get_agent("lin_bo")
+        steward["initial_state"]["attention"] = 100
+        platform.store.update_agent("lin_bo", steward)
+        platform.store.connection.commit()
+        view = platform.decision_view("lin_bo")
+        assert "behavior:govern_village" not in {item["ref"] for item in view["executable_behaviors"]}
+        result = platform.submit_behavior(BehaviorIntent(
+            "lin_bo", "behavior:govern_village", {}, {}, "Review village stability.", 0.8, "stale-attention-intent"
+        ))
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "behavior_unavailable"
+    finally:
+        platform.close()
+
+
+def test_research_attention_cost_fits_configured_capacity(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "research-capacity-world", tmp_path / "runtime"))
+    try:
+        su_wu = platform.store.get_agent("su_wu")
+        su_wu["initial_state"]["attention"] = 0
+        su_wu["initial_state"]["energy"] = 100
+        platform.store.update_agent("su_wu", su_wu)
+        platform.store.connection.commit()
+        assert any(item["ref"] == "behavior:research_source" for item in platform.decision_view("su_wu")["executable_behaviors"])
+    finally:
+        platform.close()
+
+
 def test_decision_context_explains_single_recovery_candidate(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "single-recovery-context", tmp_path / "runtime"))
@@ -1080,6 +1113,36 @@ def test_exploration_completion_persists_result_and_knowledge(tmp_path: Path):
         fact = platform.store.connection.execute("SELECT area_id FROM exploration_result WHERE agent_id=?", ("lu_xingzhou",)).fetchone()
         assert fact["area_id"] == "greywood_edge"
         assert any(item["fact_key"] == "explored:greywood_edge" for item in platform.store.list_knowledge_facts("lu_xingzhou"))
+    finally:
+        platform.close()
+
+
+def test_completed_exploration_is_not_offered_again_and_keeps_discoveries(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "exploration-novelty-world", tmp_path / "runtime"))
+    try:
+        assert platform.submit_behavior(BehaviorIntent(
+            "lu_xingzhou", "behavior:explore_greywood", {}, {}, "Survey the unknown edge.", 0.9, "exploration-novelty"
+        ))["status"] == "accepted"
+        step_n(platform, 241)
+        facts = platform.store.list_knowledge_facts("lu_xingzhou", limit=20)
+        assert any(item["fact_key"] == "explored:greywood_edge:route" for item in facts)
+        assert not any(item["ref"] == "behavior:explore_greywood" for item in platform.decision_view("lu_xingzhou")["executable_behaviors"])
+    finally:
+        platform.close()
+
+
+def test_completed_research_records_fact_and_is_not_offered_again(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "research-novelty-world", tmp_path / "runtime"))
+    try:
+        assert platform.submit_behavior(BehaviorIntent(
+            "su_wu", "behavior:research_source", {}, {}, "Study the pact source.", 0.9, "research-novelty"
+        ))["status"] == "accepted"
+        step_n(platform, 192)
+        facts = platform.store.list_knowledge_facts("su_wu", limit=20)
+        assert any(item["fact_key"] == "researched:old_pact_tablet:origin" for item in facts)
+        assert not any(item["ref"] == "behavior:research_source" for item in platform.decision_view("su_wu")["executable_behaviors"])
     finally:
         platform.close()
 
