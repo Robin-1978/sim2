@@ -14,7 +14,7 @@ actions:
   costs:
     reserve: {}
     per_minute:
-      energy: 0.5
+      energy: 0.1
       exposure: 0.1
     on_success: {}
     on_failure: {}
@@ -150,7 +150,7 @@ actions:
       resource_parameter: resource_tag
       resource_amount: 2
     per_minute:
-      energy: 0.8
+      energy: 0.25
     on_success: {}
     on_failure: {}
     refund: {}
@@ -181,7 +181,7 @@ actions:
   costs:
     reserve: {}
     per_minute:
-      energy: 0.6
+      energy: 0.25
       exposure: 0.2
     on_success: {}
     on_failure: {}
@@ -212,7 +212,7 @@ actions:
     reserve:
       medicine: 1
     per_minute:
-      energy: 0.4
+      energy: 0.2
     on_success: {}
     on_failure: {}
     refund: {}
@@ -250,7 +250,7 @@ actions:
     reserve:
       rations: 1
     per_minute:
-      energy: 0.7
+      energy: 0.25
       exposure: 0.4
     on_success: {}
     on_failure: {}
@@ -307,7 +307,7 @@ actions:
   costs:
     reserve: {}
     per_minute:
-      energy: 0.3
+      energy: 0.2
       attention: 0.8
     on_success: {}
     on_failure: {}
@@ -396,7 +396,7 @@ actions:
     reserve:
       weapon_durability: 0.1
     per_minute:
-      energy: 1.0
+      energy: 0.8
       attention: 0.3
     on_success: {}
     on_failure: {}
@@ -465,7 +465,7 @@ actions:
   costs:
     reserve: {}
     per_minute:
-      energy: 2.0
+      energy: 0.5
     on_success: {}
     on_failure: {}
     refund: {}
@@ -524,7 +524,7 @@ actions:
     reserve:
       recipe_inputs: 1
     per_minute:
-      energy: 0.4
+      energy: 0.2
       attention: 0.5
     on_success: {}
     on_failure: {}

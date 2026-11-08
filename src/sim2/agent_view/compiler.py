@@ -290,13 +290,17 @@ class AgentViewCompiler:
                     continue
                 simulated_state = simulated_agent.setdefault("initial_state", {})
                 parameters = self._view_action_parameters(node.get("parameters") or {}, simulated_state, simulated_agent.get("inventory", {}) or {}, rules.get("food_items", []) or [])
-                if not self._action_available(simulated_agent, action, parameters, simulated_location, rules.get("food_items", []) or []):
+                action_minutes = estimator._action_minutes(action, parameters, simulated_state.get("location_id"))
+                if not self._action_available(simulated_agent, action, parameters, simulated_location, rules.get("food_items", []) or [], action_minutes):
                     action_unavailable = True
                     break
                 view = _action_view(action)
                 steps.append(view["name"])
                 costs.extend(view["cost"])
                 impacts.extend(view["impact"][:1])
+                energy_rate = float((action.get("costs", {}).get("per_minute", {}) or {}).get("energy", 0) or 0)
+                if energy_rate > 0:
+                    simulated_state["energy"] = max(0.0, float(simulated_state.get("energy", 100) or 0) - energy_rate * action_minutes)
                 # Validate a sequential BT against the state produced by its
                 # earlier configured steps. This keeps a travel-then-service
                 # behavior executable without adding action-specific code.
@@ -421,7 +425,7 @@ class AgentViewCompiler:
                 queue.append((neighbor, distance + 1))
         return hop_minutes
 
-    def _action_available(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], location: dict[str, Any], food_items: list[str]) -> bool:
+    def _action_available(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], location: dict[str, Any], food_items: list[str], duration_minutes: int | None = None) -> bool:
         if action.get("id") == "gather_resource" and parameters.get("resource_tag") == "context.resource_tag":
             source = next((item for item in self.store.entities_at_location((agent.get("initial_state") or {}).get("location_id")) if item.get("entity_type") in {"resource", "material"} and not (item.get("initial_state") or {}).get("protected") and self._entity_quantity(item) > 0), None)
             parameters["resource_tag"] = source.get("id") if source else parameters.get("resource_tag")
@@ -452,6 +456,9 @@ class AgentViewCompiler:
         for predicate in action.get("preconditions", []) or []:
             if not self.conditions.evaluate(str(predicate), agent=agent, target=target, context=context, world=self.store.get_meta("world_properties", {}) or {}):
                 return False
+        energy_rate = float((action.get("costs", {}).get("per_minute", {}) or {}).get("energy", 0) or 0)
+        if energy_rate > 0 and float((agent.get("initial_state") or {}).get("energy", 100) or 0) < energy_rate * max(1, int(duration_minutes or 1)):
+            return False
         allowed, _, _ = self.resources.reserve(agent, action, parameters, commit=False)
         return allowed
 

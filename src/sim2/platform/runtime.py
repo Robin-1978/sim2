@@ -1073,6 +1073,15 @@ class Platform:
     def _reserve_action_costs(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], *, commit: bool = True) -> tuple[bool, str, list[dict[str, Any]]]:
         return self.resources.reserve(agent, action, parameters, commit=commit)
 
+    @staticmethod
+    def _check_action_energy(agent: dict[str, Any], action: dict[str, Any], duration: int) -> tuple[bool, str]:
+        rate = float((action.get("costs", {}).get("per_minute", {}) or {}).get("energy", 0) or 0)
+        required = max(0.0, rate * max(1, int(duration)))
+        available = float((agent.get("initial_state") or {}).get("energy", 100) or 0)
+        if required > available + 1e-9:
+            return False, f"energy cost {required:g} exceeds available energy {available:g}"
+        return True, ""
+
     def _apply_action_progress(self, agent: dict[str, Any], action: dict[str, Any]) -> None:
         state = dict(agent.get("initial_state") or {})
         needs = dict(agent.get("needs") or {})
@@ -1206,10 +1215,13 @@ class Platform:
             condition_target = {**parameters, **(resolved_target or {})}
             if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=condition_context, world=self.store.get_meta("world_properties", {}) or {}):
                 return False, f"precondition failed: {predicate}"
+        duration = self._action_duration(action, parameters, state.get("location_id"))
+        enough_energy, energy_reason = self._check_action_energy(agent, action, duration)
+        if not enough_energy:
+            return False, energy_reason
         allowed, reason, reservation = self._reserve_action_costs(agent, action, parameters)
         if not allowed:
             return False, reason
-        duration = self._action_duration(action, parameters, state.get("location_id"))
         action_instance_id = f"{execution_id}:{state.get('active_action_index', 0)}"
         state["active_action"] = action_id
         state["active_action_instance"] = action_instance_id
@@ -1266,11 +1278,15 @@ class Platform:
         for predicate in action.get("preconditions", []) or []:
             if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=context, world=self.store.get_meta("world_properties", {}) or {}):
                 return None, f"precondition failed: {predicate}"
+        duration = self._action_duration(action, parameters, state.get("location_id"))
+        enough_energy, energy_reason = self._check_action_energy(agent, action, duration)
+        if not enough_energy:
+            return None, energy_reason
         probe = copy.deepcopy(agent)
         allowed, reason, reservation = self._reserve_action_costs(probe, action, parameters, commit=False)
         if not allowed:
             return None, reason
-        return {"action": action, "parameters": parameters, "target": target, "duration": self._action_duration(action, parameters, state.get("location_id")), "reservation": reservation}, ""
+        return {"action": action, "parameters": parameters, "target": target, "duration": duration, "reservation": reservation}, ""
 
     def _progress_parallel_group(self, agent: dict[str, Any], execution_id: str, behavior_id: str, actions: list[dict[str, Any]], index: int, minute: int) -> None:
         state = dict(agent.get("initial_state") or {})
