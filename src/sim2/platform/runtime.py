@@ -267,9 +267,7 @@ class Platform:
             return ["behavior is not registered"]
         action_defs = {item["id"]: item for item in self.store.get_definitions("action_def")}
         allowed: set[str] = set()
-        for node in bt.get("nodes", []) or []:
-            if node.get("type") != "action":
-                continue
+        for node in self.view._iter_behavior_actions(behavior_id):
             action = action_defs.get(node.get("action_id"), {})
             allowed.update((action.get("parameters") or {}).keys())
             allowed.update((node.get("parameters") or {}).keys())
@@ -336,9 +334,21 @@ class Platform:
             })
         bt = available_defs[behavior_id]
         runtime_parameters = dict(normalized_parameters)
-        target_keys = self.view._target_parameter_keys(bt)
+        target_keys = self.view._target_parameter_keys(bt, available_defs)
         visible_participants = self.targets.visible_agents(agent)
         supplied_target = any(runtime_parameters.get(key) for key in target_keys)
+        if supplied_target:
+            visible_ids = {str(item.get("id")) for item in visible_participants}
+            hidden_targets = [
+                (key, str(runtime_parameters.get(key)))
+                for key in target_keys
+                if runtime_parameters.get(key) and str(runtime_parameters.get(key)) not in visible_ids
+            ]
+            if hidden_targets:
+                return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+                    "status": "rejected", "message": "Choose one exact visible participant from the current target list.", "failed_check": "target_visibility", "retryable": True,
+                    "available_targets": [str(item.get("name", "participant")) for item in visible_participants],
+                })
         if target_keys and not supplied_target:
             visible_name = next((intent.target.get(key) for key in ("name", "entity", "participant", "target") if isinstance(intent.target, dict) and intent.target.get(key)), None)
             if visible_name:

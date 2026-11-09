@@ -61,11 +61,14 @@ def main() -> int:
             god = AgentEngine(platform, god_provider).run(role="god", actor_id="god", task_type="core_god")
             god_quality = evaluate_turn(god, god_view)
 
+            # Resolve the configured semantic backend even when Reflection
+            # correctly chose wait and produced no memory candidate.
+            platform.view.memory.similarity._load_model()
             report = {
                 "provider": args.provider,
                 "decision": {"response": decision.response, "result": decision.result, "quality": decision_quality},
                 "reflection": {"outcomes": reflection_view.get("recent_outcomes"), "response": reflection.response, "result": reflection.result, "memory_count": memory_count, "quality": reflection_quality},
-                "next_decision": {"memory_count": len(next_view.get("memories", [])), "memory_backend": platform.memory.similarity._method, "response": next_decision.response, "result": next_decision.result, "quality": next_quality},
+                "next_decision": {"memory_count": len(next_view.get("memories", [])), "memory_backend": platform.view.memory.similarity._method, "response": next_decision.response, "result": next_decision.result, "quality": next_quality},
                 "god": {"world_changes": god_view.get("recent_world_changes"), "response": god.response, "result": god.result, "quality": god_quality},
             }
             print(json.dumps(report, ensure_ascii=False, indent=2))

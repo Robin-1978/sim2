@@ -658,6 +658,7 @@ class WorldStore:
         end = int(self.get_meta("world_minute", 0) if current_minute is None else current_minute)
         baseline = self.get_meta("resource_baseline", {}) or {}
         resources: list[dict[str, Any]] = []
+        resource_labels: dict[str, str] = {}
         for item in self.entities_of_type("resource"):
             try:
                 entity = self.get_entity(str(item["id"]))
@@ -666,8 +667,9 @@ class WorldStore:
             amount = self._resource_amount(entity)
             if amount is None:
                 continue
+            resource_labels[str(item["id"])] = str(entity.get("name", item["id"])).replace("_", " ")
             initial = baseline.get(str(item["id"]))
-            row = {"name": entity.get("name", item["id"]), "current": round(amount, 3)}
+            row = {"name": str(entity.get("name", item["id"])).replace("_", " "), "current": round(amount, 3)}
             if isinstance(initial, (int, float)):
                 row["change_from_start"] = round(amount - float(initial), 3)
             resources.append(row)
@@ -751,6 +753,7 @@ class WorldStore:
         return {
             "as_of_minute": end,
             "current_resources": sorted(resources, key=lambda item: str(item.get("name", ""))),
+            "resource_labels": resource_labels,
             "active_goal_count": len(active_goals),
             "weekly": aggregate(week_minutes),
             "monthly": aggregate(month_minutes),
@@ -820,6 +823,15 @@ class WorldStore:
                 continue
             value = next((data.get(field) for field in fields if data.get(field) not in (None, "", [])), None)
             if value not in (None, "", []):
+                if tag in {"location", "participants", "object"}:
+                    values = value if isinstance(value, list) else [value]
+                    visible_values = []
+                    for candidate in values:
+                        try:
+                            visible_values.append(self.get_entity(str(candidate)).get("name", candidate))
+                        except KeyError:
+                            visible_values.append(candidate)
+                    value = visible_values if isinstance(value, list) else visible_values[0]
                 tags[tag] = value
         if tags:
             data["tags"] = tags

@@ -981,6 +981,37 @@ def test_multiple_visible_participants_require_explicit_target(tmp_path: Path):
         platform.close()
 
 
+def test_nested_bt_target_is_explicit_and_hidden_target_is_rejected(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "nested-target-world", tmp_path / "runtime"))
+    try:
+        lin_bo = platform.store.get_agent("lin_bo")
+        lin_bo["initial_state"]["location_id"] = "inn"
+        fei_lan = platform.store.get_agent("fei_lan")
+        fei_lan["initial_bt_ids"].append("nested_communicate")
+        with platform.store.transaction():
+            platform.store.update_agent("lin_bo", lin_bo)
+            platform.store.update_agent("fei_lan", fei_lan)
+            platform.store.put_definition("bt_def", "nested_communicate", {
+                "id": "nested_communicate", "version": 1, "summary": "Nested communication",
+                "nodes": [{"type": "sequence", "children": [{"type": "action", "action_id": "communicate", "parameters": {"target_id": "context.target_id", "topic": "general"}}]}],
+            })
+        view = platform.decision_view("fei_lan")
+        nested = next(item for item in view["executable_behaviors"] if item["ref"] == "behavior:nested_communicate")
+        assert nested["target_required"] is True
+        missing = platform.submit_behavior(BehaviorIntent("fei_lan", "behavior:nested_communicate", {}, {}, "Talk to one visible person.", 0.8, "nested-missing"))
+        assert missing["status"] == "rejected"
+        assert missing["failed_check"] == "target_required"
+        nested_hidden = platform.submit_behavior(BehaviorIntent("fei_lan", "behavior:nested_communicate", {}, {"target_id": "lu_xingzhou"}, "Talk to a hidden person.", 0.8, "nested-hidden"))
+        assert nested_hidden["status"] == "rejected"
+        assert nested_hidden["failed_check"] == "target_visibility"
+        hidden = platform.submit_behavior(BehaviorIntent("fei_lan", "behavior:communicate", {}, {"target_id": "lu_xingzhou"}, "Talk to a hidden person.", 0.8, "hidden-target"))
+        assert hidden["status"] == "rejected"
+        assert hidden["failed_check"] == "target_visibility"
+    finally:
+        platform.close()
+
+
 def test_god_view_contains_weekly_and_monthly_world_trends(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "god-trend-world", tmp_path / "runtime"))
@@ -990,6 +1021,7 @@ def test_god_view_contains_weekly_and_monthly_world_trends(tmp_path: Path):
             platform.store.append_event("relationship.changed", "fei_lan", 100, {"relation": "trust", "delta": 0.2, "target_id": "yu_ge"})
             platform.store.append_event("goal.updated", "fei_lan", 100, {"statement": "Restore the trade route"})
             platform.store.append_event("behavior.completed", "fei_lan", 100, {"behavior_id": "explore_greywood", "outcome": {"expected": {"goal_tags": ["exploration"]}}})
+            platform.store.append_event("resource.changed", "fei_lan", 20000, {"resource_id": "village_food", "delta": -7})
         trends = platform.store.world_trends(current_minute=200)
         assert trends["weekly"]["resource_deltas"]["village_food"] == -12
         assert trends["weekly"]["relationship_trends"]
@@ -998,6 +1030,11 @@ def test_god_view_contains_weekly_and_monthly_world_trends(tmp_path: Path):
         prompt = render_context(view, "Review world trends.")
         assert "<world_trends>" in prompt
         assert "weekly:" in prompt and "monthly:" in prompt
+        assert "village_food" not in prompt
+        assert "village food" in prompt
+        long_window = platform.store.world_trends(current_minute=43200)
+        assert long_window["monthly"]["resource_deltas"]["village_food"] == -19
+        assert "village_food" not in long_window["weekly"]["resource_deltas"]
     finally:
         platform.close()
 
@@ -1788,6 +1825,8 @@ def test_dialogue_trade_negotiation_and_observer_text_view(tmp_path: Path):
         assert dialogue["status"] == "accepted"
         testimony = platform.store.list_memories("yu_ge", limit=10)
         assert any(item.get("type") == "testimony" and item.get("message", "").startswith("The western road") for item in testimony)
+        testimony_row = next(item for item in testimony if item.get("type") == "testimony")
+        assert testimony_row.get("tags", {}).get("participants") == "费兰"
         offer = platform.create_trade_offer("fei_lan", "yu_ge", {"trade_goods": 1}, {"letter_bundle": 1})
         assert offer["status"] == "accepted"
         counter = platform.counter_trade_offer("yu_ge", offer["offer_id"], {"letter_bundle": 1}, {"trade_goods": 1})

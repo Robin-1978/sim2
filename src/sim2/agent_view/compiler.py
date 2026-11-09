@@ -102,16 +102,33 @@ class AgentViewCompiler:
         self.memory = MemoryService(store)
 
     @staticmethod
-    def _target_parameter_keys(behavior: dict[str, Any]) -> set[str]:
-        """Return target fields that a BT expects the decision to supply."""
+    def _target_parameter_keys(behavior: dict[str, Any], behavior_defs: dict[str, dict[str, Any]] | None = None) -> set[str]:
+        """Return target fields from every configured BT control-flow node."""
 
         keys: set[str] = set()
-        for node in behavior.get("nodes", []) or []:
-            if node.get("type") != "action":
-                continue
-            for key, value in (node.get("parameters") or {}).items():
-                if isinstance(value, str) and value.startswith("context.") and value.removeprefix("context.") in {"target_id", "patient_id", "protected_target_id", "counterparty_id", "listener_id"}:
-                    keys.add(str(key))
+        target_context_names = {"target_id", "patient_id", "protected_target_id", "counterparty_id", "listener_id"}
+        visited: set[str] = set()
+
+        def visit(nodes: list[Any], owner_id: str | None = None) -> None:
+            if owner_id:
+                if owner_id in visited:
+                    return
+                visited.add(owner_id)
+            for raw in nodes or []:
+                node = raw if isinstance(raw, dict) else {"type": "behavior", "behavior_id": raw}
+                node_type = node.get("type")
+                if node_type == "action":
+                    for key, value in (node.get("parameters") or {}).items():
+                        if isinstance(value, str) and value.startswith("context.") and value.removeprefix("context.") in target_context_names:
+                            keys.add(str(key))
+                elif node_type in {"sequence", "parallel", "root", "selector"}:
+                    visit(node.get("children", []) or [])
+                elif node_type in {"behavior", "subtree"} and behavior_defs and node.get("behavior_id"):
+                    nested_id = str(node["behavior_id"])
+                    nested = behavior_defs.get(nested_id) or {}
+                    visit(nested.get("nodes", []) or [], nested_id)
+
+        visit(behavior.get("nodes", []) or [], str(behavior.get("id", "")) or None)
         return keys
 
     def _iter_behavior_actions(self, behavior_id: str, *, seen: set[str] | None = None):
@@ -434,7 +451,7 @@ class AgentViewCompiler:
             if not steps:
                 continue
             target_text = "Platform resolves permitted targets from the current view."
-            target_keys = self._target_parameter_keys(bt)
+            target_keys = self._target_parameter_keys(bt, bt_defs)
             target_required = bool(target_keys) and len(participants) > 1
             target_options = [{"name": str(item.get("name", item.get("id", "participant")))} for item in participants[:8]]
             if bt_id == "recover_at_safe_location" and safe_location_id:
@@ -779,7 +796,7 @@ class AgentViewCompiler:
             if (agent.get("initial_state") or {}).get("status") in {"executing", "paused"}
         )
         world_properties = self.store.get_meta("world_properties", {}) or {}
-        world_summary = "; ".join(f"{key}={value}" for key, value in world_properties.items()) or "none"
+        world_summary = "; ".join(f"{str(key).replace('_', ' ')}={value}" for key, value in world_properties.items()) or "none"
         prompt_protocol, platform_rules = self._prompt_sections(role)
         return {
             "context_version": "1",

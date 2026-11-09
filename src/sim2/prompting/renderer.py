@@ -287,6 +287,13 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     if role == "god":
         lines.append("<world_trends>")
         trends = context.get("world_trends") or {}
+        resource_labels = trends.get("resource_labels") or {}
+
+        def resource_changes(values: Any) -> str:
+            if not isinstance(values, dict) or not values:
+                return "none"
+            return "; ".join(f"{resource_labels.get(str(key), str(key))}={_plain(value)}" for key, value in values.items())
+
         current_resources = trends.get("current_resources") or []
         lines.append("  Current resources: " + ("; ".join(f"{item.get('name', 'resource')}={item.get('current', 'unknown')}" for item in current_resources[:8]) if current_resources else "none") + ".")
         for period in ("weekly", "monthly"):
@@ -294,8 +301,8 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             goal = item.get("goal_trends") or {}
             relationship = item.get("relationship_trends") or []
             lines.append(
-                f"  {period}: resource regeneration={_plain(item.get('resources_regenerated') or {})}; "
-                f"resource net change={_plain(item.get('resource_deltas') or {})}; "
+                f"  {period}: resource regeneration={resource_changes(item.get('resources_regenerated') or {})}; "
+                f"resource net change={resource_changes(item.get('resource_deltas') or {})}; "
                 f"relationship change={_plain(relationship) if relationship else 'none'}; "
                 f"goal progress={_plain(goal.get('progress_by_tag') or {})}; "
                 f"completed={goal.get('completed_behaviors', 0)}, failed_or_interrupted={goal.get('failed_or_interrupted_behaviors', 0)}."
