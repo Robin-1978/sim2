@@ -39,9 +39,27 @@ class MemoryService:
         """
 
         limit = max(1, min(int(limit), 20))
+        def relevant(items: list[dict[str, Any]], budget: int) -> list[dict[str, Any]]:
+            ranked_items = self.similarity.rank(query, items, limit=budget)
+            if not query.strip():
+                return ranked_items
+            # Do not fill the prompt with the highest-scoring irrelevant row.
+            # Pending interaction records remain visible because they require
+            # an immediate response even when their wording shares no terms
+            # with the current goal.
+            projected = []
+            threshold = self.similarity.embedding_retrieval_threshold if self.similarity._method.startswith("embedding_cosine") else self.similarity.retrieval_threshold
+            for item in ranked_items:
+                relevance = float(item["_retrieval_relevance"]) if "_retrieval_relevance" in item else self.similarity.relevance(query, item)
+                if relevance >= threshold or bool(item.get("pending_decision")):
+                    projected.append(item)
+            for item in projected:
+                item.pop("_retrieval_relevance", None)
+            return projected
+
         if scope in {"short_term", "long_term"}:
             candidates = self.store.list_memories(agent_id, limit=1000, tier=scope, touch=False)
-            ranked = self.similarity.rank(query, candidates, limit=limit)
+            ranked = relevant(candidates, limit)
         else:
             # Preserve both working context and durable lessons when the
             # caller asks for the default layered view.  Relevance ranking is
@@ -50,10 +68,10 @@ class MemoryService:
             long = self.store.list_memories(agent_id, limit=1000, tier="long_term", touch=False)
             short_limit = min(len(short), max(1, (limit + 1) // 2)) if short else 0
             long_limit = min(len(long), max(0, limit - short_limit)) if long else 0
-            ranked = self.similarity.rank(query, short, limit=short_limit) if short_limit else []
-            ranked.extend(self.similarity.rank(query, long, limit=long_limit) if long_limit else [])
+            ranked = relevant(short, short_limit) if short_limit else []
+            ranked.extend(relevant(long, long_limit) if long_limit else [])
             if len(ranked) < limit and long and short_limit < len(short):
-                ranked.extend(self.similarity.rank(query, short, limit=limit)[short_limit:limit - len(ranked) + short_limit])
+                ranked.extend(relevant(short, limit)[short_limit:limit - len(ranked) + short_limit])
         if touch and ranked:
             # Touch only what is exposed; retrieval strengthens accessibility
             # without changing durable memory by elapsed time.

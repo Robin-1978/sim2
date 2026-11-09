@@ -37,6 +37,11 @@ class DeterministicProvider:
                 "value": 0.2,
                 "expected_effects": ["Fog pressure is recorded at 0.2."],
             }
+        if "Story Agent" in system or "<story_state>" in context:
+            choices = re.findall(r"^\s+choice: (.+)$", context, flags=re.MULTILINE)
+            if choices:
+                return {"intent_type": "propose_story_beat", "beat": choices[0], "reason": "Activate the configured beat after the validated discovery."}
+            return {"intent_type": "wait", "reason": "No configured story continuation is available."}
         behavior_section = context.split("<executable_behaviors>", 1)[-1].split("</executable_behaviors>", 1)[0]
         choices = re.findall(r"^\s+choice: (.+)$", behavior_section, flags=re.MULTILINE)
         if not choices:
@@ -54,7 +59,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="sim2-long-run-") as runtime:
         platform = Platform(create_instance(config, "long-run", Path(runtime)))
         try:
-            report = platform.run(args.minutes, providers={"agent_decision": provider, "agent_reflection": provider, "god": provider})
+            report = platform.run(args.minutes, providers={"agent_decision": provider, "agent_reflection": provider, "god": provider, "story": provider})
             output = {"provider_calls": provider.calls, "report": report.as_dict(), "metrics": platform.metrics()}
             print(json.dumps(output, ensure_ascii=False, indent=2))
         finally:

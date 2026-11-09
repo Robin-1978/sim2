@@ -4,7 +4,7 @@ sim2 is a configuration-driven, text-first sandbox game and world simulation fra
 
 The first world is **Starter Village (雾溪村)**: a settlement at the edge of Greywood, built around a weakening pact and a hidden root gate. Food, water, health, patrols, trade, relationships, exploration, player choices, and world-level interventions can change the story. Its complete setting and extension map are in [the world guide](docs/worlds/starter-village.md); the importable package is [`worlds/starter_village/`](worlds/starter_village/), and the concise configuration catalog is [here](docs/worlds/starter-village-catalog.md).
 
-Each individual Agent has two phases: a short decision phase that selects a Platform-validated behavior or interaction, and a scheduled reflection/evolution phase that turns useful outcomes into memory, beliefs, goals, or new behavior proposals. Each world also has a God Agent that observes structured world outcomes and proposes validated world changes. Long actions continue in Platform without an LLM call every minute.
+Each individual Agent has two phases: a short decision phase that selects a Platform-validated behavior or interaction, and a scheduled reflection/evolution phase that turns useful outcomes into memory, beliefs, goals, or new behavior proposals. Each world also has Story and God Agents: Story turns validated discoveries into configured or evidence-grounded narrative beats, while God observes structured world outcomes and proposes validated world changes. Long actions continue in Platform without an LLM call every minute.
 
 ## Quick start
 
@@ -41,6 +41,13 @@ For a real-provider run using one configured provider for every Agent role, use 
 
 ```bash
 sim2 simulate --db "$DB" --minutes 1440 --provider remote
+```
+
+Memory retrieval uses SQLite FTS plus task-conditioned ranking. To enable the optional local BGE ONNX reranker with the cached model, install its small runtime in the PyTorch environment and point `SIM2_BGE_MODEL` at the model directory; the world package already enables the semantic-similarity switch and falls back safely when the variable is absent:
+
+```bash
+/disk/miniconda3/envs/pytorch/bin/pip install onnxruntime tokenizers
+export SIM2_BGE_MODEL=/path/to/bge-small-zh-v1.5
 ```
 
 The text interface supports movement, messages, offers, counteroffers, acceptance/rejection, waiting, and public world telemetry. HTTP exposes the same Platform operations for another client.

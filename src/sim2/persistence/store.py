@@ -135,6 +135,15 @@ CREATE TABLE IF NOT EXISTS exploration_result (
   world_minute INTEGER NOT NULL,
   data_json TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS progress_state (
+  owner_id TEXT NOT NULL,
+  progress_key TEXT NOT NULL,
+  current_value REAL NOT NULL DEFAULT 0,
+  required_value REAL NOT NULL DEFAULT 1,
+  data_json TEXT NOT NULL,
+  updated_minute INTEGER NOT NULL,
+  PRIMARY KEY (owner_id, progress_key)
+);
 CREATE TABLE IF NOT EXISTS dialogue_exchange (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   speaker_id TEXT NOT NULL,
@@ -366,6 +375,39 @@ class WorldStore:
             (agent_id, area_id, int(world_minute), json_dumps(data)),
         )
         return int(cur.lastrowid)
+
+    def advance_progress(self, owner_id: str, progress_key: str, amount: float, required: float, world_minute: int, data: dict[str, Any] | None = None) -> dict[str, Any]:
+        row = self.connection.execute(
+            "SELECT current_value,required_value,data_json FROM progress_state WHERE owner_id=? AND progress_key=?",
+            (owner_id, progress_key),
+        ).fetchone()
+        before = float(row["current_value"]) if row else 0.0
+        configured_required = float(row["required_value"]) if row else max(1.0, float(required))
+        current = min(configured_required, before + float(amount))
+        merged = json.loads(row["data_json"]) if row else {}
+        merged.update(data or {})
+        self.connection.execute(
+            "INSERT INTO progress_state(owner_id,progress_key,current_value,required_value,data_json,updated_minute) VALUES (?,?,?,?,?,?) "
+            "ON CONFLICT(owner_id,progress_key) DO UPDATE SET current_value=excluded.current_value,required_value=excluded.required_value,data_json=excluded.data_json,updated_minute=excluded.updated_minute",
+            (owner_id, progress_key, current, configured_required, json_dumps(merged), int(world_minute)),
+        )
+        return {"owner_id": owner_id, "progress_key": progress_key, "before": before, "after": current, "required": configured_required, "completed": current >= configured_required, **merged}
+
+    def get_progress(self, owner_id: str, progress_key: str) -> dict[str, Any] | None:
+        row = self.connection.execute(
+            "SELECT current_value,required_value,data_json,updated_minute FROM progress_state WHERE owner_id=? AND progress_key=?",
+            (owner_id, progress_key),
+        ).fetchone()
+        if row is None:
+            return None
+        return {"owner_id": owner_id, "progress_key": progress_key, "current": row["current_value"], "required": row["required_value"], "updated_minute": row["updated_minute"], **json.loads(row["data_json"])}
+
+    def list_progress(self, owner_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT progress_key,current_value,required_value,data_json,updated_minute FROM progress_state WHERE owner_id=? ORDER BY updated_minute DESC,progress_key LIMIT ?",
+            (owner_id, max(1, min(int(limit), 200))),
+        ).fetchall()
+        return [{"owner_id": owner_id, "progress_key": row["progress_key"], "current": row["current_value"], "required": row["required_value"], "updated_minute": row["updated_minute"], **json.loads(row["data_json"])} for row in rows]
 
     def put_dialogue_exchange(self, speaker_id: str, listener_id: str | None, topic: str, world_minute: int, data: dict[str, Any]) -> int:
         cur = self.connection.execute(
@@ -759,6 +801,28 @@ class WorldStore:
         # The tier has its own indexed column; do not duplicate it inside the
         # model-facing JSON payload.
         data = {key: value for key, value in data.items() if key != "memory_tier"}
+        # Keep a small fixed retrieval envelope beside free-form prose. The
+        # tags are storage metadata, not additional prompt text; hybrid FTS
+        # and BGE ranking can use location, participants, behavior, object,
+        # topic and goal without parsing a transcript.
+        raw_tags = data.get("tags")
+        tags = dict(raw_tags) if isinstance(raw_tags, dict) else {}
+        tag_sources = {
+            "location": ("location", "location_id"),
+            "participants": ("participants", "target_id", "speaker_id", "listener_id", "recipient_id"),
+            "behavior": ("behavior", "behavior_ref", "event_ref"),
+            "object": ("object", "object_id", "source_id"),
+            "topic": ("topic",),
+            "goal": ("goal", "goal_tags"),
+        }
+        for tag, fields in tag_sources.items():
+            if tag in tags and tags[tag] not in (None, "", []):
+                continue
+            value = next((data.get(field) for field in fields if data.get(field) not in (None, "", [])), None)
+            if value not in (None, "", []):
+                tags[tag] = value
+        if tags:
+            data["tags"] = tags
         encoded = json_dumps(data)
         importance = max(0.0, min(1.0, float(data.get("importance", 0.5))))
         salience = max(0.0, min(1.0, float(data.get("salience", 0.5))))

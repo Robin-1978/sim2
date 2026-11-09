@@ -9,6 +9,8 @@ actions:
   - actor.mobile
   - destination.reachable
   requires_destination: true
+  completion:
+    if_already_at_destination: true
   duration:
     mode: route_distance
   costs:
@@ -391,6 +393,11 @@ actions:
   failure:
     condition: source.destroyed
     result: failed
+  progress:
+    key: research:{source_id}
+    scope: world
+    amount: 1
+    required: 2
   interrupt_policy: pause
   definition_source: config
   kind: atomic

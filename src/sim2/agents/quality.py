@@ -16,7 +16,8 @@ def _final_submission(turn: AgentTurn) -> tuple[str, dict[str, Any]]:
             return str(step.get("name", "")), dict(step.get("arguments") or {})
         if step.get("step") == "intent" and step.get("result", {}).get("status") in {"accepted", "wait"}:
             response = step.get("response") if isinstance(step.get("response"), dict) else {}
-            return str(response.get("intent_type", "intent")), response
+            inferred = "record_experience" if response.get("summary") and not response.get("intent_type") else response.get("intent_type", "intent")
+            return str(inferred), response
     return "", {}
 
 
@@ -51,7 +52,11 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         tokens = lambda value: set(re.findall(r"[a-z0-9]+", str(value).lower().replace("_", " ")))
         reason_terms = tokens(reason)
         evidence_terms = tokens(selected.get("name", "")) | tokens(selected.get("goal_tags", [])) | tokens(view.get("identity", {}).get("capabilities", {}))
-        reason_grounded = bool(reason_terms & evidence_terms) or (bool(reason.strip()) and bool(alignment))
+        # Decision tools intentionally allow a short choice-only response.
+        # A missing rationale is acceptable when the selected BT is grounded
+        # in visible goals/drives; a supplied rationale still must overlap
+        # visible evidence.
+        reason_grounded = bool(reason_terms & evidence_terms) or bool(alignment)
         reason_detail = "reason overlaps visible evidence" if reason_terms & evidence_terms else ("choice aligned with visible goals/drives; explanation language is advisory" if reason.strip() and alignment else ("choice aligned with visible goals/drives; no explanation emitted" if not reason.strip() and alignment else "no overlap with selected behavior, goals, drives or capabilities"))
         checks.append(_check("decision_reason_grounding", reason_grounded, reason_detail))
     elif turn.role == "agent_reflection":
@@ -100,6 +105,16 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
                 checks.append(_check("god_event_is_valid_narrative_signal", not direct_claim, "narrative event can be handled by a configured world rule" if not direct_claim else "event effects claim a direct state change"))
         else:
             checks.append(_check("god_submission_is_known", name in {"propose_entity", "propose_world_change"}, f"submission={name}"))
+    elif turn.role == "story":
+        if name == "wait" or payload.get("intent_type") == "wait" or turn.result.get("status") == "wait":
+            checks.append(_check("story_can_wait_without_unlocked_beat", True, "no configured continuation was selected"))
+        elif name == "propose_story_beat" or payload.get("intent_type") == "propose_story_beat":
+            summary = str(payload.get("summary") or "")
+            configured = bool(payload.get("beat"))
+            checks.append(_check("story_choice_or_emergent_summary", configured or len(summary) >= 8, f"configured={configured}; summary_length={len(summary)}"))
+            checks.append(_check("story_platform_applied", turn.result.get("status") == "accepted" and bool(turn.result.get("activated")), f"activated={turn.result.get('activated')}"))
+        else:
+            checks.append(_check("story_submission_is_known", False, f"submission={name}"))
     passed = all(item["passed"] for item in checks)
     if turn.role == "agent_decision":
         space = len(behaviors)

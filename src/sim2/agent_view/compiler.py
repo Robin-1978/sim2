@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from typing import Any
 
 from ..actions.conditions import ConditionEngine
@@ -112,6 +113,38 @@ class AgentViewCompiler:
                 if isinstance(value, str) and value.startswith("context.") and value.removeprefix("context.") in {"target_id", "patient_id", "protected_target_id", "counterparty_id", "listener_id"}:
                     keys.add(str(key))
         return keys
+
+    def _iter_behavior_actions(self, behavior_id: str, *, seen: set[str] | None = None):
+        """Yield configured Action nodes from any BT control-flow shape."""
+
+        seen = set(seen or set())
+        if behavior_id in seen:
+            return
+        seen.add(behavior_id)
+        definitions = {item["id"]: item for item in self.store.get_definitions("bt_def")}
+        behavior = definitions.get(behavior_id) or {}
+
+        def visit(nodes: list[Any], branch_seen: set[str]):
+            for raw in nodes or []:
+                node = raw if isinstance(raw, dict) else {"type": "behavior", "behavior_id": raw}
+                node_type = node.get("type")
+                if node_type == "action" and node.get("action_id"):
+                    yield node
+                elif node_type in {"behavior", "subtree"} and node.get("behavior_id"):
+                    nested_id = str(node["behavior_id"])
+                    if nested_id not in branch_seen:
+                        nested = definitions.get(nested_id) or {}
+                        yield from visit(nested.get("nodes", []) or [], branch_seen | {nested_id})
+                elif node_type in {"sequence", "parallel", "root"}:
+                    yield from visit(node.get("children", []) or [], branch_seen)
+                elif node_type == "selector":
+                    # Match Platform's deterministic first-branch behavior
+                    # until conditional selector evaluation is configured.
+                    children = node.get("children", []) or []
+                    if children:
+                        yield from visit([children[0]], branch_seen)
+
+        yield from visit(behavior.get("nodes", []) or [], seen)
 
     def _world_time(self, minute: int | None = None) -> dict[str, Any]:
         """Expose calendar meaning without leaking the internal tick counter."""
@@ -292,7 +325,9 @@ class AgentViewCompiler:
         try:
             agent = self.store.get_agent(agent_id)
         except KeyError:
-            if role in {"god", "world_builder"}:
+            if role in {"god", "story", "world_builder"}:
+                if role == "story":
+                    return self._build_story_view(agent_id, role)
                 return self._build_world_view(agent_id, role)
             raise
         bt_defs = {x["id"]: x for x in self.store.get_definitions("bt_def")}
@@ -359,14 +394,21 @@ class AgentViewCompiler:
             action_unavailable = False
             simulated_agent = copy.deepcopy(agent)
             simulated_location = dict(current_location)
-            for node in bt.get("nodes", []):
-                if node.get("type") != "action":
-                    continue
+            for node in self._iter_behavior_actions(bt_id):
                 action = action_defs.get(node.get("action_id"))
                 if not action:
                     continue
                 simulated_state = simulated_agent.setdefault("initial_state", {})
                 parameters = self._view_action_parameters(node.get("parameters") or {}, simulated_state, simulated_agent.get("inventory", {}) or {}, rules.get("food_items", []) or [], safe_location_id=safe_location_id, resource_node=resource_node, health_location_id=health_location_id, default_target_id=(validation_target or {}).get("id"))
+                # A configured destination Action is complete when the actor
+                # is already there. It contributes no visible step to the
+                # surrounding BT, while the remaining steps stay executable.
+                if (
+                    action.get("requires_destination")
+                    and action.get("completion", {}).get("if_already_at_destination")
+                    and parameters.get("location_id") == simulated_state.get("location_id")
+                ):
+                    continue
                 action_minutes = estimator._action_minutes(action, parameters, simulated_state.get("location_id"))
                 if not self._action_available(simulated_agent, action, parameters, simulated_location, rules.get("food_items", []) or [], action_minutes):
                     action_unavailable = True
@@ -389,6 +431,8 @@ class AgentViewCompiler:
                         simulated_location = {}
             if action_unavailable:
                 continue
+            if not steps:
+                continue
             target_text = "Platform resolves permitted targets from the current view."
             target_keys = self._target_parameter_keys(bt)
             target_required = bool(target_keys) and len(participants) > 1
@@ -408,6 +452,17 @@ class AgentViewCompiler:
                     target_text = f"Resource node: {self.store.get_entity(resource_node['location_id']).get('name', resource_node['location_id'])}."
                 except KeyError:
                     target_text = "Configured resource node is available."
+            elif resource_node and any(
+                node.get("type") == "action"
+                and any(value == "context.resource_tag" for value in (node.get("parameters") or {}).values())
+                for node in bt.get("nodes", []) or []
+            ):
+                try:
+                    resource = self.store.get_entity(resource_node["resource_tag"])
+                    location = self.store.get_entity(resource_node["location_id"])
+                    target_text = f"Resource: {resource.get('name', resource_node['resource_tag'])} at {location.get('name', resource_node['location_id'])}. Platform reserves the configured amount."
+                except KeyError:
+                    target_text = "A configured resource is available at the nearest known node."
             elif target_keys and participants:
                 names = ", ".join(str(item.get("name", item.get("id"))) for item in participants[:8])
                 if target_required:
@@ -534,7 +589,7 @@ class AgentViewCompiler:
             "active_task": {"bt": active_behavior.get("summary") or ("in progress" if active_behavior_id else None), "action": active_action.get("description") or (_label(str(active_action_id)) if active_action_id else None), "remaining_minutes": state.get("remaining_minutes", 0)},
             "open_trade_offers": self._trade_offer_view(agent_id),
             "available_actions": available_actions if role == "agent_reflection" else [],
-            "executable_behaviors": self._assign_choices(available[:5]), "decision_constraints": decision_constraints, "last_platform_result": state.get("last_platform_result"), "tools": tools_for_role(role),
+            "executable_behaviors": self._assign_choices(available), "decision_constraints": decision_constraints, "last_platform_result": state.get("last_platform_result"), "tools": tools_for_role(role),
         }
 
     @staticmethod
@@ -641,6 +696,66 @@ class AgentViewCompiler:
         if value is None:
             value = state.get("quantity", state.get("amount", 0))
         return float(value or 0)
+
+    def _build_story_view(self, actor_id: str, role: str) -> dict[str, Any]:
+        minute = int(self.store.get_meta("world_minute", 0))
+        story_root = self.store.get_meta("story", {}) or {}
+        story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
+        story_state = self.store.get_meta("story_state", {}) or {}
+        recent_events = self.store.recent_events(limit=80)
+        observed_events = {str(item.get("event_type", "")) for item in recent_events}
+        fact_rows = self.store.connection.execute("SELECT fact_key,data_json FROM knowledge_fact ORDER BY id DESC").fetchall()
+        observed_facts = {str(row["fact_key"]) for row in fact_rows}
+        choices: list[dict[str, Any]] = []
+        for beat in list(story_root.get("beats", []) or []) + list(story_state.get("emergent_beats", []) or []):
+            if not isinstance(beat, dict):
+                continue
+            beat_id = str(beat.get("id", ""))
+            if isinstance(story_state.get(beat_id), dict) and story_state[beat_id].get("status") in {"active", "completed"}:
+                continue
+            trigger_events = {str(item) for item in (beat.get("trigger_events", []) or [])}
+            trigger_facts = {str(item) for item in (beat.get("trigger_facts", []) or [])}
+            if trigger_events and not trigger_events & observed_events:
+                continue
+            if trigger_facts and not trigger_facts <= observed_facts:
+                continue
+            choices.append({
+                "ref": f"story:{beat_id}",
+                "choice": str(beat.get("agent_label") or beat.get("summary") or beat_id),
+                "summary": str(beat.get("summary", "")),
+                "when": "; ".join(sorted(trigger_events)) or "The latest evidence supports a new story direction.",
+                "requires": "; ".join(sorted(trigger_facts)) or "A recent validated discovery is required.",
+                "audience": [str(item) for item in (beat.get("audience", []) or [])],
+                "impact": ["Platform records the beat, informs its configured audience, and unlocks only configured behaviors."],
+            })
+        prompt_protocol, platform_rules = self._prompt_sections(role)
+        known_facts: list[str] = []
+        for row in fact_rows[:12]:
+            try:
+                data = json.loads(row["data_json"])
+            except (TypeError, json.JSONDecodeError):
+                data = {}
+            fact = data.get("fact") or data.get("summary")
+            if fact:
+                known_facts.append(str(fact))
+            else:
+                known_facts.append(str(row["fact_key"]).replace(":", " — ").replace("_", " "))
+        return {
+            "context_version": "1", "role": role,
+            "prompt_protocol": prompt_protocol, "platform_rules": platform_rules,
+            "world_time": self._world_time(minute),
+            "self": {"id": actor_id, "name": "Story Agent", "role": role, "status": "ready", "location": "world", "goal": "Turn validated discoveries into coherent continuing story beats."},
+            "identity": {"traits": {}, "beliefs": [], "capabilities": {"story_scope": True}},
+            "needs": {}, "inventory": {}, "injuries": [], "drives": [],
+            "observation": {"facts": [str(item.get("event_type", "event")) + ": " + str(item.get("summary") or item.get("fact") or item.get("result") or "validated world result") for item in recent_events[:10]], "source": "validated_world_events"},
+            "nearby_entities": [], "known_facts": [{"fact": fact, "source_type": "world_knowledge", "confidence": 1.0} for fact in known_facts],
+            "recent_actions": recent_events[:8], "recent_story_events": [item for item in recent_events if str(item.get("event_type", "")).startswith("story.")][:8],
+            "recent_world_changes": [], "recent_agent_outcomes": [], "direct_relationships": [],
+            "active_task": {"bt": None, "action": None, "remaining_minutes": 0},
+            "executable_behaviors": [], "story_beats": choices[:12],
+            "last_platform_result": recent_events[0] if recent_events else None,
+            "tools": tools_for_role(role),
+        }
 
     def _build_world_view(self, actor_id: str, role: str) -> dict[str, Any]:
         minute = self.store.get_meta("world_minute", 0)

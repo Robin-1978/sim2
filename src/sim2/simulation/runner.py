@@ -14,6 +14,7 @@ class SimulationReport:
     decisions: int = 0
     reflections: int = 0
     god_sessions: int = 0
+    story_sessions: int = 0
     waits: int = 0
     llm_errors: int = 0
     rejected_turns: int = 0
@@ -29,6 +30,7 @@ class SimulationReport:
             "decisions": self.decisions,
             "reflections": self.reflections,
             "god_sessions": self.god_sessions,
+            "story_sessions": self.story_sessions,
             "waits": self.waits,
             "llm_errors": self.llm_errors,
             "rejected_turns": self.rejected_turns,
@@ -66,6 +68,15 @@ class SimulationRunner:
         for _ in range(minutes):
             if self.platform.status().get("status") != "running":
                 break
+            # A completed discovery creates a Story task at the current
+            # boundary. Resolve that feedback before the next world minute so
+            # the story cannot lag one tick behind the fact it is meant to
+            # interpret. Rejected or unavailable Story work pauses the world
+            # without advancing time again.
+            if any(task.get("role") == "story" for task in self.platform.ready_evolution_tasks()):
+                self._run_due_evolution(report)
+                if self.platform.status().get("status") != "running":
+                    break
             self.platform.step()
             self._run_instant_interactions(report)
             self._run_due_evolution(report)
@@ -157,6 +168,9 @@ class SimulationRunner:
             provider = self.providers.get(role)
             actor_id = task.get("actor_id") or ("god" if role == "god" else None)
             if provider is None or actor_id is None:
+                if role == "story":
+                    self.platform.pause("story_agent_provider_missing")
+                    return
                 continue
             claimed = self.platform.claim_evolution_task(task["task_id"])
             if claimed is None:
@@ -167,6 +181,8 @@ class SimulationRunner:
             turn = AgentEngine(self.platform, provider).run(role=role, actor_id=actor_id, task_type=task_type)
             if role == "god":
                 report.god_sessions += 1
+            elif role == "story":
+                report.story_sessions += 1
             else:
                 report.reflections += 1
             self._record_turn(report, turn.result, actor_id)
@@ -179,6 +195,12 @@ class SimulationRunner:
                     int(self.platform.store.get_meta("world_minute", 0)) + retry_delay,
                     str(turn.result.get("message") or turn.result.get("failed_check") or "evolution session rejected"),
                 )
+                if role == "story":
+                    # A discovery result is a synchronization barrier. Keep
+                    # world time frozen until the Story Agent can acknowledge
+                    # it or Platform receives an operator resume decision.
+                    self.platform.pause("story_agent_feedback_pending")
+                    return
 
     def _llm_not_before(self, agent_id: str) -> int:
         return self._llm_retry_until.get(agent_id, 0)

@@ -267,6 +267,24 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "additionalProperties": False,
         },
     },
+    "propose_story_beat": {
+        "purpose": "Activate one configured story beat after a validated discovery or research result.",
+        "kind": "intent",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "beat": {"type": "string", "description": "The exact visible story beat choice from the current story view."},
+                "audience": {"type": "array", "items": {"type": "string"}, "description": "Optional visible character names; Platform limits this to the configured audience."},
+                "summary": {"type": "string", "description": "Required only when creating an emergent beat not present in the configured catalog."},
+                "fact": {"type": "string", "description": "A short evidence-grounded fact to deliver to the audience."},
+                "goal_hint": {"type": "string", "description": "A short next objective for the audience."},
+                "unlock_choices": {"type": "array", "items": {"type": "string"}, "description": "Optional visible BT choices already registered in the world."},
+                "reason": {"type": "string"},
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
     "validate_world_template": {
         "purpose": "Validate a declarative world template without creating an instance.",
         "kind": "read",
@@ -294,6 +312,7 @@ ROLE_TOOLS: dict[str, list[str]] = {
     "agent_decision": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "request_behavior"],
     "agent_reflection": ["recall_memory", "query_known_fact", "record_experience", "update_belief", "update_goal", "propose_behavior"],
     "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "propose_entity", "propose_world_change"],
+    "story": ["read_public_record", "query_known_fact", "propose_story_beat"],
     "world_builder": ["validate_world_template", "submit_world_template"],
 }
 
@@ -434,6 +453,7 @@ class AgentToolExecutor:
                 key: cls._publicize(item)
                 for key, item in value.items()
                 if key not in {"id", "ref", "behavior_ref", "intent_id", "event_id"} and key not in internal_fields
+                and key != "tags"
                 and not key.endswith("_id")
             }
         if isinstance(value, list):
@@ -660,6 +680,9 @@ class AgentToolExecutor:
             "faction": dict(faction or {}),
         }
         return self.platform.submit_world_change(self.actor_id, proposal)
+
+    def _propose_story_beat(self, beat: str, audience: list[str] | None = None, summary: str = "", fact: str = "", goal_hint: str = "", unlock_choices: list[str] | None = None, reason: str = "") -> dict[str, Any]:
+        return self.platform.submit_story_beat(self.actor_id, {"beat": beat, "audience": list(audience or []), "summary": summary, "fact": fact, "goal_hint": goal_hint, "unlock_choices": list(unlock_choices or []), "reason": reason})
 
     def _validate_world_template(self, template: dict[str, Any]) -> dict[str, Any]:
         return self.platform.validate_world_template(template)

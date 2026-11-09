@@ -19,7 +19,7 @@ from .tools import (
 )
 
 
-ROLE_NAMES = {"agent_decision", "agent_reflection", "god", "world_builder"}
+ROLE_NAMES = {"agent_decision", "agent_reflection", "god", "story", "world_builder"}
 
 
 def role_policy(platform: Platform, role: str) -> str:
@@ -32,6 +32,7 @@ ROLE_INTENTS = {
     "agent_decision": {"select_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "wait"},
     "agent_reflection": {"record_experience", "update_belief", "update_goal", "propose_behavior", "wait"},
     "god": {"propose_entity", "propose_world_change", "wait"},
+    "story": {"propose_story_beat", "wait"},
     "world_builder": {"submit_world_template", "wait"},
 }
 
@@ -278,6 +279,8 @@ class AgentEngine:
             if str(task_type).startswith("trigger:"):
                 return f"Task type: {task_type}. A world trigger is active. Submit one validated direct state-changing proposal that resolves the trigger; a narrative-only event does not resolve it. State the short observable expected_effects."
             return f"Task type: {task_type}. Review the world signal and submit one validated world proposal if needed. State the short observable expected_effects."
+        if role == "story":
+            return f"Task type: {task_type}. Review newly recorded discoveries and choose one configured story beat that is now unlocked; otherwise wait. Platform applies only the configured beat consequences."
         return f"Task type: {task_type}. Produce or refine one declarative world template."
 
     def _submit_response(self, role: str, actor_id: str, response: dict[str, Any], *, context: dict[str, Any] | None = None, task_type: str = "") -> dict[str, Any]:
@@ -305,6 +308,7 @@ class AgentEngine:
                 "propose_behavior": "propose_behavior",
                 "propose_entity": "propose_entity",
                 "propose_world_change": "propose_world_change",
+                "propose_story_beat": "propose_story_beat",
                 "wait": "wait",
             }
             intent_type_value = aliases.get(str(data.get("intent")).casefold())
@@ -402,6 +406,10 @@ class AgentEngine:
                     }
                 result = self.platform.submit_world_change(actor_id, proposal)
                 return result
+            if intent_type == "propose_story_beat":
+                proposal = dict(data)
+                proposal.pop("intent_type", None)
+                return self.platform.submit_story_beat(actor_id, proposal)
             if intent_type == "submit_world_template":
                 return self.platform.submit_world_template(actor_id, data.get("template") or {})
         except (TypeError, ValueError, KeyError) as exc:

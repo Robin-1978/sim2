@@ -352,15 +352,15 @@ def test_food_store_bt_supplies_agents_without_carried_food(tmp_path: Path):
     platform = Platform(db_path)
     try:
         view = platform.decision_view("liang_he")
-        assert any(item["ref"] == "behavior:get_food_here" for item in view["executable_behaviors"])
+        assert any(item["ref"] == "behavior:get_food" for item in view["executable_behaviors"])
         before = platform.store.get_entity("village_food")["amount"]
         result = platform.submit_behavior(BehaviorIntent(
-            actor_id="liang_he", behavior_ref="behavior:get_food_here", target={}, parameters={},
+            actor_id="liang_he", behavior_ref="behavior:get_food", target={}, parameters={},
             reason="Withdraw a ration before the next task.", confidence=0.9, intent_id="get-food-intent",
         ))
         assert result["status"] == "accepted"
-        assert result["remaining_minutes"] == 10
-        for _ in range(10):
+        assert result["remaining_minutes"] == 11
+        for _ in range(11):
             platform.step()
         after = platform.store.get_agent("liang_he")
         assert after["inventory"]["rations"] == 1
@@ -445,7 +445,7 @@ def test_food_and_rest_fallbacks_disappear_when_needs_are_satisfied(tmp_path: Pa
         platform.store.connection.commit()
         offered = {item["ref"] for item in platform.decision_view("liang_he")["executable_behaviors"]}
         assert "behavior:eat_food" not in offered
-        assert "behavior:get_food_here" not in offered
+        assert "behavior:get_food" not in offered
 
         smith = platform.store.get_agent("tian_yan")
         smith["initial_state"]["energy"] = 100
@@ -514,8 +514,10 @@ def test_decision_context_explains_single_recovery_candidate(tmp_path: Path):
         platform.store.update_agent("liang_he", liang)
         platform.store.connection.commit()
         view = platform.decision_view("liang_he")
-        assert len(view["executable_behaviors"]) == 1
-        assert view["executable_behaviors"][0]["ref"] == "behavior:recover_at_safe_location"
+        offered = {item["ref"] for item in view["executable_behaviors"]}
+        assert "behavior:recover_at_safe_location" in offered
+        assert "behavior:eat_food" not in offered
+        assert "behavior:get_food" not in offered
         assert any("Satiety is 100/100" in item for item in view["decision_constraints"])
         assert any("Energy is 6.5/100" in item for item in view["decision_constraints"])
         assert any("not safe for rest" in item for item in view["decision_constraints"])
@@ -582,7 +584,7 @@ def test_platform_rechecks_behavior_entry_condition_after_context_changes(tmp_pa
         platform.store.connection.commit()
         result = platform.submit_behavior(BehaviorIntent(
             actor_id="liang_he",
-            behavior_ref="behavior:get_food_here",
+            behavior_ref="behavior:get_food",
             target={},
             parameters={},
             reason="Use a stale candidate.",
@@ -940,12 +942,12 @@ def test_memory_has_short_and_long_tiers_and_task_conditioned_recall(tmp_path: P
         with platform.store.transaction():
             platform.store.put_memory(
                 "lu_xingzhou", "testimony",
-                {"summary": "The north gate watch saw fresh marks before dawn.", "importance": 0.8},
+                {"summary": "The north gate watch saw fresh marks before dawn.", "importance": 0.8, "pending_decision": True},
                 tier="short_term",
             )
             platform.store.put_memory(
                 "lu_xingzhou", "experience",
-                {"summary": "The river route is safe only before the fog rises.", "importance": 0.9},
+                    {"summary": "Exploring Greywood confirms a safe river route before the fog rises.", "importance": 0.9},
                 tier="long_term",
             )
         recalled = platform.memory.recall("lu_xingzhou", "north gate marks", limit=2)
@@ -996,6 +998,27 @@ def test_god_view_contains_weekly_and_monthly_world_trends(tmp_path: Path):
         prompt = render_context(view, "Review world trends.")
         assert "<world_trends>" in prompt
         assert "weekly:" in prompt and "monthly:" in prompt
+    finally:
+        platform.close()
+
+
+def test_world_property_proposal_normalizes_numeric_model_values(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "world-property-type-world", tmp_path / "runtime"))
+    try:
+        result = platform.submit_world_change(
+            "god",
+            {"change_type": "world_property", "summary": "Stabilize the root gate.", "property": "root_gate_stability", "value": "0.75"},
+        )
+        assert result["status"] == "accepted"
+        assert isinstance(result["effect"]["after"], float)
+        assert platform.store.get_meta("world_properties")["root_gate_stability"] == 0.75
+        rejected = platform.submit_world_change(
+            "god",
+            {"change_type": "world_property", "summary": "Break the numeric contract.", "property": "root_gate_stability", "value": "not-a-number"},
+        )
+        assert rejected["status"] == "rejected"
+        assert rejected["failed_check"] == "property_type"
     finally:
         platform.close()
 
@@ -1286,12 +1309,55 @@ def test_water_research_path_records_a_specific_fact(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "water-research-world", tmp_path / "runtime"))
     try:
-        result = platform.submit_behavior(BehaviorIntent("qiao_ning", "behavior:research_water", {}, {}, "Test the river water for the fever investigation.", 0.9, "water-research"))
-        assert result["status"] == "accepted"
-        for _ in range(result["remaining_minutes"]):
-            platform.step()
+        for attempt in range(2):
+            if attempt:
+                agent = platform.store.get_agent("qiao_ning")
+                agent["initial_state"]["attention"] = 0
+                agent["initial_state"]["energy"] = 90
+                with platform.store.transaction():
+                    platform.store.update_agent("qiao_ning", agent)
+            result = platform.submit_behavior(BehaviorIntent("qiao_ning", "behavior:research_water", {}, {}, "Test the river water for the fever investigation.", 0.9, f"water-research-{attempt}"))
+            assert result["status"] == "accepted"
+            for _ in range(result["remaining_minutes"]):
+                platform.step()
+            if attempt == 0:
+                assert not any(task["role"] == "story" for task in platform.ready_evolution_tasks())
+            else:
+                assert any(task["role"] == "story" for task in platform.ready_evolution_tasks())
         facts = platform.store.list_knowledge_facts("qiao_ning", limit=30)
         assert any(item["fact_key"] == "researched:clean_water:contamination" for item in facts)
+    finally:
+        platform.close()
+
+
+def test_story_feedback_runs_at_completion_boundary_and_updates_audience(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "story-boundary-world", tmp_path / "runtime"))
+    provider = SequenceProvider([{"intent_type": "propose_story_beat", "beat": "Reconsider the old pact"}])
+    try:
+        for attempt in range(2):
+            agent = platform.store.get_agent("su_wu")
+            agent["initial_state"]["attention"] = 0
+            agent["initial_state"]["energy"] = 90
+            with platform.store.transaction():
+                platform.store.update_agent("su_wu", agent)
+            result = platform.submit_behavior(BehaviorIntent("su_wu", "behavior:research_source", {}, {}, "Study the pact source.", 0.9, f"story-research-{attempt}"))
+            assert result["status"] == "accepted"
+            for _ in range(result["remaining_minutes"]):
+                platform.step()
+        boundary = int(platform.store.get_meta("world_minute", 0))
+        report = SimulationRunner(platform, {"story": provider}).run(1)
+        assert report.story_sessions == 1
+        assert platform.store.get_meta("world_minute") == boundary + 1
+        assert platform.status()["status"] == "running"
+        state = platform.store.get_meta("story_state")
+        assert state["old_pact_understood"]["status"] == "active"
+        assert "Decide whether the village should renew, change, or end the old pact." in platform.store.get_agent("lin_bo")["story_goals"]
+        events = platform.store.recent_events(limit=4)
+        story_event = next(item for item in events if item["event_type"] == "story.beat.activated")
+        minute_event = next(item for item in events if item["event_type"] == "world_minute.advanced")
+        assert story_event["world_minute"] == boundary
+        assert minute_event["world_minute"] == boundary + 1
     finally:
         platform.close()
 
@@ -1537,10 +1603,17 @@ def test_completed_research_records_fact_and_is_not_offered_again(tmp_path: Path
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "research-novelty-world", tmp_path / "runtime"))
     try:
-        assert platform.submit_behavior(BehaviorIntent(
-            "su_wu", "behavior:research_source", {}, {}, "Study the pact source.", 0.9, "research-novelty"
-        ))["status"] == "accepted"
-        step_n(platform, 192)
+        for attempt in range(2):
+            if attempt:
+                agent = platform.store.get_agent("su_wu")
+                agent["initial_state"]["attention"] = 0
+                agent["initial_state"]["energy"] = 90
+                with platform.store.transaction():
+                    platform.store.update_agent("su_wu", agent)
+            assert platform.submit_behavior(BehaviorIntent(
+                "su_wu", "behavior:research_source", {}, {}, "Study the pact source.", 0.9, f"research-novelty-{attempt}"
+            ))["status"] == "accepted"
+            step_n(platform, 192)
         facts = platform.store.list_knowledge_facts("su_wu", limit=20)
         assert any(item["fact_key"] == "researched:old_pact_tablet:origin" for item in facts)
         assert not any(item["ref"] == "behavior:research_source" for item in platform.decision_view("su_wu")["executable_behaviors"])

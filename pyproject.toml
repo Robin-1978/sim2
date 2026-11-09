@@ -14,6 +14,12 @@ dependencies = [
   "PyYAML>=6.0",
 ]
 
+[project.optional-dependencies]
+bge = [
+  "onnxruntime>=1.17",
+  "tokenizers>=0.15",
+]
+
 [project.scripts]
 sim2 = "sim2.api.cli:main"
 

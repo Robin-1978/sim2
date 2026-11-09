@@ -75,10 +75,13 @@ motivation_model:
   - social_norms_and_external_pressure
 memory_quality:
   semantic_similarity:
-    enabled: false
+    enabled: true
+    backend: onnx
     model: ""
     threshold: 0.88
-fallback_behavior_ids: [rest_and_recover, recover_at_safe_location, seek_treatment, eat_food, buy_food, get_food, get_food_here, gather_at_known_node, travel]
+    retrieval_threshold: 0.06
+    embedding_retrieval_threshold: 0.18
+fallback_behavior_ids: [rest_and_recover, recover_at_safe_location, seek_treatment, eat_food, buy_food, get_food, gather_at_known_node, travel]
 food_items: [rations, ration, cooked_meal]
 need_effects:
   dialogue.completed:

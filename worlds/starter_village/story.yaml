@@ -1,0 +1,30 @@
+story:
+  beats:
+  - id: greywood_route_found
+    agent_label: Follow the Greywood caravan trail
+    summary: Exploration confirms a route from Greywood to the old quarry.
+    trigger_events: [exploration.completed]
+    trigger_facts: [explored:greywood_edge:route]
+    audience: [fei_lan, lu_xingzhou]
+    fact: A usable route from Greywood reaches the old quarry.
+    goal_hint: Confirm whether the old quarry can reopen the disrupted trade route.
+    unlock_behavior_ids: [recover_caravan_ledger]
+    public_event: story.greywood_route_opened
+  - id: water_contamination_known
+    agent_label: Trace the grey fever water source
+    summary: Research links river contamination to the grey fever outbreak.
+    trigger_events: [research.completed]
+    trigger_facts: [researched:clean_water:contamination]
+    audience: [qiao_ning, su_wu]
+    fact: River water samples show contamination linked to the grey fever outbreak.
+    goal_hint: Find the contamination source before the next fog cycle.
+    public_event: story.water_source_revealed
+  - id: old_pact_understood
+    agent_label: Reconsider the old pact
+    summary: Research of the old pact tablet reveals why the root gate must remain stable.
+    trigger_events: [research.completed, object.recovered]
+    trigger_facts: [researched:old_pact_tablet:origin]
+    audience: [lin_bo, su_wu, qiao_ning]
+    fact: The old pact was made to keep the root gate stable, and its stability is declining.
+    goal_hint: Decide whether the village should renew, change, or end the old pact.
+    public_event: story.old_pact_revealed

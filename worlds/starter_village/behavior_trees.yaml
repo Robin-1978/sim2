@@ -438,6 +438,8 @@ behavior_trees:
   - resource.available
   estimated_minutes: 144
   interrupt_policy: pause
+  goal_tags: [resources, production, survival]
+  drive_tags: [safety, autonomy, self_actualization]
   success_results:
   - action_completed
   failure_results:
@@ -495,28 +497,6 @@ behavior_trees:
     action_id: travel_to
     parameters:
       location_id: granary
-  - type: action
-    action_id: withdraw_food
-  definition_source: config
-  kind: fallback
-- id: get_food_here
-  version: 1
-  scope: universal
-  agent_label: Withdraw one ration here
-  summary: Withdraw one ration here.
-  description: Complete the configured ration service at the shared food store.
-  entry_conditions:
-  - actor.alive
-  - actor.food_withdrawal
-  - location.food_store
-  - actor.satiety <= 80
-  requirements: ["You are at the granary and the shared food store has supply."]
-  goal_tags: [food, reserve, survival]
-  drive_tags: [physiological_homeostasis, safety]
-  interrupt_policy: cancel
-  success_results: [ration_received]
-  failure_results: [ration_unavailable]
-  nodes:
   - type: action
     action_id: withdraw_food
   definition_source: config

@@ -21,5 +21,6 @@ files:
 - prompts/world.yaml
 - prompts/agent.yaml
 - evolution.yaml
+- story.yaml
 time_unit: minute
 start_world_minute: 0

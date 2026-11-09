@@ -66,13 +66,14 @@ class Platform:
             if provider_name:
                 providers = {
                     role: router.new_provider_for_name(provider_name)
-                    for role in ("agent_decision", "agent_reflection", "god")
+                    for role in ("agent_decision", "agent_reflection", "god", "story")
                 }
             else:
                 providers = {
                     "agent_decision": router.provider_for_role("agent_decision"),
                     "agent_reflection": router.provider_for_role("agent_reflection"),
                     "god": router.provider_for_role("god"),
+                    "story": router.provider_for_role("story"),
                 }
         return SimulationRunner(
             self,
@@ -915,6 +916,110 @@ class Platform:
             self.store.finish_intent(intent_id, "accepted", result)
         return result
 
+    def submit_story_beat(self, actor_id: str, proposal: dict[str, Any]) -> dict[str, Any]:
+        """Activate one configured story beat after Platform checks its evidence."""
+
+        intent_id = str(uuid4())
+        story_root = self.store.get_meta("story", {}) or {}
+        story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
+        beats = list(story_root.get("beats", []) or []) if isinstance(story_root, dict) else []
+        choice = str(proposal.get("beat", "")).strip()
+        key = "".join(char for char in choice.casefold() if char.isalnum())
+        matches = [
+            beat for beat in beats if isinstance(beat, dict)
+            and key == "".join(char for char in str(beat.get("agent_label") or beat.get("summary") or beat.get("id", "")).casefold() if char.isalnum())
+        ]
+        emergent = False
+        if not matches and str(proposal.get("summary", "")).strip():
+            summary = str(proposal.get("summary", "")).strip()
+            if len(summary) < 8 or len(summary) > 500:
+                return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "An emergent story beat summary must be 8 to 500 characters.", "failed_check": "story_summary", "retryable": True})
+            beat = {
+                "id": f"emergent:{uuid4().hex[:12]}",
+                "agent_label": choice or summary[:80],
+                "summary": summary,
+                "audience": list(proposal.get("audience", []) or []),
+                "fact": str(proposal.get("fact", "")).strip(),
+                "goal_hint": str(proposal.get("goal_hint", "")).strip(),
+                "unlock_choices": list(proposal.get("unlock_choices", []) or []),
+                "public_event": "story.emergent_beat",
+            }
+            matches = [beat]
+            emergent = True
+        if len(matches) != 1:
+            return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {
+                "status": "rejected", "message": "Choose one exact configured story beat from the current story view.", "failed_check": "story_beat_choice", "retryable": True,
+                "available_choices": [str(beat.get("agent_label") or beat.get("summary") or beat.get("id", "")) for beat in beats if isinstance(beat, dict)],
+            })
+        beat = matches[0]
+        beat_id = str(beat.get("id", ""))
+        state = dict(self.store.get_meta("story_state", {}) or {})
+        current = state.get(beat_id) if isinstance(state.get(beat_id), dict) else {}
+        if current.get("status") in {"active", "completed"}:
+            return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "This story beat is already active or completed.", "failed_check": "story_beat_state", "retryable": False})
+        recent = self.store.recent_events(limit=500)
+        if emergent and not any(str(item.get("event_type", "")) in {"exploration.completed", "research.completed", "object.recovered", "relationship.changed"} for item in recent[:30]):
+            return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "An emergent beat needs a recent discovery, research, recovery, or relationship result.", "failed_check": "story_evidence", "retryable": True})
+        trigger_events = {str(item) for item in (beat.get("trigger_events", []) or [])}
+        observed_events = {str(item.get("event_type", "")) for item in recent}
+        if trigger_events and not trigger_events & observed_events:
+            return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "The configured story beat has no observed trigger event yet.", "failed_check": "story_trigger", "retryable": True})
+        required_facts = {str(item) for item in (beat.get("trigger_facts", []) or [])}
+        if required_facts:
+            rows = self.store.connection.execute("SELECT fact_key FROM knowledge_fact").fetchall()
+            observed_facts = {str(row["fact_key"]) for row in rows}
+            if not required_facts <= observed_facts:
+                return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "The configured story beat is missing one or more required facts.", "failed_check": "story_facts", "retryable": True, "missing_facts": sorted(required_facts - observed_facts)})
+        minute = int(self.store.get_meta("world_minute", 0))
+        audience = [str(item) for item in (beat.get("audience", []) or [])]
+        if emergent:
+            resolved_audience: list[str] = []
+            for value in audience[:8]:
+                canonical = self.targets.canonical_id(value)
+                if canonical and self.store.connection.execute("SELECT 1 FROM agent_state WHERE id=?", (canonical,)).fetchone():
+                    resolved_audience.append(canonical)
+            audience = resolved_audience
+            if not audience:
+                return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "An emergent beat needs at least one exact visible character audience.", "failed_check": "story_audience", "retryable": True})
+        registered = {item["id"] for item in self.store.get_definitions("bt_def")}
+        if emergent:
+            labels = {
+                "".join(char for char in str(item.get("agent_label") or item.get("summary") or item.get("id", "")).casefold() if char.isalnum()): str(item.get("id"))
+                for item in self.store.get_definitions("bt_def")
+            }
+            beat["unlock_behavior_ids"] = [labels["".join(char for char in str(value).casefold() if char.isalnum())] for value in beat.get("unlock_choices", []) if "".join(char for char in str(value).casefold() if char.isalnum()) in labels]
+        with self.store.transaction():
+            self.store.create_intent(intent_id, actor_id, "propose_story_beat", proposal, minute)
+            state[beat_id] = {"status": "active", "started_minute": minute, "actor_id": actor_id}
+            if emergent:
+                emergent_beats = list(state.get("emergent_beats", []) or [])
+                emergent_beats.append({key: value for key, value in beat.items() if key != "unlock_choices"})
+                state["emergent_beats"] = emergent_beats[-64:]
+            self.store.set_meta("story_state", state)
+            for audience_id in audience:
+                try:
+                    target = self.store.get_agent(audience_id)
+                except KeyError:
+                    continue
+                if beat.get("goal_hint"):
+                    goals = list(target.get("story_goals", []) or [])
+                    if str(beat["goal_hint"]) not in goals:
+                        goals.append(str(beat["goal_hint"]))
+                    target["story_goals"] = goals[-8:]
+                for behavior_id in beat.get("unlock_behavior_ids", []) or []:
+                    behavior_id = str(behavior_id)
+                    if behavior_id in registered:
+                        unlocked = list(target.get("unlocked_bt_ids", []) or [])
+                        if behavior_id not in unlocked and behavior_id not in (target.get("initial_bt_ids", []) or []):
+                            unlocked.append(behavior_id)
+                        target["unlocked_bt_ids"] = unlocked
+                if beat.get("fact"):
+                    self.store.merge_knowledge_fact(target["id"], f"story:{beat_id}", {"fact": str(beat["fact"]), "source_type": "story", "source_id": beat_id, "confidence": 0.9, "observed_at": minute})
+                self.store.update_agent(target["id"], target)
+            event_id = self.store.append_event("story.beat.activated", actor_id, minute, {"beat_id": beat_id, "summary": beat.get("summary", ""), "audience": audience, "public_event": beat.get("public_event"), "reason": proposal.get("reason", "")})
+            self.store.finish_intent(intent_id, "accepted", {"status": "accepted", "intent_id": intent_id, "beat": beat.get("agent_label") or beat_id, "event_id": event_id, "activated": True})
+        return {"status": "accepted", "intent_id": intent_id, "beat": beat.get("agent_label") or beat_id, "event_id": event_id, "activated": True}
+
     def submit_world_change(self, actor_id: str, proposal: dict[str, Any]) -> dict[str, Any]:
         intent_id = str(uuid4())
         if not proposal.get("change_type") or not proposal.get("summary"):
@@ -946,6 +1051,37 @@ class Platform:
                         "retryable": True,
                     },
                 )
+        if change_type in {"world_property", "event"} and proposal.get("property"):
+            property_name = str(proposal["property"])
+            current_properties = self.store.get_meta("world_properties", {}) or {}
+            before_value = current_properties.get(property_name)
+            value = proposal.get("value")
+            if isinstance(before_value, bool):
+                if not isinstance(value, bool):
+                    return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {
+                        "status": "rejected", "message": f"World property {property_name} is boolean; value must be true or false.", "failed_check": "property_type", "retryable": True,
+                    })
+            elif isinstance(before_value, (int, float)):
+                if isinstance(value, bool):
+                    return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {
+                        "status": "rejected", "message": f"World property {property_name} is numeric; value must be a number.", "failed_check": "property_type", "retryable": True,
+                    })
+                if isinstance(value, str):
+                    try:
+                        value = float(value.strip())
+                    except ValueError:
+                        return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {
+                            "status": "rejected", "message": f"World property {property_name} is numeric; value must be a number.", "failed_check": "property_type", "retryable": True,
+                        })
+                elif not isinstance(value, (int, float)):
+                    return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {
+                        "status": "rejected", "message": f"World property {property_name} is numeric; value must be a number.", "failed_check": "property_type", "retryable": True,
+                    })
+                if isinstance(before_value, float):
+                    value = float(value)
+                elif isinstance(value, float) and value.is_integer():
+                    value = int(value)
+            proposal = {**proposal, "value": value}
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             self.store.create_intent(intent_id, actor_id, "propose_world_change", proposal, world_minute)
@@ -1358,8 +1494,11 @@ class Platform:
         state = dict(agent.get("initial_state") or {})
         parameters = self._resolve_parameters(dict(action_info.get("parameters") or {}), state)
         parameters = self._apply_action_parameter_defaults(agent, action, parameters)
-        if action.get("requires_destination") and parameters.get("location_id") == state.get("location_id"):
-            return False, "a different destination is required"
+        already_at_destination = bool(
+            action.get("requires_destination")
+            and action.get("completion", {}).get("if_already_at_destination")
+            and parameters.get("location_id") == state.get("location_id")
+        )
         resolved_target, target_error = self.targets.resolve(agent, parameters)
         if target_error:
             return False, target_error
@@ -1400,12 +1539,17 @@ class Platform:
             if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=condition_context, world=self.store.get_meta("world_properties", {}) or {}):
                 return False, f"precondition failed: {predicate}"
         duration = self._action_duration(action, parameters, state.get("location_id"))
-        capacity_ok, capacity_reason = self._check_action_capacity(agent, action, duration)
-        if not capacity_ok:
-            return False, capacity_reason
-        allowed, reason, reservation = self._reserve_action_costs(agent, action, parameters)
-        if not allowed:
-            return False, reason
+        if already_at_destination:
+            # Completing an already reached destination consumes this tick,
+            # but it does not charge movement costs or reserve resources.
+            reservation = []
+        else:
+            capacity_ok, capacity_reason = self._check_action_capacity(agent, action, duration)
+            if not capacity_ok:
+                return False, capacity_reason
+            allowed, reason, reservation = self._reserve_action_costs(agent, action, parameters)
+            if not allowed:
+                return False, reason
         action_instance_id = f"{execution_id}:{state.get('active_action_index', 0)}"
         state["active_action"] = action_id
         state["active_action_instance"] = action_instance_id
@@ -1414,9 +1558,10 @@ class Platform:
         state["remaining_minutes"] = duration
         state["active_action_parameters"] = parameters
         state["active_action_reservation"] = reservation
+        state["active_action_noop"] = already_at_destination
         agent["initial_state"] = state
-        self.store.put_action_instance(action_instance_id, execution_id, agent["id"], action_id, "running", 0, duration, {"parameters": parameters, "target": resolved_target, "reservation": reservation}, minute, minute)
-        self.store.append_event("action.started", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "duration_minutes": duration})
+        self.store.put_action_instance(action_instance_id, execution_id, agent["id"], action_id, "running", 0, duration, {"parameters": parameters, "target": resolved_target, "reservation": reservation, "no_op": already_at_destination}, minute, minute)
+        self.store.append_event("action.started", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "duration_minutes": duration, "no_op": already_at_destination})
         return True, ""
 
     def _prepare_parallel_action(self, agent: dict[str, Any], action_info: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
@@ -1427,8 +1572,11 @@ class Platform:
         state = dict(agent.get("initial_state") or {})
         parameters = self._resolve_parameters(dict(action_info.get("parameters") or {}), state)
         parameters = self._apply_action_parameter_defaults(agent, action, parameters)
-        if action.get("requires_destination") and parameters.get("location_id") == state.get("location_id"):
-            return None, "a different destination is required"
+        already_at_destination = bool(
+            action.get("requires_destination")
+            and action.get("completion", {}).get("if_already_at_destination")
+            and parameters.get("location_id") == state.get("location_id")
+        )
         target, target_error = self.targets.resolve(agent, parameters)
         if target_error:
             return None, target_error
@@ -1468,14 +1616,17 @@ class Platform:
             if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=context, world=self.store.get_meta("world_properties", {}) or {}):
                 return None, f"precondition failed: {predicate}"
         duration = self._action_duration(action, parameters, state.get("location_id"))
-        capacity_ok, capacity_reason = self._check_action_capacity(agent, action, duration)
-        if not capacity_ok:
-            return None, capacity_reason
-        probe = copy.deepcopy(agent)
-        allowed, reason, reservation = self._reserve_action_costs(probe, action, parameters, commit=False)
-        if not allowed:
-            return None, reason
-        return {"action": action, "parameters": parameters, "target": target, "duration": duration, "reservation": reservation}, ""
+        if already_at_destination:
+            reservation = []
+        else:
+            capacity_ok, capacity_reason = self._check_action_capacity(agent, action, duration)
+            if not capacity_ok:
+                return None, capacity_reason
+            probe = copy.deepcopy(agent)
+            allowed, reason, reservation = self._reserve_action_costs(probe, action, parameters, commit=False)
+            if not allowed:
+                return None, reason
+        return {"action": action, "parameters": parameters, "target": target, "duration": duration, "reservation": reservation, "no_op": already_at_destination}, ""
 
     def _progress_parallel_group(self, agent: dict[str, Any], execution_id: str, behavior_id: str, actions: list[dict[str, Any]], index: int, minute: int) -> None:
         state = dict(agent.get("initial_state") or {})
@@ -1496,7 +1647,8 @@ class Platform:
                 prepared.append((item_index, item, info or {}))
             for item_index, item, info in prepared:
                 action = info["action"]
-                self._reserve_action_costs(agent, action, info["parameters"])
+                if not info.get("no_op"):
+                    self._reserve_action_costs(agent, action, info["parameters"])
             active = {}
             for item_index, item, info in prepared:
                 action_id = item["action_id"]
@@ -1509,6 +1661,7 @@ class Platform:
                     "remaining": info["duration"],
                     "action_instance_id": action_instance_id,
                     "reservation": info.get("reservation", []),
+                    "no_op": bool(info.get("no_op")),
                 }
                 self.store.put_action_instance(action_instance_id, execution_id, agent["id"], action_id, "running", 0, info["duration"], {"parameters": info["parameters"], "target": info["target"], "reservation": info.get("reservation", []), "parallel_group": group}, minute, minute)
                 self.store.append_event("action.started", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "duration_minutes": info["duration"], "parallel_group": group})
@@ -1526,10 +1679,11 @@ class Platform:
             if not action:
                 self._finish_behavior(agent, execution_id, behavior_id, "failed", f"action is not registered: {entry['action_id']}", minute)
                 return
-            self._apply_action_progress(agent, action)
+            if not entry.get("no_op"):
+                self._apply_action_progress(agent, action)
             entry["remaining"] = max(0, int(entry["remaining"]) - 1)
             elapsed = int(entry["duration"]) - int(entry["remaining"])
-            self.store.update_action_instance(entry["action_instance_id"], status="succeeded" if entry["remaining"] == 0 else "running", elapsed_minutes=elapsed, remaining_minutes=entry["remaining"], data={"parameters": entry["parameters"], "target": entry["target"], "reservation": entry.get("reservation", []), "parallel_group": group}, updated_minute=minute)
+            self.store.update_action_instance(entry["action_instance_id"], status="succeeded" if entry["remaining"] == 0 else "running", elapsed_minutes=elapsed, remaining_minutes=entry["remaining"], data={"parameters": entry["parameters"], "target": entry["target"], "reservation": entry.get("reservation", []), "parallel_group": group, "no_op": bool(entry.get("no_op"))}, updated_minute=minute)
             if entry["remaining"] == 0:
                 failure = self._action_failure_reason(agent, action, entry["parameters"], entry.get("target"))
                 if failure:
@@ -1596,8 +1750,11 @@ class Platform:
         if not action:
             self._finish_behavior(agent, execution_id, behavior_id, "failed", "action_missing", minute)
             return
-        self._apply_action_progress(agent, action)
         state = dict(agent.get("initial_state") or {})
+        # An idempotent destination Action still completes at this tick, but
+        # its configured movement costs do not apply when already there.
+        if not state.get("active_action_noop"):
+            self._apply_action_progress(agent, action)
         remaining = max(0, int(state.get("remaining_minutes", 1)) - 1)
         duration = max(1, int(state.get("active_action_duration", state.get("remaining_minutes", 1))))
         state["remaining_minutes"] = remaining
@@ -1605,7 +1762,7 @@ class Platform:
         agent["initial_state"] = state
         action_instance_id = state.get("active_action_instance")
         if action_instance_id:
-            self.store.update_action_instance(action_instance_id, status="succeeded" if remaining == 0 else "running", elapsed_minutes=duration - remaining, remaining_minutes=remaining, data={"parameters": state.get("active_action_parameters", {}), "reservation": state.get("active_action_reservation", [])}, updated_minute=minute)
+            self.store.update_action_instance(action_instance_id, status="succeeded" if remaining == 0 else "running", elapsed_minutes=duration - remaining, remaining_minutes=remaining, data={"parameters": state.get("active_action_parameters", {}), "reservation": state.get("active_action_reservation", []), "no_op": bool(state.get("active_action_noop"))}, updated_minute=minute)
         if remaining > 0:
             self.store.update_bt_instance(execution_id, status="executing", current_node=index, data=bt_data, updated_minute=minute)
             self.store.update_agent(agent["id"], agent)
@@ -1627,6 +1784,7 @@ class Platform:
         state["active_action_duration"] = 0
         state["active_action_parameters"] = {}
         state["active_action_reservation"] = []
+        state["active_action_noop"] = False
         state["active_action_duration"] = 0
         state["action_progress"] = 1.0
         agent["initial_state"] = state
@@ -1791,6 +1949,33 @@ class Platform:
         self.store.put_relationship(agent["id"], target_id, relation_type, data)
         self.store.append_event("relationship.changed", agent["id"], minute, {"target_id": target_id, "relation": relation_type, "delta": delta, "relation_strength": data["relation_strength"]})
 
+    def _queue_story_task(self, event_id: int, event_type: str, actor_id: str, minute: int) -> None:
+        """Create a same-boundary Story Agent barrier for a new discovery."""
+
+        self.store.put_evolution_task(
+            f"story:event:{event_id}", "story", "story", f"story:{event_type}", minute, 0,
+            data={"source_event_id": int(event_id), "source_event_type": event_type, "source_actor_id": actor_id},
+        )
+
+    def _advance_information_progress(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> dict[str, Any] | None:
+        definition = action.get("progress") or {}
+        if not isinstance(definition, dict) or not definition.get("key"):
+            return None
+        key = str(definition["key"])
+        for name, value in parameters.items():
+            key = key.replace("{" + str(name) + "}", str(value))
+        scope = str(definition.get("scope", "agent"))
+        owner = str(self.store.get_meta("world_id", "world")) if scope == "world" else str(agent["id"])
+        progress = self.store.advance_progress(owner, key, float(definition.get("amount", 1) or 1), float(definition.get("required", 1) or 1), minute, {"source_action": action.get("id"), "source_agent": agent["id"]})
+        event_type = "research.completed" if progress["completed"] else "research.progressed"
+        event_id = self.store.append_event(event_type, agent["id"], minute, {"progress_key": key, "progress": progress, "source_action": action.get("id"), "parameters": parameters})
+        # Partial work is retained in SQLite for the next attempt. Story
+        # feedback is a completion boundary, so an incomplete sample does not
+        # pause the world or wake the Story Agent without a new fact.
+        if progress["completed"]:
+            self._queue_story_task(event_id, event_type, agent["id"], minute)
+        return progress
+
     def _record_information_result(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> None:
         """Persist information produced by configured information channels."""
 
@@ -1823,16 +2008,24 @@ class Platform:
                             unlocked.append(behavior_id)
                             agent["unlocked_bt_ids"] = unlocked
                             self.store.append_event("behavior.unlocked", agent["id"], minute, {"behavior_id": behavior_id, "discovery_id": discovery_id, "source": "exploration"})
-                self.store.append_event("exploration.completed", agent["id"], minute, {"area_id": area_id, "result_id": result_id, "discoveries": [str(item.get("id")) for item in discoveries]})
+                event_id = self.store.append_event("exploration.completed", agent["id"], minute, {"area_id": area_id, "result_id": result_id, "discoveries": [str(item.get("id")) for item in discoveries]})
+                self._queue_story_task(event_id, "exploration.completed", agent["id"], minute)
         if source_id:
             source_id = str(source_id)
-            if source_id not in self.store.researched_sources(agent["id"]):
-                source = self.store.get_entity(source_id) if source_id else {}
-                discovery = (source.get("research_discovery") or {}) if isinstance(source, dict) else {}
-                fact_key = str(discovery.get("id") or f"researched:{source_id}")
-                fact = str(discovery.get("fact") or f"Source {source_id} was researched.")
-                self.store.merge_knowledge_fact(agent["id"], fact_key, {"fact": fact, "source_type": "research", "confidence": 0.8, "observed_at": minute})
-                self.store.append_event("research.completed", agent["id"], minute, {"source_id": source_id, "fact": fact})
+            progress = self._advance_information_progress(agent, action, parameters, minute)
+            if progress is None or progress["completed"]:
+                if source_id not in self.store.researched_sources(agent["id"]):
+                    source = self.store.get_entity(source_id) if source_id else {}
+                    discovery = (source.get("research_discovery") or {}) if isinstance(source, dict) else {}
+                    fact_key = str(discovery.get("id") or f"researched:{source_id}")
+                    fact = str(discovery.get("fact") or f"Source {source_id} was researched.")
+                    self.store.merge_knowledge_fact(agent["id"], fact_key, {"fact": fact, "source_type": "research", "confidence": 0.8, "observed_at": minute})
+                    # A configured progress action already emitted the
+                    # completion event; without progress keep the legacy
+                    # single-attempt event contract.
+                    if progress is None:
+                        event_id = self.store.append_event("research.completed", agent["id"], minute, {"source_id": source_id, "fact": fact})
+                        self._queue_story_task(event_id, "research.completed", agent["id"], minute)
         object_id = parameters.get("object_id") or information.get("object_parameter") and parameters.get(information["object_parameter"])
         if object_id and information.get("record_object_discovery", True):
             object_id = str(object_id)
@@ -1847,7 +2040,8 @@ class Platform:
                 agent["id"], fact_key,
                 {"fact": fact, "source_type": "recovery", "source_id": object_id, "confidence": 0.9, "observed_at": minute},
             )
-            self.store.append_event("object.recovered", agent["id"], minute, {"object_id": object_id, "fact": fact})
+            event_id = self.store.append_event("object.recovered", agent["id"], minute, {"object_id": object_id, "fact": fact})
+            self._queue_story_task(event_id, "object.recovered", agent["id"], minute)
         if target_id and topic:
             target_id = str(target_id)
             try:

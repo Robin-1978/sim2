@@ -260,7 +260,7 @@ sequenceDiagram
 
 探索完成后 Platform 先写入 `exploration_result` 和 `exploration.completed` 事件，再按发现范围给执行者写入 `knowledge_fact`；沟通完成后 Platform 写入 `dialogue_exchange`，把说话者提供的内容作为带来源的 testimony 写入听者知识面。听者可以在反思阶段通过 `BeliefUpdateIntent` 调整置信度、标记事实为错误或合并重复知识。Knowledge Fact 不代表世界真相，世界真相只来自 `world` 的实体和事件状态。
 
-情节记忆写入、知识更新、摘要和遗忘都通过 Intent Gateway；检索使用 Agent 权限过滤、当前目标/地点/候选 BT 的任务相关性、实体和地点过滤、重要性、来源可信度和激活次数，并使用 SQLite FTS5。可选的本地 embedding（例如 BGE）只负责重排候选，不替代 Platform 的权限过滤。反思阶段在提交经验前先做重复性检查：默认使用确定性的词项相似度，配置本地 embedding 模型后才启用惰性语义相似度。相似度只返回“可能重复”的质量提示，最终由 Agent 选择写入还是 `wait`，Platform 不自动把不同经历合并。长期记忆不会因为时间单独衰减；显式 recall 会增加激活次数，常用记忆更容易被检索，只有显式 compact/forget 策略才会清理。关系模型属于世界领域的权威状态，记忆模块只保存关系证据和 Agent 的主观认知，不直接决定真实关系数值。决策阶段查询的是与当前目标相关的知识和记忆子集，不获得完整知识库。
+情节记忆写入、知识更新、摘要和遗忘都通过 Intent Gateway；检索使用 Agent 权限过滤、当前目标/地点/候选 BT 的任务相关性、实体和地点过滤、重要性、来源可信度和激活次数，并使用 SQLite FTS5。可选的本地 embedding（例如 BGE）只负责重排候选，不替代 Platform 的权限过滤；词项回退使用 `retrieval_threshold`，启用 embedding 时使用更严格的 `embedding_retrieval_threshold`，低于对应阈值的候选不会进入上下文。Starter Village 的配置保留 `semantic_similarity.backend: onnx`；设置 `enabled: true` 并将 `model` 指向包含 `model_optimized.onnx` 和 `tokenizer.json` 的 BGE 目录，或设置 `SIM2_BGE_MODEL`，即可使用本地 BGE。没有可用模型时自动回退到确定性词项相似度。反思阶段在提交经验前先做重复性检查：相似度只返回“可能重复”的质量提示，最终由 Agent 选择写入还是 `wait`，Platform 不自动把不同经历合并。长期记忆不会因为时间单独衰减；显式 recall 会增加激活次数，常用记忆更容易被检索，只有显式 compact/forget 策略才会清理。关系模型属于世界领域的权威状态，记忆模块只保存关系证据和 Agent 的主观认知，不直接决定真实关系数值。决策阶段查询的是与当前目标相关的知识和记忆子集，不获得完整知识库。
 
 #### 10. LLM 网关模块
 

@@ -267,6 +267,23 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("  Keep an experience only when it is new, durable, and useful for a future decision; otherwise return wait. Write one to three concise sentences, under 500 characters.")
         lines.append("</outcome_review>")
 
+    if role == "story":
+        lines.append("<story_state>")
+        lines.append("  Choose one configured beat whose evidence is present. If none is listed, propose an emergent beat grounded in the latest validated event.")
+        beats = context.get("story_beats") or []
+        for beat in beats[:12]:
+            lines.append("  <story_beat>")
+            for label in ("choice", "summary", "when", "requires", "audience", "impact"):
+                value = beat.get(label)
+                if value:
+                    if isinstance(value, list):
+                        value = "; ".join(str(item) for item in value)
+                    lines.append(f"    {label}: {value}")
+            lines.append("  </story_beat>")
+        if not beats:
+            lines.append("  - no configured continuation is currently unlocked; propose a short evidence-grounded emergent beat or wait")
+        lines.append("</story_state>")
+
     if role == "god":
         lines.append("<world_trends>")
         trends = context.get("world_trends") or {}
@@ -316,7 +333,10 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         "  <executable_behaviors>",
     ])
     behaviors = context.get("executable_behaviors") or context.get("available_behaviors") or []
-    for behavior in behaviors[:5]:
+    # The view already contains only Platform-validated executable BTs. Keep
+    # the complete current catalog visible so the model never has to choose
+    # from a truncated or stale subset.
+    for behavior in behaviors:
         lines.append("    <behavior>")
         for label in ("name", "summary", "purpose", "when", "requires", "target", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "cooldown_minutes", "tags"):
             value = behavior.get(label)

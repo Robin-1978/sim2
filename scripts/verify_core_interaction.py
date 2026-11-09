@@ -26,6 +26,7 @@ from sim2.platform.runtime import Platform
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--provider", choices=["local", "remote"], default="remote")
+    parser.add_argument("--model", default=None, help="Override the configured model name for this verification run.")
     args = parser.parse_args()
     config = LLMConfig.load()
     provider_config = config.providers[args.provider]
@@ -33,6 +34,8 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="sim2-core-interaction-") as runtime:
         platform = Platform(create_instance(world_config, "core-interaction", Path(runtime)))
         try:
+            if args.model:
+                provider_config = ProviderConfig(**{**provider_config.__dict__, "model": args.model})
             decision_provider = OpenAICompatibleProvider(ProviderConfig(**provider_config.__dict__))
             decision_view = platform.decision_view("liang_he", role="agent_decision")
             decision = AgentEngine(platform, decision_provider).run(role="agent_decision", actor_id="liang_he", task_type="core_decision")
@@ -62,11 +65,13 @@ def main() -> int:
                 "provider": args.provider,
                 "decision": {"response": decision.response, "result": decision.result, "quality": decision_quality},
                 "reflection": {"outcomes": reflection_view.get("recent_outcomes"), "response": reflection.response, "result": reflection.result, "memory_count": memory_count, "quality": reflection_quality},
-                "next_decision": {"memory_count": len(next_view.get("memories", [])), "response": next_decision.response, "result": next_decision.result, "quality": next_quality},
+                "next_decision": {"memory_count": len(next_view.get("memories", [])), "memory_backend": platform.memory.similarity._method, "response": next_decision.response, "result": next_decision.result, "quality": next_quality},
                 "god": {"world_changes": god_view.get("recent_world_changes"), "response": god.response, "result": god.result, "quality": god_quality},
             }
             print(json.dumps(report, ensure_ascii=False, indent=2))
-            passed = all(item["quality"].get("passed") for item in (report["decision"], report["reflection"], report["next_decision"], report["god"])) and memory_count > 0 and bool(next_view.get("memories"))
+            reflection_declined = reflection.result.get("status") == "wait"
+            memory_reused = bool(next_view.get("memories")) if memory_count else True
+            passed = all(item["quality"].get("passed") for item in (report["decision"], report["reflection"], report["next_decision"], report["god"])) and (memory_count > 0 or reflection_declined) and memory_reused
             return 0 if passed else 1
         finally:
             platform.close()

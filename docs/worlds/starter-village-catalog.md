@@ -91,7 +91,6 @@
 | `gather_resource` | personal | actor.can_gather<br>resource.available | 144 分钟 | gather_resource | resource_collected | gathering_failed |
 | `eat_food` | universal | actor.alive<br>actor.has_food | 1 分钟 | consume_food(item_id) | ate_food | eating_failed |
 | `get_food` | universal | actor.alive<br>actor.food_withdrawal<br>route.known | 路线分钟 + 10 分钟 | travel_to granary → withdraw_food | ration_received | ration_unavailable |
-| `get_food_here` | universal | actor.alive<br>actor.food_withdrawal<br>location.food_store | 10 分钟 | withdraw_food | ration_received | ration_unavailable |
 | `buy_food` | universal | actor.alive<br>location.market<br>actor.satiety <= 80 | 5 分钟 | buy_food | ration_purchased | ration_unavailable |
 | `recover_caravan_ledger` | personal | 灰林探索发现账册线索后，且 Agent 有调查能力 | 180 分钟 | recover_object(caravan_ledger) | ledger_recovered, trade_route_evidence | recovery_failed, interrupted |
 
