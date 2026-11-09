@@ -118,6 +118,7 @@ class ExperienceSimilarity:
         self._method = "token_jaccard"
         self._embedding_cache: dict[str, Any] = {}
         self._embedding_cache_limit = max(128, int(config.get("embedding_cache_limit", 2048) or 2048))
+        self._embedding_candidate_limit = max(32, int(config.get("embedding_candidate_limit", 256) or 256))
         provider = os.getenv("SIM2_BGE_PROVIDER", "auto").strip().casefold()
         self._providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if provider in {"auto", "cuda", "gpu"} else ["CPUExecutionProvider"]
 
@@ -135,6 +136,7 @@ class ExperienceSimilarity:
             "loaded": bool(self._model),
             "embedding_cache_size": len(self._embedding_cache),
             "embedding_cache_limit": self._embedding_cache_limit,
+            "embedding_candidate_limit": self._embedding_candidate_limit,
             "providers": list(getattr(self._model, "providers", []) or []),
         }
 
@@ -310,10 +312,28 @@ class ExperienceSimilarity:
             return memories[: max(1, int(limit))]
         ranked: list[tuple[float, int, dict[str, Any]]] = []
         texts = [self.memory_text(memory) for memory in memories]
-        semantic_scores = self._semantic_scores(query, texts)
+        self._load_model()
+        # Two-stage retrieval: lexical/metadata recall keeps the candidate set
+        # bounded before the local encoder reranks it.  This is a recall gate,
+        # not a semantic rejection: all candidates remain in the final list
+        # and can still win through lexical/importance signals.
+        candidate_indices = list(range(len(memories)))
+        if self._model and self._method.startswith("embedding_cosine") and len(candidate_indices) > self._embedding_candidate_limit:
+            query_tokens = _tokens(query)
+            scored = []
+            for index, memory in enumerate(memories):
+                memory_tokens = _tokens(texts[index])
+                lexical = len(query_tokens & memory_tokens) / max(1.0, (len(query_tokens) * len(memory_tokens)) ** 0.5) if query_tokens and memory_tokens else 0.0
+                stable = lexical + 0.08 * float(memory.get("importance", 0.5) or 0) + 0.05 * float(memory.get("salience", 0.5) or 0)
+                scored.append((stable, index))
+            scored.sort(reverse=True)
+            candidate_indices = [index for _, index in scored[: self._embedding_candidate_limit]]
+        candidate_texts = [texts[index] for index in candidate_indices]
+        candidate_scores = self._semantic_scores(query, candidate_texts)
+        semantic_scores = {index: candidate_scores[position] for position, index in enumerate(candidate_indices)} if candidate_scores is not None else {}
         for index, memory in enumerate(memories):
             text = self.memory_text(memory)
-            semantic = semantic_scores[index] if semantic_scores is not None else self.score(query, text)
+            semantic = semantic_scores.get(index, 0.0) if candidate_scores is not None else self.score(query, text)
             query_tokens, memory_tokens = _tokens(query), _tokens(text)
             lexical = len(query_tokens & memory_tokens) / max(1.0, (len(query_tokens) * len(memory_tokens)) ** 0.5) if query_tokens and memory_tokens else 0.0
             quality = 0.55 * semantic + 0.20 * lexical
