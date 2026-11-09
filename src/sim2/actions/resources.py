@@ -101,15 +101,21 @@ class ResourceLedger:
 
     def _change_world_resource(self, entity_id: str, delta: float) -> None:
         entity = self.store.get_entity(entity_id)
+        before = self._world_resource(entity_id)
         if isinstance(entity.get("amount"), (int, float)):
             entity["amount"] = float(entity["amount"]) + delta
             self.store.put_entity(entity_id, entity["entity_type"], entity["name"], {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}})
-            return
-        state = dict(entity.get("initial_state") or {})
-        key = "quantity" if isinstance(state.get("quantity"), (int, float)) else "amount"
-        state[key] = float(state.get(key, 0)) + delta
-        entity["initial_state"] = state
-        self.store.put_entity(entity_id, entity["entity_type"], entity["name"], {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}})
+        else:
+            state = dict(entity.get("initial_state") or {})
+            key = "quantity" if isinstance(state.get("quantity"), (int, float)) else "amount"
+            state[key] = float(state.get(key, 0)) + delta
+            entity["initial_state"] = state
+            self.store.put_entity(entity_id, entity["entity_type"], entity["name"], {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}})
+        after = self._world_resource(entity_id)
+        self.store.append_event(
+            "resource.changed", None, int(self.store.get_meta("world_minute", 0)),
+            {"resource_id": entity_id, "delta": float(delta), "before": (before or {}).get("amount"), "after": (after or {}).get("amount"), "source": "reservation_or_release"},
+        )
 
     def release(self, agent: dict[str, Any], reservations: list[dict[str, Any]]) -> None:
         """Return resources held by a paused action that is cancelled or fails."""

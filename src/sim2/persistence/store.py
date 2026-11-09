@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS memory_item (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   agent_id TEXT NOT NULL,
   memory_type TEXT NOT NULL,
+  memory_tier TEXT NOT NULL DEFAULT 'long_term',
   data_json TEXT NOT NULL,
   importance REAL NOT NULL DEFAULT 0.5,
   salience REAL NOT NULL DEFAULT 0.5,
@@ -194,6 +195,15 @@ class WorldStore:
         self.connection.execute("PRAGMA journal_mode = WAL")
         self.connection.execute("PRAGMA busy_timeout = 5000")
         self.connection.executescript(SCHEMA)
+        # The current schema is used for new instances.  Keep an additive
+        # compatibility check so a previously opened instance gains the
+        # explicit short/long memory tier without rewriting its records.
+        columns = {row["name"] for row in self.connection.execute("PRAGMA table_info(memory_item)").fetchall()}
+        if "memory_tier" not in columns:
+            self.connection.execute("ALTER TABLE memory_item ADD COLUMN memory_tier TEXT NOT NULL DEFAULT 'long_term'")
+            self.connection.execute(
+                "UPDATE memory_item SET memory_tier=CASE WHEN memory_type IN ('experience','summary','belief','goal','knowledge','capability') THEN 'long_term' ELSE 'short_term' END"
+            )
         self.connection.commit()
 
     @contextmanager
@@ -589,6 +599,121 @@ class WorldStore:
         ).fetchall()
         return [{"event_id": row["event_id"], "event_type": row["event_type"], "actor_id": row["actor_id"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
 
+    @staticmethod
+    def _resource_amount(entity: dict[str, Any]) -> float | None:
+        state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
+        value = entity.get("amount", state.get("quantity", state.get("amount")))
+        return float(value) if isinstance(value, (int, float)) else None
+
+    def world_trends(self, *, current_minute: int | None = None) -> dict[str, Any]:
+        """Build compact weekly/monthly aggregates for the world-level Agent.
+
+        The God view needs evidence of change, not another unbounded event
+        dump.  Aggregates are derived from the event log and current SQLite
+        projections; no time-decay score is applied to character memory.
+        """
+
+        end = int(self.get_meta("world_minute", 0) if current_minute is None else current_minute)
+        baseline = self.get_meta("resource_baseline", {}) or {}
+        resources: list[dict[str, Any]] = []
+        for item in self.entities_of_type("resource"):
+            try:
+                entity = self.get_entity(str(item["id"]))
+            except KeyError:
+                continue
+            amount = self._resource_amount(entity)
+            if amount is None:
+                continue
+            initial = baseline.get(str(item["id"]))
+            row = {"name": entity.get("name", item["id"]), "current": round(amount, 3)}
+            if isinstance(initial, (int, float)):
+                row["change_from_start"] = round(amount - float(initial), 3)
+            resources.append(row)
+
+        def aggregate(window: int) -> dict[str, Any]:
+            start = max(0, end - int(window))
+            rows = self.connection.execute(
+                "SELECT event_type,data_json FROM event_log WHERE world_minute>? AND world_minute<=?",
+                (start, end),
+            ).fetchall()
+            resource_regenerated: dict[str, float] = {}
+            resource_delta: dict[str, float] = {}
+            relationship_delta: dict[str, float] = {}
+            relationship_changes: dict[str, int] = {}
+            goal_updates = 0
+            goal_progress: dict[str, int] = {}
+            behavior_completed = behavior_failed = 0
+            for row in rows:
+                event_type = str(row["event_type"])
+                data = json.loads(row["data_json"])
+                if event_type == "resource.regenerated":
+                    key = str(data.get("resource_id", "resource"))
+                    resource_regenerated[key] = resource_regenerated.get(key, 0.0) + float(data.get("amount", 0) or 0)
+                elif event_type == "resource.changed":
+                    key = str(data.get("resource_id", "resource"))
+                    resource_delta[key] = resource_delta.get(key, 0.0) + float(data.get("delta", 0) or 0)
+                elif event_type == "relationship.changed":
+                    relation = str(data.get("relation", "related"))
+                    relationship_delta[relation] = relationship_delta.get(relation, 0.0) + float(data.get("delta", 0) or 0)
+                    relationship_changes[relation] = relationship_changes.get(relation, 0) + 1
+                elif event_type == "goal.updated":
+                    goal_updates += 1
+                elif event_type == "behavior.completed":
+                    behavior_completed += 1
+                    expected = ((data.get("outcome") or {}).get("expected") or {})
+                    for tag in expected.get("goal_tags", []) or []:
+                        goal_progress[str(tag)] = goal_progress.get(str(tag), 0) + 1
+                elif event_type in {"behavior.failed", "behavior.interrupted"}:
+                    behavior_failed += 1
+            current_relationships = self.list_relationships()
+            relation_current: dict[str, dict[str, float]] = {}
+            for item in current_relationships:
+                relation = str(item.get("type", "related"))
+                value = float(item.get("relation_strength", item.get("trust", 0)) or 0)
+                bucket = relation_current.setdefault(relation, {"total": 0.0, "count": 0.0})
+                bucket["total"] += value
+                bucket["count"] += 1
+            relationships = []
+            for relation, values in sorted(relation_current.items()):
+                current_average = values["total"] / max(1.0, values["count"])
+                delta = relationship_delta.get(relation, 0.0)
+                changes = relationship_changes.get(relation, 0)
+                if not changes and abs(delta) < 1e-9 and abs(current_average) < 1e-9:
+                    continue
+                relationships.append({
+                    "relation": relation,
+                    "current_average": round(current_average, 4),
+                    "delta": round(delta, 4),
+                    "changes": changes,
+                })
+            return {
+                "window_minutes": int(window),
+                "from_minute": start,
+                "to_minute": end,
+                "resources_regenerated": {key: round(value, 3) for key, value in sorted(resource_regenerated.items())},
+                "resource_deltas": {key: round(value, 3) for key, value in sorted(resource_delta.items())},
+                "relationship_trends": relationships,
+                "goal_trends": {
+                    "goal_updates": goal_updates,
+                    "completed_behaviors": behavior_completed,
+                    "failed_or_interrupted_behaviors": behavior_failed,
+                    "progress_by_tag": dict(sorted(goal_progress.items())),
+                },
+            }
+
+        calendar = (self.get_meta("setting", {}) or {}).get("calendar", {}) if isinstance(self.get_meta("setting", {}), dict) else {}
+        week_minutes = max(1, int(calendar.get("minutes_per_week", calendar.get("minutes_per_day", 1440) * 7) or 10080))
+        month_minutes = max(week_minutes, int(calendar.get("minutes_per_month", calendar.get("minutes_per_day", 1440) * 30) or 43200))
+        agents = self.list_agents()
+        active_goals = [str(agent.get("ultimate_goal", "")).strip() for agent in agents if str(agent.get("ultimate_goal", "")).strip()]
+        return {
+            "as_of_minute": end,
+            "current_resources": sorted(resources, key=lambda item: str(item.get("name", ""))),
+            "active_goal_count": len(active_goals),
+            "weekly": aggregate(week_minutes),
+            "monthly": aggregate(month_minutes),
+        }
+
     def create_intent(self, intent_id: str, actor_id: str, intent_type: str, data: dict[str, Any], world_minute: int) -> None:
         self.connection.execute(
             "INSERT INTO intent(intent_id,actor_id,intent_type,status,data_json,created_minute) VALUES (?,?,?,?,?,?)",
@@ -626,14 +751,21 @@ class WorldStore:
         self.connection.executemany("UPDATE agent_state SET data_json=? WHERE id=?", rows)
         self.connection.executemany("UPDATE entity SET data_json=? WHERE id=?", rows)
 
-    def put_memory(self, agent_id: str, memory_type: str, data: dict[str, Any]) -> int:
+    def put_memory(self, agent_id: str, memory_type: str, data: dict[str, Any], *, tier: str | None = None) -> int:
+        memory_type = str(memory_type)
+        tier = str(tier or data.get("memory_tier") or ("long_term" if memory_type in {"experience", "summary", "belief", "goal", "knowledge", "capability"} else "short_term"))
+        if tier not in {"short_term", "long_term"}:
+            raise ValueError("memory tier must be short_term or long_term")
+        # The tier has its own indexed column; do not duplicate it inside the
+        # model-facing JSON payload.
+        data = {key: value for key, value in data.items() if key != "memory_tier"}
         encoded = json_dumps(data)
         importance = max(0.0, min(1.0, float(data.get("importance", 0.5))))
         salience = max(0.0, min(1.0, float(data.get("salience", 0.5))))
         world_minute = int(self.get_meta("world_minute", 0))
         cur = self.connection.execute(
-            "INSERT INTO memory_item(agent_id,memory_type,data_json,importance,salience,access_count,last_access_minute) VALUES (?,?,?,?,?,?,?)",
-            (agent_id, memory_type, encoded, importance, salience, 1, world_minute),
+            "INSERT INTO memory_item(agent_id,memory_type,memory_tier,data_json,importance,salience,access_count,last_access_minute) VALUES (?,?,?,?,?,?,?,?)",
+            (agent_id, memory_type, tier, encoded, importance, salience, 1, world_minute),
         )
         memory_id = int(cur.lastrowid)
         self.connection.execute("INSERT INTO memory_fts(agent_id,content,memory_id) VALUES (?,?,?)", (agent_id, encoded, str(memory_id)))
@@ -712,14 +844,16 @@ class WorldStore:
             "average_dynamic_chars": round(float(prefixes["avg_dynamic_chars"] or 0), 1),
         }
 
-    def list_memories(self, agent_id: str, *, limit: int = 8, query: str = "", touch: bool = False) -> list[dict[str, Any]]:
+    def list_memories(self, agent_id: str, *, limit: int = 8, query: str = "", tier: str | None = None, touch: bool = False) -> list[dict[str, Any]]:
         """Return the agent's newest memories, optionally matching plain text.
 
         Memory retrieval is intentionally small and role-scoped.  The full
         event log and other agents' memories never enter an AgentView.
         """
 
-        limit = max(1, min(int(limit), 50))
+        limit = max(1, min(int(limit), 1000))
+        tier_clause = " AND memory_tier=?" if tier in {"short_term", "long_term"} else ""
+        tier_args: tuple[Any, ...] = (tier,) if tier in {"short_term", "long_term"} else ()
         if query.strip():
             try:
                 fts_rows = self.connection.execute(
@@ -730,25 +864,25 @@ class WorldStore:
                 if ids:
                     placeholders = ",".join("?" for _ in ids)
                     rows = self.connection.execute(
-                        f"SELECT id,memory_type,data_json,importance,salience,access_count,last_access_minute FROM memory_item WHERE agent_id=? AND id IN ({placeholders}) ORDER BY (importance + salience + MIN(access_count, 100) * 0.01) DESC, id DESC LIMIT ?",
-                        (agent_id, *ids, limit),
+                        f"SELECT id,memory_type,memory_tier,data_json,importance,salience,access_count,last_access_minute FROM memory_item WHERE agent_id=?{tier_clause} AND id IN ({placeholders}) ORDER BY (importance + salience + MIN(access_count, 100) * 0.01) DESC, id DESC LIMIT ?",
+                        (agent_id, *tier_args, *ids, limit),
                     ).fetchall()
                 else:
                     rows = []
             except sqlite3.OperationalError:
                 rows = self.connection.execute(
-                    "SELECT id,memory_type,data_json,importance,salience,access_count,last_access_minute FROM memory_item WHERE agent_id=? AND data_json LIKE ? ORDER BY (importance + salience + MIN(access_count, 100) * 0.01) DESC, id DESC LIMIT ?",
-                    (agent_id, f"%{query}%", limit),
+                    f"SELECT id,memory_type,memory_tier,data_json,importance,salience,access_count,last_access_minute FROM memory_item WHERE agent_id=?{tier_clause} AND data_json LIKE ? ORDER BY (importance + salience + MIN(access_count, 100) * 0.01) DESC, id DESC LIMIT ?",
+                    (agent_id, *tier_args, f"%{query}%", limit),
                 ).fetchall()
         else:
             rows = self.connection.execute(
-                "SELECT id,memory_type,data_json,importance,salience,access_count,last_access_minute FROM memory_item WHERE agent_id=? ORDER BY (importance + salience + MIN(access_count, 100) * 0.01) DESC, id DESC LIMIT ?",
-                (agent_id, limit),
+                f"SELECT id,memory_type,memory_tier,data_json,importance,salience,access_count,last_access_minute FROM memory_item WHERE agent_id=?{tier_clause} ORDER BY (importance + salience + MIN(access_count, 100) * 0.01) DESC, id DESC LIMIT ?",
+                (agent_id, *tier_args, limit),
             ).fetchall()
         result = []
         for row in rows:
             value = json.loads(row["data_json"])
-            result.append({"id": row["id"], "type": row["memory_type"], "importance": row["importance"], "salience": row["salience"], "uses": row["access_count"], "last_access_minute": row["last_access_minute"], **value})
+            result.append({"id": row["id"], "type": row["memory_type"], "tier": row["memory_tier"], "importance": row["importance"], "salience": row["salience"], "uses": row["access_count"], "last_access_minute": row["last_access_minute"], **value})
         if result and touch:
             was_in_transaction = self.connection.in_transaction
             self.connection.executemany(
@@ -766,6 +900,20 @@ class WorldStore:
         self.connection.execute(f"DELETE FROM memory_fts WHERE agent_id=? AND memory_id IN ({','.join('?' for _ in memory_ids)})", (agent_id, *(str(item) for item in memory_ids)))
         cur = self.connection.execute(f"DELETE FROM memory_item WHERE agent_id=? AND id IN ({placeholders})", (agent_id, *memory_ids))
         return int(cur.rowcount)
+
+    def touch_memories(self, memory_ids: list[int]) -> None:
+        """Record retrieval for exactly the rows exposed to an Agent."""
+
+        ids = [int(item) for item in memory_ids if item]
+        if not ids:
+            return
+        was_in_transaction = self.connection.in_transaction
+        self.connection.executemany(
+            "UPDATE memory_item SET access_count=access_count+1,last_access_minute=? WHERE id=?",
+            [(int(self.get_meta("world_minute", 0)), item) for item in ids],
+        )
+        if not was_in_transaction:
+            self.connection.commit()
 
 
 def config_hash(config_dir: Path) -> str:

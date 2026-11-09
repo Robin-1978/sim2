@@ -9,6 +9,7 @@ from ..actions.resources import ResourceLedger
 from ..actions.targets import TargetResolver
 from ..agents.tools import tools_for_role
 from ..behavior.estimator import BehaviorDurationEstimator
+from ..memory.service import MemoryService
 from ..persistence.store import WorldStore
 from ..world.drives import DriveCalculator
 from ..world.navigation import nearest_location_with_tag, nearest_resource_node, nearest_safe_location, reachable_locations
@@ -97,6 +98,20 @@ class AgentViewCompiler:
         self.conditions = ConditionEngine()
         self.resources = ResourceLedger(store)
         self.targets = TargetResolver(store)
+        self.memory = MemoryService(store)
+
+    @staticmethod
+    def _target_parameter_keys(behavior: dict[str, Any]) -> set[str]:
+        """Return target fields that a BT expects the decision to supply."""
+
+        keys: set[str] = set()
+        for node in behavior.get("nodes", []) or []:
+            if node.get("type") != "action":
+                continue
+            for key, value in (node.get("parameters") or {}).items():
+                if isinstance(value, str) and value.startswith("context.") and value.removeprefix("context.") in {"target_id", "patient_id", "protected_target_id", "counterparty_id", "listener_id"}:
+                    keys.add(str(key))
+        return keys
 
     def _world_time(self, minute: int | None = None) -> dict[str, Any]:
         """Expose calendar meaning without leaking the internal tick counter."""
@@ -305,7 +320,12 @@ class AgentViewCompiler:
                 current_location = self.store.get_entity(location_id)
             except KeyError:
                 pass
-        default_target = self.targets.default_visible_agent(agent)
+        participants = self.targets.visible_agents(agent)
+        # A single visible participant is safe to infer. With multiple
+        # participants, one candidate is used only to validate the BT; the
+        # Agent must submit an explicit visible target.
+        default_target = participants[0] if len(participants) == 1 else None
+        validation_target = default_target or (participants[0] if participants else None)
         for bt_id in catalog_ids:
             bt = bt_defs.get(bt_id)
             if not bt:
@@ -323,7 +343,7 @@ class AgentViewCompiler:
                 "researched_sources": researched_sources,
                 "inventory": agent.get("inventory", {}) or {},
                 "food_items": rules.get("food_items", []) or [],
-                "target": {"id": default_target.get("id"), "available": True} if default_target else {"available": False},
+                "target": {"id": validation_target.get("id"), "available": True} if validation_target else {"available": False},
             }
             if any(not self.conditions.evaluate(str(predicate), agent=agent, target=condition_context["target"], context=condition_context, world=self.store.get_meta("world_properties", {}) or {}) for predicate in bt.get("entry_conditions", []) or []):
                 continue
@@ -346,7 +366,7 @@ class AgentViewCompiler:
                 if not action:
                     continue
                 simulated_state = simulated_agent.setdefault("initial_state", {})
-                parameters = self._view_action_parameters(node.get("parameters") or {}, simulated_state, simulated_agent.get("inventory", {}) or {}, rules.get("food_items", []) or [], safe_location_id=safe_location_id, resource_node=resource_node, health_location_id=health_location_id, default_target_id=(default_target or {}).get("id"))
+                parameters = self._view_action_parameters(node.get("parameters") or {}, simulated_state, simulated_agent.get("inventory", {}) or {}, rules.get("food_items", []) or [], safe_location_id=safe_location_id, resource_node=resource_node, health_location_id=health_location_id, default_target_id=(validation_target or {}).get("id"))
                 action_minutes = estimator._action_minutes(action, parameters, simulated_state.get("location_id"))
                 if not self._action_available(simulated_agent, action, parameters, simulated_location, rules.get("food_items", []) or [], action_minutes):
                     action_unavailable = True
@@ -370,6 +390,9 @@ class AgentViewCompiler:
             if action_unavailable:
                 continue
             target_text = "Platform resolves permitted targets from the current view."
+            target_keys = self._target_parameter_keys(bt)
+            target_required = bool(target_keys) and len(participants) > 1
+            target_options = [{"name": str(item.get("name", item.get("id", "participant")))} for item in participants[:8]]
             if bt_id == "recover_at_safe_location" and safe_location_id:
                 try:
                     target_text = f"Configured safe location: {self.store.get_entity(safe_location_id).get('name', safe_location_id)}."
@@ -385,14 +408,12 @@ class AgentViewCompiler:
                     target_text = f"Resource node: {self.store.get_entity(resource_node['location_id']).get('name', resource_node['location_id'])}."
                 except KeyError:
                     target_text = "Configured resource node is available."
-            elif any(
-                node.get("type") == "action"
-                and any(value == "context.target_id" for value in (node.get("parameters") or {}).values())
-                for node in bt.get("nodes", []) or []
-            ):
-                participants = self.targets.visible_agents(agent)
-                names = ", ".join(str(item.get("name", item.get("id"))) for item in participants[:5])
-                target_text = f"Nearby participant: {names}. Platform uses the first visible participant if no target is supplied."
+            elif target_keys and participants:
+                names = ", ".join(str(item.get("name", item.get("id"))) for item in participants[:8])
+                if target_required:
+                    target_text = f"Choose one participant explicitly: {names}. Platform will reject a missing or ambiguous target."
+                else:
+                    target_text = f"Participant: {names}. Platform uses this participant unless another permitted target is supplied."
             available.append({
                 "ref": f"behavior:{bt_id}",
                 "registration": "platform_validated",
@@ -404,6 +425,8 @@ class AgentViewCompiler:
                 "when": bt.get("when") or bt.get("entry_descriptions") or [_predicate_text(item) for item in bt.get("entry_conditions", [])] or ["The current goal makes this useful."],
                 "requires": bt.get("requirements") or bt.get("requirement_descriptions") or [_predicate_text(item) for item in bt.get("entry_conditions", [])] or ["Platform confirms all step requirements."],
                 "target": target_text,
+                "target_required": target_required,
+                "target_options": target_options if target_required else [],
                 "steps": steps[:5],
                 "time": f"{estimator.behavior_minutes(bt_id, {'safe_location_id': safe_location_id} if safe_location_id else {}, location_id)} minutes",
                 "cost": list(dict.fromkeys(costs))[:6] or ["Costs are defined by the selected steps."],
@@ -436,6 +459,25 @@ class AgentViewCompiler:
         needs = agent.get("needs", {})
         drives = DriveCalculator(self.store.get_meta("rules", {})).calculate(agent)
         drive_model = (self.store.get_meta("rules", {}) or {}).get("motivation_model", {})
+        memory_query_parts = [str(agent.get("ultimate_goal", ""))]
+        if current_location:
+            memory_query_parts.append(str(current_location.get("name", location_id)))
+        for drive in drives[:3]:
+            memory_query_parts.extend([str(drive.get("id", "")), str(drive.get("reason", ""))])
+        for behavior in available[:8]:
+            memory_query_parts.extend([
+                str(behavior.get("choice", "")),
+                str(behavior.get("purpose", "")),
+                " ".join(str(item) for item in (behavior.get("goal_tags") or [])),
+                " ".join(str(item) for item in (behavior.get("drive_tags") or [])),
+            ])
+        memory_query = " ".join(part for part in memory_query_parts if part).strip()
+        # Compiling a snapshot is read-only. Explicit ``recall_memory`` calls
+        # touch rows so opening a new decision view cannot reorder a just-written
+        # experience by incrementing its predecessor's access count.
+        memories = self.memory.retrieve(agent_id, query=memory_query, limit=6, touch=False)
+        short_term_memories = [item for item in memories if item.get("tier") == "short_term"]
+        long_term_memories = [item for item in memories if item.get("tier") == "long_term"]
         known_facts = [self._humanize_fact(item) for item in self.store.list_knowledge_facts(agent_id, limit=8)]
         if not known_facts:
             known_facts = [{"fact": self._humanize_fact(fact), "source_type": "config_seed", "confidence": 1.0} for fact in agent.get("knowledge_seed", [])[:8]]
@@ -449,7 +491,6 @@ class AgentViewCompiler:
                     relationship["person"] = self.store.get_entity(person_id).get("name", person_id)
                 except KeyError:
                     pass
-        memories = self.store.list_memories(agent_id, limit=5)
         actor_events = self.store.recent_events_for_actor(agent_id, limit=8)
         recent_actions = actor_events[:2]
         recent_outcomes = self.store.recent_outcomes_for_actor(agent_id, limit=3)
@@ -489,7 +530,7 @@ class AgentViewCompiler:
             "goal_tags": agent.get("goal_tags", []),
             "capability_history": self.store.list_capability_progress(agent_id, limit=5),
             "needs": needs, "inventory": agent.get("inventory", {}), "injuries": state.get("injuries", []),
-            "drives": drives[:5], "drive_model": drive_model, "observation": {"facts": observation_facts[:6], "source": "current_state"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "memories": memories, "recent_actions": recent_actions, "recent_outcomes": recent_outcomes, "direct_relationships": relationships,
+            "drives": drives[:5], "drive_model": drive_model, "observation": {"facts": observation_facts[:6], "source": "current_state"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "memories": memories, "short_term_memories": short_term_memories, "long_term_memories": long_term_memories, "memory_query": memory_query, "recent_actions": recent_actions, "recent_outcomes": recent_outcomes, "direct_relationships": relationships,
             "active_task": {"bt": active_behavior.get("summary") or ("in progress" if active_behavior_id else None), "action": active_action.get("description") or (_label(str(active_action_id)) if active_action_id else None), "remaining_minutes": state.get("remaining_minutes", 0)},
             "open_trade_offers": self._trade_offer_view(agent_id),
             "available_actions": available_actions if role == "agent_reflection" else [],
@@ -606,6 +647,7 @@ class AgentViewCompiler:
         all_events = self.store.recent_events(limit=20)
         recent_world_changes = self.store.recent_world_change_events(limit=6)
         recent_agent_outcomes = self.store.recent_behavior_outcomes(limit=6)
+        world_trends = self.store.world_trends(current_minute=int(minute))
         bt_defs = {item["id"]: item for item in self.store.get_definitions("bt_def")}
         for outcome in recent_agent_outcomes:
             behavior = bt_defs.get(str(outcome.get("behavior_id", "")), {})
@@ -642,6 +684,7 @@ class AgentViewCompiler:
             "recent_actions": recent_world_events,
             "recent_world_changes": recent_world_changes,
             "recent_agent_outcomes": recent_agent_outcomes,
+            "world_trends": world_trends,
             "direct_relationships": [],
             "active_task": {"bt": None, "action": None, "remaining_minutes": 0},
             "executable_behaviors": [],

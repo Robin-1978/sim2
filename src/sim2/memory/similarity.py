@@ -15,7 +15,16 @@ from typing import Any
 
 
 def _tokens(text: str) -> set[str]:
-    return {token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 1}
+    """Return small multilingual lexical units for the no-model fallback."""
+
+    lowered = text.casefold()
+    tokens = {token for token in re.findall(r"[a-z0-9]+", lowered) if len(token) > 1}
+    # A character fallback keeps Chinese/Japanese/Korean memory usable when
+    # the optional embedding model is not installed.  Bigrams reduce matches
+    # on isolated common characters while remaining deterministic.
+    cjk = "".join(re.findall(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]", lowered))
+    tokens.update(cjk[index:index + 2] for index in range(max(0, len(cjk) - 1)))
+    return tokens
 
 
 @dataclass(frozen=True)
@@ -72,3 +81,32 @@ class ExperienceSimilarity:
             if score > best.score:
                 best = SimilarityMatch(score, self._method, int(memory["id"]) if memory.get("id") else None)
         return best
+
+    @staticmethod
+    def memory_text(memory: dict[str, Any]) -> str:
+        values = [memory.get("summary"), memory.get("lesson"), memory.get("fact"), memory.get("topic"), memory.get("message"), memory.get("location"), memory.get("behavior"), memory.get("goal"), memory.get("goal_tags")]
+        return " ".join(str(value) for value in values if value not in (None, ""))
+
+    def rank(self, query: str, memories: list[dict[str, Any]], *, limit: int = 8) -> list[dict[str, Any]]:
+        """Rank memories by task-conditioned relevance plus stable quality.
+
+        Importance and prior use break ties, but they cannot outrank a strong
+        semantic match.  There is deliberately no age decay for durable
+        memory: a useful lesson remains retrievable until Platform compaction
+        or an explicit revision removes it.
+        """
+
+        if not query.strip():
+            return memories[: max(1, int(limit))]
+        ranked: list[tuple[float, int, dict[str, Any]]] = []
+        for index, memory in enumerate(memories):
+            text = self.memory_text(memory)
+            semantic = self.score(query, text)
+            lexical = len(_tokens(query) & _tokens(text)) / max(1, len(_tokens(query) | _tokens(text)))
+            quality = 0.55 * semantic + 0.15 * lexical
+            quality += 0.12 * float(memory.get("importance", 0.5) or 0)
+            quality += 0.10 * float(memory.get("salience", 0.5) or 0)
+            quality += 0.08 * min(1.0, float(memory.get("uses", 0) or 0) / 10.0)
+            ranked.append((quality, -index, memory))
+        ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return [item[2] for item in ranked[: max(1, int(limit))]]

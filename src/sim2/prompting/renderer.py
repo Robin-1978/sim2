@@ -220,8 +220,18 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     lines.extend(["  <knowledge_and_memory>"])
     facts = context.get("known_facts") or []
     lines.extend([f"    fact: {_fact_line(item)}" for item in facts[:8]] or ["    fact: none relevant"])
-    memories = context.get("memories") or []
-    lines.extend([f"    {_memory_line(item)}" for item in memories[:5]] or ["    memory: none recent"])
+    short_memories = context.get("short_term_memories")
+    long_memories = context.get("long_term_memories")
+    if short_memories is None and long_memories is None:
+        memories = context.get("memories") or []
+        short_memories = [item for item in memories if item.get("tier") == "short_term"]
+        long_memories = [item for item in memories if item.get("tier") != "short_term"]
+    lines.append("    <short_term_memory>")
+    lines.extend([f"      {_memory_line(item)}" for item in (short_memories or [])[:3]] or ["      memory: none"])
+    lines.append("    </short_term_memory>")
+    lines.append("    <long_term_memory>")
+    lines.extend([f"      {_memory_line(item)}" for item in (long_memories or [])[:4]] or ["      memory: none"])
+    lines.append("    </long_term_memory>")
     lines.append("  </knowledge_and_memory>")
     lines.append("<recent_actions>")
     recent_actions = context.get("recent_actions") or []
@@ -258,6 +268,22 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("</outcome_review>")
 
     if role == "god":
+        lines.append("<world_trends>")
+        trends = context.get("world_trends") or {}
+        current_resources = trends.get("current_resources") or []
+        lines.append("  Current resources: " + ("; ".join(f"{item.get('name', 'resource')}={item.get('current', 'unknown')}" for item in current_resources[:8]) if current_resources else "none") + ".")
+        for period in ("weekly", "monthly"):
+            item = trends.get(period) or {}
+            goal = item.get("goal_trends") or {}
+            relationship = item.get("relationship_trends") or []
+            lines.append(
+                f"  {period}: resource regeneration={_plain(item.get('resources_regenerated') or {})}; "
+                f"resource net change={_plain(item.get('resource_deltas') or {})}; "
+                f"relationship change={_plain(relationship) if relationship else 'none'}; "
+                f"goal progress={_plain(goal.get('progress_by_tag') or {})}; "
+                f"completed={goal.get('completed_behaviors', 0)}, failed_or_interrupted={goal.get('failed_or_interrupted_behaviors', 0)}."
+            )
+        lines.append("</world_trends>")
         lines.append("<world_outcomes>")
         changes = context.get("recent_world_changes") or []
         if changes:

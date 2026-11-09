@@ -335,6 +335,27 @@ class Platform:
             })
         bt = available_defs[behavior_id]
         runtime_parameters = dict(normalized_parameters)
+        target_keys = self.view._target_parameter_keys(bt)
+        visible_participants = self.targets.visible_agents(agent)
+        supplied_target = any(runtime_parameters.get(key) for key in target_keys)
+        if target_keys and not supplied_target:
+            visible_name = next((intent.target.get(key) for key in ("name", "entity", "participant", "target") if isinstance(intent.target, dict) and intent.target.get(key)), None)
+            if visible_name:
+                canonical = self.targets.canonical_id(visible_name)
+                if canonical is None or not any(str(item.get("id")) == str(canonical) for item in visible_participants):
+                    return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+                        "status": "rejected", "message": "Choose one exact visible participant from the current target list.", "failed_check": "target_choice", "retryable": True,
+                        "available_targets": [str(item.get("name", "participant")) for item in visible_participants],
+                    })
+                runtime_parameters[next(iter(target_keys))] = canonical
+                normalized_parameters[next(iter(target_keys))] = canonical
+            elif len(visible_participants) > 1:
+                return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+                    "status": "rejected", "message": "This behavior requires one explicit visible participant.", "failed_check": "target_required", "retryable": True,
+                    "available_targets": [str(item.get("name", "participant")) for item in visible_participants],
+                })
+            elif len(visible_participants) == 1:
+                runtime_parameters[next(iter(target_keys))] = visible_participants[0]["id"]
         if behavior_id == "recover_at_safe_location":
             safe_location_id = nearest_safe_location(self.store, state.get("location_id"))
             if safe_location_id:
@@ -348,15 +369,7 @@ class Platform:
             health_location_id = nearest_location_with_tag(self.store, state.get("location_id"), {"health", "clinic"})
             if health_location_id:
                 runtime_parameters.setdefault("health_location_id", health_location_id)
-        uses_context_target = any(
-            node.get("type") == "action"
-            and any(value == "context.target_id" for value in (node.get("parameters") or {}).values())
-            for node in bt.get("nodes", []) or []
-        )
-        if uses_context_target and not any(runtime_parameters.get(key) for key in ("target_id", "patient_id", "counterparty_id", "listener_id")):
-            default_target = self.targets.default_visible_agent(agent)
-            if default_target:
-                runtime_parameters["target_id"] = default_target["id"]
+        intent_data["parameters"] = {**normalized_parameters, **runtime_parameters}
         entry_context = self._behavior_condition_context(agent, runtime_parameters, intent.target)
         entry_target = {**runtime_parameters, **intent.target, **(entry_context.get("target") or {})}
         for predicate in bt.get("entry_conditions", []) or []:
@@ -503,7 +516,19 @@ class Platform:
             return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Confidence must be between 0 and 1.", "failed_check": "confidence", "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
-            self.store.get_agent(actor_id)
+            agent = self.store.get_agent(actor_id)
+            state = agent.get("initial_state", {}) or {}
+            location_name = ""
+            try:
+                location_name = str(self.store.get_entity(str(state.get("location_id"))).get("name", "")) if state.get("location_id") else ""
+            except KeyError:
+                location_name = ""
+            data.update({
+                "location": location_name,
+                "goal": str(agent.get("ultimate_goal", "")),
+                "goal_tags": list(agent.get("goal_tags", []) or []),
+                "behavior": str(event_ref or ""),
+            })
             similarity = self.memory.experience_match(actor_id, summary)
             if similarity["duplicate"]:
                 result = {

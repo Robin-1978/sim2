@@ -933,6 +933,73 @@ def test_memory_fts_and_bounded_compaction(tmp_path: Path):
         platform.close()
 
 
+def test_memory_has_short_and_long_tiers_and_task_conditioned_recall(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "memory-tier-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            platform.store.put_memory(
+                "lu_xingzhou", "testimony",
+                {"summary": "The north gate watch saw fresh marks before dawn.", "importance": 0.8},
+                tier="short_term",
+            )
+            platform.store.put_memory(
+                "lu_xingzhou", "experience",
+                {"summary": "The river route is safe only before the fog rises.", "importance": 0.9},
+                tier="long_term",
+            )
+        recalled = platform.memory.recall("lu_xingzhou", "north gate marks", limit=2)
+        assert recalled["memories"][0]["tier"] == "short_term"
+        assert "north gate" in recalled["memories"][0]["summary"].lower()
+        view = platform.decision_view("lu_xingzhou")
+        assert view["short_term_memories"]
+        assert view["long_term_memories"]
+        assert "Greywood" in view["memory_query"] or "north" in view["memory_query"].lower()
+    finally:
+        platform.close()
+
+
+def test_multiple_visible_participants_require_explicit_target(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "explicit-target-world", tmp_path / "runtime"))
+    try:
+        lin_bo = platform.store.get_agent("lin_bo")
+        lin_bo["initial_state"]["location_id"] = "inn"
+        with platform.store.transaction():
+            platform.store.update_agent("lin_bo", lin_bo)
+        view = platform.decision_view("fei_lan")
+        communicate = next(item for item in view["executable_behaviors"] if item["ref"] == "behavior:communicate")
+        assert communicate["target_required"] is True
+        assert "Choose one participant explicitly" in communicate["target"]
+        rejected = platform.submit_behavior(BehaviorIntent("fei_lan", "behavior:communicate", {}, {}, "Exchange information.", 0.8, "missing-target"))
+        assert rejected["status"] == "rejected"
+        assert rejected["failed_check"] == "target_required"
+        assert set(rejected["available_targets"]) == {"余歌", "林泊"}
+    finally:
+        platform.close()
+
+
+def test_god_view_contains_weekly_and_monthly_world_trends(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "god-trend-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            platform.store.append_event("resource.changed", "fei_lan", 100, {"resource_id": "village_food", "delta": -12})
+            platform.store.append_event("relationship.changed", "fei_lan", 100, {"relation": "trust", "delta": 0.2, "target_id": "yu_ge"})
+            platform.store.append_event("goal.updated", "fei_lan", 100, {"statement": "Restore the trade route"})
+            platform.store.append_event("behavior.completed", "fei_lan", 100, {"behavior_id": "explore_greywood", "outcome": {"expected": {"goal_tags": ["exploration"]}}})
+        trends = platform.store.world_trends(current_minute=200)
+        assert trends["weekly"]["resource_deltas"]["village_food"] == -12
+        assert trends["weekly"]["relationship_trends"]
+        assert trends["weekly"]["goal_trends"]["progress_by_tag"]["exploration"] == 1
+        view = platform.view.build_decision_view("god", role="god")
+        prompt = render_context(view, "Review world trends.")
+        assert "<world_trends>" in prompt
+        assert "weekly:" in prompt and "monthly:" in prompt
+    finally:
+        platform.close()
+
+
 def test_successful_recipe_records_capability_history(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "capability-world", tmp_path / "runtime")

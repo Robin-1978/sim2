@@ -132,6 +132,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "properties": {
                 "question": {"type": "string"},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 8},
+                "scope": {"type": "string", "enum": ["all", "short_term", "long_term"], "description": "Use short_term for current working context or long_term for durable lessons."},
             },
             "required": [],
             "additionalProperties": False,
@@ -500,8 +501,8 @@ class AgentToolExecutor:
     def _query_known_fact(self, query: str = "", limit: int = 8) -> dict[str, Any]:
         return self.platform.perception.query_known_fact(self.actor_id, query, limit)
 
-    def _recall_memory(self, question: str = "", limit: int = 8) -> dict[str, Any]:
-        return self.platform.memory.recall(self.actor_id, question, limit)
+    def _recall_memory(self, question: str = "", limit: int = 8, scope: str = "all") -> dict[str, Any]:
+        return self.platform.memory.recall(self.actor_id, question, limit, scope=scope)
 
     def _preview_behavior(self, choice: str, target: dict[str, Any] | None = None) -> dict[str, Any]:
         behavior, error = self.platform.view.resolve_behavior_choice(self.actor_id, choice)

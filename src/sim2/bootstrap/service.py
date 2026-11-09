@@ -181,8 +181,16 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
             for obj in load_yaml(config_dir, "objects.yaml", {}).get("objects", []):
                 store.put_entity(obj["id"], obj.get("type", "object"), obj.get("name", obj["id"]), obj)
             locations = load_yaml(config_dir, "locations.yaml", {})
+            resource_baseline: dict[str, float] = {}
             for resource in locations.get("resources", []):
                 store.put_entity(resource["id"], "resource", resource.get("id", "resource"), resource)
+                amount = resource.get("amount")
+                state = resource.get("initial_state") if isinstance(resource.get("initial_state"), dict) else {}
+                if amount is None:
+                    amount = state.get("quantity", state.get("amount"))
+                if isinstance(amount, (int, float)):
+                    resource_baseline[str(resource["id"])] = float(amount)
+            store.set_meta("resource_baseline", resource_baseline)
             for faction in load_yaml(config_dir, "factions.yaml", {}).get("factions", []):
                 store.put_entity(faction["id"], "faction", faction.get("name", faction["id"]), faction)
             for agent in load_yaml(config_dir, "agents.yaml", {}).get("agents", []):
