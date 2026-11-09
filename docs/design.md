@@ -25,6 +25,8 @@
 
 本设计采用配置即代码、Schema First、领域边界、模块化单体、Intent Gateway、事件日志加状态投影和确定性回放。外部资料与采用结论见 [docs/design/references.md](design/references.md)。
 
+行为结果的逐项闭环验收见 [行为闭环矩阵](design/behavior-closure-matrix.md)。矩阵区分行为自身的直接结果与 Story、God、Reflection 在边界上的后续消费，避免把世界策略硬编码进 Platform。
+
 - ReAct 采用“工具反馈修正计划”，但副作用由 Platform 控制。
 - Generative Agents 采用观察、记忆、反思和计划分层。
 - Voyager 采用版本化技能库、执行反馈和错误迭代；本项目使用声明式 BT，不执行任意生成代码。

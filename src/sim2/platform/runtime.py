@@ -19,7 +19,7 @@ from ..intents.models import BehaviorIntent
 from ..memory.service import MemoryService
 from ..perception.service import PerceptionService
 from ..persistence.store import WorldStore
-from ..world.navigation import nearest_location_with_tag, nearest_resource_node, nearest_safe_location, reachable_locations
+from ..world.navigation import configured_location_tags, nearest_location_with_tag, nearest_resource_node, nearest_safe_location, reachable_locations
 
 
 class Platform:
@@ -35,7 +35,7 @@ class Platform:
         self.view = AgentViewCompiler(self.store)
         self.perception = PerceptionService(self.store)
         self.memory = MemoryService(self.store)
-        self.conditions = ConditionEngine()
+        self.conditions = ConditionEngine((self.store.get_meta("rules", {}) or {}))
         self.effects = EffectPipeline()
         self.targets = TargetResolver(self.store)
         self.resources = ResourceLedger(self.store)
@@ -100,6 +100,7 @@ class Platform:
             "runtime": self.store.get_meta("runtime_status", "running"),
             "world_minute": int(self.store.get_meta("world_minute", 0)),
             "instance_id": self.store.get_meta("instance_id"),
+            "memory_retrieval": self.memory.status(),
         }
 
     def pause(self, reason: str = "operator") -> dict[str, Any]:
@@ -368,19 +369,19 @@ class Platform:
                 })
             elif len(visible_participants) == 1:
                 runtime_parameters[next(iter(target_keys))] = visible_participants[0]["id"]
-        if behavior_id == "recover_at_safe_location":
-            safe_location_id = nearest_safe_location(self.store, state.get("location_id"))
-            if safe_location_id:
-                runtime_parameters.setdefault("safe_location_id", safe_location_id)
-        if behavior_id == "gather_at_known_node":
-            resource = nearest_resource_node(self.store, state.get("location_id"))
-            if resource:
-                runtime_parameters.setdefault("resource_tag", resource["resource_tag"])
-                runtime_parameters.setdefault("resource_location_id", resource["location_id"])
-        if behavior_id == "seek_treatment":
-            health_location_id = nearest_location_with_tag(self.store, state.get("location_id"), {"health", "clinic"})
-            if health_location_id:
-                runtime_parameters.setdefault("health_location_id", health_location_id)
+        for parameter, resolver in (bt.get("parameter_bindings", {}) or {}).items():
+            resolver = str(resolver)
+            if resolver == "nearest_safe_location":
+                value = nearest_safe_location(self.store, state.get("location_id"))
+            elif resolver in {"nearest_resource_node", "nearest_resource_tag"}:
+                resource = nearest_resource_node(self.store, state.get("location_id"))
+                value = (resource or {}).get("location_id" if resolver == "nearest_resource_node" else "resource_tag")
+            elif resolver == "nearest_health_service":
+                value = nearest_location_with_tag(self.store, state.get("location_id"), configured_location_tags(self.store, "health_service", {"health", "clinic"}))
+            else:
+                value = None
+            if value:
+                runtime_parameters.setdefault(str(parameter), value)
         intent_data["parameters"] = {**normalized_parameters, **runtime_parameters}
         entry_context = self._behavior_condition_context(agent, runtime_parameters, intent.target)
         entry_target = {**runtime_parameters, **intent.target, **(entry_context.get("target") or {})}
@@ -488,6 +489,20 @@ class Platform:
             except KeyError:
                 location = {}
         resolved_target, _ = self.targets.resolve(agent, {**parameters, **(target or {})})
+        participants = self.targets.visible_agents(agent)
+        rules = self.store.get_meta("rules", {}) or {}
+        conflict_types = {str(item) for item in (rules.get("conflict_relation_types", ["conflict"]) or [])}
+        participant_ids = {str(item.get("id")) for item in participants}
+        conflict_available = False
+        for relation in self.store.get_related_relationships(agent["id"], limit=50):
+            if str(relation.get("person")) not in participant_ids or str(relation.get("relation")) not in conflict_types:
+                continue
+            try:
+                conflict_available = float(relation.get("relation_strength", relation.get("value", 0)) or 0) < 0
+            except (TypeError, ValueError):
+                conflict_available = False
+            if conflict_available:
+                break
         return {
             "location_id": location_id,
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
@@ -496,7 +511,7 @@ class Platform:
             "object_id": parameters.get("object_id"),
             "inventory": agent.get("inventory", {}) or {},
             "food_items": (self.store.get_meta("rules", {}) or {}).get("food_items", []) or [],
-            "food_trigger_satiety": float((self.store.get_meta("rules", {}) or {}).get("food_trigger_satiety", 40) or 40),
+            "satiety_alert_threshold": float((self.store.get_meta("rules", {}) or {}).get("satiety_alert_threshold", 40) or 40),
             "current_location": location,
             "current_object": self._entity_for_context(parameters.get("object_id")),
             "mapped_areas": self.store.explored_areas(agent["id"]),
@@ -505,6 +520,7 @@ class Platform:
             "target.visible": bool((resolved_target or {}).get("visible", False)),
             "target.available": bool((resolved_target or {}).get("available", False)),
             "known_route_destinations": reachable_locations(self.store, location_id),
+            "conflict": {"available": conflict_available},
         }
 
     def _entity_for_context(self, entity_id: Any) -> dict[str, Any]:
@@ -1382,7 +1398,10 @@ class Platform:
             elif default == "first_available_resource":
                 location_id = (agent.get("initial_state") or {}).get("location_id")
                 sources = self.store.entities_at_location(location_id) if location_id else []
-                source = next((item for item in sources if item.get("entity_type") in {"resource", "material"} and not (item.get("initial_state") or {}).get("protected") and self._entity_quantity(item) > 0), None)
+                rules = self.store.get_meta("rules", {}) or {}
+                entity_types = {str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])}
+                protected_key = str(rules.get("resource_protected_state", "protected"))
+                source = next((item for item in sources if item.get("entity_type") in entity_types and not (item.get("initial_state") or {}).get(protected_key) and self._entity_quantity(item) > 0), None)
                 result[key] = source.get("id") if source else value
             elif value in (None, "") or (isinstance(value, str) and value.startswith("context.")):
                 result[key] = default
@@ -1459,6 +1478,8 @@ class Platform:
                 changed_agents: list[dict[str, Any]] = []
                 for agent in self.store.list_agents():
                     state = dict(agent.get("initial_state") or {})
+                    before_state = dict(state)
+                    before_needs = dict(agent.get("needs") or {})
                     condition = str(effect.get("condition") or "").strip()
                     if condition == "action.none" and state.get("status") in {"executing", "paused"}:
                         continue
@@ -1471,6 +1492,7 @@ class Platform:
                     ):
                         continue
                     self._apply_simple_effect(agent, definition)
+                    self._emit_minute_effect_events(effect, agent, minute, before_state, before_needs)
                     state = dict(agent.get("initial_state") or {})
                     if float(state.get("health", 100) or 0) <= 0 and state.get("status") not in {"unconscious", "dead"}:
                         state["status"] = "unconscious"
@@ -1512,6 +1534,67 @@ class Platform:
             key = str(effect["state"])
             state[key] = max(0.0, min(100.0, float(state.get(key, 0)) + float(effect.get("delta", 0))))
             agent["initial_state"] = state
+
+    def _emit_minute_effect_events(
+        self,
+        rule: dict[str, Any],
+        agent: dict[str, Any],
+        minute: int,
+        before_state: dict[str, Any],
+        before_needs: dict[str, Any],
+    ) -> None:
+        """Emit configured threshold or recurring events after a minute effect."""
+
+        configured = rule.get("events", []) or []
+        if not isinstance(configured, list):
+            return
+        event_state = dict(self.store.get_meta("minute_effect_event_state", {}) or {})
+        location = self._entity_for_context((agent.get("initial_state") or {}).get("location_id"))
+        rules = self.store.get_meta("rules", {}) or {}
+        context = {
+            "current_location": location,
+            "location_id": (agent.get("initial_state") or {}).get("location_id"),
+            "satiety_alert_threshold": float(rules.get("satiety_alert_threshold", 40) or 40),
+        }
+        world = self.store.get_meta("world_properties", {}) or {}
+        for index, item in enumerate(configured):
+            if not isinstance(item, dict):
+                continue
+            event_type = str(item.get("event_type") or item.get("event") or "").strip()
+            condition = str(item.get("condition") or rule.get("condition") or "").strip()
+            if not event_type or not condition:
+                continue
+            active = bool(self.conditions.evaluate(condition, agent=agent, target={}, context=context, world=world))
+            state_key = f"{agent.get('id')}:{rule.get('id', index)}:{item.get('id', index)}"
+            previous = bool(event_state.get(state_key, False))
+            edge = str(item.get("edge", "each")).strip().lower()
+            if edge == "enter":
+                emit = active and not previous
+            elif edge == "exit":
+                emit = not active and previous
+            else:
+                emit = active
+            if emit:
+                changed: dict[str, dict[str, Any]] = {}
+                for key in set(before_state) | set((agent.get("initial_state") or {})):
+                    before = before_state.get(key)
+                    after = (agent.get("initial_state") or {}).get(key)
+                    if before != after:
+                        changed[key] = {"before": before, "after": after}
+                for key in set(before_needs) | set(agent.get("needs") or {}):
+                    before = before_needs.get(key)
+                    after = (agent.get("needs") or {}).get(key)
+                    if before != after:
+                        changed[key] = {"before": before, "after": after}
+                payload = dict(item.get("data") or {})
+                payload.update({"rule_id": rule.get("id"), "edge": edge, "changes": changed})
+                if item.get("summary"):
+                    payload["summary"] = str(item["summary"])
+                if item.get("trend") is True:
+                    payload["trend"] = True
+                self.store.append_event(event_type, agent["id"], minute, payload)
+            event_state[state_key] = active
+        self.store.set_meta("minute_effect_event_state", event_state)
 
     def _start_action(self, agent: dict[str, Any], execution_id: str, action_info: dict[str, Any], minute: int) -> tuple[bool, str]:
         action_defs = {item["id"]: item for item in self.store.get_definitions("action_def")}
@@ -1718,8 +1801,12 @@ class Platform:
                     self._finish_behavior(agent, execution_id, behavior_id, "failed", failure, minute)
                     return
                 self._apply_success_effects(agent, action, entry["parameters"], minute, target=entry.get("target"))
-                self._record_information_result(agent, action, entry["parameters"], minute)
-                self.store.append_event("action.completed", agent["id"], minute, {"execution_id": execution_id, "action_id": entry["action_id"], "parallel_group": group, "result": action.get("success", {}).get("result", "completed")})
+                information_result = self._record_information_result(agent, action, entry["parameters"], minute)
+                action_result = str((information_result or {}).get("result") or action.get("success", {}).get("result", "completed"))
+                state = dict(agent.get("initial_state") or {})
+                state["last_action_result"] = action_result
+                agent["initial_state"] = state
+                self.store.append_event("action.completed", agent["id"], minute, {"execution_id": execution_id, "action_id": entry["action_id"], "parallel_group": group, "result": action_result})
                 completed_count += 1
         remaining_values = [int(entry["remaining"]) for entry in active.values()]
         state = dict(agent.get("initial_state") or {})
@@ -1783,6 +1870,10 @@ class Platform:
         # its configured movement costs do not apply when already there.
         if not state.get("active_action_noop"):
             self._apply_action_progress(agent, action)
+            # The progress pipeline mutates the agent projection.  Reload it
+            # before advancing the action cursor; otherwise the old cursor
+            # snapshot would silently overwrite every per-minute cost.
+            state = dict(agent.get("initial_state") or {})
         remaining = max(0, int(state.get("remaining_minutes", 1)) - 1)
         duration = max(1, int(state.get("active_action_duration", state.get("remaining_minutes", 1))))
         state["remaining_minutes"] = remaining
@@ -1801,8 +1892,12 @@ class Platform:
             self._finish_behavior(agent, execution_id, behavior_id, "failed", failure, minute)
             return
         self._apply_success_effects(agent, action, action_parameters, minute, target=self.targets.resolve(agent, action_parameters)[0])
-        self._record_information_result(agent, action, state.get("active_action_parameters", {}), minute)
-        self.store.append_event("action.completed", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "result": action.get("success", {}).get("result", "completed")})
+        information_result = self._record_information_result(agent, action, state.get("active_action_parameters", {}), minute)
+        action_result = str((information_result or {}).get("result") or action.get("success", {}).get("result", "completed"))
+        state = dict(agent.get("initial_state") or {})
+        state["last_action_result"] = action_result
+        agent["initial_state"] = state
+        self.store.append_event("action.completed", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "result": action_result})
         # Effects may update location, health, inventory or needs; retain that
         # projection before clearing the completed action fields.
         state = dict(agent.get("initial_state") or {})
@@ -1854,8 +1949,18 @@ class Platform:
                 property_id = str(effect.get("property") or effect.get("world_property") or "")
                 if property_id:
                     properties = dict(self.store.get_meta("world_properties", {}) or {})
-                    properties[property_id] = float(properties.get(property_id, 0) or 0) + float(effect.get("delta", effect.get("value", 0)) or 0)
+                    before_value = properties.get(property_id)
+                    value = float(before_value or 0) + float(effect.get("delta", effect.get("value", 0)) or 0)
+                    if isinstance(effect.get("minimum"), (int, float)):
+                        value = max(float(effect["minimum"]), value)
+                    if isinstance(effect.get("maximum"), (int, float)):
+                        value = min(float(effect["maximum"]), value)
+                    properties[property_id] = value
                     self.store.set_meta("world_properties", properties)
+                    self.store.append_event(
+                        "world.property_changed", agent["id"], minute,
+                        {"property": property_id, "before": before_value, "after": value, "delta": value - float(before_value or 0), "source": action.get("id")},
+                    )
             elif effect_type in {"entity_state_set", "entity.state_set"}:
                 entity_id = resolved_effect.get("entity_id") or resolved_effect.get("target_entity")
                 state_key = resolved_effect.get("state") or resolved_effect.get("property")
@@ -1985,6 +2090,26 @@ class Platform:
             data={"source_event_id": int(event_id), "source_event_type": event_type, "source_actor_id": actor_id},
         )
 
+    def _queue_configured_followups(self, configured: dict[str, Any], event_id: int, event_type: str, actor_id: str, minute: int) -> None:
+        """Wake configured result consumers without knowing story-specific IDs."""
+
+        for role in configured.get("wake", configured.get("wake_roles", [])) or []:
+            role = str(role)
+            if role not in {"story", "god", "agent_reflection"}:
+                continue
+            task_id = f"{role}:event:{event_id}"
+            task_type = f"event:{event_type}"
+            target = actor_id if role == "agent_reflection" else role
+            self.store.put_evolution_task(
+                task_id,
+                role,
+                target,
+                task_type,
+                minute,
+                0,
+                data={"source_event_id": int(event_id), "source_event_type": event_type, "source_actor_id": actor_id},
+            )
+
     def _advance_information_progress(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> dict[str, Any] | None:
         definition = action.get("progress") or {}
         if not isinstance(definition, dict) or not definition.get("key"):
@@ -2004,10 +2129,11 @@ class Platform:
             self._queue_story_task(event_id, event_type, agent["id"], minute)
         return progress
 
-    def _record_information_result(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> None:
+    def _record_information_result(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> dict[str, Any]:
         """Persist information produced by configured information channels."""
 
         information = action.get("information", {}) or {}
+        result: dict[str, Any] = {}
         area_id = parameters.get("area_id") or information.get("area_parameter") and parameters.get(information["area_parameter"])
         source_id = parameters.get("source_id") or information.get("source_parameter") and parameters.get(information["source_parameter"])
         target_id = parameters.get("target_id")
@@ -2022,7 +2148,7 @@ class Platform:
                 for discovery in discoveries:
                     discovery_id = str(discovery.get("id") or f"explored:{area_id}")
                     fact = str(discovery.get("fact") or f"Area {area_id} was explored.")
-                    self.store.merge_knowledge_fact(agent["id"], discovery_id, {"fact": fact, "source_type": "exploration", "source_id": result_id, "confidence": 0.8, "observed_at": minute})
+                    self.store.merge_knowledge_fact(agent["id"], discovery_id, {"fact": fact, "source_type": "exploration", "source_id": result_id, "behavior": action.get("id"), "confidence": 0.8, "observed_at": minute})
                     unlocks = discovery.get("unlocks", []) if isinstance(discovery, dict) else []
                     for unlock in unlocks or []:
                         behavior_id = str(unlock.get("behavior_id") if isinstance(unlock, dict) else unlock)
@@ -2038,6 +2164,7 @@ class Platform:
                             self.store.append_event("behavior.unlocked", agent["id"], minute, {"behavior_id": behavior_id, "discovery_id": discovery_id, "source": "exploration"})
                 event_id = self.store.append_event("exploration.completed", agent["id"], minute, {"area_id": area_id, "result_id": result_id, "discoveries": [str(item.get("id")) for item in discoveries]})
                 self._queue_story_task(event_id, "exploration.completed", agent["id"], minute)
+                result = {"result": "exploration_completed", "event_id": event_id}
         if source_id:
             source_id = str(source_id)
             progress = self._advance_information_progress(agent, action, parameters, minute)
@@ -2047,13 +2174,16 @@ class Platform:
                     discovery = (source.get("research_discovery") or {}) if isinstance(source, dict) else {}
                     fact_key = str(discovery.get("id") or f"researched:{source_id}")
                     fact = str(discovery.get("fact") or f"Source {source_id} was researched.")
-                    self.store.merge_knowledge_fact(agent["id"], fact_key, {"fact": fact, "source_type": "research", "confidence": 0.8, "observed_at": minute})
+                    self.store.merge_knowledge_fact(agent["id"], fact_key, {"fact": fact, "source_type": "research", "source_id": source_id, "behavior": action.get("id"), "confidence": 0.8, "observed_at": minute})
                     # A configured progress action already emitted the
                     # completion event; without progress keep the legacy
                     # single-attempt event contract.
                     if progress is None:
                         event_id = self.store.append_event("research.completed", agent["id"], minute, {"source_id": source_id, "fact": fact})
                         self._queue_story_task(event_id, "research.completed", agent["id"], minute)
+                        result = {"result": "research_completed", "event_id": event_id, "progress": progress}
+                    elif progress is not None:
+                        result = {"result": "research_progressed", "progress": progress}
         object_id = parameters.get("object_id") or information.get("object_parameter") and parameters.get(information["object_parameter"])
         if object_id and information.get("record_object_discovery", True):
             object_id = str(object_id)
@@ -2066,10 +2196,11 @@ class Platform:
             fact = str(discovery.get("fact") or f"Object {object_id} was recovered.")
             self.store.merge_knowledge_fact(
                 agent["id"], fact_key,
-                {"fact": fact, "source_type": "recovery", "source_id": object_id, "confidence": 0.9, "observed_at": minute},
+                {"fact": fact, "source_type": "recovery", "source_id": object_id, "object_id": object_id, "behavior": action.get("id"), "confidence": 0.9, "observed_at": minute},
             )
             event_id = self.store.append_event("object.recovered", agent["id"], minute, {"object_id": object_id, "fact": fact})
             self._queue_story_task(event_id, "object.recovered", agent["id"], minute)
+            result = {"result": "object_recovered", "event_id": event_id}
         if target_id and topic:
             target_id = str(target_id)
             try:
@@ -2082,18 +2213,73 @@ class Platform:
                 self.store.put_memory(target_id, "testimony", {"topic": str(topic), "speaker_id": agent["id"], "world_minute": minute, "dialogue_id": dialogue_id})
                 self._apply_configured_relationship_effect(agent, listener, "dialogue.completed", minute)
                 self.store.update_agent(listener["id"], listener)
-            self.store.append_event("dialogue.completed", agent["id"], minute, {"target_id": target_id, "topic": str(topic), "dialogue_id": dialogue_id})
+            event_id = self.store.append_event("dialogue.completed", agent["id"], minute, {"target_id": target_id, "topic": str(topic), "dialogue_id": dialogue_id})
+            result = {"result": "dialogue_recorded", "event_id": event_id}
+        configured_event = information.get("event_type") or information.get("event")
+        observed: dict[str, Any] = {}
+        observed_id = parameters.get("object_id") or parameters.get("source_id") or parameters.get("area_id")
+        if observed_id:
+            try:
+                entity = self.store.get_entity(str(observed_id))
+            except KeyError:
+                entity = {}
+            if entity:
+                entity_state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
+                amount = entity.get("amount", entity_state.get("quantity", entity_state.get("amount")))
+                observed = {
+                    "name": entity.get("name", observed_id),
+                    "entity_type": entity.get("entity_type"),
+                    "amount": amount,
+                    "location": entity_state.get("location_id"),
+                    "status": {key: value for key, value in entity_state.items() if key in {"recovered", "created", "readable", "durability"}},
+                }
+        if configured_event:
+            event_data = dict(information.get("data") or {})
+            event_data.update({"action_id": action.get("id"), "parameters": parameters})
+            if observed:
+                event_data["observed"] = observed
+            if information.get("summary"):
+                event_data["summary"] = str(information["summary"])
+            if information.get("trend") is True:
+                event_data["trend"] = True
+            event_id = self.store.append_event(str(configured_event), agent["id"], minute, event_data)
+            self._queue_configured_followups(information, event_id, str(configured_event), agent["id"], minute)
+            result.setdefault("event_id", event_id)
+            result.setdefault("result", str(information.get("result") or "information_recorded"))
+        fact_template = information.get("fact_template")
+        if fact_template:
+            template_values = {"id": observed_id or "", **observed}
+            try:
+                fact = str(fact_template).format_map(template_values)
+            except (KeyError, ValueError):
+                fact = str(fact_template)
+        else:
+            fact = information.get("fact") or information.get("knowledge_fact")
+        if fact:
+            fact_key = str(information.get("fact_key") or f"{action.get('id', 'action')}:{parameters.get('object_id') or parameters.get('source_id') or parameters.get('area_id') or 'result'}")
+            self.store.merge_knowledge_fact(agent["id"], fact_key, {"fact": str(fact), "source_type": str(information.get("source_type") or "action"), "source_id": str(action.get("id", "action")), "behavior": str(action.get("id", "action")), "confidence": float(information.get("confidence", 0.8)), "observed_at": minute})
+            result.setdefault("result", str(information.get("result") or "information_recorded"))
+        return result
 
     def _finish_behavior(self, agent: dict[str, Any], execution_id: str, behavior_id: str, status: str, result: str, minute: int) -> None:
         state = dict(agent.get("initial_state") or {})
         bt_row = self.store.connection.execute("SELECT data_json FROM bt_instance WHERE execution_id=?", (execution_id,)).fetchone()
         bt_data = json.loads(bt_row["data_json"]) if bt_row is not None else {}
         before = dict(bt_data.get("before") or {})
+        behavior_definition = next((item for item in self.store.get_definitions("bt_def") if item.get("id") == behavior_id), {})
+        if status == "completed" and result == "behavior_completed":
+            result = str(state.get("last_action_result") or result)
         if status != "completed":
             reservations = list(state.get("active_action_reservation") or [])
             for item in (state.get("active_parallel_actions") or {}).values():
                 reservations.extend(item.get("reservation", []) or [])
             self.resources.release(agent, reservations)
+        if status == "completed":
+            # BT-level effects are declarative too.  Running them through the
+            # same Platform effect pipeline ensures governance, patrol and
+            # other composite behaviors can change the world as well as the
+            # actor without introducing world-specific branches here.
+            self._apply_success_effects(agent, {"id": f"behavior:{behavior_id}", "effects": behavior_definition.get("outcome_effects", []) or []}, {}, minute)
         after = self._execution_snapshot(agent)
         outcome = {
             "status": status,
@@ -2121,9 +2307,25 @@ class Platform:
                 if action_row is not None and action_row["remaining_minutes"] > 0:
                     self.store.update_action_instance(entry["action_instance_id"], status="failed", elapsed_minutes=action_row["elapsed_minutes"], remaining_minutes=action_row["remaining_minutes"], data=json.loads(action_row["data_json"]), updated_minute=minute)
         if status == "completed":
-            behavior_definition = next((item for item in self.store.get_definitions("bt_def") if item.get("id") == behavior_id), {})
-            for effect in behavior_definition.get("outcome_effects", []) or []:
-                self.effects.apply(agent, dict(effect))
+            for configured in behavior_definition.get("outcome_events", []) or []:
+                if not isinstance(configured, dict):
+                    continue
+                event_type = str(configured.get("event_type") or configured.get("event") or "").strip()
+                if not event_type:
+                    continue
+                payload = dict(configured.get("data") or {})
+                payload.update({"behavior_id": behavior_id, "result": result, "outcome": outcome})
+                if configured.get("summary"):
+                    payload["summary"] = str(configured["summary"])
+                if configured.get("trend") is True:
+                    payload["trend"] = True
+                event_id = self.store.append_event(event_type, agent["id"], minute, payload)
+                self._queue_configured_followups(configured, event_id, event_type, agent["id"], minute)
+            for configured in behavior_definition.get("outcome_facts", []) or []:
+                if not isinstance(configured, dict) or not configured.get("fact"):
+                    continue
+                fact_key = str(configured.get("fact_key") or f"behavior:{behavior_id}:{configured.get('id', 'outcome')}")
+                self.store.merge_knowledge_fact(agent["id"], fact_key, {"fact": str(configured["fact"]), "source_type": str(configured.get("source_type") or "behavior"), "source_id": behavior_id, "behavior": behavior_id, "confidence": float(configured.get("confidence", 0.8)), "observed_at": minute})
         state["status"] = "idle" if status == "completed" else "failed"
         state["active_bt_instance"] = None
         state["active_behavior_id"] = None

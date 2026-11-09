@@ -22,7 +22,7 @@ actions:
     on_failure: {}
     refund: {}
   success:
-    condition: actor.location == target.location
+    condition: actor.state.location == target.location
     result: arrived
   effects:
   - type: location_set
@@ -43,7 +43,7 @@ actions:
     item_id: first_food
   preconditions:
   - actor.alive
-  - actor.has_food
+  - inventory.available
   duration:
     minutes: 1
   costs:
@@ -76,8 +76,8 @@ actions:
   parameters: {}
   preconditions:
   - actor.alive
-  - actor.food_withdrawal
-  - location.food_store
+  - actor.permission.food_withdrawal
+  - location.tag.food_store
   duration:
     minutes: 10
   costs:
@@ -107,7 +107,7 @@ actions:
   parameters: {}
   preconditions:
   - actor.alive
-  - location.market
+  - location.tag.market
   duration:
     minutes: 5
   costs:
@@ -161,7 +161,7 @@ actions:
     state: attention
     delta: -2
   success:
-    condition: actor.energy >= 80
+    condition: actor.state.energy >= 80
     result: rested
   failure:
     condition: danger.detected
@@ -214,7 +214,7 @@ actions:
   parameters:
     route_id: string
   preconditions:
-  - actor.is_guard
+  - actor.role == watch_captain or actor.can_patrol
   - route.known
   duration:
     minutes: 96
@@ -232,6 +232,16 @@ actions:
   failure:
     condition: hostile_contact
     result: emergency
+  information:
+    event_type: security.patrol_reported
+    wake: [god]
+    trend: true
+    summary: The north gate route was patrolled and a report was recorded.
+    fact_key: patrol:north_gate_loop
+    fact: The north gate route was patrolled and a report was recorded.
+    source_type: patrol
+    confidence: 0.9
+    result: patrol_reported
   interrupt_policy: pause
   interaction_policy: allow
   definition_source: config
@@ -243,7 +253,7 @@ actions:
   parameters:
     target_id: string
   preconditions:
-  - actor.is_healer
+  - actor.role == herbalist
   - patient.in_clinic
   - medicine.available
   duration:
@@ -425,6 +435,14 @@ actions:
   failure:
     condition: location.locked
     result: denied
+  information:
+    event_type: observation.object_inspected
+    summary: The configured object or stock was inspected.
+    fact_template: "Inspected {name}; current amount is {amount}."
+    source_type: inspection
+    confidence: 0.85
+    result: stock_reported
+    record_object_discovery: false
   interrupt_policy: cancel
   interaction_policy: allow
   definition_source: config
@@ -454,6 +472,15 @@ actions:
   failure:
     condition: trust.collapsed
     result: negotiation_failed
+  effects:
+  - type: relationship_delta
+    relation: trust
+    delta: 0.02
+  information:
+    event_type: negotiation.completed
+    wake: [story, god]
+    summary: A negotiation result was recorded between the participants.
+    result: contract_signed
   interrupt_policy: cancel
   definition_source: config
   kind: atomic
@@ -528,6 +555,11 @@ actions:
   failure:
     condition: actor.stunned
     result: interrupted
+  information:
+    event_type: defense.completed
+    wake: [story, god]
+    summary: A defensive response was completed at the configured position.
+    result: defended
   interrupt_policy: interruptible
   interaction_policy: allow
   executor: effect_pipeline
@@ -555,6 +587,12 @@ actions:
   failure:
     condition: actor.exhausted
     result: collapsed
+  effects:
+  - type: location_set
+    location_id: context.destination_id
+  information:
+    event_type: safety.escaped
+    result: escaped
   interrupt_policy: cancel
   executor: effect_pipeline
 - id: sound_alarm
@@ -581,9 +619,11 @@ actions:
   failure:
     condition: alarm_device.broken
     result: failed
-  effects:
-  - type: public_event
-    event: alarm.raised
+  information:
+    event_type: alarm.raised
+    wake: [story, god]
+    summary: An alarm was broadcast from a configured watch post.
+    result: alarm_raised
   interrupt_policy: cancel
   interaction_policy: allow
   executor: effect_pipeline

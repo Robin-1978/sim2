@@ -81,6 +81,11 @@ def _memory_line(item: dict[str, Any]) -> str:
     confidence = item.get("confidence")
     if isinstance(confidence, (int, float)):
         metadata.append(f"confidence={float(confidence):.2f}")
+    tags = item.get("tags") if isinstance(item.get("tags"), dict) else {}
+    for key, label in (("location", "where"), ("participants", "people"), ("behavior", "behavior"), ("topic", "topic"), ("goal", "goal")):
+        value = tags.get(key)
+        if value not in (None, "", []):
+            metadata.append(f"{label}={_plain(value)}")
     suffix = f" [{'; '.join(metadata)}]" if metadata else ""
     return f"memory ({item.get('type', 'memory')}): {summary}{suffix}"
 

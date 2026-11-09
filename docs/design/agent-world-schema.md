@@ -68,7 +68,7 @@ Decision Agent 只选择 Platform 已经注册、校验并过滤过的行为。�
 
 `available_behaviors` 只包含 Platform 已经验证过的 BT 或 Action。实体、地点、物体和规则也使用相同的简洁视图：`ref`、`name`、`type`、`summary`、`known_state`、`distance`、`visibility` 和 `constraints`。隐藏真相、完整数据库和其他 Agent 的私有记忆不进入视图。
 
-候选资格必须在两个边界重新计算：编译 AgentView 时按当前需求阈值、状态、入口条件和资源过滤；提交选择时 Platform 再按同一套配置条件校验一次。这样“进食”“取粮”“休息”等 fallback BT 不会在需求已经满足时继续出现，旧上下文或模型直接提交过期选择也只能得到可重试的 `entry_condition` 拒绝，不会启动无意义行为。
+候选资格必须在两个边界重新计算：编译 AgentView 时按当前状态、入口条件和资源过滤；提交选择时 Platform 再按同一套配置条件校验一次。需求阈值只提供直白的驱动提示，不是食物行为的硬门槛；只要库存或服务条件满足，Agent 可以在阈值前选择进食或取粮，Platform 仍会校验实际资源。旧上下文或模型直接提交过期选择只能得到可重试的 `entry_condition` 拒绝，不会启动无法执行的行为。
 
 这里的 `ref` 是 Platform 内部字段；渲染给 Agent 的视图只保留 `name`/`choice` 等可读名称。工具 schema 同样使用 `entity`、`recipient`、`record` 和 `offer` 这类名称字段，Platform 在权限范围内解析为内部引用。
 

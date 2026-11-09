@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import os
+import threading
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
@@ -50,7 +51,7 @@ class _BGEOnnxModel:
     directory (or an ONNX file).
     """
 
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str, providers: list[str] | None = None):
         import numpy as np  # type: ignore
         import onnxruntime as ort  # type: ignore
         from tokenizers import Tokenizer  # type: ignore
@@ -67,7 +68,12 @@ class _BGEOnnxModel:
         self._np = np
         self._tokenizer = Tokenizer.from_file(str(tokenizer_path))
         self._tokenizer.enable_truncation(max_length=512)
-        self._session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+        available = set(ort.get_available_providers())
+        requested = [str(item) for item in (providers or []) if str(item) in available]
+        if not requested:
+            requested = ["CUDAExecutionProvider", "CPUExecutionProvider"] if "CUDAExecutionProvider" in available else ["CPUExecutionProvider"]
+        self.providers = requested
+        self._session = ort.InferenceSession(str(onnx_path), providers=requested)
         self._inputs = {item.name for item in self._session.get_inputs()}
 
     def encode(self, texts: list[str]):
@@ -97,6 +103,9 @@ class _BGEOnnxModel:
 class ExperienceSimilarity:
     """Lazy BGE-compatible checker with a deterministic fallback."""
 
+    _MODEL_CACHE: dict[tuple[str, str], tuple[Any, str]] = {}
+    _MODEL_CACHE_LOCK = threading.Lock()
+
     def __init__(self, config: dict[str, Any] | None = None):
         config = config or {}
         self.enabled = bool(config.get("enabled", False))
@@ -104,28 +113,117 @@ class ExperienceSimilarity:
         self.retrieval_threshold = float(config.get("retrieval_threshold", 0.06))
         self.embedding_retrieval_threshold = float(config.get("embedding_retrieval_threshold", 0.18))
         self.backend = str(config.get("backend", "auto")).casefold()
-        self.model_name = str(config.get("model") or os.getenv("SIM2_BGE_MODEL", ""))
+        self.model_name = self._resolve_model_name(config)
         self._model: Any = None
         self._method = "token_jaccard"
+        self._embedding_cache: dict[str, Any] = {}
+        self._embedding_cache_limit = max(128, int(config.get("embedding_cache_limit", 2048) or 2048))
+        provider = os.getenv("SIM2_BGE_PROVIDER", "auto").strip().casefold()
+        self._providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if provider in {"auto", "cuda", "gpu"} else ["CPUExecutionProvider"]
+
+    @property
+    def method(self) -> str:
+        """Current retrieval backend, useful for health and audit output."""
+
+        return self._method
+
+    def status(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "backend": self._method,
+            "model": self.model_name or None,
+            "loaded": bool(self._model),
+            "embedding_cache_size": len(self._embedding_cache),
+            "embedding_cache_limit": self._embedding_cache_limit,
+            "providers": list(getattr(self._model, "providers", []) or []),
+        }
+
+    def preload(self) -> dict[str, Any]:
+        """Load the configured local encoder before the first decision."""
+
+        self._load_model()
+        return self.status()
+
+    @staticmethod
+    def _resolve_model_name(config: dict[str, Any]) -> str:
+        """Resolve a local BGE model without downloading or scanning the disk.
+
+        ``SIM2_BGE_MODEL`` is the explicit sim2 setting.  The cache variables
+        also understand the fastembed layout used by BieTheirBed, which lets
+        both projects share one already-downloaded ONNX model.  Resolution is
+        intentionally limited to the configured cache roots.
+        """
+
+        explicit = str(config.get("model") or os.getenv("SIM2_BGE_MODEL", "")).strip()
+        if explicit:
+            return explicit
+        roots = [os.getenv("SIM2_BGE_CACHE", ""), os.getenv("KNOA_BGE_CACHE", "")]
+        for raw_root in roots:
+            root = Path(raw_root).expanduser() if raw_root else None
+            if root is None or not root.exists():
+                continue
+            direct = root / "model_optimized.onnx"
+            if direct.is_file() and (root / "tokenizer.json").is_file():
+                return str(root)
+            candidates = sorted(root.glob("models--*/snapshots/*/model_optimized.onnx"))
+            for candidate in candidates:
+                if (candidate.parent / "tokenizer.json").is_file():
+                    return str(candidate.parent)
+        home_model = Path.home() / ".sim2" / "bge" / "bge-small-zh-v1.5"
+        if (home_model / "model_optimized.onnx").is_file() and (home_model / "tokenizer.json").is_file():
+            return str(home_model)
+        return ""
 
     def _load_model(self) -> None:
         if self._model is not None or not self.enabled or not self.model_name:
             return
+        cache_key = (self.backend + ":" + ",".join(self._providers), self.model_name)
+        with self._MODEL_CACHE_LOCK:
+            cached = self._MODEL_CACHE.get(cache_key)
+        if cached is not None:
+            self._model, self._method = cached
+            return
         try:
             path = Path(self.model_name).expanduser()
             if self.backend in {"onnx", "bge_onnx"} or path.is_file() or (path.is_dir() and (path / "model_optimized.onnx").is_file()):
-                self._model = _BGEOnnxModel(self.model_name)
-                self._method = "embedding_cosine_onnx"
+                model = _BGEOnnxModel(self.model_name, self._providers)
+                method = "embedding_cosine_onnx"
             else:
                 from sentence_transformers import SentenceTransformer  # type: ignore
 
-                self._model = SentenceTransformer(self.model_name)
-                self._method = "embedding_cosine"
+                model = SentenceTransformer(self.model_name)
+                method = "embedding_cosine"
+            self._model = model
+            self._method = method
+            with self._MODEL_CACHE_LOCK:
+                self._MODEL_CACHE[cache_key] = (model, method)
         except Exception:
             # The core runtime stays available when the optional package or
             # model is absent.  The caller can expose this method in diagnostics.
             self._model = False
             self._method = "token_jaccard_fallback"
+
+    def _encode_embeddings(self, texts: list[str]) -> Any:
+        """Encode text while reusing durable candidate vectors in this process."""
+
+        self._load_model()
+        if not self._model or not self._method.startswith("embedding_cosine"):
+            return None
+        missing = [text for text in texts if text not in self._embedding_cache]
+        if missing:
+            try:
+                try:
+                    vectors = self._model.encode(missing, normalize_embeddings=True)
+                except TypeError:
+                    vectors = self._model.encode(missing)
+            except Exception:
+                return None
+            for text, vector in zip(missing, vectors):
+                self._embedding_cache[text] = vector
+            if len(self._embedding_cache) > self._embedding_cache_limit:
+                for key in list(self._embedding_cache)[: len(self._embedding_cache) - self._embedding_cache_limit]:
+                    self._embedding_cache.pop(key, None)
+        return [self._embedding_cache[text] for text in texts]
 
     def score(self, left: str, right: str) -> float:
         if not left.strip() or not right.strip():
@@ -135,12 +233,11 @@ class ExperienceSimilarity:
         self._load_model()
         if self._model and self._method.startswith("embedding_cosine"):
             try:
-                vectors = self._model.encode([left, right], normalize_embeddings=True)
-            except TypeError:
-                # The local ONNX adapter always normalizes; Sentence
-                # Transformers exposes the keyword explicitly.
-                vectors = self._model.encode([left, right])
-            return max(0.0, min(1.0, float(sum(a * b for a, b in zip(vectors[0], vectors[1])))))
+                vectors = self._encode_embeddings([left, right])
+                if vectors is not None:
+                    return max(0.0, min(1.0, float(sum(a * b for a, b in zip(vectors[0], vectors[1])))))
+            except Exception:
+                pass
         a, b = _tokens(left), _tokens(right)
         if not a or not b:
             return 0.0
@@ -169,10 +266,7 @@ class ExperienceSimilarity:
         if not self._model or not self._method.startswith("embedding_cosine"):
             return None
         try:
-            try:
-                vectors = self._model.encode([query, *texts], normalize_embeddings=True)
-            except TypeError:
-                vectors = self._model.encode([query, *texts])
+            vectors = self._encode_embeddings([query, *texts])
             query_vector = vectors[0]
             return [max(0.0, min(1.0, float(sum(a * b for a, b in zip(query_vector, vector))))) for vector in vectors[1:]]
         except Exception:
@@ -184,6 +278,14 @@ class ExperienceSimilarity:
             if memory.get("type") != "experience":
                 continue
             candidate = str(memory.get("summary") or "")
+            # BGE treats templated summaries with different measured values as
+            # near duplicates. Preserve the distinction when the prose carries
+            # explicit numeric evidence; Reflection can later consolidate it
+            # with a better lesson instead of silently discarding the record.
+            left_numbers = set(re.findall(r"\d+(?:\.\d+)?", summary))
+            right_numbers = set(re.findall(r"\d+(?:\.\d+)?", candidate))
+            if left_numbers and right_numbers and left_numbers != right_numbers:
+                continue
             score = self.score(summary, candidate)
             if score > best.score:
                 best = SimilarityMatch(score, self._method, int(memory["id"]) if memory.get("id") else None)

@@ -26,7 +26,7 @@ behavior_trees:
   description: Recover energy and regain readiness before choosing another task.
   entry_conditions:
   - actor.alive
-  - actor.energy < 100
+  - actor.state.energy < 100
   estimated_minutes: 48
   interrupt_policy: pause
   goal_tags: [recovery, readiness]
@@ -44,7 +44,7 @@ behavior_trees:
   version: 1
   scope: village_council
   entry_conditions:
-  - actor.is_steward
+  - actor.role == village_steward
   estimated_minutes: 30
   cooldown_minutes: 720
   goal_tags: [autonomy, stability, population]
@@ -58,11 +58,23 @@ behavior_trees:
   outcome_effects:
   - {type: need_delta, need: esteem, delta: 0.5}
   - {type: need_delta, need: belonging, delta: 0.2}
+  outcome_events:
+  - event_type: governance.reviewed
+    wake: [god]
+    trend: true
+    summary: Food reserves and settlement risk were reviewed by the steward.
+    data: {results: [rations_reviewed, risk_reviewed]}
+  outcome_facts:
+  - id: governance_review
+    fact_key: governance:latest_review
+    fact: Food reserves and settlement risk were reviewed by the steward.
+    source_type: governance
+    confidence: 0.9
   nodes:
   - type: action
     action_id: inspect_object
     parameters:
-      location_id: context.location_id
+      object_id: village_food
   definition_source: config
   kind: base
 - id: mediate_conflict
@@ -72,6 +84,21 @@ behavior_trees:
   - conflict.available
   - actor.can_mediate
   estimated_minutes: 6
+  success_results: [conflict_resolved, relationship_repaired]
+  failure_results: [conflict_escalated, participant_refused]
+  outcome_effects:
+  - {type: relationship_delta, relation: trust, delta: 0.04}
+  outcome_events:
+  - event_type: conflict.mediation_completed
+    wake: [story, god]
+    trend: true
+    summary: A configured conflict mediation result was recorded.
+  outcome_facts:
+  - id: mediation_result
+    fact_key: conflict:latest_mediation
+    fact: A conflict mediation result was recorded for later review.
+    source_type: mediation
+    confidence: 0.8
   nodes:
   - type: action
     action_id: communicate
@@ -86,7 +113,7 @@ behavior_trees:
   version: 1
   scope: personal
   entry_conditions:
-  - actor.can_inspect_granary
+  - actor.can_inspect
   estimated_minutes: 25
   cooldown_minutes: 720
   goal_tags: [food, reserve, winter]
@@ -99,14 +126,16 @@ behavior_trees:
   - type: action
     action_id: inspect_object
     parameters:
-      location_id: context.location_id
+      object_id: village_food
+  success_results: [stock_reported]
+  failure_results: [denied, interrupted]
   definition_source: config
   kind: base
 - id: patrol_route
   version: 1
   scope: village_watch
   entry_conditions:
-  - actor.is_guard
+  - actor.role == watch_captain or actor.can_patrol
   estimated_minutes: 97
   interrupt_policy: pause
   success_results:
@@ -134,30 +163,56 @@ behavior_trees:
   version: 1
   scope: personal
   entry_conditions:
-  - actor.is_granary_keeper
+  - actor.role == granary_keeper
   estimated_minutes: 30
   cooldown_minutes: 720
+  success_results: [ration_policy_reviewed, ration_plan_shared]
+  failure_results: [stock_report_failed, participant_unavailable]
+  outcome_effects:
+  - {type: need_delta, need: esteem, delta: 0.3}
+  - {type: need_delta, need: belonging, delta: 0.2}
   goal_tags: [food, ration, winter]
   drive_tags: [safety, belonging]
   nodes:
   - type: action
     action_id: inspect_object
     parameters:
-      location_id: context.location_id
+      object_id: village_food
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: village_square
   - type: action
     action_id: communicate
     parameters:
       target_id: lin_bo
       topic: food_ration
+  outcome_events:
+  - event_type: ration.policy_reviewed
+    wake: [god]
+    trend: true
+    summary: A ration policy discussion was recorded for the next governance review.
+  outcome_facts:
+  - id: ration_discussion
+    fact_key: ration:latest_discussion
+    fact: The ration stock was inspected and a policy discussion was recorded.
+    source_type: rationing
+    confidence: 0.8
   definition_source: config
   kind: base
 - id: heal_target
   version: 1
   scope: personal
   entry_conditions:
-  - actor.is_healer
+  - actor.role == herbalist
   - patient.available
   estimated_minutes: 72
+  success_results: [patient_stabilized, treatment_recorded]
+  failure_results: [treatment_failed, patient_unavailable]
+  outcome_events:
+  - event_type: health.treatment_completed
+    wake: [story, god]
+    summary: A configured treatment result was recorded.
   interrupt_policy: pause
   goal_tags: [health, care]
   drive_tags: [belonging, safety]
@@ -181,6 +236,10 @@ behavior_trees:
   interrupt_policy: pause
   success_results: [medicine_created, capability_improved]
   failure_results: [crafting_failed]
+  outcome_events:
+  - event_type: production.medicine_completed
+    wake: [god]
+    summary: A configured medicine recipe completed and its output was recorded.
   nodes:
   - type: action
     action_id: craft_recipe
@@ -224,6 +283,10 @@ behavior_trees:
   interrupt_policy: pause
   success_results: [dawn_bell_created, capability_improved]
   failure_results: [crafting_failed]
+  outcome_events:
+  - event_type: production.warning_artifact_completed
+    wake: [god]
+    summary: A configured warning artifact recipe completed and its output was recorded.
   nodes:
   - type: action
     action_id: craft_recipe
@@ -272,6 +335,7 @@ behavior_trees:
   estimated_minutes: 192
   interrupt_policy: pause
   success_results:
+  - research_progressed
   - new_pact_fact
   - ritual_candidate
   failure_results:
@@ -295,18 +359,20 @@ behavior_trees:
   - actor.can_inspect
   estimated_minutes: 24
   cooldown_minutes: 1440
+  success_results: [observation_recorded]
+  failure_results: [access_denied, interrupted]
   nodes:
   - type: action
     action_id: inspect_object
     parameters:
-      location_id: context.location_id
+      object_id: old_pact_tablet
   definition_source: config
   kind: base
 - id: defend_village
   version: 1
   scope: village_watch
   entry_conditions:
-  - actor.is_guard
+  - actor.role == watch_captain or actor.can_patrol
   - threat.at_village
   estimated_minutes: 36
   interrupt_policy: interruptible
@@ -316,6 +382,11 @@ behavior_trees:
   failure_results:
   - defense_broken
   - retreat_required
+  outcome_events:
+  - event_type: defense.village_response
+    wake: [story, god]
+    trend: true
+    summary: The configured village defense response was completed.
   goal_tags: [safety, defense, civilians]
   drive_tags: [safety, belonging]
   nodes:
@@ -336,6 +407,12 @@ behavior_trees:
   - threat.reachable
   estimated_minutes: 30
   interrupt_policy: interruptible
+  success_results: [position_held, target_protected]
+  failure_results: [defense_interrupted, target_lost]
+  outcome_events:
+  - event_type: defense.position_result
+    wake: [story, god]
+    summary: A configured defense position result was recorded.
   nodes:
   - type: action
     action_id: defend
@@ -353,6 +430,8 @@ behavior_trees:
   - actor.alive
   - threat.overwhelming
   estimated_minutes: 96
+  success_results: [safe_location_reached, escaped]
+  failure_results: [exhausted, route_blocked]
   nodes:
   - type: action
     action_id: flee_to_safety
@@ -365,6 +444,8 @@ behavior_trees:
   - actor.can_sound_alarm
   - threat.detected
   estimated_minutes: 6
+  success_results: [alarm_raised]
+  failure_results: [alarm_failed, device_broken]
   nodes:
   - type: action
     action_id: sound_alarm
@@ -404,6 +485,12 @@ behavior_trees:
   - target.available
   cooldown_minutes: 1440
   estimated_minutes: 6
+  success_results: [dialogue_recorded, testimony_shared]
+  failure_results: [conversation_refused, participant_left]
+  outcome_events:
+  - event_type: dialogue.behavior_completed
+    wake: [agent_reflection]
+    summary: The configured conversation behavior completed and its testimony was recorded.
   nodes:
   - type: action
     action_id: communicate
@@ -421,6 +508,12 @@ behavior_trees:
   - target.available
   cooldown_minutes: 2880
   estimated_minutes: 36
+  success_results: [agreement_reached, contract_recorded]
+  failure_results: [negotiation_failed, offer_refused]
+  outcome_events:
+  - event_type: negotiation.result_recorded
+    wake: [story, god]
+    summary: The configured negotiation result was recorded for follow-up.
   nodes:
   - type: action
     action_id: negotiate
@@ -460,8 +553,7 @@ behavior_trees:
   description: Consume one carried food item to restore satiety before choosing another task.
   entry_conditions:
   - actor.alive
-  - actor.has_food
-  - actor.satiety <= context.food_trigger_satiety
+  - inventory.available
   estimated_minutes: 1
   requirements: ["Carry one food item: rations, ration, or cooked_meal."]
   goal_tags: [food, recovery, readiness]
@@ -483,9 +575,8 @@ behavior_trees:
   description: Walk to the shared food store, then complete the configured ration service.
   entry_conditions:
   - actor.alive
-  - actor.food_withdrawal
+  - actor.permission.food_withdrawal
   - route.known
-  - actor.satiety <= context.food_trigger_satiety
   requirements: ["A known route to the granary and permission to withdraw food."]
   goal_tags: [food, reserve, survival]
   drive_tags: [physiological_homeostasis, safety]
@@ -508,8 +599,7 @@ behavior_trees:
   description: Spend one coin at the market for one ration when carried food is unavailable.
   entry_conditions:
   - actor.alive
-  - location.market
-  - actor.satiety <= context.food_trigger_satiety
+  - location.tag.market
   requirements: ["You are at the market and carry at least one coin; market stock must remain." ]
   goal_tags: [food, survival, trade]
   drive_tags: [physiological_homeostasis, autonomy]

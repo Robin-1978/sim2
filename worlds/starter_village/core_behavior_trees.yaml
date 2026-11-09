@@ -4,13 +4,15 @@ behavior_trees:
   scope: universal
   summary: Move to a known safe location and restore readiness.
   description: Travel to the nearest configured safe location, then rest until safe and ready.
-  entry_conditions: [actor.alive, actor.energy < 100 or not location.safe]
+  entry_conditions: [actor.alive, actor.state.energy < 100 or not location.safe]
   requirements: ["A known route to a configured safe location."]
   goal_tags: [recovery, readiness, safety]
   drive_tags: [safety]
   interrupt_policy: pause
   success_results: [safe_location_reached, energy_restored, readiness_restored]
   failure_results: [no_safe_route, unsafe_location, interrupted]
+  parameter_bindings:
+    safe_location_id: nearest_safe_location
   nodes:
   - type: action
     action_id: travel_to
@@ -25,13 +27,15 @@ behavior_trees:
   scope: universal
   summary: Move to a health service and recover health.
   description: Travel to the nearest configured clinic or health service, then receive treatment.
-  entry_conditions: [actor.alive, actor.health < 100]
+  entry_conditions: [actor.alive, actor.state.health < 100]
   requirements: ["A reachable health service and available medicine."]
   goal_tags: [health, recovery, safety]
   drive_tags: [safety, belonging]
   interrupt_policy: pause
   success_results: [health_restored, self_stabilized]
   failure_results: [no_health_service, treatment_failed, interrupted]
+  parameter_bindings:
+    health_location_id: nearest_health_service
   nodes:
   - type: action
     action_id: travel_to
@@ -53,6 +57,9 @@ behavior_trees:
   interrupt_policy: pause
   success_results: [resource_collected]
   failure_results: [resource_empty, route_unknown, gathering_failed]
+  parameter_bindings:
+    resource_location_id: nearest_resource_node
+    resource_tag: nearest_resource_tag
   nodes:
   - type: action
     action_id: travel_to

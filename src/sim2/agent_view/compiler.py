@@ -13,7 +13,7 @@ from ..behavior.estimator import BehaviorDurationEstimator
 from ..memory.service import MemoryService
 from ..persistence.store import WorldStore
 from ..world.drives import DriveCalculator
-from ..world.navigation import nearest_location_with_tag, nearest_resource_node, nearest_safe_location, reachable_locations
+from ..world.navigation import configured_location_tags, nearest_location_with_tag, nearest_resource_node, nearest_safe_location, reachable_locations
 
 
 def _label(value: str) -> str:
@@ -30,29 +30,7 @@ def _predicate_text(predicate: str) -> str:
     """Turn a configured predicate into one short sentence for the model."""
 
     text = str(predicate).replace("_", " ").replace(".", " ").strip()
-    replacements = {
-        "actor can explore": "You have exploration capability",
-        "actor can gather": "You have gathering capability",
-        "actor can craft": "You have crafting capability",
-        "actor can communicate": "You can communicate",
-        "actor can research": "You have research capability",
-        "actor can investigate": "You have investigation capability",
-        "actor is guard": "You are a guard",
-        "actor is healer": "You are a healer",
-        "actor alive": "You are alive",
-        "actor mobile": "You can move",
-        "area unknown": "The area is not known yet",
-        "area not fully mapped": "The area is not fully mapped",
-        "threat detected": "A threat has been detected",
-        "threat at village": "A threat is at the settlement",
-        "threat overwhelming": "The threat is overwhelming",
-        "patient available": "A patient is available",
-        "inputs available": "Required inputs are available",
-        "recipe available": "A recipe is available",
-        "object available": "The discovered object is at this location",
-        "location market": "You are at the local market",
-    }
-    return replacements.get(text, text[:1].upper() + text[1:] + ".")
+    return f"Configured condition: {text[:1].upper() + text[1:]}."
 
 
 def _display_item(value: Any) -> str:
@@ -149,10 +127,29 @@ class AgentViewCompiler:
 
     def __init__(self, store: WorldStore):
         self.store = store
-        self.conditions = ConditionEngine()
+        self.conditions = ConditionEngine((self.store.get_meta("rules", {}) or {}))
         self.resources = ResourceLedger(store)
         self.targets = TargetResolver(store)
         self.memory = MemoryService(store)
+
+    def _interaction_context(self, agent: dict[str, Any], participants: list[dict[str, Any]]) -> dict[str, Any]:
+        """Expose configured relationship signals without naming story entities."""
+
+        rules = self.store.get_meta("rules", {}) or {}
+        conflict_types = {str(item) for item in (rules.get("conflict_relation_types", ["conflict"]) or [])}
+        participant_ids = {str(item.get("id")) for item in participants}
+        available = False
+        for relation in self.store.get_related_relationships(agent["id"], limit=50):
+            if str(relation.get("person")) not in participant_ids or str(relation.get("relation")) not in conflict_types:
+                continue
+            value = relation.get("relation_strength", relation.get("value", 0))
+            try:
+                available = float(value) < 0
+            except (TypeError, ValueError):
+                available = False
+            if available:
+                break
+        return {"conflict": {"available": available}}
 
     @staticmethod
     def _target_parameter_keys(behavior: dict[str, Any], behavior_defs: dict[str, dict[str, Any]] | None = None) -> set[str]:
@@ -415,7 +412,7 @@ class AgentViewCompiler:
         location_id = state.get("location_id")
         safe_location_id = nearest_safe_location(self.store, location_id)
         resource_node = nearest_resource_node(self.store, location_id)
-        health_location_id = nearest_location_with_tag(self.store, location_id, {"health", "clinic"})
+        health_location_id = nearest_location_with_tag(self.store, location_id, configured_location_tags(self.store, "health_service", {"health", "clinic"}))
         known_route_destinations = reachable_locations(self.store, location_id)
         mapped_areas = self.store.explored_areas(agent_id)
         researched_sources = self.store.researched_sources(agent_id)
@@ -448,9 +445,10 @@ class AgentViewCompiler:
                 "researched_sources": researched_sources,
                 "inventory": agent.get("inventory", {}) or {},
                 "food_items": rules.get("food_items", []) or [],
-                "food_trigger_satiety": float(rules.get("food_trigger_satiety", 40) or 40),
+                "satiety_alert_threshold": float(rules.get("satiety_alert_threshold", 40) or 40),
                 "target": {"id": validation_target.get("id"), "available": True} if validation_target else {"available": False},
             }
+            condition_context.update(self._interaction_context(agent, participants))
             if any(not self.conditions.evaluate(str(predicate), agent=agent, target=condition_context["target"], context=condition_context, world=self.store.get_meta("world_properties", {}) or {}) for predicate in bt.get("entry_conditions", []) or []):
                 continue
             cooldown_minutes = max(0, int(bt.get("cooldown_minutes", 0) or 0))
@@ -513,19 +511,27 @@ class AgentViewCompiler:
             target_keys = self._target_parameter_keys(bt, bt_defs)
             target_required = bool(target_keys) and len(participants) > 1
             target_options = [{"name": str(item.get("name", item.get("id", "participant")))} for item in participants[:8]]
-            if bt_id == "recover_at_safe_location" and safe_location_id:
+            bindings = bt.get("parameter_bindings", {}) or {}
+            binding_values = {
+                "nearest_safe_location": safe_location_id,
+                "nearest_health_service": health_location_id,
+                "nearest_resource_node": (resource_node or {}).get("location_id"),
+                "nearest_resource_tag": (resource_node or {}).get("resource_tag"),
+            }
+            bound_value = next((binding_values.get(str(resolver)) for resolver in bindings.values() if binding_values.get(str(resolver))), None)
+            if bound_value and any(str(resolver) == "nearest_safe_location" for resolver in bindings.values()):
                 try:
-                    target_text = f"Configured safe location: {self.store.get_entity(safe_location_id).get('name', safe_location_id)}."
+                    target_text = f"Configured safe location: {self.store.get_entity(bound_value).get('name', bound_value)}."
                 except KeyError:
                     target_text = "Configured safe location is available."
-            elif bt_id == "seek_treatment" and health_location_id:
+            elif bound_value and any(str(resolver) == "nearest_health_service" for resolver in bindings.values()):
                 try:
-                    target_text = f"Health service: {self.store.get_entity(health_location_id).get('name', health_location_id)}."
+                    target_text = f"Health service: {self.store.get_entity(bound_value).get('name', bound_value)}."
                 except KeyError:
                     target_text = "Configured health service is available."
-            elif bt_id == "gather_at_known_node" and resource_node:
+            elif bound_value and any(str(resolver) == "nearest_resource_node" for resolver in bindings.values()):
                 try:
-                    target_text = f"Resource node: {self.store.get_entity(resource_node['location_id']).get('name', resource_node['location_id'])}."
+                    target_text = f"Resource node: {self.store.get_entity(bound_value).get('name', bound_value)}."
                 except KeyError:
                     target_text = "Configured resource node is available."
             elif resource_node and any(
@@ -594,22 +600,26 @@ class AgentViewCompiler:
         if current_location:
             memory_query_parts.append(str(current_location.get("name", location_id)))
         for drive in drives[:3]:
-            memory_query_parts.extend([str(drive.get("id", "")), str(drive.get("reason", ""))])
-        for behavior in available[:8]:
-            memory_query_parts.extend([
-                str(behavior.get("choice", "")),
-                str(behavior.get("purpose", "")),
-                " ".join(str(item) for item in (behavior.get("goal_tags") or [])),
-                " ".join(str(item) for item in (behavior.get("drive_tags") or [])),
-            ])
+            memory_query_parts.append(str(drive.get("id", "")))
+        for behavior in available[:6]:
+            memory_query_parts.append(str(behavior.get("ref", "")).removeprefix("behavior:"))
+            choice_words = str(behavior.get("choice", "")).split()
+            if choice_words:
+                memory_query_parts.append(" ".join(choice_words[:4]))
+            memory_query_parts.extend(str(item) for item in (behavior.get("goal_tags") or []))
         memory_query = " ".join(part for part in memory_query_parts if part).strip()
+        memory_dimensions = {
+            "location": [str(location_id), str(current_location.get("name", ""))] if location_id else [],
+            "behavior": [str(item.get("ref", "")).removeprefix("behavior:") for item in available[:8]],
+            "goal": list(agent.get("goal_tags", []) or []),
+        }
         # Compiling a snapshot is read-only. Explicit ``recall_memory`` calls
         # touch rows so opening a new decision view cannot reorder a just-written
         # experience by incrementing its predecessor's access count.
-        memories = self.memory.retrieve(agent_id, query=memory_query, limit=6, touch=False)
+        memories = self.memory.retrieve(agent_id, query=memory_query, limit=6, touch=False, dimensions=memory_dimensions)
         short_term_memories = [item for item in memories if item.get("tier") == "short_term"]
         long_term_memories = [item for item in memories if item.get("tier") == "long_term"]
-        known_facts = [self._humanize_fact(item) for item in self.store.list_knowledge_facts(agent_id, limit=8)]
+        known_facts = [self._humanize_fact(item) for item in self.memory.relevant_facts(agent_id, query=memory_query, limit=8, dimensions=memory_dimensions)]
         if not known_facts:
             known_facts = [{"fact": self._humanize_fact(fact), "source_type": "config_seed", "confidence": 1.0} for fact in agent.get("knowledge_seed", [])[:8]]
         relationships = self.store.get_related_relationships(agent_id, limit=5)
@@ -637,10 +647,18 @@ class AgentViewCompiler:
         )
         prompt_protocol, platform_rules = self._prompt_sections(role)
         decision_constraints: list[str] = []
-        satiety = float((agent.get("needs", {}) or {}).get("satiety", 0) or 0)
-        food_trigger = float(rules.get("food_trigger_satiety", 40) or 40)
-        if satiety > food_trigger:
-            decision_constraints.append(f"Satiety is {satiety:g}/100; food BTs require Satiety at or below {food_trigger:g}.")
+        labels = {str(item.get("id")): str(item.get("label") or item.get("id")) for item in (self.store.get_meta("attributes", []) or []) if isinstance(item, dict) and item.get("id")}
+        for signal in rules.get("decision_signals", []) or []:
+            if not isinstance(signal, dict) or not signal.get("need"):
+                continue
+            need_id = str(signal["need"])
+            if need_id not in needs:
+                continue
+            value = float(needs.get(need_id, 0) or 0)
+            threshold = float(signal.get("alert_threshold", 0) or 0)
+            message = signal.get("below_message") if value <= threshold else signal.get("above_message")
+            if message:
+                decision_constraints.append(f"{labels.get(need_id, need_id)} is {value:g}/100; {str(message).rstrip('.') }.")
         energy = float(state.get("energy", 100) or 0)
         decision_constraints.append(f"Energy is {energy:g}/100; Platform hides any BT whose configured energy cost exceeds current Energy.")
         if location_id and safe_location_id and safe_location_id != location_id:
@@ -714,8 +732,13 @@ class AgentViewCompiler:
         return hop_minutes
 
     def _action_available(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], location: dict[str, Any], food_items: list[str], duration_minutes: int | None = None) -> bool:
-        if action.get("id") == "gather_resource" and parameters.get("resource_tag") == "context.resource_tag":
-            source = next((item for item in self.store.entities_at_location((agent.get("initial_state") or {}).get("location_id")) if item.get("entity_type") in {"resource", "material"} and not (item.get("initial_state") or {}).get("protected") and self._entity_quantity(item) > 0), None)
+        resource_parameters = (action.get("parameter_defaults", {}) or {})
+        resource_key = next((key for key, value in resource_parameters.items() if value == "first_available_resource"), None)
+        if resource_key and parameters.get(resource_key) in {None, "", "context.resource_tag"}:
+            rules = self.store.get_meta("rules", {}) or {}
+            entity_types = {str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])}
+            protected_key = str(rules.get("resource_protected_state", "protected"))
+            source = next((item for item in self.store.entities_at_location((agent.get("initial_state") or {}).get("location_id")) if item.get("entity_type") in entity_types and not (item.get("initial_state") or {}).get(protected_key) and self._entity_quantity(item) > 0), None)
             parameters["resource_tag"] = source.get("id") if source else parameters.get("resource_tag")
         if action.get("requires_destination") and parameters.get("location_id") == (agent.get("initial_state") or {}).get("location_id"):
             return False

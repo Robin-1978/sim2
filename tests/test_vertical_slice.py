@@ -23,6 +23,7 @@ from sim2.prompting.renderer import render_context
 from sim2.simulation.runner import SimulationRunner
 from sim2.llm.config import ProviderConfig
 from sim2.llm.gateway import OpenAICompatibleProvider
+from sim2.memory.similarity import ExperienceSimilarity
 
 
 class FakeProvider:
@@ -350,7 +351,7 @@ def test_food_bt_is_available_with_food_and_closes_satiety_loop(tmp_path: Path):
         platform.close()
 
 
-def test_food_bt_stays_hidden_above_configured_hunger_trigger(tmp_path: Path):
+def test_food_bt_remains_available_for_agent_choice_at_any_satiety(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "food-trigger-world", tmp_path / "runtime"))
     try:
@@ -359,10 +360,9 @@ def test_food_bt_stays_hidden_above_configured_hunger_trigger(tmp_path: Path):
         with platform.store.transaction():
             platform.store.update_agent("lu_xingzhou", agent)
         view = platform.decision_view("lu_xingzhou")
-        assert not any(item["ref"] == "behavior:eat_food" for item in view["executable_behaviors"])
-        rejected = platform.submit_behavior(BehaviorIntent("lu_xingzhou", "behavior:eat_food", {}, {}, "Eat before the next task.", 0.8, "early-food"))
-        assert rejected["status"] == "rejected"
-        assert rejected["failed_check"] == "entry_condition"
+        assert any(item["ref"] == "behavior:eat_food" for item in view["executable_behaviors"])
+        accepted = platform.submit_behavior(BehaviorIntent("lu_xingzhou", "behavior:eat_food", {}, {}, "Choose food before the next task.", 0.8, "early-food"))
+        assert accepted["status"] == "accepted"
     finally:
         platform.close()
 
@@ -459,7 +459,64 @@ def test_starvation_is_a_configured_world_consequence(tmp_path: Path):
         platform.close()
 
 
-def test_food_and_rest_fallbacks_disappear_when_needs_are_satisfied(tmp_path: Path):
+def test_patrol_report_closes_personal_world_and_knowledge_loop(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "patrol-closure-world", tmp_path / "runtime"))
+    try:
+        before = platform.store.get_meta("world_properties")["north_gate_threat_level"]
+        before_needs = platform.store.get_agent("he_yan")["needs"].copy()
+        result = platform.submit_behavior(BehaviorIntent("he_yan", "behavior:patrol_route", {}, {}, "Inspect the known boundary route.", 0.9, "patrol-closure"))
+        assert result["status"] == "accepted"
+        step_n(platform, 97)
+        after = platform.store.get_meta("world_properties")["north_gate_threat_level"]
+        assert after == before
+        agent = platform.store.get_agent("he_yan")
+        assert agent["needs"]["safety"] > before_needs["safety"]
+        assert agent["needs"]["esteem"] > before_needs["esteem"]
+        assert any(item["fact_key"] == "patrol:north_gate_loop" for item in platform.store.list_knowledge_facts("he_yan", limit=20))
+        assert any(item["event_type"] == "security.patrol_reported" for item in platform.store.recent_events(limit=30))
+        trends = platform.store.world_trends(current_minute=platform.store.get_meta("world_minute"))["weekly"]
+        assert trends["signal_events"]["security.patrol_reported"] == 1
+        assert "north_gate_threat_level" not in trends["world_property_deltas"]
+        assert any(item["role"] == "god" and item["source_event_type"] == "security.patrol_reported" for item in platform.store.ready_evolution_tasks())
+    finally:
+        platform.close()
+
+
+def test_governance_report_closes_personal_world_and_knowledge_loop(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "governance-closure-world", tmp_path / "runtime"))
+    try:
+        result = platform.submit_behavior(BehaviorIntent("lin_bo", "behavior:govern_village", {}, {}, "Review current reserves and risk.", 0.9, "governance-closure"))
+        assert result["status"] == "accepted"
+        step_n(platform, 24)
+        assert platform.store.get_meta("world_properties")["public_trust"] == 0.55
+        facts = platform.store.list_knowledge_facts("lin_bo", limit=20)
+        assert any(item["fact_key"] == "governance:latest_review" for item in facts)
+        assert any(item["fact_key"] == "inspect_object:village_food" and "320" in item["fact"] for item in facts)
+        assert any(item["event_type"] == "governance.reviewed" for item in platform.store.recent_events(limit=30))
+        assert any(item["role"] == "god" and item["source_event_type"] == "governance.reviewed" for item in platform.store.ready_evolution_tasks())
+    finally:
+        platform.close()
+
+
+def test_satiety_threshold_is_an_observable_signal_not_a_food_choice_gate(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "satiety-signal-world", tmp_path / "runtime"))
+    try:
+        agent = platform.store.get_agent("lu_xingzhou")
+        agent["needs"]["satiety"] = 40.01
+        platform.store.update_agent("lu_xingzhou", agent)
+        platform.store.connection.commit()
+        assert any(item["ref"] == "behavior:eat_food" for item in platform.decision_view("lu_xingzhou")["executable_behaviors"])
+        platform.step()
+        event = next(item for item in platform.store.recent_events(limit=30) if item["event_type"] == "need.satiety_low")
+        assert event["need"] == "satiety"
+    finally:
+        platform.close()
+
+
+def test_rest_fallback_disappears_but_food_remains_a_decision_choice(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "satisfied-needs-world", tmp_path / "runtime")
     platform = Platform(db_path)
@@ -470,7 +527,7 @@ def test_food_and_rest_fallbacks_disappear_when_needs_are_satisfied(tmp_path: Pa
         platform.store.connection.commit()
         offered = {item["ref"] for item in platform.decision_view("liang_he")["executable_behaviors"]}
         assert "behavior:eat_food" not in offered
-        assert "behavior:get_food" not in offered
+        assert "behavior:get_food" in offered
 
         smith = platform.store.get_agent("tian_yan")
         smith["initial_state"]["energy"] = 100
@@ -542,13 +599,13 @@ def test_decision_context_explains_single_recovery_candidate(tmp_path: Path):
         offered = {item["ref"] for item in view["executable_behaviors"]}
         assert "behavior:recover_at_safe_location" in offered
         assert "behavior:eat_food" not in offered
-        assert "behavior:get_food" not in offered
+        assert "behavior:get_food" in offered
         assert any("Satiety is 100/100" in item for item in view["decision_constraints"])
         assert any("Energy is 6.5/100" in item for item in view["decision_constraints"])
         assert any("not safe for rest" in item for item in view["decision_constraints"])
         prompt = render_context(view, "Choose one behavior.")
         assert "<decision_constraints>" in prompt
-        assert "food BTs require Satiety" in prompt
+        assert "Food choices remain available" in prompt
     finally:
         platform.close()
 
@@ -598,7 +655,7 @@ def test_core_treatment_bt_travels_to_health_service_and_restores_health(tmp_pat
         platform.close()
 
 
-def test_platform_rechecks_behavior_entry_condition_after_context_changes(tmp_path: Path):
+def test_platform_accepts_food_choice_without_a_hard_satiety_gate(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "stale-food-world", tmp_path / "runtime")
     platform = Platform(db_path)
@@ -616,9 +673,7 @@ def test_platform_rechecks_behavior_entry_condition_after_context_changes(tmp_pa
             confidence=0.5,
             intent_id="stale-food-intent",
         ))
-        assert result["status"] == "rejected"
-        assert result["failed_check"] == "entry_condition"
-        assert result["retryable"] is True
+        assert result["status"] == "accepted"
     finally:
         platform.close()
 
@@ -699,6 +754,28 @@ def test_all_configured_needs_have_direct_agent_facing_attribute_meanings(tmp_pa
             assert "100" in meaning and "0" in meaning
         prompt = render_context(platform.decision_view("liang_he"), "Choose one behavior.")
         assert "Satiety" in prompt and "higher means more full" in prompt
+    finally:
+        platform.close()
+
+
+def test_starter_behavior_closure_contract_is_complete(tmp_path: Path):
+    """Every registered tree must expose a result and a persisted consequence."""
+
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "behavior-closure-contract-world", tmp_path / "runtime"))
+    try:
+        actions = {item["id"]: item for item in platform.store.get_definitions("action_def")}
+        recipes = {item["id"]: item for item in platform.store.get_definitions("recipe_def")}
+        for behavior in platform.store.get_definitions("bt_def"):
+            action_nodes = list(platform.view._iter_behavior_actions(behavior["id"]))
+            configured_actions = [actions.get(str(node.get("action_id")), {}) for node in action_nodes]
+            assert behavior.get("success_results") or any(item.get("success", {}).get("result") for item in configured_actions), behavior["id"]
+            assert behavior.get("failure_results") or any(item.get("failure", {}).get("result") for item in configured_actions), behavior["id"]
+            has_consequence = bool(behavior.get("outcome_effects") or behavior.get("outcome_events") or behavior.get("outcome_facts"))
+            for action in configured_actions:
+                recipe = recipes.get(str(next((node.get("parameters", {}).get("recipe_id") for node in action_nodes if node.get("action_id") == action.get("id")), "")))
+                has_consequence = has_consequence or bool(action.get("effects") or action.get("progress_effects") or action.get("information") or (recipe and recipe.get("outputs")))
+            assert has_consequence, behavior["id"]
     finally:
         platform.close()
 
@@ -984,6 +1061,61 @@ def test_memory_has_short_and_long_tiers_and_task_conditioned_recall(tmp_path: P
         assert "Greywood" in view["memory_query"] or "north" in view["memory_query"].lower()
     finally:
         platform.close()
+
+
+def test_memory_and_knowledge_use_structured_retrieval_dimensions(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "memory-dimensions-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            platform.store.put_memory(
+                "lu_xingzhou",
+                "experience",
+                {"summary": "The north gate route is safe before fog.", "location_id": "north_gate", "behavior_ref": "patrol_route", "goal_tags": ["safety"], "importance": 0.9},
+                tier="long_term",
+            )
+            platform.store.put_memory(
+                "lu_xingzhou",
+                "experience",
+                {"summary": "The market sells cheap cloth.", "location_id": "inn", "behavior_ref": "trade", "goal_tags": ["trade"], "importance": 0.9},
+                tier="long_term",
+            )
+            platform.store.put_knowledge_fact(
+                "lu_xingzhou",
+                "patrol:north_gate",
+                {"fact": "Fresh marks were found at the north gate.", "location_id": "north_gate", "behavior": "patrol_route", "source_type": "patrol", "confidence": 0.9},
+            )
+            platform.store.put_knowledge_fact(
+                "lu_xingzhou",
+                "market:cloth",
+                {"fact": "The market has cloth.", "location_id": "inn", "source_type": "trade", "confidence": 0.9},
+            )
+        recalled = platform.memory.retrieve(
+            "lu_xingzhou",
+            query="route north gate",
+            limit=1,
+            dimensions={"location": ["north_gate"], "behavior": ["patrol_route"]},
+        )
+        assert recalled[0]["tags"]["location"] == "北门"
+        facts = platform.memory.relevant_facts(
+            "lu_xingzhou", query="marks north gate", limit=2, dimensions={"location": ["north_gate"]}
+        )
+        assert facts[0]["fact_key"] == "patrol:north_gate"
+        assert facts[0]["tags"]["behavior"] == "patrol_route"
+        assert all(item["fact_key"] != "market:cloth" for item in facts)
+    finally:
+        platform.close()
+
+
+def test_memory_bge_cache_discovery_matches_fastembed_layout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    snapshot = tmp_path / "models--Qdrant--bge-small-zh-v1.5" / "snapshots" / "revision"
+    snapshot.mkdir(parents=True)
+    (snapshot / "model_optimized.onnx").write_bytes(b"placeholder")
+    (snapshot / "tokenizer.json").write_text("{}", encoding="utf-8")
+    monkeypatch.delenv("SIM2_BGE_MODEL", raising=False)
+    monkeypatch.setenv("SIM2_BGE_CACHE", str(tmp_path))
+    resolved = ExperienceSimilarity._resolve_model_name({})
+    assert resolved == str(snapshot)
 
 
 def test_multiple_visible_participants_require_explicit_target(tmp_path: Path):
@@ -1588,7 +1720,7 @@ def test_parallel_bt_runs_action_instances_concurrently(tmp_path: Path):
 
 def test_generic_condition_and_effect_components():
     agent = {"role": "pathfinder", "capabilities": {"exploration": 0.8}, "initial_state": {"health": 100, "energy": 20, "conditions": []}, "inventory": {}}
-    conditions = ConditionEngine()
+    conditions = ConditionEngine({"capability_aliases": {"explore": ["exploration"]}})
     assert conditions.evaluate("actor.alive and actor.can_explore", agent=agent)
     assert not conditions.evaluate("actor.can_fly", agent=agent)
     agent["faction_ids"] = ["village_watch"]

@@ -290,7 +290,39 @@ class WorldStore:
         rows = self.connection.execute("SELECT from_id,to_id,relation_type,data_json FROM relationship ORDER BY from_id,to_id").fetchall()
         return [{"from": row["from_id"], "to": row["to_id"], "type": row["relation_type"], **json.loads(row["data_json"])} for row in rows]
 
+    def _memory_tags(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Build the small, stable retrieval envelope shared by facts and memories.
+
+        The prose remains free-form, but retrieval should not have to infer
+        every useful dimension from a transcript.  These dimensions are
+        deliberately declarative and optional so a world package can add
+        fields without changing the schema: location, participants,
+        behavior, object, topic and goal.
+        """
+
+        raw = data.get("tags")
+        tags = dict(raw) if isinstance(raw, dict) else {}
+        sources = {
+            "location": ("location", "location_id"),
+            "participants": ("participants", "target_id", "speaker_id", "listener_id", "recipient_id", "counterparty_id"),
+            "behavior": ("behavior", "behavior_ref", "event_ref", "source_action"),
+            "object": ("object", "object_id"),
+            "topic": ("topic",),
+            "goal": ("goal", "goal_tags"),
+        }
+        for tag, fields in sources.items():
+            if tag in tags and tags[tag] not in (None, "", []):
+                continue
+            value = next((data.get(field) for field in fields if data.get(field) not in (None, "", [])), None)
+            if value not in (None, "", []):
+                tags[tag] = value
+        return tags
+
     def put_knowledge_fact(self, agent_id: str, fact_key: str, data: dict[str, Any]) -> int:
+        data = dict(data)
+        tags = self._memory_tags(data)
+        if tags:
+            data["tags"] = tags
         cur = self.connection.execute(
             "INSERT INTO knowledge_fact(agent_id,fact_key,data_json) VALUES (?,?,?)",
             (agent_id, fact_key, json_dumps(data)),
@@ -298,6 +330,10 @@ class WorldStore:
         return int(cur.lastrowid)
 
     def merge_knowledge_fact(self, agent_id: str, fact_key: str, data: dict[str, Any]) -> int:
+        data = dict(data)
+        tags = self._memory_tags(data)
+        if tags:
+            data["tags"] = tags
         confidence = float(data.get("confidence", 0.5))
         row = self.connection.execute("SELECT id,data_json FROM knowledge_fact WHERE agent_id=? AND fact_key=? ORDER BY id DESC LIMIT 1", (agent_id, fact_key)).fetchone()
         if row is None:
@@ -311,7 +347,7 @@ class WorldStore:
     def list_knowledge_facts(self, agent_id: str, *, limit: int = 8) -> list[dict[str, Any]]:
         rows = self.connection.execute(
             "SELECT id,fact_key,data_json FROM knowledge_fact WHERE agent_id=? ORDER BY id DESC LIMIT ?",
-            (agent_id, max(1, min(int(limit), 50))),
+            (agent_id, max(1, min(int(limit), 1000))),
         ).fetchall()
         return [{"id": row["id"], "fact_key": row["fact_key"], **json.loads(row["data_json"])} for row in rows]
 
@@ -687,6 +723,8 @@ class WorldStore:
             goal_updates = 0
             goal_progress: dict[str, int] = {}
             behavior_completed = behavior_failed = 0
+            signal_events: dict[str, int] = {}
+            world_property_deltas: dict[str, float] = {}
             for row in rows:
                 event_type = str(row["event_type"])
                 data = json.loads(row["data_json"])
@@ -709,6 +747,11 @@ class WorldStore:
                         goal_progress[str(tag)] = goal_progress.get(str(tag), 0) + 1
                 elif event_type in {"behavior.failed", "behavior.interrupted"}:
                     behavior_failed += 1
+                if data.get("trend") is True:
+                    signal_events[event_type] = signal_events.get(event_type, 0) + 1
+                if event_type == "world.property_changed":
+                    property_id = str(data.get("property", "property"))
+                    world_property_deltas[property_id] = world_property_deltas.get(property_id, 0.0) + float(data.get("delta", 0) or 0)
             current_relationships = self.list_relationships()
             relation_current: dict[str, dict[str, float]] = {}
             for item in current_relationships:
@@ -743,6 +786,8 @@ class WorldStore:
                     "failed_or_interrupted_behaviors": behavior_failed,
                     "progress_by_tag": dict(sorted(goal_progress.items())),
                 },
+                "signal_events": dict(sorted(signal_events.items())),
+                "world_property_deltas": {key: round(value, 4) for key, value in sorted(world_property_deltas.items())},
             }
 
         calendar = (self.get_meta("setting", {}) or {}).get("calendar", {}) if isinstance(self.get_meta("setting", {}), dict) else {}
@@ -808,31 +853,21 @@ class WorldStore:
         # tags are storage metadata, not additional prompt text; hybrid FTS
         # and BGE ranking can use location, participants, behavior, object,
         # topic and goal without parsing a transcript.
-        raw_tags = data.get("tags")
-        tags = dict(raw_tags) if isinstance(raw_tags, dict) else {}
-        tag_sources = {
-            "location": ("location", "location_id"),
-            "participants": ("participants", "target_id", "speaker_id", "listener_id", "recipient_id"),
-            "behavior": ("behavior", "behavior_ref", "event_ref"),
-            "object": ("object", "object_id", "source_id"),
-            "topic": ("topic",),
-            "goal": ("goal", "goal_tags"),
-        }
-        for tag, fields in tag_sources.items():
-            if tag in tags and tags[tag] not in (None, "", []):
+        tags = self._memory_tags(data)
+        # IDs are useful for filtering but visible names make the envelope
+        # readable in diagnostics and prompt previews.
+        for tag in ("location", "participants", "object"):
+            value = tags.get(tag)
+            if value in (None, "", []):
                 continue
-            value = next((data.get(field) for field in fields if data.get(field) not in (None, "", [])), None)
-            if value not in (None, "", []):
-                if tag in {"location", "participants", "object"}:
-                    values = value if isinstance(value, list) else [value]
-                    visible_values = []
-                    for candidate in values:
-                        try:
-                            visible_values.append(self.get_entity(str(candidate)).get("name", candidate))
-                        except KeyError:
-                            visible_values.append(candidate)
-                    value = visible_values if isinstance(value, list) else visible_values[0]
-                tags[tag] = value
+            values = value if isinstance(value, list) else [value]
+            visible_values = []
+            for candidate in values:
+                try:
+                    visible_values.append(self.get_entity(str(candidate)).get("name", candidate))
+                except KeyError:
+                    visible_values.append(candidate)
+            tags[tag] = visible_values if isinstance(value, list) else visible_values[0]
         if tags:
             data["tags"] = tags
         encoded = json_dumps(data)

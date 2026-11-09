@@ -4,6 +4,8 @@
 
 世界、物体、能力、元动作和 BT 都以配置形式导入 SQLite。Platform 不为“采集食物”“攻击”“制作食物”等语义动作编写业务分支；Platform 只实现通用的目标解析、条件求值、资源预留、时间推进、效果解释、事件提交和投影更新。
 
+条件 DSL 只读取实例配置导入的状态路径、需求路径、库存路径、权限、地点标签和能力别名。能力别名、地点标签和属性含义属于故事包规则，不能写入 Platform 代码。
+
 LLM 不读取原始 YAML，也不调用 Python handler。Platform 根据配置和当前状态生成精简的 `ActionView`、`BTView` 和 `ObservationSnapshot`，LLM 只提交带 ID、目标和参数的 Intent。
 
 ## 配置到执行链路

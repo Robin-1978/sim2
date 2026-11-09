@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any, TYPE_CHECKING
 
 from .similarity import ExperienceSimilarity
@@ -16,11 +17,59 @@ class MemoryService:
         rules = store.get_meta("rules", {}) or {}
         config = rules.get("memory_quality", {}).get("semantic_similarity", {}) if isinstance(rules, dict) else {}
         self.similarity = similarity or ExperienceSimilarity(config)
+        preload = bool(config.get("preload", False)) or os.getenv("SIM2_BGE_PRELOAD", "").strip().casefold() in {"1", "true", "yes", "on"}
+        if preload:
+            self.similarity.preload()
+
+    def status(self) -> dict[str, Any]:
+        """Expose the selected retrieval backend without forcing model load."""
+
+        return self.similarity.status()
+
+    @staticmethod
+    def _dimension_score(item: dict[str, Any], dimensions: dict[str, Any] | None) -> float:
+        """Return a soft metadata match used as a small ranking feature."""
+
+        if not dimensions:
+            return 0.0
+        tags = item.get("tags") if isinstance(item.get("tags"), dict) else {}
+        matched = 0
+        total = 0
+        for key, wanted in dimensions.items():
+            if wanted in (None, "", []):
+                continue
+            total += 1
+            wanted_values = wanted if isinstance(wanted, (list, tuple, set)) else [wanted]
+            actual = tags.get(key)
+            actual_values = actual if isinstance(actual, (list, tuple, set)) else [actual]
+            if {str(value).casefold() for value in wanted_values if value not in (None, "", [])} & {str(value).casefold() for value in actual_values if value not in (None, "", [])}:
+                matched += 1
+        return matched / max(1, total)
+
+    def _rank(self, items: list[dict[str, Any]], query: str, limit: int, dimensions: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        """Rank every permitted candidate, with tags as a soft tie-breaker.
+
+        Scope and permission filtering happen before this method. Metadata does
+        not remove a candidate: BGE/lexical relevance is evaluated over the
+        whole permitted set, then a small tag boost improves task alignment.
+        """
+
+        if not items:
+            return []
+        ranked = self.similarity.rank(query, items, limit=len(items))
+        if dimensions:
+            def score(item: dict[str, Any]) -> tuple[float, float, float]:
+                relevance = float(item.get("_retrieval_relevance", 1.0 if not query.strip() else 0.0))
+                tag_boost = self._dimension_score(item, dimensions)
+                return (relevance + 0.12 * tag_boost, float(item.get("importance", 0.5) or 0), float(item.get("uses", 0) or 0))
+            ranked.sort(key=score, reverse=True)
+        return ranked[: max(1, int(limit))]
 
     def recall(self, agent_id: str, question: str = "", limit: int = 8, *, scope: str = "all") -> dict[str, Any]:
         scope = scope if scope in {"all", "short_term", "long_term"} else "all"
         memories = self.retrieve(agent_id, query=question, limit=limit, scope=scope, touch=True)
-        return {"status": "ok", "question": question, "scope": scope, "memories": memories, "knowledge": self.store.list_knowledge_facts(agent_id, limit=8), "source": "agent_memory"}
+        knowledge = self.relevant_facts(agent_id, query=question, limit=limit)
+        return {"status": "ok", "question": question, "scope": scope, "memories": memories, "knowledge": knowledge, "source": "agent_memory"}
 
     def retrieve(
         self,
@@ -30,6 +79,7 @@ class MemoryService:
         limit: int = 8,
         scope: str = "all",
         touch: bool = False,
+        dimensions: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Retrieve task-relevant short and long memory without age decay.
 
@@ -40,7 +90,7 @@ class MemoryService:
 
         limit = max(1, min(int(limit), 20))
         def relevant(items: list[dict[str, Any]], budget: int) -> list[dict[str, Any]]:
-            ranked_items = self.similarity.rank(query, items, limit=budget)
+            ranked_items = self._rank(items, query, budget, dimensions)
             if not query.strip():
                 return ranked_items
             # Do not fill the prompt with the highest-scoring irrelevant row.
@@ -77,6 +127,34 @@ class MemoryService:
             # without changing durable memory by elapsed time.
             self.store.touch_memories([int(item["id"]) for item in ranked if item.get("id")])
         return ranked
+
+    def relevant_facts(
+        self,
+        agent_id: str,
+        *,
+        query: str = "",
+        limit: int = 8,
+        dimensions: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Retrieve task-relevant knowledge facts using the same hybrid ranker.
+
+        Facts are authoritative observations, while memory items are retained
+        experience.  They share the retrieval envelope but remain separate in
+        the response so an Agent cannot confuse a belief or lesson with a
+        world observation.
+        """
+
+        facts = self.store.list_knowledge_facts(agent_id, limit=1000)
+        if not facts:
+            return []
+        requested = max(1, min(int(limit), 20))
+        ranked = self._rank(facts, query, requested, dimensions)
+        if query.strip():
+            threshold = self.similarity.embedding_retrieval_threshold if self.similarity._method.startswith("embedding_cosine") else self.similarity.retrieval_threshold
+            ranked = [item for item in ranked if float(item.get("_retrieval_relevance", self.similarity.relevance(query, item))) >= threshold]
+        for item in ranked:
+            item.pop("_retrieval_relevance", None)
+        return ranked[: max(1, min(int(limit), 20))]
 
     def experience_match(self, agent_id: str, summary: str) -> dict[str, Any]:
         """Return a quality hint; the Reflection Agent still decides what to retain."""

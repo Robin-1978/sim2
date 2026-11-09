@@ -73,7 +73,7 @@ LLM 看到的状态是精简摘要，例如“何砚，北门，受伤 20%，可
 
 完整的属性、元动作和基础 BT 清单见 [starter-village-catalog.md](starter-village-catalog.md)；给 LLM 的简明英文目录见 [starter-village-agent-catalog.md](starter-village-agent-catalog.md)。配置文件是 Platform 的规范输入；LLM 读取的是 Platform 根据当前状态过滤后的精简目录，不直接读取原始 YAML。AgentView 是运行时生成的临时投影，不作为世界事实文件保存。
 
-雾溪村中的 BT 用来组合通用能力：例如 `craft_meal` BT 调用 `craft_recipe` Action 读取 `cooked_meal` Recipe；`defend_village` BT 先报警，再选择防御或撤离；`explore_greywood` BT 组合移动和探索，完成后由配置的发现条目解锁后续 BT；`recover_caravan_ledger` 使用通用 `recover_object` Action，把探索结果转成物品状态、知识和公共事件。取粮统一使用 `get_food`：Platform 根据配置的地点拓扑计算路线，已经在粮仓时移动 Action 只用一个 tick 判定到达，然后继续取粮。饱食度是直观刻度，0 表示饥饿、100 表示吃饱；配置的进食触发阈值为 40，达到阈值前不会提供进食 BT，避免在接近饱腹时浪费食物。粮仓的 `village_food` 是按权限领取的公共储备，不是商店；旅店的 `market_rations` 是商户库存，`buy_food` 用金币购买并减少库存。角色之间的物品交换走通用交易事件和协商工具，不会偷偷改变公共粮仓。Recipe 可声明 `limits.max_total` 防止独特工具或有限药品被无需求刷产出，也可通过声明式实体效果同步世界物体状态，例如晨钟制作后将 `dawn_bell.created` 设为 true；饥饿伤害和市场交易也属于配置规则。Recipe 只描述材料和产物，Action 负责按分钟执行，BT 负责控制流，Platform 负责状态变化。
+雾溪村中的 BT 用来组合通用能力：例如 `craft_meal` BT 调用 `craft_recipe` Action 读取 `cooked_meal` Recipe；`defend_village` BT 先报警，再选择防御或撤离；`explore_greywood` BT 组合移动和探索，完成后由配置的发现条目解锁后续 BT；`recover_caravan_ledger` 使用通用 `recover_object` Action，把探索结果转成物品状态、知识和公共事件。取粮统一使用 `get_food`：Platform 根据配置的地点拓扑计算路线，已经在粮仓时移动 Action 只用一个 tick 判定到达，然后继续取粮。饱食度是直观刻度，0 表示饥饿、100 表示吃饱；40 只是配置的提醒信号，是否进食由 Agent 根据需求、库存、时间和其他影响选择，Platform 只校验实际条件。粮仓的 `village_food` 是按权限领取的公共储备，不是商店；旅店的 `market_rations` 是商户库存，`buy_food` 用金币购买并减少库存。角色之间的物品交换走通用交易事件和协商工具，不会偷偷改变公共粮仓。Recipe 可声明 `limits.max_total` 防止独特工具或有限药品被无需求刷产出，也可通过声明式实体效果同步世界物体状态，例如晨钟制作后将 `dawn_bell.created` 设为 true；饥饿伤害和市场交易也属于配置规则。Recipe 只描述材料和产物，Action 负责按分钟执行，BT 负责控制流，Platform 负责状态变化。
 
 配置包位于 `worlds/starter_village/`：
 

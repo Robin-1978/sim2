@@ -16,6 +16,19 @@ class ConditionEngine:
 
     _comparison = re.compile(r"^\s*([\w.]+)\s*(==|!=|>=|<=|>|<)\s*(.+?)\s*$")
 
+    def __init__(self, config: dict[str, Any] | None = None):
+        config = config or {}
+        self.capability_aliases = {
+            str(key): [str(value)] if isinstance(value, str) else [str(item) for item in (value or [])]
+            for key, value in (config.get("capability_aliases", {}) or {}).items()
+        }
+        groups = config.get("location_tag_groups", {}) or {}
+        self.location_tag_groups = {
+            str(key): {str(item) for item in (value if isinstance(value, list) else [value])}
+            for key, value in groups.items()
+        }
+        self.public_locations_are_safe = bool(config.get("public_locations_are_safe", True))
+
     def evaluate(self, expression: str, *, agent: dict[str, Any], target: dict[str, Any] | None = None, world: dict[str, Any] | None = None, context: dict[str, Any] | None = None) -> bool:
         expression = str(expression or "").strip()
         if not expression:
@@ -63,17 +76,17 @@ class ConditionEngine:
             return float(state.get("health", 100)) > 0
         if path == "actor.incapacitated":
             return float(state.get("health", 100)) <= 0 or "incapacitated" in state.get("conditions", [])
-        if path == "actor.energy":
-            return float(state.get("energy", 100))
-        if path == "actor.health":
-            return float(state.get("health", 100))
-        if path == "actor.location":
-            return state.get("location_id")
-        if path == "actor.satiety":
-            return float((agent.get("needs", {}) or {}).get("satiety", state.get("satiety", 0)))
+        if path == "actor.role":
+            return agent.get("role")
+        if path.startswith("actor.need."):
+            return (agent.get("needs", {}) or {}).get(path.removeprefix("actor.need."), state.get(path.removeprefix("actor.need.")))
+        if path.startswith("actor.state."):
+            return state.get(path.removeprefix("actor.state."))
+        if path.startswith("actor.inventory."):
+            return (agent.get("inventory", {}) or {}).get(path.removeprefix("actor.inventory."), 0)
         if path == "actor.mobile":
             return self._value("actor.alive", agent, target, world, context)
-        if path == "actor.has_food":
+        if path == "inventory.available":
             inventory = agent.get("inventory", {}) or {}
             food_items = context.get("food_items", []) or []
             item_id = context.get("item_id") or target.get("item_id")
@@ -82,19 +95,8 @@ class ConditionEngine:
             return any(float(inventory.get(str(item), 0) or 0) >= 1 for item in food_items)
         if path.startswith("actor.can_"):
             capability = path.removeprefix("actor.can_")
-            aliases = {"explore": "exploration", "speak": "conversation", "communicate": "conversation", "craft": "cooking", "attack": "combat", "defend": "defense", "gather": "gather", "research": "research", "inspect": "investigation", "investigate": "investigation", "inspect_granary": "accounting", "negotiate": "conversation", "sound_alarm": "alarm", "mediate": "conversation"}
-            if capability == "craft":
-                value = max((agent.get("capabilities", {}).get(item, 0) for item in ("cooking", "herbalism", "forging")), default=0)
-            else:
-                value = agent.get("capabilities", {}).get(aliases.get(capability, capability), 0)
-            if not value and capability == "inspect":
-                value = max((agent.get("capabilities", {}).get(item, 0) for item in ("investigation", "lore", "accounting", "governance")), default=0)
-            if not value and capability == "inspect_granary":
-                value = max((agent.get("capabilities", {}).get(item, 0) for item in ("accounting", "governance")), default=0)
-            if not value and capability == "gather":
-                value = max((agent.get("capabilities", {}).get(item, 0) for item in ("gather", "farming", "hunting", "foraging")), default=0)
-            if not value and capability == "investigate":
-                value = max((agent.get("capabilities", {}).get(item, 0) for item in ("investigation", "tracking", "lore", "rumor_assessment")), default=0)
+            candidates = self.capability_aliases.get(capability, [capability])
+            value = max((agent.get("capabilities", {}).get(item, 0) for item in candidates), default=0)
             return float(value or 0) > 0
         if path == "actor.faction_id":
             factions = agent.get("faction_ids", [])
@@ -102,20 +104,10 @@ class ConditionEngine:
         if path.startswith("actor.permission."):
             permissions = agent.get("permissions", {})
             return permissions.get(path.removeprefix("actor.permission."), False)
-        if path == "actor.food_withdrawal":
-            return bool((agent.get("permissions", {}) or {}).get("food_withdrawal", False))
         if path.startswith("actor.is_"):
             role = str(agent.get("role", "")).lower()
             expected = path.removeprefix("actor.is_").replace("_", " ")
-            role_aliases = {
-                "guard": ("guard", "watch", "patrol"),
-                "healer": ("healer", "healing", "herbalist"),
-                "steward": ("steward", "council", "leader"),
-                "granary keeper": ("granary_keeper", "granary", "ration"),
-                "blacksmith": ("blacksmith", "smith"),
-            }
-            aliases = role_aliases.get(expected, (expected,))
-            return any(alias in role for alias in aliases) or any(any(alias in str(key).lower() for alias in aliases) and float(value or 0) > 0 for key, value in agent.get("capabilities", {}).items())
+            return expected in role.replace("_", " ") or float((agent.get("capabilities", {}) or {}).get(expected.replace(" ", "_"), 0) or 0) > 0
         if path == "actor.at_location":
             return bool(state.get("location_id"))
         if path == "route.known":
@@ -161,20 +153,19 @@ class ConditionEngine:
             return self._path_value(context, path.removeprefix("context."))
         if path == "location.has_food":
             location = context.get("current_location", {}) or {}
-            return "food" in (location.get("tags", []) or []) or bool(context.get("food_available", False))
+            tags = self.location_tag_groups.get("food", {"food"})
+            return bool(set(location.get("tags", []) or []) & tags) or bool(context.get("food_available", False))
         if path == "location.resource_node":
             location = context.get("current_location", {}) or {}
-            return bool(set(location.get("tags", []) or []) & {"food", "resource", "water", "mine", "forest"})
-        if path == "location.food_store":
+            tags = self.location_tag_groups.get("resource_node", {"food", "resource", "water", "mine", "forest"})
+            return bool(set(location.get("tags", []) or []) & tags)
+        if path.startswith("location.tag."):
             location = context.get("current_location", {}) or {}
-            tags = set(location.get("tags", []) or [])
-            return {"food", "resource"}.issubset(tags)
-        if path == "location.market":
-            location = context.get("current_location", {}) or {}
-            return "market" in set(location.get("tags", []) or [])
+            return path.removeprefix("location.tag.") in set(location.get("tags", []) or [])
         if path == "location.health_service":
             location = context.get("current_location", {}) or {}
-            return bool(set(location.get("tags", []) or []) & {"health", "clinic"})
+            tags = self.location_tag_groups.get("health_service", {"health", "clinic"})
+            return bool(set(location.get("tags", []) or []) & tags)
         if path == "station.available":
             required = set(context.get("station_tags", []) or [])
             current = set((context.get("current_location", {}) or {}).get("tags", []) or [])
@@ -184,7 +175,8 @@ class ConditionEngine:
         if path in {"location.safe", "destination.safe_or_defensible", "target.available", "patient.in_clinic", "source.accessible", "resource.available", "inputs.available", "recipe.available", "medicine.available", "communication.channel_open", "location.reachable"}:
             if path == "location.safe":
                 location = context.get("current_location", {})
-                return bool(location.get("safe", False) or location.get("public", False) is True or "safe" in location.get("tags", []))
+                safe_tags = self.location_tag_groups.get("safe", {"safe"})
+                return bool(location.get("safe", False) or (self.public_locations_are_safe and location.get("public", False) is True) or set(location.get("tags", []) or []) & safe_tags)
             return bool(context.get(path, True))
         return self._path_value(context, path)
 

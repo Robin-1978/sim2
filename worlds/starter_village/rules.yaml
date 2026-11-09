@@ -5,13 +5,35 @@ minute_effects:
   effect:
     need: satiety
     delta: -0.02
+  events:
+  - id: satiety_low
+    event_type: need.satiety_low
+    condition: actor.need.satiety <= context.satiety_alert_threshold
+    edge: enter
+    trend: true
+    summary: Satiety reached the configured eating threshold.
+    data: {need: satiety, threshold: 40, signal_only: true}
+  - id: satiety_recovered
+    event_type: need.satiety_recovered
+    condition: actor.need.satiety <= context.satiety_alert_threshold
+    edge: exit
+    trend: true
+    summary: Satiety rose above the configured eating threshold.
+    data: {need: satiety, threshold: 40, signal_only: true}
 - id: starvation_damage
   scope: agent
   every_minutes: 60
-  condition: actor.satiety <= 5
+  condition: actor.need.satiety <= 5
   effect:
     state: health
     delta: -2
+  events:
+  - id: starvation_damage
+    event_type: need.starvation_damage
+    edge: each
+    trend: true
+    summary: Critical low satiety caused health damage.
+    data: {need: satiety, threshold: 5, health_delta: -2}
 - id: energy_recovery_idle
   scope: agent
   every_minutes: 1
@@ -44,6 +66,14 @@ minute_effects:
   effect:
     fog_level: 0.05
 route_minutes_per_hop: 1
+public_locations_are_safe: true
+location_tag_groups:
+  safe: [safe]
+  food: [food]
+  resource_node: [food, resource, water, mine, forest]
+  health_service: [health, clinic]
+resource_entity_types: [resource, material]
+resource_protected_state: protected
 resource_regeneration:
 - resource_id: grain
   every_minutes: 1440
@@ -73,17 +103,38 @@ motivation_model:
   - meaning_and_goal_progress
   - novelty
   - social_norms_and_external_pressure
+capability_aliases:
+  explore: [exploration]
+  speak: [conversation]
+  communicate: [conversation]
+  craft: [cooking, herbalism, forging]
+  attack: [combat]
+  defend: [defense]
+  gather: [gather, farming, hunting, foraging]
+  research: [research]
+  inspect: [investigation, lore, accounting, governance]
+  investigate: [investigation, tracking, lore, rumor_assessment]
+  negotiate: [conversation]
+  sound_alarm: [alarm]
+  mediate: [conversation]
+conflict_relation_types: [conflict]
 memory_quality:
   semantic_similarity:
     enabled: true
     backend: onnx
+    preload: true
     model: ""
     threshold: 0.88
     retrieval_threshold: 0.06
     embedding_retrieval_threshold: 0.18
 fallback_behavior_ids: [rest_and_recover, recover_at_safe_location, seek_treatment, eat_food, buy_food, get_food, gather_at_known_node, travel]
 food_items: [rations, ration, cooked_meal]
-food_trigger_satiety: 40
+satiety_alert_threshold: 40
+decision_signals:
+- need: satiety
+  alert_threshold: 40
+  below_message: "Food choices are relevant to this need."
+  above_message: "Food choices remain available; weigh their costs against other needs."
 need_effects:
   dialogue.completed:
     belonging: 1

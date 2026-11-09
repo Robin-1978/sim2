@@ -173,7 +173,7 @@ interrupt_policy: pause
 
 `behavior` 负责 BT AST、节点 Schema、版本注册、可执行目录、实例游标和结果传播。节点包含条件、顺序、选择、并行、动作、等待和装饰器；每个决策节点声明候选子节点、进入条件、成功结果和失败结果。Platform 先过滤候选，`Decision Agent` 再在候选中作语义选择；没有语义分歧时只推进唯一节点。长时动作由 `actions` 执行，BT 实例只保存当前节点、上下文、检查点和下一次决策边界。
 
-决策上下文只暴露已验证 BT，不暴露可直接提交的元动作。元动作是 BT 的构件，反思/创新阶段和 Platform 的 BT 校验器可以读取其名称、参数、成本和效果契约；Decision Agent 只能选择已经把移动、恢复、采集、制作等步骤串好的 BT。故事包必须为基本生存能力提供通用组合树，例如“寻找已知安全地点 → 移动 → 休息”；安全地点和路线来自配置与 Agent 知识，不能在 Python 中写死具体地点。若当前状态存在明显恢复驱动但目录没有可执行恢复 BT，Platform 写入 `capability_gap` 并触发修复任务，不能把无关的进食或取粮树当作替代品。
+决策上下文只暴露已验证 BT，不暴露可直接提交的元动作。元动作是 BT 的构件，反思/创新阶段和 Platform 的 BT 校验器可以读取其名称、参数、成本和效果契约；Decision Agent 只能选择已经把移动、恢复、采集、制作等步骤串好的 BT。故事包必须为基本生存能力提供通用组合树，例如“寻找已知安全地点 → 移动 → 休息”；安全地点和路线来自配置与 Agent 知识，不能在 Python 中写死具体地点。需求信号用于排序和解释，不能在 Platform 中写成食物等行为的硬门槛；真正的资格仍由库存、地点、权限、能力和资源条件决定。若当前状态存在明显恢复驱动但目录没有可执行恢复 BT，Platform 写入 `capability_gap` 并触发修复任务，不能把无关行为当作替代品。
 
 核心 BT 包位于故事包的 `core_behavior_trees.yaml`，按能力分组而不是按故事地点分组。每个故事包可以启用、覆盖或补充这些声明式模板：
 
@@ -260,7 +260,7 @@ sequenceDiagram
 
 探索完成后 Platform 先写入 `exploration_result` 和 `exploration.completed` 事件，再按发现范围给执行者写入 `knowledge_fact`；沟通完成后 Platform 写入 `dialogue_exchange`，把说话者提供的内容作为带来源的 testimony 写入听者知识面。听者可以在反思阶段通过 `BeliefUpdateIntent` 调整置信度、标记事实为错误或合并重复知识。Knowledge Fact 不代表世界真相，世界真相只来自 `world` 的实体和事件状态。
 
-情节记忆写入、知识更新、摘要和遗忘都通过 Intent Gateway；检索使用 Agent 权限过滤、当前目标/地点/候选 BT 的任务相关性、实体和地点过滤、重要性、来源可信度和激活次数，并使用 SQLite FTS5。可选的本地 embedding（例如 BGE）只负责重排候选，不替代 Platform 的权限过滤；词项回退使用 `retrieval_threshold`，启用 embedding 时使用更严格的 `embedding_retrieval_threshold`，低于对应阈值的候选不会进入上下文。Starter Village 的配置保留 `semantic_similarity.backend: onnx`；设置 `enabled: true` 并将 `model` 指向包含 `model_optimized.onnx` 和 `tokenizer.json` 的 BGE 目录，或设置 `SIM2_BGE_MODEL`，即可使用本地 BGE。没有可用模型时自动回退到确定性词项相似度。反思阶段在提交经验前先做重复性检查：相似度只返回“可能重复”的质量提示，最终由 Agent 选择写入还是 `wait`，Platform 不自动把不同经历合并。长期记忆不会因为时间单独衰减；显式 recall 会增加激活次数，常用记忆更容易被检索，只有显式 compact/forget 策略才会清理。关系模型属于世界领域的权威状态，记忆模块只保存关系证据和 Agent 的主观认知，不直接决定真实关系数值。决策阶段查询的是与当前目标相关的知识和记忆子集，不获得完整知识库。
+情节记忆写入、知识更新、摘要和遗忘都通过 Intent Gateway；检索使用 Agent 权限过滤、当前目标/地点/候选 BT 的任务相关性、实体和地点过滤、重要性、来源可信度和激活次数，并使用 SQLite FTS5。可选的本地 embedding（例如 BGE）负责对所有已允许候选做语义重排，结构化标签只作为软加分，不替代 Platform 的权限过滤，也不会把标签不匹配的语义记忆硬过滤掉；词项回退使用 `retrieval_threshold`，启用 embedding 时使用更严格的 `embedding_retrieval_threshold`，低于对应阈值的候选不会进入上下文。Starter Village 的配置保留 `semantic_similarity.backend: onnx`；设置 `enabled: true` 并将 `model` 指向包含 `model_optimized.onnx` 和 `tokenizer.json` 的 BGE 目录，或设置 `SIM2_BGE_MODEL`，即可使用本地 BGE。也可以设置 `SIM2_BGE_CACHE`，或复用 BieTheirBed 的 `KNOA_BGE_CACHE` fastembed 缓存。没有可用模型时自动回退到确定性词项相似度；Starter Village 预加载模型，其他实例可设置 `SIM2_BGE_PRELOAD=1` 或 `semantic_similarity.preload: true`。模型和候选向量在进程内复用。反思阶段在提交经验前先做重复性检查：相似度只返回“可能重复”的质量提示，最终由 Agent 选择写入还是 `wait`，Platform 不自动把不同经历合并。长期记忆不会因为时间单独衰减；显式 recall 会增加激活次数，常用记忆更容易被检索，只有显式 compact/forget 策略才会清理。关系模型属于世界领域的权威状态，记忆模块只保存关系证据和 Agent 的主观认知，不直接决定真实关系数值。决策阶段查询的是与当前目标相关的知识和记忆子集，不获得完整知识库。
 
 #### 10. LLM 网关模块
 
@@ -480,7 +480,7 @@ Provider 适配层允许少量无歧义的协议别名，例如把 `intent: wait
 
 Platform 对每次意图返回 `IntentResult`。成功结果包含 `intent_id`、`status: accepted`、`execution_id`、`started_minute` 和 `expected_completion`；拒绝结果包含 `status: rejected`、`error_code`、`error_path`、`current_state_digest` 和 `repair_context`。拒绝结果作为下一轮 ReAct 输入，Agent 可以修改参数、改选目录中的行为树或提交新的 BT 提案；没有新的有效意图时停止循环。
 
-行为树选择在 AgentView 生成时按入口条件、需求阈值和资源过滤，Platform 接受选择时必须再次校验同一条件，避免旧上下文启动已经失效的 fallback 行为。低频反思或 God 会话若因模型错误或协议拒绝结束，调度器记录 `evolution.task_retry` 并延后重试，不能把未执行的周期任务直接标记完成。
+行为树选择在 AgentView 生成时按入口条件、状态和资源过滤，Platform 接受选择时必须再次校验同一条件，避免旧上下文启动已经失效的 fallback 行为。需求阈值只产生可读驱动提示，不能替代配置的动作资格条件。低频反思或 God 会话若因模型错误或协议拒绝结束，调度器记录 `evolution.task_retry` 并延后重试，不能把未执行的周期任务直接标记完成。
 
 `ReflectionResponse` 必须包含 `reflection_id`、`period`、`intents`、`memory_updates`、`belief_updates`、`goal_updates`、`evolution_candidates` 和 `confidence`；这些字段只能转换为 `IntentEnvelope`，由 Platform 校验后写入 Agent 状态。`GodResponse` 必须包含 `intervention_id`、`scope`、`trigger`、`world_intents`、`affected_entities`、`expected_effects` 和 `rollback_plan`；Platform 将提案的条件、预期效果和实际效果一同写入世界事件，下一次 God 上下文据此比较结果；世界意图只能在结算窗口作为原子事件批次提交。
 
