@@ -119,7 +119,7 @@ class RuleCompiler:
         configured = self.rules.get("rule_enforcement_terms", []) if isinstance(self.rules, dict) else []
         terms = [str(item).casefold() for item in configured if str(item).strip()]
         if not terms:
-            terms = ["gate", "gated", "must", "before", "priorit", "defer", "block", "restrict", "必须", "先于", "优先", "阻止", "限制"]
+            terms = ["gate", "gated", "must", "priorit", "defer", "block", "restrict", "required", "only when", "until", "必须", "优先", "阻止", "限制", "直到"]
         text = " ".join(str(item).casefold() for item in (statements or []) if item not in (None, ""))
         text += " " + str(rule.get("description") or rule.get("label") or "").casefold()
         if any(term in text for term in terms):

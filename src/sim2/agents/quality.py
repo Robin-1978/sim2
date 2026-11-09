@@ -112,6 +112,11 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
                     "rest": ("rest", "recover", "energy", "休息", "恢复", "体力", "能量"),
                     "food": ("food", "ration", "satiety", "meal", "吃", "食物", "口粮", "饱食", "饱腹"),
                     "patrol": ("patrol", "watch", "security", "巡逻", "警戒", "安全"),
+                    "inspect": ("inspect", "check", "stock", "report", "检查", "巡查", "盘点", "库存", "报告"),
+                    "craft": ("craft", "forge", "recipe", "制作", "锻造", "晨钟", "工具"),
+                    "negotiate": ("negotiat", "agreement", "contract", "协商", "谈判", "协议"),
+                    "gather": ("gather", "collect", "resource", "采集", "收集", "资源"),
+                    "travel": ("travel", "move", "arrive", "route", "移动", "到达", "路线"),
                 }
                 signal_match = any(
                     any(term in summary.casefold() for term in terms)

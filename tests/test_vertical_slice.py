@@ -2115,6 +2115,14 @@ def test_invalid_world_rule_is_rejected_before_persistence(tmp_path: Path):
         })
         assert signal_claiming_gate["status"] == "rejected"
         assert signal_claiming_gate["failed_check"] == "rule_effect_semantics"
+        temporal_signal = platform.submit_world_change("god", {
+            "change_type": "rule",
+            "summary": "Record the patrol follow-up before the next cycle.",
+            "effects": ["The watch signal is recorded before the next patrol."],
+            "expected_effects": ["The watch reviews the report before the next patrol."],
+            "rule": {"id": "temporal-signal", "condition": "event.recent.governance.reviewed == true", "effect": "watch.review_alert"},
+        })
+        assert temporal_signal["status"] == "accepted"
         condition_mismatch = platform.submit_world_change("god", {
             "change_type": "rule",
             "summary": "Keep the explicit food condition in the policy.",
