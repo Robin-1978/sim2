@@ -76,6 +76,12 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
                 summary_terms = set(re.findall(r"[a-z0-9]+", summary.lower()))
                 evidence_terms = set(re.findall(r"[a-z0-9]+", evidence.lower()))
                 checks.append(_check("reflection_experience_matches_outcome", bool(summary_terms & evidence_terms), "summary overlaps expected result or observed delta" if summary_terms & evidence_terms else "summary does not cite the observed outcome"))
+        elif name == "update_capability" or payload.get("intent_type") == "update_capability":
+            evidence = str(payload.get("evidence") or "")
+            delta = payload.get("delta")
+            checks.append(_check("reflection_capability_evidence_is_specific", len(evidence.strip()) >= 12, f"evidence_length={len(evidence)}"))
+            checks.append(_check("reflection_capability_delta_is_bounded", isinstance(delta, (int, float)) and 0 < delta <= 0.2, f"delta={delta}"))
+            checks.append(_check("reflection_capability_update_applied", turn.result.get("status") == "accepted" and turn.result.get("capability") is not None, f"status={turn.result.get('status')}; capability={turn.result.get('capability')}"))
         elif name == "update_goal" or payload.get("intent_type") == "update_goal":
             statement = str(payload.get("statement") or "")
             checks.append(_check("reflection_goal_is_specific", len(statement) >= 12, f"statement_length={len(statement)}"))
@@ -90,7 +96,11 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         else:
             checks.append(_check("reflection_intent_is_known", name in {"record_experience", "update_belief", "update_goal", "propose_behavior"}, f"submission={name}"))
     elif turn.role == "god":
-        if name == "propose_entity":
+        if name == "record_world_progress" or payload.get("intent_type") == "record_world_progress":
+            evidence = str(payload.get("evidence") or "")
+            checks.append(_check("god_progress_evidence_is_specific", len(evidence.strip()) >= 12, f"evidence_length={len(evidence)}"))
+            checks.append(_check("god_progress_update_applied", turn.result.get("status") == "accepted" and bool(turn.result.get("progress")), f"status={turn.result.get('status')}; progress={bool(turn.result.get('progress'))}"))
+        elif name == "propose_entity":
             checks.append(_check("god_entity_has_type_and_name", bool(payload.get("entity_type")) and len(str(payload.get("name", "")).strip()) >= 2, f"type={payload.get('entity_type')}; name={payload.get('name')}"))
             checks.append(_check("god_entity_platform_created", bool(turn.result.get("entity_id")), f"entity_id={turn.result.get('entity_id')}"))
         elif name == "propose_world_change":
@@ -105,10 +115,34 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
                 checks.append(_check("god_event_is_valid_narrative_signal", not direct_claim, "narrative event can be handled by a configured world rule" if not direct_claim else "event effects claim a direct state change"))
             if change_type == "rule":
                 checks.append(_check("god_rule_has_behavior_followup", bool(turn.result.get("followup_verified")), "rule is stored; a later behavior outcome must verify its effect" if not turn.result.get("followup_verified") else "a later behavior outcome verified the rule"))
+                rule = payload.get("rule") if isinstance(payload.get("rule"), dict) else {}
+                condition = str(rule.get("condition") or rule.get("when") or "")
+                effect = rule.get("effect")
+                checks.append(_check("god_rule_is_declarative", len(condition.strip()) >= 5 and bool(effect), "condition and effect are explicit" if len(condition.strip()) >= 5 and bool(effect) else "rule needs an explicit condition and effect"))
+                followup = rule.get("behavior_names") or rule.get("behavior_ids") or rule.get("action_names") or []
+                checks.append(_check("god_rule_names_followup_behavior", bool(followup), "a later configured behavior is named" if followup else "rule has no configured behavior or action followup"))
+                expected_text = " ".join(str(item).casefold() for item in (payload.get("expected_effects") or []))
+                effect_text = str(rule.get("effect") or "").casefold()
+                claims_denial = any(term in expected_text for term in ("deny", "refus", "restrict", "禁止", "拒绝"))
+                effect_is_denial = effect_text in {"deny", "deny_access", "deny_action", "forbid"} or (isinstance(rule.get("effect"), dict) and str(rule["effect"].get("type", "")).casefold() in {"deny", "deny_access", "deny_action", "forbid"})
+                checks.append(_check("god_rule_expected_effect_matches", not claims_denial or effect_is_denial, "expected denial is represented by a denial effect" if not claims_denial or effect_is_denial else "expected denial is not represented by the submitted rule effect"))
+                claims_gate = any(term in expected_text or term in " ".join(str(item).casefold() for item in (payload.get("effects") or [])) for term in ("gate", "gated", "priorit", "defer", "must"))
+                effect_is_gate = effect_is_denial or (isinstance(rule.get("effect"), dict) and str(rule["effect"].get("type", "")).casefold() in {"behavior_constraint", "policy"})
+                checks.append(_check("god_rule_claims_match_enforcement", not claims_gate or effect_is_gate, "the rule effect can enforce the stated gate" if not claims_gate or effect_is_gate else "the proposal claims priority or gating but submits only a signal"))
+                rule_condition_text = str(rule.get("condition") or "").casefold()
+                declared_conditions = " ".join(str(item).casefold() for item in (payload.get("conditions") or []))
+                declared_conditions += " " + str(payload.get("summary") or "").casefold() + " " + str(rule.get("description") or "").casefold()
+                condition_terms = ("fever", "water", "food", "threat", "boundary", "粮", "水", "发热", "威胁")
+                missing_terms = [term for term in condition_terms if term in declared_conditions and term not in rule_condition_text]
+                checks.append(_check("god_rule_conditions_match", not missing_terms, "declared evidence is represented in the rule condition" if not missing_terms else f"declared condition terms are absent from rule condition: {missing_terms}"))
         else:
             checks.append(_check("god_submission_is_known", name in {"propose_entity", "propose_world_change"}, f"submission={name}"))
     elif turn.role == "story":
-        if name == "wait" or payload.get("intent_type") == "wait" or turn.result.get("status") == "wait":
+        if name == "record_world_progress" or payload.get("intent_type") == "record_world_progress":
+            evidence = str(payload.get("evidence") or "")
+            checks.append(_check("story_progress_evidence_is_specific", len(evidence.strip()) >= 12, f"evidence_length={len(evidence)}"))
+            checks.append(_check("story_progress_update_applied", turn.result.get("status") == "accepted" and bool(turn.result.get("progress")), f"status={turn.result.get('status')}; progress={bool(turn.result.get('progress'))}"))
+        elif name == "wait" or payload.get("intent_type") == "wait" or turn.result.get("status") == "wait":
             checks.append(_check("story_can_wait_without_unlocked_beat", True, "no configured continuation was selected"))
         elif name == "propose_story_beat" or payload.get("intent_type") == "propose_story_beat":
             summary = str(payload.get("summary") or "")

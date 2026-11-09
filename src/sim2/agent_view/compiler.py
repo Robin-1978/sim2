@@ -14,6 +14,7 @@ from ..memory.service import MemoryService
 from ..persistence.store import WorldStore
 from ..world.drives import DriveCalculator
 from ..world.navigation import configured_location_tags, nearest_location_with_tag, nearest_resource_node, nearest_safe_location, reachable_locations
+from ..world.rules import RuleCompiler
 
 
 def _label(value: str) -> str:
@@ -128,9 +129,24 @@ class AgentViewCompiler:
     def __init__(self, store: WorldStore):
         self.store = store
         self.conditions = ConditionEngine((self.store.get_meta("rules", {}) or {}))
+        self.rule_compiler = self._new_rule_compiler()
         self.resources = ResourceLedger(store)
         self.targets = TargetResolver(store)
         self.memory = MemoryService(store)
+
+    def _new_rule_compiler(self) -> RuleCompiler:
+        rules = self.store.get_meta("rules", {}) or {}
+        aliases = {}
+        for key in (self.store.get_meta("world_properties", {}) or {}):
+            aliases[str(key)] = str(key)
+            aliases[str(key).replace("_", " ")] = str(key)
+        for entity_type in ("resource", "material", "location", "object", "faction", "agent"):
+            for item in self.store.entities_of_type(entity_type):
+                identifier, visible = str(item.get("id") or ""), str(item.get("name") or "")
+                if identifier and visible:
+                    aliases[visible] = identifier
+        aliases.update({str(key): str(value) for key, value in (rules.get("condition_aliases", {}) or {}).items()})
+        return RuleCompiler(rules, self.conditions, aliases)
 
     def _interaction_context(self, agent: dict[str, Any], participants: list[dict[str, Any]]) -> dict[str, Any]:
         """Expose configured relationship signals without naming story entities."""
@@ -245,14 +261,31 @@ class AgentViewCompiler:
         prompt = prompt.get("agent_prompt", prompt) if isinstance(prompt, dict) else {}
         protocol = prompt.get("protocol", {}) if isinstance(prompt, dict) else {}
         protocol_lines = list(protocol.get(role, []) or []) if isinstance(protocol, dict) else []
-        rules = list(prompt.get("platform_rules", []) or []) if isinstance(prompt, dict) else []
+        role_rules = prompt.get("role_platform_rules", {}) if isinstance(prompt, dict) else {}
+        rules = list((role_rules.get(role) if isinstance(role_rules, dict) else None) or prompt.get("platform_rules", []) or []) if isinstance(prompt, dict) else []
         attributes = self.store.get_meta("attributes", []) or []
         attribute_rules = [
             f"{item.get('label', item.get('id'))}: {item.get('prompt')}"
             for item in attributes
             if isinstance(item, dict) and item.get("prompt")
         ]
-        return protocol_lines, rules + attribute_rules
+        if role in {"agent_decision", "agent_reflection"}:
+            rules = rules + attribute_rules
+        return protocol_lines, rules
+
+    def _world_rule_labels(self) -> dict[str, str]:
+        """Map package storage keys to visible names for model-facing policy text."""
+
+        labels: dict[str, str] = {}
+        for key in (self.store.get_meta("world_properties", {}) or {}):
+            labels[str(key)] = str(key).replace("_", " ")
+        for entity_type in ("resource", "material", "location", "object", "faction", "agent"):
+            for item in self.store.entities_of_type(entity_type):
+                if item.get("id") and item.get("name"):
+                    identifier = str(item["id"])
+                    name = str(item["name"])
+                    labels[identifier] = name if name != identifier else identifier.replace("_", " ")
+        return labels
 
     def _attribute_values(self, agent: dict[str, Any], state: dict[str, Any]) -> list[dict[str, Any]]:
         values: list[dict[str, Any]] = []
@@ -389,6 +422,9 @@ class AgentViewCompiler:
         return fact
 
     def build_decision_view(self, agent_id: str, role: str = "agent_decision") -> dict[str, Any]:
+        rules = self.store.get_meta("rules", {}) or {}
+        self.conditions = ConditionEngine(rules)
+        self.rule_compiler = self._new_rule_compiler()
         try:
             agent = self.store.get_agent(agent_id)
         except KeyError:
@@ -400,7 +436,13 @@ class AgentViewCompiler:
         bt_defs = {x["id"]: x for x in self.store.get_definitions("bt_def")}
         action_defs = {x["id"]: x for x in self.store.get_definitions("action_def")}
         recipe_defs = {x["id"]: x for x in self.store.get_definitions("recipe_def")}
-        estimator = BehaviorDurationEstimator(action_defs, bt_defs, recipe_defs, self._route_distance)
+        estimator = BehaviorDurationEstimator(
+            action_defs,
+            bt_defs,
+            recipe_defs,
+            self._route_distance,
+            capability_modifiers=(self.store.get_meta("rules", {}) or {}).get("capability_modifiers", {}),
+        )
         available = []
         fallback_ids = (self.store.get_meta("rules", {}) or {}).get("fallback_behavior_ids", [])
         catalog_ids = list(dict.fromkeys(
@@ -446,10 +488,18 @@ class AgentViewCompiler:
                 "inventory": agent.get("inventory", {}) or {},
                 "food_items": rules.get("food_items", []) or [],
                 "satiety_alert_threshold": float(rules.get("satiety_alert_threshold", 40) or 40),
+                "recent_event_types": self._recent_event_types(),
                 "target": {"id": validation_target.get("id"), "available": True} if validation_target else {"available": False},
             }
             condition_context.update(self._interaction_context(agent, participants))
             if any(not self.conditions.evaluate(str(predicate), agent=agent, target=condition_context["target"], context=condition_context, world=self.store.get_meta("world_properties", {}) or {}) for predicate in bt.get("entry_conditions", []) or []):
+                continue
+            if self.rule_compiler.behavior_denial(
+                behavior=bt,
+                agent=agent,
+                context=condition_context,
+                world=self.store.get_meta("world_properties", {}) or {},
+            ):
                 continue
             cooldown_minutes = max(0, int(bt.get("cooldown_minutes", 0) or 0))
             if cooldown_minutes:
@@ -464,6 +514,7 @@ class AgentViewCompiler:
             action_failures = []
             action_unavailable = False
             simulated_agent = copy.deepcopy(agent)
+            estimator.capabilities = simulated_agent.get("capabilities", {}) or {}
             simulated_location = dict(current_location)
             for node in self._iter_behavior_actions(bt_id):
                 action = action_defs.get(node.get("action_id"))
@@ -669,6 +720,14 @@ class AgentViewCompiler:
             decision_constraints.append("Exactly one BT is executable in this state; choose it only if its stated purpose fits the current goal.")
         elif not available:
             decision_constraints.append("No BT is executable in this state; return wait.")
+        capability_update_candidates = []
+        progression_rules = rules.get("capability_progression", {}) or {}
+        for capability, definition in progression_rules.items():
+            last = self.store.connection.execute("SELECT MAX(world_minute) AS minute FROM capability_progress WHERE agent_id=? AND capability=?", (agent_id, str(capability))).fetchone()["minute"]
+            completed = self.store.connection.execute("SELECT COUNT(*) AS n FROM event_log WHERE actor_id=? AND event_type='behavior.completed' AND world_minute>?", (agent_id, int(last or -1))).fetchone()["n"]
+            required = int((definition or {}).get("minimum_completed_outcomes", 3) or 3)
+            if int(completed or 0) >= required:
+                capability_update_candidates.append({"capability": str(capability), "completed_outcomes": int(completed), "required_outcomes": required, "max_delta": float((definition or {}).get("max_delta", 0.1) or 0.1)})
         return {
             "context_version": "1", "role": role,
             "prompt_protocol": prompt_protocol,
@@ -678,11 +737,13 @@ class AgentViewCompiler:
             "identity": {"traits": agent.get("traits", {}), "beliefs": agent.get("beliefs", []), "capabilities": agent.get("capabilities", {})},
             "goal_tags": agent.get("goal_tags", []),
             "capability_history": self.store.list_capability_progress(agent_id, limit=5),
+            "capability_update_candidates": capability_update_candidates,
             "needs": needs, "inventory": agent.get("inventory", {}), "injuries": state.get("injuries", []),
             "drives": drives[:5], "drive_model": drive_model, "observation": {"facts": observation_facts[:6], "source": "current_state"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "memories": memories, "short_term_memories": short_term_memories, "long_term_memories": long_term_memories, "memory_query": memory_query, "recent_actions": recent_actions, "recent_outcomes": recent_outcomes, "direct_relationships": relationships,
             "active_task": {"bt": active_behavior.get("summary") or ("in progress" if active_behavior_id else None), "action": active_action.get("description") or (_label(str(active_action_id)) if active_action_id else None), "remaining_minutes": state.get("remaining_minutes", 0)},
             "open_trade_offers": self._trade_offer_view(agent_id),
             "available_actions": available_actions if role == "agent_reflection" else [],
+            "active_world_rules": self.rule_compiler.model_view(self._world_rule_labels()),
             "executable_behaviors": self._assign_choices(available), "decision_constraints": decision_constraints, "last_platform_result": state.get("last_platform_result"), "tools": tools_for_role(role),
         }
 
@@ -731,6 +792,13 @@ class AgentViewCompiler:
                 queue.append((neighbor, distance + 1))
         return hop_minutes
 
+    def _recent_event_types(self, limit: int = 120) -> list[str]:
+        rows = self.store.connection.execute(
+            "SELECT DISTINCT event_type FROM event_log WHERE world_minute<=? ORDER BY event_id DESC LIMIT ?",
+            (int(self.store.get_meta("world_minute", 0)), max(1, min(int(limit), 500))),
+        ).fetchall()
+        return [str(row["event_type"]) for row in rows]
+
     def _action_available(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], location: dict[str, Any], food_items: list[str], duration_minutes: int | None = None) -> bool:
         resource_parameters = (action.get("parameter_defaults", {}) or {})
         resource_key = next((key for key, value in resource_parameters.items() if value == "first_available_resource"), None)
@@ -756,6 +824,7 @@ class AgentViewCompiler:
             "known_route_destinations": reachable_locations(self.store, (agent.get("initial_state") or {}).get("location_id")),
             "mapped_areas": self.store.explored_areas(str(agent.get("id", ""))),
             "researched_sources": self.store.researched_sources(str(agent.get("id", ""))),
+            "recent_event_types": self._recent_event_types(),
         }
         if parameters.get("object_id"):
             try:
@@ -774,6 +843,14 @@ class AgentViewCompiler:
         context["target"] = resolved_target or {}
         context["target.visible"] = bool((resolved_target or {}).get("visible", False))
         context["target.available"] = bool((resolved_target or {}).get("available", False))
+        if self.rule_compiler.denial(
+            action=action,
+            agent=agent,
+            target={**parameters, **(resolved_target or {})},
+            context=context,
+            world=self.store.get_meta("world_properties", {}) or {},
+        ):
+            return False
         for predicate in action.get("preconditions", []) or []:
             if not self.conditions.evaluate(str(predicate), agent=agent, target=target, context=context, world=self.store.get_meta("world_properties", {}) or {}):
                 return False
@@ -852,6 +929,12 @@ class AgentViewCompiler:
             "recent_world_changes": [], "recent_agent_outcomes": [], "direct_relationships": [],
             "active_task": {"bt": None, "action": None, "remaining_minutes": 0},
             "executable_behaviors": [], "story_beats": choices[:12],
+            "world_progress_candidates": [
+                {"progress_key": str(key), "required": float((value or {}).get("required", 1) or 1)}
+                for key, value in ((self.store.get_meta("rules", {}) or {}).get("civilization_progress", {}) or {}).items()
+                if isinstance(value, dict)
+            ],
+            "active_world_rules": self.rule_compiler.model_view(self._world_rule_labels()),
             "last_platform_result": recent_events[0] if recent_events else None,
             "tools": tools_for_role(role),
         }
@@ -879,7 +962,30 @@ class AgentViewCompiler:
         )
         world_properties = self.store.get_meta("world_properties", {}) or {}
         world_summary = "; ".join(f"{str(key).replace('_', ' ')}={value}" for key, value in world_properties.items()) or "none"
+        world_id = str(self.store.get_meta("world_id", "world"))
         prompt_protocol, platform_rules = self._prompt_sections(role)
+        behavior_catalog = []
+        for behavior in bt_defs.values():
+            behavior_catalog.append({
+                "name": behavior.get("agent_label") or behavior.get("summary") or _label(str(behavior.get("id", "behavior"))),
+                "purpose": behavior.get("description") or behavior.get("summary") or "configured behavior",
+                "success": [str(item).replace("_", " ") for item in (behavior.get("success_results") or [])[:3]],
+            })
+        action_catalog = []
+        for action in self.store.get_definitions("action_def"):
+            action_catalog.append({
+                "name": action.get("agent_label") or _label(str(action.get("id", "action"))),
+                "purpose": action.get("agent_summary") or action.get("description") or "configured action",
+            })
+        condition_fields = [
+            {"condition": f'world["{str(key).replace("_", " ")}"]', "meaning": str(key).replace("_", " ")}
+            for key in (self.store.get_meta("world_properties", {}) or {})
+        ]
+        condition_fields.extend(
+            {"condition": f"event.recent.{event_type}", "meaning": "a recent validated public event"}
+            for event_type in self._recent_event_types()[:16]
+            if event_type not in {"world_minute.advanced", "world.created"}
+        )
         return {
             "context_version": "1",
             "role": role,
@@ -899,6 +1005,11 @@ class AgentViewCompiler:
             "recent_world_changes": recent_world_changes,
             "recent_agent_outcomes": recent_agent_outcomes,
             "world_trends": world_trends,
+            "civilization_progress": self.store.list_progress(world_id, limit=20),
+            "active_world_rules": self.rule_compiler.model_view(self._world_rule_labels()),
+            "registered_behaviors": behavior_catalog[:32],
+            "registered_actions": action_catalog[:32],
+            "rule_condition_fields": condition_fields[:24],
             "direct_relationships": [],
             "active_task": {"bt": None, "action": None, "remaining_minutes": 0},
             "executable_behaviors": [],

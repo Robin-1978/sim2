@@ -182,6 +182,34 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "additionalProperties": False,
         },
     },
+    "update_capability": {
+        "purpose": "Propose a bounded personal capability improvement backed by completed outcomes.",
+        "kind": "intent",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "capability": {"type": "string", "description": "A configured capability name."},
+                "delta": {"type": "number", "minimum": 0, "maximum": 0.2},
+                "evidence": {"type": "string", "description": "A concise explanation grounded in recent completed outcomes."},
+            },
+            "required": ["capability", "delta", "evidence"],
+            "additionalProperties": False,
+        },
+    },
+    "record_world_progress": {
+        "purpose": "Propose public progress backed by completed behavior or research results; Platform wakes milestone consumers at the configured threshold.",
+        "kind": "intent",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "progress_key": {"type": "string", "description": "A configured world progress name."},
+                "delta": {"type": "number", "minimum": 0, "maximum": 5},
+                "evidence": {"type": "string", "description": "A concise public result that supports this progress."},
+            },
+            "required": ["progress_key", "delta", "evidence"],
+            "additionalProperties": False,
+        },
+    },
     "update_belief": {
         "purpose": "Submit a confidence update for a known fact or belief.",
         "kind": "intent",
@@ -260,7 +288,22 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "expected_effects": {"type": "array", "items": {"type": "string"}, "description": "Short observable effects to compare with the next world outcome."},
                 "property": {"type": "string"},
                 "value": {},
-                "rule": {"type": "object", "description": "Use visible names and configured natural-language conditions."},
+                "rule": {
+                    "type": "object",
+                    "description": "A declarative policy. Use a supported condition expression; the rule signals or gates later configured behavior and never changes resources by itself.",
+                    "properties": {
+                        "id": {"type": "string", "description": "A short unique rule name for the world."},
+                        "label": {"type": "string", "description": "A human-readable policy name."},
+                        "description": {"type": "string", "description": "One short sentence describing the policy."},
+                        "condition": {"type": "string", "description": "A declarative condition such as world[\"water quality\"] < 0.5, event.recent.clinic.fever_reported == true, or actor.permission.old_well == false."},
+                        "effect": {"description": "One effect name such as council.ration_alert or deny_access, or an object like {type: behavior_constraint, message: ...} when the rule must block a named behavior."},
+                        "wake": {"type": "array", "items": {"type": "string"}, "description": "Optional visible roles to wake, such as god or story."},
+                        "behavior_names": {"type": "array", "items": {"type": "string"}, "description": "Optional visible BT names whose completed outcomes verify this policy."},
+                        "action_names": {"type": "array", "items": {"type": "string"}, "description": "Optional visible Action names to gate when the condition is true."},
+                    },
+                    "required": ["id", "condition", "effect"],
+                    "additionalProperties": False,
+                },
                 "relationship": {"type": "object", "description": "Use visible participant names, never database identifiers."},
                 "faction": {"type": "object", "description": "Use visible member or location names, never database identifiers."},
             },
@@ -311,9 +354,9 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
 
 ROLE_TOOLS: dict[str, list[str]] = {
     "agent_decision": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "request_behavior"],
-    "agent_reflection": ["recall_memory", "query_known_fact", "record_experience", "update_belief", "update_goal", "propose_behavior"],
-    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "propose_entity", "propose_world_change"],
-    "story": ["read_public_record", "query_known_fact", "propose_story_beat"],
+    "agent_reflection": ["recall_memory", "query_known_fact", "record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior"],
+    "story": ["read_public_record", "query_known_fact", "record_world_progress", "propose_story_beat"],
+    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_world_change"],
     "world_builder": ["validate_world_template", "submit_world_template"],
 }
 
@@ -601,6 +644,12 @@ class AgentToolExecutor:
                     "message": "No completed outcome, meaningful event, or prior memory is available for a durable experience.",
                 }
         return self.platform.submit_experience(self.actor_id, event, summary, float(confidence))
+
+    def _update_capability(self, capability: str, delta: float, evidence: str) -> dict[str, Any]:
+        return self.platform.submit_capability_update(self.actor_id, capability, float(delta), evidence)
+
+    def _record_world_progress(self, progress_key: str, delta: float, evidence: str) -> dict[str, Any]:
+        return self.platform.submit_world_progress(self.actor_id, progress_key, float(delta), evidence)
 
     def _update_belief(self, confidence: float, belief: str = "", statement: str = "", reason: str = "") -> dict[str, Any]:
         return self.platform.submit_belief_update(self.actor_id, "", statement or belief, float(confidence), reason)

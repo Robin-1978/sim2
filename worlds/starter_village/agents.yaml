@@ -163,6 +163,7 @@ agents:
     rationing: 0.94
     accounting: 0.79
     cooking: 0.45
+    conversation: 0.55
   initial_state:
     location_id: granary
     health: 100

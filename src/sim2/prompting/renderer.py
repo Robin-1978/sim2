@@ -156,6 +156,18 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         "</world_state>",
     ])
 
+    active_rules = context.get("active_world_rules") or []
+    if active_rules:
+        lines.append("<active_world_rules>")
+        for rule in active_rules[:8]:
+            description = f"; {rule.get('description')}" if rule.get("description") else ""
+            applies = f"; applies to {_plain(rule.get('applies_to'))}" if rule.get("applies_to") else ""
+            lines.append(
+                f"  - {rule.get('name', 'world policy')}: when {rule.get('condition', 'configured condition')}, "
+                f"the platform applies {rule.get('effect', 'configured effect')}{applies}{description}"
+            )
+        lines.append("</active_world_rules>")
+
     lines.extend([
         "<self>",
         f"  name: {_line(self_state.get('name'))}",
@@ -255,6 +267,13 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("</decision_constraints>")
 
     if role == "agent_reflection":
+        lines.append("<capability_updates>")
+        candidates = context.get("capability_update_candidates") or []
+        for item in candidates[:8]:
+            lines.append(f"  - {item.get('capability')}: {item.get('completed_outcomes')}/{item.get('required_outcomes')} completed outcomes; maximum update={item.get('max_delta')}")
+        if not candidates:
+            lines.append("  - no capability update is currently supported by the configured evidence threshold")
+        lines.append("</capability_updates>")
         lines.append("<outcome_review>")
         outcomes = context.get("recent_outcomes") or []
         if outcomes:
@@ -275,6 +294,9 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     if role == "story":
         lines.append("<story_state>")
         lines.append("  Choose one configured beat whose evidence is present. If none is listed, propose an emergent beat grounded in the latest validated event.")
+        progress_candidates = context.get("world_progress_candidates") or []
+        if progress_candidates:
+            lines.append("  Configured public progress keys: " + "; ".join(str(item.get("progress_key")) for item in progress_candidates[:8]))
         beats = context.get("story_beats") or []
         for beat in beats[:12]:
             lines.append("  <story_beat>")
@@ -290,6 +312,28 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("</story_state>")
 
     if role == "god":
+        lines.append("<rule_condition_fields>")
+        fields = context.get("rule_condition_fields") or []
+        for field in fields[:20]:
+            lines.append(f"  - {field.get('condition')}: {field.get('meaning', 'configured world value')}")
+        if not fields:
+            lines.append("  - none")
+        lines.append("</rule_condition_fields>")
+        lines.append("<world_behavior_catalog>")
+        catalog = context.get("registered_behaviors") or []
+        for behavior in catalog[:24]:
+            success = f"; success={_plain(behavior.get('success'))}" if behavior.get("success") else ""
+            lines.append(f"  - {behavior.get('name', 'behavior')}: {behavior.get('purpose', 'configured behavior')}{success}")
+        if not catalog:
+            lines.append("  - none")
+        lines.append("</world_behavior_catalog>")
+        lines.append("<world_action_catalog>")
+        actions = context.get("registered_actions") or []
+        for action in actions[:24]:
+            lines.append(f"  - {action.get('name', 'action')}: {action.get('purpose', 'configured action')}")
+        if not actions:
+            lines.append("  - none")
+        lines.append("</world_action_catalog>")
         lines.append("<world_trends>")
         trends = context.get("world_trends") or {}
         resource_labels = trends.get("resource_labels") or {}
@@ -312,6 +356,8 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 f"goal progress={_plain(goal.get('progress_by_tag') or {})}; "
                 f"completed={goal.get('completed_behaviors', 0)}, failed_or_interrupted={goal.get('failed_or_interrupted_behaviors', 0)}."
             )
+        progress = context.get("civilization_progress") or []
+        lines.append("  Civilization progress: " + ("; ".join(f"{item.get('progress_key')}={item.get('current', 0)}/{item.get('required', 0)}" for item in progress[:8]) if progress else "none") + ".")
         lines.append("</world_trends>")
         lines.append("<world_outcomes>")
         changes = context.get("recent_world_changes") or []
@@ -382,6 +428,16 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     lines.append("</interaction_history>")
     lines.extend(["<decision>", f"  {task}", "</decision>"])
     rendered = "\n".join(lines)
+    if role == "god":
+        # God has a world projection, not a character body, inventory, or
+        # private memory. Remove empty character sections that add repeated
+        # protocol noise without evidence.
+        for tag in (
+            "self", "state_attributes", "identity", "needs_and_state", "drives",
+            "nearby_entities", "relationships", "knowledge_and_memory",
+            "recent_actions", "open_trade_offers", "active_execution",
+        ):
+            rendered, _ = _remove_block(rendered, tag)
     if len(rendered) <= max_chars:
         return rendered
     omitted: list[str] = []

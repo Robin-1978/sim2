@@ -676,7 +676,7 @@ class WorldStore:
 
         rows = self.connection.execute(
             "SELECT event_id,event_type,actor_id,world_minute,data_json FROM event_log "
-            "WHERE event_type LIKE 'world.change.%' OR event_type='entity.created' "
+            "WHERE event_type LIKE 'world.change.%' OR event_type IN ('entity.created','world.rule.followed') "
             "ORDER BY event_id DESC LIMIT ?",
             (max(1, min(int(limit), 30)),),
         ).fetchall()

@@ -30,9 +30,9 @@ def role_policy(platform: Platform, role: str) -> str:
 
 ROLE_INTENTS = {
     "agent_decision": {"select_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "wait"},
-    "agent_reflection": {"record_experience", "update_belief", "update_goal", "propose_behavior", "wait"},
-    "god": {"propose_entity", "propose_world_change", "wait"},
-    "story": {"propose_story_beat", "wait"},
+    "agent_reflection": {"record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "wait"},
+    "god": {"record_world_progress", "propose_entity", "propose_world_change", "wait"},
+    "story": {"record_world_progress", "propose_story_beat", "wait"},
     "world_builder": {"submit_world_template", "wait"},
 }
 
@@ -280,6 +280,8 @@ class AgentEngine:
                 return f"Task type: {task_type}. A world trigger is active. Submit one validated direct state-changing proposal that resolves the trigger; a narrative-only event does not resolve it. State the short observable expected_effects."
             return f"Task type: {task_type}. Review the world signal and submit one validated world proposal if needed. State the short observable expected_effects."
         if role == "story":
+            if str(task_type).startswith("milestone:"):
+                return f"Task type: {task_type}. Review the validated civilization milestone. Record configured public progress only when the evidence supports it, then activate one configured story beat if its evidence is present; otherwise wait. Platform owns every state change."
             return f"Task type: {task_type}. Review newly recorded discoveries and choose one configured story beat that is now unlocked; otherwise wait. Platform applies only the configured beat consequences."
         return f"Task type: {task_type}. Produce or refine one declarative world template."
 
@@ -303,6 +305,8 @@ class AgentEngine:
                 "counter_trade_offer": "counter_trade_offer",
                 "reject_trade_offer": "reject_trade_offer",
                 "record_experience": "record_experience",
+                "update_capability": "update_capability",
+                "record_world_progress": "record_world_progress",
                 "update_belief": "update_belief",
                 "update_goal": "update_goal",
                 "propose_behavior": "propose_behavior",
@@ -372,6 +376,10 @@ class AgentEngine:
                             "message": "No completed outcome, meaningful event, or prior memory is available for a durable experience.",
                         }
                 return self.platform.submit_experience(actor_id, str(data.get("event") or data.get("event_ref") or ""), str(data.get("summary") or ""), float(data.get("confidence", 1.0)))
+            if intent_type == "update_capability":
+                return self.platform.submit_capability_update(actor_id, str(data.get("capability") or ""), float(data.get("delta", 0)), str(data.get("evidence") or ""))
+            if intent_type == "record_world_progress":
+                return self.platform.submit_world_progress(actor_id, str(data.get("progress_key") or ""), float(data.get("delta", 0)), str(data.get("evidence") or ""))
             if intent_type == "update_belief":
                 return self.platform.submit_belief_update(actor_id, "", str(data.get("statement") or data.get("belief") or ""), float(data.get("confidence", 0.0)), str(data.get("reason") or ""))
             if intent_type == "update_goal":

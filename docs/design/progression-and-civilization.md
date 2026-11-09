@@ -3,13 +3,29 @@
 能力成长、知识发现、文明进步和规则不是同一种数据。它们通过 Platform 的
 通用效果管线连接起来，所有变化都来自已完成的行为结果。
 
+## Agent roles
+
+运行时只需要三类角色：
+
+1. **Individual Agent**：一个统一 Agent Engine，包含 Decision、Reflection
+   和 Innovation 阶段。它选择并执行行为，复盘结果并沉淀个体经验。
+2. **Story Agent**：消费探索、研究、关系和文明里程碑，推进目标、剧情、
+   知识和已注册 BT/配方解锁。
+3. **God Agent**：可插拔的全局结构角色，观察资源、势力和文明趋势，提出
+   规则、制度、势力策略和结构实体。它不能直接增加资源、需求、关系或生产
+   数值。
+
+`WorldBuilder Agent` 只在创建新世界模板时运行，不参与日常世界循环。能力、
+研究、治理和文明进度的证据由 Platform 记录，能力更新由角色 Agent 提案，
+文明阈值直接唤醒 Story/God，不为每种行为单独创建 Agent。
+
 ## 四类状态
 
 | 类型 | 所属 | 例子 | 变化来源 |
 |---|---|---|---|
-| Capability | 角色 | gather、cooking、research、navigation | 成功行为产生能力经验，Platform 按配置曲线提升能力值 |
+| Capability | 角色 | gather、cooking、research、navigation | 行为产生证据；同一角色 Agent 的 Reflection/Innovation 确认后提交能力更新 |
 | Knowledge / Discovery | 角色或世界 | 新矿点、污染事实、旧矿路线 | 探索、研究、沟通和检查产生事实，并可解锁已注册 BT、配方或地点 |
-| Civilization Progress | 世界 | food_system、public_health、governance_capacity、trade_network | 治理、研究、生产、交易和防御的 outcome 累积到 `progress_state` |
+| Civilization Progress | 世界 | food_system、public_health、governance_capacity、trade_network | Platform 累积行为证据；达到阈值后直接唤醒 Story/God 处理里程碑 |
 | Rule / Policy | 世界 | 配给制度、通行制度、巡逻制度 | God 或配置提出声明式政策；Platform 激活后约束后续行为 |
 
 规则是“如何处理结果”的声明，不是结果本身。`cooking=0.62` 是能力，
@@ -18,18 +34,18 @@
 
 ## 能力成长
 
-Action 或 BT 的成功结果可以配置通用 `capability_xp` 效果：
+Action 或 BT 的成功结果只记录能力证据，不自动提升能力。Reflection/Innovation 阶段根据重复成功、难度、失败修正和结果质量判断是否值得提交能力更新：
 
 ```yaml
-effects:
-  - type: capability_xp
-    capability: cooking
-    value: 0.04
-    source: craft_recipe
+intent_type: update_capability
+capability: cooking
+delta: 0.04
+evidence: "Three completed meals used the configured recipe without failure."
 ```
 
-Platform 记录 `capability_progress`，按故事包配置的上限、曲线和阈值更新
-角色能力。能力值只能影响配置声明的条件、时间、成本或成功率；代码不写
+Platform 验证 evidence 是否对应该角色真实 outcome、能力是否在配置目录中、
+更新是否超出上限，再记录 `capability_progress` 并更新能力值。能力值只能影响配置
+声明的条件、时间、成本或成功率；代码不写
 `if cooking > ...`。例如：
 
 ```yaml
@@ -79,10 +95,23 @@ progress:
 可以观察趋势并提出公共制度或派系变化。里程碑本身不能直接把粮食、信任
 或治安数值调高，必须有后续行为产生这些变化。
 
-## 规则激活边界
+## 规则激活和验证闭环
 
-God 提交的规则必须经过 Platform 校验，并引用已有的条件、行为、效果或
-进度类型。当前实现只把规则保存到 `rules.world_rules`，还没有把规则编译
-成运行时约束，因此规则提案仍标记为待后续验证。下一步需要实现通用
-`RuleCompiler`：把已验证规则映射到 AgentView 的政策摘要、行为候选条件、
-资源结算和 outcome 验证；规则没有对应行为和效果时必须拒绝注册。
+God 提交的规则必须经过 Platform 校验，并使用声明式条件和效果。通用
+`RuleCompiler` 将已注册规则同时用于四个边界：
+
+1. 把条件和效果摘要加入相关 Agent 的动态上下文；
+2. 在 Action 启动前拒绝违反 `deny`/`deny_access` 规则的行为；
+3. 在世界条件从未满足变为满足时产生一次规则信号，并按配置唤醒 God 或 Story；
+4. 对规则明确列出的 BT 记录 `world.rule.followed`，把行为结果和实际 delta
+   交给下一次全局复盘。
+
+规则本身从不增加库存、需求、关系或治安。它只允许 Platform 约束行为或发出
+信号，后续行为的配置效果才是实际状态变化。没有行为/Action follow-up 的 God
+规则可以作为观察性政策保存，但不能被质量审查标记为已完成；需要等到规则列出的
+行为完成并产生可观察结果。能力或文明进度也不得由 Platform 隐式累加，必须由
+Agent 提案或由阈值事件唤醒 Story/God。
+
+规则条件只能引用 Agent、target、context 或已配置的 `world.*` 字段；未知字段会
+在注册时拒绝。`signal` 只产生事件，不能声称行为已被门控；需要阻断/门控 BT 时使用
+`behavior_constraint` 并列出可见 BT 名称。

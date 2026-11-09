@@ -6,11 +6,13 @@ from typing import Any, Callable
 class BehaviorDurationEstimator:
     """Calculate BT duration from registered Actions and control flow."""
 
-    def __init__(self, actions: dict[str, dict[str, Any]], behaviors: dict[str, dict[str, Any]], recipes: dict[str, dict[str, Any]], route_distance: Callable[[str | None, str | None], int]):
+    def __init__(self, actions: dict[str, dict[str, Any]], behaviors: dict[str, dict[str, Any]], recipes: dict[str, dict[str, Any]], route_distance: Callable[[str | None, str | None], int], *, capabilities: dict[str, Any] | None = None, capability_modifiers: dict[str, Any] | None = None):
         self.actions = actions
         self.behaviors = behaviors
         self.recipes = recipes
         self.route_distance = route_distance
+        self.capabilities = capabilities or {}
+        self.capability_modifiers = capability_modifiers or {}
 
     def behavior_minutes(self, behavior_id: str, parameters: dict[str, Any] | None = None, origin: str | None = None) -> int:
         return max(1, self._nodes_minutes((self.behaviors.get(behavior_id) or {}).get("nodes", []), dict(parameters or {}), origin, set()))
@@ -39,14 +41,30 @@ class BehaviorDurationEstimator:
     def _action_minutes(self, action: dict[str, Any], parameters: dict[str, Any], origin: str | None) -> int:
         duration = action.get("duration") or {}
         if isinstance(duration.get("minutes"), (int, float)):
-            return max(1, int(duration["minutes"]))
-        mode = duration.get("mode")
-        if mode == "route_distance":
-            return max(1, self.route_distance(origin, parameters.get("location_id") or parameters.get("destination_id")))
-        if mode == "recipe_duration":
-            recipe = self.recipes.get(str(parameters.get("recipe_id")), {})
-            return max(1, int(recipe.get("duration_minutes", duration.get("default_minutes", 1))))
-        return max(1, int(duration.get("default_minutes", action.get("default_minutes", 1))))
+            base = float(duration["minutes"])
+        else:
+            mode = duration.get("mode")
+            if mode == "route_distance":
+                base = float(max(1, self.route_distance(origin, parameters.get("location_id") or parameters.get("destination_id"))))
+            elif mode == "recipe_duration":
+                recipe = self.recipes.get(str(parameters.get("recipe_id")), {})
+                base = float(max(1, int(recipe.get("duration_minutes", duration.get("default_minutes", 1)))))
+            else:
+                base = float(max(1, int(duration.get("default_minutes", action.get("default_minutes", 1)))))
+        multiplier = 1.0
+        for capability, actions in (self.capability_modifiers or {}).items():
+            spec = (actions or {}).get(str(action.get("id", ""))) if isinstance(actions, dict) else None
+            curve = spec.get("time_multiplier") if isinstance(spec, dict) else None
+            if not isinstance(curve, dict):
+                continue
+            value = float(self.capabilities.get(str(capability), 0) or 0)
+            current = float(curve.get("base", 1.0) or 1.0) + float(curve.get("per_value", 0) or 0) * value
+            if isinstance(curve.get("min"), (int, float)):
+                current = max(float(curve["min"]), current)
+            if isinstance(curve.get("max"), (int, float)):
+                current = min(float(curve["max"]), current)
+            multiplier *= max(0.05, current)
+        return max(1, int(round(base * multiplier)))
 
     @staticmethod
     def _resolve(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:

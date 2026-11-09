@@ -1241,7 +1241,7 @@ def test_world_property_accepts_readable_label_without_creating_duplicate_key(tm
         platform.close()
 
 
-def test_successful_recipe_records_capability_history(tmp_path: Path):
+def test_successful_recipe_records_capability_evidence_without_auto_upgrade(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "capability-world", tmp_path / "runtime")
     platform = Platform(db_path)
@@ -1254,8 +1254,45 @@ def test_successful_recipe_records_capability_history(tmp_path: Path):
         assert platform.submit_behavior(intent)["status"] == "accepted"
         step_n(platform, 60)
         history = platform.store.list_capability_progress("liang_he")
-        assert any(item["capability"] == "cooking" and item["delta"] > 0 for item in history)
+        assert history == []
+        evidence = platform.store.recent_events_for_actor("liang_he", limit=20)
+        assert any(item["event_type"] == "capability.evidence" and item["capability"] == "cooking" for item in evidence)
         assert platform.store.get_entity("clean_water")["amount"] == 99
+    finally:
+        platform.close()
+
+
+def test_capability_update_requires_repeated_outcomes_and_is_agent_proposed(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "capability-proposal-world", tmp_path / "runtime"))
+    try:
+        rejected = platform.submit_capability_update("liang_he", "cooking", 0.04, "One meal completed.")
+        assert rejected["status"] == "rejected"
+        assert rejected["failed_check"] == "insufficient_evidence"
+        for minute in (1, 2, 3):
+            platform.store.append_event("behavior.completed", "liang_he", minute, {"behavior_id": "craft_meal", "result": "recipe_completed"})
+        platform.store.connection.commit()
+        accepted = platform.submit_capability_update("liang_he", "cooking", 0.04, "Three configured meals completed without a failure.")
+        assert accepted["status"] == "accepted"
+        assert platform.store.get_agent("liang_he")["capabilities"]["cooking"] == 0.49
+        assert platform.store.list_capability_progress("liang_he")[0]["source"] == "agent_review"
+    finally:
+        platform.close()
+
+
+def test_world_progress_milestone_wakes_story_and_god_from_agent_proposal(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "civilization-progress-world", tmp_path / "runtime"))
+    try:
+        platform.store.append_event("behavior.completed", "lin_bo", 1, {"behavior_id": "govern_village", "result": "behavior_completed"})
+        platform.store.connection.commit()
+        result = platform.submit_world_progress("story", "governance_capacity", 5, "Five governance reviews produced public reserve and risk reports.")
+        assert result["status"] == "accepted"
+        assert result["milestone"] is True
+        assert platform.store.get_progress(platform.store.get_meta("world_id"), "governance_capacity")["current"] == 5
+        tasks = platform.ready_evolution_tasks()
+        assert any(item["role"] == "story" for item in tasks)
+        assert any(item["role"] == "god" for item in tasks)
     finally:
         platform.close()
 
@@ -1989,6 +2026,135 @@ def test_god_trigger_rejects_narrative_only_change_before_platform_commit(tmp_pa
         assert len(provider.calls) == 2
         assert not platform.store.connection.execute("SELECT 1 FROM event_log WHERE event_type='world.change.event'").fetchone()
         assert platform.store.get_meta("rules")["world_rules"][-1]["id"] == "food_crisis_response"
+    finally:
+        platform.close()
+
+
+def test_world_rule_signal_wakes_god_once_and_rearms_after_recovery(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "world-rule-signal-world", tmp_path / "runtime"))
+    try:
+        resource = platform.store.get_entity("village_food")
+        resource["amount"] = 100
+        with platform.store.transaction():
+            platform.store.put_entity("village_food", resource["entity_type"], resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
+        platform.step()
+        signals = [item for item in platform.store.recent_events(limit=30) if item["event_type"] == "world.rule.public_ration"]
+        assert len(signals) == 1
+        assert any(item["role"] == "god" and item["task_type"] == "rule:public_ration" for item in platform.ready_evolution_tasks())
+        started = platform.submit_behavior(BehaviorIntent("liang_he", "behavior:manage_ration", {}, {}, "Review the low food reserve.", 0.8, "rule-followup"))
+        assert started["status"] == "accepted"
+        step_n(platform, started["remaining_minutes"])
+        followups = [item for item in platform.store.recent_events(limit=100) if item["event_type"] == "world.rule.followed"]
+        assert any(item["rule"] == "public_ration" and item["behavior_id"] == "manage_ration" for item in followups)
+        platform.step()
+        assert len([item for item in platform.store.recent_events(limit=500) if item["event_type"] == "world.rule.public_ration"]) == 1
+
+        resource = platform.store.get_entity("village_food")
+        resource["amount"] = 160
+        with platform.store.transaction():
+            platform.store.put_entity("village_food", resource["entity_type"], resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
+        platform.step()
+        resource = platform.store.get_entity("village_food")
+        resource["amount"] = 100
+        with platform.store.transaction():
+            platform.store.put_entity("village_food", resource["entity_type"], resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
+        platform.step()
+        assert len([item for item in platform.store.recent_events(limit=500) if item["event_type"] == "world.rule.public_ration"]) == 2
+    finally:
+        platform.close()
+
+
+def test_invalid_world_rule_is_rejected_before_persistence(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "world-rule-validation-world", tmp_path / "runtime"))
+    try:
+        result = platform.submit_world_change("god", {
+            "change_type": "rule",
+            "summary": "Unclear policy.",
+            "rule": {"id": "missing-effect", "condition": "world.water_quality < 0.5"},
+        })
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "rule_schema"
+        assert not any(item.get("id") == "missing-effect" for item in (platform.store.get_meta("rules", {}) or {}).get("world_rules", []))
+        unsupported = platform.submit_world_change("god", {
+            "change_type": "rule",
+            "summary": "Unknown projection.",
+            "rule": {"id": "unknown-projection", "condition": "world.clinic.fever_reported == true", "effect": "clinic.alert", "behavior_names": ["Inspect Object"]},
+        })
+        assert unsupported["status"] == "rejected"
+        assert unsupported["failed_check"] == "rule_schema"
+        compound = platform.submit_world_change("god", {
+            "change_type": "rule",
+            "summary": "Compound effect.",
+            "rule": {"id": "compound-effect", "condition": "world.water_quality < 0.8", "effect": "watch.alert and deny_access", "behavior_names": ["Patrol Route"]},
+        })
+        assert compound["status"] == "rejected"
+        assert compound["failed_check"] == "rule_schema"
+    finally:
+        platform.close()
+
+
+def test_active_world_rule_removes_denied_behavior_from_agent_view(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "world-rule-denial-world", tmp_path / "runtime"))
+    try:
+        agent = platform.store.get_agent("su_wu")
+        agent["faction_ids"] = []
+        with platform.store.transaction():
+            platform.store.update_agent("su_wu", agent)
+        view = platform.decision_view("su_wu")
+        choices = {item["ref"] for item in view["executable_behaviors"]}
+        assert "behavior:inspect_object" not in choices
+        assert "old_well" not in render_context(view, "Choose one behavior.")
+    finally:
+        platform.close()
+
+
+def test_behavior_constraint_rule_blocks_named_behavior_without_mutating_state(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "world-rule-constraint-world", tmp_path / "runtime"))
+    try:
+        before = platform.store.get_agent("liang_he")["capabilities"]["cooking"]
+        result = platform.submit_world_change("god", {
+            "change_type": "rule",
+            "summary": "Review cooking during the reserve review.",
+            "rule": {
+                "id": "cooking_review_gate",
+                "condition": "world.village_food < 400",
+                "effect": {"type": "behavior_constraint", "message": "Cooking is paused until the reserve review."},
+                "behavior_names": ["Craft Meal"],
+            },
+        })
+        assert result["status"] == "accepted"
+        view = platform.decision_view("liang_he")
+        assert "behavior:craft_meal" not in {item["ref"] for item in view["executable_behaviors"]}
+        assert platform.store.get_agent("liang_he")["capabilities"]["cooking"] == before
+    finally:
+        platform.close()
+
+
+def test_recent_event_rule_uses_only_events_reached_by_world_time(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "event-rule-world", tmp_path / "runtime"))
+    try:
+        result = platform.submit_world_change("god", {
+            "change_type": "rule",
+            "summary": "Review the clinic event when it occurs.",
+            "rule": {
+                "id": "fever_event_signal",
+                "condition": "event.recent.clinic.fever_reported == true",
+                "effect": "clinic.triage_alert",
+                "behavior_names": ["Heal Target"],
+                "wake": ["god"],
+            },
+        })
+        assert result["status"] == "accepted"
+        assert not any(item["event_type"] == "world.rule.fever_event_signal" for item in platform.store.recent_events(limit=30))
+        step_n(platform, 11)
+        assert not any(item["event_type"] == "world.rule.fever_event_signal" for item in platform.store.recent_events(limit=100))
+        platform.step()
+        assert any(item["event_type"] == "world.rule.fever_event_signal" for item in platform.store.recent_events(limit=100))
     finally:
         platform.close()
 

@@ -73,7 +73,7 @@ flowchart LR
 
 ### 模块划分
 
-首版采用一个进程内的模块化单体，划分 12 个业务模块。个体 Agent 的决策/反思阶段与 God Agent 是 `agents` 模块中的两类运行时参与者，不拆成独立服务；WorldBuilder 只在创建期使用。横向观测和审计作为基础设施包贯穿各模块。感知模块单独承担信息过滤和授权，防止 Agent 直接读取世界数据库。
+首版采用一个进程内的模块化单体，划分 12 个业务模块。个体 Agent 的决策/反思/创新阶段、Story Agent 与可插拔的 God Agent 是 `agents` 模块中的三类运行时角色，不拆成独立服务；WorldBuilder 只在创建期使用。横向观测和审计作为基础设施包贯穿各模块。感知模块单独承担信息过滤和授权，防止 Agent 直接读取世界数据库。
 
 | 模块 | 目录 | 单一职责 |
 |---|---|---|
@@ -496,7 +496,7 @@ Platform 对每次意图返回 `IntentResult`。成功结果包含 `intent_id`�
 
 Agent 的新行为不是直接返回一个已经生效的 BT，而是返回 `BehaviorTreeProposalIntent`。该意图包含 `owner_agent_id`、作用域、基础 BT 版本、节点 AST、入口条件、Action 参数、结果契约、允许调用的 Platform 函数、预计时长、资源成本和中断策略。Agent 默认只能注册自己的私有 BT；注册到同一势力或全世界需要额外的共享权限和 Platform 策略。
 
-Platform 对新 BT 执行静态和运行时验证：节点类型和 Schema 必须有效，树不能有环，节点数、深度和预计时长必须受限；每个条件必须引用已知状态，每个 Action 必须来自函数白名单，资源和副作用必须显式声明，结果必须能映射到状态或事件。验证成功后 Platform 为 BT 分配版本、写入 BT 注册表并刷新相关 Agent 的 `eligible_bt_catalog`；验证失败时返回 `IntentValidationError`，包含错误路径、错误码和修正上下文，且不产生任何状态变化。Agent 将错误作为下一轮 ReAct 输入，继续修改和提交，直到成功或达到迭代上限。
+Platform 对新 BT 执行静态和运行时验证：节点类型和 Schema 必须有效，树不能有环，节点数、深度和预计时长必须受限；每个条件必须引用已知状态，每个 Action 必须来自函数白名单，资源和副作用必须显式声明，结果必须能映射到状态或事件。验证成功后 Platform 为 BT 分配版本、写入 BT 注册表并刷新相关 Agent 的 `eligible_bt_catalog`；验证失败时返回 `IntentValidationError`，包含错误路径、错误码和修正上下文，且不产生任何状态变化。Agent 将错误作为下一轮 ReAct 输入，继续修改和提交，直到成功或达到迭代上限。能力提升和文明里程碑也必须经过 Agent 提案与 Platform 证据校验；进度达到配置阈值时 Platform 只负责发出 `civilization.milestone` 并唤醒 Story/God，不直接改变能力或文明数值。
 
 God Agent 可以创造世界实体，但也只能提交 `CreateEntityIntent`，不能直接写入实体表。允许的实体类型由故事包声明，首版包括地点、势力、Agent、物品、资源节点、任务、制度、规则实例和传闻。意图包含 `entity_type`、蓝图、父实体、位置、初始状态、可见性、来源、有效期和预期影响。Platform 校验实体 Schema、唯一标识、引用完整性、出生位置、初始资源、世界容量、权限、因果约束和可见性规则；成功后生成 `entity.created` 事件并使实体进入世界，失败则返回结构化错误并让 God Agent 继续 ReAct。新 Agent 的身份、能力、记忆初始值和统一 Agent 配置也必须由 Platform 生成，实体不会自动被所有 Agent 感知。God 不能直接修改资源、需求、关系或生产数值；这些数值必须由角色行为和配置效果推进。
 

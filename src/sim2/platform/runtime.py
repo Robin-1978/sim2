@@ -20,6 +20,7 @@ from ..memory.service import MemoryService
 from ..perception.service import PerceptionService
 from ..persistence.store import WorldStore
 from ..world.navigation import configured_location_tags, nearest_location_with_tag, nearest_resource_node, nearest_safe_location, reachable_locations
+from ..world.rules import RuleCompiler
 
 
 class Platform:
@@ -36,12 +37,34 @@ class Platform:
         self.perception = PerceptionService(self.store)
         self.memory = MemoryService(self.store)
         self.conditions = ConditionEngine((self.store.get_meta("rules", {}) or {}))
+        self.rule_compiler = self._new_rule_compiler()
         self.effects = EffectPipeline()
         self.targets = TargetResolver(self.store)
         self.resources = ResourceLedger(self.store)
 
     def close(self) -> None:
         self.store.close()
+
+    def _new_rule_compiler(self) -> RuleCompiler:
+        rules = self.store.get_meta("rules", {}) or {}
+        aliases = {}
+        for key in (self.store.get_meta("world_properties", {}) or {}):
+            aliases[str(key)] = str(key)
+            aliases[str(key).replace("_", " ")] = str(key)
+        for entity_type in ("resource", "material", "location", "object", "faction", "agent"):
+            for item in self.store.entities_of_type(entity_type):
+                identifier, visible = str(item.get("id") or ""), str(item.get("name") or "")
+                if identifier and visible:
+                    aliases[visible] = identifier
+        aliases.update({str(key): str(value) for key, value in (rules.get("condition_aliases", {}) or {}).items()})
+        return RuleCompiler(
+            rules,
+            self.conditions,
+            aliases,
+            known_behaviors=list(self.store.get_definitions("bt_def")),
+            known_actions=list(self.store.get_definitions("action_def")),
+            world_keys=set((self.store.get_meta("world_properties", {}) or {}).keys()),
+        )
 
     def run(
         self,
@@ -424,6 +447,8 @@ class Platform:
             available_defs,
             {item["id"]: item for item in self.store.get_definitions("recipe_def")},
             self._route_distance,
+            capabilities=agent.get("capabilities", {}),
+            capability_modifiers=(self.store.get_meta("rules", {}) or {}).get("capability_modifiers", {}),
         )
         remaining_minutes = estimator.behavior_minutes(behavior_id, {**runtime_parameters, **intent.target}, state.get("location_id"))
         expected = {
@@ -520,6 +545,7 @@ class Platform:
             "target.visible": bool((resolved_target or {}).get("visible", False)),
             "target.available": bool((resolved_target or {}).get("available", False)),
             "known_route_destinations": reachable_locations(self.store, location_id),
+            "recent_event_types": self._recent_event_types(),
             "conflict": {"available": conflict_available},
         }
 
@@ -583,6 +609,88 @@ class Platform:
             memory_id = self.store.put_memory(actor_id, "experience", {**data, "world_minute": world_minute})
             self.store.append_event("memory.experience_recorded", actor_id, world_minute, {"memory_id": memory_id, **data})
             result = {"status": "accepted", "intent_id": intent_id, "memory_id": memory_id}
+            self.store.finish_intent(intent_id, "accepted", result)
+        return result
+
+    def submit_capability_update(self, actor_id: str, capability: str, delta: float, evidence: str) -> dict[str, Any]:
+        """Apply a personal capability change only after Agent evidence review."""
+
+        intent_id = str(uuid4())
+        capability = str(capability).strip()
+        evidence = str(evidence).strip()
+        data = {"capability": capability, "delta": delta, "evidence": evidence}
+        definitions = {str(item.get("id")): item for item in self.store.get_definitions("capability_def")}
+        if capability not in definitions:
+            return self._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability is not configured.", "failed_check": "capability", "retryable": True})
+        if not 0 < float(delta) <= 0.2 or len(evidence) < 12:
+            return self._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability delta or evidence is invalid.", "failed_check": "evidence", "retryable": True})
+        rules = self.store.get_meta("rules", {}) or {}
+        progression = (rules.get("capability_progression", {}) or {}).get(capability, {})
+        minimum = max(1, int(progression.get("minimum_completed_outcomes", 3) or 3))
+        maximum_delta = min(0.2, float(progression.get("max_delta", 0.1) or 0.1))
+        if float(delta) > maximum_delta:
+            return self._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability delta exceeds the configured review bound.", "failed_check": "delta_limit", "retryable": True})
+        try:
+            agent = self.store.get_agent(actor_id)
+        except KeyError:
+            return self._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability updates require an individual Agent.", "failed_check": "actor", "retryable": False})
+        last = self.store.connection.execute("SELECT MAX(world_minute) AS minute FROM capability_progress WHERE agent_id=? AND capability=?", (actor_id, capability)).fetchone()["minute"]
+        start = int(last or -1)
+        row = self.store.connection.execute(
+            "SELECT COUNT(*) AS n FROM event_log WHERE actor_id=? AND event_type='behavior.completed' AND world_minute>?",
+            (actor_id, start),
+        ).fetchone()
+        completed = int(row["n"] or 0)
+        if completed < minimum:
+            return self._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": f"More completed outcomes are required before updating {capability}.", "failed_check": "insufficient_evidence", "completed_outcomes": completed, "required_outcomes": minimum, "retryable": True})
+        world_minute = int(self.store.get_meta("world_minute", 0))
+        current = float((agent.get("capabilities") or {}).get(capability, 0) or 0)
+        maximum = float(progression.get("max_value", 1.0) or 1.0)
+        after = min(maximum, current + float(delta))
+        applied_delta = after - current
+        if applied_delta <= 0:
+            return self._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability is already at its configured maximum.", "failed_check": "capability_max", "retryable": False})
+        with self.store.transaction():
+            agent.setdefault("capabilities", {})[capability] = after
+            self.store.create_intent(intent_id, actor_id, "update_capability", data, world_minute)
+            self.store.update_agent(actor_id, agent)
+            self.store.put_capability_progress(actor_id, capability, applied_delta, "agent_review", world_minute, {"evidence": evidence, "completed_outcomes": completed})
+            event_id = self.store.append_event("capability.updated", actor_id, world_minute, {"capability": capability, "before": current, "after": after, "delta": applied_delta, "evidence": evidence, "completed_outcomes": completed})
+            result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "capability": capability, "before": current, "after": after, "delta": applied_delta}
+            self.store.finish_intent(intent_id, "accepted", result)
+        return result
+
+    def submit_world_progress(self, actor_id: str, progress_key: str, delta: float, evidence: str) -> dict[str, Any]:
+        """Record public progress proposed by Story or God from real outcomes."""
+
+        intent_id = str(uuid4())
+        progress_key = str(progress_key).strip()
+        evidence = str(evidence).strip()
+        data = {"progress_key": progress_key, "delta": delta, "evidence": evidence}
+        rules = self.store.get_meta("rules", {}) or {}
+        definitions = rules.get("civilization_progress", {}) or {}
+        definition = definitions.get(progress_key) if isinstance(definitions, dict) else None
+        if not isinstance(definition, dict):
+            return self._reject_intent(intent_id, actor_id, "record_world_progress", data, {"status": "rejected", "message": "World progress key is not configured.", "failed_check": "progress_key", "retryable": True})
+        if not 0 < float(delta) <= 5 or len(evidence) < 12:
+            return self._reject_intent(intent_id, actor_id, "record_world_progress", data, {"status": "rejected", "message": "Progress delta or evidence is invalid.", "failed_check": "evidence", "retryable": True})
+        outcomes = self.store.recent_behavior_outcomes(limit=20)
+        if not outcomes:
+            return self._reject_intent(intent_id, actor_id, "record_world_progress", data, {"status": "rejected", "message": "A public progress update needs a recent behavior outcome.", "failed_check": "insufficient_evidence", "retryable": True})
+        world_minute = int(self.store.get_meta("world_minute", 0))
+        world_id = str(self.store.get_meta("world_id", "world"))
+        required = float(definition.get("required", 1) or 1)
+        with self.store.transaction():
+            self.store.create_intent(intent_id, actor_id, "record_world_progress", data, world_minute)
+            progress = self.store.advance_progress(world_id, progress_key, float(delta), required, world_minute, {"evidence": evidence, "source_agent": actor_id})
+            event_type = "civilization.milestone" if progress["completed"] else "civilization.progressed"
+            event_id = self.store.append_event(event_type, actor_id, world_minute, {"progress": progress, "evidence": evidence, "source_agent": actor_id})
+            result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "progress": progress, "milestone": bool(progress["completed"])}
+            if progress["completed"]:
+                wake = list(definition.get("wake", ["story", "god"]) or [])
+                self._queue_configured_followups({"wake": wake}, event_id, event_type, actor_id, world_minute)
+                for role in wake:
+                    self.store.mark_evolution_task_ready(f"{role}:event:{event_id}")
             self.store.finish_intent(intent_id, "accepted", result)
         return result
 
@@ -1085,6 +1193,10 @@ class Platform:
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "property is required for a world_property change.", "failed_check": "property", "retryable": True})
         if change_type == "rule" and not isinstance(proposal.get("rule"), dict):
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "rule object is required for a rule change.", "failed_check": "rule", "retryable": True})
+        if change_type == "rule" and isinstance(proposal.get("rule"), dict):
+            valid, message = self.rule_compiler.validate(dict(proposal["rule"]))
+            if not valid:
+                return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": message, "failed_check": "rule_schema", "retryable": True})
         if change_type == "relationship" and not isinstance(proposal.get("relationship"), dict):
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "relationship object is required for a relationship change.", "failed_check": "relationship", "retryable": True})
         if change_type == "faction" and not isinstance(proposal.get("faction"), dict):
@@ -1161,6 +1273,8 @@ class Platform:
                 world_rules.append(dict(proposal["rule"]))
                 rules["world_rules"] = world_rules
                 self.store.set_meta("rules", rules)
+                self.conditions = ConditionEngine(rules)
+                self.rule_compiler = self._new_rule_compiler()
                 effect = {"rule_added": dict(proposal["rule"]), "rule_count": len(world_rules)}
             elif change_type == "relationship":
                 relation = dict(proposal["relationship"])
@@ -1411,24 +1525,16 @@ class Platform:
                 queue.append((neighbor, distance + 1))
         return hop_minutes
 
-    def _action_duration(self, action: dict[str, Any], parameters: dict[str, Any], origin_location: str | None = None) -> int:
-        duration = action.get("duration") or {}
-        minutes = duration.get("minutes")
-        if isinstance(minutes, (int, float)):
-            return max(1, int(minutes))
-        mode = duration.get("mode")
-        if mode == "recipe_duration":
-            recipe_id = parameters.get("recipe_id")
-            recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == recipe_id), None)
-            if recipe and isinstance(recipe.get("duration_minutes"), (int, float)):
-                return max(1, int(recipe["duration_minutes"]))
-        if mode == "route_distance":
-            return max(1, self._route_distance(origin_location, parameters.get("location_id") or parameters.get("destination_id")))
-        configured = duration.get("default_minutes", action.get("default_minutes", 1))
-        try:
-            return max(1, int(configured))
-        except (TypeError, ValueError):
-            return 1
+    def _action_duration(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], origin_location: str | None = None) -> int:
+        estimator = BehaviorDurationEstimator(
+            {item["id"]: item for item in self.store.get_definitions("action_def")},
+            {},
+            {item["id"]: item for item in self.store.get_definitions("recipe_def")},
+            self._route_distance,
+            capabilities=agent.get("capabilities", {}),
+            capability_modifiers=(self.store.get_meta("rules", {}) or {}).get("capability_modifiers", {}),
+        )
+        return estimator._action_minutes(action, parameters, origin_location)
 
     def _apply_action_parameter_defaults(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any]) -> dict[str, Any]:
         """Resolve declarative defaults without making the LLM fill hidden plumbing."""
@@ -1687,15 +1793,25 @@ class Platform:
             "target.visible": (resolved_target or {}).get("visible", False),
             "target.available": (resolved_target or {}).get("available", False),
             "known_route_destinations": reachable_locations(self.store, location_id),
+            "recent_event_types": self._recent_event_types(),
         }
         if action_id == "craft_recipe":
             recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
             condition_context["station_tags"] = list((recipe or {}).get("station_tags", []) or [])
+        denial = self.rule_compiler.denial(
+            action=action,
+            agent=agent,
+            target={**parameters, **(resolved_target or {})},
+            context=condition_context,
+            world=self.store.get_meta("world_properties", {}) or {},
+        )
+        if denial:
+            return False, denial["message"]
         for predicate in action.get("preconditions", []) or []:
             condition_target = {**parameters, **(resolved_target or {})}
             if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=condition_context, world=self.store.get_meta("world_properties", {}) or {}):
                 return False, f"precondition failed: {predicate}"
-        duration = self._action_duration(action, parameters, state.get("location_id"))
+        duration = self._action_duration(agent, action, parameters, state.get("location_id"))
         if already_at_destination:
             # Completing an already reached destination consumes this tick,
             # but it does not charge movement costs or reserve resources.
@@ -1764,15 +1880,25 @@ class Platform:
             "target.visible": (target or {}).get("visible", False),
             "target.available": (target or {}).get("available", False),
             "known_route_destinations": reachable_locations(self.store, state.get("location_id")),
+            "recent_event_types": self._recent_event_types(),
         }
         if action_info.get("action_id") == "craft_recipe":
             recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
             context["station_tags"] = list((recipe or {}).get("station_tags", []) or [])
         condition_target = {**parameters, **(target or {})}
+        denial = self.rule_compiler.denial(
+            action=action,
+            agent=agent,
+            target=condition_target,
+            context=context,
+            world=self.store.get_meta("world_properties", {}) or {},
+        )
+        if denial:
+            return None, denial["message"]
         for predicate in action.get("preconditions", []) or []:
             if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=context, world=self.store.get_meta("world_properties", {}) or {}):
                 return None, f"precondition failed: {predicate}"
-        duration = self._action_duration(action, parameters, state.get("location_id"))
+        duration = self._action_duration(agent, action, parameters, state.get("location_id"))
         if already_at_destination:
             reservation = []
         else:
@@ -2034,11 +2160,11 @@ class Platform:
             if effect.get("type") in {"capability_xp", "capability.add_xp"} or effect.get("op") == "capability.add_xp":
                 capability = effect.get("capability")
                 if capability:
-                    self._add_capability_progress(agent, capability, float(effect.get("value", effect.get("delta", 0))), str(action.get("id", "action")), minute)
+                    self.store.append_event("capability.evidence", agent["id"], minute, {"capability": str(capability), "source": str(action.get("id", "action")), "configured_delta": float(effect.get("value", effect.get("delta", 0)) or 0), "requires_agent_review": True})
         for effect in action.get("capability_effects", []) or []:
             capability = effect.get("capability")
             if capability:
-                self._add_capability_progress(agent, capability, float(effect.get("value", 0)), str(action.get("id", "action")), minute)
+                self.store.append_event("capability.evidence", agent["id"], minute, {"capability": str(capability), "source": str(action.get("id", "action")), "configured_delta": float(effect.get("value", 0) or 0), "requires_agent_review": True})
         recipe_id = parameters.get("recipe_id")
         if not recipe_id:
             return
@@ -2074,7 +2200,7 @@ class Platform:
             elif effect_type == "capability.add_xp":
                 capability = effect.get("capability")
                 if capability:
-                    self._add_capability_progress(agent, capability, float(effect.get("value", 0)), f"recipe:{recipe_id}", minute)
+                    self.store.append_event("capability.evidence", agent["id"], minute, {"capability": str(capability), "source": f"recipe:{recipe_id}", "configured_delta": float(effect.get("value", 0) or 0), "requires_agent_review": True})
 
     def _action_failure_reason(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], target: dict[str, Any] | None) -> str | None:
         condition = str((action.get("failure") or {}).get("condition") or "").strip()
@@ -2334,6 +2460,34 @@ class Platform:
             "delta": self._execution_delta(before, after) if before else {},
             "decision": dict(bt_data.get("decision") or {}),
         }
+        rule_followups: list[dict[str, Any]] = []
+        if status == "completed":
+            location_id = (agent.get("initial_state") or {}).get("location_id")
+            context = {
+                "location_id": location_id,
+                "current_location": self._entity_for_context(location_id),
+                "behavior_id": behavior_id,
+                "recent_event_types": self._recent_event_types(),
+            }
+            world = self._world_trigger_context()
+            for raw_rule in self.rule_compiler.all_rules():
+                behavior = behavior_definition
+                if not self.rule_compiler.behavior_matches(raw_rule, behavior):
+                    continue
+                if not self.rule_compiler.matches(raw_rule, agent=agent, target={}, context=context, world=world):
+                    continue
+                compiled = self.rule_compiler.compile(raw_rule)
+                followup = {
+                    "rule": compiled["name"],
+                    "behavior_id": behavior_id,
+                    "result": result,
+                    "expected_effects": list(raw_rule.get("expected_effects") or []),
+                    "observed_delta": outcome.get("delta") or {},
+                }
+                rule_followups.append(followup)
+                self.store.append_event("world.rule.followed", agent["id"], minute, followup)
+        if rule_followups:
+            outcome["rule_followups"] = rule_followups
         action_instance_id = state.get("active_action_instance")
         if action_instance_id and status != "completed":
             action_row = self.store.connection.execute("SELECT elapsed_minutes,remaining_minutes,data_json FROM action_instance WHERE action_instance_id=?", (action_instance_id,)).fetchone()
@@ -2399,6 +2553,49 @@ class Platform:
                 self.store.sync_world_property_from_resource(resource["id"], amount)
                 context[resource["id"]] = amount
         return context
+
+    def _recent_event_types(self, limit: int = 120) -> list[str]:
+        rows = self.store.connection.execute(
+            "SELECT DISTINCT event_type FROM event_log WHERE world_minute<=? ORDER BY event_id DESC LIMIT ?",
+            (int(self.store.get_meta("world_minute", 0)), max(1, min(int(limit), 500))),
+        ).fetchall()
+        return [str(row["event_type"]) for row in rows]
+
+    def _emit_world_rule_signals(self, minute: int) -> None:
+        """Emit edge-triggered signals from active declarative world rules."""
+
+        world = self._world_trigger_context()
+        signals = self.rule_compiler.signal_specs(agent={}, context={"recent_event_types": self._recent_event_types()}, world=world)
+        state = dict(self.store.get_meta("world_rule_signal_state", {}) or {})
+        for signal in signals:
+            name = str(signal.get("name") or "world_rule")
+            was_active = bool(state.get(name, False))
+            if not was_active:
+                event_id = self.store.append_event(
+                    str(signal.get("event_type") or f"world.rule.{name}"),
+                    None,
+                    minute,
+                    {
+                        "rule": name,
+                        "condition": signal.get("condition"),
+                        "effect": signal.get("effect"),
+                        "signal": True,
+                    },
+                )
+                for index, target in enumerate(signal.get("wake") or []):
+                    target = str(target)
+                    if target in {"god", "story"}:
+                        role, actor_id = target, None
+                    elif target in {agent["id"] for agent in self.store.list_agents()}:
+                        role, actor_id = "agent_reflection", target
+                    else:
+                        continue
+                    task_id = f"rule:{name}:{minute}:{index}"
+                    self.store.put_evolution_task(task_id, role, actor_id, f"rule:{name}", minute, 0, status="ready", data={"rule": name, "event_id": event_id})
+        for rule in self.rule_compiler.all_rules():
+            name = str(rule.get("name") or rule.get("id") or "world_rule")
+            state[name] = any(str(item.get("name")) == name for item in signals)
+        self.store.set_meta("world_rule_signal_state", state)
 
     def _set_world_property(self, key: str, value: Any) -> dict[str, Any]:
         """Update one world property and its shared-resource projection atomically.
@@ -2536,6 +2733,7 @@ class Platform:
                     failed.append(agent["id"])
             self.store.set_meta("world_minute", minute)
             self.store.append_event("world_minute.advanced", None, minute, {"minute": minute})
+            self._emit_world_rule_signals(minute)
             self._emit_evolution_triggers(minute)
             self._emit_due_evolution_tasks(minute)
         return {"status": "advanced", "from_minute": start, "to_minute": minute, "completed_agents": sorted(set(completed)), "failed_agents": sorted(set(failed))}

@@ -48,7 +48,11 @@ class ConditionEngine:
                 left = self._value(left_path.strip(), agent, target, world, context)
                 right = self._literal(right_text)
                 if left is None:
-                    return False
+                    # An absent membership value is still outside an
+                    # explicitly listed set.  This lets declarative access
+                    # rules distinguish “no faction/permission” from a
+                    # matching member without story-specific code.
+                    return operator.strip() == "not_in"
                 try:
                     return left not in right if operator.strip() == "not_in" else left in right
                 except TypeError:
@@ -151,6 +155,9 @@ class ConditionEngine:
             return self._path_value(world, path.removeprefix("world."))
         if path.startswith("context."):
             return self._path_value(context, path.removeprefix("context."))
+        if path.startswith("event.recent."):
+            event_type = path.removeprefix("event.recent.")
+            return event_type in {str(item) for item in (context.get("recent_event_types", []) or [])}
         if path == "location.has_food":
             location = context.get("current_location", {}) or {}
             tags = self.location_tag_groups.get("food", {"food"})

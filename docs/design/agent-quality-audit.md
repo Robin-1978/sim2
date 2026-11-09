@@ -54,8 +54,9 @@ the rule changed the world.
 3. The output does not fill in Platform-owned time, cost, or effects.
 4. Reflection keeps only a specific, durable, outcome-grounded lesson, or
    returns `wait` when the outcome adds no reusable knowledge.
-5. God proposals have an observable typed effect, and a later context verifies
-   the effect rather than treating acceptance as evolution.
+5. God proposals have an observable typed effect, their declared evidence is
+   represented in the condition, and a later context verifies the effect rather
+   than treating acceptance as evolution.
 
 The full prompt, tool calls, Platform results, and quality checks are kept in
 the redacted local artifact `artifacts/deepseek-quality-review.json`; it does
@@ -68,7 +69,11 @@ turn `accepted_needs_world_followup`: the rule is stored, but a later behavior
 must execute rationing and produce the expected resource outcome before the
 world change is considered complete.
 
-Current implementation note: `rules.world_rules` is presently a persisted
-proposal registry, not an active rule executor. Until a generic rule compiler
-connects validated rule effects to behavior conditions/effects, a stored rule
-must not be reported as an applied world change.
+Current implementation note: `RuleCompiler` connects validated rule records to
+the Agent view, BT/Action admission, edge-triggered world signals, and
+`world.rule.followed` outcome records. It rejects unknown `world.*` condition
+fields and maps visible entity names such as “旧井” back to configured keys at
+the Platform boundary. A stored rule is still not an applied world change: the
+God grade remains pending until the named behavior completes and its observed
+result is visible in a later world review. A signal cannot claim to gate or
+prioritize a behavior; that requires a typed `behavior_constraint` effect.

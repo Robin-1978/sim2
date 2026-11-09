@@ -103,6 +103,26 @@ motivation_model:
   - meaning_and_goal_progress
   - novelty
   - social_norms_and_external_pressure
+capability_progression:
+  cooking: {minimum_completed_outcomes: 3, max_delta: 0.08, max_value: 1.0}
+  gather: {minimum_completed_outcomes: 3, max_delta: 0.08, max_value: 1.0}
+  research: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
+  navigation: {minimum_completed_outcomes: 3, max_delta: 0.08, max_value: 1.0}
+civilization_progress:
+  governance_capacity: {required: 5, wake: [story, god]}
+  public_health: {required: 4, wake: [story, god]}
+  trade_network: {required: 4, wake: [story, god]}
+  food_system: {required: 5, wake: [story, god]}
+capability_modifiers:
+  cooking:
+    craft_recipe:
+      time_multiplier: {base: 1.0, per_value: -0.25, min: 0.75}
+  navigation:
+    travel_to:
+      time_multiplier: {base: 1.0, per_value: -0.25, min: 0.75}
+  gather:
+    gather_resource:
+      time_multiplier: {base: 1.0, per_value: -0.20, min: 0.80}
 capability_aliases:
   explore: [exploration]
   speak: [conversation]
@@ -189,9 +209,13 @@ need_gates:
   multiplier: 0.4
 world_rules:
 - id: old_well_restriction
-  condition: actor.faction_id not_in [root_keepers] and actor.permission.old_well
-    == false
+  condition: actor.faction_id not_in [root_keepers] and actor.permission.old_well == false
+    and context.location_id == old_well
   effect: deny_access
+  description: Only root keepers may perform actions at the Old Well.
 - id: public_ration
   condition: resource.village_food < 120
   effect: council.ration_alert
+  wake: [god]
+  behavior_names: [Manage ration]
+  description: Low public food should be reviewed by the world policy Agent.
