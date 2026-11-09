@@ -284,8 +284,8 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "summary": {"type": "string"},
                 "scope": {"type": "string"},
                 "conditions": {"type": "array", "items": {"type": "string"}},
-                "effects": {"type": "array", "items": {"type": "string"}},
-                "expected_effects": {"type": "array", "items": {"type": "string"}, "description": "Short observable effects to compare with the next world outcome."},
+                "effects": {"type": "array", "items": {"type": "string"}, "description": "Observable effects. For a signal, say only what is recorded or woken; do not claim priority, blocking, holding, deferral, or an until condition."},
+                "expected_effects": {"type": "array", "items": {"type": "string"}, "description": "Short observable effects to compare with the next world outcome; signal-only proposals must not claim enforcement."},
                 "property": {"type": "string"},
                 "value": {},
                 "rule": {

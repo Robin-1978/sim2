@@ -1229,7 +1229,7 @@ class Platform:
                     proposal,
                     {
                         "status": "rejected",
-                        "message": "Event effects must be narrative only. Use world_property, rule, relationship or faction for direct state changes.",
+                        "message": "Event effects must be narrative only: remove claims that a resource, need, relationship, safety, hold, gate, or other state changes. Use a rule with a typed effect for enforcement or a behavior outcome for state changes.",
                         "failed_check": "event_effects",
                         "retryable": True,
                     },

@@ -123,7 +123,7 @@ class RuleCompiler:
         text = " ".join(str(item).casefold() for item in (statements or []) if item not in (None, ""))
         text += " " + str(rule.get("description") or rule.get("label") or "").casefold()
         if any(term in text for term in terms):
-            return False, "The proposal claims ordering or enforcement, but its rule effect is only a signal; use a typed behavior_constraint or denial effect."
+            return False, "Signal-only rule rejected: remove priority, gating, blocking, or until language from the proposal text, or use effect.type behavior_constraint and list only the blocked BT. Submit one corrected proposal now."
         return True, ""
 
     def validate_declared_conditions(self, rule: dict[str, Any], declared: list[Any] | None = None) -> tuple[bool, str]:
