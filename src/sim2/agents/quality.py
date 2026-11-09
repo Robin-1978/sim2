@@ -10,6 +10,14 @@ def _check(name: str, passed: bool, detail: str) -> dict[str, Any]:
     return {"name": name, "passed": bool(passed), "detail": detail}
 
 
+def _terms(value: Any) -> set[str]:
+    text = str(value or "").casefold()
+    terms = set(re.findall(r"[a-z0-9]+", text.replace("_", " ")))
+    cjk = "".join(re.findall(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]", text))
+    terms.update(cjk[index:index + 2] for index in range(max(0, len(cjk) - 1)))
+    return terms
+
+
 def _final_submission(turn: AgentTurn) -> tuple[str, dict[str, Any]]:
     for step in reversed(turn.transcript):
         if step.get("step") == "tool" and step.get("result", {}).get("status") in {"accepted", "wait"}:
@@ -22,6 +30,8 @@ def _final_submission(turn: AgentTurn) -> tuple[str, dict[str, Any]]:
                 inferred = "propose_entity"
             elif response.get("beat") or response.get("summary") and response.get("audience"):
                 inferred = "propose_story_beat"
+            elif isinstance(response.get("intent"), str):
+                inferred = str(response["intent"])
             else:
                 inferred = "record_experience" if response.get("summary") and not response.get("intent_type") else response.get("intent_type", "intent")
             return str(inferred), response
@@ -59,8 +69,14 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         goal_tags = set(view.get("goal_tags") or [])
         alignment = (goal_tags & set(selected.get("goal_tags") or [])) | (drive_ids & set(selected.get("drive_tags") or []))
         tokens = lambda value: set(re.findall(r"[a-z0-9]+", str(value).lower().replace("_", " ")))
-        reason_terms = tokens(reason)
-        evidence_terms = tokens(selected.get("name", "")) | tokens(selected.get("summary", "")) | tokens(selected.get("purpose", "")) | tokens(selected.get("goal_tags", [])) | tokens(view.get("identity", {}).get("capabilities", {})) | tokens(view.get("goal_tags", []))
+        reason_terms = _terms(reason)
+        evidence_terms = set().union(
+            _terms(selected.get("name", "")), _terms(selected.get("summary", "")),
+            _terms(selected.get("purpose", "")), _terms(selected.get("goal_tags", [])),
+            _terms(view.get("identity", {}).get("capabilities", {})), _terms(view.get("goal_tags", [])),
+            _terms(view.get("self", {}).get("goal", "")), _terms(view.get("observation", {}).get("facts", [])),
+            _terms(view.get("known_facts", [])), _terms(view.get("memories", [])),
+        )
         # Decision tools intentionally allow a short choice-only response.
         # A missing rationale is acceptable when the selected BT is grounded
         # in visible goals/drives; a supplied rationale still must overlap
@@ -84,8 +100,8 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
                     str((outcome.get("expected") or {}).get("summary", "")),
                     str(outcome.get("delta", {})),
                 ])
-                summary_terms = set(re.findall(r"[a-z0-9]+", summary.lower()))
-                evidence_terms = set(re.findall(r"[a-z0-9]+", evidence.lower()))
+                summary_terms = _terms(summary)
+                evidence_terms = _terms(evidence)
                 checks.append(_check("reflection_experience_matches_outcome", bool(summary_terms & evidence_terms), "summary overlaps expected result or observed delta" if summary_terms & evidence_terms else "summary does not cite the observed outcome"))
         elif name == "update_capability" or payload.get("intent_type") == "update_capability":
             evidence = str(payload.get("evidence") or "")
