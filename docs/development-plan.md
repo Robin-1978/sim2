@@ -121,18 +121,20 @@ python scripts/benchmark_platform.py --agents 1000 --runs 5
 python scripts/verify_agent_models.py
 ```
 
-最近一次结果为 `56 passed`；1000 个 Agent、5 次非 LLM 模拟分钟的 p95 为约 `169 ms`。测试覆盖 ReAct 工具反馈与拒绝重试、SQLite 创世与回滚、长 Action/并行 BT/共享资源、中断恢复、探索沟通知识、聊天与两阶段交易、文本玩家/旁观者入口、记忆 FTS5 与激活、反思目标和能力历史、执行 outcome 复盘上下文、God 世界前后值复盘、God 事件语义质量门、HTTP 控制、健康探针、快照恢复、确定性回放、可读名称映射、重复 BT 提案质量门、Provider 短暂断连重试与限流 cooldown 以及 Starter Village 端到端场景。
+最近一次结果为 `100 passed`；测试覆盖 ReAct 工具反馈与拒绝重试、SQLite 创世与回滚、长 Action/并行 BT/共享资源、中断恢复、探索沟通知识、聊天与两阶段交易、文本玩家/旁观者入口、短期/长期记忆与任务条件召回、BGE 适配、嵌套 BT 多参与者目标校验、周/月 God 趋势、反思目标和能力历史、执行 outcome 复盘上下文、God 世界前后值复盘、God 事件语义质量门、HTTP 控制、健康探针、快照恢复、确定性回放、可读名称映射、重复 BT 提案质量门、Provider 短暂断连重试与限流 cooldown 以及 Starter Village 端到端场景。
 
 `verify_agent_models.py` 是真实模型验收入口：它不打印原始 reasoning 或密钥，只报告 Decision/Reflection/God 的会话步骤、最终 Intent、Platform 校验结果和质量布尔值；远程 Provider 使用 `~/.sim2/llm.json` 中的显式代理和环境变量引用。
 
-上下文缓存指标同时记录 Provider 返回的 `cached_tokens/prompt_tokens` 和结构化 Prompt 的稳定前缀复用率。最近一次 beam-free God 会话为 6 次模型调用，Provider 报告 `7616/11123` prompt tokens 命中，约 `68.47%`；稳定前缀复用率为 `83.33%`。本地确定性长跑没有 Provider token usage，但 1,585 次调用的稳定前缀复用率为 `99.81%`，说明动态内容已被放在稳定协议之后。
+上下文缓存指标同时记录 Provider 返回的 `cached_tokens/prompt_tokens` 和结构化 Prompt 的稳定前缀复用率。最近的确定性周跑没有 Provider token usage，但 1,932 次调用的稳定前缀复用率为 `99%` 以上；稳定协议和工具定义位于动态世界状态之前，说明缓存边界保持稳定。
 
-`python scripts/run_long_simulation.py --minutes 10080` 的一周确定性闭环 smoke test 完成 1,980 次决策、72 次日/周反思、1 次 God 周期会话和 2,053 次 provider 调用；选出 13 种行为、产生 14 种事件类型、7 个不同位置，世界分钟完整推进到 10,080，未触发单一行为支配、健康耗尽或无限重规划标记。该 smoke provider 的反思固定返回 `wait`，所以不会伪造记忆增长；真实模型验收仍由 `verify_agent_models.py` 完成。
+`python scripts/run_long_simulation.py --minutes 10080` 的当前一周确定性闭环完成 1,810 次决策、72 次反思、1 次 God 周期会话、3 次 Story 会话和 1,932 次 provider 调用；选出 17 种行为、产生 20 种事件类型，世界分钟完整推进到 10,080，未触发单一行为支配、健康耗尽、拒绝风暴或无限重规划标记。该 smoke provider 的反思固定返回 `wait`，所以不会伪造记忆增长；真实模型验收由 `verify_core_interaction.py` 和 `verify_agent_models.py` 完成。
 
-2026-11-08 的真实本地验证使用 llama.cpp 模型 `Huihui-Qwen3.5-4B-abliterated.Q4_K_M`：Decision 选择了配置中可执行的 `behavior:explore_greywood`，目标/驱动标签对齐；Reflection 提交了具体且不超过 500 字符的经验摘要。随后通过配置代理运行 beam-free 的 God Agent 检查，模型读取受限的世界信号后提交了 `root_gate_stability: 0.64 → 0.75` 的结构化世界属性变化，Platform 接受且质量为 `grounded`，未输出密钥或原始推理。只记录叙事 event、没有结构化状态效果的提案会被质量门标为 `accepted_needs_world_followup`。
+真实 DeepSeek `deepseek-v4.1-flash` 核心闭环已通过：Decision、Reflection、下一次 Decision 和 God 的语义质量均为通过，Platform 结果分别为有效行为、有效经验或等待、有效下一步行为和有效世界提案。使用 `/disk` 中的 `bge-small-zh-v1.5` ONNX 缓存和 PyTorch 环境运行时，记忆 backend 为 `embedding_cosine_onnx`，同一闭环仍全部通过；未安装模型时自动回退到词项检索。BGE 由 `onnxruntime` 和 `tokenizers` 批量编码，记忆标签只用于召回和重排，不进入模型可见的内部 ID 字段。
+
+真实模型验证使用配置中的远程代理和 `MY_MY_API` 环境变量，不把密钥写入仓库或输出。God 上下文包含当前资源、周/月资源净变化、关系变化和目标标签趋势；只记录叙事 event、没有结构化状态效果的提案会被质量门标为 `accepted_needs_world_followup`。
 
 最新本地协议回归在可读名称 schema 上通过：Decision 的 `request_behavior` 使用 `choice: "Explore Greywood"`，质量为 `comparative_grounded_choice`；Reflection 的短经验提交质量为 `grounded`。一次冗长经验会被 Platform 的 500 字符限制拒绝，重复的等价 BT 也会被 Platform 拒绝，随后 Agent 可以提交有效信念或等待。
 
 多 Agent 审查脚本还验证了 `liang_he` 的 3 个候选：本地模型选择 `behavior:craft_meal`，理由与 food/winter 目标及 safety/belonging 驱动标签一致，质量等级为 `comparative_grounded_choice`；`lin_bo` 的唯一治理候选为 `grounded_forced_choice`。完整 Prompt、原生 tool call、Platform 结果和质量检查保存在被 `.gitignore` 排除的 `artifacts/agent-session-review.json`。
 
-同日 Beam 1440 分钟长跑已经推进到世界分钟 1440，产生 56 次行为启动、53 次行为完成、3 次行为失败、39 次对话和 1 次完成交易；事件审计显示 332 次模型调用中有 60 次远程断连/限流错误。世界循环和 Platform 事务没有因此损坏，但这批结果还不能作为“远程服务稳定”的通过证据。Provider 现在对网络错误、429 和 5xx 做有限退避重试，并需要下一轮真实 Beam 验证确认错误率下降。
+多参与者审查覆盖顶层和嵌套 BT：当前可见参与者超过一个时，AgentView 要求使用可读目标名称，Platform 对遗漏、歧义和隐藏目标统一拒绝；单一可见参与者仍可由 Platform 安全推断。God 趋势测试同时验证了周窗口和月窗口的边界，世界属性和资源名称在 Prompt 中显示为可读文本。
