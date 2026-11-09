@@ -2573,7 +2573,8 @@ class Platform:
         state = dict(self.store.get_meta("world_rule_signal_state", {}) or {})
         for signal in signals:
             name = str(signal.get("name") or "world_rule")
-            was_active = bool(state.get(name, False))
+            state_key = str(signal.get("id") or name)
+            was_active = bool(state.get(state_key, False))
             if not was_active:
                 event_id = self.store.append_event(
                     str(signal.get("event_type") or f"world.rule.{name}"),
@@ -2596,9 +2597,10 @@ class Platform:
                         continue
                     task_id = f"rule:{name}:{minute}:{index}"
                     self.store.put_evolution_task(task_id, role, actor_id, f"rule:{name}", minute, 0, status="ready", data={"rule": name, "event_id": event_id})
+        active_ids = {str(item.get("id")) for item in signals}
         for rule in self.rule_compiler.all_rules():
-            name = str(rule.get("name") or rule.get("id") or "world_rule")
-            state[name] = any(str(item.get("name")) == name for item in signals)
+            state_key = str(rule.get("id") or rule.get("name") or "world_rule")
+            state[state_key] = state_key in active_ids
         self.store.set_meta("world_rule_signal_state", state)
 
     def _set_world_property(self, key: str, value: Any) -> dict[str, Any]:

@@ -2143,6 +2143,7 @@ def test_recent_event_rule_uses_only_events_reached_by_world_time(tmp_path: Path
             "summary": "Review the clinic event when it occurs.",
             "rule": {
                 "id": "fever_event_signal",
+                "label": "Clinic fever signal",
                 "condition": "event.recent.clinic.fever_reported == true",
                 "effect": "clinic.triage_alert",
                 "behavior_names": ["Heal Target"],
@@ -2155,6 +2156,8 @@ def test_recent_event_rule_uses_only_events_reached_by_world_time(tmp_path: Path
         assert not any(item["event_type"] == "world.rule.fever_event_signal" for item in platform.store.recent_events(limit=100))
         platform.step()
         assert any(item["event_type"] == "world.rule.fever_event_signal" for item in platform.store.recent_events(limit=100))
+        step_n(platform, 3)
+        assert len([item for item in platform.store.recent_events(limit=200) if item["event_type"] == "world.rule.fever_event_signal"]) == 1
     finally:
         platform.close()
 
