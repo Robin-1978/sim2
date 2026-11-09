@@ -298,7 +298,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                         "condition": {"type": "string", "description": "A declarative condition such as world[\"water quality\"] < 0.5, event.recent.clinic.fever_reported == true, or actor.permission.old_well == false."},
                         "effect": {"description": "One effect name such as council.ration_alert or deny_access, or an object like {type: behavior_constraint, message: ...} when the rule must block a named behavior."},
                         "wake": {"type": "array", "items": {"type": "string"}, "description": "Optional visible roles to wake, such as god or story."},
-                        "behavior_names": {"type": "array", "items": {"type": "string"}, "description": "Optional visible BT names whose completed outcomes verify this policy."},
+                        "behavior_names": {"type": "array", "items": {"type": "string"}, "description": "Optional visible BT names. For a behavior_constraint, every listed BT is blocked; list only the blocked BT. For a signal, names identify the follow-up outcome."},
                         "action_names": {"type": "array", "items": {"type": "string"}, "description": "Optional visible Action names to gate when the condition is true."},
                     },
                     "required": ["id", "condition", "effect"],

@@ -314,6 +314,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     if role == "god":
         lines.append("<world_proposal_contract>")
         lines.append("  - rule.behavior_names must use exact BT names from world_behavior_catalog.")
+        lines.append("  - In a behavior_constraint, every listed BT is blocked; list only the blocked BT, never the desired follow-up BT.")
         lines.append("  - rule.action_names must use exact Action names from world_action_catalog; a BT name is not an Action name.")
         lines.append("  - A signal records or wakes work. To block, order, or defer behavior, use effect type behavior_constraint or a denial effect.")
         lines.append("</world_proposal_contract>")

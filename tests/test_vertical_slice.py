@@ -2123,6 +2123,18 @@ def test_invalid_world_rule_is_rejected_before_persistence(tmp_path: Path):
         })
         assert condition_mismatch["status"] == "rejected"
         assert condition_mismatch["failed_check"] == "rule_condition_semantics"
+        ambiguous_constraint = platform.submit_world_change("god", {
+            "change_type": "rule",
+            "summary": "Hold one behavior until review.",
+            "rule": {
+                "id": "ambiguous-constraint",
+                "condition": "world.water_quality < 0.8",
+                "effect": {"type": "behavior_constraint", "message": "Review required."},
+                "behavior_names": ["Manage Ration", "Inspect Granary"],
+            },
+        })
+        assert ambiguous_constraint["status"] == "rejected"
+        assert ambiguous_constraint["failed_check"] == "rule_schema"
     finally:
         platform.close()
 
@@ -2161,6 +2173,9 @@ def test_behavior_constraint_rule_blocks_named_behavior_without_mutating_state(t
         assert result["status"] == "accepted"
         view = platform.decision_view("liang_he")
         assert "behavior:craft_meal" not in {item["ref"] for item in view["executable_behaviors"]}
+        # The constraint names only the cooking BT; it must not hide an
+        # unrelated food Action/BT at the same time.
+        assert "behavior:get_food" in {item["ref"] for item in view["executable_behaviors"]}
         assert platform.store.get_agent("liang_he")["capabilities"]["cooking"] == before
     finally:
         platform.close()

@@ -86,6 +86,8 @@ class RuleCompiler:
         normalized = self.compile(rule)
         behavior_selectors = normalized["behavior_ids"] + normalized["behavior_names"]
         action_selectors = list(rule.get("action_names") or normalized["effect"].get("action_names") or [])
+        if str(normalized["effect"].get("type", "")).casefold() == "behavior_constraint" and len(behavior_selectors) > 1:
+            return False, "A behavior_constraint blocks every listed behavior; list only the behavior that must be blocked."
         raw_effect = rule.get("effect", rule.get("enforcement"))
         if isinstance(raw_effect, str) and (behavior_selectors or action_selectors) and not re.fullmatch(r"[A-Za-z0-9_.-]+", raw_effect.strip()):
             return False, "A rule with a behavior follow-up needs one supported effect name or a typed effect object."
@@ -231,6 +233,11 @@ class RuleCompiler:
             return any(self._normal(item) in action_candidates for item in configured_actions) or bool(action_candidates & action_names)
         if action_names:
             return bool(action_candidates & action_names)
+        # A behavior-only constraint is evaluated by ``behavior_denial``.
+        # Treating it as a global Action denial would hide unrelated actions
+        # such as eating, resting, or gathering whenever one BT is held.
+        if rule.get("behavior_ids") or rule.get("behavior_names"):
+            return False
         # A rule without an action selector is intentionally global.  Packages
         # should add action_names/action_ids when a denial is location-specific.
         return True

@@ -99,10 +99,27 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
                     str(outcome.get("result", "")),
                     str((outcome.get("expected") or {}).get("summary", "")),
                     str(outcome.get("delta", {})),
+                    str(outcomes[0].get("event_type", "")),
+                    str(outcomes[0].get("behavior_choice", "")),
                 ])
                 summary_terms = _terms(summary)
                 evidence_terms = _terms(evidence)
-                checks.append(_check("reflection_experience_matches_outcome", bool(summary_terms & evidence_terms), "summary overlaps expected result or observed delta" if summary_terms & evidence_terms else "summary does not cite the observed outcome"))
+                event_kind = " ".join(str(value).casefold() for value in (outcomes[0].get("event_type"), outcome.get("result"), outcomes[0].get("behavior_choice")))
+                semantic_signals = {
+                    "dialogue": ("dialogue", "conversation", "communicat", "exchange", "talk", "对话", "交谈", "交流", "沟通", "谈", "消息"),
+                    "research": ("research", "study", "fact", "研究", "调查", "事实"),
+                    "explor": ("explor", "survey", "route", "map", "探索", "勘察", "地图", "路线"),
+                    "rest": ("rest", "recover", "energy", "休息", "恢复", "体力", "能量"),
+                    "food": ("food", "ration", "satiety", "meal", "吃", "食物", "口粮", "饱食", "饱腹"),
+                    "patrol": ("patrol", "watch", "security", "巡逻", "警戒", "安全"),
+                }
+                signal_match = any(
+                    any(term in summary.casefold() for term in terms)
+                    for key, terms in semantic_signals.items()
+                    if key in event_kind
+                )
+                grounded = bool(summary_terms & evidence_terms) or signal_match
+                checks.append(_check("reflection_experience_matches_outcome", grounded, "summary overlaps the observed outcome" if grounded else "summary does not cite the observed outcome"))
         elif name == "update_capability" or payload.get("intent_type") == "update_capability":
             evidence = str(payload.get("evidence") or "")
             delta = payload.get("delta")
