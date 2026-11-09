@@ -166,7 +166,9 @@ class SimulationRunner:
         for task in list(self.platform.ready_evolution_tasks()):
             role = task.get("role")
             provider = self.providers.get(role)
-            actor_id = task.get("actor_id") or ("god" if role == "god" else None)
+            actor_id = task.get("actor_id") or (
+                "god" if role == "god" else "story" if role == "story" else None
+            )
             if provider is None or actor_id is None:
                 if role == "story":
                     self.platform.pause("story_agent_provider_missing")

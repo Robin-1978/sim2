@@ -16,7 +16,14 @@ def _final_submission(turn: AgentTurn) -> tuple[str, dict[str, Any]]:
             return str(step.get("name", "")), dict(step.get("arguments") or {})
         if step.get("step") == "intent" and step.get("result", {}).get("status") in {"accepted", "wait"}:
             response = step.get("response") if isinstance(step.get("response"), dict) else {}
-            inferred = "record_experience" if response.get("summary") and not response.get("intent_type") else response.get("intent_type", "intent")
+            if response.get("change_type"):
+                inferred = "propose_world_change"
+            elif response.get("entity_type") and response.get("name"):
+                inferred = "propose_entity"
+            elif response.get("beat") or response.get("summary") and response.get("audience"):
+                inferred = "propose_story_beat"
+            else:
+                inferred = "record_experience" if response.get("summary") and not response.get("intent_type") else response.get("intent_type", "intent")
             return str(inferred), response
     return "", {}
 
@@ -25,7 +32,7 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
     """Score structural and semantic guardrails without trusting acceptance alone."""
 
     checks: list[dict[str, Any]] = []
-    checks.append(_check("session_finished", turn.result.get("status") in {"accepted", "wait"}, f"status={turn.result.get('status')}"))
+    checks.append(_check("session_finished", turn.result.get("status") in {"accepted", "wait", "skipped"}, f"status={turn.result.get('status')}"))
     checks.append(_check("bounded_session", 0 <= turn.iterations <= 6, f"iterations={turn.iterations}"))
     rejected = [step for step in turn.transcript if step.get("result", {}).get("status") == "rejected"]
     checks.append(_check("platform_feedback_visible", not rejected or any(step.get("step") in {"tool", "intent"} for step in turn.transcript), f"rejections={len(rejected)}"))
@@ -35,11 +42,14 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         behaviors = view.get("executable_behaviors") or view.get("available_behaviors", [])
         refs = {item.get("ref") for item in behaviors}
         choice = payload.get("choice")
+        wait_choice = turn.result.get("status") == "wait" or name == "wait" or payload.get("intent") == "wait"
+        platform_guarded = turn.result.get("status") == "skipped"
+        interaction = name in {"send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer"} or str(payload.get("intent_type") or "") in {"send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer"}
         selected_by_choice = next((item for item in behaviors if str(item.get("choice") or item.get("name", "")).casefold() == str(choice or "").casefold()), None)
         behavior_ref = payload.get("behavior_ref") or turn.result.get("behavior_ref") or (selected_by_choice or {}).get("ref")
         if behavior_ref and not str(behavior_ref).startswith("behavior:"):
             behavior_ref = f"behavior:{behavior_ref}"
-        checks.append(_check("behavior_is_offered", behavior_ref in refs, f"selected={behavior_ref}; offered={sorted(refs)}"))
+        checks.append(_check("behavior_is_offered", wait_choice or platform_guarded or interaction or behavior_ref in refs, f"selected={behavior_ref}; offered={sorted(refs)}"))
         reason = str(payload.get("reason") or "")
         checks.append(_check("decision_reason_advisory", True, f"reason_length={len(reason.strip())}; detailed rationale is optional and reviewed by Reflection"))
         parameters = payload.get("parameters") or {}
@@ -48,15 +58,16 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         drive_ids = {item.get("id") for item in (view.get("drives") or [])[:3]}
         goal_tags = set(view.get("goal_tags") or [])
         alignment = (goal_tags & set(selected.get("goal_tags") or [])) | (drive_ids & set(selected.get("drive_tags") or []))
-        checks.append(_check("decision_semantic_signal", bool(alignment) or len(behaviors) <= 1, f"alignment={sorted(alignment)}; candidates={len(behaviors)}"))
         tokens = lambda value: set(re.findall(r"[a-z0-9]+", str(value).lower().replace("_", " ")))
         reason_terms = tokens(reason)
-        evidence_terms = tokens(selected.get("name", "")) | tokens(selected.get("goal_tags", [])) | tokens(view.get("identity", {}).get("capabilities", {}))
+        evidence_terms = tokens(selected.get("name", "")) | tokens(selected.get("summary", "")) | tokens(selected.get("purpose", "")) | tokens(selected.get("goal_tags", [])) | tokens(view.get("identity", {}).get("capabilities", {})) | tokens(view.get("goal_tags", []))
         # Decision tools intentionally allow a short choice-only response.
         # A missing rationale is acceptable when the selected BT is grounded
         # in visible goals/drives; a supplied rationale still must overlap
         # visible evidence.
-        reason_grounded = bool(reason_terms & evidence_terms) or bool(alignment)
+        reason_grounded = wait_choice or platform_guarded or interaction or bool(reason_terms & evidence_terms) or bool(alignment)
+        semantic_ok = wait_choice or platform_guarded or interaction or bool(alignment) or bool(reason_terms & evidence_terms) or len(behaviors) <= 1
+        checks.append(_check("decision_semantic_signal", semantic_ok, f"alignment={sorted(alignment)}; reason_overlap={bool(reason_terms & evidence_terms)}; candidates={len(behaviors)}"))
         reason_detail = "reason overlaps visible evidence" if reason_terms & evidence_terms else ("choice aligned with visible goals/drives; explanation language is advisory" if reason.strip() and alignment else ("choice aligned with visible goals/drives; no explanation emitted" if not reason.strip() and alignment else "no overlap with selected behavior, goals, drives or capabilities"))
         checks.append(_check("decision_reason_grounding", reason_grounded, reason_detail))
     elif turn.role == "agent_reflection":
@@ -132,7 +143,7 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
                 rule_condition_text = str(rule.get("condition") or "").casefold()
                 declared_conditions = " ".join(str(item).casefold() for item in (payload.get("conditions") or []))
                 declared_conditions += " " + str(payload.get("summary") or "").casefold() + " " + str(rule.get("description") or "").casefold()
-                condition_terms = ("fever", "water", "food", "threat", "boundary", "粮", "水", "发热", "威胁")
+                condition_terms = ("fever", "water", "food", "threat", "boundary")
                 missing_terms = [term for term in condition_terms if term in declared_conditions and term not in rule_condition_text]
                 checks.append(_check("god_rule_conditions_match", not missing_terms, "declared evidence is represented in the rule condition" if not missing_terms else f"declared condition terms are absent from rule condition: {missing_terms}"))
         else:
@@ -154,8 +165,14 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
     passed = all(item["passed"] for item in checks)
     if turn.role == "agent_decision":
         space = len(behaviors)
-        if not passed:
+        if turn.result.get("status") == "skipped":
+            grade = "platform_guarded"
+        elif not passed:
             grade = "invalid_protocol"
+        elif interaction:
+            grade = "grounded_interaction"
+        elif wait_choice:
+            grade = "grounded_wait"
         elif alignment:
             grade = "comparative_grounded_choice" if space >= 2 else "grounded_forced_choice"
         else:

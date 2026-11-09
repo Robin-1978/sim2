@@ -292,6 +292,16 @@ class AgentEngine:
         if data.get("type") == "intent":
             data.pop("type", None)
         intent_type_value = data.get("intent_type") or data.get("kind")
+        # Native tool-capable models sometimes return the proposal fields
+        # directly instead of repeating the tool name. Infer only from the
+        # role-specific required shape; Platform still validates the proposal.
+        if not intent_type_value and role == "god":
+            if data.get("change_type"):
+                intent_type_value = "propose_world_change"
+            elif data.get("entity_type") and data.get("name"):
+                intent_type_value = "propose_entity"
+        if not intent_type_value and role == "story" and (data.get("beat") or data.get("summary")):
+            intent_type_value = "propose_story_beat"
         if not intent_type_value and isinstance(data.get("intent"), str):
             # Providers sometimes emit the visible action as ``intent``.  The
             # alias is accepted only at this protocol boundary; Platform still

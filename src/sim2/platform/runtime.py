@@ -1197,6 +1197,10 @@ class Platform:
             valid, message = self.rule_compiler.validate(dict(proposal["rule"]))
             if not valid:
                 return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": message, "failed_check": "rule_schema", "retryable": True})
+            proposed_id = str(proposal["rule"].get("id") or proposal["rule"].get("name") or "").strip()
+            existing_rules = (self.store.get_meta("rules", {}) or {}).get("world_rules", []) or []
+            if proposed_id and any(str(item.get("id") or item.get("name") or "").strip() == proposed_id for item in existing_rules if isinstance(item, dict)):
+                return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "A world rule with this name is already registered; review its existing outcome instead of adding a duplicate.", "failed_check": "rule_duplicate", "retryable": True})
         if change_type == "relationship" and not isinstance(proposal.get("relationship"), dict):
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "relationship object is required for a relationship change.", "failed_check": "relationship", "retryable": True})
         if change_type == "faction" and not isinstance(proposal.get("faction"), dict):
