@@ -240,6 +240,20 @@ class WorldStore:
         row = self.connection.execute("SELECT value FROM instance_meta WHERE key=?", (key,)).fetchone()
         return default if row is None else json.loads(row["value"])
 
+    def sync_world_property_from_resource(self, entity_id: str, amount: Any) -> dict[str, Any] | None:
+        """Keep a shared resource and its existing world-property label equal."""
+
+        if not isinstance(amount, (int, float)) or isinstance(amount, bool):
+            return None
+        properties = dict(self.get_meta("world_properties", {}) or {})
+        key = str(entity_id)
+        if key not in properties or properties.get(key) == amount:
+            return None
+        before = properties.get(key)
+        properties[key] = amount
+        self.set_meta("world_properties", properties)
+        return {"world_property": key, "before": before, "after": amount}
+
     def put_entity(self, entity_id: str, entity_type: str, name: str, data: dict[str, Any]) -> None:
         self.connection.execute(
             "INSERT OR REPLACE INTO entity(id,entity_type,name,data_json) VALUES (?,?,?,?)",

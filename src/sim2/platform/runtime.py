@@ -920,6 +920,14 @@ class Platform:
             errors.append("entity_type is required")
         if not proposal.get("name"):
             errors.append("name is required")
+        if actor_id == "god":
+            rules = self.store.get_meta("rules", {}) or {}
+            resource_types = {str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])}
+            entity_type = str(proposal.get("entity_type", ""))
+            state = proposal.get("state") if isinstance(proposal.get("state"), dict) else {}
+            quantity = state.get("quantity", state.get("amount"))
+            if entity_type in resource_types and isinstance(quantity, (int, float)) and float(quantity) > 0:
+                errors.append("God cannot create a stocked resource directly; a behavior result must create or recover the supply")
         if proposal.get("location_id"):
             try:
                 self.store.get_entity(str(proposal["location_id"]))
@@ -931,7 +939,8 @@ class Platform:
         except KeyError:
             pass
         if errors:
-            return self._reject_intent(intent_id, actor_id, "propose_entity", data, {"status": "rejected", "message": "Entity proposal failed validation.", "errors": errors, "retryable": True})
+            failed_check = "god_resource_creation" if any("stocked resource" in error for error in errors) else "entity_schema"
+            return self._reject_intent(intent_id, actor_id, "propose_entity", data, {"status": "rejected", "message": "Entity proposal failed validation.", "failed_check": failed_check, "errors": errors, "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         entity_data = {"description": proposal.get("description", ""), "initial_state": dict(proposal.get("state") or {})}
         if proposal.get("location_id"):
@@ -1058,6 +1067,20 @@ class Platform:
         if change_type in {"world_property", "event"} and proposal.get("property"):
             current_properties = self.store.get_meta("world_properties", {}) or {}
             proposal = {**proposal, "property": self._canonical_world_property(str(proposal["property"]), current_properties)}
+            property_id = str(proposal["property"])
+            if actor_id == "god" and not self._god_property_change_allowed(property_id):
+                return self._reject_intent(
+                    intent_id,
+                    actor_id,
+                    "propose_world_change",
+                    proposal,
+                    {
+                        "status": "rejected",
+                        "message": "God cannot directly change a world property. Submit a rule, entity, faction, or narrative proposal; world behavior must produce the state change.",
+                        "failed_check": "god_direct_property_change",
+                        "retryable": True,
+                    },
+                )
         if change_type == "world_property" and not proposal.get("property"):
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "property is required for a world_property change.", "failed_check": "property", "retryable": True})
         if change_type == "rule" and not isinstance(proposal.get("rule"), dict):
@@ -1113,16 +1136,25 @@ class Platform:
                 elif isinstance(value, float) and value.is_integer():
                     value = int(value)
             proposal = {**proposal, "value": value}
+            if change_type in {"world_property", "event"} and property_name in current_properties and current_properties.get(property_name) == value:
+                return self._reject_intent(
+                    intent_id,
+                    actor_id,
+                    "propose_world_change",
+                    proposal,
+                    {
+                        "status": "rejected",
+                        "message": "The proposed world property already has this value; submit a real state change or a narrative event without a property.",
+                        "failed_check": "no_state_change",
+                        "retryable": True,
+                    },
+                )
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             self.store.create_intent(intent_id, actor_id, "propose_world_change", proposal, world_minute)
             effect: dict[str, Any] = {}
             if change_type == "world_property":
-                properties = dict(self.store.get_meta("world_properties", {}) or {})
-                before_value = properties.get(str(proposal["property"]))
-                properties[str(proposal["property"])] = proposal.get("value")
-                self.store.set_meta("world_properties", properties)
-                effect = {"world_property": str(proposal["property"]), "before": before_value, "after": proposal.get("value")}
+                effect = self._set_world_property(str(proposal["property"]), proposal.get("value"))
             elif change_type == "rule":
                 rules = dict(self.store.get_meta("rules", {}) or {})
                 world_rules = list(rules.get("world_rules", []))
@@ -1155,11 +1187,7 @@ class Platform:
                 self.store.put_entity(faction_id, "faction", current.get("name", faction_id), {key: value for key, value in current.items() if key not in {"id", "entity_type", "name"}})
                 effect = {"faction_id": faction_id, "changed_fields": sorted(faction), "after": {key: current.get(key) for key in faction}}
             elif change_type == "event" and proposal.get("property"):
-                properties = dict(self.store.get_meta("world_properties", {}) or {})
-                before_value = properties.get(str(proposal["property"]))
-                properties[str(proposal["property"])] = proposal.get("value")
-                self.store.set_meta("world_properties", properties)
-                effect = {"world_property": str(proposal["property"]), "before": before_value, "after": proposal.get("value")}
+                effect = self._set_world_property(str(proposal["property"]), proposal.get("value"))
             else:
                 effect = {"event_recorded": True, "state_changed": False}
             event_data = {
@@ -1189,6 +1217,24 @@ class Platform:
             if normalized(str(key)) == candidate:
                 return str(key)
         return candidate or str(value).strip()
+
+    def _god_property_change_allowed(self, property_id: str) -> bool:
+        """Return whether the package explicitly permits God to set a property.
+
+        The default is deny. Shared resources and personal/social outcomes must
+        be changed by configured behaviors; a package may opt in to a narrow
+        world property only when it has a documented reason.
+        """
+
+        try:
+            entity = self.store.get_entity(property_id)
+        except KeyError:
+            entity = None
+        if entity and entity.get("entity_type") == "resource":
+            return False
+        policy = self.store.get_meta("rules", {}).get("world_change_policy", {}) or {}
+        allowed = policy.get("god_direct_properties", []) if isinstance(policy, dict) else []
+        return property_id in {str(item) for item in (allowed or [])}
 
     def validate_world_template(self, template: dict[str, Any]) -> dict[str, Any]:
         errors: list[str] = []
@@ -1467,6 +1513,7 @@ class Platform:
                 entity["initial_state"] = state
             payload = {name: value for name, value in entity.items() if name not in {"id", "entity_type", "name"}}
             self.store.put_entity(entity["id"], entity["entity_type"], entity["name"], payload)
+            self.store.sync_world_property_from_resource(entity["id"], after)
             self.store.append_event("resource.regenerated", None, minute, {"resource_id": entity["id"], "amount": after - before, "total": after})
         for effect in rules.get("minute_effects", []) or []:
             every = max(1, int(effect.get("every_minutes", 1)))
@@ -1505,11 +1552,10 @@ class Platform:
                     changed_agents.append(agent)
                 self.store.update_agents_bulk(changed_agents)
             elif scope == "world":
-                properties = dict(self.store.get_meta("world_properties", {}) or {})
                 key = definition.get("world_property") or definition.get("property") or definition.get("need")
                 if key:
-                    properties[key] = float(properties.get(key, 0)) + float(definition.get("delta", 0))
-                    self.store.set_meta("world_properties", properties)
+                    properties = dict(self.store.get_meta("world_properties", {}) or {})
+                    self._set_world_property(str(key), float(properties.get(key, 0)) + float(definition.get("delta", 0)))
             elif scope == "relationship":
                 relation_delta = float(definition.get("relation_strength", definition.get("delta", 0)))
                 for relation in self.store.list_relationships():
@@ -1955,8 +2001,7 @@ class Platform:
                         value = max(float(effect["minimum"]), value)
                     if isinstance(effect.get("maximum"), (int, float)):
                         value = min(float(effect["maximum"]), value)
-                    properties[property_id] = value
-                    self.store.set_meta("world_properties", properties)
+                    self._set_world_property(property_id, value)
                     self.store.append_event(
                         "world.property_changed", agent["id"], minute,
                         {"property": property_id, "before": before_value, "after": value, "delta": value - float(before_value or 0), "source": action.get("id")},
@@ -2351,8 +2396,57 @@ class Platform:
                 continue
             amount = entity.get("amount", (entity.get("initial_state") or {}).get("quantity"))
             if isinstance(amount, (int, float)):
+                self.store.sync_world_property_from_resource(resource["id"], amount)
                 context[resource["id"]] = amount
         return context
+
+    def _set_world_property(self, key: str, value: Any) -> dict[str, Any]:
+        """Update one world property and its shared-resource projection atomically.
+
+        A resource may also be exposed as a world property, for example
+        ``village_food``.  The resource ledger remains the world quantity, while
+        the property is the prompt/condition projection.  Updating only one side
+        makes triggers, Agent context and God proposals disagree.
+        """
+
+        properties = dict(self.store.get_meta("world_properties", {}) or {})
+        before = properties.get(str(key))
+        properties[str(key)] = value
+        self.store.set_meta("world_properties", properties)
+        projection = self._sync_world_resource_projection(str(key), value)
+        effect = {"world_property": str(key), "before": before, "after": value}
+        if projection:
+            effect["resource_projection"] = projection
+        return effect
+
+    def _sync_world_resource_projection(self, key: str, value: Any) -> dict[str, Any] | None:
+        """Keep a numeric shared resource equal to its world-property view."""
+
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            return None
+        try:
+            entity = self.store.get_entity(str(key))
+        except KeyError:
+            return None
+        if entity.get("entity_type") != "resource":
+            return None
+        state = dict(entity.get("initial_state") or {})
+        before = entity.get("amount", state.get("quantity", state.get("amount")))
+        if not isinstance(before, (int, float)):
+            return None
+        if "amount" in entity:
+            entity["amount"] = value
+        else:
+            state_key = "quantity" if "quantity" in state else "amount"
+            state[state_key] = value
+            entity["initial_state"] = state
+        self.store.put_entity(
+            entity["id"],
+            entity["entity_type"],
+            entity["name"],
+            {name: item for name, item in entity.items() if name not in {"id", "entity_type", "name"}},
+        )
+        return {"entity_id": entity["id"], "before": before, "after": value}
 
     def _emit_evolution_triggers(self, minute: int) -> None:
         evolution = self.store.get_meta("evolution", {}) or {}

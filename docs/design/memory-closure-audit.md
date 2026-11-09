@@ -38,6 +38,31 @@ and cuDNN runtime; a CUDA-enabled PyTorch installation alone is not enough.
 otherwise falls back to CPU. The backend status reports the provider actually
 used.
 
+## Persistence and scale status
+
+The current implementation persists memory prose, tier, tags, importance,
+salience, and access counts in SQLite. BGE vectors are **not yet persisted**:
+they live in the process cache and are recomputed after a restart or cache
+eviction. Retrieval currently ranks at most 1,000 permitted records per tier,
+then exposes a small bounded slice to the Agent. This is acceptable for the
+present Starter Village evidence, but it is not the final design for a large
+world or a long-lived instance.
+
+The next persistence step is an additive `memory_embedding` table keyed by
+`memory_id`, `model_key`, and `model_revision`, with `dimensions`, `dtype`,
+`normalized`, `vector_blob`, and `updated_at`. New instances should create it
+from the package schema; a development instance may use an additive migration.
+If the model revision changes, old vectors remain identifiable and are rebuilt
+in the background or on demand. SQLite FTS5 remains the lexical index, while
+the embedding table is a durable cache rather than authoritative memory.
+
+At roughly 10,000 memories per Agent, SQLite storage is not the limiting risk;
+candidate generation, encoding time, and prompt size are. The planned query
+path is permission scope → FTS/dense candidate generation → BGE ranking →
+tag soft boost → bounded prompt slice. Tags must never hard-filter a semantically
+relevant memory. `sqlite-vec` can be evaluated later as an optional accelerator,
+but it is not required for correctness.
+
 The default decision view retrieves only a small split of short-term and
 long-term records using the current goal, location, drives, and executable
 behavior descriptions. Knowledge facts use the same task-conditioned ranker

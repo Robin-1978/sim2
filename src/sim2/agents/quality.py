@@ -103,6 +103,8 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
                 direct_claim = any(term in effects for term in direct_change_terms)
                 checks.append(_check("god_event_does_not_claim_unapplied_state_change", not direct_claim, "event is narrative only" if not direct_claim else "direct state mutation requires a structured property/rule/relationship/faction proposal"))
                 checks.append(_check("god_event_is_valid_narrative_signal", not direct_claim, "narrative event can be handled by a configured world rule" if not direct_claim else "event effects claim a direct state change"))
+            if change_type == "rule":
+                checks.append(_check("god_rule_has_behavior_followup", bool(turn.result.get("followup_verified")), "rule is stored; a later behavior outcome must verify its effect" if not turn.result.get("followup_verified") else "a later behavior outcome verified the rule"))
         else:
             checks.append(_check("god_submission_is_known", name in {"propose_entity", "propose_world_change"}, f"submission={name}"))
     elif turn.role == "story":

@@ -193,6 +193,7 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                     amount = state.get("quantity", state.get("amount"))
                 if isinstance(amount, (int, float)):
                     resource_baseline[str(resource["id"])] = float(amount)
+                    store.sync_world_property_from_resource(str(resource["id"]), amount)
             store.set_meta("resource_baseline", resource_baseline)
             for faction in load_yaml(config_dir, "factions.yaml", {}).get("factions", []):
                 store.put_entity(faction["id"], "faction", faction.get("name", faction["id"]), faction)

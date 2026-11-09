@@ -55,7 +55,7 @@ def main() -> int:
             next_decision = AgentEngine(platform, next_decision_provider).run(role="agent_decision", actor_id="lin_bo", task_type="core_next_decision")
             next_quality = evaluate_turn(next_decision, next_view)
 
-            platform.submit_world_change("god", {"change_type": "world_property", "summary": "Lower fog after a clear reading.", "property": "fog_level", "value": 0.2})
+            platform.submit_world_change("operator", {"change_type": "world_property", "summary": "Lower fog after a clear reading.", "property": "fog_level", "value": 0.2})
             god_view = platform.decision_view("god", role="god")
             god_provider = OpenAICompatibleProvider(ProviderConfig(**provider_config.__dict__))
             god = AgentEngine(platform, god_provider).run(role="god", actor_id="god", task_type="core_god")

@@ -28,14 +28,14 @@ behavior tree.
 | `inspect_granary` | Granary stock is observed as a knowledge fact | Reflection / God when a risk signal exists | Closed after the object inspection |
 | `manage_ration` | Stock observation, policy discussion, personal esteem/belonging effects, event and fact are persisted | God / Reflection | Closed as a policy recommendation; God applies any later world policy through a validated proposal |
 | `govern_village` | Stock observation, governance report, and personal needs change; God receives the report | God / Reflection | Closed as a report; God decides any policy change from measured evidence |
-| `patrol_route` | Route report, knowledge fact, personal needs and trend signal are persisted; God receives the report | God / Story when the report is relevant | Closed as an observation and escalation signal; a threat change requires a later validated world proposal |
+| `patrol_route` | Route report, knowledge fact, personal needs and trend signal are persisted; God receives the report | God; Story only when a configured discovery is relevant | Closed as an observation and escalation signal; a threat change requires a later validated world proposal |
 | `defend_village` | Alarm and defense result event are persisted; God receives the report | Story / God | Closed as a report; threat policy is external |
 | `defend_position` | Protected status and defense result event are persisted | Reflection / Story for a public threat | Closed as a response report |
 | `flee_to_safety` | Location changes and escape event are persisted | Next decision / Reflection | Closed |
 | `sound_alarm` | Public alarm event is persisted and Story/God are woken | Story / God | Closed as a signal; response is external |
-| `explore_greywood` | Map result, discoveries, knowledge, and unlocks are persisted | Story / God | Closed |
-| `research_water` | Cumulative research progress and final fact are persisted | Story / God | Closed when the configured source is available |
-| `research_source` | Cumulative progress and final knowledge fact are persisted | Story | Closed |
+| `explore_greywood` | Map result, discoveries, knowledge, and unlocks are persisted | Story; God only for a configured world-level discovery | Closed |
+| `research_water` | Cumulative research progress and final fact are persisted | Story; God only when the configured fact has a world-level consequence | Closed when the configured source is available |
+| `research_source` | Cumulative progress and final knowledge fact are persisted | Story; God only when the configured fact has a world-level consequence | Closed |
 | `recover_caravan_ledger` | Object state, trade evidence, knowledge, and public effect change | Story / God | Closed |
 
 The matrix deliberately distinguishes a direct result from a later policy.
@@ -59,4 +59,45 @@ This prevents a “busy” behavior from becoming a dead end. Reports are useful
 results: they become facts and trend signals that can wake the low-frequency
 God/Story loop, while a later policy change remains a separate validated
 intent.
+
+## Trigger ownership
+
+The behavior result owns the first state change. A configured `wake` list only
+selects which consumer interprets the persisted result:
+
+- governance, ration review, and patrol reports normally wake **God**;
+- exploration, research, recovered objects, and story discoveries normally wake
+  **Story**;
+- a result may wake both when it has both a narrative and a world-policy
+  consequence.
+
+God is not an autonomous resource operator. It is scheduled for a weekly local
+review and a monthly structural review, and it may be woken by a behavior
+result or a derived threshold signal. A threshold signal must include the
+source event that caused the crossing; it is not an unexplained model call.
+God may propose a rule, entity, faction strategy, or narrative event. Shared
+resource quantities, personal needs, relationships, and production outcomes
+must be changed by configured behavior effects. A God proposal cannot directly
+increase food, trust, safety, or another behavior-owned value.
+
+Writing a rule is only a proposal result. The God quality audit remains open
+until a later behavior outcome shows that the rule was used and produced its
+configured effect.
+
+## Audit conclusion
+
+The current Starter Village catalog passes the direct-result closure test: each
+offered tree has a configured execution path and leaves a persisted state,
+fact, progress record, relationship change, or event. Health recovery,
+conflict mediation, exploration follow-up, and resource/food flows are included
+in that conclusion.
+
+Governance, ration management, patrol, defense, and alarm behaviors close as
+reports or public signals. Their later policy is deliberately a separate God
+proposal. A report is useful only when the God loop consumes it and submits a
+structured `rule`, `relationship`, or `faction` change when a world-policy
+change is warranted. Resource, need, relationship, safety, trust, and
+production values change through behavior effects; a narrative-only `event`
+cannot claim that they changed. The Agent quality audit records this as a
+remaining end-to-end risk even when Platform accepted the event row.
 

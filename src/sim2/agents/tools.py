@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import copy
 from typing import Any, TYPE_CHECKING
 from uuid import uuid4
 
@@ -230,7 +231,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "propose_entity": {
-        "purpose": "Propose a new world entity for Platform validation and creation.",
+        "purpose": "Propose a new, evidence-backed world entity for Platform validation. Do not create stocked resources as a reward.",
         "kind": "intent",
         "parameters": {
             "type": "object",
@@ -246,7 +247,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "propose_world_change": {
-        "purpose": "Propose a world event or rule change for Platform validation.",
+        "purpose": "Propose an evidence-backed rule or narrative change. World behavior, not God, must produce resource and social values.",
         "kind": "intent",
         "parameters": {
             "type": "object",
@@ -320,7 +321,24 @@ ROLE_TOOLS: dict[str, list[str]] = {
 def tools_for_role(role: str) -> list[dict[str, Any]]:
     """Return compact, human-readable descriptions used in AgentView."""
 
-    return [{"name": name, **TOOL_DEFINITIONS[name], "input": TOOL_DEFINITIONS[name]["parameters"]} for name in ROLE_TOOLS.get(role, [])]
+    return [_tool_for_role(role, name) for name in ROLE_TOOLS.get(role, [])]
+
+
+def _tool_for_role(role: str, name: str) -> dict[str, Any]:
+    """Return a role-scoped tool view instead of exposing invalid choices."""
+
+    definition = copy.deepcopy(TOOL_DEFINITIONS[name])
+    if name == "propose_entity" and role == "god":
+        definition["purpose"] = "Propose an evidence-backed structural entity. Do not create a stocked resource as a reward."
+        definition["parameters"]["properties"]["state"]["description"] = "Initial structural state only; a positive resource quantity must come from a validated behavior result."
+    if name == "propose_world_change" and role == "god":
+        definition["purpose"] = "Propose an evidence-backed rule, faction strategy, relationship, or narrative event. Behavior must produce resource and social values."
+        change_type = definition["parameters"]["properties"]["change_type"]
+        change_type["enum"] = ["rule", "relationship", "faction", "event"]
+        change_type["description"] = "Choose exactly one: rule, relationship, faction, or event. Do not set a world property."
+        definition["parameters"]["properties"].pop("property", None)
+        definition["parameters"]["properties"].pop("value", None)
+    return {"name": name, **definition, "input": definition["parameters"]}
 
 
 def tool_schemas_for_role(role: str) -> list[dict[str, Any]]:

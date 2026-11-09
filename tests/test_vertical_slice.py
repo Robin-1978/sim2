@@ -233,6 +233,14 @@ def test_model_tool_schemas_use_visible_names_instead_of_ids():
             assert not any(key == "id" or key.endswith("_id") for key in properties)
 
 
+def test_god_schema_does_not_offer_direct_world_property_mutation():
+    world_change = next(schema for schema in tool_schemas_for_role("god") if schema["function"]["name"] == "propose_world_change")
+    parameters = world_change["function"]["parameters"]
+    assert parameters["properties"]["change_type"]["enum"] == ["rule", "relationship", "faction", "event"]
+    assert "property" not in parameters["properties"]
+    assert "value" not in parameters["properties"]
+
+
 def test_provider_retries_transient_disconnect_without_logging_credentials(monkeypatch):
     responses = [httpx.RemoteProtocolError("disconnect"), httpx.Response(200, request=httpx.Request("POST", "http://example.test"), json={"choices": [{"message": {"content": '{"intent_type":"wait"}'}}]})]
     calls = []
@@ -1201,14 +1209,14 @@ def test_world_property_proposal_normalizes_numeric_model_values(tmp_path: Path)
     platform = Platform(create_instance(config, "world-property-type-world", tmp_path / "runtime"))
     try:
         result = platform.submit_world_change(
-            "god",
+            "operator",
             {"change_type": "world_property", "summary": "Stabilize the root gate.", "property": "root_gate_stability", "value": "0.75"},
         )
         assert result["status"] == "accepted"
         assert isinstance(result["effect"]["after"], float)
         assert platform.store.get_meta("world_properties")["root_gate_stability"] == 0.75
         rejected = platform.submit_world_change(
-            "god",
+            "operator",
             {"change_type": "world_property", "summary": "Break the numeric contract.", "property": "root_gate_stability", "value": "not-a-number"},
         )
         assert rejected["status"] == "rejected"
@@ -1222,7 +1230,7 @@ def test_world_property_accepts_readable_label_without_creating_duplicate_key(tm
     platform = Platform(create_instance(config, "world-property-label-world", tmp_path / "runtime"))
     try:
         result = platform.submit_world_change(
-            "god",
+            "operator",
             {"change_type": "world_property", "summary": "Ease the gate pressure.", "property": "north gate threat level", "value": 0.18},
         )
         assert result["status"] == "accepted"
@@ -1872,7 +1880,7 @@ def test_god_world_change_and_trigger_create_platform_state(tmp_path: Path):
     db_path = create_instance(config, "evolution-trigger-world", tmp_path / "runtime")
     platform = Platform(db_path)
     try:
-        change = platform.submit_world_change("god", {"change_type": "world_property", "summary": "Adjust fog pressure.", "property": "fog_pressure", "value": 0.4, "expected_effects": ["Fog pressure is recorded as 0.4."]})
+        change = platform.submit_world_change("operator", {"change_type": "world_property", "summary": "Adjust fog pressure.", "property": "fog_pressure", "value": 0.4, "expected_effects": ["Fog pressure is recorded as 0.4."]})
         assert change["status"] == "accepted"
         assert platform.store.get_meta("world_properties")["fog_pressure"] == 0.4
         world_change = platform.store.recent_world_change_events(limit=1)[0]
@@ -1888,13 +1896,71 @@ def test_god_world_change_and_trigger_create_platform_state(tmp_path: Path):
         platform.close()
 
 
+def test_property_and_shared_resource_projection_stay_in_sync(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "resource-projection-world", tmp_path / "runtime"))
+    try:
+        resource = platform.store.get_entity("village_food")
+        resource["amount"] = 100
+        with platform.store.transaction():
+            platform.store.put_entity("village_food", resource["entity_type"], resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
+        platform.step()
+        assert any(task.get("trigger_id") == "food_crisis" for task in platform.ready_evolution_tasks())
+        change = platform.submit_world_change("operator", {
+            "change_type": "world_property",
+            "summary": "Record the approved emergency food reserve.",
+            "property": "village food",
+            "value": 180,
+            "expected_effects": ["Village food is recorded as 180."],
+        })
+        assert change["status"] == "accepted"
+        assert platform.store.get_meta("world_properties")["village_food"] == 180
+        assert platform.store.get_entity("village_food")["amount"] == 180
+        assert change["effect"]["resource_projection"] == {"entity_id": "village_food", "before": 100, "after": 180}
+    finally:
+        platform.close()
+
+
+def test_god_cannot_directly_mutate_shared_resource(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "god-resource-policy-world", tmp_path / "runtime"))
+    try:
+        rejected = platform.submit_world_change("god", {
+            "change_type": "world_property",
+            "summary": "Give the village more food.",
+            "property": "village food",
+            "value": 420,
+        })
+        assert rejected["status"] == "rejected"
+        assert rejected["failed_check"] == "god_direct_property_change"
+        assert platform.store.get_entity("village_food")["amount"] == 320
+    finally:
+        platform.close()
+
+
+def test_god_cannot_create_stocked_resource_without_behavior_result(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "god-stocked-resource-policy-world", tmp_path / "runtime"))
+    try:
+        rejected = platform.submit_entity_proposal("god", {
+            "entity_type": "resource",
+            "name": "Unfounded Grain",
+            "location_id": "granary",
+            "state": {"quantity": 60},
+        })
+        assert rejected["status"] == "rejected"
+        assert rejected["failed_check"] == "god_resource_creation"
+    finally:
+        platform.close()
+
+
 def test_god_reacts_after_event_effect_rejection(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "god-quality-world", tmp_path / "runtime")
     platform = Platform(db_path)
     provider = SequenceProvider([
         {"intent_type": "propose_world_change", "change_type": "event", "summary": "Mobilize a public response.", "effects": ["stabilize the clinic"]},
-        {"intent_type": "propose_world_change", "change_type": "world_property", "summary": "Record the clinic report.", "property": "clinic_fever_outbreak", "value": {"status": "reported", "severity": 0.3}},
+        {"intent_type": "propose_world_change", "change_type": "rule", "summary": "Record the clinic report rule.", "rule": {"id": "clinic_fever_response", "condition": "clinic fever is reported", "effect": "open the configured treatment response"}},
     ])
     try:
         view = platform.decision_view("god", role="god")
@@ -1902,7 +1968,9 @@ def test_god_reacts_after_event_effect_rejection(tmp_path: Path):
         quality = evaluate_turn(turn, view)
         assert turn.result["status"] == "accepted"
         assert len(provider.calls) == 2
-        assert quality["passed"] is True
+        assert quality["passed"] is False
+        assert quality["grade"] == "accepted_needs_world_followup"
+        assert platform.store.get_meta("rules")["world_rules"][-1]["id"] == "clinic_fever_response"
     finally:
         platform.close()
 
@@ -1913,14 +1981,14 @@ def test_god_trigger_rejects_narrative_only_change_before_platform_commit(tmp_pa
     platform = Platform(db_path)
     provider = SequenceProvider([
         {"tool_call": {"name": "propose_world_change", "arguments": {"change_type": "event", "summary": "A bell sounds.", "effects": ["People notice the bell."]}}},
-        {"tool_call": {"name": "propose_world_change", "arguments": {"change_type": "world_property", "summary": "Lower food crisis pressure.", "property": "food_crisis_response", "value": "ration_reviewed", "expected_effects": ["The crisis response is recorded."]}}},
+        {"tool_call": {"name": "propose_world_change", "arguments": {"change_type": "rule", "summary": "Record the food crisis response rule.", "rule": {"id": "food_crisis_response", "condition": "food crisis is reported", "effect": "use the configured ration behavior"}, "expected_effects": ["The crisis response rule is recorded."]}}},
     ])
     try:
         turn = AgentEngine(platform, provider).run(role="god", actor_id="god", task_type="trigger:food_crisis")
         assert turn.result["status"] == "accepted"
         assert len(provider.calls) == 2
         assert not platform.store.connection.execute("SELECT 1 FROM event_log WHERE event_type='world.change.event'").fetchone()
-        assert platform.store.get_meta("world_properties")["food_crisis_response"] == "ration_reviewed"
+        assert platform.store.get_meta("rules")["world_rules"][-1]["id"] == "food_crisis_response"
     finally:
         platform.close()
 
@@ -1943,7 +2011,7 @@ def test_world_event_change_applies_structured_property_effect(tmp_path: Path):
     db_path = create_instance(config, "event-change-world", tmp_path / "runtime")
     platform = Platform(db_path)
     try:
-        result = platform.submit_world_change("god", {"change_type": "event", "summary": "A boundary signal changes threat assessment.", "property": "north_gate_threat_level", "value": 0.3})
+        result = platform.submit_world_change("operator", {"change_type": "event", "summary": "A boundary signal changes threat assessment.", "property": "north_gate_threat_level", "value": 0.3})
         assert result["status"] == "accepted"
         assert result["applied_effects"] is True
         assert platform.store.get_meta("world_properties")["north_gate_threat_level"] == 0.3
@@ -1956,7 +2024,7 @@ def test_god_view_compares_world_change_effects_on_next_window(tmp_path: Path):
     db_path = create_instance(config, "god-outcome-world", tmp_path / "runtime")
     platform = Platform(db_path)
     try:
-        result = platform.submit_world_change("god", {"change_type": "world_property", "summary": "Lower fog pressure after a clear reading.", "property": "fog_pressure", "value": 0.2})
+        result = platform.submit_world_change("operator", {"change_type": "world_property", "summary": "Lower fog pressure after a clear reading.", "property": "fog_pressure", "value": 0.2})
         assert result["status"] == "accepted"
         view = platform.decision_view("god", role="god")
         change = view["recent_world_changes"][0]

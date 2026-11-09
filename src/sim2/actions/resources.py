@@ -62,7 +62,7 @@ class ResourceLedger:
                     value = inventory[key]
                     agent.setdefault("inventory", {})[key] = int(value) if float(value).is_integer() else value
                 else:
-                    self._change_world_resource(item["entity_id"], -float(item["amount"]))
+                    self._change_world_resource(item["entity_id"], -float(item["amount"]), actor_id=agent.get("id"))
         return True, "", reservation
 
     def _check_recipe_output_limits(self, recipe: dict[str, Any]) -> str | None:
@@ -99,7 +99,7 @@ class ResourceLedger:
             return None
         return {"entity_id": key, "amount": float(amount)}
 
-    def _change_world_resource(self, entity_id: str, delta: float) -> None:
+    def _change_world_resource(self, entity_id: str, delta: float, *, actor_id: str | None = None) -> None:
         entity = self.store.get_entity(entity_id)
         before = self._world_resource(entity_id)
         if isinstance(entity.get("amount"), (int, float)):
@@ -112,8 +112,10 @@ class ResourceLedger:
             entity["initial_state"] = state
             self.store.put_entity(entity_id, entity["entity_type"], entity["name"], {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}})
         after = self._world_resource(entity_id)
+        if after is not None:
+            self.store.sync_world_property_from_resource(entity_id, after["amount"])
         self.store.append_event(
-            "resource.changed", None, int(self.store.get_meta("world_minute", 0)),
+            "resource.changed", actor_id, int(self.store.get_meta("world_minute", 0)),
             {"resource_id": entity_id, "delta": float(delta), "before": (before or {}).get("amount"), "after": (after or {}).get("amount"), "source": "reservation_or_release"},
         )
 
@@ -129,4 +131,4 @@ class ResourceLedger:
                 value = float((agent.setdefault("inventory", {}).get(key, 0) or 0)) + amount
                 agent["inventory"][key] = int(value) if value.is_integer() else value
             elif item.get("scope") == "world" and item.get("entity_id"):
-                self._change_world_resource(str(item["entity_id"]), amount)
+                self._change_world_resource(str(item["entity_id"]), amount, actor_id=agent.get("id"))
