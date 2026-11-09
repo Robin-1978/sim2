@@ -74,6 +74,14 @@ Real-provider checks use the configured local or remote OpenAI-compatible provid
 ```bash
 python scripts/verify_agent_models.py
 python scripts/verify_core_interaction.py --provider remote
+# Full context/output/world causality audit (runs every role through one provider)
+bash -ic 'python scripts/audit_real_world.py --minutes 1440 --provider remote'
 ```
+
+`audit_real_world.py` writes a reviewable JSON artifact under `artifacts/` with
+each session's initial AgentView, rendered ReAct prompts, tool results, final
+Intent, quality checks, and the resulting SQLite world projection. Use
+`SIM2_BGE_MODEL=disabled` for a fast LLM/world-loop isolation run; omit it to
+exercise the configured local BGE reranker.
 
 Licensed under [Apache License 2.0](LICENSE).

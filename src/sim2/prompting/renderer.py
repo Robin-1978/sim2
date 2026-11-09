@@ -312,6 +312,11 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("</story_state>")
 
     if role == "god":
+        lines.append("<world_proposal_contract>")
+        lines.append("  - rule.behavior_names must use exact BT names from world_behavior_catalog.")
+        lines.append("  - rule.action_names must use exact Action names from world_action_catalog; a BT name is not an Action name.")
+        lines.append("  - A signal records or wakes work. To block, order, or defer behavior, use effect type behavior_constraint or a denial effect.")
+        lines.append("</world_proposal_contract>")
         lines.append("<rule_condition_fields>")
         fields = context.get("rule_condition_fields") or []
         for field in fields[:20]:
@@ -323,14 +328,14 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         catalog = context.get("registered_behaviors") or []
         for behavior in catalog[:24]:
             success = f"; success={_plain(behavior.get('success'))}" if behavior.get("success") else ""
-            lines.append(f"  - {behavior.get('name', 'behavior')}: {behavior.get('purpose', 'configured behavior')}{success}")
+            lines.append(f"  - BT: {behavior.get('name', 'behavior')}: {behavior.get('purpose', 'configured behavior')}{success}")
         if not catalog:
             lines.append("  - none")
         lines.append("</world_behavior_catalog>")
         lines.append("<world_action_catalog>")
         actions = context.get("registered_actions") or []
         for action in actions[:24]:
-            lines.append(f"  - {action.get('name', 'action')}: {action.get('purpose', 'configured action')}")
+            lines.append(f"  - Action: {action.get('name', 'action')}: {action.get('purpose', 'configured action')}")
         if not actions:
             lines.append("  - none")
         lines.append("</world_action_catalog>")

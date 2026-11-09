@@ -123,7 +123,9 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         else:
             checks.append(_check("reflection_intent_is_known", name in {"record_experience", "update_belief", "update_goal", "propose_behavior"}, f"submission={name}"))
     elif turn.role == "god":
-        if name == "record_world_progress" or payload.get("intent_type") == "record_world_progress":
+        if name == "wait" or payload.get("intent_type") == "wait" or turn.result.get("status") == "wait":
+            checks.append(_check("god_can_wait_without_supported_proposal", True, "no evidence-backed world proposal was needed for this signal"))
+        elif name == "record_world_progress" or payload.get("intent_type") == "record_world_progress":
             evidence = str(payload.get("evidence") or "")
             checks.append(_check("god_progress_evidence_is_specific", len(evidence.strip()) >= 12, f"evidence_length={len(evidence)}"))
             checks.append(_check("god_progress_update_applied", turn.result.get("status") == "accepted" and bool(turn.result.get("progress")), f"status={turn.result.get('status')}; progress={bool(turn.result.get('progress'))}"))
@@ -157,11 +159,15 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
                 effect_is_gate = effect_is_denial or (isinstance(rule.get("effect"), dict) and str(rule["effect"].get("type", "")).casefold() in {"behavior_constraint", "policy"})
                 checks.append(_check("god_rule_claims_match_enforcement", not claims_gate or effect_is_gate, "the rule effect can enforce the stated gate" if not claims_gate or effect_is_gate else "the proposal claims priority or gating but submits only a signal"))
                 rule_condition_text = str(rule.get("condition") or "").casefold()
-                declared_conditions = " ".join(str(item).casefold() for item in (payload.get("conditions") or []))
-                declared_conditions += " " + str(payload.get("summary") or "").casefold() + " " + str(rule.get("description") or "").casefold()
-                condition_terms = ("fever", "water", "food", "threat", "boundary")
-                missing_terms = [term for term in condition_terms if term in declared_conditions and term not in rule_condition_text]
-                checks.append(_check("god_rule_conditions_match", not missing_terms, "declared evidence is represented in the rule condition" if not missing_terms else f"declared condition terms are absent from rule condition: {missing_terms}"))
+                declared_paths: set[str] = set()
+                for item in payload.get("conditions") or []:
+                    text = str(item or "").casefold()
+                    text = re.sub(r"world\[(?:\"([^\"]+)\"|'([^']+)')\]", lambda match: "world." + (match.group(1) or match.group(2)).replace(" ", "_"), text)
+                    declared_paths.update(re.findall(r"(?<![a-z0-9_])((?:world|resource|actor|target|context|event\.recent)(?:\.[a-z0-9_]+)+)", text))
+                normalized_rule = re.sub(r"world\[(?:\"([^\"]+)\"|'([^']+)')\]", lambda match: "world." + (match.group(1) or match.group(2)).replace(" ", "_"), rule_condition_text)
+                normalized_rule = normalized_rule.replace(" ", "_")
+                missing_paths = [path for path in sorted(declared_paths) if path not in normalized_rule]
+                checks.append(_check("god_rule_conditions_match", not missing_paths, "declared machine fields are represented in the rule condition" if not missing_paths else f"declared condition fields are absent from rule condition: {missing_paths}"))
         else:
             checks.append(_check("god_submission_is_known", name in {"propose_entity", "propose_world_change"}, f"submission={name}"))
     elif turn.role == "story":

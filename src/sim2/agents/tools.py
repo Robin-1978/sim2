@@ -500,7 +500,17 @@ class AgentToolExecutor:
         if not isinstance(result, dict):
             return {"status": "ok", "tool": name, "result": result}
         result.setdefault("tool", name)
-        return self._publicize(result)
+        public = self._publicize(result)
+        # The model must not see implementation identifiers, but the
+        # scheduler still needs a stable signal that a zero-minute interaction
+        # committed successfully so it can apply the configured cooldown.
+        if public.get("status") == "accepted" and name == "send_message":
+            public["interaction_committed"] = True
+        if public.get("status") == "accepted" and name in {
+            "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer",
+        }:
+            public["trade_committed"] = True
+        return public
 
     @classmethod
     def _publicize(cls, value: Any) -> Any:

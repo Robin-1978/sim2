@@ -99,6 +99,48 @@ class RuleCompiler:
             return False, f"Unknown action follow-up: {', '.join(unknown_actions)}."
         return True, ""
 
+    def validate_declared_effects(self, rule: dict[str, Any], statements: list[Any] | None = None) -> tuple[bool, str]:
+        """Reject prose that promises enforcement a signal cannot perform.
+
+        A signal may wake an Agent, but it cannot order, block, gate, or
+        prioritize a behavior.  Those claims require a typed enforcement
+        effect so the same rule can be checked by ``behavior_denial``.  The
+        vocabulary is package-configurable and intentionally generic; it does
+        not name any world property or behavior.
+        """
+
+        compiled = self.compile(rule)
+        effect_type = str(compiled["effect"].get("type", "")).casefold()
+        enforcement_types = self._DENY_EFFECTS | {"policy"}
+        if effect_type in enforcement_types:
+            return True, ""
+        configured = self.rules.get("rule_enforcement_terms", []) if isinstance(self.rules, dict) else []
+        terms = [str(item).casefold() for item in configured if str(item).strip()]
+        if not terms:
+            terms = ["gate", "gated", "must", "before", "priorit", "defer", "block", "restrict", "必须", "先于", "优先", "阻止", "限制"]
+        text = " ".join(str(item).casefold() for item in (statements or []) if item not in (None, ""))
+        text += " " + str(rule.get("description") or rule.get("label") or "").casefold()
+        if any(term in text for term in terms):
+            return False, "The proposal claims ordering or enforcement, but its rule effect is only a signal; use a typed behavior_constraint or denial effect."
+        return True, ""
+
+    def validate_declared_conditions(self, rule: dict[str, Any], declared: list[Any] | None = None) -> tuple[bool, str]:
+        """Ensure explicit machine conditions are represented by the rule."""
+
+        machine_condition = self._normalize_expression(str(rule.get("condition", rule.get("when", ""))))
+        for item in declared or []:
+            text = self._normalize_expression(str(item or ""))
+            paths = self._condition_paths(text)
+            missing = [path for path in paths if path not in machine_condition]
+            if missing:
+                return False, f"Declared condition fields are absent from the rule condition: {', '.join(missing)}."
+        return True, ""
+
+    @staticmethod
+    def _condition_paths(expression: str) -> list[str]:
+        paths = re.findall(r"(?<![A-Za-z0-9_])((?:world|resource|actor|target|context|event\.recent)(?:\.[A-Za-z0-9_]+)+)", expression)
+        return list(dict.fromkeys(paths))
+
     def _condition_supported(self, expression: str) -> tuple[bool, str]:
         """Reject structured paths that the condition engine cannot observe."""
 

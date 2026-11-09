@@ -2012,6 +2012,21 @@ def test_god_reacts_after_event_effect_rejection(tmp_path: Path):
         platform.close()
 
 
+def test_god_wait_is_a_valid_quality_outcome_when_no_proposal_is_supported(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "god-wait-quality-world", tmp_path / "runtime"))
+    provider = SequenceProvider([{"intent": "wait", "reason": "No evidence-backed world change is needed."}])
+    try:
+        view = platform.decision_view("god", role="god")
+        turn = AgentEngine(platform, provider).run(role="god", actor_id="god", task_type="quality")
+        quality = evaluate_turn(turn, view)
+        assert turn.result["status"] == "wait"
+        assert quality["passed"] is True
+        assert quality["grade"] == "grounded"
+    finally:
+        platform.close()
+
+
 def test_god_trigger_rejects_narrative_only_change_before_platform_commit(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "god-trigger-quality-world", tmp_path / "runtime")
@@ -2091,6 +2106,23 @@ def test_invalid_world_rule_is_rejected_before_persistence(tmp_path: Path):
         })
         assert compound["status"] == "rejected"
         assert compound["failed_check"] == "rule_schema"
+        signal_claiming_gate = platform.submit_world_change("god", {
+            "change_type": "rule",
+            "summary": "Signal a review before the next ration decision.",
+            "effects": ["The ration decision is prioritized before trade."],
+            "expected_effects": ["The named behavior must wait until review."],
+            "rule": {"id": "signal-claimed-as-gate", "condition": "world.water_quality < 0.8", "effect": "council.review_alert", "behavior_names": ["Manage Ration"]},
+        })
+        assert signal_claiming_gate["status"] == "rejected"
+        assert signal_claiming_gate["failed_check"] == "rule_effect_semantics"
+        condition_mismatch = platform.submit_world_change("god", {
+            "change_type": "rule",
+            "summary": "Keep the explicit food condition in the policy.",
+            "conditions": ["event.recent.governance.reviewed == true", "world[\"village food\"] < 200"],
+            "rule": {"id": "condition-mismatch", "condition": "event.recent.governance.reviewed == true", "effect": "council.review_alert"},
+        })
+        assert condition_mismatch["status"] == "rejected"
+        assert condition_mismatch["failed_check"] == "rule_condition_semantics"
     finally:
         platform.close()
 

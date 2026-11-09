@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import hashlib
 import json
+import copy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -45,6 +46,8 @@ class AgentTurn:
     result: dict[str, Any]
     iterations: int
     transcript: list[dict[str, Any]] = field(default_factory=list)
+    initial_context: dict[str, Any] = field(default_factory=dict)
+    prompt_history: list[str] = field(default_factory=list)
 
 
 class AgentEngine:
@@ -113,7 +116,7 @@ class AgentEngine:
                 state = {}
             if state.get("status") in {"executing", "paused"}:
                 result = {"status": "skipped", "reason": "active_behavior", "message": "Platform is already executing a behavior; wait for completion or an interrupt."}
-                return AgentTurn(role, task_type, {}, result, 0, [{"step": "skipped", "result": result}])
+                return AgentTurn(role, task_type, {}, result, 0, [{"step": "skipped", "result": result}], {}, [])
         context = self.view.build_decision_view(actor_id, role=role)
         context["role"] = role
         view_errors = validate_agent_view(context, role=role)
@@ -121,12 +124,14 @@ class AgentEngine:
             raise ValueError("invalid AgentView: " + "; ".join(view_errors))
         if role == "agent_reflection" and task_type in {"daily_reflection", "integration_verification"} and not self._reflection_has_evidence(context):
             result = {"status": "wait", "reason": "No completed outcome or meaningful event is available for reflection."}
-            return AgentTurn(role, task_type, {}, result, 0, [{"step": "guard", "result": result}])
+            return AgentTurn(role, task_type, {}, result, 0, [{"step": "guard", "result": result}], {}, [])
         task = self._task_text(role, task_type)
         executor = AgentToolExecutor(self.platform, role=role, actor_id=actor_id)
         last_response: dict[str, Any] = {}
         last_result: dict[str, Any] = {"status": "no_result"}
         transcript: list[dict[str, Any]] = []
+        initial_context = copy.deepcopy(context)
+        prompt_history: list[str] = []
         repeated: dict[str, int] = {}
         tool_calls_used = 0
         read_tool_calls = 0
@@ -138,6 +143,7 @@ class AgentEngine:
 
         for iteration in range(1, self.max_iterations + 1):
             prompt = render_context(context, task)
+            prompt_history.append(prompt)
             try:
                 self._last_usage = {}
                 response = self._complete(role=role, system=system_policy, context=prompt, messages=conversation_messages)
@@ -152,7 +158,7 @@ class AgentEngine:
                 # A provider/configuration failure is outside the model's
                 # ReAct loop. Retrying it immediately six times creates an
                 # error storm; the scheduler will retry after backoff.
-                return AgentTurn(role, task_type, last_response, last_result, iteration, transcript)
+                return AgentTurn(role, task_type, last_response, last_result, iteration, transcript, initial_context, prompt_history)
             last_response = response
             transcript.append({"step": "llm", "response": response})
             self._audit(actor_id, role, task_type, iteration, prompt, response, "response", usage=self._last_usage)
@@ -224,7 +230,7 @@ class AgentEngine:
                     conversation_messages.append({"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
                     conversation_messages.append({"role": "user", "content": f"Tool results: {json.dumps(model_tool_result, ensure_ascii=False)}"})
                 if accepted_result is not None:
-                    return AgentTurn(role, task_type, last_response, accepted_result, iteration, transcript)
+                    return AgentTurn(role, task_type, last_response, accepted_result, iteration, transcript, initial_context, prompt_history)
                 continue
 
             result = self._submit_response(role, actor_id, response, context=context, task_type=task_type)
@@ -238,7 +244,7 @@ class AgentEngine:
             context["last_platform_result"] = result
             last_result = result
             if result.get("status") in {"accepted", "wait"}:
-                return AgentTurn(role, task_type, response, result, iteration, transcript)
+                return AgentTurn(role, task_type, response, result, iteration, transcript, initial_context, prompt_history)
 
         if last_result.get("status") not in {"accepted", "wait", "skipped"}:
             last_result = {
@@ -248,7 +254,7 @@ class AgentEngine:
                 "retryable": True,
                 "message": "The ReAct session reached its iteration limit before a valid final Intent.",
             }
-        return AgentTurn(role, task_type, last_response, last_result, self.max_iterations, transcript)
+        return AgentTurn(role, task_type, last_response, last_result, self.max_iterations, transcript, initial_context, prompt_history)
 
     def _restore_internal_tool_result(self, tool_name: str, arguments: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
         """Keep internal audit details on AgentTurn without exposing them to the model."""

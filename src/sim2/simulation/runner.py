@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
-from ..agents.engine import AgentEngine
+from ..agents.engine import AgentEngine, AgentTurn
 from ..platform.runtime import Platform
 
 
@@ -44,7 +44,7 @@ class SimulationReport:
 class SimulationRunner:
     """Drive Platform minutes and invoke Agent phases only at boundaries."""
 
-    def __init__(self, platform: Platform, providers: dict[str, Any], *, wait_cooldown_minutes: int = 30, llm_error_cooldown_minutes: int = 60, max_interaction_rounds: int = 4, interaction_cooldown_minutes: int = 30):
+    def __init__(self, platform: Platform, providers: dict[str, Any], *, wait_cooldown_minutes: int = 30, llm_error_cooldown_minutes: int = 60, max_interaction_rounds: int = 4, interaction_cooldown_minutes: int = 30, turn_observer: Callable[[AgentTurn, str], None] | None = None):
         self.platform = platform
         self.providers = providers
         self.wait_cooldown_minutes = max(1, int(wait_cooldown_minutes))
@@ -58,6 +58,11 @@ class SimulationRunner:
         self._interaction_events_seen: set[int] = set()
         self._interaction_rounds: dict[tuple[str, ...], tuple[int, int]] = {}
         self._interaction_not_before: dict[str, int] = {}
+        self.turn_observer = turn_observer
+
+    def _observe_turn(self, turn: AgentTurn, actor_id: str) -> None:
+        if self.turn_observer is not None:
+            self.turn_observer(turn, actor_id)
 
     def run(self, minutes: int) -> SimulationReport:
         minutes = int(minutes)
@@ -118,9 +123,14 @@ class SimulationRunner:
                 actor_id=recipient_id,
                 task_type=f"instant:{event['event_type']}",
             )
+            self._observe_turn(turn, recipient_id)
             report.decisions += 1
             self._record_turn(report, turn.result, recipient_id)
-            if turn.result.get("status") == "accepted" and any(key in turn.result for key in ("dialogue_id", "offer_id", "trade_status")):
+            if turn.result.get("status") == "accepted" and (
+                turn.result.get("interaction_committed")
+                or turn.result.get("trade_committed")
+                or any(key in turn.result for key in ("dialogue_id", "offer_id", "trade_status"))
+            ):
                 self._interaction_not_before[recipient_id] = minute + self.interaction_cooldown_minutes
                 self._interaction_not_before[actor_id] = minute + self.interaction_cooldown_minutes
             if turn.result.get("status") == "wait":
@@ -144,6 +154,7 @@ class SimulationRunner:
                     self._decision_not_before[agent_id] = minute + 60
                     continue
             turn = AgentEngine(self.platform, provider).run(role="agent_decision", actor_id=agent_id, task_type="agent_plan_selection")
+            self._observe_turn(turn, agent_id)
             report.decisions += 1
             self._record_turn(report, turn.result, agent_id)
             if turn.result.get("status") == "wait":
@@ -151,7 +162,7 @@ class SimulationRunner:
                 self._decision_not_before[agent_id] = minute + self.wait_cooldown_minutes
             elif turn.result.get("status") == "accepted":
                 self._llm_error_count.pop(agent_id, None)
-                if any(key in turn.result for key in ("dialogue_id", "offer_id", "trade_status")):
+                if turn.result.get("interaction_committed") or turn.result.get("trade_committed") or any(key in turn.result for key in ("dialogue_id", "offer_id", "trade_status")):
                     self._interaction_not_before[agent_id] = minute + self.interaction_cooldown_minutes
                 # If a selected BT fails at its first boundary, avoid an
                 # unbounded same-minute retry loop while preserving prompt
@@ -181,6 +192,7 @@ class SimulationRunner:
             if task.get("trigger_id"):
                 task_type = f"trigger:{task.get('trigger_id')}"
             turn = AgentEngine(self.platform, provider).run(role=role, actor_id=actor_id, task_type=task_type)
+            self._observe_turn(turn, actor_id)
             if role == "god":
                 report.god_sessions += 1
             elif role == "story":

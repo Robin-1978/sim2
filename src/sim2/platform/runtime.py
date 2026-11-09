@@ -5,7 +5,7 @@ import re
 import sqlite3
 import copy
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 from ..actions.conditions import ConditionEngine
@@ -74,6 +74,7 @@ class Platform:
         provider_name: str | None = None,
         wait_cooldown_minutes: int = 30,
         llm_error_cooldown_minutes: int = 60,
+        turn_observer: Callable[[Any, str], None] | None = None,
     ) -> Any:
         """Run the autonomous world loop owned by Platform.
 
@@ -104,6 +105,7 @@ class Platform:
             providers,
             wait_cooldown_minutes=wait_cooldown_minutes,
             llm_error_cooldown_minutes=llm_error_cooldown_minutes,
+            turn_observer=turn_observer,
         ).run(minutes)
 
     def status(self) -> dict[str, Any]:
@@ -1197,6 +1199,17 @@ class Platform:
             valid, message = self.rule_compiler.validate(dict(proposal["rule"]))
             if not valid:
                 return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": message, "failed_check": "rule_schema", "retryable": True})
+            conditions_valid, conditions_message = self.rule_compiler.validate_declared_conditions(
+                dict(proposal["rule"]), list(proposal.get("conditions") or [])
+            )
+            if not conditions_valid:
+                return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": conditions_message, "failed_check": "rule_condition_semantics", "retryable": True})
+            declared_valid, declared_message = self.rule_compiler.validate_declared_effects(
+                dict(proposal["rule"]),
+                list(proposal.get("effects") or []) + list(proposal.get("expected_effects") or []),
+            )
+            if not declared_valid:
+                return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": declared_message, "failed_check": "rule_effect_semantics", "retryable": True})
             proposed_id = str(proposal["rule"].get("id") or proposal["rule"].get("name") or "").strip()
             existing_rules = (self.store.get_meta("rules", {}) or {}).get("world_rules", []) or []
             if proposed_id and any(str(item.get("id") or item.get("name") or "").strip() == proposed_id for item in existing_rules if isinstance(item, dict)):
