@@ -323,6 +323,10 @@ def test_food_bt_is_available_with_food_and_closes_satiety_loop(tmp_path: Path):
     db_path = create_instance(config, "food-loop-world", tmp_path / "runtime")
     platform = Platform(db_path)
     try:
+        agent = platform.store.get_agent("lu_xingzhou")
+        agent["needs"]["satiety"] = 40
+        with platform.store.transaction():
+            platform.store.update_agent("lu_xingzhou", agent)
         view = platform.decision_view("lu_xingzhou")
         assert any(item["ref"] == "behavior:eat_food" for item in view["executable_behaviors"])
         before = platform.store.get_agent("lu_xingzhou")
@@ -339,9 +343,26 @@ def test_food_bt_is_available_with_food_and_closes_satiety_loop(tmp_path: Path):
         platform.step()
         after = platform.store.get_agent("lu_xingzhou")
         assert after["inventory"]["rations"] == before["inventory"]["rations"] - 1
-        assert before["needs"]["satiety"] == 80
-        assert after["needs"]["satiety"] == min(100, before["needs"]["satiety"] + 30)
+        assert before["needs"]["satiety"] == 40
+        assert after["needs"]["satiety"] == pytest.approx(min(100, before["needs"]["satiety"] - 0.02 + 30))
         assert after["initial_state"]["status"] == "idle"
+    finally:
+        platform.close()
+
+
+def test_food_bt_stays_hidden_above_configured_hunger_trigger(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "food-trigger-world", tmp_path / "runtime"))
+    try:
+        agent = platform.store.get_agent("lu_xingzhou")
+        agent["needs"]["satiety"] = 79
+        with platform.store.transaction():
+            platform.store.update_agent("lu_xingzhou", agent)
+        view = platform.decision_view("lu_xingzhou")
+        assert not any(item["ref"] == "behavior:eat_food" for item in view["executable_behaviors"])
+        rejected = platform.submit_behavior(BehaviorIntent("lu_xingzhou", "behavior:eat_food", {}, {}, "Eat before the next task.", 0.8, "early-food"))
+        assert rejected["status"] == "rejected"
+        assert rejected["failed_check"] == "entry_condition"
     finally:
         platform.close()
 
@@ -351,6 +372,10 @@ def test_food_store_bt_supplies_agents_without_carried_food(tmp_path: Path):
     db_path = create_instance(config, "food-store-world", tmp_path / "runtime")
     platform = Platform(db_path)
     try:
+        agent = platform.store.get_agent("liang_he")
+        agent["needs"]["satiety"] = 40
+        with platform.store.transaction():
+            platform.store.update_agent("liang_he", agent)
         view = platform.decision_view("liang_he")
         assert any(item["ref"] == "behavior:get_food" for item in view["executable_behaviors"])
         before = platform.store.get_entity("village_food")["amount"]
@@ -1056,6 +1081,22 @@ def test_world_property_proposal_normalizes_numeric_model_values(tmp_path: Path)
         )
         assert rejected["status"] == "rejected"
         assert rejected["failed_check"] == "property_type"
+    finally:
+        platform.close()
+
+
+def test_world_property_accepts_readable_label_without_creating_duplicate_key(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "world-property-label-world", tmp_path / "runtime"))
+    try:
+        result = platform.submit_world_change(
+            "god",
+            {"change_type": "world_property", "summary": "Ease the gate pressure.", "property": "north gate threat level", "value": 0.18},
+        )
+        assert result["status"] == "accepted"
+        properties = platform.store.get_meta("world_properties")
+        assert properties["north_gate_threat_level"] == 0.18
+        assert "north gate threat level" not in properties
     finally:
         platform.close()
 

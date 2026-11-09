@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import copy
 from pathlib import Path
@@ -495,6 +496,7 @@ class Platform:
             "object_id": parameters.get("object_id"),
             "inventory": agent.get("inventory", {}) or {},
             "food_items": (self.store.get_meta("rules", {}) or {}).get("food_items", []) or [],
+            "food_trigger_satiety": float((self.store.get_meta("rules", {}) or {}).get("food_trigger_satiety", 40) or 40),
             "current_location": location,
             "current_object": self._entity_for_context(parameters.get("object_id")),
             "mapped_areas": self.store.explored_areas(agent["id"]),
@@ -1037,6 +1039,9 @@ class Platform:
         change_type = str(proposal["change_type"])
         if change_type not in {"world_property", "rule", "relationship", "faction", "event"}:
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "Unsupported world change type.", "failed_check": "change_type", "retryable": True})
+        if change_type in {"world_property", "event"} and proposal.get("property"):
+            current_properties = self.store.get_meta("world_properties", {}) or {}
+            proposal = {**proposal, "property": self._canonical_world_property(str(proposal["property"]), current_properties)}
         if change_type == "world_property" and not proposal.get("property"):
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "property is required for a world_property change.", "failed_check": "property", "retryable": True})
         if change_type == "rule" and not isinstance(proposal.get("rule"), dict):
@@ -1155,6 +1160,19 @@ class Platform:
             result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "applied": True, "applied_effects": bool(effect.get("state_changed", True)), "change_type": change_type, "effect": effect, "expected_effects": event_data["expected_effects"]}
             self.store.finish_intent(intent_id, "accepted", result)
         return result
+
+    @staticmethod
+    def _canonical_world_property(value: str, properties: dict[str, Any]) -> str:
+        """Map a readable property label to its configured storage key."""
+
+        def normalized(text: str) -> str:
+            return re.sub(r"_+", "_", re.sub(r"[^a-z0-9]+", "_", str(text).casefold())).strip("_")
+
+        candidate = normalized(value)
+        for key in properties:
+            if normalized(str(key)) == candidate:
+                return str(key)
+        return candidate or str(value).strip()
 
     def validate_world_template(self, template: dict[str, Any]) -> dict[str, Any]:
         errors: list[str] = []

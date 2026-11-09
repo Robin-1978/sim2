@@ -83,6 +83,7 @@ memory_quality:
     embedding_retrieval_threshold: 0.18
 fallback_behavior_ids: [rest_and_recover, recover_at_safe_location, seek_treatment, eat_food, buy_food, get_food, gather_at_known_node, travel]
 food_items: [rations, ration, cooked_meal]
+food_trigger_satiety: 40
 need_effects:
   dialogue.completed:
     belonging: 1

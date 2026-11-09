@@ -55,7 +55,11 @@ def _predicate_text(predicate: str) -> str:
     return replacements.get(text, text[:1].upper() + text[1:] + ".")
 
 
-def _cost_text(action: dict[str, Any]) -> list[str]:
+def _display_item(value: Any) -> str:
+    return str(value).removeprefix("context.").replace("_", " ")
+
+
+def _cost_text(action: dict[str, Any], recipe: dict[str, Any] | None = None) -> list[str]:
     costs = action.get("costs", {})
     out: list[str] = []
     for phase, values in costs.items():
@@ -63,17 +67,66 @@ def _cost_text(action: dict[str, Any]) -> list[str]:
             continue
         if isinstance(values, dict):
             for key, value in values.items():
-                if key == "item_parameter":
-                    out.append(f"Required item ({phase.replace('_', ' ')})")
+                if key == "recipe_inputs" and recipe:
+                    inputs = ", ".join(f"{item.get('quantity', 1)} {_display_item(item.get('item', 'input'))}" for item in recipe.get("inputs", []) or [])
+                    out.append(f"Recipe inputs: {inputs or 'configured inputs'} (reserved before start)")
                     continue
-                shown_value = "the selected target" if str(value).endswith("_id") else value
-                out.append(f"{_label(str(key))} {shown_value} ({phase.replace('_', ' ')})")
+                if key == "item_parameter":
+                    out.append(f"One selected item (reserved before start)")
+                    continue
+                if key == "resource_parameter":
+                    amount = values.get("resource_amount", 1)
+                    out.append(f"{amount} units of the selected resource (reserved before start)")
+                    continue
+                if key == "resource_amount":
+                    continue
+                shown_value = "the selected target" if str(value).endswith("_id") else _display_item(value)
+                out.append(f"{_display_item(key).title()} {shown_value} ({phase.replace('_', ' ')})")
         else:
             out.append(f"{phase.replace('_', ' ')}: {values}")
     return out or ["No direct resource cost."]
 
 
-def _action_view(action: dict[str, Any]) -> dict[str, Any]:
+def _effect_text(action: dict[str, Any], recipe: dict[str, Any] | None = None, parameters: dict[str, Any] | None = None) -> list[str]:
+    impacts: list[str] = []
+    parameters = parameters or {}
+
+    def resolved(value: Any) -> Any:
+        if isinstance(value, str) and value.startswith("context."):
+            return parameters.get(value.removeprefix("context."), value)
+        return value
+
+    for effect in action.get("effects", []) or []:
+        effect_type = str(effect.get("type") or effect.get("op") or "")
+        if effect_type == "need_delta":
+            impacts.append(f"{_display_item(effect.get('need', 'need')).title()} {float(effect.get('delta', 0)):g}")
+        elif effect_type in {"state_delta", "state.add"}:
+            impacts.append(f"{_display_item(effect.get('state', 'state')).title()} {float(effect.get('delta', 0)):g}")
+        elif effect_type in {"inventory_add", "inventory.add"}:
+            impacts.append(f"Inventory +{effect.get('quantity', 1)} {_display_item(resolved(effect.get('item', 'item')))}")
+        elif effect_type in {"inventory.consume_item", "inventory.remove"}:
+            impacts.append(f"Inventory -{effect.get('quantity', 1)} {_display_item(resolved(effect.get('item', 'item')))}")
+        elif effect_type == "health_restore":
+            impacts.append(f"Health +{effect.get('amount', 0)}")
+        elif effect_type in {"location_set", "location.set"}:
+            impacts.append("Arrive at the selected location")
+        elif effect_type in {"world_property_delta", "world.property_delta"}:
+            impacts.append(f"World {_display_item(effect.get('property', 'property'))} changes by {effect.get('delta', effect.get('value', 0))}")
+        elif effect_type:
+            impacts.append(f"Platform applies configured {effect_type.replace('_', ' ')} effect")
+    if recipe:
+        outputs = ", ".join(f"{item.get('quantity', 1)} {_display_item(item.get('item', 'output'))}" for item in recipe.get("outputs", []) or [])
+        if outputs:
+            impacts.append(f"Produces {outputs}")
+    progress = action.get("progress") or {}
+    if isinstance(progress, dict) and progress.get("key"):
+        impacts.append(f"Adds {progress.get('amount', 1)} progress; {progress.get('required', 1)} total progress completes the discovery")
+    if action.get("information"):
+        impacts.append("Records the configured information result")
+    return list(dict.fromkeys(impacts)) or ["Platform applies configured state effects and records the result."]
+
+
+def _action_view(action: dict[str, Any], recipe: dict[str, Any] | None = None, parameters: dict[str, Any] | None = None) -> dict[str, Any]:
     success = action.get("success", {})
     failure = action.get("failure", {})
     return {
@@ -83,8 +136,8 @@ def _action_view(action: dict[str, Any]) -> dict[str, Any]:
         "requires": action.get("requirements") or action.get("requirement_text") or [_predicate_text(item) for item in action.get("preconditions", [])] or ["Platform confirms the configured requirements."],
         "target": "Platform selects a permitted target from the current view.",
         "time": f"{action.get('duration', {}).get('minutes', 'variable')} minutes",
-        "cost": _cost_text(action),
-        "impact": ["Platform applies the configured state effects and records an event."],
+        "cost": _cost_text(action, recipe),
+        "impact": _effect_text(action, recipe, parameters),
         "success": [str(success.get("result", "configured success")).replace("_", " ")],
         "failure": [str(failure.get("result", "configured failure")).replace("_", " ")],
         "interrupt": action.get("interrupt_policy", "cancel"),
@@ -395,6 +448,7 @@ class AgentViewCompiler:
                 "researched_sources": researched_sources,
                 "inventory": agent.get("inventory", {}) or {},
                 "food_items": rules.get("food_items", []) or [],
+                "food_trigger_satiety": float(rules.get("food_trigger_satiety", 40) or 40),
                 "target": {"id": validation_target.get("id"), "available": True} if validation_target else {"available": False},
             }
             if any(not self.conditions.evaluate(str(predicate), agent=agent, target=condition_context["target"], context=condition_context, world=self.store.get_meta("world_properties", {}) or {}) for predicate in bt.get("entry_conditions", []) or []):
@@ -408,6 +462,8 @@ class AgentViewCompiler:
             steps = []
             costs = []
             impacts = []
+            action_successes = []
+            action_failures = []
             action_unavailable = False
             simulated_agent = copy.deepcopy(agent)
             simulated_location = dict(current_location)
@@ -430,10 +486,13 @@ class AgentViewCompiler:
                 if not self._action_available(simulated_agent, action, parameters, simulated_location, rules.get("food_items", []) or [], action_minutes):
                     action_unavailable = True
                     break
-                view = _action_view(action)
+                recipe = recipe_defs.get(str(parameters.get("recipe_id"))) if action.get("id") == "craft_recipe" else None
+                view = _action_view(action, recipe, parameters)
                 steps.append(view["name"])
                 costs.extend(view["cost"])
-                impacts.extend(view["impact"][:1])
+                impacts.extend(view["impact"][:3])
+                action_successes.extend(view["success"])
+                action_failures.extend(view["failure"])
                 energy_rate = float((action.get("costs", {}).get("per_minute", {}) or {}).get("energy", 0) or 0)
                 if energy_rate > 0:
                     simulated_state["energy"] = max(0.0, float(simulated_state.get("energy", 100) or 0) - energy_rate * action_minutes)
@@ -503,8 +562,8 @@ class AgentViewCompiler:
                 "time": f"{estimator.behavior_minutes(bt_id, {'safe_location_id': safe_location_id} if safe_location_id else {}, location_id)} minutes",
                 "cost": list(dict.fromkeys(costs))[:6] or ["Costs are defined by the selected steps."],
                 "impact": list(dict.fromkeys(impacts))[:3] or ["Platform applies configured effects and records events."],
-                "success": [str(item).replace("_", " ") for item in bt.get("success_results", [])] or ["Platform reports the configured success result."],
-                "failure": [str(item).replace("_", " ") for item in bt.get("failure_results", [])] or ["Platform reports a failed or interrupted step."],
+                "success": [str(item).replace("_", " ") for item in bt.get("success_results", [])] or list(dict.fromkeys(action_successes))[:4] or ["Platform reports the configured success result."],
+                "failure": [str(item).replace("_", " ") for item in bt.get("failure_results", [])] or list(dict.fromkeys(action_failures))[:4] or ["Platform reports a failed or interrupted step."],
                 "interrupt": bt.get("interrupt_policy", "cancel"),
                 "cooldown_minutes": cooldown_minutes,
                 "tags": bt.get("tags", []),
@@ -579,9 +638,9 @@ class AgentViewCompiler:
         prompt_protocol, platform_rules = self._prompt_sections(role)
         decision_constraints: list[str] = []
         satiety = float((agent.get("needs", {}) or {}).get("satiety", 0) or 0)
-        satiety_target = next((float(item.get("target", 80)) for item in (rules.get("needs", []) or []) if item.get("id") == "satiety"), 80.0)
-        if satiety > satiety_target:
-            decision_constraints.append(f"Satiety is {satiety:g}/100; food BTs require Satiety at or below {satiety_target:g}.")
+        food_trigger = float(rules.get("food_trigger_satiety", 40) or 40)
+        if satiety > food_trigger:
+            decision_constraints.append(f"Satiety is {satiety:g}/100; food BTs require Satiety at or below {food_trigger:g}.")
         energy = float(state.get("energy", 100) or 0)
         decision_constraints.append(f"Energy is {energy:g}/100; Platform hides any BT whose configured energy cost exceeds current Energy.")
         if location_id and safe_location_id and safe_location_id != location_id:

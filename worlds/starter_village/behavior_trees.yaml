@@ -461,7 +461,7 @@ behavior_trees:
   entry_conditions:
   - actor.alive
   - actor.has_food
-  - actor.satiety <= 80
+  - actor.satiety <= context.food_trigger_satiety
   estimated_minutes: 1
   requirements: ["Carry one food item: rations, ration, or cooked_meal."]
   goal_tags: [food, recovery, readiness]
@@ -485,7 +485,7 @@ behavior_trees:
   - actor.alive
   - actor.food_withdrawal
   - route.known
-  - actor.satiety <= 80
+  - actor.satiety <= context.food_trigger_satiety
   requirements: ["A known route to the granary and permission to withdraw food."]
   goal_tags: [food, reserve, survival]
   drive_tags: [physiological_homeostasis, safety]
@@ -509,7 +509,7 @@ behavior_trees:
   entry_conditions:
   - actor.alive
   - location.market
-  - actor.satiety <= 80
+  - actor.satiety <= context.food_trigger_satiety
   requirements: ["You are at the market and carry at least one coin; market stock must remain." ]
   goal_tags: [food, survival, trade]
   drive_tags: [physiological_homeostasis, autonomy]

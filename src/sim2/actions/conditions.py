@@ -43,7 +43,8 @@ class ConditionEngine:
         comparison = self._comparison.match(expression)
         if comparison:
             left = self._value(comparison.group(1), agent, target, world, context)
-            right = self._literal(comparison.group(3))
+            right_text = comparison.group(3).strip()
+            right = self._value(right_text, agent, target, world, context) if right_text.startswith("context.") else self._literal(right_text)
             if left is None:
                 return False
             try:
@@ -156,6 +157,8 @@ class ConditionEngine:
             return self._path_value(target, path.removeprefix("target."))
         if path.startswith("world."):
             return self._path_value(world, path.removeprefix("world."))
+        if path.startswith("context."):
+            return self._path_value(context, path.removeprefix("context."))
         if path == "location.has_food":
             location = context.get("current_location", {}) or {}
             return "food" in (location.get("tags", []) or []) or bool(context.get("food_available", False))
