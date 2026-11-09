@@ -85,6 +85,36 @@ def _memory_line(item: dict[str, Any]) -> str:
     return f"memory ({item.get('type', 'memory')}): {summary}{suffix}"
 
 
+def _fact_line(item: Any) -> str:
+    if isinstance(item, str):
+        return item
+    if not isinstance(item, dict):
+        return _plain(item)
+    fact = item.get("fact") or item.get("statement") or "unknown fact"
+    metadata = []
+    source = item.get("source_type") or item.get("source")
+    confidence = item.get("confidence")
+    if source:
+        metadata.append(f"source={_plain(source)}")
+    if isinstance(confidence, (int, float)):
+        metadata.append(f"confidence={float(confidence):.2f}")
+    suffix = f" [{'; '.join(metadata)}]" if metadata else ""
+    return f"{_plain(fact)}{suffix}"
+
+
+def _remove_block(text: str, tag: str) -> tuple[str, bool]:
+    """Remove one low-priority tagged block without damaging other sections."""
+
+    start_tag = f"<{tag}>"
+    end_tag = f"</{tag}>"
+    start = text.find(start_tag)
+    end = text.find(end_tag, start + len(start_tag)) if start >= 0 else -1
+    if start < 0 or end < 0:
+        return text, False
+    end += len(end_tag)
+    return text[:start].rstrip() + text[end:], True
+
+
 def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000) -> str:
     """Render a stable XML-like prefix followed by dynamic Agent state.
 
@@ -97,12 +127,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     self_state = context.get("self", {})
     lines = ["<protocol>"]
     lines.extend(f"    - {item}" for item in (context.get("prompt_protocol") or []))
-    lines.extend(["</protocol>", "", "<world_state>"])
-    world_time = context.get("world_time") or {}
-    lines.append(f"  time: {world_time.get('label', world_time.get('minute', 'unknown'))}")
-    lines.append(f"  minute: {world_time.get('minute', 'unknown')}")
-    lines.append("</world_state>")
-
+    lines.extend(["</protocol>"])
     platform_rules = context.get("platform_rules") or []
     if platform_rules:
         lines.extend(["<platform_rules>", *[f"  - {item}" for item in platform_rules], "</platform_rules>"])
@@ -113,6 +138,18 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             if isinstance(tool, dict) and tool.get("name"):
                 lines.append(f"  - {tool['name']}")
         lines.append("</allowed_intents_and_tools>")
+
+    # Keep all stable protocol, rule, and tool-name text before the dynamic
+    # snapshot. Providers can then reuse the prefix across world minutes and
+    # only reprocess the changing state suffix.
+    world_time = context.get("world_time") or {}
+    lines.extend([
+        "",
+        "<world_state>",
+        f"  time: {world_time.get('label', world_time.get('minute', 'unknown'))}",
+        f"  minute: {world_time.get('minute', 'unknown')}",
+        "</world_state>",
+    ])
 
     lines.extend([
         "<self>",
@@ -170,12 +207,19 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
 
     lines.extend(["  <relationships>"])
     relationships = context.get("direct_relationships") or []
-    lines.extend([f"    - {item.get('person', 'unknown')}: {item.get('relation', 'related')}; direction={item.get('direction', 'unknown')}; trust={item.get('trust', 'unknown')}" for item in relationships[:5]] or ["    - none relevant"])
+    relationship_lines = []
+    for item in relationships[:5]:
+        trust = item.get("trust", item.get("relation_strength", item.get("value", "unknown")))
+        relationship_lines.append(
+            f"    - {item.get('person', 'unknown')}: {item.get('relation', 'related')}; "
+            f"direction={item.get('direction', 'unknown')}; trust={_plain(trust)}"
+        )
+    lines.extend(relationship_lines or ["    - none relevant"])
     lines.append("  </relationships>")
 
     lines.extend(["  <knowledge_and_memory>"])
     facts = context.get("known_facts") or []
-    lines.extend([f"    fact: {item if isinstance(item, str) else item.get('fact', 'unknown fact')}" for item in facts[:8]] or ["    fact: none relevant"])
+    lines.extend([f"    fact: {_fact_line(item)}" for item in facts[:8]] or ["    fact: none relevant"])
     memories = context.get("memories") or []
     lines.extend([f"    {_memory_line(item)}" for item in memories[:5]] or ["    memory: none recent"])
     lines.append("  </knowledge_and_memory>")
@@ -204,7 +248,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 expected = outcome.get("expected") or {}
                 delta = outcome.get("delta") or {}
                 lines.append(
-                    f"  - {item.get('behavior_id', 'behavior')}: {outcome.get('status', item.get('event_type', 'unknown'))}; "
+                    f"  - {item.get('behavior_choice') or item.get('behavior_name') or 'behavior'}: {outcome.get('status', item.get('event_type', 'unknown'))}; "
                     f"result={outcome.get('result', 'unknown')}; expected={expected.get('summary', 'not stated')}; "
                     f"observed_changes={_plain(delta) if delta else 'none'}"
                 )
@@ -232,7 +276,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             lines.append("  Recent character outcomes:")
             for item in outcomes[:6]:
                 outcome = item.get("outcome") or {}
-                lines.append(f"  - {item.get('actor_id', 'character')}: {item.get('behavior_id', 'behavior')} -> {outcome.get('status', item.get('event_type', 'unknown'))}; {outcome.get('result', 'no result')}")
+                lines.append(f"  - {item.get('actor_name') or 'a character'}: {item.get('behavior_choice') or item.get('behavior_name') or 'a behavior'} -> {outcome.get('status', item.get('event_type', 'unknown'))}; {outcome.get('result', 'no result')}")
         lines.append("  Compare expected and observed effects before proposing one next world change.")
         lines.append("</world_outcomes>")
 
@@ -266,7 +310,6 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.extend([f"    - choice: {item.get('choice')}; {item.get('summary', 'configured action')}" for item in actions[:24]] or ["    - none"])
         lines.append("  </registered_actions>")
 
-    lines.extend(["  <decision>", f"    {task}", "  </decision>"])
     lines.extend(["  <interaction_history>"])
     history = context.get("interaction_history") or []
     if history:
@@ -279,9 +322,37 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     if last:
         lines.append(f"    latest_platform_result: {_result_line(last)}")
     lines.append("</interaction_history>")
+    lines.extend(["<decision>", f"  {task}", "</decision>"])
     rendered = "\n".join(lines)
     if len(rendered) <= max_chars:
         return rendered
-    head_size = max_chars * 2 // 3
-    tail_size = max_chars - head_size
-    return rendered[:head_size] + "\n<context_limit>Earlier low-priority details were omitted; use a read tool if needed.</context_limit>\n" + rendered[-tail_size:]
+    omitted: list[str] = []
+    # Preserve the current task, executable choices, active execution and
+    # latest tool result. Remove only retrievable background sections first;
+    # cutting the middle of the behavior catalog can leave an unusable prompt.
+    for tag in ("registered_actions", "knowledge_and_memory", "nearby_entities", "relationships", "recent_actions"):
+        rendered, removed = _remove_block(rendered, tag)
+        if removed:
+            omitted.append(tag)
+        if len(rendered) <= max_chars:
+            break
+    if len(rendered) <= max_chars:
+        note = ", ".join(omitted) or "low-priority details"
+        suffix = f"\n<context_limit>Omitted {note}; use a read tool if needed.</context_limit>"
+        if len(rendered) + len(suffix) <= max_chars:
+            return rendered + suffix
+        return rendered[: max_chars - len(suffix)] + suffix
+    # As a final guard, keep the complete behavior catalog and the final task
+    # section while compacting the remaining prose. This is rarely reached
+    # because the compiler already caps memories, facts, and candidates.
+    behavior_start = rendered.find("  <executable_behaviors>")
+    behavior_end = rendered.find("  </executable_behaviors>", behavior_start)
+    decision_start = rendered.find("<decision>")
+    if behavior_start >= 0 and behavior_end >= 0 and decision_start >= 0:
+        behavior_end += len("  </executable_behaviors>")
+        preserved = rendered[behavior_start:behavior_end]
+        tail = rendered[decision_start:]
+        prefix_budget = max(0, max_chars - len(preserved) - len(tail) - 120)
+        prefix = rendered[:prefix_budget]
+        return prefix + "\n<context_limit>Earlier context was compacted; use a read tool if needed.</context_limit>\n" + preserved + "\n" + tail
+    return rendered[: max_chars - 100] + "\n<context_limit>Context was compacted; use a read tool if needed.</context_limit>"

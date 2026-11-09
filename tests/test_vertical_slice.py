@@ -124,6 +124,81 @@ def test_agent_selects_human_readable_choice_and_prompt_hides_behavior_ref(tmp_p
         platform.close()
 
 
+def test_prompt_keeps_stable_sections_before_dynamic_world_state(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "prompt-order-world", tmp_path / "runtime"))
+    try:
+        prompt = render_context(platform.decision_view("lu_xingzhou"), "Choose one behavior.")
+        assert prompt.index("<protocol>") < prompt.index("<platform_rules>") < prompt.index("<allowed_intents_and_tools>") < prompt.index("<world_state>")
+    finally:
+        platform.close()
+
+
+def test_agent_view_exposes_calendar_time_not_only_tick_number(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "calendar-context-world", tmp_path / "runtime"))
+    try:
+        platform.store.set_meta("world_minute", 1530)
+        time = platform.decision_view("lu_xingzhou")["world_time"]
+        assert time["day"] == 2
+        assert time["time_of_day"] == "01:30"
+        assert time["season"] == "late_autumn"
+        assert time["label"] == "Day 2, 01:30, late_autumn"
+    finally:
+        platform.close()
+
+
+def test_agent_view_scene_describes_current_location_and_nearby_participants(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "scene-context-world", tmp_path / "runtime"))
+    try:
+        scene = platform.decision_view("yu_ge")["observation"]
+        assert scene["source"] == "current_state"
+        assert any("余歌旅店" in fact for fact in scene["facts"])
+        assert any("费兰" in fact for fact in scene["facts"])
+    finally:
+        platform.close()
+
+
+def test_context_compaction_preserves_choices_and_task(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "context-compaction-world", tmp_path / "runtime"))
+    try:
+        view = platform.decision_view("lu_xingzhou")
+        view["memories"] = [{"type": "experience", "summary": "Long historical detail " * 80, "confidence": 0.5} for _ in range(30)]
+        view["known_facts"] = [{"fact": "Long fact " * 80} for _ in range(30)]
+        prompt = render_context(view, "Choose one behavior for the current goal.", max_chars=8000)
+        assert len(prompt) <= 8000
+        assert "<executable_behaviors>" in prompt
+        assert "choice: Explore Greywood" in prompt
+        assert "<decision>" in prompt
+        if "</interaction_history>" in prompt:
+            assert prompt.rindex("<decision>") > prompt.rindex("</interaction_history>")
+    finally:
+        platform.close()
+
+
+def test_reflection_and_god_prompts_use_readable_outcome_names(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "readable-outcomes-world", tmp_path / "runtime"))
+    try:
+        result = platform.submit_behavior(BehaviorIntent(
+            "lin_bo", "behavior:rest_and_recover", {}, {}, "Restore readiness.", 0.8, "readable-outcome"
+        ))
+        for _ in range(result["remaining_minutes"]):
+            platform.step()
+        reflection_prompt = render_context(platform.decision_view("lin_bo", role="agent_reflection"), "Review the latest outcome.")
+        god_prompt = render_context(platform.decision_view("god", role="god"), "Review the world outcome.")
+        assert "behavior:rest_and_recover" not in reflection_prompt
+        assert "rest_and_recover" not in reflection_prompt
+        assert "Recover energy at the current safe location." in reflection_prompt
+        assert "behavior:rest_and_recover" not in god_prompt
+        assert "lin_bo" not in god_prompt
+        assert "林泊" in god_prompt
+    finally:
+        platform.close()
+
+
 def test_decision_alias_wait_ends_without_repeated_model_calls(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "wait-alias-world", tmp_path / "runtime"))
@@ -133,6 +208,18 @@ def test_decision_alias_wait_ends_without_repeated_model_calls(tmp_path: Path):
         assert turn.result["status"] == "wait"
         assert turn.iterations == 1
         assert len(provider.calls) == 1
+    finally:
+        platform.close()
+
+
+def test_react_session_reports_budget_exhaustion_explicitly(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "budget-world", tmp_path / "runtime"))
+    provider = SequenceProvider([{"intent_type": "not_allowed"}, {"intent_type": "still_not_allowed"}])
+    try:
+        turn = AgentEngine(platform, provider, max_iterations=2).run(role="agent_decision", actor_id="lu_xingzhou")
+        assert turn.result["status"] == "rejected"
+        assert turn.result["failed_check"] == "budget_exhausted"
     finally:
         platform.close()
 
@@ -324,6 +411,7 @@ def test_nearby_communication_behavior_resolves_a_visible_participant(tmp_path: 
         assert dialogue["topic"] == "general"
         assert platform.store.list_memories("fei_lan", limit=5)
         assert any(item["from"] == "yu_ge" and item["to"] == "fei_lan" and item["type"] == "trust" for item in platform.store.list_relationships())
+        assert "trust=0.02" in render_context(platform.decision_view("yu_ge"), "Choose one behavior.")
         assert not any(item["ref"] == "behavior:communicate" for item in platform.decision_view("yu_ge")["executable_behaviors"])
     finally:
         platform.close()
@@ -604,6 +692,9 @@ def test_agent_view_contract_and_native_react_messages(tmp_path: Path):
         assert len(provider.messages) == 2
         assert any(message.get("role") == "assistant" and message.get("tool_calls") for message in provider.messages[1])
         assert any(message.get("role") == "tool" and message.get("tool_call_id") == "call-1" for message in provider.messages[1])
+        assert provider.messages[1][-1]["role"] == "user"
+        assert "<self>" not in provider.messages[1][-1]["content"]
+        assert "Tool results:" in provider.messages[1][-1]["content"]
     finally:
         platform.close()
 
@@ -625,6 +716,23 @@ def test_native_multiple_tool_calls_receive_one_result_each(tmp_path: Path):
         second = provider.messages[1]
         tool_messages = [message for message in second if message.get("role") == "tool"]
         assert {message["tool_call_id"] for message in tool_messages} == {"call-a", "call-b"}
+    finally:
+        platform.close()
+
+
+def test_native_batch_stops_after_one_accepted_intent(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "native-one-intent-world", tmp_path / "runtime"))
+    provider = MessageProvider([
+        {"tool_calls": [
+            {"id": "intent-a", "type": "function", "function": {"name": "request_behavior", "arguments": '{"choice":"Explore Greywood"}'}},
+            {"id": "intent-b", "type": "function", "function": {"name": "request_behavior", "arguments": '{"choice":"Eat one available food item"}'}},
+        ]}
+    ])
+    try:
+        turn = AgentEngine(platform, provider).run(role="agent_decision", actor_id="lu_xingzhou")
+        assert turn.result["status"] == "accepted"
+        assert platform.store.connection.execute("SELECT COUNT(*) AS n FROM bt_instance WHERE actor_id='lu_xingzhou'").fetchone()["n"] == 1
     finally:
         platform.close()
 
@@ -908,6 +1016,20 @@ def test_perception_channels_are_scoped_and_model_readable(tmp_path: Path):
         assert known["status"] == "ok"
         public = executor.execute("read_public_record", {"entity_id": "village_square"})
         assert public["status"] == "ok"
+    finally:
+        platform.close()
+
+
+def test_read_tool_projection_hides_internal_execution_fields(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "perception-redaction-world", tmp_path / "runtime"))
+    try:
+        executor = AgentToolExecutor(platform, role="agent_decision", actor_id="yu_ge")
+        result = executor.execute("inspect_entity", {"entity": "费兰"})
+        encoded = json.dumps(result, ensure_ascii=False)
+        assert result["status"] == "ok"
+        assert "active_bt_instance" not in encoded
+        assert "behavior:communicate" not in encoded
     finally:
         platform.close()
 

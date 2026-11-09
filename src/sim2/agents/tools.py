@@ -424,10 +424,15 @@ class AgentToolExecutor:
     @classmethod
     def _publicize(cls, value: Any) -> Any:
         if isinstance(value, dict):
+            internal_fields = {
+                "active_bt_instance", "active_behavior_id", "active_action_instance",
+                "active_action_parameters", "active_action_reservation", "active_parameters",
+                "active_parallel_actions", "execution_id", "action_instance_id",
+            }
             return {
                 key: cls._publicize(item)
                 for key, item in value.items()
-                if key not in {"id", "ref", "behavior_ref", "intent_id", "event_id"}
+                if key not in {"id", "ref", "behavior_ref", "intent_id", "event_id"} and key not in internal_fields
                 and not key.endswith("_id")
             }
         if isinstance(value, list):

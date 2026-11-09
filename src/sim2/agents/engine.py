@@ -208,11 +208,17 @@ class AgentEngine:
                         conversation_messages.append({"role": "tool", "tool_call_id": native_call.get("id", "tool_call"), "name": tool_name, "content": json.dumps(model_tool_result, ensure_ascii=False)})
                     if TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "intent" and model_tool_result.get("status") in {"accepted", "wait"}:
                         accepted_result = internal_tool_result
+                        # One session may batch read tools, but a decision or
+                        # proposal is a single side effect. Ignore any later
+                        # intent calls in the same model response.
+                        if not is_read_tool:
+                            break
                 if native_tool_calls:
-                    # Native tool results are not enough by themselves: feed
-                    # the compact, updated world view back as the next user
-                    # message so the model can close the decision loop.
-                    conversation_messages.append({"role": "user", "content": render_context(context, task)})
+                    # The initial snapshot is already in the message list.
+                    # Append only the tool result on each ReAct turn; sending
+                    # another full snapshot here would duplicate dynamic
+                    # context and destroy provider cache efficiency.
+                    conversation_messages.append({"role": "user", "content": f"Tool results: {json.dumps(model_tool_result, ensure_ascii=False)}\nContinue the same task and submit the next tool call or final Intent."})
                 else:
                     conversation_messages.append({"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
                     conversation_messages.append({"role": "user", "content": f"Tool results: {json.dumps(model_tool_result, ensure_ascii=False)}"})
@@ -233,6 +239,14 @@ class AgentEngine:
             if result.get("status") in {"accepted", "wait"}:
                 return AgentTurn(role, task_type, response, result, iteration, transcript)
 
+        if last_result.get("status") not in {"accepted", "wait", "skipped"}:
+            last_result = {
+                **last_result,
+                "status": "rejected",
+                "failed_check": "budget_exhausted",
+                "retryable": True,
+                "message": "The ReAct session reached its iteration limit before a valid final Intent.",
+            }
         return AgentTurn(role, task_type, last_response, last_result, self.max_iterations, transcript)
 
     def _restore_internal_tool_result(self, tool_name: str, arguments: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:

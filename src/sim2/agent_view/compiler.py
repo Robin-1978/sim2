@@ -98,6 +98,33 @@ class AgentViewCompiler:
         self.resources = ResourceLedger(store)
         self.targets = TargetResolver(store)
 
+    def _world_time(self, minute: int | None = None) -> dict[str, Any]:
+        """Expose calendar meaning without leaking the internal tick counter."""
+
+        setting = self.store.get_meta("setting", {}) or {}
+        calendar = setting.get("calendar", {}) if isinstance(setting, dict) else {}
+        day_minutes = max(1, int(calendar.get("minutes_per_day", 1440) or 1440))
+        week_minutes = max(day_minutes, int(calendar.get("minutes_per_week", day_minutes * 7) or day_minutes * 7))
+        month_minutes = max(week_minutes, int(calendar.get("minutes_per_month", week_minutes * 4) or week_minutes * 4))
+        clock = setting.get("world_clock", {}) if isinstance(setting, dict) else {}
+        current = int(self.store.get_meta("world_minute", 0) if minute is None else minute)
+        start_day = int(clock.get("start_day", 1) or 1)
+        start_minute = int(clock.get("start_minute", 0) or 0)
+        absolute = max(0, start_minute + current)
+        day = start_day + absolute // day_minutes
+        minute_of_day = absolute % day_minutes
+        hour, minute_part = divmod(minute_of_day, 60)
+        season = str(clock.get("season") or setting.get("season") or "unknown")
+        return {
+            "minute": current,
+            "day": day,
+            "week": absolute // week_minutes + 1,
+            "month": absolute // month_minutes + 1,
+            "time_of_day": f"{hour:02d}:{minute_part:02d}",
+            "season": season,
+            "label": f"Day {day}, {hour:02d}:{minute_part:02d}, {season}",
+        }
+
     def _prompt_sections(self, role: str) -> tuple[list[str], list[str]]:
         prompt = self.store.get_prompt("agent", {}) or {}
         prompt = prompt.get("agent_prompt", prompt) if isinstance(prompt, dict) else {}
@@ -426,6 +453,16 @@ class AgentViewCompiler:
         actor_events = self.store.recent_events_for_actor(agent_id, limit=8)
         recent_actions = actor_events[:2]
         recent_outcomes = self.store.recent_outcomes_for_actor(agent_id, limit=3)
+        for outcome in recent_outcomes:
+            behavior = bt_defs.get(str(outcome.get("behavior_id", "")), {})
+            outcome["behavior_choice"] = behavior.get("agent_label") or behavior.get("summary") or behavior.get("description") or "a behavior"
+        observation_facts = []
+        if current_location:
+            observation_facts.append(f"You are at {current_location.get('name', location_id)}.")
+        observation_facts.extend(
+            f"{item.get('name', item.get('id', 'Someone'))} is nearby."
+            for item in nearby[:4]
+        )
         prompt_protocol, platform_rules = self._prompt_sections(role)
         decision_constraints: list[str] = []
         satiety = float((agent.get("needs", {}) or {}).get("satiety", 0) or 0)
@@ -446,13 +483,13 @@ class AgentViewCompiler:
             "context_version": "1", "role": role,
             "prompt_protocol": prompt_protocol,
             "platform_rules": platform_rules,
-            "world_time": {"minute": self.store.get_meta("world_minute", 0), "label": f"World minute {self.store.get_meta('world_minute', 0)}"},
+            "world_time": self._world_time(),
             "self": {"id": agent_id, "name": agent.get("name", agent_id), "role": agent.get("role", "agent"), "status": state.get("status", "idle"), "location": current_location.get("name", location_id) if isinstance(current_location, dict) else location_id, "known_routes": known_routes, "health": state.get("health"), "energy": state.get("energy"), "attributes": self._attribute_values(agent, state), "goal": agent.get("ultimate_goal")},
             "identity": {"traits": agent.get("traits", {}), "beliefs": agent.get("beliefs", []), "capabilities": agent.get("capabilities", {})},
             "goal_tags": agent.get("goal_tags", []),
             "capability_history": self.store.list_capability_progress(agent_id, limit=5),
             "needs": needs, "inventory": agent.get("inventory", {}), "injuries": state.get("injuries", []),
-            "drives": drives[:5], "drive_model": drive_model, "observation": {"facts": [], "source": "platform_snapshot"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "memories": memories, "recent_actions": recent_actions, "recent_outcomes": recent_outcomes, "direct_relationships": relationships,
+            "drives": drives[:5], "drive_model": drive_model, "observation": {"facts": observation_facts[:6], "source": "current_state"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "memories": memories, "recent_actions": recent_actions, "recent_outcomes": recent_outcomes, "direct_relationships": relationships,
             "active_task": {"bt": active_behavior.get("summary") or ("in progress" if active_behavior_id else None), "action": active_action.get("description") or (_label(str(active_action_id)) if active_action_id else None), "remaining_minutes": state.get("remaining_minutes", 0)},
             "open_trade_offers": self._trade_offer_view(agent_id),
             "available_actions": available_actions if role == "agent_reflection" else [],
@@ -569,6 +606,16 @@ class AgentViewCompiler:
         all_events = self.store.recent_events(limit=20)
         recent_world_changes = self.store.recent_world_change_events(limit=6)
         recent_agent_outcomes = self.store.recent_behavior_outcomes(limit=6)
+        bt_defs = {item["id"]: item for item in self.store.get_definitions("bt_def")}
+        for outcome in recent_agent_outcomes:
+            behavior = bt_defs.get(str(outcome.get("behavior_id", "")), {})
+            outcome["behavior_choice"] = behavior.get("agent_label") or behavior.get("summary") or behavior.get("description") or "a behavior"
+            outcome_actor_id = outcome.get("actor_id")
+            if outcome_actor_id:
+                try:
+                    outcome["actor_name"] = self.store.get_entity(str(outcome_actor_id)).get("name", "a character")
+                except KeyError:
+                    outcome["actor_name"] = "a character"
         recent_world_events = (recent_world_changes + [item for item in all_events if item.get("actor_id") == actor_id])[:6]
         active_count = sum(
             1 for agent in self.store.list_agents()
@@ -582,7 +629,7 @@ class AgentViewCompiler:
             "role": role,
             "prompt_protocol": prompt_protocol,
             "platform_rules": platform_rules,
-            "world_time": {"minute": minute, "label": f"World minute {minute}"},
+            "world_time": self._world_time(int(minute)),
             "self": {"id": actor_id, "name": actor_id, "role": role, "status": "ready", "location": "world", "goal": "preserve a coherent, evolving world"},
             "identity": {"traits": {}, "beliefs": [], "capabilities": {"world_scope": True}},
             "needs": {},
