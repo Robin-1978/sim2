@@ -82,7 +82,9 @@ increase food, trust, safety, or another behavior-owned value.
 
 Writing a rule is only a proposal result. The God quality audit remains open
 until a later behavior outcome shows that the rule was used and produced its
-configured effect.
+configured effect. In the current implementation, `rules.world_rules` stores
+the proposal but does not execute it; the rule executor/compiler is a required
+follow-up before a God rule can close.
 
 ## Audit conclusion
 

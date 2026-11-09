@@ -67,3 +67,8 @@ property write or a stocked resource entity. The Platform correctly graded the
 turn `accepted_needs_world_followup`: the rule is stored, but a later behavior
 must execute rationing and produce the expected resource outcome before the
 world change is considered complete.
+
+Current implementation note: `rules.world_rules` is presently a persisted
+proposal registry, not an active rule executor. Until a generic rule compiler
+connects validated rule effects to behavior conditions/effects, a stored rule
+must not be reported as an applied world change.
