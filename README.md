@@ -88,10 +88,12 @@ Real-provider checks use the configured local or remote OpenAI-compatible provid
 ```bash
 python scripts/verify_agent_models.py
 python scripts/verify_core_interaction.py --provider remote
-# Full context/output/world causality audit (runs every role through one provider)
-bash -ic 'python scripts/audit_real_world.py --minutes 1440 --provider remote'
+# Full one-week context/output/world causality audit (runs every role through one provider)
+bash -ic 'source ~/.bashrc >/dev/null 2>&1; python scripts/audit_real_world.py \
+  --minutes 10080 --provider remote --model deepseek-v4.1-flash \
+  --output artifacts/real-agent-audit-week.json --auto-resume'
 # Review every recorded session and the persisted SQLite execution closure
-python scripts/review_audit.py artifacts/real-agent-audit-1440-final-complete.json
+python scripts/review_audit.py artifacts/real-agent-audit-week.json
 # Export every recorded world event, including one-minute time advances and
 # chat text, without exporting Agent prompts or call details
 python scripts/export_timeline.py --db "$DB" --output artifacts/world-timeline.md

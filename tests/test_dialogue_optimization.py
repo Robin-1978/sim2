@@ -398,6 +398,7 @@ def test_starter_bell_enables_alarm_only_when_threat_is_configured(tmp_path: Pat
         for _ in range(install["remaining_minutes"]):
             platform.step()
         assert platform.store.get_meta("world_properties")["north_gate_alarm_ready"] == 1
+        assert not any(task["role"] == "story" for task in platform.ready_evolution_tasks())
         assert not any(item["ref"] == "behavior:sound_alarm" for item in platform.decision_view("he_yan")["executable_behaviors"])
 
         with platform.store.transaction():

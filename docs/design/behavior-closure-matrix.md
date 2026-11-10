@@ -20,6 +20,7 @@ behavior tree.
 | `craft_meal` | Inputs are consumed and food is produced | Next decision / Reflection | Closed |
 | `craft_medicine` | Inputs are consumed and medicine is produced | Next decision / Reflection | Closed |
 | `craft_dawn_bell` | Materials are consumed and the configured object state changes | God trend | Closed |
+| `install_dawn_bell` | The carried bell is consumed, the entity is installed at the watch post, alarm readiness becomes true, and the installation is persisted | God evidence group / next decision | Closed; installation alone does not create a Story goal |
 | `heal_target` | Target health changes and treatment cost is committed | Next decision / Reflection | Closed when a patient target is supplied |
 | `communicate` | Dialogue exchange, testimony, relationship and belonging effects | Next decision / Reflection | Closed |
 | `negotiate` | Concrete terms and the actual opening message are persisted and delivered to the other participant; no contract is claimed | Recipient instant response; item movement uses the separate atomic trade offer protocol | Closed as a terms-sharing interaction; only a later accepted response or trade intent can form an agreement |

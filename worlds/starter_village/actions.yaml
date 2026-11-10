@@ -803,7 +803,7 @@ actions:
     result: installation_failed
   information:
     event_type: entity.installed
-    wake: [story, god]
+    wake: [god]
     summary: A configured entity was installed at its target location.
     fact_template: "{name} is installed at {location} and ready for its configured use."
     source_type: deployment

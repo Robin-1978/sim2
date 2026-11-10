@@ -98,7 +98,7 @@ LLM Agent 不直接依赖 SQLite。所有 Agent 输出经过 Intent 网关；所
 
 实现 API、实例管理、暂停/继续、单步推进、外部事件注入、审计导出、快照恢复、指标、Prompt 缓存命中率和 Agent 成本分析。运行雾溪村完整场景，覆盖玩家进入、探索、沟通、制作、战斗、反思和 God Agent 演化。
 
-验收：配置创世、分钟推进、LLM 驱动的 Agent 自动演化、玩家进入、知识传播、战斗中断、BT 演化、世界实体创建和确定性回放全部通过。当前已完成 transport-neutral `ControlService` 和 CLI 控制命令、本地 HTTP 控制适配器、暂停/继续/单步、外部事件注入、玩家模板入口、SQLite 一致性快照、快照恢复、审计导出、基础运行指标、相同配置/Intent 的事件序列回放、Starter Village 端到端场景和 1000 Agent 五次稳态模拟分钟 p95 基准（约 193ms）。基准单独报告第一个初始化分钟；分钟效果会按角色合并并批量写入，阈值状态每分钟只持久化一次。
+验收：配置创世、分钟推进、LLM 驱动的 Agent 自动演化、玩家进入、知识传播、战斗中断、BT 演化、世界实体创建和确定性回放全部通过。当前已完成 transport-neutral `ControlService` 和 CLI 控制命令、本地 HTTP 控制适配器、暂停/继续/单步、外部事件注入、玩家模板入口、SQLite 一致性快照、快照恢复、审计导出、基础运行指标、相同配置/Intent 的事件序列回放、Starter Village 端到端场景和 1000 Agent 五次稳态模拟分钟 p95 基准（最近一次为 159.073ms）。基准单独报告第一个初始化分钟；分钟效果会按角色合并并批量写入，阈值状态每分钟只持久化一次。
 
 性能测量入口为 `python scripts/benchmark_platform.py --agents 1000`；它只测非 LLM 的一个模拟分钟，不把网络模型延迟混入 Platform 指标。
 
@@ -124,7 +124,7 @@ python scripts/benchmark_platform.py --agents 1000 --runs 5
 python scripts/verify_agent_models.py
 ```
 
-最近一次结果为 `204 passed`；测试覆盖 ReAct 工具反馈与拒绝重试、SQLite 创世与回滚、长 Action/并行 BT/共享资源、中断恢复、探索沟通知识、聊天与两阶段交易、文本玩家/旁观者入口、短期/长期记忆与任务条件召回、BGE 适配、嵌套 BT 多参与者目标校验、周/月 God 趋势、反思目标和能力历史、执行 outcome 复盘上下文、God 世界前后值复盘、God 事件语义质量门、HTTP 控制、健康探针、快照恢复、确定性回放、可读名称映射、重复 BT 提案质量门、Provider 短暂断连重试与限流 cooldown、Tick 快照与提交屏障、活动定义版本快照、提案按类型结果匹配、记忆事件来源校验、文明进度证据归属与唯一计数、对象空间可达性、TUI 配置时钟以及 Starter Village 端到端场景。
+最近一次结果为 `219 passed`；测试覆盖 ReAct 工具反馈与拒绝重试、SQLite 创世与回滚、长 Action/并行 BT/共享资源、中断恢复、探索沟通知识、聊天与两阶段交易、文本及 TUI 玩家/旁观者入口、地图可见性、短期/长期记忆与任务条件召回、BGE 适配、嵌套 BT 多参与者目标校验、周/月 God 趋势、反思目标和能力历史、执行 outcome 复盘上下文、God 世界前后值复盘、God 事件语义质量门、HTTP 控制、健康探针、快照恢复、确定性回放、可读名称映射、重复 BT 提案质量门、Provider 短暂断连重试与限流 cooldown、Tick 快照与提交屏障、活动定义版本快照、提案按类型结果匹配、记忆事件来源校验、文明进度证据归属与唯一计数、对象与研究来源的空间可达性、研究事实门控、事件组准入与冷却、报警响应闭环、Story 来源范围一致性以及 Starter Village 端到端场景。
 
 `verify_agent_models.py` 是真实模型验收入口：它不打印原始 reasoning 或密钥，只报告 Decision/Reflection/God 的会话步骤、最终 Intent、Platform 校验结果和质量布尔值；远程 Provider 使用 `~/.sim2/llm.json` 中的显式代理和环境变量引用。
 
