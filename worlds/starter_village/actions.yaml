@@ -570,7 +570,7 @@ actions:
     result: interrupted
   information:
     event_type: defense.completed
-    wake: [story, god]
+    wake: []
     summary: A defensive response was completed at the configured position.
     result: defended
   interrupt_policy: interruptible
@@ -636,7 +636,7 @@ actions:
     result: failed
   information:
     event_type: alarm.raised
-    wake: [story, god]
+    wake: [story]
     summary: An alarm was broadcast from a configured watch post.
     result: alarm_raised
   interrupt_policy: cancel
@@ -843,7 +843,7 @@ actions:
     condition: actor.incapacitated
     result: pact_stabilization_failed
   information:
-    event_type: pact.stability_improved
+    event_type: pact.stability.improved
     wake: [god]
     summary: A configured pact-stabilization measure was completed and its world result was recorded.
     result: pact_stabilized

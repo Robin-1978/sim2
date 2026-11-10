@@ -47,8 +47,12 @@ class EventWakeScheduler:
         if bool(policy.get("actor_scoped", False)) and not str(actor_id or "").strip():
             return None
         task_actor = str(actor_id) if bool(policy.get("actor_scoped", False)) else consumer
-        groups = [
+        configured_groups = [
             item for item in (policy.get("event_groups") or policy.get("groups") or [])
+            if isinstance(item, dict)
+        ]
+        groups = [
+            item for item in configured_groups
             if isinstance(item, dict)
             and str(event_type) in {str(value) for value in (item.get("event_types") or [])}
         ]
@@ -104,6 +108,19 @@ class EventWakeScheduler:
                 )
                 return task_id
             return None
+
+        # Once a consumer declares evidence groups, an unmatched event is not
+        # silently promoted to a direct wake.  That fallback made a one-character
+        # configuration typo bypass thresholds and cooldowns.  Worlds can still
+        # declare genuinely direct evidence or task channels explicitly.
+        if configured_groups:
+            direct_events = {str(value) for value in (policy.get("direct_event_types") or [])}
+            requested_task_type = str(task_type or f"event:{event_type}")
+            direct_prefixes = [str(value) for value in (policy.get("direct_task_type_prefixes") or [])]
+            if str(event_type) not in direct_events and not any(
+                requested_task_type.startswith(prefix) for prefix in direct_prefixes if prefix
+            ):
+                return None
 
         batch_minutes = int(policy.get("batch_minutes", 0) or 0)
         if batch_minutes <= 0:

@@ -32,6 +32,10 @@ evolution:
         # handled causally. Research and social progress wake God only after
         # the configured number of independent results.
         batch_minutes: 0
+        # Milestones and edge-triggered policy rules are already aggregated by
+        # their producers. Every other God wake must pass an evidence group.
+        direct_event_types: [civilization.milestone]
+        direct_task_type_prefixes: ["rule:"]
         event_groups:
           - {id: research_synthesis, event_types: [research.completed], minimum_events: 5, cooldown_minutes: 10080}
           - {id: governance_capacity, event_types: [governance.reviewed, ration.policy_reviewed], minimum_events: 8, cooldown_minutes: 10080}

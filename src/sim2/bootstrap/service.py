@@ -545,6 +545,93 @@ def _ids(values: list[dict[str, Any]], label: str, errors: list[str]) -> set[str
     return result
 
 
+def _validate_event_wake_references(
+    data: dict[str, list[dict[str, Any]]],
+    rules: dict[str, Any],
+    evolution: dict[str, Any],
+    errors: list[str],
+) -> None:
+    """Ensure declared wakes cannot bypass a consumer's evidence policy.
+
+    Event groups are admission rules as well as batching rules.  A producer
+    that names a grouped consumer must emit an event covered by one group or
+    by that consumer's explicit direct-event/task allowlist.  Otherwise a
+    spelling mismatch would only surface during a long simulation.
+    """
+
+    root = evolution.get("evolution", evolution) if isinstance(evolution, dict) else {}
+    wake_policy = root.get("event_wake_policy", {}) if isinstance(root, dict) else {}
+    consumers = wake_policy.get("consumers", {}) if isinstance(wake_policy, dict) else {}
+    if not isinstance(consumers, dict):
+        return
+
+    producers: list[tuple[str, str, list[str], str]] = []
+
+    def add(source: str, definition: Any, *, default_event: str = "", task_type: str = "") -> None:
+        if not isinstance(definition, dict):
+            return
+        wake = definition.get("wake", definition.get("wake_roles", [])) or []
+        if isinstance(wake, str):
+            wake = [wake]
+        roles = [str(item) for item in wake if str(item)]
+        if not roles:
+            return
+        event_type = str(definition.get("event_type") or definition.get("event") or default_event).strip()
+        if not event_type:
+            errors.append(f"{source} declares wake consumers but no result event_type")
+            return
+        producers.append((source, event_type, roles, task_type or f"event:{event_type}"))
+
+    for action in data.get("actions", []):
+        action_id = str(action.get("id") or "action")
+        add(f"action {action_id} information", action.get("information"))
+        # The generic research progress channel emits this completion event.
+        add(f"action {action_id} progress", action.get("progress"), default_event="research.completed")
+    for behavior in data.get("behavior_trees", []):
+        behavior_id = str(behavior.get("id") or "behavior")
+        for index, outcome in enumerate(behavior.get("outcome_events", []) or []):
+            add(f"behavior {behavior_id} outcome_events[{index}]", outcome)
+    for progress_key, definition in (rules.get("civilization_progress", {}) or {}).items():
+        add(f"civilization progress {progress_key}", definition, default_event="civilization.milestone")
+    for rule in rules.get("world_rules", []) or []:
+        if not isinstance(rule, dict):
+            continue
+        rule_id = str(rule.get("id") or rule.get("name") or "rule")
+        add(
+            f"world rule {rule_id}",
+            rule,
+            default_event=f"world.rule.{rule_id}",
+            task_type=f"rule:{rule_id}",
+        )
+
+    for source, event_type, roles, task_type in producers:
+        for role in roles:
+            policy = consumers.get(role)
+            if not isinstance(policy, dict):
+                continue
+            groups = [
+                item for item in (policy.get("event_groups") or policy.get("groups") or [])
+                if isinstance(item, dict)
+            ]
+            if not groups:
+                continue
+            grouped_events = {
+                str(value)
+                for group in groups
+                for value in (group.get("event_types") or [])
+            }
+            direct_events = {str(value) for value in (policy.get("direct_event_types") or [])}
+            direct_prefixes = [str(value) for value in (policy.get("direct_task_type_prefixes") or [])]
+            if event_type in grouped_events or event_type in direct_events:
+                continue
+            if any(task_type.startswith(prefix) for prefix in direct_prefixes if prefix):
+                continue
+            errors.append(
+                f"{source} wakes {role} with unregistered event {event_type}; "
+                "add it to an event group or the consumer's explicit direct-event policy"
+            )
+
+
 def validate_config(config_dir: Path) -> dict[str, Any]:
     """Validate generic package references before creating a SQLite file."""
 
@@ -642,6 +729,10 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
             errors.append(f"relationship references unknown source {relation.get('from')}")
         if relation.get("to") not in agent_ids and relation.get("to") != "player":
             errors.append(f"relationship references unknown target {relation.get('to')}")
+
+    rules = load_yaml(config_dir, "rules.yaml", {}) or {}
+    evolution = load_yaml(config_dir, "evolution.yaml", {}) or {}
+    _validate_event_wake_references(data, rules, evolution, errors)
 
     return {"valid": not errors, "errors": errors, "manifest": manifest}
 

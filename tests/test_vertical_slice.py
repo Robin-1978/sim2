@@ -1927,7 +1927,7 @@ def test_world_progress_rejects_a_trigger_from_the_wrong_configured_domain(tmp_p
     try:
         with platform.store.transaction():
             pact_event = platform.store.append_event(
-                "pact.stability_improved",
+                "pact.stability.improved",
                 "su_wu",
                 10,
                 {"behavior_id": "stabilize_pact", "result": "pact_stabilized"},
@@ -2012,7 +2012,7 @@ def test_god_reacts_to_progress_domain_rejection_and_waits(tmp_path: Path):
     try:
         with platform.store.transaction():
             source_event = platform.store.append_event(
-                "pact.stability_improved",
+                "pact.stability.improved",
                 "su_wu",
                 10,
                 {"behavior_id": "stabilize_pact", "result": "pact_stabilized"},
@@ -2042,7 +2042,7 @@ def test_god_reacts_to_progress_domain_rejection_and_waits(tmp_path: Path):
         turn = AgentEngine(platform, provider).run(
             role="god",
             actor_id="god",
-            task_type="event:pact.stability_improved",
+            task_type="event:pact.stability.improved",
             source_event_id=source_event,
         )
 
@@ -2289,6 +2289,34 @@ def test_invalid_reference_fails_before_sqlite_creation(tmp_path: Path):
     with pytest.raises(ValueError):
         create_instance(copied, "invalid", tmp_path / "runtime")
     assert not (tmp_path / "runtime" / "instances" / "invalid" / "world.sqlite3").exists()
+
+
+def test_world_validation_rejects_unregistered_grouped_consumer_event(tmp_path: Path):
+    source = Path(__file__).parents[1] / "worlds" / "starter_village"
+    copied = tmp_path / "invalid-event-wake-world"
+    copied.mkdir()
+    for path in source.iterdir():
+        if path.is_file():
+            copied.joinpath(path.name).write_bytes(path.read_bytes())
+    action_file = copied / "actions.yaml"
+    action_file.write_text(
+        action_file.read_text(encoding="utf-8").replace(
+            "event_type: pact.stability.improved",
+            "event_type: pact.stability_improved",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    report = validate_config(copied)
+
+    assert report["valid"] is False
+    assert any(
+        "stabilize_pact" in error
+        and "pact.stability_improved" in error
+        and "unregistered event" in error
+        for error in report["errors"]
+    )
 
 
 def test_platform_advances_persisted_action_progress_without_llm(tmp_path: Path):
@@ -2603,10 +2631,47 @@ def test_incremental_remediation_records_result_without_story_wake(tmp_path: Pat
         ))
         assert started["status"] == "accepted"
         step_n(platform, started["remaining_minutes"])
-        assert any(item["event_type"] == "pact.stability_improved" for item in platform.store.recent_events(limit=30))
+        assert any(item["event_type"] == "pact.stability.improved" for item in platform.store.recent_events(limit=30))
         tasks = platform.ready_evolution_tasks()
         assert any(item["role"] == "god" for item in tasks)
         assert not any(item["role"] == "story" for item in tasks)
+    finally:
+        platform.close()
+
+
+def test_completed_action_respects_existing_public_incident_cooldown(tmp_path: Path):
+    """A real Action result cannot fall through to a direct God wake."""
+
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "action-incident-cooldown-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            first_event = platform.store.append_event(
+                "security.marks_classified", "he_yan", 96,
+                {"summary": "The configured investigation classified the marks."},
+            )
+            platform._queue_event_consumer_task(
+                "god", first_event, "security.marks_classified", "he_yan", 96,
+                task_type="event:security.marks_classified",
+            )
+            platform.store.set_meta("world_minute", 605)
+
+        started = platform.submit_behavior(BehaviorIntent(
+            "su_wu", "behavior:stabilize_pact", {}, {},
+            "Apply one measured stabilization during the incident review cooldown.",
+            0.9, "stabilize-during-cooldown",
+        ))
+        assert started["status"] == "accepted"
+        step_n(platform, started["remaining_minutes"])
+
+        assert any(
+            item["event_type"] == "pact.stability.improved"
+            for item in platform.store.recent_events(limit=40)
+        )
+        god_tasks = [item for item in platform.ready_evolution_tasks() if item["role"] == "god"]
+        assert [item["task_id"] for item in god_tasks] == [
+            f"god:event_group:public_incident:{first_event}"
+        ]
     finally:
         platform.close()
 
