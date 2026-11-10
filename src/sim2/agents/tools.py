@@ -935,7 +935,10 @@ def parse_tool_call(response: dict[str, Any]) -> tuple[str, dict[str, Any]] | No
         "arguments",
         function.get(
             "args",
-            candidate.get("arguments", candidate.get("parameters", candidate.get("input", {}))),
+            candidate.get(
+                "arguments",
+                candidate.get("parameters", candidate.get("params", candidate.get("input", {}))),
+            ),
         ),
     )
     if not isinstance(name, str) or not name:

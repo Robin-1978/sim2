@@ -42,6 +42,10 @@ def test_compatible_tool_use_envelopes_are_normalized():
         "observe_nearby",
         {"question": "What is here?"},
     )
+    assert parse_tool_call({"tool": "record_world_progress", "params": {"progress_key": "security", "delta": 0.2}}) == (
+        "record_world_progress",
+        {"progress_key": "security", "delta": 0.2},
+    )
 
 
 def test_unbound_context_reference_does_not_leak_into_world_text():
