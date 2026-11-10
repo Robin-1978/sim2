@@ -56,7 +56,35 @@ def main() -> int:
         platform = Platform(create_instance(config, "long-run", Path(runtime)))
         try:
             report = platform.run(args.minutes, providers={"agent_decision": provider, "agent_reflection": provider, "god": provider, "story": provider})
-            output = {"provider_calls": provider.calls, "report": report.as_dict(), "metrics": platform.metrics()}
+            agents = []
+            for agent in platform.store.list_agents():
+                state = dict(agent.get("initial_state", {}) or {})
+                agents.append({
+                    "name": agent.get("name", agent.get("id")),
+                    "status": state.get("status"),
+                    "location": state.get("location_id"),
+                    "energy": state.get("energy"),
+                    "satiety": (agent.get("needs", {}) or {}).get("satiety", state.get("satiety")),
+                    "health": state.get("health"),
+                    "inventory": agent.get("inventory", {}),
+                })
+            resources = [
+                {"name": item.get("name", item.get("id")), "type": item.get("entity_type"), "state": item.get("initial_state", {})}
+                for entity_type in ("resource", "material", "consumable")
+                for item in platform.store.entities_of_type(entity_type)
+            ]
+            output = {
+                "provider_calls": provider.calls,
+                "report": report.as_dict(),
+                "metrics": platform.metrics(),
+                "world_properties": platform.store.get_meta("world_properties", {}),
+                "agents": agents,
+                "resources": resources,
+                "evolution_tasks": {
+                    row["status"]: int(row["n"])
+                    for row in platform.store.connection.execute("SELECT status,COUNT(*) AS n FROM evolution_task GROUP BY status")
+                },
+            }
             print(json.dumps(output, ensure_ascii=False, indent=2))
         finally:
             platform.close()
