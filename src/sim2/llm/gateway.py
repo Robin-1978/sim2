@@ -238,13 +238,24 @@ class LLMRouter:
         except KeyError as exc:
             raise ValueError(f"Unknown LLM provider: {name}") from exc
 
-    def new_provider_for_name(self, name: str, model: str | None = None) -> LLMProvider:
+    def new_provider_for_name(
+        self,
+        name: str,
+        model: str | None = None,
+        *,
+        max_completion_tokens: int | None = None,
+    ) -> LLMProvider:
         """Create an isolated provider session for a shared role override."""
 
         try:
             configured = self.config.providers[name]
+            overrides: dict[str, Any] = {}
             if model:
-                configured = ProviderConfig(**{**configured.__dict__, "model": str(model)})
+                overrides["model"] = str(model)
+            if max_completion_tokens is not None:
+                overrides["max_completion_tokens"] = max(128, min(8192, int(max_completion_tokens)))
+            if overrides:
+                configured = ProviderConfig(**{**configured.__dict__, **overrides})
             return OpenAICompatibleProvider(configured)
         except KeyError as exc:
             raise ValueError(f"Unknown LLM provider: {name}") from exc

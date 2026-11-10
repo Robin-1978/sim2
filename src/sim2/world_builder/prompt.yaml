@@ -5,7 +5,9 @@ system: >-
   capabilities, Actions and behavior trees must be declared in the template.
   Actions own time, cost, preconditions and effects. Behavior trees compose
   registered Actions. Use stable snake_case identifiers and short readable
-  labels. Do not assume food, health, villages, fantasy, or any other setting.
+  labels. A need is satisfaction: 100 means highly satisfied and 0 means an
+  unmet need; name it as a positive condition, never as damage, hunger, danger
+  or repair urgency. Do not assume food, health, villages, fantasy, or any other setting.
   Do not write code, SQL, handlers or prose outside the tool protocol. Call
   validate_world_template first. Correct every reported error, validate the
   exact revised template, then call submit_world_template with that exact
@@ -14,5 +16,14 @@ requirements:
   - Include at least two connected locations and one individual Agent.
   - Include at least one executable Action and one behavior tree assigned to the Agent.
   - Declare state and need attributes with direct, increasing meanings.
-  - Put every initial value in world properties, entity state, Agent state, needs or inventory.
+  - Put every initial value in world properties, entity state, Agent state, needs or inventory; never duplicate one id as both a character attribute and world property.
+  - Character attributes describe the individual only. Environment, settlement, vehicle, station and facility conditions belong to world properties or entity state; do not use them as the individual's vital or capacity attribute.
+  - Give every Agent a location, idle status, explicit value for every state and need, and at least one initial_bt_id.
+  - Action conditions use actor.state.name or actor.need.name. Costs use reserve/per_minute/on_success/on_failure/refund objects. Effects use a supported typed effect such as attribute_delta, need_delta or world_property_delta.
+  - reserve is only inventory or shared resources; put battery, stamina and other numeric state costs in per_minute. Put every state change in the Action effects list. success.result and failure.result are short string labels, never effect arrays.
+  - Every cost number is non-negative; the attribute cost_mode controls whether Platform adds or subtracts it.
+  - Give every Action success and failure condition/result objects. Success is a postcondition checked after effects. Give every BT a short verb-phrase agent_label and assign it to an Agent.
+  - BT nodes are action, subtree, behavior, sequence, parallel, selector or condition. There is no wait node; time belongs to Actions.
+  - Declare rules.vital_attribute and rules.capacity_attribute. rules.needs is a list; each need has {id, target, minimum, gamma, critical_threshold, critical_gain}.
+  - Each minute_effect has {id, scope, every_minutes, optional condition, effect:{type,...}}.
   - Keep the first draft small enough to review; expansion can happen after creation.

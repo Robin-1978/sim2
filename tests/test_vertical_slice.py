@@ -3,6 +3,7 @@ import pytest
 import json
 import threading
 import httpx
+import yaml
 from urllib.request import Request, urlopen
 from sim2.intents.models import BehaviorIntent
 
@@ -1190,9 +1191,9 @@ def test_agent_view_contract_and_native_react_messages(tmp_path: Path):
         assert len(provider.messages) == 2
         assert any(message.get("role") == "assistant" and message.get("tool_calls") for message in provider.messages[1])
         assert any(message.get("role") == "tool" and message.get("tool_call_id") == "call-1" for message in provider.messages[1])
-        assert provider.messages[1][-1]["role"] == "user"
+        assert provider.messages[1][-1]["role"] == "tool"
         assert "<self>" not in provider.messages[1][-1]["content"]
-        assert "Tool results:" in provider.messages[1][-1]["content"]
+        assert '"status": "ok"' in provider.messages[1][-1]["content"]
     finally:
         platform.close()
 
@@ -2840,10 +2841,7 @@ def test_world_builder_validates_then_submits_template(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "builder-world", tmp_path / "runtime")
     platform = Platform(db_path)
-    template = {
-        "world": {"id": "small_world", "title": "Small World"},
-        "actions": [], "behavior_trees": [], "agents": [],
-    }
+    template = yaml.safe_load((Path(__file__).parents[1] / "examples" / "orbital-world-template.yaml").read_text(encoding="utf-8"))
     provider = SequenceProvider([
         {"tool_call": {"name": "validate_world_template", "arguments": {"template": template}}},
         {"tool_call": {"name": "submit_world_template", "arguments": {"template": template}}},
@@ -2860,20 +2858,15 @@ def test_validated_template_creates_a_separate_instance(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     source_db = create_instance(config, "template-source", tmp_path / "runtime")
     platform = Platform(source_db)
-    template = {
-        "template_version": "test-template-1",
-        "world": {"id": "generated_world", "title": "Generated World", "premise": "A small test world."},
-        "locations": [{"id": "entry", "name": "Entry", "routes": []}],
-        "actions": [], "behavior_trees": [], "agents": [], "factions": [],
-    }
+    template = yaml.safe_load((Path(__file__).parents[1] / "examples" / "orbital-world-template.yaml").read_text(encoding="utf-8"))
     try:
         result = platform.bootstrap_world_from_template(template, "generated-instance", tmp_path / "generated")
         assert result["status"] == "accepted"
         generated = Platform(Path(result["db_path"]))
         try:
-            assert generated.store.get_meta("world_id") == "generated_world"
-            assert generated.store.get_meta("config_version") == "test-template-1"
-            assert generated.store.get_entity("entry")["entity_type"] == "location"
+            assert generated.store.get_meta("world_id") == "orbital_lab"
+            assert generated.store.get_meta("config_version") == "orbital-lab-1"
+            assert generated.store.get_entity("reactor_bay")["entity_type"] == "location"
         finally:
             generated.close()
     finally:

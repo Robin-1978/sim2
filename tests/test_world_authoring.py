@@ -11,6 +11,7 @@ from sim2.bootstrap.service import (
 )
 from sim2.platform.runtime import Platform
 from sim2.world_builder import WorldBuilderService
+from sim2.world_builder.service import smoke_test_world_template
 
 
 class OneChoiceProvider:
@@ -178,3 +179,11 @@ def test_world_builder_agent_validates_exact_template_before_submission():
     assert any(item["function"]["name"] == "validate_world_template" for item in provider.calls[0]["tools"])
     second_messages = provider.calls[1]["messages"]
     assert any(message.get("role") == "tool" and "Template is valid" in message.get("content", "") for message in second_messages)
+
+
+def test_world_builder_runtime_smoke_rejects_structurally_valid_dead_start():
+    template = orbital_template()
+    template["behavior_trees"][0]["entry_conditions"] = ["actor.state.charge < 0"]
+    assert validate_world_template(template)["valid"] is True
+    errors = smoke_test_world_template(template)
+    assert any("no executable initial behavior" in item for item in errors)

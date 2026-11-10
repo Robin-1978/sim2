@@ -323,11 +323,10 @@ class AgentEngine:
                         if not is_read_tool:
                             break
                 if native_tool_calls:
-                    # The initial snapshot is already in the message list.
-                    # Append only the tool result on each ReAct turn; sending
-                    # another full snapshot here would duplicate dynamic
-                    # context and destroy provider cache efficiency.
-                    conversation_messages.append({"role": "user", "content": f"Tool results: {json.dumps(model_tool_result, ensure_ascii=False)}\nContinue the same task and submit the next tool call or final Intent."})
+                    # Native tool messages already contain every result.  An
+                    # extra user copy is redundant and can invalidate strict
+                    # providers when a response contains multiple calls.
+                    pass
                 else:
                     conversation_messages.append({"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
                     conversation_messages.append({"role": "user", "content": f"Tool results: {json.dumps(model_tool_result, ensure_ascii=False)}"})
@@ -336,7 +335,7 @@ class AgentEngine:
                 # cap every read result is resent on every iteration, so a
                 # short choice can accumulate a large prompt and latency.
                 if len(conversation_messages) > 8:
-                    conversation_messages = conversation_messages[:2] + conversation_messages[-6:]
+                    conversation_messages = self._trim_conversation_messages(conversation_messages, max_tail=6)
                 if accepted_result is not None:
                     return AgentTurn(role, task_type, last_response, accepted_result, iteration, transcript, initial_context, prompt_history)
                 continue
@@ -371,6 +370,36 @@ class AgentEngine:
             return str(self.platform.store.get_entity(str(actor_id)).get("name") or actor_id)
         except KeyError:
             return str(actor_id)
+
+    @staticmethod
+    def _trim_conversation_messages(messages: list[dict[str, Any]], *, max_tail: int = 6) -> list[dict[str, Any]]:
+        """Keep a bounded tail without orphaning native tool results.
+
+        OpenAI-compatible protocols require each ``tool`` message to follow
+        the assistant message that declared its correlation ID.  Cropping a
+        raw message slice can remove that declaration and make the next HTTP
+        request invalid.  Remove whole assistant/tool groups instead.
+        """
+
+        if len(messages) <= 2 + max(1, int(max_tail)):
+            return list(messages)
+        prefix = list(messages[:2])
+        tail = list(messages[2:])
+        limit = max(1, int(max_tail))
+        while len(tail) > limit:
+            removed = tail.pop(0)
+            if removed.get("role") == "assistant" and removed.get("tool_calls"):
+                while tail and tail[0].get("role") == "tool":
+                    tail.pop(0)
+            while tail and tail[0].get("role") == "tool":
+                tail.pop(0)
+        # A very large single tool group must remain intact even if it exceeds
+        # the nominal cap; protocol validity is more important than one turn's
+        # soft message budget.
+        if tail and tail[0].get("role") == "tool":
+            while tail and tail[0].get("role") == "tool":
+                tail.pop(0)
+        return prefix + tail
 
     @staticmethod
     def _interaction_tools(task_type: str) -> list[str] | None:

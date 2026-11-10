@@ -42,6 +42,7 @@ def main() -> None:
     build_world.add_argument("--instance-id")
     build_world.add_argument("--runtime-root", type=Path, default=Path.home() / ".sim2")
     build_world.add_argument("--provider", default="remote_beam", help="configured provider used for --brief")
+    build_world.add_argument("--max-completion-tokens", type=int, default=8192, help="creation-time output budget; ordinary runtime roles keep their configured smaller budget")
     build_world.add_argument("--audit-output", type=Path, help="optional JSON transcript path without credentials")
 
     decide = sub.add_parser("decide", help="run one Decision Agent turn")
@@ -129,10 +130,20 @@ def main() -> None:
                 raise ValueError("--template must contain a YAML object")
         else:
             brief = args.brief if args.brief is not None else args.brief_file.read_text(encoding="utf-8")
-            from ..world_builder import WorldBuilderService
+            from ..world_builder import WorldBuilderError, WorldBuilderService
 
-            provider = LLMRouter.from_default_config().new_provider_for_name(args.provider)
-            draft = WorldBuilderService(provider).build(brief)
+            provider = LLMRouter.from_default_config().new_provider_for_name(
+                args.provider,
+                max_completion_tokens=args.max_completion_tokens,
+            )
+            try:
+                draft = WorldBuilderService(provider).build(brief)
+            except WorldBuilderError as exc:
+                failed_audit = {"status": "rejected", "message": str(exc), "usage": exc.usage, "transcript": exc.transcript}
+                if args.audit_output:
+                    args.audit_output.parent.mkdir(parents=True, exist_ok=True)
+                    args.audit_output.write_text(json.dumps(failed_audit, ensure_ascii=False, indent=2), encoding="utf-8")
+                raise
             raw = draft.template
             build_audit = {"iterations": draft.iterations, "usage": draft.usage, "transcript": draft.transcript}
         package = write_world_package_from_template(raw, args.output, overwrite=args.overwrite)

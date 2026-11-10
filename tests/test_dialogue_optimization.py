@@ -152,6 +152,29 @@ def test_native_tool_arguments_are_readable_in_audit_copy():
     assert isinstance(raw["tool_calls"][0]["function"]["arguments"], str)
 
 
+def test_react_message_compaction_keeps_native_tool_groups_intact():
+    messages = [{"role": "system", "content": "s"}, {"role": "user", "content": "u"}]
+    for turn in range(3):
+        messages.append({
+            "role": "assistant",
+            "tool_calls": [
+                {"id": f"call-{turn}-a", "type": "function", "function": {"name": "listen", "arguments": "{}"}},
+                {"id": f"call-{turn}-b", "type": "function", "function": {"name": "recall_memory", "arguments": "{}"}},
+            ],
+        })
+        messages.append({"role": "tool", "tool_call_id": f"call-{turn}-a", "content": "{}"})
+        messages.append({"role": "tool", "tool_call_id": f"call-{turn}-b", "content": "{}"})
+    compacted = AgentEngine._trim_conversation_messages(messages, max_tail=6)
+    assert compacted[:2] == messages[:2]
+    assert compacted[2]["role"] == "assistant"
+    declared = set()
+    for message in compacted[2:]:
+        if message.get("role") == "assistant":
+            declared.update(call["id"] for call in message.get("tool_calls") or [])
+        if message.get("role") == "tool":
+            assert message["tool_call_id"] in declared
+
+
 def test_unbound_context_reference_does_not_leak_into_world_text():
     assert Platform._resolve_parameters({"topic": "context.topic"}, {}) == {"topic": None}
 

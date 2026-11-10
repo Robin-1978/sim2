@@ -92,6 +92,11 @@ them. A science-fiction world can use `integrity` and `charge`; a biological
 world can use different terms. Platform does not inject `health`, `energy`,
 `satiety`, food or village concepts.
 
+Character attributes describe the individual. Environmental, institutional,
+vehicle and facility values belong to world properties or entity state. For
+example, a diver may have `suit_integrity` while a station has
+`hull_integrity`; the same number must not appear in both scopes.
+
 ## Action and BT rule
 
 An Action is executable mechanics. It declares:
