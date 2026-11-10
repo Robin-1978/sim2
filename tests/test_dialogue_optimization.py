@@ -11,6 +11,7 @@ from sim2.intents.models import BehaviorIntent
 from sim2.actions.capacity import check_action_capacity
 from sim2.actions.conditions import ConditionEngine
 from sim2.actions.effects import EffectPipeline
+from sim2.llm.adapters import IcemanAdapter, resolve_adapter
 
 
 class WaitProvider:
@@ -63,6 +64,14 @@ def test_provider_intent_wrapper_uses_visible_behavior_choice():
     )
     assert normalized["choice"] == "Explore Greywood"
     assert normalized["target"] == {"name": "Greywood edge"}
+
+
+def test_iceman_adapter_keeps_tools_but_removes_unsupported_json_mode():
+    adapter = resolve_adapter("openai_compatible", "https://example.test", "iceman-contributor-free")
+    assert isinstance(adapter, IcemanAdapter)
+    payload = adapter.prepare_payload({"tools": [{"type": "function"}], "response_format": {"type": "json_object"}})
+    assert "tools" in payload
+    assert "response_format" not in payload
 
 
 def test_unbound_context_reference_does_not_leak_into_world_text():

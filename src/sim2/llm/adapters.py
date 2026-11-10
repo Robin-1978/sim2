@@ -49,8 +49,22 @@ class DeepSeekAdapter(ModelAdapter):
         return prepared
 
 
+@dataclass(frozen=True)
+class IcemanAdapter(ModelAdapter):
+    """Iceman accepts native tools but rejects OpenAI JSON response_format."""
+
+    name: str = "iceman"
+
+    def prepare_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        prepared = dict(payload)
+        prepared.pop("response_format", None)
+        return prepared
+
+
 def resolve_adapter(provider_type: str, base_url: str, model: str, hint: str | None = None) -> ModelAdapter:
     key = str(hint or "").casefold()
     if key in {"deepseek", "deepseek_chat"} or "deepseek" in str(model).casefold():
         return DeepSeekAdapter()
+    if key in {"iceman", "iceman_chat"} or "iceman" in str(model).casefold():
+        return IcemanAdapter()
     return ModelAdapter()
