@@ -205,6 +205,7 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
             evidence = str(payload.get("evidence") or "")
             checks.append(_check("god_progress_evidence_is_specific", len(evidence.strip()) >= 12, f"evidence_length={len(evidence)}"))
             checks.append(_check("god_progress_update_applied", turn.result.get("status") == "accepted" and bool(turn.result.get("progress")), f"status={turn.result.get('status')}; progress={bool(turn.result.get('progress'))}"))
+            checks.append(_check("god_progress_source_matches_definition", bool(turn.result.get("source_event_type") or turn.result.get("source_behavior_id")), f"source_event={turn.result.get('source_event_type')}; source_behavior={turn.result.get('source_behavior_id')}"))
         elif name == "propose_entity":
             checks.append(_check("god_entity_has_type_and_name", bool(payload.get("entity_type")) and len(str(payload.get("name", "")).strip()) >= 2, f"type={payload.get('entity_type')}; name={payload.get('name')}"))
             checks.append(_check("god_entity_platform_created", bool(turn.result.get("entity_id")), f"entity_id={turn.result.get('entity_id')}"))
@@ -263,6 +264,7 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
             evidence = str(payload.get("evidence") or "")
             checks.append(_check("story_progress_evidence_is_specific", len(evidence.strip()) >= 12, f"evidence_length={len(evidence)}"))
             checks.append(_check("story_progress_update_applied", turn.result.get("status") == "accepted" and bool(turn.result.get("progress")), f"status={turn.result.get('status')}; progress={bool(turn.result.get('progress'))}"))
+            checks.append(_check("story_progress_source_matches_definition", bool(turn.result.get("source_event_type") or turn.result.get("source_behavior_id")), f"source_event={turn.result.get('source_event_type')}; source_behavior={turn.result.get('source_behavior_id')}"))
         elif name == "wait" or payload.get("intent_type") == "wait" or turn.result.get("status") == "wait":
             checks.append(_check("story_can_wait_without_unlocked_beat", True, "no configured continuation was selected"))
         elif name == "propose_story_beat" or payload.get("intent_type") == "propose_story_beat":

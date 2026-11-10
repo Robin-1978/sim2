@@ -535,10 +535,18 @@ def validate_tool_arguments(name: str, arguments: dict[str, Any]) -> list[str]:
 class AgentToolExecutor:
     """Execute role-allowed tools and route every mutation to Platform."""
 
-    def __init__(self, platform: "Platform", *, role: str, actor_id: str):
+    def __init__(
+        self,
+        platform: "Platform",
+        *,
+        role: str,
+        actor_id: str,
+        source_event_ids: list[int] | None = None,
+    ):
         self.platform = platform
         self.role = role
         self.actor_id = actor_id
+        self.source_event_ids = [int(value) for value in (source_event_ids or []) if int(value) > 0]
         self.allowed = set(ROLE_TOOLS.get(role, []))
 
     def execute(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -751,7 +759,13 @@ class AgentToolExecutor:
         return self.platform.submit_capability_update(self.actor_id, capability, float(delta), evidence)
 
     def _record_world_progress(self, progress_key: str, delta: float, evidence: str) -> dict[str, Any]:
-        return self.platform.submit_world_progress(self.actor_id, progress_key, float(delta), evidence)
+        return self.platform.submit_world_progress(
+            self.actor_id,
+            progress_key,
+            float(delta),
+            evidence,
+            source_event_ids=self.source_event_ids,
+        )
 
     def _propose_institution(
         self,

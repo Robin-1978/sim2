@@ -40,6 +40,16 @@ def _display_item(value: Any) -> str:
     return str(value).removeprefix("context.").replace("_", " ")
 
 
+def _display_number(value: Any) -> str:
+    """Keep preformatted context strings free of binary float tails."""
+
+    if isinstance(value, float):
+        if abs(value - round(value)) < 1e-9:
+            return str(int(round(value)))
+        return f"{value:.4f}".rstrip("0").rstrip(".")
+    return str(value)
+
+
 def _cost_text(action: dict[str, Any], recipe: dict[str, Any] | None = None) -> list[str]:
     costs = action.get("costs", {})
     out: list[str] = []
@@ -1058,7 +1068,13 @@ class AgentViewCompiler:
             "active_task": {"bt": None, "action": None, "remaining_minutes": 0},
             "executable_behaviors": [], "story_beats": choices[:12],
             "world_progress_candidates": [
-                {"progress_key": str(key), "required": float((value or {}).get("required", 1) or 1)}
+                {
+                    "progress_key": str(key),
+                    "required": float((value or {}).get("required", 1) or 1),
+                    "description": str((value or {}).get("description") or ""),
+                    "evidence_event_types": [str(item) for item in ((value or {}).get("evidence_event_types") or [])],
+                    "evidence_behaviors": [str(item) for item in ((value or {}).get("evidence_behaviors") or [])],
+                }
                 for key, value in ((self.store.get_meta("rules", {}) or {}).get("civilization_progress", {}) or {}).items()
                 if isinstance(value, dict)
             ],
@@ -1136,7 +1152,10 @@ class AgentViewCompiler:
             if (agent.get("initial_state") or {}).get("status") in {"executing", "paused"}
         )
         world_properties = self.store.get_meta("world_properties", {}) or {}
-        world_summary = "; ".join(f"{str(key).replace('_', ' ')}={value}" for key, value in world_properties.items()) or "none"
+        world_summary = "; ".join(
+            f"{str(key).replace('_', ' ')}={_display_number(value)}"
+            for key, value in world_properties.items()
+        ) or "none"
         world_id = str(self.store.get_meta("world_id", "world"))
         prompt_protocol, platform_rules = self._prompt_sections(role)
         behavior_catalog = []
@@ -1183,7 +1202,13 @@ class AgentViewCompiler:
             "world_trends": world_trends,
             "civilization_progress": self.store.list_progress(world_id, limit=20),
             "world_progress_candidates": [
-                {"progress_key": str(key), "required": float((value or {}).get("required", 1) or 1)}
+                {
+                    "progress_key": str(key),
+                    "required": float((value or {}).get("required", 1) or 1),
+                    "description": str((value or {}).get("description") or ""),
+                    "evidence_event_types": [str(item) for item in ((value or {}).get("evidence_event_types") or [])],
+                    "evidence_behaviors": [str(item) for item in ((value or {}).get("evidence_behaviors") or [])],
+                }
                 for key, value in ((self.store.get_meta("rules", {}) or {}).get("civilization_progress", {}) or {}).items()
                 if isinstance(value, dict)
             ],

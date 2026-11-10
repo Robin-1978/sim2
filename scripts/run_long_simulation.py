@@ -39,9 +39,22 @@ class DeterministicProvider:
                 return {"intent_type": "propose_story_beat", "beat": choices[0], "reason": "Activate the configured beat after the validated discovery."}
             return {"intent_type": "wait", "reason": "No configured story continuation is available."}
         behavior_section = context.split("<executable_behaviors>", 1)[-1].split("</executable_behaviors>", 1)[0]
-        choices = re.findall(r"^\s+choice: (.+)$", behavior_section, flags=re.MULTILINE)
+        blocks = re.findall(r"<behavior>(.*?)</behavior>", behavior_section, flags=re.DOTALL)
+        # This provider has no semantic model and therefore cannot invent a
+        # message, topic or explicit participant. Select only choices whose
+        # inputs Platform can resolve from the validated view. Predictable
+        # schema rejections are not useful long-run behavior evidence.
+        choices = []
+        for block in blocks:
+            if re.search(r"^\s+parameters: .*\brequired\b", block, flags=re.MULTILINE):
+                continue
+            if "Choose one participant explicitly" in block:
+                continue
+            match = re.search(r"^\s+choice: (.+)$", block, flags=re.MULTILINE)
+            if match:
+                choices.append(match.group(1))
         if not choices:
-            return {"intent_type": "wait", "reason": "No executable behavior."}
+            return {"intent_type": "wait", "reason": "No executable behavior without user-facing parameters."}
         choice = choices[(self.calls - 1) % len(choices)]
         return {"choice": choice, "reason": "Choose an offered behavior for the current state.", "confidence": 0.7}
 

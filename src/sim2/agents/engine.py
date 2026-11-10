@@ -183,7 +183,12 @@ class AgentEngine:
             result = {"status": "wait", "reason": "No completed outcome or meaningful event is available for reflection."}
             return AgentTurn(role, task_type, {}, result, 0, [{"step": "guard", "result": result}], {}, [])
         task = self._task_text(role, task_type)
-        executor = AgentToolExecutor(self.platform, role=role, actor_id=actor_id)
+        executor = AgentToolExecutor(
+            self.platform,
+            role=role,
+            actor_id=actor_id,
+            source_event_ids=event_ids,
+        )
         last_response: dict[str, Any] = {}
         last_result: dict[str, Any] = {"status": "no_result"}
         transcript: list[dict[str, Any]] = []
@@ -339,7 +344,14 @@ class AgentEngine:
                     return AgentTurn(role, task_type, last_response, accepted_result, iteration, transcript, initial_context, prompt_history)
                 continue
 
-            result = self._submit_response(role, actor_id, response, context=context, task_type=task_type)
+            result = self._submit_response(
+                role,
+                actor_id,
+                response,
+                context=context,
+                task_type=task_type,
+                source_event_ids=event_ids,
+            )
             transcript.append({"step": "intent", "response": response, "result": result})
             conversation_messages.append({"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
             conversation_messages.append({"role": "user", "content": f"Platform result: {json.dumps(result, ensure_ascii=False)}"})
@@ -615,7 +627,16 @@ class AgentEngine:
             return f"Task type: {task_type}. Review newly recorded discoveries and choose one configured story beat that is now unlocked; otherwise wait. Platform applies only the configured beat consequences."
         return f"Task type: {task_type}. Produce or refine one declarative world template."
 
-    def _submit_response(self, role: str, actor_id: str, response: dict[str, Any], *, context: dict[str, Any] | None = None, task_type: str = "") -> dict[str, Any]:
+    def _submit_response(
+        self,
+        role: str,
+        actor_id: str,
+        response: dict[str, Any],
+        *,
+        context: dict[str, Any] | None = None,
+        task_type: str = "",
+        source_event_ids: list[int] | None = None,
+    ) -> dict[str, Any]:
         data = response.get("intent") if isinstance(response.get("intent"), dict) else dict(response)
         if not isinstance(data, dict):
             return {"status": "rejected", "failed_check": "intent_schema", "retryable": True, "message": "Intent must be an object."}
@@ -747,7 +768,13 @@ class AgentEngine:
             if intent_type == "update_capability":
                 return self.platform.submit_capability_update(actor_id, str(data.get("capability") or ""), float(data.get("delta", 0)), str(data.get("evidence") or ""))
             if intent_type == "record_world_progress":
-                return self.platform.submit_world_progress(actor_id, str(data.get("progress_key") or ""), float(data.get("delta", 0)), str(data.get("evidence") or ""))
+                return self.platform.submit_world_progress(
+                    actor_id,
+                    str(data.get("progress_key") or ""),
+                    float(data.get("delta", 0)),
+                    str(data.get("evidence") or ""),
+                    source_event_ids=source_event_ids,
+                )
             if intent_type == "propose_institution":
                 return self.platform.submit_institution_proposal(actor_id, {
                     "name": data.get("name"), "purpose": data.get("purpose"), "scope": data.get("scope"),

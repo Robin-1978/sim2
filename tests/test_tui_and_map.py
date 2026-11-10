@@ -50,8 +50,11 @@ def test_tui_mounts_map_timeline_controls_and_character_table(tmp_path: Path):
         async with app.run_test(size=(150, 45)) as pilot:
             await pilot.pause()
             assert "starter_village" in str(app.query_one("#status_bar").content)
+            assert "07:00" in str(app.query_one("#status_bar").content)
             assert "村广场" in str(app.query_one("#map").content)
             assert app.query_one("#agents").row_count >= 9
+            first = app.service.observer(1)["agents"][0]
+            assert first["location"] != first["location_id"]
             app.action_toggle_pause()
             await pilot.pause()
             assert "paused" in str(app.query_one("#status_bar").content)

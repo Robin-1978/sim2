@@ -134,10 +134,30 @@ capability_progression:
   research: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
   navigation: {minimum_completed_outcomes: 3, max_delta: 0.08, max_value: 1.0}
 civilization_progress:
-  governance_capacity: {required: 5, wake: [story, god]}
-  public_health: {required: 4, wake: [story, god]}
-  trade_network: {required: 4, wake: [story, god]}
-  food_system: {required: 5, wake: [story, god]}
+  governance_capacity:
+    required: 5
+    wake: [story, god]
+    description: Verified governance, ration, or conflict-resolution work improves public coordination.
+    evidence_event_types: [governance.reviewed, ration.policy_reviewed, conflict.mediation_completed]
+    evidence_behaviors: [govern_village, manage_ration, mediate_conflict]
+  public_health:
+    required: 4
+    wake: [story, god]
+    description: Verified prevention, treatment, or water-safety work improves public health.
+    evidence_event_types: [water.mitigation.applied, health.treatment_completed, public_health.measure_completed]
+    evidence_behaviors: [mitigate_water, heal_target]
+  trade_network:
+    required: 4
+    wake: [story, god]
+    description: Verified trade, negotiation, or route-recovery results strengthen the trade network.
+    evidence_event_types: [trade.completed, trade.ledger_recovered, negotiation.result_recorded]
+    evidence_behaviors: [recover_caravan_ledger, negotiate]
+  food_system:
+    required: 5
+    wake: [story, god]
+    description: Verified food production, collection, or ration work strengthens the food system.
+    evidence_event_types: [ration.policy_reviewed, resource.changed]
+    evidence_behaviors: [craft_meal, gather_resource, gather_at_known_node, manage_ration]
 capability_modifiers:
   cooking:
     craft_recipe:

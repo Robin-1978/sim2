@@ -22,6 +22,11 @@ The screen has four live areas:
 - **Characters**: location, execution state, active BT and minutes remaining.
 - **Details and command bar**: public attributes plus player or observer commands.
 
+The status bar uses the instance's configured calendar, starting clock, day
+phase and season. Character rows show public location and behavior names; raw
+SQLite identifiers remain available through the audit API rather than being
+used as the primary interface text.
+
 Keys: `p` pauses or resumes, `s` advances exactly one minute while paused,
 `r` refreshes and `q` exits. Buttons expose the same controls. The command bar
 accepts `map`, `look`, `move`, `say`, trade commands and the text-client command

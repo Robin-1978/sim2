@@ -211,17 +211,35 @@ class Platform(ActivityRuntimeMixin):
     def observer_view(self, *, event_limit: int = 20) -> dict[str, Any]:
         """Return public whole-world telemetry without private memories."""
 
+        behavior_defs = {
+            str(item.get("id")): item for item in self.store.get_definitions("bt_def")
+        }
         agents = []
         for agent in self.store.list_agents():
             state = agent.get("initial_state", {}) or {}
+            location_id = str(state.get("location_id") or "")
+            try:
+                location_name = str(self.store.get_entity(location_id).get("name") or location_id)
+            except KeyError:
+                location_name = location_id or "unknown"
+            behavior_id = str(state.get("active_behavior_id") or "")
+            behavior = behavior_defs.get(behavior_id, {})
             agents.append({
                 "id": agent["id"],
                 "name": agent.get("name", agent["id"]),
                 "role": agent.get("role", "agent"),
-                "location": state.get("location_id"),
+                "location_id": location_id,
+                "location": location_name,
                 "status": state.get("status", "idle"),
                 "attributes": self.attribute_schema.values(state, agent.get("needs", {}) or {}),
-                "active_behavior": state.get("active_behavior_id"),
+                "active_behavior_id": behavior_id or None,
+                "active_behavior": (
+                    behavior.get("agent_label")
+                    or behavior.get("summary")
+                    or behavior.get("description")
+                    or behavior_id
+                    or None
+                ),
                 "remaining_minutes": state.get("remaining_minutes", 0),
             })
         public_events = []
@@ -234,6 +252,7 @@ class Platform(ActivityRuntimeMixin):
         return {
             "status": "ok",
             "world_time": int(self.store.get_meta("world_minute", 0)),
+            "world_clock": world_time_view(self.store),
             "world_id": self.store.get_meta("world_id"),
             "world_properties": self.store.get_meta("world_properties", {}) or {},
             "agents": agents,
@@ -351,11 +370,6 @@ class Platform(ActivityRuntimeMixin):
         if "entity_id" in normalized_parameters and "target_id" not in normalized_parameters:
             normalized_parameters["target_id"] = normalized_parameters["entity_id"]
         normalized_parameters.pop("entity_id", None)
-        for key in ("target_id", "patient_id", "protected_target_id", "counterparty_id", "listener_id", "location_id"):
-            if normalized_parameters.get(key):
-                canonical = self.targets.canonical_id(normalized_parameters[key])
-                if canonical:
-                    normalized_parameters[key] = canonical
         for target_alias in ("entity_id", "id"):
             if target_alias in intent.target and "target_id" not in normalized_parameters:
                 normalized_parameters["target_id"] = intent.target[target_alias]
@@ -365,6 +379,17 @@ class Platform(ActivityRuntimeMixin):
             normalized_parameters.pop(alias, None)
             if alias in intent.target and "location_id" not in normalized_parameters:
                 normalized_parameters["location_id"] = intent.target[alias]
+        # Models use the visible names supplied by AgentView.  Normalize every
+        # entity reference only after target aliases have been folded into the
+        # registered Action parameters.  Doing this earlier left values copied
+        # from ``target.location`` as display text (for example ``粮仓``), while
+        # navigation compares stable entity IDs (``granary``).  The behavior
+        # was accepted from a valid view and then failed one tick later.
+        for key in ("target_id", "patient_id", "protected_target_id", "counterparty_id", "listener_id", "location_id"):
+            if normalized_parameters.get(key):
+                canonical = self.targets.canonical_id(normalized_parameters[key])
+                if canonical:
+                    normalized_parameters[key] = canonical
         intent_data = {
             "actor_id": intent.actor_id,
             "behavior_ref": intent.behavior_ref,
@@ -776,7 +801,15 @@ class Platform(ActivityRuntimeMixin):
             self.store.finish_intent(intent_id, "accepted", result)
         return result
 
-    def submit_world_progress(self, actor_id: str, progress_key: str, delta: float, evidence: str) -> dict[str, Any]:
+    def submit_world_progress(
+        self,
+        actor_id: str,
+        progress_key: str,
+        delta: float,
+        evidence: str,
+        *,
+        source_event_ids: list[int] | None = None,
+    ) -> dict[str, Any]:
         """Record public progress proposed by Story or God from real outcomes."""
 
         intent_id = str(uuid4())
@@ -790,18 +823,62 @@ class Platform(ActivityRuntimeMixin):
             return self._reject_intent(intent_id, actor_id, "record_world_progress", data, {"status": "rejected", "message": "World progress key is not configured.", "failed_check": "progress_key", "retryable": True})
         if not 0 < float(delta) <= 5 or len(evidence) < 12:
             return self._reject_intent(intent_id, actor_id, "record_world_progress", data, {"status": "rejected", "message": "Progress delta or evidence is invalid.", "failed_check": "evidence", "retryable": True})
-        outcomes = self.store.recent_behavior_outcomes(limit=20)
-        if not outcomes:
+        source_events = (
+            self.store.events_by_ids(list(source_event_ids or []))
+            if source_event_ids
+            else self.store.recent_events(limit=200)
+        )
+        if not source_events:
             return self._reject_intent(intent_id, actor_id, "record_world_progress", data, {"status": "rejected", "message": "A public progress update needs a recent behavior outcome.", "failed_check": "insufficient_evidence", "retryable": True})
+        allowed_events = {str(item) for item in (definition.get("evidence_event_types") or [])}
+        allowed_behaviors = {str(item) for item in (definition.get("evidence_behaviors") or [])}
+        matching_sources = [
+            item for item in source_events
+            if (
+                not allowed_events and not allowed_behaviors
+            ) or (
+                str(item.get("event_type") or "") in allowed_events
+                or str(item.get("behavior_id") or "") in allowed_behaviors
+            )
+        ]
+        if not matching_sources:
+            description = str(definition.get("description") or progress_key.replace("_", " "))
+            return self._reject_intent(intent_id, actor_id, "record_world_progress", data, {
+                "status": "rejected",
+                "message": f"The triggering result is not configured evidence for {description}. Choose a matching progress category or wait.",
+                "failed_check": "progress_evidence_mismatch",
+                "retryable": True,
+            })
+        source_event = matching_sources[-1] if source_event_ids else matching_sources[0]
+        data.update({
+            "source_event_id": int(source_event.get("event_id", 0) or 0),
+            "source_event_type": str(source_event.get("event_type") or ""),
+            "source_behavior_id": str(source_event.get("behavior_id") or ""),
+        })
         world_minute = int(self.store.get_meta("world_minute", 0))
         world_id = str(self.store.get_meta("world_id", "world"))
         required = float(definition.get("required", 1) or 1)
         with self.store.transaction():
             self.store.create_intent(intent_id, actor_id, "record_world_progress", data, world_minute)
-            progress = self.store.advance_progress(world_id, progress_key, float(delta), required, world_minute, {"evidence": evidence, "source_agent": actor_id})
+            progress = self.store.advance_progress(world_id, progress_key, float(delta), required, world_minute, {
+                "evidence": evidence,
+                "source_agent": actor_id,
+                "source_event_id": data["source_event_id"],
+                "source_event_type": data["source_event_type"],
+                "source_behavior_id": data["source_behavior_id"],
+            })
             event_type = "civilization.milestone" if progress["completed"] else "civilization.progressed"
-            event_id = self.store.append_event(event_type, actor_id, world_minute, {"progress": progress, "evidence": evidence, "source_agent": actor_id})
-            result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "progress": progress, "milestone": bool(progress["completed"])}
+            event_id = self.store.append_event(event_type, actor_id, world_minute, {"progress": progress, **data, "source_agent": actor_id})
+            result = {
+                "status": "accepted",
+                "intent_id": intent_id,
+                "event_id": event_id,
+                "progress": progress,
+                "milestone": bool(progress["completed"]),
+                "source_event_id": data["source_event_id"],
+                "source_event_type": data["source_event_type"],
+                "source_behavior_id": data["source_behavior_id"],
+            }
             if progress["completed"]:
                 wake = list(definition.get("wake") or [])
                 self._queue_configured_followups({"wake": wake}, event_id, event_type, actor_id, world_minute)
@@ -2285,6 +2362,9 @@ class Platform(ActivityRuntimeMixin):
 
     def _apply_minute_effects(self, minute: int) -> None:
         rules = self.store.get_meta("rules", {}) or {}
+        minute_event_state = dict(self.store.get_meta("minute_effect_event_state", {}) or {})
+        minute_event_state_changed = False
+        world_properties = self.store.get_meta("world_properties", {}) or {}
         for regeneration in rules.get("resource_regeneration", []) or []:
             every = max(1, int(regeneration.get("every_minutes", 1)))
             if minute % every != 0:
@@ -2309,15 +2389,19 @@ class Platform(ActivityRuntimeMixin):
             self.store.put_entity(entity["id"], entity["entity_type"], entity["name"], payload)
             self.store.sync_world_property_from_resource(entity["id"], after)
             self.store.append_event("resource.regenerated", None, minute, {"resource_id": entity["id"], "amount": after - before, "total": after})
-        for effect in rules.get("minute_effects", []) or []:
-            every = max(1, int(effect.get("every_minutes", 1)))
-            if minute % every != 0:
-                continue
-            scope = effect.get("scope")
-            definition = effect.get("effect", {}) or {}
-            if scope == "agent":
-                changed_agents: list[dict[str, Any]] = []
-                for agent in self.store.list_agents():
+        due_effects = [
+            effect
+            for effect in (rules.get("minute_effects", []) or [])
+            if minute % max(1, int(effect.get("every_minutes", 1))) == 0
+        ]
+        agent_effects = [effect for effect in due_effects if effect.get("scope") == "agent"]
+        if agent_effects:
+            changed_agents: list[dict[str, Any]] = []
+            vital = self.attribute_schema.vital_attribute()
+            vital_minimum = self.attribute_schema.minimum(vital) if vital else 0
+            for agent in self.store.list_agents():
+                agent_changed = False
+                for effect in agent_effects:
                     state = dict(agent.get("initial_state") or {})
                     before_state = dict(state)
                     before_needs = dict(agent.get("needs") or {})
@@ -2329,15 +2413,25 @@ class Platform(ActivityRuntimeMixin):
                         agent=agent,
                         target={},
                         context={"current_location": self._entity_for_context(state.get("location_id"))},
-                        world=self.store.get_meta("world_properties", {}) or {},
+                        world=world_properties,
                     ):
                         continue
-                    self._apply_simple_effect(agent, definition)
-                    self._emit_minute_effect_events(effect, agent, minute, before_state, before_needs)
+                    self._apply_simple_effect(agent, effect.get("effect", {}) or {})
+                    agent_changed = True
+                    if effect.get("events"):
+                        minute_event_state_changed = self._emit_minute_effect_events(
+                            effect,
+                            agent,
+                            minute,
+                            before_state,
+                            before_needs,
+                            event_state=minute_event_state,
+                            rules=rules,
+                            world=world_properties,
+                        ) or minute_event_state_changed
                     state = dict(agent.get("initial_state") or {})
-                    vital = self.attribute_schema.vital_attribute()
                     vital_value = float(state.get(vital, 1) or 0) if vital else 1
-                    if vital and vital_value <= self.attribute_schema.minimum(vital) and state.get("status") not in {"unconscious", "dead"}:
+                    if vital and vital_value <= vital_minimum and state.get("status") not in {"unconscious", "dead"}:
                         state["status"] = "unconscious"
                         conditions = list(state.get("conditions") or [])
                         if "incapacitated" not in conditions:
@@ -2345,9 +2439,14 @@ class Platform(ActivityRuntimeMixin):
                         state["conditions"] = conditions
                         agent["initial_state"] = state
                         self.store.append_event("agent.incapacitated", agent["id"], minute, {"reason": effect.get("id", "minute_effect")})
+                if agent_changed:
                     changed_agents.append(agent)
-                self.store.update_agents_bulk(changed_agents)
-            elif scope == "world":
+            self.store.update_agents_bulk(changed_agents)
+
+        for effect in due_effects:
+            scope = effect.get("scope")
+            definition = effect.get("effect", {}) or {}
+            if scope == "world":
                 key = definition.get("world_property") or definition.get("property") or definition.get("need")
                 if key:
                     properties = dict(self.store.get_meta("world_properties", {}) or {})
@@ -2365,6 +2464,11 @@ class Platform(ActivityRuntimeMixin):
                     data = {key: value for key, value in relation.items() if key not in {"from", "to", "type"}}
                     data["relation_strength"] = float(data.get("relation_strength", data.get("value", 0))) + relation_delta
                     self.store.put_relationship(relation["from"], relation["to"], relation["type"], data)
+        if minute_event_state_changed:
+            # Threshold state belongs to the whole minute. Persisting the
+            # growing map after every agent/effect made a 1,000-agent tick
+            # encode and decode the same JSON thousands of times.
+            self.store.set_meta("minute_effect_event_state", minute_event_state)
 
     def _apply_simple_effect(self, agent: dict[str, Any], effect: dict[str, Any]) -> None:
         self.effects.apply(agent, effect)
@@ -2376,21 +2480,32 @@ class Platform(ActivityRuntimeMixin):
         minute: int,
         before_state: dict[str, Any],
         before_needs: dict[str, Any],
-    ) -> None:
+        *,
+        event_state: dict[str, Any],
+        rules: dict[str, Any],
+        world: dict[str, Any],
+    ) -> bool:
         """Emit configured threshold or recurring events after a minute effect."""
 
         configured = rule.get("events", []) or []
         if not isinstance(configured, list):
-            return
-        event_state = dict(self.store.get_meta("minute_effect_event_state", {}) or {})
-        location = self._entity_for_context((agent.get("initial_state") or {}).get("location_id"))
-        rules = self.store.get_meta("rules", {}) or {}
+            return False
+        changed_state = False
+        conditions = " ".join(
+            str(item.get("condition") or rule.get("condition") or "")
+            for item in configured
+            if isinstance(item, dict)
+        )
+        location = (
+            self._entity_for_context((agent.get("initial_state") or {}).get("location_id"))
+            if "location." in conditions or "current_location" in conditions
+            else {}
+        )
         context = {
             "current_location": location,
             "location_id": (agent.get("initial_state") or {}).get("location_id"),
             "satiety_alert_threshold": float(rules.get("satiety_alert_threshold", 40) or 40),
         }
-        world = self.store.get_meta("world_properties", {}) or {}
         for index, item in enumerate(configured):
             if not isinstance(item, dict):
                 continue
@@ -2427,8 +2542,10 @@ class Platform(ActivityRuntimeMixin):
                 if item.get("trend") is True:
                     payload["trend"] = True
                 self.store.append_event(event_type, agent["id"], minute, payload)
-            event_state[state_key] = active
-        self.store.set_meta("minute_effect_event_state", event_state)
+            if previous != active or state_key not in event_state:
+                event_state[state_key] = active
+                changed_state = True
+        return changed_state
 
     def _world_trigger_context(self) -> dict[str, Any]:
         context = dict(self.store.get_meta("world_properties", {}) or {})

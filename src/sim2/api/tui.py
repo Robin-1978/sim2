@@ -174,8 +174,8 @@ class WorldTUI(App[None]):
         view = self.service.observer(100)
         map_view = self.service.map(viewer_id=self.player_id, observer=self.observer)
         minute = int(status.get("world_minute", 0))
-        day, within_day = divmod(minute, 1440)
-        hour, minute_of_hour = divmod(within_day, 60)
+        clock = view.get("world_clock") or {}
+        time_label = str(clock.get("label") or f"minute {minute}")
         runtime = str(status.get("status", "unknown"))
         worker_note = ""
         if self.worker:
@@ -183,7 +183,7 @@ class WorldTUI(App[None]):
             if self.worker.last_error:
                 worker_note += f" · provider error: {self.worker.last_error[:100]}"
         self.query_one("#status_bar", Static).update(
-            f"{view.get('world_id')}  ·  Day {day + 1}, {hour:02d}:{minute_of_hour:02d}  ·  minute {minute}  ·  {runtime}{worker_note}"
+            f"{view.get('world_id')}  ·  {time_label}  ·  minute {minute}  ·  {runtime}{worker_note}"
         )
         self.query_one("#map", Static).update(render_topology_map(map_view))
 

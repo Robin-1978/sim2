@@ -356,7 +356,10 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("  </audience_candidates>")
         progress_candidates = context.get("world_progress_candidates") or []
         if progress_candidates:
-            lines.append("  Configured public progress keys: " + "; ".join(str(item.get("progress_key")) for item in progress_candidates[:8]))
+            lines.append("  Configured public progress (submit only when the validated source matches):")
+            for item in progress_candidates[:8]:
+                evidence = list(item.get("evidence_event_types") or []) + list(item.get("evidence_behaviors") or [])
+                lines.append(f"  - {item.get('progress_key')}: {item.get('description') or 'configured progress'}; accepted evidence={_plain(evidence) or 'any validated outcome'}")
         beats = context.get("story_beats") or []
         for beat in beats[:12]:
             lines.append("  <story_beat>")
@@ -380,7 +383,16 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("</world_proposal_contract>")
         progress_candidates = context.get("world_progress_candidates") or []
         lines.append("<configured_public_progress>")
-        lines.append("  " + ("; ".join(f"{item.get('progress_key')} target={_number(item.get('required', 1))}" for item in progress_candidates[:12]) if progress_candidates else "none configured; do not invent a progress key"))
+        if progress_candidates:
+            for item in progress_candidates[:12]:
+                evidence = list(item.get("evidence_event_types") or []) + list(item.get("evidence_behaviors") or [])
+                lines.append(
+                    f"  - {item.get('progress_key')} target={_number(item.get('required', 1))}: "
+                    f"{item.get('description') or 'configured progress'}; accepted evidence={_plain(evidence) or 'any validated outcome'}"
+                )
+            lines.append("  Submit progress only when the triggering evidence matches the named progress definition; otherwise wait.")
+        else:
+            lines.append("  none configured; do not invent a progress key")
         lines.append("</configured_public_progress>")
         lines.append("<rule_condition_fields>")
         fields = context.get("rule_condition_fields") or []

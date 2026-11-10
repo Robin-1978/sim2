@@ -183,6 +183,28 @@ def _database_checks(data: dict[str, Any]) -> dict[str, Any]:
         for execution_id in sorted(action_started - action_finished - running_actions):
             issues.append(_issue("action_execution_not_closed", f"action_instance={execution_id}"))
 
+        # A behavior may fail legitimately, but repeatedly offering the same
+        # unchanged choice with the same failure means AgentView validation and
+        # execution disagree.  Structural closure alone would otherwise mark
+        # every failed instance as healthy.
+        repeated_failures: dict[tuple[str, str, str], list[int]] = {}
+        for row in event_rows:
+            if row["event_type"] != "behavior.failed":
+                continue
+            item = payload(row)
+            key = (
+                str(row["actor_id"] or ""),
+                str(item.get("behavior_id") or ""),
+                str(item.get("result") or (item.get("outcome") or {}).get("result") or ""),
+            )
+            repeated_failures.setdefault(key, []).append(int(row["world_minute"]))
+        for (actor_id, behavior_id, result), minutes in repeated_failures.items():
+            if len(minutes) >= 3:
+                issues.append(_issue(
+                    "repeated_behavior_failure",
+                    f"actor={actor_id}; behavior={behavior_id}; result={result}; minutes={minutes[:12]}",
+                ))
+
         scheduled_due = rows("SELECT task_id,status,due_minute FROM evolution_task WHERE due_minute<=?", (final_minute if final_minute is not None else (requested or 10**9),))
         open_statuses = {"ready", "claimed", "running", "scheduled"}
         open_tasks = [row for row in scheduled_due if str(row["status"]) in open_statuses]

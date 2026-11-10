@@ -1795,6 +1795,112 @@ def test_world_progress_has_no_implicit_consumers_without_configured_wake(tmp_pa
         platform.close()
 
 
+def test_world_progress_rejects_a_trigger_from_the_wrong_configured_domain(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "progress-evidence-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            pact_event = platform.store.append_event(
+                "pact.stability_improved",
+                "su_wu",
+                10,
+                {"behavior_id": "stabilize_pact", "result": "pact_stabilized"},
+            )
+        rejected = platform.submit_world_progress(
+            "god",
+            "governance_capacity",
+            1,
+            "A pact stabilization measure completed.",
+            source_event_ids=[pact_event],
+        )
+        assert rejected["status"] == "rejected"
+        assert rejected["failed_check"] == "progress_evidence_mismatch"
+
+        with platform.store.transaction():
+            governance_event = platform.store.append_event(
+                "governance.reviewed",
+                "lin_bo",
+                11,
+                {"behavior_id": "govern_village", "result": "stock_reported"},
+            )
+        accepted = platform.submit_world_progress(
+            "god",
+            "governance_capacity",
+            1,
+            "A governance review produced a verified stock report.",
+            source_event_ids=[governance_event],
+        )
+        assert accepted["status"] == "accepted"
+        assert accepted["source_event_type"] == "governance.reviewed"
+        assert accepted["source_behavior_id"] == "govern_village"
+    finally:
+        platform.close()
+
+
+def test_god_reacts_to_progress_domain_rejection_and_waits(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "progress-react-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            source_event = platform.store.append_event(
+                "pact.stability_improved",
+                "su_wu",
+                10,
+                {"behavior_id": "stabilize_pact", "result": "pact_stabilized"},
+            )
+        provider = SequenceProvider([
+            {"tool_calls": [{
+                "id": "wrong-progress",
+                "type": "function",
+                "function": {
+                    "name": "record_world_progress",
+                    "arguments": json.dumps({
+                        "progress_key": "governance_capacity",
+                        "delta": 1,
+                        "evidence": "A pact stabilization measure completed.",
+                    }),
+                },
+            }]},
+            {"tool_calls": [{
+                "id": "wait-after-feedback",
+                "type": "function",
+                "function": {
+                    "name": "wait",
+                    "arguments": json.dumps({"reason": "The pact result matches no configured public progress category."}),
+                },
+            }]},
+        ])
+
+        turn = AgentEngine(platform, provider).run(
+            role="god",
+            actor_id="god",
+            task_type="event:pact.stability_improved",
+            source_event_id=source_event,
+        )
+
+        assert turn.result["status"] == "wait"
+        rejected = next(step for step in turn.transcript if step.get("name") == "record_world_progress")
+        assert rejected["result"]["failed_check"] == "progress_evidence_mismatch"
+        assert "not configured evidence" in provider.calls[1]["context"]
+    finally:
+        platform.close()
+
+
+def test_world_level_prompt_formats_precomputed_property_summary(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "world-summary-format", tmp_path / "runtime"))
+    try:
+        properties = dict(platform.store.get_meta("world_properties") or {})
+        properties["water_quality"] = 0.1 + 0.2
+        with platform.store.transaction():
+            platform.store.set_meta("world_properties", properties)
+        prompt = render_context(platform.view.build_decision_view("god", role="god"), "Review the world.")
+        assert "water quality=0.3" in prompt
+        assert "0.30000000000000004" not in prompt
+    finally:
+        platform.close()
+
+
 def test_decision_session_does_not_call_llm_while_behavior_is_active(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "active-world", tmp_path / "runtime")

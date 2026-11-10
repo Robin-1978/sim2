@@ -44,6 +44,14 @@ threat, dispatch help, or change a rule. The patrol tree must not contain a
 hard-coded world policy. A governance report must contain the measured stock
 and risk facts; God decides whether to ration, trade, or change a rule.
 
+Civilization progress uses the same evidence boundary. Every configured
+progress dimension may declare accepted event types and behavior names. The
+world-level Agent receives a plain description of those sources, while
+Platform binds a submission to the task's actual source event. A pact
+stabilization result therefore cannot be posted to governance capacity merely
+because both are beneficial public work. A source that matches no configured
+dimension produces no progress update.
+
 The Platform may validate generic fields such as `state_delta`,
 `need_delta`, `inventory_add`, `entity_state_set`, `world_property_delta`,
 `relationship_delta`, `public_event`, `information`, and `progress`. It must

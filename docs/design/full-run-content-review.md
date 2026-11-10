@@ -83,3 +83,23 @@ follow-up behavior records. Memory claims carry the resolved source event;
 are rejected, while `promised` and `inferred` remain explicitly weaker. The
 remaining semantic acceptance step is the real-provider audit described in
 the development plan.
+
+## First post-fix run findings
+
+A later 1,440-minute DeepSeek run reached the target with 141 structurally
+valid sessions, completed the water, pact, boundary-mark and warning-bell
+follow-ups, and no longer invented a ledger delivery or public reading. Manual
+review still found two defects that the earlier structural audit missed:
+
+- Liang He selected local grain gathering six times, but the visible location
+  name was copied after reference normalization, so Action execution compared
+  `粮仓` with the SQLite ID `granary` and failed `route.known` each time.
+- God posted a pact-stabilization result to `governance_capacity`; the evidence
+  was real but belonged to a different progress domain.
+
+The reference boundary now canonicalizes visible names after all aliases are
+merged. The audit rejects three repeated identical behavior failures. Public
+progress definitions now declare accepted event and behavior evidence, and
+Platform binds God/Story submissions to the evolution task's causal source
+event. The next release audit must run from a fresh instance because the first
+post-fix database contains the pre-repair failures and incorrect progress row.
