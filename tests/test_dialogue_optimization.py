@@ -33,6 +33,17 @@ def test_flattened_function_call_is_normalized():
     )
 
 
+def test_compatible_tool_use_envelopes_are_normalized():
+    assert parse_tool_call({"tool": "wait", "parameters": {"reason": "No new work."}}) == (
+        "wait",
+        {"reason": "No new work."},
+    )
+    assert parse_tool_call({"tool_uses": [{"tool": "observe_nearby", "arguments": {"question": "What is here?"}}]}) == (
+        "observe_nearby",
+        {"question": "What is here?"},
+    )
+
+
 def test_unbound_context_reference_does_not_leak_into_world_text():
     assert Platform._resolve_parameters({"topic": "context.topic"}, {}) == {"topic": None}
 

@@ -905,7 +905,20 @@ def parse_tool_call(response: dict[str, Any]) -> tuple[str, dict[str, Any]] | No
         candidate = response.get("function_call")
     if candidate is None and response.get("tool_calls"):
         candidate = response["tool_calls"][0]
+    # Several OpenAI-compatible free models use the Anthropic/SDK-style
+    # ``tool_uses`` envelope in JSON mode even when native tools were not
+    # negotiated.  Treat it as a prompt-level call; the Engine will append
+    # the result as ordinary ReAct context and will not fabricate a native
+    # provider correlation id.
+    if candidate is None and response.get("tool_uses"):
+        candidate = response["tool_uses"][0]
     if candidate is None and response.get("type") == "tool_call":
+        candidate = response
+    # Longcat and a few other compatible endpoints flatten a call as
+    # ``{"tool": "name", "parameters": {...}}``.  This is still a tool
+    # request, not a world Intent; normalize it before the role and Platform
+    # validation layers see it.
+    if candidate is None and isinstance(response.get("tool"), str):
         candidate = response
     # Some OpenAI-compatible gateways flatten one function call to
     # ``{"name": ..., "arguments": {...}}``.  Accept that wire shape at the
@@ -917,8 +930,14 @@ def parse_tool_call(response: dict[str, Any]) -> tuple[str, dict[str, Any]] | No
     if not isinstance(candidate, dict):
         return None
     function = candidate.get("function") if isinstance(candidate.get("function"), dict) else candidate
-    name = function.get("name") or candidate.get("name")
-    arguments = function.get("arguments", function.get("args", candidate.get("arguments", {})))
+    name = function.get("name") or candidate.get("name") or candidate.get("tool")
+    arguments = function.get(
+        "arguments",
+        function.get(
+            "args",
+            candidate.get("arguments", candidate.get("parameters", candidate.get("input", {}))),
+        ),
+    )
     if not isinstance(name, str) or not name:
         return None
     if isinstance(arguments, str):
