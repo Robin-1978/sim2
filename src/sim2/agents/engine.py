@@ -770,6 +770,14 @@ class AgentEngine:
         target = normalized.get("target")
         if isinstance(target, str) and target.strip():
             normalized["target"] = {"name": target.strip()}
+        elif isinstance(target, dict):
+            target_copy = dict(target)
+            if not target_copy.get("name"):
+                for key, value in target_copy.items():
+                    if str(key).casefold() in {"participant", "entity", "target"} and isinstance(value, str) and value.strip():
+                        target_copy["name"] = value.strip()
+                        break
+            normalized["target"] = target_copy
         return normalized
 
     @staticmethod

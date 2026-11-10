@@ -1563,6 +1563,27 @@ class Platform(ActivityRuntimeMixin):
         """Activate one configured story beat after Platform checks its evidence."""
 
         intent_id = str(uuid4())
+        proposal = dict(proposal or {})
+
+        def visible_label(value: Any) -> str:
+            text = str(value or "").strip()
+            # Models sometimes serialize a visible name with one extra pair
+            # of quotes inside the JSON string. Remove only wrapping quotes;
+            # exact Platform name resolution still decides whether it exists.
+            for _ in range(2):
+                if len(text) >= 2 and text[0] == text[-1] and text[0] in {"\"", "'"}:
+                    text = text[1:-1].strip()
+                else:
+                    break
+            return text
+
+        for key in ("beat", "summary", "fact", "goal_hint", "reason"):
+            if key in proposal and isinstance(proposal[key], str):
+                proposal[key] = visible_label(proposal[key])
+        if isinstance(proposal.get("audience"), list):
+            proposal["audience"] = [visible_label(item) for item in proposal["audience"]]
+        if isinstance(proposal.get("unlock_choices"), list):
+            proposal["unlock_choices"] = [visible_label(item) for item in proposal["unlock_choices"]]
         story_root = self.store.get_meta("story", {}) or {}
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
         beats = list(story_root.get("beats", []) or []) if isinstance(story_root, dict) else []

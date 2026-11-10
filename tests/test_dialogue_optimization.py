@@ -67,6 +67,14 @@ def test_provider_intent_wrapper_uses_visible_behavior_choice():
     assert normalized["target"] == {"name": "Greywood edge"}
 
 
+def test_provider_target_alias_is_mapped_to_visible_name():
+    normalized = AgentEngine._normalize_provider_intent(
+        "agent_decision",
+        {"choice": "Exchange information with another character.", "target": {"Participant": "余歌"}},
+    )
+    assert normalized["target"]["name"] == "余歌"
+
+
 def test_iceman_adapter_keeps_tools_but_removes_unsupported_json_mode():
     adapter = resolve_adapter("openai_compatible", "https://example.test", "iceman-contributor-free")
     assert isinstance(adapter, IcemanAdapter)
@@ -371,6 +379,25 @@ def test_story_rejects_unverified_public_movement_claim(tmp_path: Path):
         )
         assert result["status"] == "rejected"
         assert result["failed_check"] == "story_unverified_action_claim"
+    finally:
+        platform.close()
+
+
+def test_story_visible_names_strip_model_wrapping_quotes(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "story-quote-cleanup", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            platform.store.append_event("security.investigation_completed", "he_yan", 10, {"story_source": True, "summary": "The boundary marks were investigated and classified."})
+        result = platform.submit_story_beat(
+            "story",
+            {
+                "summary": '"The north gate investigation is recorded."',
+                "fact": '"The boundary marks were investigated and classified."',
+                "goal_hint": '"Continue monitoring the north gate."',
+                "audience": ['"何砚"'],
+            },
+        )
+        assert result["status"] == "accepted"
     finally:
         platform.close()
 
