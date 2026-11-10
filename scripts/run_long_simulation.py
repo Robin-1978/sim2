@@ -28,15 +28,11 @@ class DeterministicProvider:
         if "Reflection" in system or "reflection" in context.lower():
             return {"intent_type": "wait", "reason": "No new durable lesson in this smoke-test window."}
         if "God Agent" in system:
-            return {
-                "intent_type": "propose_world_change",
-                "change_type": "world_property",
-                "summary": "The weekly review updates fog pressure from measured world signals.",
-                "scope": "world",
-                "property": "fog_level",
-                "value": 0.2,
-                "expected_effects": ["Fog pressure is recorded at 0.2."],
-            }
+            # The performance baseline must not manufacture a direct God
+            # property mutation. A real God session may submit a typed,
+            # evidence-backed proposal; this deterministic provider simply
+            # declines when it has no semantic reviewer.
+            return {"intent_type": "wait", "reason": "No evidence-backed world proposal in the baseline provider."}
         if "Story Agent" in system or "<story_state>" in context:
             choices = re.findall(r"^\s+choice: (.+)$", context, flags=re.MULTILINE)
             if choices:
