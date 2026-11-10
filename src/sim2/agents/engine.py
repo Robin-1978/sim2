@@ -220,11 +220,20 @@ class AgentEngine:
                 native_tool_calls = response.get("tool_calls") if isinstance(response.get("tool_calls"), list) else None
                 calls: list[tuple[str, dict[str, Any], dict[str, Any] | None]] = []
                 if native_tool_calls:
+                    normalized_native_calls: list[dict[str, Any]] = []
                     for native_call in native_tool_calls:
+                        native_call = dict(native_call)
+                        # A malformed compatible endpoint may omit the native
+                        # correlation id. Generate a session-local protocol
+                        # id so multiple results cannot collide. This is not a
+                        # world/entity id and is never used for Platform state.
+                        if not str(native_call.get("id") or "").strip():
+                            native_call["id"] = f"platform-tool-{iteration}-{len(normalized_native_calls)}"
+                        normalized_native_calls.append(native_call)
                         parsed = parse_tool_call({"tool_calls": [native_call]})
                         if parsed is not None:
                             calls.append((parsed[0], parsed[1], native_call))
-                    conversation_messages.append({"role": "assistant", "tool_calls": native_tool_calls})
+                    conversation_messages.append({"role": "assistant", "tool_calls": normalized_native_calls})
                 else:
                     calls.append((call[0], call[1], None))
                 accepted_result: dict[str, Any] | None = None

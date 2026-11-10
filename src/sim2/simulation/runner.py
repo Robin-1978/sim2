@@ -107,9 +107,11 @@ class SimulationRunner:
         """Dispatch zero-minute dialogue/trade events as bounded micro-turns."""
 
         provider = self.providers.get("agent_decision")
-        if provider is None:
+        if provider is None or self._provider_cooling_down(provider):
             return
         for event in reversed(self.platform.store.recent_events(limit=100)):
+            if self._provider_cooling_down(provider):
+                return
             event_id = int(event.get("event_id", 0))
             if event_id in self._interaction_events_seen:
                 continue
@@ -158,6 +160,10 @@ class SimulationRunner:
             self._observe_turn(turn, recipient_id)
             report.decisions += 1
             self._record_turn(report, turn.result, recipient_id)
+            if turn.result.get("failed_check") == "llm_response":
+                # A provider outage must not consume the interaction event;
+                # it remains eligible after the scheduler backoff.
+                self._interaction_events_seen.discard(event_id)
             if turn.result.get("status") == "accepted" and (
                 turn.result.get("interaction_committed")
                 or turn.result.get("trade_committed")
@@ -231,10 +237,12 @@ class SimulationRunner:
 
     def _run_idle_decisions(self, report: SimulationReport) -> None:
         provider = self.providers.get("agent_decision")
-        if provider is None:
+        if provider is None or self._provider_cooling_down(provider):
             return
         minute = int(self.platform.store.get_meta("world_minute", 0))
         for agent in self.platform.store.list_agents():
+            if self._provider_cooling_down(provider):
+                return
             agent_id = agent["id"]
             state = agent.get("initial_state", {}) or {}
             if state.get("status") in {"executing", "paused"} or minute < max(self._decision_not_before.get(agent_id, 0), self._llm_not_before(agent_id), self._interaction_not_before.get(agent_id, 0)):
@@ -250,6 +258,8 @@ class SimulationRunner:
             self._observe_turn(turn, agent_id)
             report.decisions += 1
             self._record_turn(report, turn.result, agent_id)
+            if self._provider_cooling_down(provider):
+                return
             if turn.result.get("status") == "wait":
                 report.waits += 1
                 self._decision_not_before[agent_id] = minute + self.wait_cooldown_minutes
@@ -278,6 +288,8 @@ class SimulationRunner:
                     self.platform.pause("story_agent_provider_missing")
                     return
                 continue
+            if self._provider_cooling_down(provider):
+                return
             claimed = self.platform.claim_evolution_task(task["task_id"])
             if claimed is None:
                 continue
@@ -315,6 +327,19 @@ class SimulationRunner:
                     # it or Platform receives an operator resume decision.
                     self.platform.pause("story_agent_feedback_pending")
                     return
+            if self._provider_cooling_down(provider):
+                return
+
+    @staticmethod
+    def _provider_cooling_down(provider: Any) -> bool:
+        """Avoid issuing more calls while a provider circuit breaker is open."""
+
+        value = getattr(provider, "cooldown_remaining", 0.0)
+        try:
+            remaining = value() if callable(value) else value
+            return float(remaining or 0.0) > 0.0
+        except (TypeError, ValueError):
+            return False
 
     def _llm_not_before(self, agent_id: str) -> int:
         return self._llm_retry_until.get(agent_id, 0)

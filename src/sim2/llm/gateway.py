@@ -56,11 +56,17 @@ class OpenAICompatibleProvider:
     def __post_init__(self) -> None:
         self.adapter = resolve_adapter(self.config.provider_type, self.config.base_url, self.config.model, self.config.adapter)
 
+    @property
+    def cooldown_remaining(self) -> float:
+        """Seconds until this provider may issue another request."""
+
+        return max(0.0, self._cooldown_until - time.monotonic())
+
     def _post(self, url: str, *, headers: dict[str, str], payload: dict[str, Any]) -> httpx.Response:
         """Perform a bounded retry for transport and transient upstream errors."""
 
         retry_statuses = {408, 425, 429, 500, 502, 503, 504}
-        remaining = self._cooldown_until - time.monotonic()
+        remaining = self.cooldown_remaining
         if remaining > 0:
             raise RuntimeError(f"LLM provider cooldown active; retry after {remaining:.1f}s")
         attempts = max(0, int(self.config.max_retries))
