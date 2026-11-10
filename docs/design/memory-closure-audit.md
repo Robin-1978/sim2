@@ -49,11 +49,16 @@ separates model/backend revisions. Retrieval ranks at most 1,000 permitted
 records per tier, but BGE reranking is bounded by `embedding_candidate_limit`
 (256 by default). FTS/lexical ranking produces that candidate set first.
 
-LanceDB is intentionally not required for the current scale. Each world has
-one SQLite file and roughly 10,000 records still fit a lexical-candidate plus
-NumPy rerank path without a second service or storage format. If a future
-world exceeds the bounded candidate scan, `sqlite-vec` or LanceDB can be added
-behind the same retrieval interface; correctness does not depend on either.
+LanceDB is intentionally not required for the current scale. Its current
+[vector-index guidance](https://docs.lancedb.com/indexing/vector-index) says
+that exact disk kNN is normally sufficient at roughly 100,000 rows or fewer;
+ANN index overhead becomes worthwhile closer to million-row/high-dimensional
+workloads or strict latency targets. A sim2 world currently has tens to
+thousands of permitted records per Agent and must remain one portable SQLite
+file. LanceDB would add `lancedb`/PyArrow dependencies and a second storage
+directory while still requiring BGE to encode every new query. If a future
+world exceeds the bounded scan, LanceDB can be added behind the same retrieval
+interface and measured against exact recall before it becomes the default.
 
 At roughly 10,000 memories per Agent, SQLite storage is not the limiting risk;
 candidate generation, encoding time, and prompt size are. The planned query
@@ -61,6 +66,16 @@ path is permission scope → FTS/dense candidate generation → BGE ranking →
 tag soft boost → bounded prompt slice. Tags must never hard-filter a semantically
 relevant memory. `sqlite-vec` can be evaluated later as an optional accelerator,
 but it is not required for correctness.
+
+A controlled ten-query paraphrase check over Starter Village concepts found
+Recall@1 of 2/10 for the lexical fallback and 8/10 for BGE when the relevant
+memory shared little surface wording with the query. This is deliberately a
+hard semantic case, not a production-quality benchmark; normal goal/location/
+behavior tags reduce the gap. The corresponding micro-run took about 0.005 s
+for lexical ranking and 0.31 s for ten BGE queries including model setup/cache
+work. BGE therefore stays enabled for decision-boundary retrieval, Reflection
+deduplication, and explicit recall, but it never runs as part of an otherwise
+idle world-minute update.
 
 The default decision view retrieves only a small split of short-term and
 long-term records using the current goal, location, drives, and executable
