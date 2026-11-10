@@ -58,7 +58,12 @@ class EventWakeScheduler:
             states = dict(self.store.get_meta(state_key, {}) or {})
             for group in groups:
                 group_id = str(group.get("id") or "group")
-                last_event_id = int((states.get(group_id) or {}).get("last_event_id", 0) or 0)
+                group_state = states.get(group_id) or {}
+                last_event_id = int(group_state.get("last_event_id", 0) or 0)
+                cooldown_minutes = max(0, int(group.get("cooldown_minutes", 0) or 0))
+                last_wake_minute = int(group_state.get("last_wake_minute", -10**9) or -10**9)
+                if cooldown_minutes and int(minute) - last_wake_minute < cooldown_minutes:
+                    continue
                 event_types = [str(value) for value in (group.get("event_types") or [])]
                 if not event_types:
                     continue
@@ -74,6 +79,8 @@ class EventWakeScheduler:
                     "last_event_id": int(rows[-1]["event_id"]),
                     "observed_count": len(rows),
                     "minimum_events": minimum,
+                    "cooldown_minutes": cooldown_minutes,
+                    "last_wake_minute": int(minute),
                     "updated_minute": int(minute),
                 }
                 self.store.set_meta(state_key, states)

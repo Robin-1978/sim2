@@ -324,9 +324,9 @@ def test_research_wakes_story_and_god_only_after_configured_rounds(tmp_path: Pat
         rows = platform.store.connection.execute("SELECT role,task_type FROM evolution_task WHERE task_type='event:research.completed'").fetchall()
         assert {row["role"] for row in rows} == {"story"}
         # One completed source is not enough for a world-level synthesis.
-        # The starter package requires three independent research results;
+        # The starter package requires five independent research results;
         # content packs can choose a longer or shorter evidence threshold.
-        for minute in (201, 202):
+        for minute in (201, 202, 203, 204):
             with platform.store.transaction():
                 event_id = platform.store.append_event("research.completed", "qiao_ning", minute, {"summary": "Another validated research result."})
             platform._queue_event_consumer_task("god", event_id, "research.completed", "qiao_ning", minute, task_type="event:research.completed")

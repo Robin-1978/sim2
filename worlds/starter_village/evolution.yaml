@@ -33,9 +33,9 @@ evolution:
         # the configured number of independent results.
         batch_minutes: 0
         event_groups:
-          - {id: research_synthesis, event_types: [research.completed], minimum_events: 3}
-          - {id: governance_capacity, event_types: [governance.reviewed, ration.policy_reviewed], minimum_events: 5}
-          - {id: trade_network, event_types: [negotiation.result_recorded], minimum_events: 4}
-          - {id: public_incident, event_types: [water.mitigation.applied, pact.stability.improved, security.marks_classified, entity.installed, defense.village_response, defense.position_result], minimum_events: 1}
+          - {id: research_synthesis, event_types: [research.completed], minimum_events: 5, cooldown_minutes: 10080}
+          - {id: governance_capacity, event_types: [governance.reviewed, ration.policy_reviewed], minimum_events: 8, cooldown_minutes: 10080}
+          - {id: trade_network, event_types: [negotiation.result_recorded], minimum_events: 6, cooldown_minutes: 10080}
+          - {id: public_incident, event_types: [water.mitigation.applied, pact.stability.improved, security.marks_classified, entity.installed, defense.village_response, defense.position_result], minimum_events: 1, cooldown_minutes: 1440}
       story: {batch_minutes: 0}
       agent_reflection: {batch_minutes: 0, actor_scoped: true}
