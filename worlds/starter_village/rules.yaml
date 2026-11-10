@@ -3,7 +3,7 @@ capacity_attribute: energy
 perception:
   visible_fields: [role, type, summary, description, public]
   visible_state_fields: [status, quantity, durability, created, readable, recovered, installed]
-  audible_event_types: [dialogue.completed, trade.offer_created, trade.countered, trade.completed, alarm.sounded, defense.village_response, clinic.fever_reported]
+  audible_event_types: [dialogue.completed, trade.offer_created, trade.countered, trade.completed, alarm.raised, defense.village_response, clinic.fever_reported]
   global:
     fields: [role, type, summary, description, public]
     state_fields: [status, location_id, quantity, durability, created, readable, recovered, installed]
@@ -224,6 +224,7 @@ decision_policy:
   - behavior.failed
   - story.beat.activated
   - trade.offer_created
+  - alarm.raised
 need_effects:
   dialogue.completed:
     belonging: 1

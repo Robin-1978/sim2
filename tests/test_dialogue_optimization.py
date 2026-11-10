@@ -410,6 +410,27 @@ def test_starter_bell_enables_alarm_only_when_threat_is_configured(tmp_path: Pat
         for _ in range(alarm["remaining_minutes"]):
             platform.step()
         assert any(item["event_type"] == "alarm.raised" for item in platform.store.timeline_events(limit=100))
+        heard = platform.perception.listen("lin_bo", "Was an alarm raised?", 10)
+        assert any(item["event_type"] == "alarm.raised" for item in heard["events"])
+
+        response_choices = {item["ref"] for item in platform.decision_view("he_yan")["executable_behaviors"]}
+        assert "behavior:sound_alarm" not in response_choices
+        assert "behavior:defend_village" in response_choices
+        before = platform.store.get_meta("world_properties")["north_gate_threat_level"]
+        defense = platform.submit_behavior(BehaviorIntent(
+            "he_yan", "behavior:defend_village", {}, {},
+            "Respond to the verified alarm and secure the northern boundary.", 0.95, "bell-alarm-response",
+        ))
+        assert defense["status"] == "accepted"
+        for _ in range(defense["remaining_minutes"]):
+            platform.step()
+        after = platform.store.get_meta("world_properties")["north_gate_threat_level"]
+        assert after < before
+        assert after < 0.7
+        assert any(item["event_type"] == "defense.village_response" for item in platform.store.timeline_events(limit=200))
+        assert "behavior:defend_village" not in {
+            item["ref"] for item in platform.decision_view("he_yan")["executable_behaviors"]
+        }
     finally:
         platform.close()
 

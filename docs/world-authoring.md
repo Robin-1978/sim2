@@ -76,6 +76,12 @@ event types or BT tags that prove a later movement, meeting, delivery or public
 statement. Runtime Story tasks always bind their exact causal event IDs first;
 these fields are a configurable validation fallback, not a source guess.
 
+`evolution.event_wake_policy` is also an admission contract. If a consumer has
+`event_groups`, an Action or BT that wakes that consumer must emit an event in
+one of those groups. Exceptional channels use `direct_event_types` or
+`direct_task_type_prefixes`. `validate-world` rejects mismatches before a
+SQLite instance is created.
+
 IDs are internal references and use stable `snake_case`. Labels, summaries and
 prompts are short natural language written for people and Agents. References
 must resolve inside the same template. The validator rejects missing routes,
@@ -142,6 +148,12 @@ An Action is executable mechanics. It declares:
 - typed effects;
 - success and failure outcomes;
 - interruption and interaction policy.
+
+Knowledge-dependent remediation must name its evidence as a machine
+precondition, for example `actor.knowledge.researched:source:finding`. Plain
+description text does not unlock an Action. A source-dependent Action also
+requires the configured source at the actor's current location; travel belongs
+in the surrounding BT.
 
 A BT is the choice shown to an individual Agent. Its `agent_label`, summary,
 requirements, estimated time, costs and likely effects are compiled into short

@@ -31,6 +31,7 @@ subset; Platform recomputes every condition, cost and effect from SQLite.
 | Attack | You are alive; the target is visible, reachable and combat is allowed. | 6 minutes | Damage, hostility and the combat result are recorded. |
 | Defend | You are alive and can protect the target. | 30 minutes; energy 0.3/min; attention 0.4/min | The protection window and result are recorded. |
 | Flee To Safety | A known route leads to a safe or defensible destination. | Route-dependent; energy 0.5/min | The actor reaches safety or fails from exhaustion. |
+| Secure Boundary | You can defend, are at a watch post, and the configured public threat is high. | 120 minutes; energy 0.3/min; attention 0.2/min | The verified threat falls and a defense result is recorded. |
 | Sound Alarm | An installed alarm is ready and a real threat exists. | 3 minutes; attention 0.2/min | A warning event is broadcast. |
 | Craft Recipe | The recipe, station and inputs are available. | Recipe-defined: 90–180 minutes in this world | Inputs are consumed and outputs and skill evidence are recorded. |
 | Consume Food | You carry `rations`, `ration`, or `cooked_meal`; the model weighs food against other needs. | 1 minute | One item is consumed and Satiety increases. |
@@ -48,12 +49,12 @@ subset; Platform recomputes every condition, cost and effect from SQLite.
 | Manage Ration | Review stock and coordinate rationing. | The granary keeper has a pending ration decision. | Inspect; Travel; Communicate | 45 + route |
 | Heal Target | Restore a target with available treatment. | A nearby target needs treatment and medicine exists. | Heal Target | 90 |
 | Explore Greywood | Map Greywood and record findings. | The area is not fully mapped and you can explore. | Travel To; Explore Area | Route + 300 |
-| Research Source | Study an accessible source and record cumulative progress. | A relevant source has a new fact. | Research Source | 240 per sample |
+| Research Source | Study an accessible source and record cumulative progress. | A relevant source is at the current location and has a new fact. | Research Source | 240 per sample |
 | Inspect Object | Inspect an accessible object or facility. | Inspection is due and the object is reachable. | Inspect Object | 30 |
-| Defend Village | Respond to an active village threat. | A threat is active and you are on watch. | Sound Alarm; choose a configured branch | 3 + branch |
+| Defend Village | Respond to a verified boundary alarm. | The alarm was raised, the threat remains high, and you can defend. | Travel To North Gate; Secure Boundary | Route + 120 |
 | Defend Position | Hold position and attack if needed. | A reachable threat is active. | Defend; Attack | 36 |
 | Flee To Safety | Escape to a safe location. | The threat is overwhelming. | Flee To Safety | Route-dependent |
-| Sound Alarm | Raise a warning. | A threat is detected and the installed alarm is ready. | Sound Alarm | 3 |
+| Sound Alarm | Raise an audible warning and wake the next response decision. | A threat is detected, the installed alarm is ready, and the cooldown elapsed. | Sound Alarm | 3 |
 | Craft Meal | Craft food from available inputs. | A cooking station and recipe inputs are available. | Craft Recipe | 90 |
 | Communicate | Exchange information with another character. | A participant is available and its cooldown has elapsed. | Communicate | 15 |
 | Negotiate | Reach an agreement with another character. | A counterparty is available and its cooldown has elapsed. | Negotiate | 60 |

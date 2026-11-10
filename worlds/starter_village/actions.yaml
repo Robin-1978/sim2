@@ -609,6 +609,46 @@ actions:
   interrupt_policy: cancel
   interaction_policy: deny
   executor: effect_pipeline
+- id: secure_boundary
+  version: 1
+  description: Carry out a configured boundary defense that reduces the active public threat.
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.can_defend
+  - location.tag.watch_post
+  - world.north_gate_threat_level >= 0.7
+  duration:
+    minutes: 120
+  costs:
+    reserve: {}
+    per_minute:
+      energy: 0.3
+      attention: 0.2
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: north_gate_threat_level
+    delta: -0.35
+    minimum: 0.0
+  success:
+    condition: world.north_gate_threat_level < 0.7
+    result: boundary_secured
+  failure:
+    condition: actor.incapacitated
+    result: defense_interrupted
+  information:
+    event_type: defense.boundary_secured
+    wake: []
+    summary: A configured boundary defense reduced the verified public threat.
+    result: boundary_secured
+  interrupt_policy: pause
+  interaction_policy: deny
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
 - id: sound_alarm
   version: 1
   description: 向村庄广播边界或战斗警报

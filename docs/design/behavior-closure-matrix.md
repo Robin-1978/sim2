@@ -29,13 +29,13 @@ behavior tree.
 | `manage_ration` | Stock observation, policy discussion, personal esteem/belonging effects, event and fact are persisted | God / Reflection | Closed as a policy recommendation; God applies any later world policy through a validated proposal |
 | `govern_village` | Stock observation, governance report, and personal needs change | Reflection; God after the configured governance evidence count | Closed as a report; one review does not wake a world-level Agent |
 | `patrol_route` | Route report, knowledge fact, personal needs and trend signal are persisted | Reflection; Story/God only when a configured discovery or incident is relevant | Closed as an observation; routine patrols do not wake God |
-| `defend_village` | Alarm and defense result event are persisted; God receives the report | Story / God | Closed as a report; threat policy is external |
+| `defend_village` | After a verified alarm, the defender travels to the boundary, spends configured time and capacity, lowers the configured threat property, and records the defense result | Story / God | Closed; the world delta is produced by the configured defense Action |
 | `defend_position` | Protected status and defense result event are persisted | Reflection / Story for a public threat | Closed as a response report |
 | `flee_to_safety` | Location changes and escape event are persisted | Next decision / Reflection | Closed |
-| `sound_alarm` | Public alarm event is persisted and Story/God are woken | Story / God | Closed as a signal; response is external |
+| `sound_alarm` | The alarm is persisted, is audible through the perception policy, clears the actor's decision backoff, and unlocks the configured defense response while threat remains high | Story / next individual decision | Closed; the alarm itself does not lower threat |
 | `explore_greywood` | Map result, discoveries, knowledge, and unlocks are persisted | Story; God only for a configured world-level discovery | Closed |
-| `research_water` | Cumulative research progress and final fact are persisted | Story per discovery; God after the configured research synthesis count | Closed when the configured source is available |
-| `research_source` | Cumulative progress and final knowledge fact are persisted | Story; God only when the configured fact has a world-level consequence | Closed |
+| `research_water` | Cumulative research progress and final fact are persisted; water mitigation remains unavailable until that exact fact exists | Story per discovery; God after the configured research synthesis count | Closed when the configured source is co-located after travel |
+| `research_source` | Cumulative progress and final knowledge fact are persisted; pact stabilization remains unavailable until that exact fact exists | Story; God only when the configured fact has a world-level consequence | Closed; a source at another location cannot be researched remotely |
 | `recover_caravan_ledger` | Object state, trade evidence, knowledge, and public effect change | Story / God | Closed |
 
 The matrix deliberately distinguishes a direct result from a later policy.
@@ -87,6 +87,11 @@ completed research results”, “five governance reviews”, or “one public s
 incident”; Platform wakes God only when that configured count is reached. This
 is causal evidence accumulation, not a daily timer. High-impact public results
 may use a group threshold of one.
+
+An event-group policy is also an admission rule. An unmatched event is not
+silently promoted to a direct call. Worlds list exceptional direct events or
+task prefixes explicitly, and package validation checks every Action and BT
+wake against the consumer policy before a SQLite instance is created.
 
 God is not an autonomous resource operator. It is scheduled for a weekly local
 review and a monthly structural review, and it may be woken by a configured

@@ -35,6 +35,7 @@ capabilities:
   uses:
   - attack
   - defend
+  - secure_boundary
   xp_rule: one_resolved_attack
 - id: exploration
   name: 探索

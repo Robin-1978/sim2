@@ -19,8 +19,8 @@ story-specific duration branch belongs in runtime code.
 | Research | one sample | 240 minutes, plus travel | Research progress is cumulative; two samples unlock the result |
 | Exploration | travel + survey | 300 minutes, plus travel | Exposure is 0.3/minute and one ration is reserved |
 | Crafting | meal / ration / medicine / bell | 90 / 120 / 180 / 180 minutes | Recipe definitions own time, inputs, outputs and skill evidence |
-| Public measures | water / pact | 120 / 180 minutes, plus travel where configured | Each completion changes a configured world property |
-| Deployment / emergency | install / alarm / attack | 20 / 3 / 6 minutes, plus travel | Alarm and attack are short response actions; they require a real threat or target |
+| Public measures | water / pact | 120 / 180 minutes, plus travel where configured | Each is hidden until its exact research fact exists, then changes a configured world property |
+| Deployment / emergency | install / alarm / boundary defense / attack | 20 / 3 / 120 / 6 minutes, plus travel | Alarm wakes the next response decision; defense lowers verified threat; attack requires a target |
 
 Composite examples use the same calculation: `explore_greywood` is 305
 minutes from the north gate (5-minute route plus 300-minute survey),
@@ -56,12 +56,11 @@ structural entity, narrative beat, or world progress. A proposed Action/BT
 must be declarative, validated and registered by Platform, then selected and
 executed by a real actor through the normal duration and cost pipeline.
 
-## Remaining runtime guard
+## Runtime guard
 
-Action `success.condition` currently contains both machine-checkable predicates
-and human result labels. Runtime enforces supported predicates such as
-`actor.state.energy >= 80`; symbolic labels are result contracts backed by the
-configured effect/information pipeline. The next generic guard must evaluate a
-post-action projection of actor, target, inventory, world, entity, progress and
-information, and reject a failed machine predicate without adding package IDs
-to Platform.
+Action `success.condition` may contain a machine-checkable predicate or a
+symbolic result contract. Runtime evaluates supported predicates against the
+post-action projection inside one savepoint. A false predicate rolls back the
+effect and information event together. Symbolic labels remain contracts backed
+by the configured effect/information pipeline; no package ID is embedded in
+Platform.

@@ -67,13 +67,16 @@ Decision Agent 选择 craft_meal BT
   → Platform 更新烹饪熟练度并写入事件
 ```
 
-例如“应对灰林狼群”使用 BT 的选择节点：
+例如“响应边界警报”使用可验证的串行 BT：
 
 ```text
+sound_alarm BT
+  → sound_alarm Action 记录可听见的 alarm.raised
+  → 事件唤醒执行者的下一次决策
 defend_village BT
-  → sound_alarm Action
-  → 选择 defend_position BT 或 flee_to_safety BT
-  → defend_position BT 可以执行 defend Action 和 attack Action
+  → travel_to Action 前往北门
+  → secure_boundary Action 消耗时间与体力并降低威胁值
+  → Platform 记录 defense.village_response
 ```
 
 BT 负责计划和控制流，Recipe 负责材料变换，Action 负责时间化执行，Platform 负责全部状态变化。

@@ -499,9 +499,10 @@ behavior_trees:
   version: 1
   scope: village_watch
   entry_conditions:
-  - actor.role == watch_captain or actor.can_patrol
-  - threat.at_village
-  estimated_minutes: 39
+  - actor.can_defend
+  - world.north_gate_threat_level >= 0.7
+  - event.recent.alarm.raised
+  estimated_minutes: 125
   interrupt_policy: interruptible
   success_results:
   - threat_contained
@@ -509,6 +510,10 @@ behavior_trees:
   failure_results:
   - defense_broken
   - retreat_required
+  outcome_effects:
+  - {type: need_delta, need: safety, delta: 2}
+  - {type: need_delta, need: belonging, delta: 1}
+  - {type: need_delta, need: esteem, delta: 1}
   outcome_events:
   - event_type: defense.village_response
     wake: [story, god]
@@ -518,14 +523,11 @@ behavior_trees:
   drive_tags: [safety, belonging]
   nodes:
   - type: action
-    action_id: sound_alarm
+    action_id: travel_to
     parameters:
-      alarm_type: village_attack
-      location_id: watchtower
-  - type: selector
-    children:
-    - defend_position
-    - flee_to_safety
+      location_id: north_gate
+  - type: action
+    action_id: secure_boundary
 - id: defend_position
   version: 1
   scope: personal
@@ -571,6 +573,7 @@ behavior_trees:
   - world.north_gate_alarm_ready >= 1
   - world.north_gate_threat_level >= 0.7
   estimated_minutes: 3
+  cooldown_minutes: 720
   success_results: [alarm_raised]
   failure_results: [alarm_failed, device_broken]
   nodes:
