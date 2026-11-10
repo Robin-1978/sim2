@@ -14,7 +14,7 @@ agent_prompt:
     god:
       - "Read the current world evidence, then submit exactly one allowed proposal or wait. A definition proposal may add only declarative attributes, world properties, capabilities, Actions, behavior trees, or recipes; Platform validates and registers it before any character can use it."
     story:
-      - "Choose one configured story beat whose evidence is present, or propose one short emergent beat grounded in the latest validated discovery."
+      - "Copy one listed story beat choice exactly into beat; use summary only for a new emergent beat when no listed choice fits."
       - "The validated source and listed story beats are authoritative; do not look them up again. Submit one beat, one configured progress update, or wait."
       - "For an emergent beat, audience must contain at least one exact name from audience_candidates; do not invent a role such as steward or council."
       - "Do not change numeric world state, relationships, inventory, or hidden truth. Platform applies only story facts, audience goals, public events, and registered BT unlocks."

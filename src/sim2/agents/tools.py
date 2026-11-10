@@ -146,7 +146,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "type": "object",
             "properties": {
                 "choice": {"type": "string", "description": "The exact visible behavior name from the current executable list."},
-                "target": {"type": "object", "description": "Optional target details using visible names, never database identifiers."},
+                "target": {"type": "object", "description": "Optional target; use {name: exact visible participant or entity name}.", "properties": {"name": {"type": "string"}}, "additionalProperties": False},
             },
             "required": ["choice"],
             "additionalProperties": False,
@@ -372,7 +372,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "propose_story_beat": {
-        "purpose": "Activate one configured story beat after a validated discovery or research result.",
+        "purpose": "Activate one listed beat by exact visible choice, or submit one short evidence-grounded emergent beat.",
         "kind": "intent",
         "parameters": {
             "type": "object",
