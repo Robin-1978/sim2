@@ -25,9 +25,10 @@ concerns, not permission defects.
 The first 967-minute remote baseline recorded 396 instant dialogue sessions
 and 2.30M dialogue prompt tokens. The messages were fluent, but the same
 topics (ration shares, trade ledgers, and river contamination) were reopened
-every few minutes with little new information. The cause was a pair-only round
-counter combined with a 30-minute retry window, while each reply received the
-full planning view.
+every few minutes with little new information. The cause was a thread key based
+on model-controlled topic text combined with a short retry window: changing a
+few topic words reset the round budget while each reply received the full
+planning view.
 
 The runtime now treats an interaction as a bounded thread:
 
@@ -35,6 +36,9 @@ The runtime now treats an interaction as a bounded thread:
   nearby participants, relevant facts and testimony, and open offers;
 - a dialogue reply can only send one short message or wait; it cannot start an
   unrelated long behavior;
+- one participant pair shares one dialogue chain throughout the configured
+  window, even when the model rephrases the topic; trade offers use a separate
+  pair chain;
 - repeated or near-identical messages within the thread window are suppressed;
 - a thread closes after three exchanges and can reopen only after the
   configured window; ordinary direct-message retries use the configured

@@ -70,7 +70,6 @@ class SimulationRunner:
         self._interaction_events_seen: set[int] = set()
         self._interaction_rounds: dict[tuple[str, ...], tuple[int, int]] = {}
         self._interaction_messages: dict[tuple[str, str], list[tuple[int, str]]] = {}
-        self._interaction_topic_families: dict[tuple[str, str], list[tuple[str, set[str]]]] = {}
         self._interaction_not_before: dict[str, int] = {}
         self._provider_retry_pending = False
         self._wait_streak: dict[str, int] = {}
@@ -97,13 +96,6 @@ class SimulationRunner:
             tuple(str(value) for value in item.get("key", [])): [(int(row[0]), str(row[1])) for row in (item.get("messages") or []) if isinstance(row, list) and len(row) == 2]
             for item in (state.get("interaction_messages") or []) if isinstance(item, dict) and item.get("key")
         }
-        self._interaction_topic_families = {
-            tuple(str(value) for value in item.get("key", [])): [
-                (str(family[0]), {str(part) for part in family[1]})
-                for family in (item.get("families") or []) if isinstance(family, list) and len(family) == 2
-            ]
-            for item in (state.get("interaction_topic_families") or []) if isinstance(item, dict) and item.get("key")
-        }
 
     def _persist_scheduler_state(self) -> None:
         state = {
@@ -123,10 +115,6 @@ class SimulationRunner:
             "interaction_messages": [
                 {"key": list(key), "messages": [[minute, message] for minute, message in values[-8:]]}
                 for key, values in sorted(self._interaction_messages.items())
-            ],
-            "interaction_topic_families": [
-                {"key": list(key), "families": [[name, sorted(parts)] for name, parts in values]}
-                for key, values in sorted(self._interaction_topic_families.items())
             ],
         }
         with self.platform.store.transaction():
@@ -213,7 +201,13 @@ class SimulationRunner:
                 dialogue = self.platform.store.get_dialogue_exchange(dialogue_id)
             topic = str((dialogue or {}).get("topic") or event_data.get("topic") or "general")
             message = str((dialogue or {}).get("message") or "").strip()
-            thread_key = (*pair, self._topic_family_key(pair, topic))
+            # The model may rephrase a topic on every reply.  A dialogue
+            # thread is therefore the participant pair within the configured
+            # window, not model-controlled topic text. Trade exchanges use a
+            # separate pair thread so conversation and offer rounds do not
+            # consume each other's budget.
+            interaction_kind = "dialogue" if event.get("event_type") == "dialogue.completed" else "trade"
+            thread_key = (interaction_kind, *pair)
             last_minute, rounds = self._interaction_rounds.get(thread_key, (minute, 0))
             if minute - last_minute >= self.interaction_thread_window_minutes:
                 rounds = 0
@@ -257,33 +251,6 @@ class SimulationRunner:
                 self._interaction_not_before[actor_id] = minute + self.interaction_cooldown_minutes
             if turn.result.get("status") == "wait":
                 report.waits += 1
-
-    @staticmethod
-    def _normalize_topic(topic: str) -> str:
-        text = unicodedata.normalize("NFKC", str(topic or "general")).casefold()
-        text = re.sub(r"[\W_]+", "", text, flags=re.UNICODE)
-        return text[:120] or "general"
-
-    @classmethod
-    def _topic_components(cls, topic: str) -> set[str]:
-        """Extract stable subject components without a world-specific list."""
-
-        normalized = unicodedata.normalize("NFKC", str(topic or "general")).casefold()
-        parts = [item for item in re.split(r"[与和及/、,:：&+]+", normalized) if item]
-        return {re.sub(r"[\W_]+", "", item, flags=re.UNICODE) for item in parts if len(item) >= 2} or {cls._normalize_topic(normalized)}
-
-    def _topic_family_key(self, pair: tuple[str, ...], topic: str) -> str:
-        """Merge reordered or shared-subject labels into one conversation thread."""
-
-        components = self._topic_components(topic)
-        pair_key = tuple(pair)
-        families = self._interaction_topic_families.setdefault(pair_key, [])
-        for key, known in families:
-            if components & known:
-                return key
-        key = self._normalize_topic(topic)
-        families.append((key, components))
-        return key
 
     @staticmethod
     def _message_similarity(left: str, right: str) -> float:

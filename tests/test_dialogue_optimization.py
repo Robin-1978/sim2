@@ -724,6 +724,32 @@ def test_repeated_dialogue_message_is_suppressed_by_thread_scheduler(tmp_path: P
         platform.close()
 
 
+def test_dialogue_round_limit_uses_pair_chain_not_model_topic_text(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "dialogue-pair-chain", tmp_path / "runtime"))
+    provider = WaitProvider()
+    runner = SimulationRunner(platform, {"agent_decision": provider}, max_interaction_rounds=3)
+    report = SimulationReport(0, 0)
+    try:
+        for index, topic in enumerate(("lost ledger", "north gate marks", "bridge safety", "ledger follow-up")):
+            sent = platform.submit_dialogue(
+                "fei_lan", "yu_ge", topic,
+                f"Distinct message {index} about the same ongoing exchange.",
+            )
+            assert sent["status"] == "accepted"
+
+        runner._run_instant_interactions(report)
+
+        assert len(provider.calls) == 3
+        assert report.interaction_replies_suppressed == 1
+        assert report.interaction_threads_closed == 1
+        state = platform.store.get_meta("runtime_scheduler_state")
+        pair_thread = next(item for item in state["interaction_rounds"] if item["key"][0] == "dialogue")
+        assert pair_thread["rounds"] == 3
+        assert len(pair_thread["key"]) == 3
+    finally:
+        platform.close()
+
+
 def test_interaction_dispatch_cursor_survives_runner_restart(tmp_path: Path):
     platform = Platform(create_instance(_config(), "dialogue-resume", tmp_path / "runtime"))
     provider = WaitProvider()
