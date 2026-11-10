@@ -78,6 +78,11 @@ python scripts/verify_core_interaction.py --provider remote
 bash -ic 'python scripts/audit_real_world.py --minutes 1440 --provider remote'
 # Review every recorded session and the persisted SQLite execution closure
 python scripts/review_audit.py artifacts/real-agent-audit-1440-final-complete.json
+# Export every recorded world event, including one-minute time advances and
+# chat text, without exporting Agent prompts or call details
+python scripts/export_timeline.py --db "$DB" --output artifacts/world-timeline.md
+# Export character-centred storylines from the same public event history
+python scripts/export_storylines.py --db "$DB" --output artifacts/character-storylines.md
 ```
 
 `audit_real_world.py` writes a reviewable JSON artifact under `artifacts/` with

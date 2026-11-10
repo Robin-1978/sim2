@@ -4,6 +4,7 @@ from sim2.agents.engine import AgentEngine
 from sim2.agents.tools import parse_tool_call
 from sim2.bootstrap.service import create_instance
 from sim2.platform.runtime import Platform
+from sim2.prompting.renderer import render_context
 from sim2.simulation.runner import SimulationReport, SimulationRunner
 
 
@@ -29,6 +30,23 @@ def test_flattened_function_call_is_normalized():
 
 def test_unbound_context_reference_does_not_leak_into_world_text():
     assert Platform._resolve_parameters({"topic": "context.topic"}, {}) == {"topic": None}
+
+
+def test_prompt_formats_float_state_without_binary_noise():
+    prompt = render_context(
+        {
+            "role": "agent_decision",
+            "world_time": {"minute": 1, "label": "Day 1, 00:01"},
+            "self": {"attributes": [{"label": "Satiety", "value": 81.200000000004}]},
+            "drives": [{"id": "safety", "urgency": 0.020000000000000004, "reason": "test"}],
+            "executable_behaviors": [],
+        },
+        "Choose one.",
+    )
+    assert "81.2" in prompt
+    assert "0.02" in prompt
+    assert "81.200000000004" not in prompt
+    assert "0.020000000000000004" not in prompt
 
 
 def test_world_relationship_proposal_uses_visible_names(tmp_path: Path):

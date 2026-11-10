@@ -3,6 +3,20 @@ from __future__ import annotations
 from typing import Any
 
 
+def _number(value: Any) -> str:
+    """Render numeric state without exposing binary floating-point noise."""
+
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, float):
+        if value != value or value in {float("inf"), float("-inf")}:
+            return "unknown"
+        # Six significant digits preserve meaningful world precision while
+        # turning values such as 81.200000000004 into ``81.2``.
+        return format(value, ".6g")
+    return str(value)
+
+
 def _line(value: Any) -> str:
     if value is None or value == "":
         return "unknown"
@@ -24,6 +38,8 @@ def _plain(value: Any) -> str:
         return separator.join(_plain(item) for item in value) or "none"
     if isinstance(value, bool):
         return "yes" if value else "no"
+    if isinstance(value, (int, float)):
+        return _number(value)
     return str(value)
 
 
@@ -214,7 +230,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         "<drives>",
     ])
     drives = context.get("drives") or []
-    lines.extend([f"  - {d.get('id', 'need')}: urgency={d.get('urgency', 0)}; {d.get('reason', 'no reason')}" for d in drives[:3]] or ["  - no urgent drive"])
+    lines.extend([f"  - {d.get('id', 'need')}: urgency={_number(d.get('urgency', 0))}; {d.get('reason', 'no reason')}" for d in drives[:3]] or ["  - no urgent drive"])
     model = context.get("drive_model") or {}
     if model:
         lines.append(f"  model: {model.get('family', 'configured hybrid')}; needs are parallel, not a fixed hierarchy")
@@ -281,7 +297,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("<capability_updates>")
         candidates = context.get("capability_update_candidates") or []
         for item in candidates[:8]:
-            lines.append(f"  - {item.get('capability')}: {item.get('completed_outcomes')}/{item.get('required_outcomes')} completed outcomes; maximum update={item.get('max_delta')}")
+            lines.append(f"  - {item.get('capability')}: {item.get('completed_outcomes')}/{item.get('required_outcomes')} completed outcomes; maximum update={_number(item.get('max_delta'))}")
         if not candidates:
             lines.append("  - no capability update is currently supported by the configured evidence threshold")
         lines.append("</capability_updates>")
@@ -368,7 +384,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             return "; ".join(f"{resource_labels.get(str(key), str(key))}={_plain(value)}" for key, value in values.items())
 
         current_resources = trends.get("current_resources") or []
-        lines.append("  Current resources: " + ("; ".join(f"{item.get('name', 'resource')}={item.get('current', 'unknown')}" for item in current_resources[:8]) if current_resources else "none") + ".")
+        lines.append("  Current resources: " + ("; ".join(f"{item.get('name', 'resource')}={_plain(item.get('current', 'unknown'))}" for item in current_resources[:8]) if current_resources else "none") + ".")
         for period in ("weekly", "monthly"):
             item = trends.get(period) or {}
             goal = item.get("goal_trends") or {}
@@ -381,7 +397,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 f"completed={goal.get('completed_behaviors', 0)}, failed_or_interrupted={goal.get('failed_or_interrupted_behaviors', 0)}."
             )
         progress = context.get("civilization_progress") or []
-        lines.append("  Civilization progress: " + ("; ".join(f"{item.get('progress_key')}={item.get('current', 0)}/{item.get('required', 0)}" for item in progress[:8]) if progress else "none") + ".")
+        lines.append("  Civilization progress: " + ("; ".join(f"{item.get('progress_key')}={_plain(item.get('current', 0))}/{_plain(item.get('required', 0))}" for item in progress[:8]) if progress else "none") + ".")
         lines.append("</world_trends>")
         lines.append("<world_outcomes>")
         changes = context.get("recent_world_changes") or []
