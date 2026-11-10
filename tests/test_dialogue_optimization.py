@@ -25,6 +25,30 @@ class WaitProvider:
         return {"intent_type": "wait", "reason": "The message adds no new decision."}
 
 
+class ReplyChainProvider:
+    def __init__(self):
+        self.calls = []
+
+    def complete_json(self, *, system, context, tools=None, messages=None):
+        self.calls.append({"system": system, "context": context, "tools": tools, "messages": messages})
+        recipient = "费兰" if "from: 费兰" in context else "余歌"
+        index = len(self.calls)
+        return {
+            "tool_calls": [{
+                "id": f"reply-{index}",
+                "type": "function",
+                "function": {
+                    "name": "send_message",
+                    "arguments": {
+                        "recipient": recipient,
+                        "topic": f"rephrased topic {index}",
+                        "message": f"Reply {index} continues the same bounded exchange.",
+                    },
+                },
+            }],
+        }
+
+
 def test_agent_sessions_reuse_platform_view_and_embedding_cache(tmp_path: Path):
     platform = Platform(create_instance(_config(), "shared-view-cache", tmp_path / "runtime"))
     try:
@@ -746,6 +770,58 @@ def test_dialogue_round_limit_uses_pair_chain_not_model_topic_text(tmp_path: Pat
         pair_thread = next(item for item in state["interaction_rounds"] if item["key"][0] == "dialogue")
         assert pair_thread["rounds"] == 3
         assert len(pair_thread["key"]) == 3
+    finally:
+        platform.close()
+
+
+def test_dialogue_reply_chain_is_drained_without_advancing_world_time(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "dialogue-same-minute-chain", tmp_path / "runtime"))
+    provider = ReplyChainProvider()
+    runner = SimulationRunner(platform, {"agent_decision": provider}, max_interaction_rounds=3)
+    report = SimulationReport(0, 0)
+    try:
+        sent = platform.submit_dialogue(
+            "fei_lan", "yu_ge", "opening topic",
+            "This message opens one bounded exchange.",
+        )
+        assert sent["status"] == "accepted"
+
+        runner._run_instant_interactions(report)
+
+        assert len(provider.calls) == 3
+        assert platform.store.get_meta("world_minute") == 0
+        rows = platform.store.connection.execute(
+            "SELECT world_minute,topic FROM dialogue_exchange ORDER BY id"
+        ).fetchall()
+        assert len(rows) == 4  # opening message plus three accepted replies
+        assert {int(row["world_minute"]) for row in rows} == {0}
+        assert report.interaction_replies_suppressed == 1
+        assert report.interaction_threads_closed == 1
+    finally:
+        platform.close()
+
+
+def test_pending_interaction_blocks_tick_and_resumes_from_persisted_event(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "dialogue-blocking-resume", tmp_path / "runtime"))
+    try:
+        sent = platform.submit_dialogue(
+            "fei_lan", "yu_ge", "route evidence",
+            "Please review this route report before world time advances.",
+        )
+        assert sent["status"] == "accepted"
+
+        blocked = SimulationRunner(platform, {}).run(1)
+        assert blocked.stop_reason == "interaction_pending"
+        assert platform.store.get_meta("world_minute") == 0
+
+        provider = WaitProvider()
+        resumed = SimulationRunner(platform, {"agent_decision": provider}).run(1)
+        assert resumed.stop_reason is None
+        assert provider.calls
+        assert "<incoming_interaction>" in provider.calls[0]["context"]
+        assert platform.store.get_meta("world_minute") == 1
+        state = platform.store.get_meta("runtime_scheduler_state")
+        assert sent["event_id"] in state["interaction_events_seen"]
     finally:
         platform.close()
 

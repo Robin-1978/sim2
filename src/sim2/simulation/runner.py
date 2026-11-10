@@ -138,9 +138,22 @@ class SimulationRunner:
             if cooling_roles:
                 report.stop_reason = "provider_cooldown:" + ",".join(cooling_roles)
                 break
+            # Resume and fully resolve any persisted zero-minute interaction
+            # before advancing world time. This is the recovery path when a
+            # provider cooldown paused a dialogue or trade halfway through.
+            if not self._run_instant_interactions(report):
+                cooling_roles = self._cooling_provider_roles()
+                report.stop_reason = (
+                    "provider_cooldown:" + ",".join(cooling_roles)
+                    if cooling_roles else "interaction_pending"
+                )
+                break
+            cooling_roles = self._cooling_provider_roles()
+            if cooling_roles:
+                report.stop_reason = "provider_cooldown:" + ",".join(cooling_roles)
+                break
             if self._provider_retry_pending:
                 self._provider_retry_pending = False
-                self._run_instant_interactions(report)
                 self._run_due_evolution(report)
                 self._run_idle_decisions(report)
                 cooling_roles = self._cooling_provider_roles()
@@ -158,7 +171,13 @@ class SimulationRunner:
                 if self.platform.status().get("status") != "running":
                     break
             self.platform.step()
-            self._run_instant_interactions(report)
+            if not self._run_instant_interactions(report):
+                cooling_roles = self._cooling_provider_roles()
+                report.stop_reason = (
+                    "provider_cooldown:" + ",".join(cooling_roles)
+                    if cooling_roles else "interaction_pending"
+                )
+                break
             self._run_due_evolution(report)
             self._run_idle_decisions(report)
         report.end_minute = int(self.platform.store.get_meta("world_minute", 0))
@@ -172,15 +191,22 @@ class SimulationRunner:
     def _cooling_provider_roles(self) -> list[str]:
         return sorted(role for role, provider in self.providers.items() if self._provider_cooling_down(provider))
 
-    def _run_instant_interactions(self, report: SimulationReport) -> None:
+    def _run_instant_interactions(self, report: SimulationReport) -> bool:
         """Dispatch zero-minute dialogue/trade events as bounded micro-turns."""
 
         provider = self.providers.get("agent_decision")
+        pending = [
+            event for event in reversed(self.platform.store.recent_events(limit=100))
+            if int(event.get("event_id", 0)) not in self._interaction_events_seen
+            and event.get("event_type") in {"dialogue.completed", "trade.offer_created", "trade.countered"}
+        ]
+        if not pending:
+            return True
         if provider is None or self._provider_cooling_down(provider):
-            return
-        for event in reversed(self.platform.store.recent_events(limit=100)):
+            return False
+        for event in pending:
             if self._provider_cooling_down(provider):
-                return
+                return False
             event_id = int(event.get("event_id", 0))
             if event_id in self._interaction_events_seen:
                 continue
@@ -242,6 +268,7 @@ class SimulationRunner:
                 # it remains eligible after the scheduler backoff.
                 self._interaction_events_seen.discard(event_id)
                 self._persist_scheduler_state()
+                return False
             if turn.result.get("status") == "accepted" and (
                 turn.result.get("interaction_committed")
                 or turn.result.get("trade_committed")
@@ -251,6 +278,18 @@ class SimulationRunner:
                 self._interaction_not_before[actor_id] = minute + self.interaction_cooldown_minutes
             if turn.result.get("status") == "wait":
                 report.waits += 1
+
+        # Replies append new zero-minute events after the snapshot above was
+        # read. Drain them now at the same world minute. The configured round
+        # limit guarantees termination, while a provider error returns above
+        # with the triggering event still persisted for the next run.
+        if not self._provider_cooling_down(provider) and any(
+            int(event.get("event_id", 0)) not in self._interaction_events_seen
+            and event.get("event_type") in {"dialogue.completed", "trade.offer_created", "trade.countered"}
+            for event in self.platform.store.recent_events(limit=100)
+        ):
+            return self._run_instant_interactions(report)
+        return not self._provider_cooling_down(provider)
 
     @staticmethod
     def _message_similarity(left: str, right: str) -> float:
