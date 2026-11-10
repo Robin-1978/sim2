@@ -102,6 +102,14 @@ class OpenAICompatibleProvider:
         raise RuntimeError("LLM request retry loop ended unexpectedly")
 
     def complete_json(self, *, system: str, context: str, tools: list[dict[str, Any]] | None = None, messages: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        started = time.perf_counter()
+
+        def with_latency(value: dict[str, Any]) -> dict[str, Any]:
+            usage = dict(value.get("_usage") or {})
+            usage["request_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 1)
+            value["_usage"] = usage
+            return value
+
         headers = {"content-type": "application/json"}
         if not self.session_id:
             self.session_id = str(uuid4())
@@ -165,7 +173,7 @@ class OpenAICompatibleProvider:
                     result = _json_from_text(content)
                 if usage:
                     result["_usage"] = usage
-                return result
+                return with_latency(result)
             except httpx.HTTPStatusError as exc:
                 detail = response.text[:800].replace("authorization", "auth")
                 raise RuntimeError(f"LLM HTTP {response.status_code}: {detail}") from exc
@@ -199,11 +207,14 @@ class LLMRouter:
         except KeyError as exc:
             raise ValueError(f"Unknown LLM provider: {name}") from exc
 
-    def new_provider_for_name(self, name: str) -> LLMProvider:
+    def new_provider_for_name(self, name: str, model: str | None = None) -> LLMProvider:
         """Create an isolated provider session for a shared role override."""
 
         try:
-            return OpenAICompatibleProvider(self.config.providers[name])
+            configured = self.config.providers[name]
+            if model:
+                configured = ProviderConfig(**{**configured.__dict__, "model": str(model)})
+            return OpenAICompatibleProvider(configured)
         except KeyError as exc:
             raise ValueError(f"Unknown LLM provider: {name}") from exc
 

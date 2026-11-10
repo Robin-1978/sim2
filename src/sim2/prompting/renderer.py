@@ -367,6 +367,10 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("  - rule.action_names must use exact Action names from world_action_catalog; a BT name is not an Action name.")
         lines.append("  - A typed signal records or wakes work; prose descriptions never enforce policy. To block behavior, use effect type behavior_constraint or a denial effect.")
         lines.append("</world_proposal_contract>")
+        progress_candidates = context.get("world_progress_candidates") or []
+        lines.append("<configured_public_progress>")
+        lines.append("  " + ("; ".join(f"{item.get('progress_key')} target={_number(item.get('required', 1))}" for item in progress_candidates[:12]) if progress_candidates else "none configured; do not invent a progress key"))
+        lines.append("</configured_public_progress>")
         lines.append("<rule_condition_fields>")
         fields = context.get("rule_condition_fields") or []
         for field in fields[:20]:

@@ -311,7 +311,7 @@ behavior_trees:
   failure_results: [installation_failed, interrupted]
   outcome_events:
   - event_type: warning.artifact_installed
-    wake: [story, god]
+    wake: []
     summary: The warning artifact was installed at the north gate watch post.
   nodes:
   - type: action
@@ -342,7 +342,7 @@ behavior_trees:
   failure_results: [water_measure_failed, interrupted]
   outcome_events:
   - event_type: public_health.measure_completed
-    wake: [story, god]
+    wake: []
     summary: The water-safety measure produced a verified world result.
   nodes:
   - type: action
@@ -370,7 +370,7 @@ behavior_trees:
   failure_results: [pact_stabilization_failed, interrupted]
   outcome_events:
   - event_type: pact.stability_action_completed
-    wake: [story, god]
+    wake: []
     summary: A pact-stabilization action produced a verified world result.
   nodes:
   - type: action
@@ -393,7 +393,7 @@ behavior_trees:
   failure_results: [investigation_failed, interrupted]
   outcome_events:
   - event_type: security.investigation_completed
-    wake: [story, god]
+    wake: []
     summary: The north gate marks were investigated and classified.
   nodes:
   - type: action
@@ -443,6 +443,8 @@ behavior_trees:
   - secret.source_available
   estimated_minutes: 192
   interrupt_policy: pause
+  goal_tags: [research, knowledge, pact]
+  drive_tags: [self_actualization, safety]
   success_results:
   - research_progressed
   - new_pact_fact
@@ -551,7 +553,8 @@ behavior_trees:
   scope: village_watch
   entry_conditions:
   - actor.can_sound_alarm
-  - threat.detected
+  - world.north_gate_alarm_ready >= 1
+  - world.north_gate_threat_level >= 0.7
   estimated_minutes: 6
   success_results: [alarm_raised]
   failure_results: [alarm_failed, device_broken]
@@ -594,6 +597,8 @@ behavior_trees:
   - target.available
   cooldown_minutes: 1440
   estimated_minutes: 6
+  goal_tags: [belonging, information, trade]
+  drive_tags: [belonging, autonomy]
   success_results: [dialogue_recorded, testimony_shared]
   failure_results: [conversation_refused, participant_left]
   outcome_events:
@@ -617,6 +622,8 @@ behavior_trees:
   - target.available
   cooldown_minutes: 2880
   estimated_minutes: 36
+  goal_tags: [trade, belonging, autonomy]
+  drive_tags: [belonging, autonomy, esteem]
   success_results: [agreement_reached, contract_recorded]
   failure_results: [negotiation_failed, offer_refused]
   outcome_events:
@@ -662,6 +669,7 @@ behavior_trees:
   description: Consume one carried food item to restore satiety before choosing another task.
   entry_conditions:
   - actor.alive
+  - actor.need.satiety <= context.satiety_alert_threshold
   - inventory.available
   estimated_minutes: 1
   requirements: ["Carry one food item: rations, ration, or cooked_meal."]
@@ -684,6 +692,7 @@ behavior_trees:
   description: Walk to the shared food store, then complete the configured ration service.
   entry_conditions:
   - actor.alive
+  - actor.need.satiety <= context.satiety_alert_threshold
   - actor.permission.food_withdrawal
   - route.known
   requirements: ["A known route to the granary and permission to withdraw food."]
@@ -708,6 +717,7 @@ behavior_trees:
   description: Spend one coin at the market for one ration when carried food is unavailable.
   entry_conditions:
   - actor.alive
+  - actor.need.satiety <= context.satiety_alert_threshold
   - location.tag.market
   requirements: ["You are at the market and carry at least one coin; market stock must remain." ]
   goal_tags: [food, survival, trade]

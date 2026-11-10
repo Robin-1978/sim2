@@ -359,7 +359,7 @@ def test_food_bt_is_available_with_food_and_closes_satiety_loop(tmp_path: Path):
         platform.close()
 
 
-def test_food_bt_remains_available_for_agent_choice_at_any_satiety(tmp_path: Path):
+def test_food_bt_is_hidden_when_satiety_is_adequate(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "food-trigger-world", tmp_path / "runtime"))
     try:
@@ -368,9 +368,10 @@ def test_food_bt_remains_available_for_agent_choice_at_any_satiety(tmp_path: Pat
         with platform.store.transaction():
             platform.store.update_agent("lu_xingzhou", agent)
         view = platform.decision_view("lu_xingzhou")
-        assert any(item["ref"] == "behavior:eat_food" for item in view["executable_behaviors"])
+        assert not any(item["ref"] == "behavior:eat_food" for item in view["executable_behaviors"])
         accepted = platform.submit_behavior(BehaviorIntent("lu_xingzhou", "behavior:eat_food", {}, {}, "Choose food before the next task.", 0.8, "early-food"))
-        assert accepted["status"] == "accepted"
+        assert accepted["status"] == "rejected"
+        assert accepted["failed_check"] == "entry_condition"
     finally:
         platform.close()
 
@@ -508,7 +509,7 @@ def test_governance_report_closes_personal_world_and_knowledge_loop(tmp_path: Pa
         platform.close()
 
 
-def test_satiety_threshold_is_an_observable_signal_not_a_food_choice_gate(tmp_path: Path):
+def test_satiety_threshold_is_both_a_signal_and_food_choice_gate(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "satiety-signal-world", tmp_path / "runtime"))
     try:
@@ -516,7 +517,7 @@ def test_satiety_threshold_is_an_observable_signal_not_a_food_choice_gate(tmp_pa
         agent["needs"]["satiety"] = 40.01
         platform.store.update_agent("lu_xingzhou", agent)
         platform.store.connection.commit()
-        assert any(item["ref"] == "behavior:eat_food" for item in platform.decision_view("lu_xingzhou")["executable_behaviors"])
+        assert not any(item["ref"] == "behavior:eat_food" for item in platform.decision_view("lu_xingzhou")["executable_behaviors"])
         platform.step()
         event = next(item for item in platform.store.recent_events(limit=30) if item["event_type"] == "need.satiety_low")
         assert event["need"] == "satiety"
@@ -524,7 +525,7 @@ def test_satiety_threshold_is_an_observable_signal_not_a_food_choice_gate(tmp_pa
         platform.close()
 
 
-def test_rest_fallback_disappears_but_food_remains_a_decision_choice(tmp_path: Path):
+def test_rest_fallback_disappears_but_food_is_gated_by_satiety(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "satisfied-needs-world", tmp_path / "runtime")
     platform = Platform(db_path)
@@ -535,7 +536,11 @@ def test_rest_fallback_disappears_but_food_remains_a_decision_choice(tmp_path: P
         platform.store.connection.commit()
         offered = {item["ref"] for item in platform.decision_view("liang_he")["executable_behaviors"]}
         assert "behavior:eat_food" not in offered
-        assert "behavior:get_food" in offered
+        assert "behavior:get_food" not in offered
+        liang["needs"]["satiety"] = 40
+        platform.store.update_agent("liang_he", liang)
+        platform.store.connection.commit()
+        assert "behavior:get_food" in {item["ref"] for item in platform.decision_view("liang_he")["executable_behaviors"]}
 
         smith = platform.store.get_agent("tian_yan")
         smith["initial_state"]["energy"] = 100
@@ -607,13 +612,13 @@ def test_decision_context_explains_single_recovery_candidate(tmp_path: Path):
         offered = {item["ref"] for item in view["executable_behaviors"]}
         assert "behavior:recover_at_safe_location" in offered
         assert "behavior:eat_food" not in offered
-        assert "behavior:get_food" in offered
+        assert "behavior:get_food" not in offered
         assert any("Satiety is 100/100" in item for item in view["decision_constraints"])
         assert any("Energy is 6.5/100" in item for item in view["decision_constraints"])
         assert any("not safe for rest" in item for item in view["decision_constraints"])
         prompt = render_context(view, "Choose one behavior.")
         assert "<decision_constraints>" in prompt
-        assert "Food choices remain available" in prompt
+        assert "Food is not currently needed" in prompt
     finally:
         platform.close()
 
@@ -663,7 +668,7 @@ def test_core_treatment_bt_travels_to_health_service_and_restores_health(tmp_pat
         platform.close()
 
 
-def test_platform_accepts_food_choice_without_a_hard_satiety_gate(tmp_path: Path):
+def test_platform_rejects_stale_food_choice_when_satiety_is_adequate(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "stale-food-world", tmp_path / "runtime")
     platform = Platform(db_path)
@@ -681,7 +686,8 @@ def test_platform_accepts_food_choice_without_a_hard_satiety_gate(tmp_path: Path
             confidence=0.5,
             intent_id="stale-food-intent",
         ))
-        assert result["status"] == "accepted"
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "entry_condition"
     finally:
         platform.close()
 
@@ -2239,6 +2245,10 @@ def test_behavior_constraint_rule_blocks_named_behavior_without_mutating_state(t
             },
         })
         assert result["status"] == "accepted"
+        liang = platform.store.get_agent("liang_he")
+        liang["needs"]["satiety"] = 40
+        platform.store.update_agent("liang_he", liang)
+        platform.store.connection.commit()
         view = platform.decision_view("liang_he")
         assert "behavior:craft_meal" not in {item["ref"] for item in view["executable_behaviors"]}
         # The constraint names only the cooking BT; it must not hide an

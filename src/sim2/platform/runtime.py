@@ -74,6 +74,7 @@ class Platform:
         *,
         providers: dict[str, Any] | None = None,
         provider_name: str | None = None,
+        provider_model: str | None = None,
         wait_cooldown_minutes: int = 30,
         llm_error_cooldown_minutes: int = 60,
         turn_observer: Callable[[Any, str], None] | None = None,
@@ -92,7 +93,7 @@ class Platform:
             router = LLMRouter.from_default_config()
             if provider_name:
                 providers = {
-                    role: router.new_provider_for_name(provider_name)
+                    role: router.new_provider_for_name(provider_name, provider_model)
                     for role in ("agent_decision", "agent_reflection", "god", "story")
                 }
             else:
@@ -1232,7 +1233,8 @@ class Platform:
         source_event = next(
             (
                 item for item in recent[:30]
-                if str(item.get("event_type", "")) in {"exploration.completed", "research.completed", "object.recovered", "relationship.changed"}
+                if bool(item.get("story_source"))
+                or str(item.get("event_type", "")) in {"exploration.completed", "research.completed", "object.recovered", "relationship.changed"}
             ),
             None,
         )
@@ -2511,7 +2513,11 @@ class Platform:
         # feedback is a completion boundary, so an incomplete sample does not
         # pause the world or wake the Story Agent without a new fact.
         if progress["completed"]:
-            self._queue_story_task(event_id, event_type, agent["id"], minute)
+            wake = definition.get("wake")
+            if wake is None:
+                self._queue_story_task(event_id, event_type, agent["id"], minute)
+            else:
+                self._queue_configured_followups({"wake": wake}, event_id, event_type, agent["id"], minute)
         return progress
 
     def _record_information_result(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> dict[str, Any]:
@@ -2627,6 +2633,8 @@ class Platform:
                 event_data["summary"] = str(information["summary"])
             if information.get("trend") is True:
                 event_data["trend"] = True
+            if "story" in {str(item) for item in (information.get("wake") or [])}:
+                event_data["story_source"] = True
             event_id = self.store.append_event(str(configured_event), agent["id"], minute, event_data)
             self._queue_configured_followups(information, event_id, str(configured_event), agent["id"], minute)
             result.setdefault("event_id", event_id)
@@ -2792,6 +2800,8 @@ class Platform:
                     payload["summary"] = str(configured["summary"])
                 if configured.get("trend") is True:
                     payload["trend"] = True
+                if "story" in {str(item) for item in (configured.get("wake") or [])}:
+                    payload["story_source"] = True
                 event_id = self.store.append_event(event_type, agent["id"], minute, payload)
                 self._queue_configured_followups(configured, event_id, event_type, agent["id"], minute)
             for configured in behavior_definition.get("outcome_facts", []) or []:

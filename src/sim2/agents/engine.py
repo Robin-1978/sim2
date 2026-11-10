@@ -29,6 +29,14 @@ def role_policy(platform: Platform, role: str) -> str:
     policies = prompt.get("role_policies", {}) if isinstance(prompt, dict) else {}
     return str(policies.get(role) or "")
 
+
+def configured_role_tools(platform: Platform, role: str) -> list[str] | None:
+    prompt = platform.store.get_prompt("agent", {}) or {}
+    prompt = prompt.get("agent_prompt", prompt) if isinstance(prompt, dict) else {}
+    policy = prompt.get("tool_policy", {}) if isinstance(prompt, dict) else {}
+    names = policy.get(role) if isinstance(policy, dict) else None
+    return [str(item) for item in names if str(item)] if isinstance(names, list) else None
+
 ROLE_INTENTS = {
     "agent_decision": {"select_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "propose_institution", "wait"},
     "agent_reflection": {"record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "propose_institution", "wait"},
@@ -137,6 +145,7 @@ class AgentEngine:
         if interaction:
             context["interaction"] = dict(interaction)
         interaction_tools = self._interaction_tools(task_type)
+        role_tools = configured_role_tools(self.platform, role)
         if interaction_tools is not None:
             self._compact_interaction_context(context, task_type, interaction_tools)
         view_errors = validate_agent_view(context, role=role)
@@ -155,6 +164,15 @@ class AgentEngine:
         repeated: dict[str, int] = {}
         tool_calls_used = 0
         read_tool_calls = 0
+        # World-level reviewers must make a bounded decision after a small
+        # evidence sample.  Without a role-specific cap, remote models can
+        # spend all six ReAct turns reading the same event from different
+        # projections and leave the evolution task unresolved.
+        read_budget = (
+            min(self.max_read_tool_calls, 2) if role == "god"
+            else min(self.max_read_tool_calls, 4) if role in {"story", "agent_decision"}
+            else self.max_read_tool_calls
+        )
         system_policy = role_policy(self.platform, role)
         conversation_messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_policy},
@@ -171,7 +189,7 @@ class AgentEngine:
                     system=system_policy,
                     context=prompt,
                     messages=conversation_messages,
-                    allowed_tools=interaction_tools,
+                    allowed_tools=interaction_tools if interaction_tools is not None else role_tools,
                 )
                 if not isinstance(response, dict):
                     raise ValueError("LLM response must be a JSON object")
@@ -219,7 +237,7 @@ class AgentEngine:
                     repeated[signature_key] = repeated.get(signature_key, 0) + 1
                     if tool_calls_used > self.max_tool_calls:
                         tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "tool_budget", "message": "Tool-call budget exhausted; submit one final Intent now."}
-                    elif is_read_tool and read_tool_calls > self.max_read_tool_calls:
+                    elif is_read_tool and read_tool_calls > read_budget:
                         tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "read_budget", "message": "Read budget exhausted; use the facts already collected and submit one final Intent."}
                     elif repeated[signature_key] > self.max_repeated_tool_calls:
                         tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "repeated_tool_call", "message": "The same tool request was repeated; use the previous result or choose the previous result."}
@@ -231,13 +249,24 @@ class AgentEngine:
                             "retryable": True,
                             "message": "This interaction exposes only its direct reply or trade decision tools; return wait or use one listed tool.",
                         }
-                    elif role == "god" and str(task_type).startswith("trigger:") and tool_name == "propose_world_change" and arguments.get("change_type") == "event" and not arguments.get("property"):
-                        tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "trigger_requires_state_change", "retryable": True, "message": "This trigger requires a direct state-changing proposal; a narrative-only event does not resolve it."}
+                    elif role == "god" and (str(task_type).startswith("trigger:") or str(task_type).startswith("event:")) and tool_name == "propose_world_change" and arguments.get("change_type") == "event" and not arguments.get("property"):
+                        tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "event_already_recorded", "retryable": True, "message": "The triggering event is already recorded. Do not add a narrative acknowledgement; return wait or submit one typed rule, progress, entity, relationship, or faction proposal grounded in the observed result."}
                     else:
                         tool_result = executor.execute(tool_name, arguments)
-                    model_tool_result = tool_result
+                    model_tool_result = self._model_tool_result(tool_name, tool_result)
                     internal_tool_result = self._restore_internal_tool_result(tool_name, arguments, tool_result)
-                    transcript.append({"step": "tool", "name": tool_name, "arguments": arguments, "result": internal_tool_result})
+                    transcript.append({
+                        "step": "tool",
+                        "name": tool_name,
+                        "arguments": arguments,
+                        # ``raw_result`` is private Platform output; the
+                        # model received only ``model_result`` below. Keeping
+                        # both makes provenance and view-compilation audits
+                        # possible without leaking internals into prompts.
+                        "raw_result": internal_tool_result,
+                        "model_result": model_tool_result,
+                        "result": internal_tool_result,
+                    })
                     context.setdefault("interaction_history", []).extend([
                         {"kind": "assistant_tool_call", "name": tool_name, "arguments": arguments},
                         {"kind": "tool_result", "name": tool_name, "result": model_tool_result},
@@ -379,6 +408,69 @@ class AgentEngine:
         restored["entity_id"] = row["id"]
         return restored
 
+    @classmethod
+    def _model_tool_result(cls, tool_name: str, result: dict[str, Any]) -> dict[str, Any]:
+        """Compile one tool result into a small model-facing view.
+
+        Store/API responses may contain complete entity state, nested previous
+        outcomes, and internal identifiers.  Those details remain in the
+        private transcript for diagnostics, but repeating them in every ReAct
+        message wastes context and encourages the model to re-read the same
+        facts.  The model view keeps visible facts, status, and the next
+        decision signal only.
+        """
+
+        def compact(value: Any, *, key: str = "", depth: int = 0) -> Any:
+            if depth > 4:
+                return "[details omitted]"
+            if isinstance(value, float):
+                return round(value, 4)
+            if isinstance(value, (str, int, bool)) or value is None:
+                text = value
+                if isinstance(value, str) and len(value) > 500:
+                    text = value[:497] + "..."
+                return text
+            if isinstance(value, list):
+                return [compact(item, depth=depth + 1) for item in value[:8]]
+            if not isinstance(value, dict):
+                return str(value)
+            if key in {"last_outcome", "outcome_history", "transcript", "prompt_history", "data_json"}:
+                return "[details omitted]"
+            drop = {
+                "id", "intent_id", "execution_id", "event_id", "entity_id",
+                "action_instance_id", "active_bt_instance", "active_action_instance",
+            }
+            output: dict[str, Any] = {}
+            for child_key, child_value in value.items():
+                normalized = str(child_key)
+                if normalized in drop or normalized.endswith("_id"):
+                    continue
+                if normalized in {"initial_state", "state"} and isinstance(child_value, dict):
+                    state_keys = {
+                        "status", "location_id", "active_behavior", "active_action",
+                        "remaining_minutes", "energy", "attention", "health",
+                        "exposure", "threat_level", "reputation",
+                    }
+                    child_value = {k: v for k, v in child_value.items() if k in state_keys}
+                output[normalized] = compact(child_value, key=normalized, depth=depth + 1)
+            return output
+
+        compacted = compact(result)
+        if not isinstance(compacted, dict):
+            compacted = {"status": "ok", "result": compacted}
+        compacted.setdefault("tool", str(tool_name))
+        # Keep a hard upper bound even for an unexpectedly large configured
+        # record.  The full value is still available in the private transcript.
+        encoded = json.dumps(compacted, ensure_ascii=False, separators=(",", ":"))
+        if len(encoded) > 6000:
+            compacted = {
+                key: compacted[key]
+                for key in ("status", "message", "failed_check", "choice", "summary", "remaining_minutes", "tool")
+                if key in compacted
+            }
+            compacted["message"] = str(compacted.get("message") or "Detailed tool output omitted; use the visible facts already collected.")
+        return compacted
+
     @staticmethod
     def _task_text(role: str, task_type: str) -> str:
         if role == "agent_decision":
@@ -396,7 +488,7 @@ class AgentEngine:
         if role == "god":
             if str(task_type).startswith("trigger:"):
                 return f"Task type: {task_type}. A world trigger is active. Submit one validated direct state-changing proposal that resolves the trigger; a narrative-only event does not resolve it. State the short observable expected_effects."
-            return f"Task type: {task_type}. Review the world signal and submit one validated world proposal if needed. State the short observable expected_effects."
+            return f"Task type: {task_type}. Review the already-recorded world signal. Submit one validated typed proposal only if it changes a configured rule, progress key, entity, relationship, or faction; otherwise return wait. Do not create a narrative acknowledgement event. State the short observable expected_effects."
         if role == "story":
             if str(task_type).startswith("milestone:"):
                 return f"Task type: {task_type}. Review the validated civilization milestone. Record configured public progress only when the evidence supports it, then activate one configured story beat if its evidence is present; otherwise wait. Platform owns every state change."
@@ -420,7 +512,11 @@ class AgentEngine:
                 intent_type_value = "propose_entity"
         if not intent_type_value and role == "story" and (data.get("beat") or data.get("summary")):
             intent_type_value = "propose_story_beat"
-        if not intent_type_value and isinstance(data.get("intent"), str):
+        command_value = next(
+            (data.get(key) for key in ("intent", "decision", "action") if isinstance(data.get(key), str)),
+            "",
+        )
+        if not intent_type_value and isinstance(command_value, str) and command_value:
             # Providers sometimes emit the visible action as ``intent``.  The
             # alias is accepted only at this protocol boundary; Platform still
             # validates the resulting Intent and all side effects.
@@ -445,7 +541,7 @@ class AgentEngine:
                 "approve_institution": "approve_institution",
                 "wait": "wait",
             }
-            intent_type_value = aliases.get(str(data.get("intent")).casefold())
+            intent_type_value = aliases.get(str(command_value).casefold())
         # A reflection response containing only a concise lesson is an
         # unambiguous record-experience proposal.  Use the latest visible
         # outcome as its audit reference; the Platform still performs all
@@ -459,7 +555,7 @@ class AgentEngine:
             else:
                 data.setdefault("event_ref", "reflection")
         intent_type = str(intent_type_value or ("select_behavior" if data.get("choice") or data.get("behavior_ref") or data.get("behavior_id") or data.get("behavior") else ""))
-        if data.get("wait") is True:
+        if data.get("wait") is True or str(command_value).casefold() == "wait":
             intent_type = "wait"
         if intent_type not in ROLE_INTENTS.get(role, set()):
             return {"status": "rejected", "failed_check": "intent_type", "retryable": True, "message": "This intent type is not allowed for the current role."}
@@ -556,12 +652,12 @@ class AgentEngine:
             if intent_type == "propose_world_change":
                 proposal = dict(data)
                 proposal.pop("intent_type", None)
-                if str(task_type).startswith("trigger:") and proposal.get("change_type") == "event" and not proposal.get("property"):
+                if (str(task_type).startswith("trigger:") or str(task_type).startswith("event:")) and proposal.get("change_type") == "event" and not proposal.get("property"):
                     return {
                         "status": "rejected",
-                        "failed_check": "trigger_requires_state_change",
+                        "failed_check": "event_already_recorded",
                         "retryable": True,
-                        "message": "This trigger requires a direct state-changing proposal; a narrative-only event does not resolve it.",
+                        "message": "The triggering event is already recorded. Return wait or submit one typed rule, progress, entity, relationship, or faction proposal grounded in the observed result.",
                     }
                 result = self.platform.submit_world_change(actor_id, proposal)
                 return result
@@ -640,6 +736,7 @@ class AgentEngine:
                 static_prefix_hash=prefix_hash,
                 static_prefix_chars=len(static_prefix),
                 dynamic_chars=len(dynamic_text),
+                request_latency_ms=usage.get("request_latency_ms") if isinstance(usage, dict) else None,
             )
         except Exception:
             # Observability must never turn a valid Intent into a failed turn.

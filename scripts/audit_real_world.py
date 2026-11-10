@@ -175,6 +175,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--minutes", type=int, default=1440)
     parser.add_argument("--provider", default="remote", help="Configured provider name; remote is the default real-model path.")
+    parser.add_argument("--model", default=None, help="Override the configured model for this provider.")
     parser.add_argument("--output", type=Path, default=Path("artifacts/real-agent-audit.json"))
     args = parser.parse_args()
     if args.minutes < 1:
@@ -194,7 +195,7 @@ def main() -> int:
         sessions.append(_safe_result(turn, context, actor_id))
 
     try:
-        report = platform.run(args.minutes, provider_name=args.provider, turn_observer=observe)
+        report = platform.run(args.minutes, provider_name=args.provider, provider_model=args.model, turn_observer=observe)
         causality = _causality(platform, sessions)
         _finalize_quality(sessions, causality)
         quality_counts = {
@@ -204,7 +205,7 @@ def main() -> int:
         }
         output = {
             "provider": args.provider,
-            "model": config.providers[args.provider].model,
+            "model": args.model or config.providers[args.provider].model,
             "minutes_requested": args.minutes,
             "db_path": str(db_path),
             "sessions": sessions,
@@ -226,7 +227,7 @@ def main() -> int:
         print(json.dumps({
             "audit_file": str(args.output),
             "db_path": str(db_path),
-            "model": config.providers[args.provider].model,
+            "model": args.model or config.providers[args.provider].model,
             "world_minute": output["world"]["status"]["world_minute"],
             "sessions": len(sessions),
             "quality_failed": failed,

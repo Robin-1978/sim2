@@ -398,7 +398,11 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
 ROLE_TOOLS: dict[str, list[str]] = {
     "agent_decision": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "request_behavior", "propose_institution"],
     "agent_reflection": ["recall_memory", "query_known_fact", "record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "propose_institution"],
-    "story": ["read_public_record", "query_known_fact", "record_world_progress", "propose_story_beat", "propose_institution"],
+    # Story receives the validated source, required facts, and unlocked beats
+    # in its world view.  Keeping generic lookup tools out of this role avoids
+    # a read-only loop over names that are not public records; it must turn the
+    # supplied evidence into one beat/progress proposal or wait.
+    "story": ["record_world_progress", "propose_story_beat"],
     "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_world_change", "approve_institution"],
     "world_builder": ["validate_world_template", "submit_world_template"],
 }
@@ -827,7 +831,7 @@ class AgentToolExecutor:
         }
         return self.platform.submit_world_change(self.actor_id, proposal)
 
-    def _propose_story_beat(self, beat: str, audience: list[str] | None = None, summary: str = "", fact: str = "", goal_hint: str = "", unlock_choices: list[str] | None = None, reason: str = "") -> dict[str, Any]:
+    def _propose_story_beat(self, beat: str = "", audience: list[str] | None = None, summary: str = "", fact: str = "", goal_hint: str = "", unlock_choices: list[str] | None = None, reason: str = "") -> dict[str, Any]:
         return self.platform.submit_story_beat(self.actor_id, {"beat": beat, "audience": list(audience or []), "summary": summary, "fact": fact, "goal_hint": goal_hint, "unlock_choices": list(unlock_choices or []), "reason": reason})
 
     def _validate_world_template(self, template: dict[str, Any]) -> dict[str, Any]:

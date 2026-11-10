@@ -410,6 +410,7 @@ actions:
     scope: world
     amount: 1
     required: 2
+    wake: [story, god]
   interrupt_policy: pause
   definition_source: config
   kind: atomic
@@ -606,7 +607,8 @@ actions:
     location_id: string
   preconditions:
   - actor.can_sound_alarm
-  - location.watch_post
+  - location.tag.watch_post
+  - world.north_gate_alarm_ready >= 1
   duration:
     minutes: 6
   costs:
@@ -738,6 +740,10 @@ actions:
     entity_id: context.entity_id
     state: location_id
     value: context.location_id
+  - type: world_property_delta
+    property: north_gate_alarm_ready
+    delta: 1
+    maximum: 1
   success:
     condition: entity.installed
     result: entity_installed

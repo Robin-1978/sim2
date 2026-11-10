@@ -114,7 +114,8 @@ CREATE TABLE IF NOT EXISTS llm_call (
   completion_tokens INTEGER,
   static_prefix_hash TEXT,
   static_prefix_chars INTEGER NOT NULL DEFAULT 0,
-  dynamic_chars INTEGER NOT NULL DEFAULT 0
+  dynamic_chars INTEGER NOT NULL DEFAULT 0,
+  request_latency_ms REAL
 );
 CREATE TABLE IF NOT EXISTS bt_instance (
   execution_id TEXT PRIMARY KEY,
@@ -245,6 +246,9 @@ class WorldStore:
             self.connection.execute(
                 "UPDATE memory_item SET memory_tier=CASE WHEN memory_type IN ('experience','summary','belief','goal','knowledge','capability') THEN 'long_term' ELSE 'short_term' END"
             )
+        llm_columns = {row["name"] for row in self.connection.execute("PRAGMA table_info(llm_call)").fetchall()}
+        if "request_latency_ms" not in llm_columns:
+            self.connection.execute("ALTER TABLE llm_call ADD COLUMN request_latency_ms REAL")
         self.connection.commit()
 
     @contextmanager
@@ -1076,6 +1080,7 @@ class WorldStore:
         static_prefix_hash: str | None = None,
         static_prefix_chars: int = 0,
         dynamic_chars: int = 0,
+        request_latency_ms: float | None = None,
     ) -> int:
         usage = usage or {}
         prompt_tokens = usage.get("prompt_tokens")
@@ -1084,8 +1089,8 @@ class WorldStore:
         cached_tokens = usage.get("cached_tokens", usage.get("prompt_cache_hit_tokens", details.get("cached_tokens")))
         with self._write_lock:
             cur = self.connection.execute(
-                "INSERT INTO llm_call(actor_id,role,task_type,iteration,context_hash,response_json,status,world_minute,prompt_tokens,cached_tokens,completion_tokens,static_prefix_hash,static_prefix_chars,dynamic_chars) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO llm_call(actor_id,role,task_type,iteration,context_hash,response_json,status,world_minute,prompt_tokens,cached_tokens,completion_tokens,static_prefix_hash,static_prefix_chars,dynamic_chars,request_latency_ms) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     actor_id,
                     role,
@@ -1101,6 +1106,7 @@ class WorldStore:
                     static_prefix_hash,
                     int(static_prefix_chars),
                     int(dynamic_chars),
+                    float(request_latency_ms) if isinstance(request_latency_ms, (int, float)) else None,
                 ),
             )
             self.connection.commit()
@@ -1112,7 +1118,7 @@ class WorldStore:
         row = self.connection.execute(
             "SELECT COUNT(*) AS calls, SUM(CASE WHEN cached_tokens IS NOT NULL THEN 1 ELSE 0 END) AS measured, "
             "COALESCE(SUM(prompt_tokens),0) AS prompt_tokens, COALESCE(SUM(cached_tokens),0) AS cached_tokens, "
-            "COALESCE(SUM(completion_tokens),0) AS completion_tokens FROM llm_call"
+            "COALESCE(SUM(completion_tokens),0) AS completion_tokens, COALESCE(AVG(request_latency_ms),0) AS average_latency_ms, COALESCE(MAX(request_latency_ms),0) AS max_latency_ms FROM llm_call"
         ).fetchone()
         prefixes = self.connection.execute(
             "SELECT COUNT(*) AS total, COUNT(DISTINCT static_prefix_hash) AS distinct_prefixes, "
@@ -1129,6 +1135,8 @@ class WorldStore:
             "cached_tokens": cached_tokens,
             "prompt_tokens": prompt_tokens,
             "completion_tokens": int(row["completion_tokens"] or 0),
+            "average_request_latency_ms": round(float(row["average_latency_ms"] or 0), 1),
+            "max_request_latency_ms": round(float(row["max_latency_ms"] or 0), 1),
             "static_prefix_distinct": int(prefixes["distinct_prefixes"] or 0),
             "static_prefix_reuse_rate": round(1 - int(prefixes["distinct_prefixes"] or 0) / int(prefixes["total"] or 1), 4) if calls else 0.0,
             "average_static_prefix_chars": round(float(prefixes["avg_static_chars"] or 0), 1),

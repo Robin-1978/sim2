@@ -281,6 +281,13 @@ class AgentViewCompiler:
             rules = rules + attribute_rules
         return protocol_lines, rules
 
+    def _role_tools(self, role: str) -> list[dict[str, Any]]:
+        prompt = self.store.get_prompt("agent", {}) or {}
+        prompt = prompt.get("agent_prompt", prompt) if isinstance(prompt, dict) else {}
+        policy = prompt.get("tool_policy", {}) if isinstance(prompt, dict) else {}
+        names = policy.get(role) if isinstance(policy, dict) else None
+        return tools_for_role(role, names if isinstance(names, list) else None)
+
     def _world_rule_labels(self) -> dict[str, str]:
         """Map package storage keys to visible names for model-facing policy text."""
 
@@ -784,7 +791,7 @@ class AgentViewCompiler:
             "pending_institutions": pending_institutions,
             "active_institutions": active_institutions,
             "institution_ledgers": institution_ledgers,
-            "executable_behaviors": self._assign_choices(available), "decision_constraints": decision_constraints, "last_platform_result": state.get("last_platform_result"), "tools": tools_for_role(role),
+            "executable_behaviors": self._assign_choices(available), "decision_constraints": decision_constraints, "last_platform_result": state.get("last_platform_result"), "tools": self._role_tools(role),
         }
 
     @staticmethod
@@ -919,17 +926,30 @@ class AgentViewCompiler:
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
         story_state = self.store.get_meta("story_state", {}) or {}
         recent_events = self.store.recent_events(limit=80)
+        # Prefer the validated information event over the later wrapper
+        # ``behavior.completed`` row.  The wrapper often says only
+        # ``research_progressed``; using it as the source hides the completed
+        # fact and makes Story search for evidence it already received.
         source_event = next(
             (
                 item for item in recent_events
                 if str(item.get("event_type", "")) in {
                     "exploration.completed", "research.completed", "object.recovered",
-                    "relationship.changed", "negotiation.result_recorded", "behavior.completed",
+                    "relationship.changed", "negotiation.result_recorded",
                 }
                 and item.get("actor_id") not in {"story", "god"}
             ),
             None,
         )
+        if source_event is None:
+            source_event = next(
+                (
+                    item for item in recent_events
+                    if str(item.get("event_type", "")) == "behavior.completed"
+                    and item.get("actor_id") not in {"story", "god"}
+                ),
+                None,
+            )
         validated_source: dict[str, Any] = {}
         if source_event:
             outcome = source_event.get("outcome") if isinstance(source_event.get("outcome"), dict) else {}
@@ -952,6 +972,24 @@ class AgentViewCompiler:
                 "fact": source_event.get("fact") or (outcome.get("expected") or {}).get("summary") or "",
                 "world_minute": source_event.get("world_minute"),
             }
+            # Information facts are persisted separately from the event
+            # envelope.  Include the matching public fact in the source view
+            # so Story never has to guess a key or query a private record.
+            source_minute = int(source_event.get("world_minute", -1) or -1)
+            fact_rows = self.store.connection.execute("SELECT agent_id,data_json FROM knowledge_fact ORDER BY id DESC LIMIT 64").fetchall()
+            for row in fact_rows:
+                try:
+                    fact_data = json.loads(row["data_json"] or "{}")
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if str(fact_data.get("source_type") or "") not in {"research", "exploration", "recovery", "story"}:
+                    continue
+                if str(row["agent_id"] or "") != str(actor_id) or fact_data.get("observed_at") not in {source_minute, str(source_minute)}:
+                    continue
+                if fact_data.get("fact"):
+                    validated_source["fact"] = str(fact_data["fact"])
+                    validated_source["fact_key"] = str(fact_data.get("source_id") or "")
+                    break
         audience_candidates = self._story_audience_candidates(recent_events)
         observed_events = {str(item.get("event_type", "")) for item in recent_events}
         fact_rows = self.store.connection.execute("SELECT fact_key,data_json FROM knowledge_fact ORDER BY id DESC").fetchall()
@@ -1012,7 +1050,7 @@ class AgentViewCompiler:
             ],
             "active_world_rules": self.rule_compiler.model_view(self._world_rule_labels()),
             "last_platform_result": recent_events[0] if recent_events else None,
-            "tools": tools_for_role(role),
+            "tools": self._role_tools(role),
         }
 
     def _story_audience_candidates(self, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1124,6 +1162,11 @@ class AgentViewCompiler:
             "recent_agent_outcomes": recent_agent_outcomes,
             "world_trends": world_trends,
             "civilization_progress": self.store.list_progress(world_id, limit=20),
+            "world_progress_candidates": [
+                {"progress_key": str(key), "required": float((value or {}).get("required", 1) or 1)}
+                for key, value in ((self.store.get_meta("rules", {}) or {}).get("civilization_progress", {}) or {}).items()
+                if isinstance(value, dict)
+            ],
             "pending_institutions": [
                 {"name": str(item.get("name", "")), "purpose": str(item.get("purpose", "")), "scope": str(item.get("scope", "world")), "status": "proposed"}
                 for item in self.store.list_institutions(status="proposed", limit=20)
@@ -1144,5 +1187,5 @@ class AgentViewCompiler:
             "active_task": {"bt": None, "action": None, "remaining_minutes": 0},
             "executable_behaviors": [],
             "last_platform_result": recent_world_events[0] if recent_world_events else None,
-            "tools": tools_for_role(role),
+            "tools": self._role_tools(role),
         }

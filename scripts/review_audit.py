@@ -75,6 +75,39 @@ def _feedback_checks(session: dict[str, Any], index: int) -> list[dict[str, Any]
     return issues
 
 
+def _tool_view_checks(session: dict[str, Any], index: int) -> list[dict[str, Any]]:
+    """Check that the model saw a bounded, provenance-preserving tool view."""
+
+    issues: list[dict[str, Any]] = []
+    uuid_pattern = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", re.IGNORECASE)
+    for step_index, step in enumerate(session.get("transcript", []) or []):
+        if step.get("step") != "tool":
+            continue
+        model_result = step.get("model_result")
+        raw_result = step.get("raw_result", step.get("result"))
+        # Older audit artifacts predate the dual-track field; do not claim a
+        # model-view defect when reviewing those historical files.
+        if model_result is None:
+            continue
+        try:
+            encoded = json.dumps(model_result, ensure_ascii=False, separators=(",", ":"))
+        except (TypeError, ValueError) as exc:
+            issues.append(_issue("invalid_model_tool_view", f"tool {step_index}: {exc}", index))
+            continue
+        if len(encoded) > 6000:
+            issues.append(_issue("model_tool_view_over_budget", f"tool {step_index}: {len(encoded)} chars", index))
+        if uuid_pattern.search(encoded):
+            issues.append(_issue("internal_uuid_in_model_tool_view", f"tool {step_index} exposes an internal UUID", index))
+        if isinstance(raw_result, dict) and isinstance(model_result, dict):
+            if raw_result.get("status") != model_result.get("status"):
+                issues.append(_issue("tool_status_changed_in_view", f"tool {step_index}: raw={raw_result.get('status')}; model={model_result.get('status')}", index))
+            if raw_result.get("source") and model_result.get("source") != raw_result.get("source"):
+                issues.append(_issue("tool_source_lost_in_view", f"tool {step_index}: source={raw_result.get('source')}", index))
+            if raw_result.get("failed_check") and model_result.get("failed_check") != raw_result.get("failed_check"):
+                issues.append(_issue("tool_feedback_lost_in_view", f"tool {step_index}: failed_check={raw_result.get('failed_check')}", index))
+    return issues
+
+
 def _database_checks(data: dict[str, Any]) -> dict[str, Any]:
     """Verify persisted execution and evolution closure for the full run.
 
@@ -232,10 +265,12 @@ def review(data: dict[str, Any]) -> dict[str, Any]:
             stats["quality_failed"] += 1
         prompt_issues = _prompt_checks(session, index) if session.get("result", {}).get("status") != "skipped" else []
         feedback_issues = _feedback_checks(session, index)
+        tool_view_issues = _tool_view_checks(session, index)
         stats["prompt_issues"] += len(prompt_issues)
-        stats["feedback_issues"] += len(feedback_issues)
+        stats["feedback_issues"] += len(feedback_issues) + len(tool_view_issues)
         issues.extend(prompt_issues)
         issues.extend(feedback_issues)
+        issues.extend(tool_view_issues)
     world = data.get("world") or {}
     causality = world.get("causality") or {}
     if causality.get("orphan_behavior_intents"):

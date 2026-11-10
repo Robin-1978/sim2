@@ -7,6 +7,7 @@ world_state:
     winter_days_remaining: 30
     root_gate_stability: 0.64
     north_gate_threat_level: 0.22
+    north_gate_alarm_ready: 0
   initial_facts:
     - {id: village_rules, subject: starter_village, predicate: public_rule, object: night_restriction_at_old_well, source_type: public}
     - {id: trade_route, subject: river_trade_route, predicate: status, object: disrupted, source_type: public}
