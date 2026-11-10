@@ -214,6 +214,18 @@ def test_classified_boundary_marks_remove_repeat_investigation(tmp_path: Path):
         platform.close()
 
 
+def test_world_calendar_effects_advance_fog_and_winter_countdown(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "calendar-world-effects", tmp_path / "runtime"))
+    try:
+        for _ in range(1440):
+            platform.step()
+        properties = platform.store.get_meta("world_properties")
+        assert properties["winter_days_remaining"] == 29
+        assert round(properties["fog_level"], 2) == 0.6
+    finally:
+        platform.close()
+
+
 def test_starter_bell_enables_alarm_only_when_threat_is_configured(tmp_path: Path):
     platform = Platform(create_instance(_config(), "bell-alarm-loop", tmp_path / "runtime"))
     try:

@@ -2325,7 +2325,14 @@ class Platform(ActivityRuntimeMixin):
                 key = definition.get("world_property") or definition.get("property") or definition.get("need")
                 if key:
                     properties = dict(self.store.get_meta("world_properties", {}) or {})
-                    self._set_world_property(str(key), float(properties.get(key, 0)) + float(definition.get("delta", 0)))
+                    before = float(properties.get(key, 0) or 0)
+                    after = before + float(definition.get("delta", 0) or 0)
+                    if definition.get("minimum") is not None:
+                        after = max(float(definition["minimum"]), after)
+                    if definition.get("maximum") is not None:
+                        after = min(float(definition["maximum"]), after)
+                    if abs(after - before) > 1e-12:
+                        self._set_world_property(str(key), after)
             elif scope == "relationship":
                 relation_delta = float(definition.get("relation_strength", definition.get("delta", 0)))
                 for relation in self.store.list_relationships():

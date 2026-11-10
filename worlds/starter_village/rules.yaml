@@ -71,7 +71,18 @@ minute_effects:
   scope: world
   every_minutes: 144
   effect:
-    fog_level: 0.05
+    type: world_property_delta
+    property: fog_level
+    delta: 0.05
+    maximum: 1.0
+- id: winter_countdown
+  scope: world
+  every_minutes: 1440
+  effect:
+    type: world_property_delta
+    property: winter_days_remaining
+    delta: -1
+    minimum: 0
 route_minutes_per_hop: 5
 public_locations_are_safe: true
 location_tag_groups:
