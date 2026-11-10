@@ -2272,7 +2272,12 @@ def test_story_catalog_is_scoped_to_the_triggering_event(tmp_path: Path):
     try:
         with platform.store.transaction():
             platform.store.merge_knowledge_fact("su_wu", "researched:old_pact_tablet:origin", {
-                "fact": "The old pact kept the root gate stable.", "source_type": "research", "confidence": 0.9,
+                "fact": "The old pact kept the root gate stable.", "source_type": "research", "source_id": "old_pact_tablet", "confidence": 0.9, "observed_at": 2,
+            })
+            # A different Story fact reaches the same person in the same
+            # minute. Source type, not row recency, must select evidence.
+            platform.store.merge_knowledge_fact("su_wu", "story:ledger_boundary", {
+                "fact": "The recovered ledger mentions the northern boundary.", "source_type": "story", "confidence": 1.0, "observed_at": 2,
             })
             recovered = platform.store.append_event("object.recovered", "lu_xingzhou", 1, {"fact": "The caravan ledger was recovered."})
             researched = platform.store.append_event("research.completed", "su_wu", 2, {"fact": "The old pact tablet research completed."})
@@ -2280,6 +2285,8 @@ def test_story_catalog_is_scoped_to_the_triggering_event(tmp_path: Path):
         assert all(item["ref"] != "story:old_pact_understood" for item in recovered_view["story_beats"])
         research_view = platform.view.build_decision_view("story", role="story", source_event_id=researched)
         assert any(item["ref"] == "story:old_pact_understood" for item in research_view["story_beats"])
+        assert research_view["validated_source"]["fact"] == "The old pact kept the root gate stable."
+        assert research_view["validated_source"]["fact_key"] == "researched:old_pact_tablet:origin"
     finally:
         platform.close()
 

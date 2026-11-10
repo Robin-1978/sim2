@@ -978,19 +978,28 @@ class AgentViewCompiler:
             # envelope.  Include the matching public fact in the source view
             # so Story never has to guess a key or query a private record.
             source_minute = int(source_event.get("world_minute", -1) or -1)
-            fact_rows = self.store.connection.execute("SELECT agent_id,data_json FROM knowledge_fact ORDER BY id DESC LIMIT 64").fetchall()
+            expected_source_types = {
+                "research.completed": {"research"},
+                "exploration.completed": {"exploration"},
+                "object.recovered": {"recovery"},
+                "entity.installed": {"deployment"},
+            }.get(str(source_event.get("event_type") or ""), set())
+            fact_rows = self.store.connection.execute("SELECT agent_id,fact_key,data_json FROM knowledge_fact ORDER BY id DESC LIMIT 64").fetchall()
             for row in fact_rows:
                 try:
                     fact_data = json.loads(row["data_json"] or "{}")
                 except (TypeError, json.JSONDecodeError):
                     continue
-                if str(fact_data.get("source_type") or "") not in {"research", "exploration", "recovery", "story"}:
+                fact_source_type = str(fact_data.get("source_type") or "")
+                if expected_source_types and fact_source_type not in expected_source_types:
+                    continue
+                if not expected_source_types and fact_source_type not in {"research", "exploration", "recovery", "deployment"}:
                     continue
                 if str(row["agent_id"] or "") != str(actor_id) or fact_data.get("observed_at") not in {source_minute, str(source_minute)}:
                     continue
                 if fact_data.get("fact"):
                     validated_source["fact"] = str(fact_data["fact"])
-                    validated_source["fact_key"] = str(fact_data.get("source_id") or "")
+                    validated_source["fact_key"] = str(row["fact_key"] or fact_data.get("source_id") or "")
                     break
         audience_candidates = self._story_audience_candidates(recent_events)
         observed_events = {str(item.get("event_type", "")) for item in recent_events}
