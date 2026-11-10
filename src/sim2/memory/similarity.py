@@ -164,6 +164,8 @@ class ExperienceSimilarity:
         """
 
         explicit = str(config.get("model") or os.getenv("SIM2_BGE_MODEL", "")).strip()
+        if explicit.casefold() in {"disabled", "disable", "off", "none", "false", "0"}:
+            return ""
         if explicit:
             return explicit
         roots = [os.getenv("SIM2_BGE_CACHE", ""), os.getenv("KNOA_BGE_CACHE", "")]

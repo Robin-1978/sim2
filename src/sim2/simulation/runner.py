@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 import re
 import unicodedata
 from typing import Any, Callable
@@ -71,6 +72,8 @@ class SimulationRunner:
         self._interaction_topic_families: dict[tuple[str, str], list[tuple[str, set[str]]]] = {}
         self._interaction_not_before: dict[str, int] = {}
         self._provider_retry_pending = False
+        self._wait_streak: dict[str, int] = {}
+        self._decision_event_cursor = 0
         self.turn_observer = turn_observer
         self._load_scheduler_state()
 
@@ -83,6 +86,8 @@ class SimulationRunner:
         self._interaction_not_before = {str(key): int(value) for key, value in (state.get("interaction_not_before") or {}).items()}
         self._interaction_events_seen = {int(value) for value in (state.get("interaction_events_seen") or [])}
         self._provider_retry_pending = bool(state.get("provider_retry_pending", False))
+        self._wait_streak = {str(key): int(value) for key, value in (state.get("wait_streak") or {}).items()}
+        self._decision_event_cursor = int(state.get("decision_event_cursor", 0) or 0)
         self._interaction_rounds = {
             tuple(str(value) for value in item.get("key", [])): (int(item.get("last_minute", 0)), int(item.get("rounds", 0)))
             for item in (state.get("interaction_rounds") or []) if isinstance(item, dict) and item.get("key")
@@ -108,6 +113,8 @@ class SimulationRunner:
             "interaction_not_before": self._interaction_not_before,
             "interaction_events_seen": sorted(self._interaction_events_seen)[-2000:],
             "provider_retry_pending": self._provider_retry_pending,
+            "wait_streak": self._wait_streak,
+            "decision_event_cursor": self._decision_event_cursor,
             "interaction_rounds": [
                 {"key": list(key), "last_minute": value[0], "rounds": value[1]}
                 for key, value in sorted(self._interaction_rounds.items())
@@ -316,6 +323,7 @@ class SimulationRunner:
         if provider is None or self._provider_cooling_down(provider):
             return
         minute = int(self.platform.store.get_meta("world_minute", 0))
+        self._refresh_decision_wakes(minute)
         for agent in self.platform.store.list_agents():
             if self._provider_cooling_down(provider):
                 return
@@ -338,9 +346,12 @@ class SimulationRunner:
                 return
             if turn.result.get("status") == "wait":
                 report.waits += 1
-                self._decision_not_before[agent_id] = minute + self.wait_cooldown_minutes
+                streak = self._wait_streak.get(agent_id, 0) + 1
+                self._wait_streak[agent_id] = streak
+                self._decision_not_before[agent_id] = minute + self._wait_delay(streak)
             elif turn.result.get("status") == "accepted":
                 self._llm_error_count.pop(agent_id, None)
+                self._wait_streak.pop(agent_id, None)
                 if turn.result.get("interaction_committed") or turn.result.get("trade_committed") or any(key in turn.result for key in ("dialogue_id", "offer_id", "trade_status")):
                     self._interaction_not_before[agent_id] = minute + self.interaction_cooldown_minutes
                 # If a selected BT fails at its first boundary, avoid an
@@ -352,6 +363,44 @@ class SimulationRunner:
                 # budget. Let the world advance before trying again.
                 self._decision_not_before[agent_id] = minute + self.wait_cooldown_minutes
             self._persist_scheduler_state()
+
+    def _wait_delay(self, streak: int) -> int:
+        policy = (self.platform.store.get_meta("rules", {}) or {}).get("decision_policy", {}) or {}
+        values = policy.get("wait_backoff_minutes") or [self.wait_cooldown_minutes]
+        delays = [max(1, int(value)) for value in values if isinstance(value, (int, float)) and int(value) > 0]
+        if not delays:
+            delays = [self.wait_cooldown_minutes]
+        return delays[min(max(1, int(streak)) - 1, len(delays) - 1)]
+
+    def _refresh_decision_wakes(self, minute: int) -> None:
+        """Clear wait backoff for configured events without semantic branches."""
+
+        policy = (self.platform.store.get_meta("rules", {}) or {}).get("decision_policy", {}) or {}
+        wake_events = {str(value) for value in (policy.get("wake_events") or []) if str(value)}
+        rows = self.platform.store.connection.execute(
+            "SELECT event_id,event_type,actor_id,data_json FROM event_log WHERE event_id>? ORDER BY event_id LIMIT 2000",
+            (int(self._decision_event_cursor),),
+        ).fetchall()
+        if not rows:
+            return
+        known_agents = {str(item["id"]) for item in self.platform.store.list_agents()}
+        for row in rows:
+            self._decision_event_cursor = max(self._decision_event_cursor, int(row["event_id"]))
+            if str(row["event_type"]) not in wake_events:
+                continue
+            try:
+                data = json.loads(row["data_json"] or "{}")
+            except (TypeError, ValueError):
+                data = {}
+            candidates = [row["actor_id"]]
+            for key in ("target_id", "recipient_id", "listener_id", "patient_id", "counterparty_id"):
+                candidates.append(data.get(key))
+            audience = data.get("audience")
+            if isinstance(audience, list):
+                candidates.extend(audience)
+            for actor_id in {str(value) for value in candidates if value is not None and str(value) in known_agents}:
+                self._decision_not_before[actor_id] = min(minute, self._decision_not_before.get(actor_id, minute))
+                self._wait_streak.pop(actor_id, None)
 
     def _run_due_evolution(self, report: SimulationReport) -> None:
         for task in list(self.platform.ready_evolution_tasks()):

@@ -657,3 +657,30 @@ def test_interaction_dispatch_cursor_survives_runner_restart(tmp_path: Path):
         assert sent["event_id"] in state["interaction_events_seen"]
     finally:
         platform.close()
+
+
+def test_wait_decisions_back_off_and_configured_event_wakes_one_agent(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "decision-backoff", tmp_path / "runtime"))
+    provider = WaitProvider()
+    try:
+        rules = dict(platform.store.get_meta("rules") or {})
+        rules["decision_policy"] = {"wait_backoff_minutes": [5, 10, 20], "wake_events": ["test.wake"]}
+        with platform.store.transaction():
+            platform.store.set_meta("rules", rules)
+        runner = SimulationRunner(platform, {"agent_decision": provider})
+        runner.run(1)
+        initial_calls = len(provider.calls)
+        assert initial_calls == len(platform.store.list_agents())
+        runner.run(4)
+        assert len(provider.calls) == initial_calls
+        runner.run(1)
+        assert len(provider.calls) == initial_calls * 2
+
+        event = platform.inject_event("test.wake", {"summary": "A configured wake signal."}, "fei_lan")
+        assert event["status"] == "accepted"
+        before = len(provider.calls)
+        runner.run(1)
+        assert len(provider.calls) == before + 1
+        assert runner._wait_streak.get("fei_lan") == 1
+    finally:
+        platform.close()

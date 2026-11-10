@@ -223,14 +223,26 @@ def main() -> int:
     platform = Platform(db_path)
     checkpoint_path = args.checkpoint or args.output.with_name(args.output.stem + ".checkpoint.json")
     sessions: list[dict[str, Any]] = []
+    resume_after_provider_cooldown = False
     for prior_path in (checkpoint_path, args.output):
         if args.resume_db and prior_path.is_file():
             try:
                 prior = json.loads(prior_path.read_text(encoding="utf-8"))
-                sessions = list(prior.get("sessions") or [])
-                break
+                if not sessions:
+                    sessions = list(prior.get("sessions") or [])
+                stop_reason = str(
+                    prior.get("stop_reason")
+                    or ((prior.get("world") or {}).get("report") or {}).get("stop_reason")
+                    or ""
+                )
+                resume_after_provider_cooldown = resume_after_provider_cooldown or stop_reason.startswith("provider_cooldown")
             except (OSError, TypeError, ValueError, json.JSONDecodeError):
                 pass
+    if args.resume_db and resume_after_provider_cooldown:
+        scheduler_state = dict(platform.store.get_meta("runtime_scheduler_state", {}) or {})
+        scheduler_state["provider_retry_pending"] = True
+        with platform.store.transaction():
+            platform.store.set_meta("runtime_scheduler_state", scheduler_state)
 
     def observe(turn: Any, actor_id: str) -> None:
         context = turn.initial_context or {}
@@ -259,6 +271,7 @@ def main() -> int:
             "minutes_requested": args.minutes,
             "start_minute": start_minute,
             "target_minute": target_minute,
+            "stop_reason": report.stop_reason,
             "db_path": str(db_path),
             "sessions": sessions,
             "world": {
@@ -281,6 +294,7 @@ def main() -> int:
             "db_path": str(db_path),
             "world_minute": output["world"]["status"]["world_minute"],
             "target_minute": target_minute,
+            "stop_reason": report.stop_reason,
             "quality_counts": quality_counts,
             "sessions": sessions,
         })

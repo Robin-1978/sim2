@@ -179,6 +179,14 @@ interaction_policy:
   max_rounds: 3
   reply_cooldown_minutes: 120
   thread_window_minutes: 360
+decision_policy:
+  wait_backoff_minutes: [60, 120, 240, 480, 720]
+  wake_events:
+  - need.satiety_low
+  - need.starvation_damage
+  - behavior.failed
+  - story.beat.activated
+  - trade.offer_created
 need_effects:
   dialogue.completed:
     belonging: 1

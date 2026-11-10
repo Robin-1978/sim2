@@ -63,16 +63,22 @@ def main() -> int:
                     "name": agent.get("name", agent.get("id")),
                     "status": state.get("status"),
                     "location": state.get("location_id"),
-                    "energy": state.get("energy"),
-                    "satiety": (agent.get("needs", {}) or {}).get("satiety", state.get("satiety")),
-                    "health": state.get("health"),
+                    "attributes": {
+                        item["id"]: item["value"]
+                        for item in platform.attribute_schema.values(state, agent.get("needs", {}) or {})
+                    },
                     "inventory": agent.get("inventory", {}),
                 })
-            resources = [
-                {"name": item.get("name", item.get("id")), "type": item.get("entity_type"), "state": item.get("initial_state", {})}
-                for entity_type in ("resource", "material", "consumable")
-                for item in platform.store.entities_of_type(entity_type)
-            ]
+            resources = []
+            for entity_type in (platform.store.get_meta("rules", {}) or {}).get("resource_entity_types", ["resource", "material"]):
+                for row in platform.store.entities_of_type(str(entity_type)):
+                    item = platform.store.get_entity(str(row["id"]))
+                    resources.append({
+                        "name": item.get("name", item.get("id")),
+                        "type": item.get("entity_type"),
+                        "amount": item.get("amount", (item.get("initial_state") or {}).get("quantity", (item.get("initial_state") or {}).get("amount"))),
+                        "state": item.get("initial_state", {}),
+                    })
             output = {
                 "provider_calls": provider.calls,
                 "report": report.as_dict(),

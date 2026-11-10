@@ -1544,6 +1544,11 @@ def test_memory_bge_cache_discovery_matches_fastembed_layout(tmp_path: Path, mon
     assert resolved == str(snapshot)
 
 
+def test_memory_bge_can_be_explicitly_disabled_without_treating_flag_as_path(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("SIM2_BGE_MODEL", "disabled")
+    assert ExperienceSimilarity._resolve_model_name({}) == ""
+
+
 def test_semantic_embeddings_persist_in_instance_sqlite(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "memory-embedding-store-world", tmp_path / "runtime"))
