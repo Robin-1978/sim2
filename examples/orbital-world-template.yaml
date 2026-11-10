@@ -132,6 +132,12 @@ agents:
 rules:
   vital_attribute: integrity
   capacity_attribute: charge
+  perception:
+    visible_fields: [role, type, summary, description, public]
+    visible_state_fields: [status]
+    global:
+      fields: [role, type, summary, description, public]
+      state_fields: [status, location_id]
   fallback_behavior_ids: []
   needs:
   - id: signal_clarity

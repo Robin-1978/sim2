@@ -1733,6 +1733,23 @@ def test_world_progress_milestone_wakes_story_and_god_from_agent_proposal(tmp_pa
         platform.close()
 
 
+def test_world_progress_has_no_implicit_consumers_without_configured_wake(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "progress-no-wake-world", tmp_path / "runtime"))
+    try:
+        rules = dict(platform.store.get_meta("rules") or {})
+        rules["civilization_progress"] = {"quiet_progress": {"required": 1}}
+        with platform.store.transaction():
+            platform.store.set_meta("rules", rules)
+            platform.store.append_event("behavior.completed", "lin_bo", 1, {"behavior_id": "govern_village", "result": "behavior_completed"})
+        result = platform.submit_world_progress("story", "quiet_progress", 1, "One verified behavior produced this configured progress result.")
+        assert result["status"] == "accepted"
+        assert result["milestone"] is True
+        assert platform.ready_evolution_tasks() == []
+    finally:
+        platform.close()
+
+
 def test_decision_session_does_not_call_llm_while_behavior_is_active(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "active-world", tmp_path / "runtime")
@@ -1811,6 +1828,33 @@ def test_read_tool_projection_hides_internal_execution_fields(tmp_path: Path):
         assert result["status"] == "ok"
         assert "active_bt_instance" not in encoded
         assert "behavior:communicate" not in encoded
+        assert "ultimate_goal" not in encoded
+        assert "traits" not in encoded
+        assert "needs" not in encoded
+        assert "capabilities" not in encoded
+        assert "inventory" not in encoded
+        assert result["visibility"] == "nearby"
+        assert result["observed_at"] == 0
+        assert result["entity"]["name"] == "费兰"
+        assert result["entity"]["known_state"]["status"] == "idle"
+    finally:
+        platform.close()
+
+
+def test_known_distant_entity_does_not_reveal_live_state(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "perception-known-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            agent = platform.store.get_agent("lu_xingzhou")
+            agent.setdefault("knowledge_seed", []).append("public:granary")
+            platform.store.update_agent("lu_xingzhou", agent)
+        result = AgentToolExecutor(platform, role="agent_decision", actor_id="lu_xingzhou").execute(
+            "inspect_entity", {"entity": "粮仓"},
+        )
+        assert result["status"] == "ok"
+        assert result["visibility"] == "known"
+        assert "known_state" not in result["entity"]
     finally:
         platform.close()
 

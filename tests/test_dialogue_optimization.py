@@ -65,6 +65,10 @@ def test_compatible_tool_use_envelopes_are_normalized():
         "preview_behavior",
         {"choice": "Explore Greywood"},
     )
+    assert parse_tool_call({"tool_uses": [{"function": "request_behavior", "arguments": {"choice": "Research Water"}}]}) == (
+        "request_behavior",
+        {"choice": "Research Water"},
+    )
 
 
 def test_provider_intent_wrapper_uses_visible_behavior_choice():
@@ -78,6 +82,31 @@ def test_provider_intent_wrapper_uses_visible_behavior_choice():
     )
     assert normalized["choice"] == "Explore Greywood"
     assert normalized["target"] == {"name": "Greywood edge"}
+
+    detailed = AgentEngine._normalize_provider_intent(
+        "agent_decision",
+        {
+            "choice": "request_behavior",
+            "choice_detail": {"behavior_name": "Manage Ration"},
+            "target": "粮仓",
+            "reason": "Review winter allocation.",
+        },
+    )
+    assert detailed["choice"] == "Manage Ration"
+    assert detailed["target"] == {"name": "粮仓"}
+
+    nested = AgentEngine._normalize_provider_intent(
+        "agent_decision",
+        {
+            "choice": "request_behavior",
+            "parameters": {"choice": "Manage Ration", "target": "粮仓", "reason": "Review winter allocation.", "confidence": 0.9},
+        },
+    )
+    assert nested["choice"] == "Manage Ration"
+    assert nested["target"] == {"name": "粮仓"}
+    assert nested["reason"] == "Review winter allocation."
+    assert nested["confidence"] == 0.9
+    assert nested["parameters"] == {}
 
 
 def test_provider_target_alias_is_mapped_to_visible_name():

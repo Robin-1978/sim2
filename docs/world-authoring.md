@@ -92,6 +92,15 @@ them. A science-fiction world can use `integrity` and `charge`; a biological
 world can use different terms. Platform does not inject `health`, `energy`,
 `satiety`, food or village concepts.
 
+`rules.perception` is the information boundary between SQLite truth and an
+Agent observation. `visible_fields` and `visible_state_fields` list properties
+that a nearby inspection may reveal. The optional `types` map overrides those
+lists for any configured entity type, and `global` defines the bounded view
+used by world-level review. Properties absent from these lists remain private.
+A merely known but distant entity exposes identity and public description, not
+its live state. This policy lets a new world add arbitrary properties without
+adding projection code or leaking complete entity rows to a model.
+
 Character attributes describe the individual. Environmental, institutional,
 vehicle and facility values belong to world properties or entity state. For
 example, a diver may have `suit_integrity` while a station has

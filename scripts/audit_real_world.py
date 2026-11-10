@@ -52,9 +52,14 @@ def _write_json_atomic(path: Path, value: dict[str, Any]) -> None:
 
 
 def _quality_counts(sessions: list[dict[str, Any]]) -> dict[str, int]:
+    def provider_error(item: dict[str, Any]) -> bool:
+        return (
+            str((item.get("quality") or {}).get("grade") or "").startswith("provider_")
+            or (item.get("result") or {}).get("failed_check") == "llm_response"
+        )
+
     provider_errors = sum(
-        1 for item in sessions
-        if str((item.get("quality") or {}).get("grade") or "").startswith("provider_")
+        1 for item in sessions if provider_error(item)
     )
     return {
         "passed": sum(1 for item in sessions if item["quality"].get("passed")),
@@ -64,9 +69,32 @@ def _quality_counts(sessions: list[dict[str, Any]]) -> dict[str, int]:
             1 for item in sessions
             if not item["quality"].get("passed")
             and not item["quality"].get("pending")
-            and not str(item["quality"].get("grade") or "").startswith("provider_")
+            and not provider_error(item)
         ),
     }
+
+
+def _merge_reports(reports: list[Any], *, target_minute: int) -> dict[str, Any]:
+    if not reports:
+        return {"start_minute": target_minute, "end_minute": target_minute, "stop_reason": "no_run"}
+    numeric = (
+        "decisions", "reflections", "god_sessions", "story_sessions", "waits",
+        "llm_errors", "rejected_turns", "interaction_replies_suppressed",
+        "interaction_threads_closed",
+    )
+    latest = reports[-1].as_dict()
+    merged = {
+        "start_minute": reports[0].start_minute,
+        "end_minute": reports[-1].end_minute,
+        **{key: sum(int(getattr(report, key, 0) or 0) for report in reports) for key in numeric},
+        "event_types": latest.get("event_types", {}),
+        "selected_behaviors": latest.get("selected_behaviors", {}),
+        "degeneration_flags": sorted({flag for report in reports for flag in (report.degeneration_flags or [])}),
+        "diversity": latest.get("diversity", {}),
+        "stop_reason": None if reports[-1].end_minute >= target_minute else reports[-1].stop_reason,
+        "segments": len(reports),
+    }
+    return merged
 
 
 def _causality(platform: Platform, sessions: list[dict[str, Any]]) -> dict[str, Any]:
@@ -205,6 +233,9 @@ def main() -> int:
     parser.add_argument("--resume-db", type=Path, help="continue the same SQLite world instead of creating a new instance")
     parser.add_argument("--target-minute", type=int, help="run until this absolute world minute; recommended with --resume-db")
     parser.add_argument("--checkpoint", type=Path, help="per-turn checkpoint path (default: OUTPUT.checkpoint.json)")
+    parser.add_argument("--auto-resume", action="store_true", help="wait on provider cooldown and continue the same SQLite world")
+    parser.add_argument("--cooldown-seconds", type=float, default=60.0, help="wall-clock wait between automatic provider retries")
+    parser.add_argument("--max-provider-errors", type=int, default=20, help="stop automatic retries after this many provider-error sessions")
     args = parser.parse_args()
     if args.minutes < 1:
         raise SystemExit("--minutes must be at least 1")
@@ -261,7 +292,35 @@ def main() -> int:
         target_minute = int(args.target_minute) if args.target_minute is not None else start_minute + int(args.minutes)
         if target_minute <= start_minute:
             raise SystemExit(f"target minute {target_minute} must be greater than current minute {start_minute}")
-        report = platform.run(target_minute - start_minute, provider_name=args.provider, provider_model=args.model, turn_observer=observe)
+        reports = []
+        while int(platform.status()["world_minute"]) < target_minute:
+            segment = platform.run(
+                target_minute - int(platform.status()["world_minute"]),
+                provider_name=args.provider,
+                provider_model=args.model,
+                turn_observer=observe,
+            )
+            reports.append(segment)
+            if int(platform.status()["world_minute"]) >= target_minute:
+                break
+            if not str(segment.stop_reason or "").startswith("provider_cooldown") or not args.auto_resume:
+                break
+            counts = _quality_counts(sessions)
+            if counts["provider_errors"] >= max(1, int(args.max_provider_errors)):
+                break
+            _write_json_atomic(checkpoint_path, {
+                "status": "provider_cooldown",
+                "provider": args.provider,
+                "model": args.model or config.providers[args.provider].model,
+                "db_path": str(db_path),
+                "world_minute": platform.status()["world_minute"],
+                "target_minute": target_minute,
+                "stop_reason": segment.stop_reason,
+                "quality_counts": counts,
+                "sessions": sessions,
+            })
+            time.sleep(max(1.0, float(args.cooldown_seconds)))
+        report = _merge_reports(reports, target_minute=target_minute)
         causality = _causality(platform, sessions)
         _finalize_quality(sessions, causality)
         quality_counts = _quality_counts(sessions)
@@ -271,13 +330,13 @@ def main() -> int:
             "minutes_requested": args.minutes,
             "start_minute": start_minute,
             "target_minute": target_minute,
-            "stop_reason": report.stop_reason,
+            "stop_reason": report.get("stop_reason"),
             "db_path": str(db_path),
             "sessions": sessions,
             "world": {
                 "status": platform.status(),
                 "health": platform.health(),
-                "report": report.as_dict(),
+                "report": report,
                 "metrics": platform.metrics(),
                 "observer": platform.observer_view(event_limit=100),
                 "agents": platform.store.list_agents(),
@@ -294,7 +353,7 @@ def main() -> int:
             "db_path": str(db_path),
             "world_minute": output["world"]["status"]["world_minute"],
             "target_minute": target_minute,
-            "stop_reason": report.stop_reason,
+            "stop_reason": report.get("stop_reason"),
             "quality_counts": quality_counts,
             "sessions": sessions,
         })
@@ -311,18 +370,19 @@ def main() -> int:
                     "sessions": sum(1 for item in sessions if item["role"] == role),
                     "passed": sum(1 for item in sessions if item["role"] == role and item["quality"].get("passed")),
                     "pending": sum(1 for item in sessions if item["role"] == role and item["quality"].get("pending")),
-                    "provider_errors": sum(1 for item in sessions if item["role"] == role and str(item["quality"].get("grade") or "").startswith("provider_")),
+                    "provider_errors": sum(1 for item in sessions if item["role"] == role and ((item.get("result") or {}).get("failed_check") == "llm_response" or str(item["quality"].get("grade") or "").startswith("provider_"))),
                     "failed": sum(
                         1 for item in sessions
                         if item["role"] == role
                         and not item["quality"].get("passed")
                         and not item["quality"].get("pending")
+                        and (item.get("result") or {}).get("failed_check") != "llm_response"
                         and not str(item["quality"].get("grade") or "").startswith("provider_")
                     ),
                 }
                 for role in ("agent_decision", "agent_reflection", "story", "god")
             },
-            "report": report.as_dict(),
+            "report": report,
             "causality": output["world"]["causality"],
         }, ensure_ascii=False, indent=2))
         reached_target = int(output["world"]["status"]["world_minute"]) >= target_minute

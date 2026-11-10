@@ -780,7 +780,7 @@ class Platform(ActivityRuntimeMixin):
             event_id = self.store.append_event(event_type, actor_id, world_minute, {"progress": progress, "evidence": evidence, "source_agent": actor_id})
             result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "progress": progress, "milestone": bool(progress["completed"])}
             if progress["completed"]:
-                wake = list(definition.get("wake", ["story", "god"]) or [])
+                wake = list(definition.get("wake") or [])
                 self._queue_configured_followups({"wake": wake}, event_id, event_type, actor_id, world_minute)
                 for role in wake:
                     self.store.mark_evolution_task_ready(f"{role}:event:{event_id}")

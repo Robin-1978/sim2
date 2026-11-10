@@ -931,7 +931,12 @@ def parse_tool_call(response: dict[str, Any]) -> tuple[str, dict[str, Any]] | No
     if not isinstance(candidate, dict):
         return None
     function = candidate.get("function") if isinstance(candidate.get("function"), dict) else candidate
-    name = function.get("name") or candidate.get("name") or candidate.get("tool")
+    name = (
+        function.get("name")
+        or candidate.get("name")
+        or candidate.get("tool")
+        or (candidate.get("function") if isinstance(candidate.get("function"), str) else None)
+    )
     arguments = function.get(
         "arguments",
         function.get(

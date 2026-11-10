@@ -298,11 +298,10 @@ class AgentEngine:
                         "step": "tool",
                         "name": tool_name,
                         "arguments": arguments,
-                        # ``raw_result`` is private Platform output; the
-                        # model received only ``model_result`` below. Keeping
-                        # both makes provenance and view-compilation audits
-                        # possible without leaking internals into prompts.
-                        "raw_result": internal_tool_result,
+                        # ``result`` is private Platform output; the model
+                        # receives only ``model_result`` below.  Keep one raw
+                        # copy for provenance instead of duplicating it under
+                        # two transcript keys in every audit artifact.
                         "model_result": model_tool_result,
                         "result": internal_tool_result,
                     })
@@ -816,18 +815,29 @@ class AgentEngine:
             return normalized
         nested = normalized.get("parameters")
         nested_choice = nested.get("choice") if isinstance(nested, dict) else None
+        choice_detail = normalized.get("choice_detail") if isinstance(normalized.get("choice_detail"), dict) else {}
         choice = normalized.get("choice")
         intent_names = {"request_behavior", "select_behavior"}
         if isinstance(choice, str) and choice.casefold() in intent_names:
-            candidate = nested_choice or normalized.get("behavior") or normalized.get("behavior_name")
+            candidate = (
+                nested_choice
+                or choice_detail.get("behavior_name")
+                or choice_detail.get("choice")
+                or normalized.get("behavior")
+                or normalized.get("behavior_name")
+            )
             if isinstance(candidate, str) and candidate.strip():
                 normalized["choice"] = candidate
                 if isinstance(nested, dict):
-                    if normalized.get("target") in (None, "") and nested.get("target") not in (None, ""):
-                        normalized["target"] = nested.get("target")
+                    for key in ("target", "reason", "confidence"):
+                        if normalized.get(key) in (None, "") and nested.get(key) not in (None, ""):
+                            normalized[key] = nested.get(key)
                     # The wrapper's choice is a selector, not an execution
                     # parameter. Preserve only actual user-facing parameters.
-                    normalized["parameters"] = {key: value for key, value in nested.items() if key not in {"choice", "target"}}
+                    normalized["parameters"] = {
+                        key: value for key, value in nested.items()
+                        if key not in {"choice", "target", "reason", "confidence"}
+                    }
         elif not isinstance(choice, str) or not choice.strip():
             candidate = normalized.get("behavior") or normalized.get("behavior_name")
             if isinstance(candidate, str) and candidate.strip():

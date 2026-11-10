@@ -1,5 +1,11 @@
 vital_attribute: health
 capacity_attribute: energy
+perception:
+  visible_fields: [role, type, summary, description, public]
+  visible_state_fields: [status, quantity, durability, created, readable, recovered, installed]
+  global:
+    fields: [role, type, summary, description, public]
+    state_fields: [status, location_id, quantity, durability, created, readable, recovered, installed]
 minute_effects:
 - id: satiety_decay
   scope: agent

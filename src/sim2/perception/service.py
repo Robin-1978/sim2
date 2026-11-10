@@ -12,27 +12,111 @@ class PerceptionService:
     def __init__(self, store: "WorldStore"):
         self.store = store
 
+    def _policy(self, entity_type: str, *, global_scope: bool = False) -> dict[str, Any]:
+        """Return the declarative projection policy for one entity type.
+
+        Entity records are Platform truth, not an observation payload.  A
+        read tool therefore selects only configured public fields instead of
+        copying an arbitrary database row.  Worlds may add entirely different
+        entity properties without changing this code; unlisted properties stay
+        private by default.
+        """
+
+        rules = self.store.get_meta("rules", {}) or {}
+        root = rules.get("perception", {}) if isinstance(rules, dict) else {}
+        root = root if isinstance(root, dict) else {}
+        policy: dict[str, Any] = {
+            "fields": list(root.get("visible_fields", ["role", "type", "summary", "description", "public"]) or []),
+            "state_fields": list(root.get("visible_state_fields", ["status"]) or []),
+        }
+        typed = (root.get("types", {}) or {}).get(str(entity_type), {})
+        if isinstance(typed, dict):
+            if "fields" in typed:
+                policy["fields"] = list(typed.get("fields") or [])
+            if "state_fields" in typed:
+                policy["state_fields"] = list(typed.get("state_fields") or [])
+        if global_scope:
+            global_policy = root.get("global", {}) or {}
+            if isinstance(global_policy, dict):
+                policy["fields"] = list(global_policy.get("fields", policy["fields"]) or [])
+                policy["state_fields"] = list(global_policy.get("state_fields", policy["state_fields"]) or [])
+        return policy
+
+    def _project_entity(
+        self,
+        entity: dict[str, Any],
+        *,
+        include_state: bool,
+        global_scope: bool = False,
+    ) -> dict[str, Any]:
+        entity_type = str(entity.get("entity_type") or entity.get("type") or "entity")
+        policy = self._policy(entity_type, global_scope=global_scope)
+        projected: dict[str, Any] = {
+            "name": str(entity.get("name") or "unknown entity"),
+            "type": entity_type,
+        }
+        for field in policy["fields"]:
+            if field in {"id", "entity_type", "name", "initial_state"}:
+                continue
+            if entity.get(field) not in (None, "", [], {}):
+                projected[str(field)] = entity[field]
+        if include_state:
+            state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
+            visible_state = {
+                str(field): state[field]
+                for field in policy["state_fields"]
+                if field != "location_id" and state.get(field) not in (None, "", [], {})
+            }
+            location_id = state.get("location_id")
+            if "location_id" in policy["state_fields"] and location_id:
+                try:
+                    visible_state["location"] = self.store.get_entity(str(location_id)).get("name", location_id)
+                except KeyError:
+                    visible_state["location"] = "known location"
+            if visible_state:
+                projected["known_state"] = visible_state
+        return projected
+
+    def _observation_meta(self, *, visibility: str) -> dict[str, Any]:
+        return {
+            "observed_at": int(self.store.get_meta("world_minute", 0) or 0),
+            "source": "platform_perception",
+            "visibility": visibility,
+            "confidence": 1.0,
+            "expires_at": None,
+        }
+
     def observe_nearby(self, agent_id: str, question: str = "") -> dict[str, Any]:
         try:
             agent = self.store.get_agent(agent_id)
             location_id = agent.get("initial_state", {}).get("location_id")
-            entities = [item for item in self.store.entities_at_location(location_id) if item["id"] != agent_id]
+            raw_entities = [item for item in self.store.entities_at_location(location_id) if item["id"] != agent_id]
+            entities = [self._project_entity(item, include_state=True) for item in raw_entities[:8]]
         except KeyError:
             location_id = "world"
             entities = []
             for entity_type in ("location", "faction"):
-                entities.extend(self.store.entities_of_type(entity_type)[:8])
+                entities.extend(
+                    self._project_entity(item, include_state=False, global_scope=True)
+                    for item in self.store.entities_of_type(entity_type)[:8]
+                )
+        try:
+            location = self.store.get_entity(str(location_id)).get("name", location_id)
+        except KeyError:
+            location = location_id
         return {
             "status": "ok",
-            "location": location_id,
+            "location": location,
             "question": question,
             "facts": [f"{item['name']} is here ({item.get('summary', item.get('type', 'entity'))})." for item in entities[:8]],
             "entities": entities[:8],
-            "source": "platform_perception",
+            **self._observation_meta(visibility="nearby"),
         }
 
     def inspect_entity(self, agent_id: str, entity_id: str, question: str = "", *, global_scope: bool = False) -> dict[str, Any]:
         entity = self.store.get_entity(entity_id)
+        visibility = "global" if global_scope else "known"
+        include_state = bool(global_scope)
         if not global_scope:
             agent = self.store.get_agent(agent_id)
             state = agent.get("initial_state", {})
@@ -40,9 +124,10 @@ class PerceptionService:
             seeded = {str(value).split(":", 1)[-1] for value in agent.get("knowledge_seed", []) if isinstance(value, str)}
             if entity_id != agent_id and entity_id not in nearby_ids and entity_id not in seeded:
                 return {"status": "rejected", "failed_check": "visibility", "retryable": True, "message": "This entity is not visible or known to the agent."}
-        private_fields = {"beliefs", "knowledge_seed", "inventory", "combat_stats", "initial_bt_ids", "external_pressure", "relation_pressure"}
-        data = {key: value for key, value in entity.items() if key not in private_fields and not key.startswith("_")}
-        return {"status": "ok", "entity": data, "question": question, "source": "platform_perception"}
+            include_state = entity_id == agent_id or entity_id in nearby_ids
+            visibility = "self" if entity_id == agent_id else ("nearby" if entity_id in nearby_ids else "known")
+        data = self._project_entity(entity, include_state=include_state, global_scope=global_scope)
+        return {"status": "ok", "entity": data, "question": question, **self._observation_meta(visibility=visibility)}
 
     def listen(self, agent_id: str, question: str = "", limit: int = 5) -> dict[str, Any]:
         try:
@@ -58,17 +143,38 @@ class PerceptionService:
                 events.append({"event_type": event.get("event_type"), "world_minute": event.get("world_minute"), "summary": event.get("result") or event.get("topic") or event.get("event_type")})
             if len(events) >= limit:
                 break
-        return {"status": "ok", "question": question, "events": events, "source": "audible_local_events"}
+        return {
+            "status": "ok",
+            "question": question,
+            "events": events,
+            **self._observation_meta(visibility="audible_local_events"),
+        }
 
     def read_public_record(self, agent_id: str, entity_id: str, question: str = "", *, global_scope: bool = False) -> dict[str, Any]:
         entity = self.store.get_entity(entity_id)
         if not global_scope and not entity.get("public", False):
             return {"status": "rejected", "failed_check": "publicity", "retryable": True, "message": "This record is not public."}
-        return {"status": "ok", "question": question, "record": {key: value for key, value in entity.items() if not key.startswith("_")}, "source": "public_record"}
+        record = self._project_entity(entity, include_state=True, global_scope=global_scope)
+        return {
+            "status": "ok",
+            "question": question,
+            "record": record,
+            **self._observation_meta(visibility="public_record"),
+        }
 
     def query_known_fact(self, agent_id: str, query: str = "", limit: int = 8) -> dict[str, Any]:
         facts = self.store.list_knowledge_facts(agent_id, limit=50)
         if query.strip():
             query_lower = query.lower()
             facts = [fact for fact in facts if query_lower in str(fact).lower()]
-        return {"status": "ok", "query": query, "facts": facts[: max(1, min(int(limit), 8))], "source": "agent_knowledge"}
+        visible_fields = {"fact", "summary", "source_type", "source", "confidence", "claim_status", "observed_at", "expires_at"}
+        visible_facts = [
+            {key: value for key, value in fact.items() if key in visible_fields and value not in (None, "", [], {})}
+            for fact in facts[: max(1, min(int(limit), 8))]
+        ]
+        return {
+            "status": "ok",
+            "query": query,
+            "facts": visible_facts,
+            **self._observation_meta(visibility="agent_knowledge"),
+        }
