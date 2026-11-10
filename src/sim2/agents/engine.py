@@ -7,7 +7,6 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..agent_view.compiler import AgentViewCompiler
 from ..agent_view.validator import validate_agent_view
 from ..intents.models import BehaviorIntent
 from ..platform.runtime import Platform
@@ -75,7 +74,10 @@ class AgentEngine:
         self.max_repeated_tool_calls = max(1, max_repeated_tool_calls)
         self.max_tool_calls = max(1, max_tool_calls)
         self.max_read_tool_calls = max(1, max_read_tool_calls)
-        self.view = AgentViewCompiler(platform.store)
+        # Reuse the Platform-owned compiler and MemoryService. Creating a new
+        # compiler for every session discards the in-process query embedding
+        # cache and repeats BGE inference for identical goal/location views.
+        self.view = platform.view
         self._last_usage: dict[str, Any] = {}
 
     def _complete(

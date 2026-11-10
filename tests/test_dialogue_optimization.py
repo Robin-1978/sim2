@@ -24,6 +24,18 @@ class WaitProvider:
         return {"intent_type": "wait", "reason": "The message adds no new decision."}
 
 
+def test_agent_sessions_reuse_platform_view_and_embedding_cache(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "shared-view-cache", tmp_path / "runtime"))
+    try:
+        first = AgentEngine(platform, WaitProvider())
+        second = AgentEngine(platform, WaitProvider())
+        assert first.view is platform.view
+        assert second.view is platform.view
+        assert first.view.memory is second.view.memory
+    finally:
+        platform.close()
+
+
 def _config() -> Path:
     return Path(__file__).parents[1] / "worlds" / "starter_village"
 
