@@ -22,7 +22,7 @@ story:
   - id: old_pact_understood
     agent_label: Reconsider the old pact
     summary: Research of the old pact tablet reveals why the root gate must remain stable.
-    trigger_events: [research.completed, object.recovered]
+    trigger_events: [research.completed]
     trigger_facts: [researched:old_pact_tablet:origin]
     audience: [lin_bo, su_wu, qiao_ning]
     fact: The old pact was made to keep the root gate stable, and its stability is declining.

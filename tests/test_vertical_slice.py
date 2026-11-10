@@ -2266,6 +2266,24 @@ def test_story_feedback_runs_at_completion_boundary_and_updates_audience(tmp_pat
         platform.close()
 
 
+def test_story_catalog_is_scoped_to_the_triggering_event(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "story-source-scope", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            platform.store.merge_knowledge_fact("su_wu", "researched:old_pact_tablet:origin", {
+                "fact": "The old pact kept the root gate stable.", "source_type": "research", "confidence": 0.9,
+            })
+            recovered = platform.store.append_event("object.recovered", "lu_xingzhou", 1, {"fact": "The caravan ledger was recovered."})
+            researched = platform.store.append_event("research.completed", "su_wu", 2, {"fact": "The old pact tablet research completed."})
+        recovered_view = platform.view.build_decision_view("story", role="story", source_event_id=recovered)
+        assert all(item["ref"] != "story:old_pact_understood" for item in recovered_view["story_beats"])
+        research_view = platform.view.build_decision_view("story", role="story", source_event_id=researched)
+        assert any(item["ref"] == "story:old_pact_understood" for item in research_view["story_beats"])
+    finally:
+        platform.close()
+
+
 def test_emergent_story_beat_is_not_repeated_for_one_validated_result(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "story-dedup-world", tmp_path / "runtime"))

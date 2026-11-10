@@ -752,7 +752,7 @@ class ActivityRuntimeMixin:
             result = {"result": "dialogue_recorded", "event_id": event_id}
         configured_event = information.get("event_type") or information.get("event")
         observed: dict[str, Any] = {}
-        observed_id = parameters.get("object_id") or parameters.get("source_id") or parameters.get("area_id")
+        observed_id = parameters.get("object_id") or parameters.get("entity_id") or parameters.get("item_id") or parameters.get("source_id") or parameters.get("area_id")
         if observed_id:
             try:
                 entity = self.store.get_entity(str(observed_id))

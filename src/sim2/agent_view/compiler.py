@@ -1005,7 +1005,10 @@ class AgentViewCompiler:
                 continue
             trigger_events = {str(item) for item in (beat.get("trigger_events", []) or [])}
             trigger_facts = {str(item) for item in (beat.get("trigger_facts", []) or [])}
-            if trigger_events and not trigger_events & observed_events:
+            source_event_type = str((source_event or {}).get("event_type") or "")
+            if trigger_events and source_event_type and source_event_type not in trigger_events:
+                continue
+            if trigger_events and not source_event_type and not trigger_events & observed_events:
                 continue
             if trigger_facts and not trigger_facts <= observed_facts:
                 continue
