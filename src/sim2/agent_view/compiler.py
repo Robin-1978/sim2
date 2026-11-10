@@ -439,7 +439,7 @@ class AgentViewCompiler:
             return item
         return fact
 
-    def build_decision_view(self, agent_id: str, role: str = "agent_decision") -> dict[str, Any]:
+    def build_decision_view(self, agent_id: str, role: str = "agent_decision", *, source_event_id: int | None = None) -> dict[str, Any]:
         rules = self.store.get_meta("rules", {}) or {}
         self.conditions = ConditionEngine(rules)
         self.rule_compiler = self._new_rule_compiler()
@@ -448,7 +448,7 @@ class AgentViewCompiler:
         except KeyError:
             if role in {"god", "story", "world_builder"}:
                 if role == "story":
-                    return self._build_story_view(agent_id, role)
+                    return self._build_story_view(agent_id, role, source_event_id=source_event_id)
                 return self._build_world_view(agent_id, role)
             raise
         bt_defs = {x["id"]: x for x in self.store.get_definitions("bt_def")}
@@ -774,6 +774,8 @@ class AgentViewCompiler:
             })
         return {
             "context_version": "1", "role": role,
+            "world_revision": int(self.store.get_meta("world_revision", 0) or 0),
+            "agent_revision": int(agent.get("agent_revision", 0) or 0),
             "prompt_protocol": prompt_protocol,
             "platform_rules": platform_rules,
             "world_time": self._world_time(),
@@ -920,7 +922,7 @@ class AgentViewCompiler:
             value = state.get("quantity", state.get("amount", 0))
         return float(value or 0)
 
-    def _build_story_view(self, actor_id: str, role: str) -> dict[str, Any]:
+    def _build_story_view(self, actor_id: str, role: str, *, source_event_id: int | None = None) -> dict[str, Any]:
         minute = int(self.store.get_meta("world_minute", 0))
         story_root = self.store.get_meta("story", {}) or {}
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
@@ -930,18 +932,22 @@ class AgentViewCompiler:
         # ``behavior.completed`` row.  The wrapper often says only
         # ``research_progressed``; using it as the source hides the completed
         # fact and makes Story search for evidence it already received.
-        source_event = next(
-            (
-                item for item in recent_events
-                if str(item.get("event_type", "")) in {
-                    "exploration.completed", "research.completed", "object.recovered",
-                    "relationship.changed", "negotiation.result_recorded",
-                }
-                and item.get("actor_id") not in {"story", "god"}
-            ),
-            None,
-        )
-        if source_event is None:
+        source_event = None
+        if source_event_id is not None:
+            source_event = next((item for item in recent_events if int(item.get("event_id", -1) or -1) == int(source_event_id)), None)
+        if source_event is None and source_event_id is None:
+            source_event = next(
+                (
+                    item for item in recent_events
+                    if str(item.get("event_type", "")) in {
+                        "exploration.completed", "research.completed", "object.recovered",
+                        "relationship.changed", "negotiation.result_recorded",
+                    }
+                    and item.get("actor_id") not in {"story", "god"}
+                ),
+                None,
+            )
+        if source_event is None and source_event_id is None:
             source_event = next(
                 (
                     item for item in recent_events
@@ -1099,6 +1105,7 @@ class AgentViewCompiler:
         minute = self.store.get_meta("world_minute", 0)
         all_events = self.store.recent_events(limit=20)
         recent_world_changes = self.store.recent_world_change_events(limit=6)
+        world_proposals = self.store.list_world_proposals(limit=8)
         recent_agent_outcomes = self.store.recent_behavior_outcomes(limit=6)
         world_trends = self.store.world_trends(current_minute=int(minute))
         bt_defs = {item["id"]: item for item in self.store.get_definitions("bt_def")}
@@ -1159,6 +1166,7 @@ class AgentViewCompiler:
             "known_facts": [],
             "recent_actions": recent_world_events,
             "recent_world_changes": recent_world_changes,
+            "world_proposals": world_proposals,
             "recent_agent_outcomes": recent_agent_outcomes,
             "world_trends": world_trends,
             "civilization_progress": self.store.list_progress(world_id, limit=20),

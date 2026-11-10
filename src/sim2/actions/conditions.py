@@ -68,7 +68,7 @@ class ConditionEngine:
                 return False
             try:
                 operator = comparison.group(2)
-                return {"==": left == right, "!=": left != right, ">=": left >= right, "<=": left <= right, ">": left > right, "<": left < right}[operator]
+                return self._compare(left, operator, right)
             except TypeError:
                 return False
         return bool(self._value(expression, agent, target, world, context))
@@ -128,12 +128,32 @@ class ConditionEngine:
                 return False
             try:
                 operator = comparison.group(2)
-                return {"==": left == right, "!=": left != right, ">=": left >= right, "<=": left <= right, ">": left > right, "<": left < right}[operator]
+                return self._compare(left, operator, right)
             except TypeError:
                 return False
         if not self._known_path(expression):
             return None
         return bool(self._value(expression, agent, target, world, context))
+
+    @staticmethod
+    def _compare(left: Any, operator: str, right: Any) -> bool:
+        """Compare numeric configuration values without binary-edge errors."""
+
+        if isinstance(left, (int, float)) and not isinstance(left, bool) and isinstance(right, (int, float)) and not isinstance(right, bool):
+            epsilon = 1e-9 * max(1.0, abs(float(left)), abs(float(right)))
+            if operator == "==":
+                return abs(float(left) - float(right)) <= epsilon
+            if operator == "!=":
+                return abs(float(left) - float(right)) > epsilon
+            if operator == ">=":
+                return float(left) + epsilon >= float(right)
+            if operator == "<=":
+                return float(left) - epsilon <= float(right)
+            if operator == ">":
+                return float(left) > float(right) + epsilon
+            if operator == "<":
+                return float(left) < float(right) - epsilon
+        return {"==": left == right, "!=": left != right, ">=": left >= right, "<=": left <= right, ">": left > right, "<": left < right}[operator]
 
     @staticmethod
     def _known_path(path: str) -> bool:

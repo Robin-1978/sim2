@@ -25,3 +25,17 @@ evolution:
     agent_innovation_calls_per_week: 1
     god_local_candidates_per_week: 3
     god_structural_candidates_per_month: 1
+  event_wake_policy:
+    consumers:
+      god:
+        # Routine behavior results do not wake God; world-level events are
+        # handled causally. Research and social progress wake God only after
+        # the configured number of independent results.
+        batch_minutes: 0
+        event_groups:
+          - {id: research_synthesis, event_types: [research.completed], minimum_events: 3}
+          - {id: governance_capacity, event_types: [governance.reviewed, ration.policy_reviewed], minimum_events: 5}
+          - {id: trade_network, event_types: [negotiation.result_recorded], minimum_events: 4}
+          - {id: public_incident, event_types: [water.mitigation.applied, pact.stability.improved, security.marks_classified, entity.installed, defense.village_response, defense.position_result], minimum_events: 1}
+      story: {batch_minutes: 0}
+      agent_reflection: {batch_minutes: 0, actor_scoped: true}

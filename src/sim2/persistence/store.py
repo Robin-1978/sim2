@@ -49,6 +49,20 @@ CREATE TABLE IF NOT EXISTS intent (
   created_minute INTEGER NOT NULL,
   result_json TEXT
 );
+CREATE TABLE IF NOT EXISTS world_proposal (
+  proposal_id TEXT PRIMARY KEY,
+  intent_id TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  change_type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_minute INTEGER NOT NULL,
+  evaluation_due_minute INTEGER NOT NULL,
+  expected_json TEXT NOT NULL,
+  observed_json TEXT NOT NULL,
+  result_json TEXT NOT NULL,
+  updated_minute INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS world_proposal_status_idx ON world_proposal(status,evaluation_due_minute);
 CREATE TABLE IF NOT EXISTS event_log (
   event_id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_type TEXT NOT NULL,
@@ -254,8 +268,18 @@ class WorldStore:
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
         with self._write_lock:
+            # Keep one revision for one logical commit.  A nested caller is
+            # already inside the same commit and must not advance the world a
+            # second time.  The revision is reserved before any event is
+            # written so every event in the transaction carries the revision
+            # that will become visible after commit.
+            if self.connection.in_transaction:
+                yield self.connection
+                return
             try:
                 self.connection.execute("BEGIN IMMEDIATE")
+                next_revision = int(self.get_meta("world_revision", 0) or 0) + 1
+                self.set_meta("world_revision", next_revision)
                 yield self.connection
                 self.connection.commit()
             except Exception:
@@ -275,6 +299,24 @@ class WorldStore:
     def get_meta(self, key: str, default: Any = None) -> Any:
         row = self.connection.execute("SELECT value FROM instance_meta WHERE key=?", (key,)).fetchone()
         return default if row is None else json.loads(row["value"])
+
+    def world_snapshot(self) -> dict[str, Any]:
+        """Return the read-only boundary used by a decision or tick.
+
+        The snapshot is deliberately a projection rather than a copy of every
+        table.  LLM work may keep this value while SQLite continues to run;
+        commit code compares the revision again before accepting a write.
+        """
+
+        return {
+            "world_id": self.get_meta("world_id", self.get_meta("instance_id", "")),
+            "world_minute": int(self.get_meta("world_minute", 0) or 0),
+            "world_revision": int(self.get_meta("world_revision", 0) or 0),
+            "agent_revisions": {
+                str(agent["id"]): int((agent.get("agent_revision", 0) or 0))
+                for agent in self.list_agents()
+            },
+        }
 
     def sync_world_property_from_resource(self, entity_id: str, amount: Any) -> dict[str, Any] | None:
         """Keep a shared resource and its existing world-property label equal."""
@@ -297,6 +339,8 @@ class WorldStore:
         )
 
     def put_agent(self, agent_id: str, data: dict[str, Any], name: str) -> None:
+        data = dict(data)
+        data.setdefault("agent_revision", 0)
         self.put_entity(agent_id, "agent", name, data)
         self.connection.execute(
             "INSERT OR REPLACE INTO agent_state(id,data_json) VALUES (?,?)",
@@ -306,6 +350,11 @@ class WorldStore:
     def put_definition(self, table: str, definition_id: str, data: dict[str, Any]) -> None:
         if table not in {"action_def", "bt_def", "recipe_def", "capability_def"}:
             raise ValueError(f"unsupported definition table: {table}")
+        data = dict(data)
+        definition_version = int(data.get("definition_version", data.get("version", 1)) or 1)
+        data.setdefault("definition_version", definition_version)
+        data.setdefault("status", "active")
+        data.setdefault("created_revision", int(self.get_meta("world_revision", 0) or 0))
         self.connection.execute(
             f"INSERT OR REPLACE INTO {table}(id,data_json) VALUES (?,?)",
             (definition_id, json_dumps(data)),
@@ -789,6 +838,15 @@ class WorldStore:
         return [json.loads(row["data_json"]) for row in rows]
 
     def append_event(self, event_type: str, actor_id: str | None, world_minute: int, data: dict[str, Any]) -> int:
+        data = dict(data)
+        data.setdefault("world_instance_id", self.get_meta("world_id", self.get_meta("instance_id", "")))
+        data.setdefault("world_revision", int(self.get_meta("world_revision", 0) or 0))
+        if data.get("intent_id") and not data.get("causation_id"):
+            data["causation_id"] = str(data["intent_id"])
+        if data.get("execution_id") and not data.get("correlation_id"):
+            data["correlation_id"] = str(data["execution_id"])
+        elif data.get("intent_id") and not data.get("correlation_id"):
+            data["correlation_id"] = str(data["intent_id"])
         cur = self.connection.execute(
             "INSERT INTO event_log(event_type,actor_id,world_minute,data_json) VALUES (?,?,?,?)",
             (event_type, actor_id, world_minute, json_dumps(data)),
@@ -1016,12 +1074,64 @@ class WorldStore:
             "result": json.loads(row["result_json"]) if row["result_json"] else None,
         }
 
+    def put_world_proposal(
+        self,
+        proposal_id: str,
+        intent_id: str,
+        actor_id: str,
+        change_type: str,
+        status: str,
+        created_minute: int,
+        evaluation_due_minute: int,
+        expected: dict[str, Any] | list[Any] | None,
+        result: dict[str, Any] | None = None,
+    ) -> None:
+        self.connection.execute(
+            "INSERT OR REPLACE INTO world_proposal(proposal_id,intent_id,actor_id,change_type,status,created_minute,evaluation_due_minute,expected_json,observed_json,result_json,updated_minute) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                str(proposal_id), str(intent_id), str(actor_id), str(change_type), str(status), int(created_minute), int(evaluation_due_minute),
+                json_dumps(expected or {}), json_dumps({}), json_dumps(result or {}), int(created_minute),
+            ),
+        )
+
+    def list_world_proposals(self, *, status: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+        query = "SELECT proposal_id,intent_id,actor_id,change_type,status,created_minute,evaluation_due_minute,expected_json,observed_json,result_json,updated_minute FROM world_proposal"
+        args: list[Any] = []
+        if status:
+            query += " WHERE status=?"
+            args.append(str(status))
+        query += " ORDER BY created_minute DESC,proposal_id LIMIT ?"
+        args.append(max(1, min(int(limit), 100)))
+        rows = self.connection.execute(query, tuple(args)).fetchall()
+        return [
+            {
+                "proposal_id": row["proposal_id"], "intent_id": row["intent_id"], "actor_id": row["actor_id"],
+                "change_type": row["change_type"], "status": row["status"], "created_minute": row["created_minute"],
+                "evaluation_due_minute": row["evaluation_due_minute"], "expected": json.loads(row["expected_json"] or "{}"),
+                "observed": json.loads(row["observed_json"] or "{}"), "result": json.loads(row["result_json"] or "{}"),
+                "updated_minute": row["updated_minute"],
+            }
+            for row in rows
+        ]
+
+    def update_world_proposal(self, proposal_id: str, status: str, observed: dict[str, Any], result: dict[str, Any], updated_minute: int) -> None:
+        self.connection.execute(
+            "UPDATE world_proposal SET status=?,observed_json=?,result_json=?,updated_minute=? WHERE proposal_id=?",
+            (str(status), json_dumps(observed or {}), json_dumps(result or {}), int(updated_minute), str(proposal_id)),
+        )
+
     def update_agent(self, agent_id: str, data: dict[str, Any]) -> None:
+        data = dict(data)
+        data["agent_revision"] = int(data.get("agent_revision", 0) or 0) + 1
         self.connection.execute("UPDATE agent_state SET data_json=? WHERE id=?", (json_dumps(data), agent_id))
         self.connection.execute("UPDATE entity SET data_json=? WHERE id=?", (json_dumps(data), agent_id))
 
     def update_agents_bulk(self, agents: list[dict[str, Any]]) -> None:
-        rows = [(json_dumps(agent), agent["id"]) for agent in agents]
+        rows = []
+        for agent in agents:
+            item = dict(agent)
+            item["agent_revision"] = int(item.get("agent_revision", 0) or 0) + 1
+            rows.append((json_dumps(item), item["id"]))
         self.connection.executemany("UPDATE agent_state SET data_json=? WHERE id=?", rows)
         self.connection.executemany("UPDATE entity SET data_json=? WHERE id=?", rows)
 

@@ -25,7 +25,7 @@ from sim2.platform.runtime import Platform
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", choices=["local", "remote"], default="remote")
+    parser.add_argument("--provider", default="remote", help="Configured provider name; remote is the default real-model path.")
     parser.add_argument("--model", default=None, help="Override the configured model name for this verification run.")
     args = parser.parse_args()
     config = LLMConfig.load()

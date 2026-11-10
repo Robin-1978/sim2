@@ -332,6 +332,244 @@ def test_god_definition_proposal_registers_attribute_action_and_behavior(tmp_pat
         platform.close()
 
 
+def test_intent_revisions_are_observational_and_events_carry_causation(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "revision-world", tmp_path / "runtime"))
+    try:
+        result = platform.submit_behavior(BehaviorIntent(
+            "lin_bo", "behavior:govern_village", {}, {}, "Review the village state.", 0.8, "revision-intent",
+            observed_world_revision=0, observed_agent_revision=0,
+        ))
+        assert result["status"] == "accepted"
+        assert result["stale_observation"] is True
+        started = next(item for item in platform.store.recent_events(limit=20) if item["event_type"] == "behavior.started")
+        assert started["world_revision"] >= 1
+        assert started["world_instance_id"] == platform.store.get_meta("world_id")
+        assert started["causation_id"] == "revision-intent"
+        assert started["correlation_id"] == "revision-intent"
+    finally:
+        platform.close()
+
+
+def test_god_world_proposal_is_evaluated_after_its_observation_window(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "proposal-evaluation-world", tmp_path / "runtime"))
+    try:
+        result = platform.submit_world_change("god", {
+            "change_type": "rule",
+            "summary": "Review patrol outcomes after a short observation window.",
+            "evaluation_window_minutes": 2,
+            "rule": {"id": "patrol_review_rule", "condition": "world.north_gate_threat_level >= 0.2", "effect": "policy.review_signal", "behavior_names": ["Patrol Route"]},
+        })
+        assert result["status"] == "accepted"
+        assert result["evaluation_status"] == "pending_evaluation"
+        platform.step()
+        platform.step()
+        proposal = platform.store.list_world_proposals(limit=1)[0]
+        assert proposal["proposal_id"] == result["proposal_id"]
+        assert proposal["status"] in {"observed", "no_observed_effect"}
+        assert any(item["event_type"] == "world.proposal.evaluated" for item in platform.store.recent_events(limit=20))
+        view = platform.decision_view("god", role="god")
+        assert "world_proposals" in view
+    finally:
+        platform.close()
+
+
+def test_god_prompt_hides_internal_world_proposal_identifiers(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "god-prompt-identifiers", tmp_path / "runtime"))
+    try:
+        result = platform.submit_world_change("operator", {
+            "change_type": "world_property",
+            "summary": "Record a measured fog reading.",
+            "property": "fog_level",
+            "value": 0.2,
+            "evaluation_window_minutes": 10,
+        })
+        assert result["status"] == "accepted"
+        prompt = render_context(platform.decision_view("god", role="god"), "Review the measured world result.")
+        assert result["proposal_id"] not in prompt
+        assert "Pending proposal evaluations" in prompt
+        assert "Record a measured fog reading." in prompt
+    finally:
+        platform.close()
+
+
+def test_god_event_wakes_use_configured_evidence_counts(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "god-evidence-gates", tmp_path / "runtime"))
+    try:
+        # Routine governance does not wake God by itself.
+        with platform.store.transaction():
+            routine_id = platform.store.append_event("governance.reviewed", "lin_bo", 1, {"summary": "One routine review."})
+        platform._queue_configured_followups({"wake": ["god"]}, routine_id, "governance.reviewed", "lin_bo", 1)
+        assert not any(item["role"] == "god" for item in platform.ready_evolution_tasks())
+
+        # A single public incident is a direct world consequence and wakes God.
+        with platform.store.transaction():
+            incident_id = platform.store.append_event("entity.installed", "tian_yan", 2, {"summary": "A public warning device was installed."})
+        platform._queue_event_consumer_task("god", incident_id, "entity.installed", "tian_yan", 2, task_type="event:entity.installed")
+        assert any(item["role"] == "god" and item["task_type"] == "event_group:public_incident" for item in platform.ready_evolution_tasks())
+    finally:
+        platform.close()
+
+
+def test_tick_snapshot_revision_is_committed_once_and_events_share_it(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "tick-protocol-world", tmp_path / "runtime"))
+    try:
+        before = platform.tick_snapshot()
+        result = platform.step()
+        assert result["snapshot_revision"] == before["world_revision"]
+        assert result["world_revision"] > before["world_revision"]
+        tick_event = next(item for item in platform.store.recent_events(limit=10) if item["event_type"] == "world_minute.advanced")
+        assert tick_event["world_revision"] == result["world_revision"]
+        assert platform.tick_snapshot()["world_minute"] == 1
+    finally:
+        platform.close()
+
+
+def test_stale_character_revision_is_rejected_at_commit_barrier(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "stale-agent-world", tmp_path / "runtime"))
+    try:
+        view = platform.tick_snapshot()
+        agent_revision = view["agent_revisions"]["lu_xingzhou"]
+        with platform.store.transaction():
+            agent = platform.store.get_agent("lu_xingzhou")
+            agent.setdefault("initial_state", {})["attention"] = 1
+            platform.store.update_agent("lu_xingzhou", agent)
+        rejected = platform.submit_behavior(BehaviorIntent(
+            "lu_xingzhou", "behavior:explore_greywood", {}, {}, "Use the old decision view.", 0.8, "stale-agent-intent",
+            observed_world_revision=view["world_revision"], observed_agent_revision=agent_revision,
+        ))
+        assert rejected["status"] == "rejected"
+        assert rejected["failed_check"] == "stale_agent_revision"
+    finally:
+        platform.close()
+
+
+def test_running_action_keeps_definition_snapshot_after_registry_change(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "definition-snapshot-world", tmp_path / "runtime"))
+    try:
+        started = platform.submit_behavior(BehaviorIntent("lin_bo", "behavior:rest_and_recover", {}, {}, "Recover readiness.", 0.8, "definition-snapshot"))
+        assert started["status"] == "accepted"
+        platform.step()
+        active = platform.store.get_agent("lin_bo")["initial_state"]
+        assert active["active_action"] == "rest"
+        old_version = active["active_action_definition_version"]
+        with platform.store.transaction():
+            rest = next(item for item in platform.store.get_definitions("action_def") if item["id"] == "rest")
+            rest = dict(rest)
+            rest["definition_version"] = old_version + 1
+            rest["duration"] = {"minutes": 1}
+            platform.store.put_definition("action_def", "rest", rest)
+        platform.step()
+        current = platform.store.get_agent("lin_bo")["initial_state"]
+        assert current["status"] == "executing"
+        assert current["remaining_minutes"] > 1
+        action_row = platform.store.connection.execute("SELECT data_json FROM action_instance WHERE action_instance_id=?", (active["active_action_instance"],)).fetchone()
+        assert json.loads(action_row["data_json"])["definition_version"] == old_version
+    finally:
+        platform.close()
+
+
+def test_proposal_evaluation_requires_typed_followup_not_unrelated_event(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "proposal-followup-world", tmp_path / "runtime"))
+    try:
+        result = platform.submit_world_change("god", {
+            "change_type": "rule",
+            "summary": "Review one named patrol result after the gate report.",
+            "evaluation_window_minutes": 1,
+            "rule": {"id": "named_patrol_review", "condition": "world.north_gate_threat_level >= 0.2", "effect": "policy.review_signal", "behavior_names": ["Patrol Route"]},
+        })
+        assert result["status"] == "accepted"
+        with platform.store.transaction():
+            platform.store.append_event("dialogue.completed", "lin_bo", 0, {"summary": "Unrelated conversation."})
+        platform.step()
+        proposal = platform.store.list_world_proposals(limit=1)[0]
+        assert proposal["status"] == "no_observed_effect"
+        assert proposal["observed"]["match"] is False
+    finally:
+        platform.close()
+
+
+def test_confirmed_experience_requires_recorded_source_event(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "experience-source-world", tmp_path / "runtime"))
+    try:
+        rejected = platform.submit_experience("lu_xingzhou", "research.completed", "The water result is confirmed.", 0.9, "confirmed")
+        assert rejected["status"] == "rejected"
+        assert rejected["failed_check"] == "claim_evidence"
+        with platform.store.transaction():
+            event_id = platform.store.append_event("research.completed", "lu_xingzhou", 0, {"summary": "Water research completed."})
+        accepted = platform.submit_experience("lu_xingzhou", "research.completed", "The water result is confirmed.", 0.9, "confirmed")
+        assert accepted["status"] == "accepted"
+        memory = platform.store.list_memories("lu_xingzhou", limit=1)[0]
+        assert memory["source_event_id"] == event_id
+        assert memory["claim_status"] == "confirmed"
+    finally:
+        platform.close()
+
+
+def test_configured_postcondition_uses_numeric_tolerance_and_publishes_success_once(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "water-postcondition-world", tmp_path / "runtime"))
+    try:
+        accepted = platform.submit_behavior(BehaviorIntent("qiao_ning", "behavior:mitigate_water", {}, {}, "Apply the measured water safety step.", 0.9, "water-postcondition"))
+        assert accepted["status"] == "accepted"
+        for _ in range(accepted["remaining_minutes"]):
+            platform.step()
+        assert platform.store.get_meta("world_properties")["water_quality"] == pytest.approx(0.8)
+        assert any(item["event_type"] == "water.mitigation.applied" for item in platform.store.recent_events(limit=30))
+        assert not any(item["event_type"] == "behavior.failed" and item.get("execution_id") == accepted["execution_id"] for item in platform.store.recent_events(limit=30))
+    finally:
+        platform.close()
+
+
+def test_failed_postcondition_rolls_back_effects_and_information_events(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "water-rollback-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            action = next(item for item in platform.store.get_definitions("action_def") if item["id"] == "mitigate_water")
+            broken = dict(action)
+            broken["success"] = {"condition": "world.water_quality >= 2", "result": "water_measure_applied"}
+            platform.store.put_definition("action_def", "mitigate_water", broken)
+        accepted = platform.submit_behavior(BehaviorIntent("qiao_ning", "behavior:mitigate_water", {}, {}, "Try the configured safety step.", 0.9, "water-rollback"))
+        assert accepted["status"] == "accepted"
+        for _ in range(accepted["remaining_minutes"]):
+            platform.step()
+        assert platform.store.get_meta("world_properties")["water_quality"] == pytest.approx(0.72)
+        events = platform.store.recent_events(limit=50)
+        assert any(item["event_type"] == "behavior.failed" and item.get("execution_id") == accepted["execution_id"] for item in events)
+        assert not any(item["event_type"] == "water.mitigation.applied" for item in events)
+        assert not any(item["event_type"] == "world.property_changed" and item.get("source") == "mitigate_water" for item in events)
+    finally:
+        platform.close()
+
+
+def test_outcome_projection_does_not_embed_previous_outcome_history(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "outcome-size-world", tmp_path / "runtime"))
+    try:
+        for index in range(2):
+            accepted = platform.submit_behavior(BehaviorIntent("qiao_ning", "behavior:mitigate_water", {}, {}, "Apply the next measured water step.", 0.9, f"outcome-size-{index}"))
+            assert accepted["status"] == "accepted"
+            for _ in range(accepted["remaining_minutes"]):
+                platform.step()
+        outcomes = [item for item in platform.store.recent_events(limit=500) if item["event_type"] == "outcome.evaluated" and item.get("actor_id") == "qiao_ning"]
+        assert len(outcomes) >= 2
+        for event in outcomes[:2]:
+            actual = (event.get("actual") or {})
+            assert "last_outcome" not in actual.get("attributes", {})
+        assert len(json.dumps(outcomes[0], ensure_ascii=False)) < 5000
+    finally:
+        platform.close()
+
+
 def test_provider_retries_transient_disconnect_without_logging_credentials(monkeypatch):
     responses = [httpx.RemoteProtocolError("disconnect"), httpx.Response(200, request=httpx.Request("POST", "http://example.test"), json={"choices": [{"message": {"content": '{"intent_type":"wait"}'}}]})]
     calls = []
@@ -348,6 +586,7 @@ def test_provider_retries_transient_disconnect_without_logging_credentials(monke
     result = provider.complete_json(system="system", context="context")
     assert result["intent_type"] == "wait"
     assert len(calls) == 2
+    assert calls[-1]["json"]["max_tokens"] == 2048
 
 
 def test_provider_cooldown_stops_repeated_transient_requests(monkeypatch):
@@ -538,6 +777,7 @@ def test_nearby_communication_behavior_resolves_a_visible_participant(tmp_path: 
         assert any(item["from"] == "yu_ge" and item["to"] == "fei_lan" and item["type"] == "trust" for item in platform.store.list_relationships())
         assert "trust=0.02" in render_context(platform.decision_view("yu_ge"), "Choose one behavior.")
         assert not any(item["ref"] == "behavior:communicate" for item in platform.decision_view("yu_ge")["executable_behaviors"])
+        assert not any(item["role"] == "agent_reflection" for item in platform.ready_evolution_tasks())
     finally:
         platform.close()
 
@@ -578,7 +818,7 @@ def test_patrol_report_closes_personal_world_and_knowledge_loop(tmp_path: Path):
         trends = platform.store.world_trends(current_minute=platform.store.get_meta("world_minute"))["weekly"]
         assert trends["signal_events"]["security.patrol_reported"] == 1
         assert "north_gate_threat_level" not in trends["world_property_deltas"]
-        assert any(item["role"] == "god" and item["source_event_type"] == "security.patrol_reported" for item in platform.store.ready_evolution_tasks())
+        assert not any(item["role"] == "god" and item.get("source_event_type") == "security.patrol_reported" for item in platform.store.ready_evolution_tasks())
     finally:
         platform.close()
 
@@ -595,7 +835,7 @@ def test_governance_report_closes_personal_world_and_knowledge_loop(tmp_path: Pa
         assert any(item["fact_key"] == "governance:latest_review" for item in facts)
         assert any(item["fact_key"] == "inspect_object:village_food" and "320" in item["fact"] for item in facts)
         assert any(item["event_type"] == "governance.reviewed" for item in platform.store.recent_events(limit=30))
-        assert any(item["role"] == "god" and item["source_event_type"] == "governance.reviewed" for item in platform.store.ready_evolution_tasks())
+        assert not any(item["role"] == "god" and item.get("source_event_type") == "governance.reviewed" for item in platform.store.ready_evolution_tasks())
     finally:
         platform.close()
 

@@ -84,6 +84,7 @@ def main() -> int:
     parser.add_argument("--skip-remote", action="store_true")
     parser.add_argument("--skip-local", action="store_true")
     parser.add_argument("--remote-model", default=None)
+    parser.add_argument("--provider", default="remote", help="Configured provider name for the real-model check.")
     args = parser.parse_args()
     config = LLMConfig.load()
     world_config = Path(__file__).parents[1] / "worlds" / "starter_village"
@@ -98,7 +99,7 @@ def main() -> int:
                 local_provider = OpenAICompatibleProvider(ProviderConfig(**{**local.__dict__, "model": model, "proxy": None}))
                 reports.append({"provider": "local", "model": model, **run_session(platform, local_provider, "agent_decision", "lu_xingzhou")})
                 reports.append({"provider": "local", "model": model, **run_session(platform, local_provider, "agent_reflection", "lu_xingzhou")})
-            remote = config.providers.get("remote")
+            remote = config.providers.get(args.provider)
             if remote and not args.skip_remote:
                 if remote.api_key_env and not __import__("os").environ.get(remote.api_key_env):
                     reports.append({"provider": "remote", "model": remote.model, "status": "blocked", "reason": "configured API key environment variable is not available to this process", "quality": False})
@@ -106,7 +107,7 @@ def main() -> int:
                     if args.remote_model:
                         remote = ProviderConfig(**{**remote.__dict__, "model": args.remote_model})
                     remote_provider = OpenAICompatibleProvider(remote)
-                    reports.append({"provider": "remote", "model": remote.model, **run_session(platform, remote_provider, "god", "god")})
+                    reports.append({"provider": args.provider, "model": remote.model, **run_session(platform, remote_provider, "god", "god")})
         finally:
             platform.close()
     print(json.dumps({

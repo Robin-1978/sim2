@@ -23,6 +23,10 @@ class ProviderConfig:
     timeout_seconds: float = 120.0
     max_retries: int = 2
     retry_backoff_seconds: float = 1.0
+    # Keep tool-call and JSON replies bounded.  Providers otherwise choose a
+    # large completion budget and reasoning/tool planning can dominate cost.
+    # ``extra_body`` may override the provider-specific field when required.
+    max_completion_tokens: int | None = 2048
     adapter: str | None = None
     extra_body: dict[str, Any] | None = None
 
@@ -40,7 +44,7 @@ class LLMConfig:
             raise FileNotFoundError(
                 f"LLM config not found at {config_path}. Copy examples/llm-config.example.json "
                 "to ~/.sim2/llm.json and edit provider settings."
-            )
+                )
         raw: dict[str, Any] = json.loads(config_path.read_text(encoding="utf-8"))
         providers: dict[str, ProviderConfig] = {}
         for name, value in raw.get("providers", {}).items():
@@ -55,6 +59,10 @@ class LLMConfig:
                 timeout_seconds=float(value.get("timeout_seconds", 120)),
                 max_retries=max(0, int(value.get("max_retries", 2))),
                 retry_backoff_seconds=max(0.0, float(value.get("retry_backoff_seconds", 1.0))),
+                max_completion_tokens=(
+                    max(128, min(8192, int(value["max_completion_tokens"])))
+                    if value.get("max_completion_tokens") is not None else 2048
+                ),
                 adapter=value.get("adapter"),
                 extra_body=dict(value.get("extra_body") or {}),
             )

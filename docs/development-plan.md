@@ -2,7 +2,7 @@
 
 ## 实施状态（2026-11-07）
 
-`M0`–`M8` 的计划内容已经落地并分阶段提交：统一 ReAct、JSON Schema 工具调用、原生 assistant/tool/result 消息、通用配置创世、SQLite BT/Action 执行、条件/目标/资源/效果、探索与沟通知识、低频演化、God/WorldBuilder、玩家入口、控制/回放和规模基准均有代码与测试。当前 ReAct 会话默认最多 6 次模型调用，长时 BT 不在会话内推进；每个 Agent 唤醒都重新构建 AgentView，只有当前会话保留互动消息。
+`M0`–`M8` 的计划内容已经落地并分阶段提交：统一 ReAct、JSON Schema 工具调用、原生 assistant/tool/result 消息、通用配置创世、SQLite BT/Action 执行、条件/目标/资源/效果、探索与沟通知识、低频演化、God/WorldBuilder、玩家入口、控制/回放和规模基准均有代码与测试。当前 ReAct 会话默认最多 6 次模型调用，长时 BT 不在会话内推进；每个 Agent 唤醒都重新构建 AgentView，只有当前会话保留互动消息。Tick/Commit、Activity、Outcome/Reflection、World Evolution 四份协议已固化在 [runtime-protocols.md](design/runtime-protocols.md)，并有修订冲突、定义快照、提案匹配和记忆来源回归测试。
 
 ## 开发目标
 
@@ -31,7 +31,8 @@ Platform 不替 Agent 规划剧情，也不替 Agent 决定目标；它只执行
 | 配置与初始化 | `src/sim2/bootstrap` | Manifest、Schema、引用校验、新 SQLite 创建、初始导入 |
 | SQLite 持久化 | `src/sim2/persistence` | Schema、Repository、事务、事件日志、状态投影、快照、备份 |
 | 世界领域 | `src/sim2/world` | Entity、组件、资源、地点、关系、社会规则和领域约束 |
-| Platform 运行时 | `src/sim2/platform` | 世界分钟、调度队列、暂停、恢复、单步和事务协调 |
+| Platform 运行时 | `src/sim2/platform` | 世界分钟、调度队列、暂停、恢复、单步和事务协调；长时活动由 `platform/activity.py` 承担 |
+| 演化调度 | `src/sim2/evolution` | 通用事件消费者唤醒、累计证据门控和世界提案结果评估 |
 | Action 与效果 | `src/sim2/actions` | ActionDefinition、目标解析、条件引擎、成本和通用 Effect Pipeline |
 | 行为树 | `src/sim2/behavior` | BT 定义、实例、顺序、选择、并行、条件、结果和中断 |
 | Intent 网关 | `src/sim2/intents` | Intent 生命周期、权限、资源、幂等、拒绝反馈 |
@@ -123,7 +124,7 @@ python scripts/benchmark_platform.py --agents 1000 --runs 5
 python scripts/verify_agent_models.py
 ```
 
-最近一次结果为 `100 passed`；测试覆盖 ReAct 工具反馈与拒绝重试、SQLite 创世与回滚、长 Action/并行 BT/共享资源、中断恢复、探索沟通知识、聊天与两阶段交易、文本玩家/旁观者入口、短期/长期记忆与任务条件召回、BGE 适配、嵌套 BT 多参与者目标校验、周/月 God 趋势、反思目标和能力历史、执行 outcome 复盘上下文、God 世界前后值复盘、God 事件语义质量门、HTTP 控制、健康探针、快照恢复、确定性回放、可读名称映射、重复 BT 提案质量门、Provider 短暂断连重试与限流 cooldown 以及 Starter Village 端到端场景。
+最近一次结果为 `152 passed`；测试覆盖 ReAct 工具反馈与拒绝重试、SQLite 创世与回滚、长 Action/并行 BT/共享资源、中断恢复、探索沟通知识、聊天与两阶段交易、文本玩家/旁观者入口、短期/长期记忆与任务条件召回、BGE 适配、嵌套 BT 多参与者目标校验、周/月 God 趋势、反思目标和能力历史、执行 outcome 复盘上下文、God 世界前后值复盘、God 事件语义质量门、HTTP 控制、健康探针、快照恢复、确定性回放、可读名称映射、重复 BT 提案质量门、Provider 短暂断连重试与限流 cooldown、Tick 快照与提交屏障、活动定义版本快照、提案按类型结果匹配、记忆事件来源校验以及 Starter Village 端到端场景。
 
 `verify_agent_models.py` 是真实模型验收入口：它不打印原始 reasoning 或密钥，只报告 Decision/Reflection/God 的会话步骤、最终 Intent、Platform 校验结果和质量布尔值；远程 Provider 使用 `~/.sim2/llm.json` 中的显式代理和环境变量引用。
 

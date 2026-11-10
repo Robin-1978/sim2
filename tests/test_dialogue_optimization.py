@@ -126,9 +126,11 @@ def test_starter_bell_installation_closes_entity_and_inventory_loop(tmp_path: Pa
             platform.step()
         assert platform.store.get_agent("tian_yan")["inventory"].get("dawn_bell", 0) == 0
         assert platform.store.get_entity("dawn_bell")["initial_state"]["installed"] is True
+        assert any("installed at" in str(item.get("fact", "")) for item in platform.store.list_knowledge_facts("tian_yan"))
         assert any(item["event_type"] == "entity.installed" for item in platform.store.timeline_events(limit=100))
-        tasks = [row["task_type"] for row in platform.store.connection.execute("SELECT task_type FROM evolution_task WHERE task_type LIKE 'event:%'")]
-        assert tasks.count("event:entity.installed") == 2  # one Story and one God wake
+        tasks = [row["task_type"] for row in platform.store.connection.execute("SELECT task_type FROM evolution_task")]
+        assert tasks.count("event:entity.installed") == 1  # Story wake
+        assert "event_group:public_incident" in tasks  # one causal world-level wake
         assert "event:warning.artifact_installed" not in tasks
     finally:
         platform.close()
@@ -267,7 +269,15 @@ def test_research_wakes_story_and_god_only_after_configured_rounds(tmp_path: Pat
         second = platform._advance_information_progress(agent, action, {"source_id": "clean_water"}, 200)
         assert second["completed"] is True
         rows = platform.store.connection.execute("SELECT role,task_type FROM evolution_task WHERE task_type='event:research.completed'").fetchall()
-        assert {row["role"] for row in rows} == {"story", "god"}
+        assert {row["role"] for row in rows} == {"story"}
+        # One completed source is not enough for a world-level synthesis.
+        # The starter package requires three independent research results;
+        # content packs can choose a longer or shorter evidence threshold.
+        for minute in (201, 202):
+            with platform.store.transaction():
+                event_id = platform.store.append_event("research.completed", "qiao_ning", minute, {"summary": "Another validated research result."})
+            platform._queue_event_consumer_task("god", event_id, "research.completed", "qiao_ning", minute, task_type="event:research.completed")
+        assert any(item["role"] == "god" and str(item["task_type"]).startswith("event_group:research_synthesis") for item in platform.ready_evolution_tasks())
         assert platform.store.connection.execute("SELECT COUNT(*) AS n FROM event_log WHERE event_type='research.progressed'").fetchone()["n"] == 1
     finally:
         platform.close()
@@ -335,6 +345,19 @@ def test_story_accepts_configured_story_source_event_without_hardcoded_event_nam
         platform.close()
 
 
+def test_story_task_uses_its_source_event_when_newer_events_exist(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "story-source-boundary", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            source_id = platform.store.append_event("research.completed", "qiao_ning", 5, {"summary": "Water source was confirmed."})
+            platform.store.append_event("relationship.changed", "lin_bo", 6, {"summary": "A later social change was recorded."})
+        view = platform.view.build_decision_view("story", role="story", source_event_id=source_id)
+        assert view["validated_source"]["event_type"] == "research.completed"
+        assert view["validated_source"]["world_minute"] == 5
+    finally:
+        platform.close()
+
+
 def test_world_relationship_proposal_uses_visible_names(tmp_path: Path):
     platform = Platform(create_instance(_config(), "relationship-proposal", tmp_path / "runtime"))
     try:
@@ -368,7 +391,7 @@ def test_instant_dialogue_view_is_compact_and_explicit(tmp_path: Path):
         assert "<executable_behaviors>\n    - none; return wait" in prompt
         assert len(prompt) < 7000
         assert provider.calls[0]["tools"]
-        assert {item["function"]["name"] for item in provider.calls[0]["tools"]} == {"send_message"}
+        assert {item["function"]["name"] for item in provider.calls[0]["tools"]} == {"send_message", "wait"}
     finally:
         platform.close()
 

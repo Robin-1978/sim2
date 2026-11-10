@@ -15,7 +15,7 @@
 
 用户提供世界观、地点、势力、初始 Agent、元动作、行为树、规则、提示词和开局事件，系统将其导入一个全新的 SQLite 世界实例。初始化完成后，配置文件不再参与运行；Platform 从该 SQLite 读取当前状态并把每次演化写回同一文件。
 
-运行时只有两类参与者：每个个体一个 `Agent`，以及每个世界一个 `God Agent`。个体 Agent 在一次唤醒中进入“决策”或“反思/演化”阶段：决策阶段快速选择一个 Platform 已验证的 BT；行为完成后，反思阶段比较预期与实际结果，只把新的、持久且有助于下次决策的结论写成经验、信念、目标或 BT 提案。God Agent 同样读取世界提案的实际结果，再决定是否提出下一次世界变化。创建新世界时使用独立的 `WorldBuilder Agent` 生成模板草稿。所有 Agent 只表达 Intent，Platform 执行所有副作用。
+运行时有三类逻辑角色：个体 Agent、God Agent 和事件驱动的 Story Agent；WorldBuilder Agent 只在创世阶段生成模板草稿，不属于运行中的常驻角色。个体 Agent 在一次唤醒中进入“决策”或“反思/演化”阶段：决策阶段快速选择一个 Platform 已验证的 BT；行为完成后，反思阶段比较预期与实际结果，只把新的、持久且有助于下次决策的结论写成经验、信念、目标或 BT 提案。Story Agent 只组织已验证事实、剧情、角色目标和已注册 BT 解锁；God Agent 读取世界提案的实际结果，再决定是否提出下一次世界机制变化。所有 Agent 只表达 Intent，Platform 执行所有副作用。
 
 世界时间以分钟推进，Platform 主要推进当前 BT 和长时 Action。LLM 不在每一分钟调用，也不由模拟分钟驱动 ReAct；需要语义决策时启动一次有预算的会话，模型可以在该会话内连续调用工具、读取结果和修正 Intent，直到 Platform 接受、Agent 等待或会话预算耗尽。会话结束后，长时 BT 由 Platform 独立推进。LLM 只在没有活动计划、进入语义决策节点、紧急中断后、反思窗口或创新窗口介入。探索和沟通都会形成持久化结果：世界事件保存真实变化，Agent 的 `knowledge_fact` 保存其主观知识，`memory_item` 保存经历和摘要。
 
@@ -26,6 +26,10 @@
 本设计采用配置即代码、Schema First、领域边界、模块化单体、Intent Gateway、事件日志加状态投影和确定性回放。外部资料与采用结论见 [docs/design/references.md](design/references.md)。
 
 行为结果的逐项闭环验收见 [行为闭环矩阵](design/behavior-closure-matrix.md)。矩阵区分行为自身的直接结果与 Story、God、Reflection 在边界上的后续消费，避免把世界策略硬编码进 Platform。
+
+四份运行时协议（Tick/Commit、Activity、Outcome/Reflection、World Evolution）见
+[runtime-protocols.md](design/runtime-protocols.md)。它们冻结快照修订号、长时活动的
+定义版本、结果因果链和提案验证边界，作为实现与回放测试的共同契约。
 
 能力成长、发现、文明进度和规则的因果链见 [进步与文明设计](design/progression-and-civilization.md)。
 
@@ -47,6 +51,7 @@ flowchart LR
     P --> T[分钟推进与 BT 执行]
     T --> Q[决策边界与周期调度]
     Q --> A[Individual Agent: Decision or Reflection]
+    Q --> S[Story Agent: Event-driven narrative]
     Q --> G[God Agent]
     A --> R[Perception、Memory、规则预览]
     A --> I[Intent Gateway]
@@ -63,6 +68,7 @@ flowchart LR
 |---|---|
 | `bootstrap` | 读取配置包、校验引用、创建新 SQLite 并导入初始数据 |
 | `platform` | 世界分钟、调度、事务、暂停、恢复和副作用协调 |
+| `evolution` | 配置驱动的事件消费者唤醒、累计证据门控和提案结果评估 |
 | `world` | 实体、地点、势力、关系、社会规则和世界约束 |
 | `perception` | 按视角、位置、距离、权限和信息渠道生成观察 |
 | `actions` | 配置化元动作、持续时间、成本、进度和结果 |
@@ -101,13 +107,15 @@ YAML 只负责初始化。运行中 God 可以提交声明式定义提案，Plat
 5. 对没有活动计划或进入语义决策节点的 Agent 生成可执行 BT 目录。
 6. 唤起 Decision Agent 选择 BT、分支、等待或提交新 BT 意图。
 7. Platform 校验并创建执行实例，失败时返回错误进入 ReAct。
-8. 在一个 SQLite 事务中写入事件和当前状态投影。
+8. 在一个 SQLite 事务中写入事件和当前状态投影；LLM 请求不持有写事务，Intent 提交时重新验证当前状态。
+
+每个提交事务递增 `world_revision`，每个角色状态投影维护 `agent_revision`。AgentView 携带观察到的修订号；无关角色变化允许继续提交，但角色自身修订变化会在提交屏障以 `stale_agent_revision` 拒绝。Platform 仍按强一致前置条件、资源预留和当前权限重新校验。事件数据带有 `world_instance_id`、`world_revision`、`causation_id` 和 `correlation_id`，用于追踪“Intent → BT → Action → outcome → 反思/God 评估”链路。
 
 下一状态为：当前状态加分钟基础效果、Action 增量效果、环境效果和已接受意图效果。成本可以为零；时间、体力、资源、风险、注意力、声誉和冷却分别配置。Action 默认叠加分钟基础效果，显式配置的恢复或抵消效果可以降低需求和消耗。
 
 Action 启动时由 Platform 预锁定所需资源；暂停保留游标、进度和锁，取消或失败才按配置释放。只有配置了 `interaction_policy: allow` 的执行中 Action 才能与外部即时互动并行，移动和探索等行动默认拒绝互动。
 
-每个 Agent 的运行状态包含执行信封字段 `status`、`location_id`、`active_bt_instance`、`active_action`、`action_progress`、`remaining_minutes`、`current_goal_id`、`inventory` 和 `last_platform_result`；世界属性和需求由 `attributes.yaml` 与规则配置声明，不固定要求存在 `health`、`energy` 或 `satiety`。Platform 在攻击、疾病、事故和环境事件后按配置更新属性与状态效果；治疗和恢复 Action 通过 Platform 消除或减轻配置中的伤势。
+每个 Agent 的运行状态包含执行信封字段 `status`、`location_id`、`active_bt_instance`、`active_action`、`action_progress`、`remaining_minutes`、`current_goal_id`、`inventory` 和 `last_platform_result`；世界属性和需求由 `attributes.yaml` 与规则配置声明，不固定要求存在 `health`、`energy` 或 `satiety`。Platform 在攻击、疾病、事故和环境事件后按配置更新属性与状态效果；治疗和恢复 Action 通过 Platform 消除或减轻配置中的伤势。运行中的 Action 保存启动时的声明式定义快照和版本，后续 God 注册新版本不会改变已经锁定的成本、时长或效果。
 
 ### Agent 与上下文
 
@@ -140,7 +148,7 @@ System Prompt 定义身份、职责和不变量；Function Schema 使用简短�
 
 ### Platform 与验证
 
-所有 Agent 输出封装成 `IntentEnvelope`，状态为 `received`、`validated`、`accepted`、`executing`、`committed` 或 `rejected`。Platform 提供只读的 `preview_intent`、`check_preconditions` 和 `estimate_cost`。新 BT 经过节点、循环、深度、时长、函数白名单、资源、副作用和权限验证后才能注册；God Agent 创建实体也必须经过 Schema、引用、位置、容量、因果和可见性验证。
+所有 Agent 输出封装成 `IntentEnvelope`，状态为 `received`、`validated`、`accepted`、`executing`、`committed` 或 `rejected`。Platform 提供只读的 `preview_intent`、`check_preconditions` 和 `estimate_cost`。新 BT 经过节点、循环、深度、时长、函数白名单、资源、副作用和权限验证后才能注册；God Agent 创建实体也必须经过 Schema、引用、位置、容量、因果和可见性验证。行为结束时同时写入 `outcome.evaluated` 与终态事件；反思的 observed/confirmed/failed 经验必须引用真实事件，promised/inferred 会保留为较弱主张。
 
 ## 验证与验收
 

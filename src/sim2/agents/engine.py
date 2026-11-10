@@ -129,6 +129,7 @@ class AgentEngine:
         actor_id: str,
         task_type: str = "decision",
         interaction: dict[str, Any] | None = None,
+        source_event_id: int | None = None,
     ) -> AgentTurn:
         if role not in ROLE_NAMES:
             raise ValueError(f"unknown agent role: {role}")
@@ -140,7 +141,7 @@ class AgentEngine:
             if state.get("status") in {"executing", "paused"}:
                 result = {"status": "skipped", "reason": "active_behavior", "message": "Platform is already executing a behavior; wait for completion or an interrupt."}
                 return AgentTurn(role, task_type, {}, result, 0, [{"step": "skipped", "result": result}], {}, [])
-        context = self.view.build_decision_view(actor_id, role=role)
+        context = self.view.build_decision_view(actor_id, role=role, source_event_id=source_event_id)
         context["role"] = role
         if interaction:
             context["interaction"] = dict(interaction)
@@ -169,8 +170,7 @@ class AgentEngine:
         # spend all six ReAct turns reading the same event from different
         # projections and leave the evolution task unresolved.
         read_budget = (
-            min(self.max_read_tool_calls, 2) if role == "god"
-            else min(self.max_read_tool_calls, 4) if role in {"story", "agent_decision"}
+            min(self.max_read_tool_calls, 2) if role in {"god", "story", "agent_decision"}
             else self.max_read_tool_calls
         )
         system_policy = role_policy(self.platform, role)
@@ -292,6 +292,12 @@ class AgentEngine:
                 else:
                     conversation_messages.append({"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
                     conversation_messages.append({"role": "user", "content": f"Tool results: {json.dumps(model_tool_result, ensure_ascii=False)}"})
+                # Keep the stable system prompt and initial snapshot, plus a
+                # bounded tail of the current ReAct exchange.  Without this
+                # cap every read result is resent on every iteration, so a
+                # short choice can accumulate a large prompt and latency.
+                if len(conversation_messages) > 8:
+                    conversation_messages = conversation_messages[:2] + conversation_messages[-6:]
                 if accepted_result is not None:
                     return AgentTurn(role, task_type, last_response, accepted_result, iteration, transcript, initial_context, prompt_history)
                 continue
@@ -335,10 +341,10 @@ class AgentEngine:
             return None
         event_type = task.removeprefix("instant:")
         if event_type == "dialogue.completed":
-            return ["send_message"]
+            return ["send_message", "wait"]
         if event_type in {"trade.offer_created", "trade.countered"}:
-            return ["accept_trade_offer", "counter_trade_offer", "reject_trade_offer"]
-        return ["send_message"]
+            return ["accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "wait"]
+        return ["send_message", "wait"]
 
     @staticmethod
     def _compact_interaction_context(context: dict[str, Any], task_type: str, tools: list[str]) -> None:
@@ -583,6 +589,10 @@ class AgentEngine:
                         return error
                     data = dict(data)
                     data["behavior_ref"] = behavior["ref"]
+                data = dict(data)
+                if isinstance(context, dict):
+                    data.setdefault("observed_world_revision", context.get("world_revision"))
+                    data.setdefault("observed_agent_revision", context.get("agent_revision"))
                 return self.platform.submit_behavior(BehaviorIntent.from_json(data, actor_id=actor_id))
             if intent_type == "send_message":
                 return self.platform.submit_dialogue(actor_id, str(data.get("recipient") or data.get("target_id") or ""), str(data.get("topic") or "general"), str(data.get("message") or ""))

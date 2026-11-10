@@ -27,14 +27,14 @@ behavior tree.
 | `inspect_object` | The selected object, quantity, and observation are recorded | Reflection | Closed when an object is selected |
 | `inspect_granary` | Granary stock is observed as a knowledge fact | Reflection / God when a risk signal exists | Closed after the object inspection |
 | `manage_ration` | Stock observation, policy discussion, personal esteem/belonging effects, event and fact are persisted | God / Reflection | Closed as a policy recommendation; God applies any later world policy through a validated proposal |
-| `govern_village` | Stock observation, governance report, and personal needs change; God receives the report | God / Reflection | Closed as a report; God decides any policy change from measured evidence |
-| `patrol_route` | Route report, knowledge fact, personal needs and trend signal are persisted; God receives the report | God; Story only when a configured discovery is relevant | Closed as an observation and escalation signal; a threat change requires a later validated world proposal |
+| `govern_village` | Stock observation, governance report, and personal needs change | Reflection; God after the configured governance evidence count | Closed as a report; one review does not wake a world-level Agent |
+| `patrol_route` | Route report, knowledge fact, personal needs and trend signal are persisted | Reflection; Story/God only when a configured discovery or incident is relevant | Closed as an observation; routine patrols do not wake God |
 | `defend_village` | Alarm and defense result event are persisted; God receives the report | Story / God | Closed as a report; threat policy is external |
 | `defend_position` | Protected status and defense result event are persisted | Reflection / Story for a public threat | Closed as a response report |
 | `flee_to_safety` | Location changes and escape event are persisted | Next decision / Reflection | Closed |
 | `sound_alarm` | Public alarm event is persisted and Story/God are woken | Story / God | Closed as a signal; response is external |
 | `explore_greywood` | Map result, discoveries, knowledge, and unlocks are persisted | Story; God only for a configured world-level discovery | Closed |
-| `research_water` | Cumulative research progress and final fact are persisted | Story; God only when the configured fact has a world-level consequence | Closed when the configured source is available |
+| `research_water` | Cumulative research progress and final fact are persisted | Story per discovery; God after the configured research synthesis count | Closed when the configured source is available |
 | `research_source` | Cumulative progress and final knowledge fact are persisted | Story; God only when the configured fact has a world-level consequence | Closed |
 | `recover_caravan_ledger` | Object state, trade evidence, knowledge, and public effect change | Story / God | Closed |
 
@@ -63,18 +63,19 @@ intent.
 ## Trigger ownership
 
 The behavior result owns the first state change. A configured `wake` list only
-selects which consumer interprets the persisted result:
-
-- governance, ration review, and patrol reports normally wake **God**;
-- exploration, research, recovered objects, and story discoveries normally wake
-  **Story**;
-- a result may wake both when it has both a narrative and a world-policy
-  consequence.
+selects which consumer interprets the persisted result. Routine governance,
+ration review, patrol, treatment, and production reports stay in the individual
+and Story loops. The world package may define evidence groups such as “three
+completed research results”, “five governance reviews”, or “one public safety
+incident”; Platform wakes God only when that configured count is reached. This
+is causal evidence accumulation, not a daily timer. High-impact public results
+may use a group threshold of one.
 
 God is not an autonomous resource operator. It is scheduled for a weekly local
-review and a monthly structural review, and it may be woken by a behavior
-result or a derived threshold signal. A threshold signal must include the
-source event that caused the crossing; it is not an unexplained model call.
+review and a monthly structural review, and it may be woken by a configured
+evidence group or a derived threshold signal. A threshold signal must include
+the source events that caused the crossing; it is not an unexplained model
+call.
 God may propose a rule, entity, faction strategy, or narrative event. Shared
 resource quantities, personal needs, relationships, and production outcomes
 must be changed by configured behavior effects. A God proposal cannot directly

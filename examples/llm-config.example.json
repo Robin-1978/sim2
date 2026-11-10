@@ -14,7 +14,8 @@
       "api_key_env": null,
       "timeout_seconds": 120,
       "max_retries": 2,
-      "retry_backoff_seconds": 1.0
+      "retry_backoff_seconds": 1.0,
+      "max_completion_tokens": 2048
     },
     "remote": {
       "type": "openai_compatible",
@@ -23,7 +24,8 @@
       "api_key_env": "MY_MY_API",
       "timeout_seconds": 120,
       "max_retries": 2,
-      "retry_backoff_seconds": 1.0
+      "retry_backoff_seconds": 1.0,
+      "max_completion_tokens": 2048
     }
   }
 }

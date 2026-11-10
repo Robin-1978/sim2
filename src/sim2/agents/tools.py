@@ -333,6 +333,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "conditions": {"type": "array", "items": {"type": "string"}},
                 "effects": {"type": "array", "items": {"type": "string"}, "description": "Observable effects. For a signal, say only what is recorded or woken; do not claim priority, blocking, holding, deferral, or an until condition."},
                 "expected_effects": {"type": "array", "items": {"type": "string"}, "description": "Short observable effects to compare with the next world outcome; signal-only proposals must not claim enforcement."},
+                "evaluation_window_minutes": {"type": "integer", "minimum": 1, "maximum": 43200, "description": "How long Platform should observe outcomes before God reviews this proposal."},
                 "property": {"type": "string"},
                 "value": {},
                 "rule": {
@@ -408,19 +409,29 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "additionalProperties": False,
         },
     },
+    "wait": {
+        "purpose": "End this bounded session without changing the world.",
+        "kind": "intent",
+        "parameters": {
+            "type": "object",
+            "properties": {"reason": {"type": "string", "maxLength": 240}},
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
 }
 
 
 ROLE_TOOLS: dict[str, list[str]] = {
-    "agent_decision": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "request_behavior", "propose_institution"],
-    "agent_reflection": ["recall_memory", "query_known_fact", "record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "propose_institution"],
+    "agent_decision": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "request_behavior", "propose_institution", "wait"],
+    "agent_reflection": ["recall_memory", "query_known_fact", "record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "propose_institution", "wait"],
     # Story receives the validated source, required facts, and unlocked beats
     # in its world view.  Keeping generic lookup tools out of this role avoids
     # a read-only loop over names that are not public records; it must turn the
     # supplied evidence into one beat/progress proposal or wait.
-    "story": ["record_world_progress", "propose_story_beat"],
-    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "approve_institution"],
-    "world_builder": ["validate_world_template", "submit_world_template"],
+    "story": ["record_world_progress", "propose_story_beat", "wait"],
+    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "approve_institution", "wait"],
+    "world_builder": ["validate_world_template", "submit_world_template", "wait"],
 }
 
 
@@ -625,6 +636,14 @@ class AgentToolExecutor:
     def _send_message(self, recipient: str, topic: str, message: str) -> dict[str, Any]:
         return self.platform.submit_dialogue(self.actor_id, recipient, topic, message)
 
+    def _wait(self, reason: str = "") -> dict[str, Any]:
+        """End the bounded session without creating a world-side effect."""
+
+        return {
+            "status": "wait",
+            "reason": str(reason or "No response or world change is needed now."),
+        }
+
     def _create_trade_offer(self, recipient: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
         result = self.platform.create_trade_offer(self.actor_id, recipient, give, want)
         return self._trade_result_with_choice(result)
@@ -704,7 +723,7 @@ class AgentToolExecutor:
             result.pop("behavior_ref", None)
         return result
 
-    def _record_experience(self, summary: str, event: str = "", confidence: float = 1.0) -> dict[str, Any]:
+    def _record_experience(self, summary: str, event: str = "", confidence: float = 1.0, claim_status: str = "inferred") -> dict[str, Any]:
         if self.role == "agent_reflection":
             meaningful_events = {
                 "behavior.completed", "behavior.failed", "behavior.interrupted",
@@ -725,7 +744,7 @@ class AgentToolExecutor:
                     "retryable": True,
                     "message": "No completed outcome, meaningful event, or prior memory is available for a durable experience.",
                 }
-        return self.platform.submit_experience(self.actor_id, event, summary, float(confidence))
+        return self.platform.submit_experience(self.actor_id, event, summary, float(confidence), str(claim_status or "inferred"))
 
     def _update_capability(self, capability: str, delta: float, evidence: str) -> dict[str, Any]:
         return self.platform.submit_capability_update(self.actor_id, capability, float(delta), evidence)
@@ -845,6 +864,7 @@ class AgentToolExecutor:
         conditions: list[str] | None = None,
         effects: list[str] | None = None,
         expected_effects: list[str] | None = None,
+        evaluation_window_minutes: int = 1440,
         property: str = "",
         value: Any = None,
         rule: dict[str, Any] | None = None,
@@ -858,6 +878,7 @@ class AgentToolExecutor:
             "conditions": list(conditions or []),
             "effects": list(effects or []),
             "expected_effects": list(expected_effects or effects or []),
+            "evaluation_window_minutes": int(evaluation_window_minutes),
             "property": property,
             "value": value,
             "rule": dict(rule or {}),

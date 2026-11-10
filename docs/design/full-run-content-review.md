@@ -52,10 +52,15 @@ and the strict structural/database audit is in
   not silently stored as a confirmed fact.
 - Prompt numbers are rendered without floating-point tails such as
   `81.200000000004`; stored world values retain their calculation precision.
+- Installation information now records a derived fact from the configured
+  entity name and resulting location, so later decisions do not continue to
+  treat a deployed artifact as unfinished.
 
-The water follow-up BTs and warning-bell installation remain configuration
-work items. They need explicit Actions and observable result events before
-their research/production stories can be considered closed.
+The starter package now contains configured water mitigation, pact
+stabilization, mark investigation, and warning-bell installation Actions.
+Each has an observable event and a follow-up BT path; a post-fix run must
+still verify that the configured characters actually select them under the
+real model rather than merely proving that the definitions exist.
 
 ## Review boundary and remaining risks
 
@@ -72,9 +77,9 @@ overlapping wake events (`negotiation.completed` and
 IDs, so this is not a database duplicate, but the scheduler should eventually
 deduplicate one outcome chain or choose one canonical wake event.
 
-The current Story guard rejects unsupported movement or delivery claims, but
-its phrase list lives in Platform code. Replace that temporary guard with
-typed, configuration-backed claim/evidence references before adding another
-world. Likewise, `claim_status` labels memory provenance but does not yet
-verify a `confirmed` claim against a specific event payload; that remains a
-semantic validation task.
+Story evidence claims are now checked against configured source events and
+follow-up behavior records. Memory claims carry the resolved source event;
+`observed`, `confirmed`, and `failed` submissions without a recorded source
+are rejected, while `promised` and `inferred` remain explicitly weaker. The
+remaining semantic acceptance step is the real-provider audit described in
+the development plan.

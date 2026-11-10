@@ -234,7 +234,7 @@ actions:
     result: emergency
   information:
     event_type: security.patrol_reported
-    wake: [god]
+    wake: []
     trend: true
     summary: The north gate route was patrolled and a report was recorded.
     fact_key: patrol:north_gate_loop
@@ -754,6 +754,9 @@ actions:
     event_type: entity.installed
     wake: [story, god]
     summary: A configured entity was installed at its target location.
+    fact_template: "{name} is installed at {location} and ready for its configured use."
+    source_type: deployment
+    confidence: 1.0
     result: entity_installed
   interrupt_policy: pause
   interaction_policy: allow

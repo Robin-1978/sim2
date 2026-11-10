@@ -284,7 +284,14 @@ class SimulationRunner:
             task_type = str(task.get("task_type", "evolution"))
             if task.get("trigger_id"):
                 task_type = f"trigger:{task.get('trigger_id')}"
-            turn = AgentEngine(self.platform, provider).run(role=role, actor_id=actor_id, task_type=task_type)
+            task_data = task.get("data") if isinstance(task.get("data"), dict) else {}
+            source_event_id = task_data.get("source_event_id")
+            turn = AgentEngine(self.platform, provider).run(
+                role=role,
+                actor_id=actor_id,
+                task_type=task_type,
+                source_event_id=int(source_event_id) if source_event_id is not None else None,
+            )
             self._observe_turn(turn, actor_id)
             if role == "god":
                 report.god_sessions += 1

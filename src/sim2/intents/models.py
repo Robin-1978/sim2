@@ -15,6 +15,8 @@ class BehaviorIntent:
     confidence: float
     intent_id: str
     intent_type: str = "select_behavior"
+    observed_world_revision: int | None = None
+    observed_agent_revision: int | None = None
 
     def __post_init__(self) -> None:
         if self.behavior_ref and not self.behavior_ref.startswith("behavior:"):
@@ -35,4 +37,6 @@ class BehaviorIntent:
             reason=str(data.get("reason") or data.get("decision_summary") or ""),
             confidence=float(data.get("confidence", 0.0)),
             intent_id=str(data.get("intent_id") or uuid4()),
+            observed_world_revision=int(data["observed_world_revision"]) if data.get("observed_world_revision") is not None else None,
+            observed_agent_revision=int(data["observed_agent_revision"]) if data.get("observed_agent_revision") is not None else None,
         )

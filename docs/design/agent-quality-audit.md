@@ -45,6 +45,25 @@ LLM work only and does not delete world history. `SimulationReport` exposes
 `interaction_replies_suppressed` and `interaction_threads_closed`; compare
 those with `llm_call` usage when reviewing a long run.
 
+Completion-token spikes have a separate cause from prompt size.  The remote
+provider was allowed to choose its default completion budget, so a single
+decision could spend thousands of tokens on internal planning and several
+read-tool calls before returning one small choice.  The gateway now sends a
+bounded `max_tokens` value (default 2048; configurable per provider) while the
+existing ReAct read/tool budgets remain in force.  The larger bound leaves
+free providers enough room for one tool call and a concise decision while
+remaining below the unbounded 3k+ completions seen in the baseline. `llm_call`
+records prompt, completion, latency, and tool iteration counts, so a review
+can distinguish a large dynamic context from a verbose model response.  A
+provider requiring a different field can override it through `extra_body`.
+
+Decision, Story, and God sessions also cap ordinary read tools at two per
+turn and retain only the initial snapshot plus a short ReAct tail.  This keeps
+an Agent from reopening the same scene for six iterations and prevents tool
+results from being resent as an ever-growing conversation.  A rejected read
+budget is fed back as a normal Platform error, after which the model must use
+the facts it already has or submit `wait`/one intent.
+
 ## Full-run verification
 
 The latest complete run used DeepSeek v4.1 Flash for 1,440 world minutes. It

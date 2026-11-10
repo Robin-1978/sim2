@@ -431,6 +431,19 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 )
         else:
             lines.append("  - no recent world proposal result")
+        pending = [item for item in (context.get("world_proposals") or []) if item.get("status") == "pending_evaluation"]
+        if pending:
+            lines.append("  Pending proposal evaluations:")
+            for item in pending[:6]:
+                # Proposal/intent IDs are audit-only identifiers.  They add no
+                # meaning to a model decision and make prompt cache/content
+                # checks noisy, so expose the typed change and due time only.
+                expected = item.get("expected") if isinstance(item.get("expected"), dict) else {}
+                state = expected.get("state") if isinstance(expected, dict) else {}
+                label = expected.get("summary") or item.get("change_type") or "world proposal"
+                lines.append(f"  - {label}; due={item.get('evaluation_due_minute')}; expected={_plain(state or expected)}")
+        else:
+            lines.append("  Pending proposal evaluations: none.")
         outcomes = context.get("recent_agent_outcomes") or []
         if outcomes:
             lines.append("  Recent character outcomes:")

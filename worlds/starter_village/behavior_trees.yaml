@@ -60,7 +60,7 @@ behavior_trees:
   - {type: need_delta, need: belonging, delta: 0.2}
   outcome_events:
   - event_type: governance.reviewed
-    wake: [god]
+    wake: []
     trend: true
     summary: Food reserves and settlement risk were reviewed by the steward.
     data: {results: [rations_reviewed, risk_reviewed]}
@@ -90,7 +90,7 @@ behavior_trees:
   - {type: relationship_delta, relation: trust, delta: 0.04}
   outcome_events:
   - event_type: conflict.mediation_completed
-    wake: [story, god]
+    wake: [story]
     trend: true
     summary: A configured conflict mediation result was recorded.
   outcome_facts:
@@ -189,7 +189,7 @@ behavior_trees:
       topic: food_ration
   outcome_events:
   - event_type: ration.policy_reviewed
-    wake: [god]
+    wake: []
     trend: true
     summary: A ration policy discussion was recorded for the next governance review.
   outcome_facts:
@@ -211,7 +211,7 @@ behavior_trees:
   failure_results: [treatment_failed, patient_unavailable]
   outcome_events:
   - event_type: health.treatment_completed
-    wake: [story, god]
+    wake: [story]
     summary: A configured treatment result was recorded.
   interrupt_policy: pause
   goal_tags: [health, care]
@@ -238,7 +238,7 @@ behavior_trees:
   failure_results: [crafting_failed]
   outcome_events:
   - event_type: production.medicine_completed
-    wake: [god]
+    wake: []
     summary: A configured medicine recipe completed and its output was recorded.
   nodes:
   - type: action
@@ -285,7 +285,7 @@ behavior_trees:
   failure_results: [crafting_failed]
   outcome_events:
   - event_type: production.warning_artifact_completed
-    wake: [god]
+    wake: []
     summary: A configured warning artifact recipe completed and its output was recorded.
   nodes:
   - type: action
@@ -603,7 +603,7 @@ behavior_trees:
   failure_results: [conversation_refused, participant_left]
   outcome_events:
   - event_type: dialogue.behavior_completed
-    wake: [agent_reflection]
+    wake: []
     summary: The configured conversation behavior completed and its testimony was recorded.
   nodes:
   - type: action
@@ -628,7 +628,7 @@ behavior_trees:
   failure_results: [negotiation_failed, offer_refused]
   outcome_events:
   - event_type: negotiation.result_recorded
-    wake: [story, god]
+    wake: [story]
     summary: The configured negotiation result was recorded for follow-up.
   nodes:
   - type: action

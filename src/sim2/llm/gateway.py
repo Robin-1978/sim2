@@ -132,6 +132,13 @@ class OpenAICompatibleProvider:
             "temperature": 0.2,
             "response_format": {"type": "json_object"},
         }
+        # OpenAI-compatible providers generally accept ``max_tokens``.  Keep
+        # the default deliberately small: a bounded Agent turn should emit a
+        # tool call or one concise Intent, not an unbounded reasoning essay.
+        # An explicitly configured extra_body value wins for providers that
+        # require ``max_completion_tokens`` or another naming convention.
+        if self.config.max_completion_tokens is not None:
+            payload["max_tokens"] = int(self.config.max_completion_tokens)
         if self.config.extra_body:
             payload.update(self.config.extra_body)
         if tools and self.adapter.native_tools:
