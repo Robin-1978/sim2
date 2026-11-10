@@ -285,8 +285,9 @@ class SimulationRunner:
             )
             if provider is None or actor_id is None:
                 if role == "story":
-                    self.platform.pause("story_agent_provider_missing")
-                    return
+                    # Story feedback is asynchronous. A missing provider must
+                    # leave the task pending without freezing the world.
+                    continue
                 continue
             if self._provider_cooling_down(provider):
                 return
@@ -321,12 +322,6 @@ class SimulationRunner:
                     int(self.platform.store.get_meta("world_minute", 0)) + retry_delay,
                     str(turn.result.get("message") or turn.result.get("failed_check") or "evolution session rejected"),
                 )
-                if role == "story":
-                    # A discovery result is a synchronization barrier. Keep
-                    # world time frozen until the Story Agent can acknowledge
-                    # it or Platform receives an operator resume decision.
-                    self.platform.pause("story_agent_feedback_pending")
-                    return
             if self._provider_cooling_down(provider):
                 return
 

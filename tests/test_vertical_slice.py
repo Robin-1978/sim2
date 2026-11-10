@@ -627,6 +627,28 @@ def test_provider_failure_is_bounded_and_backed_off(tmp_path: Path):
         platform.close()
 
 
+def test_story_provider_failure_retries_without_pausing_world(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "story-provider-failure", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            event_id = platform.store.append_event(
+                "security.marks_classified",
+                "he_yan",
+                1,
+                {"story_source": True, "summary": "The boundary marks were classified."},
+            )
+        platform._queue_event_consumer_task("story", event_id, "security.marks_classified", "he_yan", 1, task_type="event:security.marks_classified")
+        report = SimulationRunner(platform, {"story": FailingProvider()}).run(2)
+        assert report.end_minute == 2
+        assert platform.status()["status"] == "running"
+        task = next(item for item in platform.store.ready_evolution_tasks() + platform.store.due_evolution_tasks(100) if item["role"] == "story")
+        assert task["status"] == "scheduled"
+        assert not any(item["event_type"] == "runtime.paused" for item in platform.store.timeline_events(limit=50))
+    finally:
+        platform.close()
+
+
 def test_platform_run_owns_autonomous_scheduler(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "platform-runtime-world", tmp_path / "runtime")

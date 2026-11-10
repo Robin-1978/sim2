@@ -58,6 +58,11 @@ class IcemanAdapter(ModelAdapter):
     def prepare_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         prepared = dict(payload)
         prepared.pop("response_format", None)
+        if prepared.get("tools"):
+            # Iceman occasionally emits plain prose when tool use is optional.
+            # A required call is safe because every role exposes the side
+            # effect-free wait tool and keeps the protocol bounded.
+            prepared["tool_choice"] = "required"
         return prepared
 
 

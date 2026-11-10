@@ -73,6 +73,7 @@ def test_iceman_adapter_keeps_tools_but_removes_unsupported_json_mode():
     payload = adapter.prepare_payload({"tools": [{"type": "function"}], "response_format": {"type": "json_object"}})
     assert "tools" in payload
     assert "response_format" not in payload
+    assert payload["tool_choice"] == "required"
 
 
 def test_bare_wait_is_the_only_plain_text_intent_normalized():
