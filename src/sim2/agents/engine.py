@@ -505,6 +505,7 @@ class AgentEngine:
         data = response.get("intent") if isinstance(response.get("intent"), dict) else dict(response)
         if not isinstance(data, dict):
             return {"status": "rejected", "failed_check": "intent_schema", "retryable": True, "message": "Intent must be an object."}
+        data = self._normalize_provider_intent(role, data)
         if data.get("type") == "intent":
             data.pop("type", None)
         intent_type_value = data.get("intent_type") or data.get("kind")
@@ -687,6 +688,43 @@ class AgentEngine:
         except (TypeError, ValueError, KeyError) as exc:
             return {"status": "rejected", "failed_check": "intent_schema", "message": str(exc)}
         return {"status": "rejected", "failed_check": "intent_type", "message": "Intent was not handled."}
+
+    @staticmethod
+    def _normalize_provider_intent(role: str, data: dict[str, Any]) -> dict[str, Any]:
+        """Normalize harmless provider wrappers without changing world semantics.
+
+        Some JSON-mode models put the intent name in ``choice`` and the real
+        visible behavior in ``behavior`` or a nested ``parameters.choice``.
+        The model-facing contract remains the visible choice; this boundary
+        repair is accepted only for the decision role and still passes through
+        exact Platform choice resolution.
+        """
+
+        normalized = dict(data)
+        if role != "agent_decision":
+            return normalized
+        nested = normalized.get("parameters")
+        nested_choice = nested.get("choice") if isinstance(nested, dict) else None
+        choice = normalized.get("choice")
+        intent_names = {"request_behavior", "select_behavior"}
+        if isinstance(choice, str) and choice.casefold() in intent_names:
+            candidate = nested_choice or normalized.get("behavior") or normalized.get("behavior_name")
+            if isinstance(candidate, str) and candidate.strip():
+                normalized["choice"] = candidate
+                if isinstance(nested, dict):
+                    if normalized.get("target") in (None, "") and nested.get("target") not in (None, ""):
+                        normalized["target"] = nested.get("target")
+                    # The wrapper's choice is a selector, not an execution
+                    # parameter. Preserve only actual user-facing parameters.
+                    normalized["parameters"] = {key: value for key, value in nested.items() if key not in {"choice", "target"}}
+        elif not isinstance(choice, str) or not choice.strip():
+            candidate = normalized.get("behavior") or normalized.get("behavior_name")
+            if isinstance(candidate, str) and candidate.strip():
+                normalized["choice"] = candidate
+        target = normalized.get("target")
+        if isinstance(target, str) and target.strip():
+            normalized["target"] = {"name": target.strip()}
+        return normalized
 
     @staticmethod
     def _interaction_intents(task_type: str) -> set[str] | None:

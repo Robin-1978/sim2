@@ -6,6 +6,7 @@ agent_prompt:
   protocol:
     agent_decision:
       - "Select exactly one allowed intent: request_behavior, send_message, create_trade_offer, accept_trade_offer, counter_trade_offer, reject_trade_offer, or wait."
+      - "For request_behavior, the choice is the exact visible behavior name from the offered list; never put request_behavior or another tool name in choice."
       - "Use only the exact visible choice or name. Never output internal identifiers, duration, cost, or effects."
       - "Return wait only when no listed behavior or interaction is suitable. Platform owns every state change and continues long behaviors after this session."
     agent_reflection:

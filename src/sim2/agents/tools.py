@@ -153,7 +153,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "request_behavior": {
-        "purpose": "Ask Platform to start one offered behavior; Platform validates and executes it.",
+        "purpose": "Ask Platform to start one offered behavior; set choice to the exact visible behavior name, never to the tool name request_behavior.",
         "kind": "intent",
         "parameters": {
             "type": "object",

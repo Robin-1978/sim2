@@ -52,6 +52,19 @@ def test_compatible_tool_use_envelopes_are_normalized():
     )
 
 
+def test_provider_intent_wrapper_uses_visible_behavior_choice():
+    normalized = AgentEngine._normalize_provider_intent(
+        "agent_decision",
+        {
+            "choice": "request_behavior",
+            "behavior": "Explore Greywood",
+            "target": "Greywood edge",
+        },
+    )
+    assert normalized["choice"] == "Explore Greywood"
+    assert normalized["target"] == {"name": "Greywood edge"}
+
+
 def test_unbound_context_reference_does_not_leak_into_world_text():
     assert Platform._resolve_parameters({"topic": "context.topic"}, {}) == {"topic": None}
 
