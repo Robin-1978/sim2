@@ -4,6 +4,8 @@ import ast
 import operator
 from typing import Any
 
+from ..world.schema import AttributeSchema
+
 
 class EffectPipeline:
     """Apply declarative effects to an in-memory projection.
@@ -12,6 +14,9 @@ class EffectPipeline:
     persist the mutated projection and event in its transaction.  No package
     can execute arbitrary code through an effect definition.
     """
+
+    def __init__(self, attributes: list[dict[str, Any]] | None = None):
+        self.schema = AttributeSchema(attributes or [])
 
     def apply(self, agent: dict[str, Any], effect: dict[str, Any], *, target: dict[str, Any] | None = None, formula_agent: dict[str, Any] | None = None) -> dict[str, Any]:
         target = target or {}
@@ -23,7 +28,7 @@ class EffectPipeline:
         if effect_type in {"need_delta", "need.delta"}:
             key = str(effect.get("need"))
             value = float(needs.get(key, state.get(key, 0))) + float(effect.get("delta", effect.get("value", 0)))
-            value = max(0.0, min(100.0, value))
+            value = self.schema.clamp(key, value)
             if key in state:
                 state[key] = value
             else:
@@ -31,9 +36,18 @@ class EffectPipeline:
             result.update({"applied": True, "need": key, "value": value})
         elif effect_type in {"state_delta", "state.delta", "threat_delta"}:
             key = "threat_level" if effect_type == "threat_delta" else str(effect.get("state"))
-            value = max(0.0, min(100.0, float(state.get(key, 0)) + float(effect.get("delta", effect.get("value", 0)))))
+            value = self.schema.clamp(key, float(state.get(key, self.schema.default(key, 0)) or 0) + float(effect.get("delta", effect.get("value", 0))))
             state[key] = value
             result.update({"applied": True, "state": key, "value": value})
+        elif effect_type in {"attribute_delta", "attribute.delta", "attribute_set", "attribute.set"}:
+            key = str(effect.get("attribute") or effect.get("state") or "")
+            if not key:
+                result["error"] = "attribute is required"
+            else:
+                before = state.get(key, self.schema.default(key, 0))
+                value = effect.get("value") if effect_type in {"attribute_set", "attribute.set"} else float(before or 0) + float(effect.get("delta", 0) or 0)
+                state[key] = self.schema.clamp(key, value)
+                result.update({"applied": True, "attribute": key, "before": before, "value": state[key]})
         elif effect_type in {"public_event", "event.public"}:
             result.update({"applied": True, "event": str(effect.get("event") or "public.event")})
         elif effect_type in {"relationship_delta", "relationship.delta"}:
@@ -64,12 +78,14 @@ class EffectPipeline:
             result.update({"applied": True, "status": status})
         elif effect_type in {"damage", "health_delta"}:
             amount = self._formula(effect.get("formula"), formula_agent or agent, target) if effect.get("formula") else float(effect.get("amount", effect.get("delta", 0)))
-            state["health"] = max(0.0, min(100.0, float(state.get("health", 100)) - amount if effect_type == "damage" else float(state.get("health", 100)) + amount))
-            result.update({"applied": True, "health": state["health"]})
+            key = str(effect.get("attribute") or "health")
+            state[key] = self.schema.clamp(key, float(state.get(key, self.schema.default(key, 100)) or 0) - amount if effect_type == "damage" else float(state.get(key, self.schema.default(key, 100)) or 0) + amount)
+            result.update({"applied": True, "attribute": key, "value": state[key]})
         elif effect_type in {"heal", "health_restore"}:
             amount = float(effect.get("amount", effect.get("value", 0)))
-            state["health"] = max(0.0, min(100.0, float(state.get("health", 100)) + amount))
-            result.update({"applied": True, "health": state["health"]})
+            key = str(effect.get("attribute") or "health")
+            state[key] = self.schema.clamp(key, float(state.get(key, self.schema.default(key, 100)) or 0) + amount)
+            result.update({"applied": True, "attribute": key, "value": state[key]})
         elif effect_type in {"location_set", "move_to"}:
             location_id = effect.get("location_id") or target.get("location_id") or target.get("destination_id")
             if location_id:

@@ -6,6 +6,9 @@ from sim2.bootstrap.service import create_instance
 from sim2.platform.runtime import Platform
 from sim2.prompting.renderer import render_context
 from sim2.simulation.runner import SimulationReport, SimulationRunner
+from sim2.actions.capacity import check_action_capacity
+from sim2.actions.conditions import ConditionEngine
+from sim2.actions.effects import EffectPipeline
 
 
 class WaitProvider:
@@ -49,6 +52,22 @@ def test_prompt_formats_float_state_without_binary_noise():
     assert "0.020000000000000004" not in prompt
 
 
+def test_world_defined_attributes_do_not_require_health_or_energy_names():
+    attributes = [
+        {"id": "vitality", "kind": "state", "min": 0, "max": 10, "default": 10, "vital": True},
+        {"id": "focus", "kind": "state", "min": 0, "max": 20, "default": 20, "capacity": True, "cost_mode": "decrease"},
+    ]
+    rules = {"vital_attribute": "vitality", "capacity_attribute": "focus"}
+    agent = {"initial_state": {"vitality": 10, "focus": 5, "conditions": []}, "needs": {}, "inventory": {}}
+    conditions = ConditionEngine(rules)
+    assert conditions.evaluate("actor.alive", agent=agent)
+    assert conditions.evaluate("actor.exhausted", agent={**agent, "initial_state": {"vitality": 10, "focus": 0, "conditions": []}})
+    result = EffectPipeline(attributes).apply(agent, {"type": "attribute_delta", "attribute": "vitality", "delta": -3})
+    assert result["value"] == 7
+    ok, reason = check_action_capacity(agent, {"costs": {"per_minute": {"focus": 1}}}, 5, attributes)
+    assert ok is True, reason
+
+
 def test_experience_records_claim_provenance(tmp_path: Path):
     platform = Platform(create_instance(_config(), "experience-provenance", tmp_path / "runtime"))
     try:
@@ -56,6 +75,38 @@ def test_experience_records_claim_provenance(tmp_path: Path):
         assert result["status"] == "accepted"
         memory = platform.store.list_memories("yu_ge", limit=5)[0]
         assert memory["claim_status"] == "promised"
+    finally:
+        platform.close()
+
+
+def test_social_institution_is_absent_until_proposed_and_activated(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "emergent-institution", tmp_path / "runtime"))
+    try:
+        assert platform.store.list_institutions() == []
+        assert platform.store.connection.execute("SELECT COUNT(*) AS n FROM institution_ledger_entry").fetchone()["n"] == 0
+        proposed = platform.submit_institution_proposal(
+            "liang_he",
+            {
+                "name": "Public Work Ledger",
+                "purpose": "Record verified public work before deciding how to distribute scarce food.",
+                "scope": "village",
+                "ledger": {"period": "week", "selectors": [{"event_types": ["behavior.completed"], "category": "public_work", "points": 1}]},
+                "policy": {"allocation": {"minimum_per_subject": 1, "contribution_share": 0.5}},
+            },
+        )
+        assert proposed["status"] == "accepted"
+        assert platform.store.list_institutions(status="active") == []
+        activated = platform.activate_institution("god", "Public Work Ledger", "The proposal has an observed food-allocation problem.")
+        assert activated["status"] == "accepted"
+        active = platform.store.list_institutions(status="active")[0]
+        before = platform.calculate_institution_allocation("Public Work Ledger", ["liang_he", "lin_bo"], 10, "week:0")
+        assert before["status"] == "accepted"
+        assert all(row["total"] == 1 for row in before["allocations"])
+        event_id = platform.store.append_event("behavior.completed", "liang_he", 20, {"behavior_id": "gather_resource", "result": "resource_collected"})
+        platform._record_active_institution_entries(event_id, "behavior.completed", "liang_he", 20, {"behavior_id": "gather_resource", "result": "resource_collected"})
+        totals = platform.store.institution_ledger_totals(active["institution_id"])
+        assert totals[0]["subject_id"] == "liang_he"
+        assert totals[0]["total"] == 1
     finally:
         platform.close()
 

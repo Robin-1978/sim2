@@ -29,6 +29,8 @@
 
 能力成长、发现、文明进度和规则的因果链见 [进步与文明设计](design/progression-and-civilization.md)。
 
+属性由世界包导入，Platform 只保留执行信封；动态社会制度、账本和完全不同属性世界的边界见 [动态世界 Schema](design/dynamic-world-schema.md)。
+
 - ReAct 采用“工具反馈修正计划”，但副作用由 Platform 控制。
 - Generative Agents 采用观察、记忆、反思和计划分层。
 - Voyager 采用版本化技能库、执行反馈和错误迭代；本项目使用声明式 BT，不执行任意生成代码。
@@ -103,7 +105,7 @@ Platform 采用通用 `target_resolver`、`condition_engine`、`effect_pipeline`
 
 Action 启动时由 Platform 预锁定所需资源；暂停保留游标、进度和锁，取消或失败才按配置释放。只有配置了 `interaction_policy: allow` 的执行中 Action 才能与外部即时互动并行，移动和探索等行动默认拒绝互动。
 
-每个 Agent 的运行状态至少包含 `status`、`location_id`、`health`、`energy`、`satiety`、`injuries`、`conditions`、`active_bt_instance`、`active_action`、`action_progress`、`remaining_minutes`、`current_goal_id`、`inventory` 和 `last_platform_result`。Platform 在攻击、疾病、事故和环境事件后更新伤势与状态效果；伤势会降低能力或阻止相关 BT，治疗和恢复 Action 通过 Platform 消除或减轻伤势。
+每个 Agent 的运行状态包含执行信封字段 `status`、`location_id`、`active_bt_instance`、`active_action`、`action_progress`、`remaining_minutes`、`current_goal_id`、`inventory` 和 `last_platform_result`；世界属性和需求由 `attributes.yaml` 与规则配置声明，不固定要求存在 `health`、`energy` 或 `satiety`。Platform 在攻击、疾病、事故和环境事件后按配置更新属性与状态效果；治疗和恢复 Action 通过 Platform 消除或减轻配置中的伤势。
 
 ### Agent 与上下文
 

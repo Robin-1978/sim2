@@ -21,6 +21,7 @@ from ..perception.service import PerceptionService
 from ..persistence.store import WorldStore
 from ..world.navigation import configured_location_tags, nearest_location_with_tag, nearest_resource_node, nearest_safe_location, reachable_locations
 from ..world.rules import RuleCompiler
+from ..world.schema import AttributeSchema
 
 
 class Platform:
@@ -36,9 +37,10 @@ class Platform:
         self.view = AgentViewCompiler(self.store)
         self.perception = PerceptionService(self.store)
         self.memory = MemoryService(self.store)
+        self.attribute_schema = AttributeSchema(self.store.get_meta("attributes", []) or [], self.store.get_meta("rules", {}) or {})
         self.conditions = ConditionEngine((self.store.get_meta("rules", {}) or {}))
         self.rule_compiler = self._new_rule_compiler()
-        self.effects = EffectPipeline()
+        self.effects = EffectPipeline(self.store.get_meta("attributes", []) or [])
         self.targets = TargetResolver(self.store)
         self.resources = ResourceLedger(self.store)
 
@@ -169,6 +171,12 @@ class Platform:
             self.store.get_entity(location_id)
         except KeyError:
             return {"status": "rejected", "message": "The configured player entry location does not exist.", "failed_check": "entry_location_id", "retryable": False}
+        state_defaults = self.attribute_schema.state_defaults()
+        state_defaults.update({"location_id": location_id, "status": "idle", "injuries": [], "conditions": [], "active_bt_instance": None, "active_action": None, "remaining_minutes": 0})
+        needs = self.attribute_schema.need_defaults()
+        for item in ((self.store.get_meta("rules", {}) or {}).get("needs", []) or []):
+            if isinstance(item, dict) and item.get("id"):
+                needs.setdefault(str(item["id"]), float(item.get("target", 100)))
         agent = {
             "id": player_id,
             "name": name or player_id,
@@ -176,15 +184,11 @@ class Platform:
             "traits": dict(origin.get("traits") or {}),
             "ultimate_goal": origin.get("starting_goal", "Find a meaningful place in this world."),
             "beliefs": [],
-            "needs": {
-                str(item["id"]): float(item.get("target", 100))
-                for item in ((self.store.get_meta("rules", {}) or {}).get("needs", []) or [])
-                if isinstance(item, dict) and item.get("id")
-            },
+            "needs": needs,
             "knowledge_seed": list(template.get("knowledge_seed") or []),
             "initial_bt_ids": list(template.get("initial_bt_ids") or []),
             "capabilities": {},
-            "initial_state": {"location_id": location_id, "health": 100, "energy": 100, "status": "idle", "injuries": [], "conditions": [], "active_bt_instance": None, "active_action": None, "remaining_minutes": 0},
+            "initial_state": state_defaults,
             "inventory": {},
         }
         minute = int(self.store.get_meta("world_minute", 0))
@@ -535,6 +539,7 @@ class Platform:
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "area_id": parameters.get("area_id"),
             "item_id": parameters.get("item_id"),
+            "entity_id": parameters.get("entity_id"),
             "object_id": parameters.get("object_id"),
             "inventory": agent.get("inventory", {}) or {},
             "food_items": (self.store.get_meta("rules", {}) or {}).get("food_items", []) or [],
@@ -698,6 +703,122 @@ class Platform:
                     self.store.mark_evolution_task_ready(f"{role}:event:{event_id}")
             self.store.finish_intent(intent_id, "accepted", result)
         return result
+
+    def submit_institution_proposal(self, actor_id: str, proposal: dict[str, Any]) -> dict[str, Any]:
+        """Record a proposed social institution without activating it.
+
+        A proposal is world data, not a state mutation.  It creates no metric
+        values and no ledger rows until an authorized world decision activates
+        it later.
+        """
+
+        intent_id = str(uuid4())
+        name = str(proposal.get("name") or "").strip()
+        purpose = str(proposal.get("purpose") or "").strip()
+        if len(name) < 2 or len(name) > 120:
+            return self._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "Institution name must be 2 to 120 characters.", "failed_check": "name", "retryable": True})
+        if len(purpose) < 12 or len(purpose) > 500:
+            return self._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "Institution purpose must be 12 to 500 characters.", "failed_check": "purpose", "retryable": True})
+        existing = self.store.list_institutions(limit=200)
+        if any(str(item.get("name", "")).casefold() == name.casefold() and item.get("status") in {"proposed", "active"} for item in existing):
+            return self._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "An institution with this name is already proposed or active.", "failed_check": "duplicate_institution", "retryable": False})
+        institution_id = f"institution:{uuid4().hex[:16]}"
+        minute = int(self.store.get_meta("world_minute", 0))
+        data = {
+            "name": name,
+            "purpose": purpose,
+            "scope": str(proposal.get("scope") or "world"),
+            "evidence": str(proposal.get("evidence") or ""),
+            "ledger": dict(proposal.get("ledger") or {}) if isinstance(proposal.get("ledger"), dict) else {},
+            "policy": dict(proposal.get("policy") or {}) if isinstance(proposal.get("policy"), dict) else {},
+            "proposed_by": actor_id,
+        }
+        with self.store.transaction():
+            self.store.put_institution(institution_id, "proposed", data, minute)
+            event_id = self.store.append_event("institution.proposed", actor_id, minute, {"institution": {"name": name, "purpose": purpose, "scope": data["scope"]}, "status": "proposed"})
+            self.store.create_intent(intent_id, actor_id, "propose_institution", {**data, "institution_name": name}, minute)
+            result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "institution": {"name": name, "status": "proposed"}}
+            self.store.finish_intent(intent_id, "accepted", result)
+        return result
+
+    def activate_institution(self, actor_id: str, institution: str, reason: str = "") -> dict[str, Any]:
+        """Activate one pending institution after a world-level decision."""
+
+        intent_id = str(uuid4())
+        choice = str(institution or "").strip()
+        candidates = [item for item in self.store.list_institutions(status="proposed", limit=200) if str(item.get("name", "")).casefold() == choice.casefold() or str(item.get("institution_id", "")) == choice]
+        if len(candidates) != 1:
+            return self._reject_intent(intent_id, actor_id, "activate_institution", {"institution": choice, "reason": reason}, {"status": "rejected", "message": "Choose one exact pending institution name.", "failed_check": "institution_choice", "retryable": True, "available_choices": [str(item.get("name", "")) for item in self.store.list_institutions(status="proposed", limit=20)]})
+        selected = candidates[0]
+        minute = int(self.store.get_meta("world_minute", 0))
+        with self.store.transaction():
+            institution_data = {key: value for key, value in selected.items() if key not in {"institution_id", "status", "created_minute", "activated_minute"}}
+            self.store.put_institution(str(selected["institution_id"]), "active", institution_data, int(selected.get("created_minute", minute)), minute)
+            event_id = self.store.append_event("institution.activated", actor_id, minute, {"institution": {"name": selected.get("name"), "purpose": selected.get("purpose")}, "reason": reason, "status": "active"})
+            self.store.create_intent(intent_id, actor_id, "activate_institution", {"institution": choice, "reason": reason}, minute)
+            result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "institution": {"name": selected.get("name"), "status": "active"}}
+            self.store.finish_intent(intent_id, "accepted", result)
+        return result
+
+    def institution_ledger(self, institution: str, period: str | None = None) -> dict[str, Any]:
+        """Return a public aggregate for an active institution."""
+
+        candidates = [item for item in self.store.list_institutions(status="active", limit=200) if str(item.get("name", "")).casefold() == str(institution).casefold() or str(item.get("institution_id", "")) == str(institution)]
+        if len(candidates) != 1:
+            return {"status": "rejected", "message": "Choose one exact active institution name.", "failed_check": "institution_choice", "retryable": True}
+        selected = candidates[0]
+        return {"status": "ok", "institution": {"name": selected.get("name"), "status": selected.get("status")}, "entries": self.store.institution_ledger_totals(str(selected["institution_id"]), period)}
+
+    def calculate_institution_allocation(
+        self,
+        institution: str,
+        subjects: list[str],
+        available_pool: float,
+        period: str | None = None,
+    ) -> dict[str, Any]:
+        """Calculate, but do not apply, a declarative resource allocation.
+
+        The policy must explicitly define a minimum allocation and the share of
+        the remaining pool that may use verified ledger totals.  This keeps an
+        emergent contribution institution safe before a world-specific
+        settlement Action is configured.
+        """
+
+        candidates = [item for item in self.store.list_institutions(status="active", limit=200) if str(item.get("name", "")).casefold() == str(institution).casefold() or str(item.get("institution_id", "")) == str(institution)]
+        if len(candidates) != 1:
+            return {"status": "rejected", "message": "Choose one exact active institution name.", "failed_check": "institution_choice", "retryable": True}
+        selected = candidates[0]
+        policy = selected.get("policy") if isinstance(selected.get("policy"), dict) else {}
+        allocation = policy.get("allocation") if isinstance(policy.get("allocation"), dict) else {}
+        minimum = float(allocation.get("minimum_per_subject", 0) or 0)
+        contribution_share = float(allocation.get("contribution_share", 0) or 0)
+        if minimum < 0 or not 0 <= contribution_share <= 1:
+            return {"status": "rejected", "message": "The active institution has an invalid allocation policy.", "failed_check": "allocation_policy", "retryable": False}
+        subject_ids = [str(item) for item in subjects if str(item)]
+        if not subject_ids:
+            return {"status": "accepted", "institution": {"name": selected.get("name")}, "period": period or "world", "allocations": [], "unallocated": float(available_pool)}
+        pool = max(0.0, float(available_pool))
+        base_total = minimum * len(subject_ids)
+        if base_total > pool + 1e-9:
+            return {"status": "rejected", "message": "The available pool cannot satisfy the configured minimum allocation.", "failed_check": "minimum_allocation", "retryable": True, "required": base_total, "available": pool}
+        remaining = pool - base_total
+        bonus_pool = remaining * contribution_share
+        totals = self.store.institution_ledger_totals(str(selected["institution_id"]), period)
+        category = allocation.get("category")
+        weights = {
+            subject: sum(
+                float(row.get("total", 0) or 0)
+                for row in totals
+                if str(row.get("subject_id")) == subject and (not category or str(row.get("category")) == str(category))
+            )
+            for subject in subject_ids
+        }
+        weight_total = sum(weights.values())
+        rows = []
+        for subject in subject_ids:
+            bonus = bonus_pool * weights[subject] / weight_total if weight_total > 0 else 0.0
+            rows.append({"subject": subject, "minimum": minimum, "bonus": bonus, "total": minimum + bonus, "verified_weight": weights[subject]})
+        return {"status": "accepted", "institution": {"name": selected.get("name")}, "period": period or "world", "allocations": rows, "unallocated": remaining - bonus_pool}
 
     @staticmethod
     def _valid_transfer(bundle: dict[str, Any]) -> bool:
@@ -1545,10 +1666,13 @@ class Platform:
         """Return a small, JSON-safe state projection for outcome review."""
 
         state = dict(agent.get("initial_state") or {})
+        execution_fields = {"location_id", "status", "active_bt_instance", "active_behavior_id", "active_action", "active_action_instance", "active_action_parameters", "active_action_reservation", "active_parallel_actions", "active_parameters", "remaining_minutes", "action_progress", "conditions", "injuries"}
+        attributes = {key: value for key, value in state.items() if key not in execution_fields}
         return {
             "location": state.get("location_id"),
             "health": state.get("health"),
             "energy": state.get("energy"),
+            "attributes": attributes,
             "needs": dict(agent.get("needs") or {}),
             "inventory": dict(agent.get("inventory") or {}),
             "capabilities": dict(agent.get("capabilities") or {}),
@@ -1562,6 +1686,15 @@ class Platform:
         for key in ("location", "health", "energy"):
             if before.get(key) != after.get(key):
                 delta[key] = {"before": before.get(key), "after": after.get(key)}
+        old_attributes = before.get("attributes") or {}
+        new_attributes = after.get("attributes") or {}
+        attribute_changes = {
+            key: {"before": old_attributes.get(key), "after": new_attributes.get(key)}
+            for key in sorted(set(old_attributes) | set(new_attributes))
+            if old_attributes.get(key) != new_attributes.get(key)
+        }
+        if attribute_changes:
+            delta["attributes"] = attribute_changes
         for group in ("needs", "inventory", "capabilities"):
             old = before.get(group) or {}
             new = after.get(group) or {}
@@ -1671,19 +1804,20 @@ class Platform:
         state = dict(agent.get("initial_state") or {})
         needs = dict(agent.get("needs") or {})
         for key, value in (action.get("costs", {}).get("per_minute", {}) or {}).items():
-            if not isinstance(value, (int, float)) or key in {"time", "attention"} and key not in state:
-                if key == "attention":
-                    state["attention"] = float(state.get("attention", 0)) + float(value or 0)
+            if not isinstance(value, (int, float)) or key == "time":
+                continue
+            if key not in state and key not in needs:
                 continue
             numeric = float(value)
-            if key in {"exposure", "attention"}:
-                state[key] = max(0.0, min(100.0, float(state.get(key, 0)) + numeric))
-            elif key in {"energy", "health"}:
-                state[key] = max(0.0, min(100.0, float(state.get(key, 0)) - numeric))
-            elif key in needs:
-                needs[key] = max(0.0, float(needs.get(key, 0)) - numeric)
+            mode = self.attribute_schema.cost_mode(str(key))
+            target = state if key in state or key not in needs else needs
+            current = float(target.get(key, self.attribute_schema.default(str(key), 0)) or 0)
+            changed = current + numeric if mode == "increase" else current - numeric
+            target[key] = self.attribute_schema.clamp(str(key), changed)
+            if target is state:
+                state[key] = target[key]
             else:
-                state[key] = float(state.get(key, 0)) + numeric
+                needs[key] = target[key]
         agent["needs"] = needs
         agent["initial_state"] = state
         for effect in action.get("progress_effects", []) or []:
@@ -1741,7 +1875,9 @@ class Platform:
                     self._apply_simple_effect(agent, definition)
                     self._emit_minute_effect_events(effect, agent, minute, before_state, before_needs)
                     state = dict(agent.get("initial_state") or {})
-                    if float(state.get("health", 100) or 0) <= 0 and state.get("status") not in {"unconscious", "dead"}:
+                    vital = self.attribute_schema.vital_attribute()
+                    vital_value = float(state.get(vital, 1) or 0) if vital else 1
+                    if vital and vital_value <= self.attribute_schema.minimum(vital) and state.get("status") not in {"unconscious", "dead"}:
                         state["status"] = "unconscious"
                         conditions = list(state.get("conditions") or [])
                         if "incapacitated" not in conditions:
@@ -1763,23 +1899,13 @@ class Platform:
                     data["relation_strength"] = float(data.get("relation_strength", data.get("value", 0))) + relation_delta
                     self.store.put_relationship(relation["from"], relation["to"], relation["type"], data)
 
-    @staticmethod
-    def _apply_simple_effect(agent: dict[str, Any], effect: dict[str, Any]) -> None:
-        if effect.get("need"):
-            key = str(effect["need"])
-            state = dict(agent.get("initial_state") or {})
-            if key in state:
-                state[key] = max(0.0, min(100.0, float(state.get(key, 0)) + float(effect.get("delta", 0))))
-                agent["initial_state"] = state
-            else:
-                needs = dict(agent.get("needs") or {})
-                needs[key] = max(0.0, min(100.0, float(needs.get(key, 0)) + float(effect.get("delta", 0))))
-                agent["needs"] = needs
-        elif effect.get("state"):
-            state = dict(agent.get("initial_state") or {})
-            key = str(effect["state"])
-            state[key] = max(0.0, min(100.0, float(state.get(key, 0)) + float(effect.get("delta", 0))))
-            agent["initial_state"] = state
+    def _apply_simple_effect(self, agent: dict[str, Any], effect: dict[str, Any]) -> None:
+        configured = dict(effect)
+        if configured.get("need") and not configured.get("type") and not configured.get("op"):
+            configured["type"] = "need_delta"
+        elif configured.get("state") and not configured.get("type") and not configured.get("op"):
+            configured["type"] = "state_delta"
+        self.effects.apply(agent, configured)
 
     def _emit_minute_effect_events(
         self,
@@ -2526,6 +2652,66 @@ class Platform:
             result.setdefault("result", str(information.get("result") or "information_recorded"))
         return result
 
+    def _institution_period_key(self, period: Any, minute: int) -> str:
+        if isinstance(period, (int, float)) and not isinstance(period, bool) and float(period) > 0:
+            size = max(1, int(period))
+            return f"block:{int(minute) // size}"
+        calendar = (self.store.get_meta("setting", {}) or {}).get("calendar", {}) or {}
+        key = str(period or "world").casefold()
+        sizes = {
+            "day": int(calendar.get("minutes_per_day", 1440) or 1440),
+            "week": int(calendar.get("minutes_per_week", 10080) or 10080),
+            "month": int(calendar.get("minutes_per_month", 43200) or 43200),
+        }
+        if key in sizes:
+            return f"{key}:{int(minute) // max(1, sizes[key])}"
+        return f"{key}:{int(minute)}"
+
+    @staticmethod
+    def _institution_selector_matches(selector: dict[str, Any], event_type: str, payload: dict[str, Any]) -> bool:
+        event_types = selector.get("event_types", selector.get("events", []))
+        if isinstance(event_types, str):
+            event_types = [event_types]
+        if event_types and str(event_type) not in {str(item) for item in event_types}:
+            return False
+        behavior_ids = selector.get("behavior_ids", selector.get("behaviors", []))
+        if isinstance(behavior_ids, str):
+            behavior_ids = [behavior_ids]
+        if behavior_ids and str(payload.get("behavior_id", "")) not in {str(item) for item in behavior_ids}:
+            return False
+        action_ids = selector.get("action_ids", selector.get("actions", []))
+        if isinstance(action_ids, str):
+            action_ids = [action_ids]
+        if action_ids and str(payload.get("action_id", "")) not in {str(item) for item in action_ids}:
+            return False
+        return True
+
+    def _record_active_institution_entries(self, event_id: int, event_type: str, actor_id: str, minute: int, payload: dict[str, Any]) -> None:
+        """Apply active, declarative ledger selectors to one verified event."""
+
+        for institution in self.store.list_institutions(status="active", limit=200):
+            ledger = institution.get("ledger") if isinstance(institution.get("ledger"), dict) else {}
+            selectors = ledger.get("selectors", ledger.get("evidence", []))
+            if not isinstance(selectors, list):
+                continue
+            for raw_selector in selectors:
+                if not isinstance(raw_selector, dict) or not self._institution_selector_matches(raw_selector, event_type, payload):
+                    continue
+                category = str(raw_selector.get("category") or "general").strip()
+                amount = float(raw_selector.get("points", raw_selector.get("amount", 1)) or 0)
+                if not category or amount <= 0:
+                    continue
+                period = self._institution_period_key(ledger.get("period", "world"), minute)
+                entry_id = self.store.append_institution_ledger_entry(
+                    str(institution["institution_id"]), actor_id, period, category, amount,
+                    int(event_id), "verified", {"event_type": event_type, "source": payload.get("behavior_id") or payload.get("action_id") or event_type}, minute,
+                )
+                if entry_id is not None:
+                    self.store.append_event(
+                        "institution.ledger_entry", actor_id, minute,
+                        {"institution": {"name": institution.get("name"), "category": category}, "period": period, "amount": amount, "source_event_id": int(event_id), "status": "verified"},
+                    )
+
     def _finish_behavior(self, agent: dict[str, Any], execution_id: str, behavior_id: str, status: str, result: str, minute: int) -> None:
         state = dict(agent.get("initial_state") or {})
         bt_row = self.store.connection.execute("SELECT data_json FROM bt_instance WHERE execution_id=?", (execution_id,)).fetchone()
@@ -2633,7 +2819,9 @@ class Platform:
         bt_data["outcome"] = outcome
         bt_data["result"] = result
         self.store.update_bt_instance(execution_id, status=status, current_node=int(state.get("active_action_index", 0)), data=bt_data, updated_minute=minute)
-        self.store.append_event(f"behavior.{status}", agent["id"], minute, {"execution_id": execution_id, "behavior_id": behavior_id, "result": result, "outcome": outcome})
+        behavior_event_id = self.store.append_event(f"behavior.{status}", agent["id"], minute, {"execution_id": execution_id, "behavior_id": behavior_id, "result": result, "outcome": outcome})
+        if status == "completed":
+            self._record_active_institution_entries(behavior_event_id, "behavior.completed", agent["id"], minute, {"execution_id": execution_id, "behavior_id": behavior_id, "result": result, "outcome": outcome})
 
     def _world_trigger_context(self) -> dict[str, Any]:
         context = dict(self.store.get_meta("world_properties", {}) or {})

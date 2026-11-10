@@ -5,6 +5,9 @@ attributes:
     unit: points
     min: 0
     max: 100
+    default: 100
+    vital: true
+    cost_mode: decrease
     prompt: Physical integrity; zero means incapacitated.
   - id: energy
     kind: state
@@ -12,6 +15,9 @@ attributes:
     unit: points
     min: 0
     max: 100
+    default: 100
+    capacity: true
+    cost_mode: decrease
     prompt: Combined action capacity and accumulated load.
   - id: exposure
     kind: state
@@ -19,6 +25,8 @@ attributes:
     unit: points
     min: 0
     max: 100
+    default: 0
+    cost_mode: increase
     prompt: Higher value means more environmental exposure; 0 means sheltered; 100 means highly exposed.
   - id: attention
     kind: state
@@ -26,13 +34,34 @@ attributes:
     unit: points
     min: 0
     max: 100
+    default: 0
+    cost_mode: increase
     prompt: Higher value means more occupied attention; 0 means fully available.
+  - id: reputation
+    kind: state
+    label: Reputation
+    unit: points
+    min: -100
+    max: 100
+    default: 0
+    cost_mode: increase
+    prompt: Public trust or standing earned through observed behavior.
+  - id: threat_level
+    kind: state
+    label: Threat level
+    unit: points
+    min: 0
+    max: 100
+    default: 0
+    cost_mode: increase
+    prompt: Immediate danger associated with the person or current situation.
   - id: satiety
     kind: need
     label: Satiety
     unit: points
     min: 0
     max: 100
+    default: 80
     prompt: Higher value means more full; 100 means full; 0 means starving. World time lowers it and food raises it.
   - id: safety
     kind: need

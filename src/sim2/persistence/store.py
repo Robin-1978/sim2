@@ -194,6 +194,28 @@ CREATE TABLE IF NOT EXISTS capability_progress (
   world_minute INTEGER NOT NULL,
   data_json TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS institution_definition (
+  institution_id TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  data_json TEXT NOT NULL,
+  created_minute INTEGER NOT NULL,
+  activated_minute INTEGER
+);
+CREATE TABLE IF NOT EXISTS institution_ledger_entry (
+  entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  institution_id TEXT NOT NULL,
+  subject_id TEXT NOT NULL,
+  period_key TEXT NOT NULL,
+  category TEXT NOT NULL,
+  amount REAL NOT NULL,
+  source_event_id INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  data_json TEXT NOT NULL,
+  created_minute INTEGER NOT NULL,
+  UNIQUE(institution_id, subject_id, category, source_event_id)
+);
+CREATE INDEX IF NOT EXISTS institution_ledger_lookup
+  ON institution_ledger_entry(institution_id, period_key, subject_id, category);
 """
 
 
@@ -639,6 +661,75 @@ class WorldStore:
             (agent_id, max(1, min(int(limit), 100))),
         ).fetchall()
         return [{"id": row["id"], "capability": row["capability"], "delta": row["delta"], "source": row["source"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
+
+    def put_institution(self, institution_id: str, status: str, data: dict[str, Any], created_minute: int, activated_minute: int | None = None) -> None:
+        self.connection.execute(
+            "INSERT INTO institution_definition(institution_id,status,data_json,created_minute,activated_minute) VALUES (?,?,?,?,?) "
+            "ON CONFLICT(institution_id) DO UPDATE SET status=excluded.status,data_json=excluded.data_json,activated_minute=excluded.activated_minute",
+            (str(institution_id), str(status), json_dumps(data), int(created_minute), int(activated_minute) if activated_minute is not None else None),
+        )
+
+    def get_institution(self, institution_id: str) -> dict[str, Any] | None:
+        row = self.connection.execute(
+            "SELECT institution_id,status,data_json,created_minute,activated_minute FROM institution_definition WHERE institution_id=?",
+            (str(institution_id),),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "institution_id": row["institution_id"],
+            "status": row["status"],
+            "created_minute": row["created_minute"],
+            "activated_minute": row["activated_minute"],
+            **json.loads(row["data_json"] or "{}"),
+        }
+
+    def list_institutions(self, *, status: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        query = "SELECT institution_id,status,data_json,created_minute,activated_minute FROM institution_definition"
+        args: list[Any] = []
+        if status:
+            query += " WHERE status=?"
+            args.append(str(status))
+        query += " ORDER BY created_minute DESC,institution_id LIMIT ?"
+        args.append(max(1, min(int(limit), 200)))
+        rows = self.connection.execute(query, tuple(args)).fetchall()
+        return [
+            {
+                "institution_id": row["institution_id"],
+                "status": row["status"],
+                "created_minute": row["created_minute"],
+                "activated_minute": row["activated_minute"],
+                **json.loads(row["data_json"] or "{}"),
+            }
+            for row in rows
+        ]
+
+    def append_institution_ledger_entry(
+        self,
+        institution_id: str,
+        subject_id: str,
+        period_key: str,
+        category: str,
+        amount: float,
+        source_event_id: int,
+        status: str,
+        data: dict[str, Any],
+        created_minute: int,
+    ) -> int | None:
+        cur = self.connection.execute(
+            "INSERT OR IGNORE INTO institution_ledger_entry(institution_id,subject_id,period_key,category,amount,source_event_id,status,data_json,created_minute) VALUES (?,?,?,?,?,?,?,?,?)",
+            (str(institution_id), str(subject_id), str(period_key), str(category), float(amount), int(source_event_id), str(status), json_dumps(data), int(created_minute)),
+        )
+        return int(cur.lastrowid) if cur.rowcount else None
+
+    def institution_ledger_totals(self, institution_id: str, period_key: str | None = None) -> list[dict[str, Any]]:
+        query = "SELECT subject_id,category,period_key,SUM(amount) AS total,COUNT(*) AS entries FROM institution_ledger_entry WHERE institution_id=? AND status='verified'"
+        args: list[Any] = [str(institution_id)]
+        if period_key is not None:
+            query += " AND period_key=?"
+            args.append(str(period_key))
+        query += " GROUP BY subject_id,category,period_key ORDER BY subject_id,category,period_key"
+        return [dict(row) for row in self.connection.execute(query, tuple(args)).fetchall()]
 
     def get_agent(self, agent_id: str) -> dict[str, Any]:
         row = self.connection.execute("SELECT data_json FROM agent_state WHERE id=?", (agent_id,)).fetchone()

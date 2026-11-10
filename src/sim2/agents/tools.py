@@ -211,6 +211,36 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "additionalProperties": False,
         },
     },
+    "propose_institution": {
+        "purpose": "Propose a new social institution without activating it or changing world state.",
+        "kind": "intent",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "A short visible institution name."},
+                "purpose": {"type": "string", "description": "What public problem the institution is meant to solve."},
+                "scope": {"type": "string", "description": "Who or what the institution covers."},
+                "evidence": {"type": "string", "description": "The observed problem or event motivating the proposal."},
+                "ledger": {"type": "object", "description": "Optional declarative future ledger selectors; these are inert until activation."},
+                "policy": {"type": "object", "description": "Optional declarative policy data; Platform validates it when the world accepts the proposal."},
+            },
+            "required": ["name", "purpose"],
+            "additionalProperties": False,
+        },
+    },
+    "approve_institution": {
+        "purpose": "Activate one pending institution after the world-level review accepts it.",
+        "kind": "intent",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "institution": {"type": "string", "description": "The exact visible pending institution name."},
+                "reason": {"type": "string", "description": "Short evidence-backed approval reason."},
+            },
+            "required": ["institution"],
+            "additionalProperties": False,
+        },
+    },
     "update_belief": {
         "purpose": "Submit a confidence update for a known fact or belief.",
         "kind": "intent",
@@ -366,10 +396,10 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
 
 
 ROLE_TOOLS: dict[str, list[str]] = {
-    "agent_decision": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "request_behavior"],
-    "agent_reflection": ["recall_memory", "query_known_fact", "record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior"],
-    "story": ["read_public_record", "query_known_fact", "record_world_progress", "propose_story_beat"],
-    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_world_change"],
+    "agent_decision": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "request_behavior", "propose_institution"],
+    "agent_reflection": ["recall_memory", "query_known_fact", "record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "propose_institution"],
+    "story": ["read_public_record", "query_known_fact", "record_world_progress", "propose_story_beat", "propose_institution"],
+    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_world_change", "approve_institution"],
     "world_builder": ["validate_world_template", "submit_world_template"],
 }
 
@@ -682,6 +712,23 @@ class AgentToolExecutor:
 
     def _record_world_progress(self, progress_key: str, delta: float, evidence: str) -> dict[str, Any]:
         return self.platform.submit_world_progress(self.actor_id, progress_key, float(delta), evidence)
+
+    def _propose_institution(
+        self,
+        name: str,
+        purpose: str,
+        scope: str = "world",
+        evidence: str = "",
+        ledger: dict[str, Any] | None = None,
+        policy: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self.platform.submit_institution_proposal(
+            self.actor_id,
+            {"name": name, "purpose": purpose, "scope": scope, "evidence": evidence, "ledger": dict(ledger or {}), "policy": dict(policy or {})},
+        )
+
+    def _approve_institution(self, institution: str, reason: str = "") -> dict[str, Any]:
+        return self.platform.activate_institution(self.actor_id, institution, reason)
 
     def _update_belief(self, confidence: float, belief: str = "", statement: str = "", reason: str = "") -> dict[str, Any]:
         return self.platform.submit_belief_update(self.actor_id, "", statement or belief, float(confidence), reason)

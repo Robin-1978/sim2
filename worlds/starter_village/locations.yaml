@@ -41,12 +41,12 @@ locations:
   - id: watchtower
     name: 北门瞭望塔
     public: restricted
-    tags: [security, observation]
+    tags: [security, observation, watch_post]
     routes: [village_square, north_gate]
   - id: north_gate
     name: 北门
     public: restricted
-    tags: [security, boundary]
+    tags: [security, boundary, watch_post]
     routes: [watchtower, greywood_edge]
   - id: river_bank
     name: 河岸

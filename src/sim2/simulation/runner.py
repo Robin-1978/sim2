@@ -350,8 +350,10 @@ class SimulationRunner:
             flags.append("excessive_replanning_or_low_execution")
         if report.event_types.get("trade.completed", 0) < 0:
             flags.append("invalid_trade_count")
-        for agent in self.platform.store.list_agents():
-            state = agent.get("initial_state", {}) or {}
-            if float(state.get("health", 100) or 0) <= 0:
-                flags.append(f"health_depleted:{agent['id']}")
+        vital = (self.platform.store.get_meta("rules", {}) or {}).get("vital_attribute")
+        if vital:
+            for agent in self.platform.store.list_agents():
+                state = agent.get("initial_state", {}) or {}
+                if float(state.get(str(vital), 0) or 0) <= 0:
+                    flags.append(f"vital_depleted:{agent['id']}")
         return flags

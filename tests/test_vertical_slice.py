@@ -742,7 +742,7 @@ def test_attribute_context_comes_from_config_and_food_stays_inventory(tmp_path: 
     try:
         view = platform.decision_view("lu_xingzhou")
         labels = {item["label"] for item in view["self"]["attributes"]}
-        assert labels == {"Health", "Energy", "Exposure", "Attention load", "Satiety", "Safety", "Belonging", "Esteem", "Self-actualization"}
+        assert labels == {"Health", "Energy", "Exposure", "Attention load", "Reputation", "Threat level", "Satiety", "Safety", "Belonging", "Esteem", "Self-actualization"}
         assert "food" not in {label.casefold() for label in labels}
         assert "rations" in view["inventory"]
         assert any("Only listed BTs" in rule for rule in view["platform_rules"])

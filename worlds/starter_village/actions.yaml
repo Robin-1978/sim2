@@ -478,7 +478,6 @@ actions:
     delta: 0.02
   information:
     event_type: negotiation.completed
-    wake: [story, god]
     summary: A negotiation result was recorded between the participants.
     result: contract_signed
   interrupt_policy: cancel
@@ -700,6 +699,170 @@ actions:
   information:
     object_parameter: object_id
     record_object_discovery: true
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: install_entity
+  version: 1
+  description: Install a carried entity at a configured public location.
+  parameters:
+    entity_id: string
+    location_id: string
+  preconditions:
+  - actor.alive
+  - inventory.item_available
+  - location.tag.watch_post
+  duration:
+    minutes: 12
+  costs:
+    reserve: {}
+    per_minute:
+      energy: 0.05
+      attention: 0.3
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_remove
+    item: context.entity_id
+    quantity: 1
+  - type: entity_state_set
+    entity_id: context.entity_id
+    state: installed
+    value: true
+  - type: entity_state_set
+    entity_id: context.entity_id
+    state: location_id
+    value: context.location_id
+  success:
+    condition: entity.installed
+    result: entity_installed
+  failure:
+    condition: actor.incapacitated
+    result: installation_failed
+  information:
+    event_type: entity.installed
+    wake: [story, god]
+    summary: A configured entity was installed at its target location.
+    result: entity_installed
+  interrupt_policy: pause
+  interaction_policy: allow
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: mitigate_water
+  version: 1
+  description: Apply the configured water-safety measure after the contamination finding.
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.can_research
+  - world.water_quality < 0.9
+  duration:
+    minutes: 90
+  costs:
+    reserve: {}
+    per_minute:
+      energy: 0.15
+      attention: 0.25
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: water_quality
+    delta: 0.08
+    maximum: 1.0
+  success:
+    condition: world.water_quality >= 0.8
+    result: water_measure_applied
+  failure:
+    condition: actor.incapacitated
+    result: water_measure_failed
+  information:
+    event_type: water.mitigation.applied
+    wake: [story, god]
+    summary: A configured water-safety measure was applied and its world result was recorded.
+    result: water_measure_applied
+  interrupt_policy: pause
+  interaction_policy: allow
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: stabilize_pact
+  version: 1
+  description: Perform the configured root-gate stabilization measure.
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.can_research
+  - world.root_gate_stability < 0.9
+  duration:
+    minutes: 120
+  costs:
+    reserve: {}
+    per_minute:
+      energy: 0.2
+      attention: 0.35
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: root_gate_stability
+    delta: 0.08
+    maximum: 1.0
+  success:
+    condition: world.root_gate_stability >= 0.7
+    result: pact_stabilized
+  failure:
+    condition: actor.incapacitated
+    result: pact_stabilization_failed
+  information:
+    event_type: pact.stability_improved
+    wake: [story, god]
+    summary: A configured pact-stabilization measure was completed and its world result was recorded.
+    result: pact_stabilized
+  interrupt_policy: pause
+  interaction_policy: allow
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: investigate_marks
+  version: 1
+  description: Investigate and classify a boundary mark instead of merely recording a patrol.
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.can_investigate
+  - location.tag.watch_post
+  duration:
+    minutes: 72
+  costs:
+    reserve: {}
+    per_minute:
+      energy: 0.2
+      exposure: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success:
+    condition: route.completed
+    result: marks_classified
+  failure:
+    condition: actor.incapacitated
+    result: investigation_failed
+  information:
+    event_type: security.marks_classified
+    wake: [story, god]
+    summary: The boundary marks were investigated and classified.
+    fact_key: security:north_gate_marks
+    fact: The boundary marks were investigated and classified.
+    source_type: investigation
+    confidence: 0.9
+    result: marks_classified
+  interrupt_policy: pause
+  interaction_policy: allow
   definition_source: config
   kind: atomic
   executor: effect_pipeline

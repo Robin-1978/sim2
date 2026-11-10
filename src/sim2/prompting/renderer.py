@@ -436,6 +436,22 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("  Compare expected and observed effects before proposing one next world change.")
         lines.append("</world_outcomes>")
 
+    pending_institutions = context.get("pending_institutions") or []
+    active_institutions = context.get("active_institutions") or []
+    institution_ledgers = context.get("institution_ledgers") or []
+    if pending_institutions or active_institutions or institution_ledgers:
+        lines.append("<social_institutions>")
+        lines.append("  pending:")
+        lines.extend([f"    - {item.get('name')}: {item.get('purpose')}" for item in pending_institutions[:6]] or ["    - none"])
+        lines.append("  active:")
+        lines.extend([f"    - {item.get('name')}: {item.get('purpose')}" for item in active_institutions[:6]] or ["    - none"])
+        if institution_ledgers:
+            lines.append("  verified ledger totals:")
+            for ledger in institution_ledgers[:4]:
+                lines.append(f"    - {ledger.get('name')}: {_plain(ledger.get('entries') or [])}")
+        lines.append("  A proposal is only a recorded suggestion. It changes the world only after an authorized activation.")
+        lines.append("</social_institutions>")
+
     active = context.get("active_task") or {}
     lines.extend([
         "  <active_execution>",

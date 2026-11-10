@@ -294,6 +294,116 @@ behavior_trees:
       station_id: context.station_id
   definition_source: config
   kind: base
+- id: install_dawn_bell
+  version: 1
+  scope: village_watch
+  summary: Install the crafted dawn bell at the north gate watch post.
+  description: Carry the completed bell to the watch post and install it so the village can hear the warning signal.
+  entry_conditions:
+  - actor.alive
+  - actor.inventory.dawn_bell >= 1
+  - route.known
+  estimated_minutes: 14
+  goal_tags: [warning, safety, public_infrastructure]
+  drive_tags: [safety, esteem, belonging]
+  interrupt_policy: pause
+  success_results: [entity_installed, warning_ready]
+  failure_results: [installation_failed, interrupted]
+  outcome_events:
+  - event_type: warning.artifact_installed
+    wake: [story, god]
+    summary: The warning artifact was installed at the north gate watch post.
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: north_gate
+  - type: action
+    action_id: install_entity
+    parameters:
+      entity_id: dawn_bell
+      location_id: north_gate
+  definition_source: config
+  kind: base
+- id: mitigate_water
+  version: 1
+  scope: personal
+  summary: Apply a water-safety measure after the contamination finding.
+  description: Move to the river bank and apply the configured measure that improves water quality.
+  entry_conditions:
+  - actor.alive
+  - actor.can_research
+  - world.water_quality < 0.9
+  estimated_minutes: 92
+  goal_tags: [health, water, public_health]
+  drive_tags: [safety, belonging, self_actualization]
+  interrupt_policy: pause
+  success_results: [water_measure_applied, public_health_improved]
+  failure_results: [water_measure_failed, interrupted]
+  outcome_events:
+  - event_type: public_health.measure_completed
+    wake: [story, god]
+    summary: The water-safety measure produced a verified world result.
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: river_bank
+  - type: action
+    action_id: mitigate_water
+  definition_source: config
+  kind: base
+- id: stabilize_pact
+  version: 1
+  scope: root_keepers
+  summary: Apply a measured stabilization to the root gate pact.
+  description: Perform the configured stabilization measure after the old pact has been researched.
+  entry_conditions:
+  - actor.alive
+  - actor.can_research
+  - world.root_gate_stability < 0.9
+  estimated_minutes: 120
+  goal_tags: [pact, stability, public_safety]
+  drive_tags: [safety, self_actualization, social_norms]
+  interrupt_policy: pause
+  success_results: [pact_stabilized, stability_verified]
+  failure_results: [pact_stabilization_failed, interrupted]
+  outcome_events:
+  - event_type: pact.stability_action_completed
+    wake: [story, god]
+    summary: A pact-stabilization action produced a verified world result.
+  nodes:
+  - type: action
+    action_id: stabilize_pact
+  definition_source: config
+  kind: base
+- id: investigate_north_gate_marks
+  version: 1
+  scope: village_watch
+  summary: Investigate and classify the north gate marks.
+  description: Go to the watch post and investigate the marks; routine patrol alone does not classify them.
+  entry_conditions:
+  - actor.alive
+  - actor.can_investigate
+  estimated_minutes: 72
+  goal_tags: [safety, investigation, warning]
+  drive_tags: [safety, novelty, esteem]
+  interrupt_policy: pause
+  success_results: [marks_classified, security_fact_recorded]
+  failure_results: [investigation_failed, interrupted]
+  outcome_events:
+  - event_type: security.investigation_completed
+    wake: [story, god]
+    summary: The north gate marks were investigated and classified.
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: north_gate
+  - type: action
+    action_id: investigate_marks
+  definition_source: config
+  kind: base
 - id: explore_greywood
   version: 1
   scope: personal

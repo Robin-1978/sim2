@@ -41,6 +41,25 @@ intent_type: update_capability
 capability: cooking
 delta: 0.04
 evidence: "Three completed meals used the configured recipe without failure."
+
+## Emergent contribution institutions
+
+Contribution is not an initial person attribute. A world may begin with no
+contribution metric, no ledger, and no quota policy. A person can propose a
+public-allocation institution during play; the proposal is only an event until
+the world accepts it.
+
+After acceptance, Platform stores the institution and its policy as declarative
+SQLite data. The policy names the event evidence that can create ledger
+entries, the categories, period, aggregation, minimum safety allocation, and
+whether historical events may be backfilled. A completed configured behavior
+can then append a verified entry using its source event. Agents cannot assign
+themselves points or change the ledger directly.
+
+The first quota calculation must preserve a configured minimum allocation for
+every eligible person. Only the remaining pool can be distributed using the
+new ledger. If the proposal is rejected, the world keeps its previous food
+rules and no contribution state is created.
 ```
 
 Platform 验证 evidence 是否对应该角色真实 outcome、能力是否在配置目录中、

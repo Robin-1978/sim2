@@ -18,6 +18,8 @@ class ConditionEngine:
 
     def __init__(self, config: dict[str, Any] | None = None):
         config = config or {}
+        self.vital_attribute = str(config.get("vital_attribute")) if config.get("vital_attribute") else None
+        self.capacity_attribute = str(config.get("capacity_attribute")) if config.get("capacity_attribute") else None
         self.capability_aliases = {
             str(key): [str(value)] if isinstance(value, str) else [str(item) for item in (value or [])]
             for key, value in (config.get("capability_aliases", {}) or {}).items()
@@ -77,9 +79,12 @@ class ConditionEngine:
         context = context or {}
         state = agent.get("initial_state", {})
         if path == "actor.alive":
-            return float(state.get("health", 100)) > 0
+            if self.vital_attribute:
+                return float(state.get(self.vital_attribute, 0) or 0) > 0
+            return str(state.get("status", "alive")).casefold() not in {"dead", "unconscious", "incapacitated"}
         if path == "actor.incapacitated":
-            return float(state.get("health", 100)) <= 0 or "incapacitated" in state.get("conditions", [])
+            vital_zero = self.vital_attribute and float(state.get(self.vital_attribute, 0) or 0) <= 0
+            return bool(vital_zero or "incapacitated" in state.get("conditions", []) or str(state.get("status", "")).casefold() in {"dead", "unconscious"})
         if path == "actor.role":
             return agent.get("role")
         if path.startswith("actor.need."):
@@ -97,6 +102,10 @@ class ConditionEngine:
             if item_id:
                 return str(item_id) in {str(item) for item in food_items} and float(inventory.get(str(item_id), 0) or 0) >= 1
             return any(float(inventory.get(str(item), 0) or 0) >= 1 for item in food_items)
+        if path in {"inventory.item_available", "actor.inventory_item_available"}:
+            inventory = agent.get("inventory", {}) or {}
+            item_id = context.get("item_id") or target.get("item_id") or context.get("entity_id") or target.get("entity_id")
+            return bool(item_id) and float(inventory.get(str(item_id), 0) or 0) >= 1
         if path.startswith("actor.can_"):
             capability = path.removeprefix("actor.can_")
             candidates = self.capability_aliases.get(capability, [capability])
@@ -141,7 +150,8 @@ class ConditionEngine:
         if path == "secret.source_available":
             return any(str(item).startswith("secret:") for item in agent.get("knowledge_seed", []))
         if path in {"actor.exhausted", "actor.stunned"}:
-            return float(state.get("energy", 100)) <= 0 or path.removeprefix("actor.") in state.get("conditions", [])
+            capacity_zero = self.capacity_attribute and float(state.get(self.capacity_attribute, 0) or 0) <= 0
+            return bool(capacity_zero or path.removeprefix("actor.") in state.get("conditions", []))
         if path.startswith("target."):
             if path == "target.available":
                 # A target-dependent action is not executable until Platform

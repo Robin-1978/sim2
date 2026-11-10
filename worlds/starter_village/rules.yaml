@@ -1,3 +1,5 @@
+vital_attribute: health
+capacity_attribute: energy
 minute_effects:
 - id: satiety_decay
   scope: agent

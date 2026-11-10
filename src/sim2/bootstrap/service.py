@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 
 from ..persistence.store import WorldStore, config_hash
+from ..world.schema import AttributeSchema
 
 
 CONFIG_COLLECTIONS = {
@@ -167,11 +168,11 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
             rules = load_yaml(config_dir, "rules.yaml", {})
             store.set_meta("rules", rules)
             store.set_meta("attributes", load_yaml(config_dir, "attributes.yaml", {}).get("attributes", []))
-            default_needs = {
-                str(item["id"]): float(item.get("target", 100))
-                for item in (rules.get("needs", []) or [])
-                if isinstance(item, dict) and item.get("id")
-            }
+            attribute_schema = AttributeSchema(store.get_meta("attributes", []) or [], rules)
+            default_needs = attribute_schema.need_defaults()
+            for item in (rules.get("needs", []) or []):
+                if isinstance(item, dict) and item.get("id"):
+                    default_needs.setdefault(str(item["id"]), float(item.get("target", 100)))
             evolution = load_yaml(config_dir, "evolution.yaml", {})
             store.set_meta("evolution", evolution)
             story = load_yaml(config_dir, "story.yaml", {})
@@ -203,6 +204,10 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                 for need_id, value in default_needs.items():
                     needs.setdefault(need_id, value)
                 state["needs"] = needs
+                initial_state = dict(state.get("initial_state") or {})
+                for attribute_id, value in attribute_schema.state_defaults().items():
+                    initial_state.setdefault(attribute_id, value)
+                state["initial_state"] = initial_state
                 store.put_agent(agent["id"], state, agent.get("name", agent["id"]))
                 for knowledge in agent.get("knowledge_seed", []):
                     fact_key = str(knowledge)

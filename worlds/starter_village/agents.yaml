@@ -93,6 +93,7 @@ agents:
   - patrol_route
   - defend_village
   - sound_alarm
+  - investigate_north_gate_marks
   capabilities:
     patrol: 0.94
     investigation: 0.78
@@ -219,6 +220,7 @@ agents:
   - gather_resource
   - research_water
   - craft_medicine
+  - mitigate_water
   capabilities:
     healing: 0.91
     herbalism: 0.82
@@ -278,6 +280,7 @@ agents:
   - craft_dawn_bell
   - craft_meal
   - gather_resource
+  - install_dawn_bell
   capabilities:
     forging: 0.96
     mining: 0.72
@@ -522,6 +525,7 @@ agents:
   - research_source
   - inspect_object
   - craft_meal
+  - stabilize_pact
   capabilities:
     research: 0.96
     ritual: 0.9

@@ -30,10 +30,10 @@ def role_policy(platform: Platform, role: str) -> str:
     return str(policies.get(role) or "")
 
 ROLE_INTENTS = {
-    "agent_decision": {"select_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "wait"},
-    "agent_reflection": {"record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "wait"},
-    "god": {"record_world_progress", "propose_entity", "propose_world_change", "wait"},
-    "story": {"record_world_progress", "propose_story_beat", "wait"},
+    "agent_decision": {"select_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "propose_institution", "wait"},
+    "agent_reflection": {"record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "propose_institution", "wait"},
+    "god": {"record_world_progress", "propose_entity", "propose_world_change", "approve_institution", "wait"},
+    "story": {"record_world_progress", "propose_story_beat", "propose_institution", "wait"},
     "world_builder": {"submit_world_template", "wait"},
 }
 
@@ -441,6 +441,8 @@ class AgentEngine:
                 "propose_entity": "propose_entity",
                 "propose_world_change": "propose_world_change",
                 "propose_story_beat": "propose_story_beat",
+                "propose_institution": "propose_institution",
+                "approve_institution": "approve_institution",
                 "wait": "wait",
             }
             intent_type_value = aliases.get(str(data.get("intent")).casefold())
@@ -522,6 +524,13 @@ class AgentEngine:
                 return self.platform.submit_capability_update(actor_id, str(data.get("capability") or ""), float(data.get("delta", 0)), str(data.get("evidence") or ""))
             if intent_type == "record_world_progress":
                 return self.platform.submit_world_progress(actor_id, str(data.get("progress_key") or ""), float(data.get("delta", 0)), str(data.get("evidence") or ""))
+            if intent_type == "propose_institution":
+                return self.platform.submit_institution_proposal(actor_id, {
+                    "name": data.get("name"), "purpose": data.get("purpose"), "scope": data.get("scope"),
+                    "evidence": data.get("evidence"), "ledger": data.get("ledger"), "policy": data.get("policy"),
+                })
+            if intent_type == "approve_institution":
+                return self.platform.activate_institution(actor_id, str(data.get("institution") or ""), str(data.get("reason") or ""))
             if intent_type == "update_belief":
                 return self.platform.submit_belief_update(actor_id, "", str(data.get("statement") or data.get("belief") or ""), float(data.get("confidence", 0.0)), str(data.get("reason") or ""))
             if intent_type == "update_goal":

@@ -15,6 +15,7 @@ from ..persistence.store import WorldStore
 from ..world.drives import DriveCalculator
 from ..world.navigation import configured_location_tags, nearest_location_with_tag, nearest_resource_node, nearest_safe_location, reachable_locations
 from ..world.rules import RuleCompiler
+from ..world.schema import AttributeSchema
 
 
 def _label(value: str) -> str:
@@ -305,6 +306,9 @@ class AgentViewCompiler:
             values.append({"label": definition.get("label", definition["id"]), "value": value, "unit": definition.get("unit", ""), "kind": kind, "meaning": definition.get("prompt", "")})
         return values
 
+    def _attribute_schema(self) -> AttributeSchema:
+        return AttributeSchema(self.store.get_meta("attributes", []) or [], self.store.get_meta("rules", {}) or {})
+
     @staticmethod
     def _assign_choices(behaviors: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Give the current view short, human-readable, collision-free choices.
@@ -542,9 +546,16 @@ class AgentViewCompiler:
                 impacts.extend(view["impact"][:3])
                 action_successes.extend(view["success"])
                 action_failures.extend(view["failure"])
-                energy_rate = float((action.get("costs", {}).get("per_minute", {}) or {}).get("energy", 0) or 0)
-                if energy_rate > 0:
-                    simulated_state["energy"] = max(0.0, float(simulated_state.get("energy", 100) or 0) - energy_rate * action_minutes)
+                schema = self._attribute_schema()
+                for cost_key, rate in (action.get("costs", {}).get("per_minute", {}) or {}).items():
+                    if cost_key == "time" or not isinstance(rate, (int, float)) or rate <= 0:
+                        continue
+                    target_state = simulated_state if cost_key in simulated_state else simulated_agent.get("needs", {})
+                    if cost_key not in target_state:
+                        continue
+                    current = float(target_state.get(cost_key, schema.default(str(cost_key), 0)) or 0)
+                    delta = current + float(rate) * action_minutes if schema.cost_mode(str(cost_key)) == "increase" else current - float(rate) * action_minutes
+                    target_state[cost_key] = schema.clamp(str(cost_key), delta)
                 # Validate a sequential BT against the state produced by its
                 # earlier configured steps. This keeps a travel-then-service
                 # behavior executable without adding action-specific code.
@@ -710,8 +721,13 @@ class AgentViewCompiler:
             message = signal.get("below_message") if value <= threshold else signal.get("above_message")
             if message:
                 decision_constraints.append(f"{labels.get(need_id, need_id)} is {value:g}/100; {str(message).rstrip('.') }.")
-        energy = float(state.get("energy", 100) or 0)
-        decision_constraints.append(f"Energy is {energy:g}/100; Platform hides any BT whose configured energy cost exceeds current Energy.")
+        schema = self._attribute_schema()
+        capacity_id = schema.capacity_attribute()
+        if capacity_id:
+            capacity_value = float(state.get(capacity_id, 0) or 0)
+            capacity_label = labels.get(capacity_id, capacity_id)
+            capacity_max = schema.maximum(capacity_id)
+            decision_constraints.append(f"{capacity_label} is {capacity_value:g}/{capacity_max:g}; Platform hides any BT whose configured cost exceeds current {capacity_label}.")
         if location_id and safe_location_id and safe_location_id != location_id:
             decision_constraints.append("The current location is not safe for rest; the recovery BT moves to a configured safe location first.")
         elif location_id and not safe_location_id:
@@ -728,6 +744,20 @@ class AgentViewCompiler:
             required = int((definition or {}).get("minimum_completed_outcomes", 3) or 3)
             if int(completed or 0) >= required:
                 capability_update_candidates.append({"capability": str(capability), "completed_outcomes": int(completed), "required_outcomes": required, "max_delta": float((definition or {}).get("max_delta", 0.1) or 0.1)})
+        pending_institutions = [
+            {"name": str(item.get("name", "")), "purpose": str(item.get("purpose", "")), "scope": str(item.get("scope", "world")), "status": "proposed"}
+            for item in self.store.list_institutions(status="proposed", limit=12)
+        ]
+        active_institutions = [
+            {"name": str(item.get("name", "")), "purpose": str(item.get("purpose", "")), "scope": str(item.get("scope", "world")), "status": "active"}
+            for item in self.store.list_institutions(status="active", limit=12)
+        ]
+        institution_ledgers = []
+        for item in self.store.list_institutions(status="active", limit=12):
+            institution_ledgers.append({
+                "name": str(item.get("name", "")),
+                "entries": self.store.institution_ledger_totals(str(item.get("institution_id")), None)[:12],
+            })
         return {
             "context_version": "1", "role": role,
             "prompt_protocol": prompt_protocol,
@@ -744,6 +774,9 @@ class AgentViewCompiler:
             "open_trade_offers": self._trade_offer_view(agent_id),
             "available_actions": available_actions if role == "agent_reflection" else [],
             "active_world_rules": self.rule_compiler.model_view(self._world_rule_labels()),
+            "pending_institutions": pending_institutions,
+            "active_institutions": active_institutions,
+            "institution_ledgers": institution_ledgers,
             "executable_behaviors": self._assign_choices(available), "decision_constraints": decision_constraints, "last_platform_result": state.get("last_platform_result"), "tools": tools_for_role(role),
         }
 
@@ -1084,6 +1117,18 @@ class AgentViewCompiler:
             "recent_agent_outcomes": recent_agent_outcomes,
             "world_trends": world_trends,
             "civilization_progress": self.store.list_progress(world_id, limit=20),
+            "pending_institutions": [
+                {"name": str(item.get("name", "")), "purpose": str(item.get("purpose", "")), "scope": str(item.get("scope", "world")), "status": "proposed"}
+                for item in self.store.list_institutions(status="proposed", limit=20)
+            ],
+            "active_institutions": [
+                {"name": str(item.get("name", "")), "purpose": str(item.get("purpose", "")), "scope": str(item.get("scope", "world")), "status": "active"}
+                for item in self.store.list_institutions(status="active", limit=20)
+            ],
+            "institution_ledgers": [
+                {"name": str(item.get("name", "")), "entries": self.store.institution_ledger_totals(str(item.get("institution_id")), None)[:20]}
+                for item in self.store.list_institutions(status="active", limit=20)
+            ],
             "active_world_rules": self.rule_compiler.model_view(self._world_rule_labels()),
             "registered_behaviors": behavior_catalog[:32],
             "registered_actions": action_catalog[:32],
