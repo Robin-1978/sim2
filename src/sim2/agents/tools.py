@@ -6,6 +6,7 @@ from typing import Any, TYPE_CHECKING
 from uuid import uuid4
 
 from ..intents.models import BehaviorIntent
+from ..bootstrap.service import world_template_schema
 
 if TYPE_CHECKING:  # pragma: no cover - imports are only for type checkers
     from ..platform.runtime import Platform
@@ -394,7 +395,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "kind": "read",
         "parameters": {
             "type": "object",
-            "properties": {"template": {"type": "object", "description": "Use human-readable names; Platform assigns internal identifiers."}},
+            "properties": {"template": {**world_template_schema(), "description": "Complete declarative template. Use human-readable labels; Platform validates every reference."}},
             "required": ["template"],
             "additionalProperties": False,
         },
@@ -404,7 +405,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "kind": "intent",
         "parameters": {
             "type": "object",
-            "properties": {"template": {"type": "object", "description": "Use human-readable names; Platform assigns internal identifiers."}},
+            "properties": {"template": {**world_template_schema(), "description": "The exact template that already passed validate_world_template."}},
             "required": ["template"],
             "additionalProperties": False,
         },
@@ -885,7 +886,7 @@ class AgentToolExecutor:
             "relationship": dict(relationship or {}),
             "faction": dict(faction or {}),
         }
-        return self.platform.submit_world_change(self.actor_id, proposal)
+        return self.platform.submit_world_change(self.actor_id, proposal, origin_role=self.role)
 
     def _propose_story_beat(self, beat: str = "", audience: list[str] | None = None, summary: str = "", fact: str = "", goal_hint: str = "", unlock_choices: list[str] | None = None, reason: str = "") -> dict[str, Any]:
         return self.platform.submit_story_beat(self.actor_id, {"beat": beat, "audience": list(audience or []), "summary": summary, "fact": fact, "goal_hint": goal_hint, "unlock_choices": list(unlock_choices or []), "reason": reason})

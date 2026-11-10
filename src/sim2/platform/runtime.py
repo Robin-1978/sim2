@@ -241,6 +241,13 @@ class Platform(ActivityRuntimeMixin):
             "private_data": "excluded",
         }
 
+    def map_view(self, *, viewer_id: str | None = None, observer: bool = False) -> dict[str, Any]:
+        """Return the visible location topology for text, TUI or HTTP clients."""
+
+        from ..api.map_view import build_map_view
+
+        return build_map_view(self.store, viewer_id=viewer_id, observer=observer)
+
     def timeline(self, *, limit: int = 100, after_event_id: int = 0, include_ticks: bool = False) -> dict[str, Any]:
         """Return a public, chronological third-person event projection."""
 
@@ -1738,7 +1745,7 @@ class Platform(ActivityRuntimeMixin):
             self.store.finish_intent(intent_id, "accepted", {"status": "accepted", "intent_id": intent_id, "beat": beat.get("agent_label") or beat_id, "event_id": event_id, "activated": True})
         return {"status": "accepted", "intent_id": intent_id, "beat": beat.get("agent_label") or beat_id, "event_id": event_id, "activated": True}
 
-    def submit_world_change(self, actor_id: str, proposal: dict[str, Any]) -> dict[str, Any]:
+    def submit_world_change(self, actor_id: str, proposal: dict[str, Any], *, origin_role: str | None = None) -> dict[str, Any]:
         intent_id = str(uuid4())
         if not proposal.get("change_type") or not proposal.get("summary"):
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "change_type and summary are required.", "retryable": True})
@@ -1782,6 +1789,21 @@ class Platform(ActivityRuntimeMixin):
             if not declared_valid:
                 return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": declared_message, "failed_check": "rule_effect_semantics", "retryable": True})
             proposed_id = str(proposal["rule"].get("id") or proposal["rule"].get("name") or "").strip()
+            compiled_rule = self.rule_compiler.compile(dict(proposal["rule"]))
+            wake_roles = {str(item).strip() for item in (compiled_rule.get("wake") or []) if str(item).strip()}
+            if origin_role and str(origin_role) in wake_roles:
+                return self._reject_intent(
+                    intent_id,
+                    actor_id,
+                    "propose_world_change",
+                    proposal,
+                    {
+                        "status": "rejected",
+                        "message": "A dynamic signal cannot wake the same role that proposed it. Use a different consumer, an executable follow-up, or wait for new evidence.",
+                        "failed_check": "rule_self_wake",
+                        "retryable": True,
+                    },
+                )
             existing_rules = (self.store.get_meta("rules", {}) or {}).get("world_rules", []) or []
             signal_conflict = self.rule_compiler.signal_conflict(dict(proposal["rule"]), existing_rules)
             if signal_conflict:
@@ -1989,29 +2011,10 @@ class Platform(ActivityRuntimeMixin):
         return property_id in {str(item) for item in (allowed or [])}
 
     def validate_world_template(self, template: dict[str, Any]) -> dict[str, Any]:
-        errors: list[str] = []
-        if not isinstance(template, dict):
-            return {"status": "ok", "valid": False, "errors": ["template must be an object"], "failed_check": "template", "message": "Template must be an object.", "retryable": True}
-        world = template.get("world")
-        if not isinstance(world, dict) or not world.get("id"):
-            errors.append("world.id is required")
-        if template.get("template_version") is not None and not isinstance(template.get("template_version"), str):
-            errors.append("template_version must be a string")
-        collections = {key: value for key, value in template.items() if isinstance(value, list)}
-        for key, values in collections.items():
-            ids = [value.get("id") for value in values if isinstance(value, dict)]
-            if len(ids) != len(set(ids)):
-                errors.append(f"duplicate id in {key}")
-        action_ids = {x.get("id") for x in collections.get("actions", []) if isinstance(x, dict)}
-        bt_ids = {x.get("id") for x in collections.get("behavior_trees", []) if isinstance(x, dict)}
-        for bt in collections.get("behavior_trees", []):
-            for node in bt.get("nodes", []):
-                if node.get("type") == "action" and node.get("action_id") not in action_ids:
-                    errors.append(f"behavior {bt.get('id')} references unknown action {node.get('action_id')}")
-        for agent in collections.get("agents", []):
-            for bt_id in agent.get("initial_bt_ids", []):
-                if bt_id not in bt_ids:
-                    errors.append(f"agent {agent.get('id')} references unknown behavior {bt_id}")
+        from ..bootstrap.service import validate_world_template
+
+        report = validate_world_template(template)
+        errors = list(report["errors"])
         return {
             "status": "ok",
             "valid": not errors,

@@ -298,12 +298,16 @@ class SimulationRunner:
             if task.get("trigger_id"):
                 task_type = f"trigger:{task.get('trigger_id')}"
             task_data = task.get("data") if isinstance(task.get("data"), dict) else {}
+            source_events = [item for item in (task_data.get("source_events") or []) if isinstance(item, dict)]
             source_event_id = task_data.get("source_event_id")
+            if source_event_id is None and source_events:
+                source_event_id = source_events[-1].get("event_id")
             turn = AgentEngine(self.platform, provider).run(
                 role=role,
                 actor_id=actor_id,
                 task_type=task_type,
                 source_event_id=int(source_event_id) if source_event_id is not None else None,
+                source_events=source_events,
             )
             self._observe_turn(turn, actor_id)
             if role == "god":

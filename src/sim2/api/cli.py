@@ -4,12 +4,15 @@ import argparse
 import json
 from pathlib import Path
 
+import yaml
+
 from ..agents.engine import AgentEngine
-from ..bootstrap.service import create_instance
+from ..bootstrap.service import create_instance, describe_config, validate_config, world_template_schema, write_world_package_from_template
 from ..llm.gateway import LLMRouter
 from ..platform.runtime import Platform
 from .text import TextWorldSession
 from .http import ControlHTTPServer
+from .map_view import render_topology_map
 
 
 def main() -> None:
@@ -20,6 +23,26 @@ def main() -> None:
     init.add_argument("--config", type=Path, required=True)
     init.add_argument("--instance-id", required=True)
     init.add_argument("--runtime-root", type=Path, default=Path.home() / ".sim2")
+
+    validate_world = sub.add_parser("validate-world", help="validate a YAML world package and all cross references")
+    validate_world.add_argument("--config", type=Path, required=True)
+
+    describe_world = sub.add_parser("describe-world", help="show a world package inventory and validation result")
+    describe_world.add_argument("--config", type=Path, required=True)
+
+    sub.add_parser("world-schema", help="print the machine-readable WorldBuilder template schema")
+
+    build_world = sub.add_parser("build-world", help="compile a WorldBuilder YAML template into a reviewable world package")
+    build_source = build_world.add_mutually_exclusive_group(required=True)
+    build_source.add_argument("--template", type=Path, help="existing unified YAML template")
+    build_source.add_argument("--brief", help="world description for the WorldBuilder Agent")
+    build_source.add_argument("--brief-file", type=Path, help="UTF-8 world description for the WorldBuilder Agent")
+    build_world.add_argument("--output", type=Path, required=True)
+    build_world.add_argument("--overwrite", action="store_true")
+    build_world.add_argument("--instance-id")
+    build_world.add_argument("--runtime-root", type=Path, default=Path.home() / ".sim2")
+    build_world.add_argument("--provider", default="remote_beam", help="configured provider used for --brief")
+    build_world.add_argument("--audit-output", type=Path, help="optional JSON transcript path without credentials")
 
     decide = sub.add_parser("decide", help="run one Decision Agent turn")
     decide.add_argument("--db", type=Path, required=True)
@@ -33,6 +56,15 @@ def main() -> None:
     mud.add_argument("--name")
     mud.add_argument("--observer", action="store_true")
 
+    tui = sub.add_parser("tui", help="open the live world map, timeline and character interface")
+    tui.add_argument("--db", type=Path, required=True)
+    tui.add_argument("--observer", action="store_true")
+    tui.add_argument("--player-id")
+    tui.add_argument("--origin")
+    tui.add_argument("--name")
+    tui.add_argument("--run", action="store_true", help="run the autonomous world in a background thread")
+    tui.add_argument("--provider", help="provider name used by --run")
+
     simulate = sub.add_parser("simulate", help="run the automatic Agent/Platform loop")
     simulate.add_argument("--db", type=Path, required=True)
     simulate.add_argument("--minutes", type=int, required=True)
@@ -45,7 +77,7 @@ def main() -> None:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8080)
 
-    for name, help_text in [("status", "show instance status"), ("health", "check database and runtime health"), ("timeline", "show the public third-person timeline"), ("pause", "pause world advancement"), ("resume", "resume world advancement"), ("step", "advance one world minute"), ("metrics", "show runtime metrics"), ("audit", "export event and Agent audit")]:
+    for name, help_text in [("status", "show instance status"), ("health", "check database and runtime health"), ("timeline", "show the public third-person timeline"), ("map", "show the location topology and character positions"), ("pause", "pause world advancement"), ("resume", "resume world advancement"), ("step", "advance one world minute"), ("metrics", "show runtime metrics"), ("audit", "export event and Agent audit")]:
         command = sub.add_parser(name, help=help_text)
         command.add_argument("--db", type=Path, required=True)
         if name == "timeline":
@@ -73,6 +105,65 @@ def main() -> None:
     if args.command == "init":
         db = create_instance(args.config, args.instance_id, args.runtime_root)
         print(json.dumps({"db_path": str(db)}, ensure_ascii=False))
+        return
+    if args.command == "validate-world":
+        report = validate_config(args.config)
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        if not report["valid"]:
+            raise SystemExit(1)
+        return
+    if args.command == "describe-world":
+        report = describe_config(args.config)
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        if not report["valid"]:
+            raise SystemExit(1)
+        return
+    if args.command == "world-schema":
+        print(json.dumps(world_template_schema(), ensure_ascii=False, indent=2))
+        return
+    if args.command == "build-world":
+        build_audit = None
+        if args.template:
+            raw = yaml.safe_load(args.template.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                raise ValueError("--template must contain a YAML object")
+        else:
+            brief = args.brief if args.brief is not None else args.brief_file.read_text(encoding="utf-8")
+            from ..world_builder import WorldBuilderService
+
+            provider = LLMRouter.from_default_config().new_provider_for_name(args.provider)
+            draft = WorldBuilderService(provider).build(brief)
+            raw = draft.template
+            build_audit = {"iterations": draft.iterations, "usage": draft.usage, "transcript": draft.transcript}
+        package = write_world_package_from_template(raw, args.output, overwrite=args.overwrite)
+        result: dict[str, object] = {"status": "accepted", "package": str(package), "validation": describe_config(package)}
+        if build_audit is not None:
+            result["world_builder"] = {"iterations": build_audit["iterations"], "usage": build_audit["usage"]}
+            if args.audit_output:
+                args.audit_output.parent.mkdir(parents=True, exist_ok=True)
+                args.audit_output.write_text(json.dumps(build_audit, ensure_ascii=False, indent=2), encoding="utf-8")
+                result["audit"] = str(args.audit_output)
+        if args.instance_id:
+            result["db_path"] = str(create_instance(package, args.instance_id, args.runtime_root))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    if args.command == "tui":
+        platform = Platform(args.db)
+        try:
+            observer = bool(args.observer or not args.player_id)
+            if not observer:
+                try:
+                    platform.store.get_agent(args.player_id)
+                except KeyError:
+                    if not args.origin:
+                        raise ValueError("--origin is required when creating a new player")
+                    entered = platform.enter_player(args.player_id, args.origin, name=args.name)
+                    if entered.get("status") != "accepted":
+                        raise ValueError(str(entered))
+        finally:
+            platform.close()
+        from .tui import run_tui
+        run_tui(args.db, observer=observer, player_id=args.player_id, run_world=args.run, provider_name=args.provider)
         return
     if args.command == "decide":
         platform = Platform(args.db)
@@ -126,7 +217,7 @@ def main() -> None:
         finally:
             server.close()
         return
-    if args.command in {"status", "health", "timeline", "pause", "resume", "step", "metrics", "audit", "snapshot", "restore", "enter-player", "inject"}:
+    if args.command in {"status", "health", "timeline", "map", "pause", "resume", "step", "metrics", "audit", "snapshot", "restore", "enter-player", "inject"}:
         platform = Platform(args.db)
         try:
             if args.command == "status":
@@ -135,6 +226,9 @@ def main() -> None:
                 result = platform.health()
             elif args.command == "timeline":
                 result = platform.timeline(limit=args.limit, after_event_id=args.after, include_ticks=args.ticks)
+            elif args.command == "map":
+                print(render_topology_map(platform.map_view(observer=True)))
+                return
             elif args.command == "pause":
                 result = platform.pause()
             elif args.command == "resume":

@@ -13,6 +13,7 @@ from typing import Callable
 from ..prompting.renderer import render_context
 from ..intents.models import BehaviorIntent
 from ..platform.runtime import Platform
+from .map_view import render_topology_map
 
 
 def _bundle(text: str) -> dict[str, float]:
@@ -62,6 +63,8 @@ class TextWorldSession:
             limit = int(args[0]) if args else 50
             timeline = self.platform.timeline(limit=limit)
             return "\n".join(f"[{event['world_minute']}] {event['narrative']}" for event in timeline["events"]) or "No public timeline events."
+        if command == "map":
+            return render_topology_map(self.platform.map_view(viewer_id=self.player_id, observer=self.observer))
         if command == "pause":
             self._require_observer()
             return self._format_result(self.platform.pause("observer"))
@@ -152,7 +155,7 @@ class TextWorldSession:
 
     @staticmethod
     def _help() -> str:
-        return "Commands: look, status, pause, resume, move <known_location_id>, say <target> <topic> <message>, offer <target> <give:item=qty> <want:item=qty>, offers, accept <offer_id>, counter <offer_id> <give:item=qty> <want:item=qty>, reject <offer_id>, wait [minutes], world/events/timeline [limit] in observer mode, quit."
+        return "Commands: look, map, status, pause, resume, move <known_location_id>, say <target> <topic> <message>, offer <target> <give:item=qty> <want:item=qty>, offers, accept <offer_id>, counter <offer_id> <give:item=qty> <want:item=qty>, reject <offer_id>, wait, world/events/timeline [limit] in observer mode, quit."
 
     @staticmethod
     def _format_result(result: dict[str, object]) -> str:

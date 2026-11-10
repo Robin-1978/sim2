@@ -860,6 +860,21 @@ class WorldStore:
         ).fetchall()
         return [{"event_id": row["event_id"], "event_type": row["event_type"], "actor_id": row["actor_id"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
 
+    def events_by_ids(self, event_ids: list[int]) -> list[dict[str, Any]]:
+        values = list(dict.fromkeys(int(value) for value in event_ids if int(value) > 0))
+        if not values:
+            return []
+        placeholders = ",".join("?" for _ in values)
+        rows = self.connection.execute(
+            "SELECT event_id,event_type,actor_id,world_minute,data_json FROM event_log "
+            f"WHERE event_id IN ({placeholders}) ORDER BY event_id",
+            tuple(values),
+        ).fetchall()
+        return [
+            {"event_id": row["event_id"], "event_type": row["event_type"], "actor_id": row["actor_id"], "world_minute": row["world_minute"], **json.loads(row["data_json"])}
+            for row in rows
+        ]
+
     def timeline_events(self, *, after_event_id: int = 0, limit: int = 100, include_ticks: bool = False) -> list[dict[str, Any]]:
         event_filter = "" if include_ticks else " AND event_type <> 'world_minute.advanced'"
         rows = self.connection.execute(

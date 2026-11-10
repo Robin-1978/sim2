@@ -42,6 +42,9 @@ class ControlService:
     def observer(self, event_limit: int = 20) -> dict[str, Any]:
         return self.platform.observer_view(event_limit=event_limit)
 
+    def map(self, *, viewer_id: str | None = None, observer: bool = False) -> dict[str, Any]:
+        return self.platform.map_view(viewer_id=viewer_id, observer=observer)
+
     def timeline(self, event_limit: int = 100, after_event_id: int = 0, include_ticks: bool = False) -> dict[str, Any]:
         return self.platform.timeline(limit=event_limit, after_event_id=after_event_id, include_ticks=include_ticks)
 

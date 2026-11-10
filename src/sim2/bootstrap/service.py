@@ -25,6 +25,223 @@ CONFIG_COLLECTIONS = {
 }
 
 
+def world_template_schema() -> dict[str, Any]:
+    """JSON Schema used by the CLI, WorldBuilder and model tool channel."""
+
+    identified = {
+        "type": "object",
+        "properties": {"id": {"type": "string", "minLength": 1}, "name": {"type": "string"}},
+        "required": ["id"],
+        "additionalProperties": True,
+    }
+    attribute = {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "minLength": 1},
+            "kind": {"type": "string", "enum": ["state", "need"]},
+            "label": {"type": "string"},
+            "unit": {"type": "string"},
+            "min": {"type": "number"},
+            "max": {"type": "number"},
+            "default": {"type": "number"},
+            "cost_mode": {"type": "string", "enum": ["increase", "decrease"]},
+            "prompt": {"type": "string"},
+        },
+        "required": ["id", "kind", "label", "min", "max", "default", "prompt"],
+        "additionalProperties": True,
+    }
+    action = {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "minLength": 1},
+            "description": {"type": "string"},
+            "parameters": {"type": "object"},
+            "preconditions": {"type": "array", "items": {"type": "string"}},
+            "duration": {"type": "object"},
+            "costs": {"type": "object"},
+            "effects": {"type": "array", "items": {"type": "object"}},
+            "success": {"type": "object"},
+            "failure": {"type": "object"},
+        },
+        "required": ["id", "description", "duration", "effects"],
+        "additionalProperties": True,
+    }
+    behavior = {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "minLength": 1},
+            "agent_label": {"type": "string"},
+            "summary": {"type": "string"},
+            "entry_conditions": {"type": "array", "items": {"type": "string"}},
+            "estimated_minutes": {"type": "integer", "minimum": 1},
+            "nodes": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+        },
+        "required": ["id", "agent_label", "summary", "nodes"],
+        "additionalProperties": True,
+    }
+    return {
+        "type": "object",
+        "properties": {
+            "template_version": {"type": "string"},
+            "world": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "minLength": 1},
+                    "title": {"type": "string"},
+                    "premise": {"type": "string"},
+                    "genre": {"type": "string"},
+                    "locale": {"type": "string"},
+                    "time_unit": {"type": "string", "enum": ["minute"]},
+                    "properties": {"type": "object"},
+                    "random_seed": {"type": "integer"},
+                },
+                "required": ["id", "title", "premise", "properties"],
+                "additionalProperties": True,
+            },
+            "attributes": {"type": "array", "items": attribute},
+            "locations": {"type": "array", "items": identified},
+            "resources": {"type": "array", "items": identified},
+            "objects": {"type": "array", "items": identified},
+            "factions": {"type": "array", "items": identified},
+            "agents": {"type": "array", "items": identified},
+            "capabilities": {"type": "array", "items": identified},
+            "actions": {"type": "array", "items": action},
+            "recipes": {"type": "array", "items": identified},
+            "behavior_trees": {"type": "array", "items": behavior},
+            "relationships": {"type": "array", "items": {"type": "object"}},
+            "rules": {"type": "object"},
+            "evolution": {"type": "object"},
+            "story": {"type": "object"},
+            "player_template": {"type": "object"},
+            "initial_events": {"type": "array", "items": identified},
+            "prompts": {"type": "object"},
+        },
+        "required": ["template_version", "world", "attributes", "locations", "agents", "actions", "behavior_trees", "rules"],
+        "additionalProperties": False,
+    }
+
+
+def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
+    """Validate the single-object authoring format used by WorldBuilder."""
+
+    errors: list[str] = []
+    if not isinstance(template, dict):
+        return {"valid": False, "errors": ["template must be an object"]}
+    world = template.get("world")
+    if not isinstance(world, dict) or not str(world.get("id") or "").strip():
+        errors.append("world.id is required")
+    if template.get("template_version") is not None and not isinstance(template.get("template_version"), str):
+        errors.append("template_version must be a string")
+
+    collection_names = (
+        "attributes", "locations", "resources", "objects", "factions", "agents",
+        "capabilities", "actions", "recipes", "behavior_trees", "relationships",
+        "initial_events",
+    )
+    collections: dict[str, list[dict[str, Any]]] = {}
+    for key in collection_names:
+        value = template.get(key, [])
+        if not isinstance(value, list):
+            errors.append(f"{key} must be a list")
+            value = []
+        collections[key] = [item for item in value if isinstance(item, dict)]
+        if len(collections[key]) != len(value):
+            errors.append(f"{key} entries must be objects")
+        ids = [str(item.get("id") or "") for item in collections[key] if key != "relationships"]
+        if any(not value for value in ids):
+            errors.append(f"{key} entries require non-empty ids")
+        if len(ids) != len(set(ids)):
+            errors.append(f"duplicate id in {key}")
+
+    attribute_ids = {str(item.get("id")) for item in collections["attributes"]}
+    location_ids = {str(item.get("id")) for item in collections["locations"]}
+    faction_ids = {str(item.get("id")) for item in collections["factions"]}
+    agent_ids = {str(item.get("id")) for item in collections["agents"]}
+    action_ids = {str(item.get("id")) for item in collections["actions"]}
+    behavior_ids = {str(item.get("id")) for item in collections["behavior_trees"]}
+    capability_ids = {str(item.get("id")) for item in collections["capabilities"]}
+
+    for attribute in collections["attributes"]:
+        for field in ("kind", "label", "min", "max", "default", "prompt"):
+            if field not in attribute:
+                errors.append(f"attribute {attribute.get('id')} is missing {field}")
+        if attribute.get("kind") == "state" and attribute.get("cost_mode") not in {"increase", "decrease"}:
+            errors.append(f"state attribute {attribute.get('id')} must declare cost_mode")
+    for location in collections["locations"]:
+        for route in location.get("routes", []) or []:
+            if str(route) not in location_ids:
+                errors.append(f"location {location.get('id')} references unknown route {route}")
+    for item in collections["resources"] + collections["objects"]:
+        location_id = item.get("location_id") or (item.get("initial_state") or {}).get("location_id")
+        if location_id and str(location_id) not in location_ids:
+            errors.append(f"{item.get('id')} references unknown location {location_id}")
+    for action in collections["actions"]:
+        duration = action.get("duration")
+        if not isinstance(duration, dict):
+            errors.append(f"action {action.get('id')} requires a duration object")
+        effects = action.get("effects", [])
+        if not isinstance(effects, list):
+            errors.append(f"action {action.get('id')}.effects must be a list")
+    for behavior in collections["behavior_trees"]:
+        nodes = behavior.get("nodes", [])
+        if not isinstance(nodes, list) or not nodes:
+            errors.append(f"behavior {behavior.get('id')} requires at least one node")
+            continue
+        for node in nodes:
+            if not isinstance(node, dict):
+                errors.append(f"behavior {behavior.get('id')} contains a non-object node")
+            elif node.get("type") == "action" and str(node.get("action_id")) not in action_ids:
+                errors.append(f"behavior {behavior.get('id')} references unknown action {node.get('action_id')}")
+            elif node.get("type") in {"subtree", "behavior"} and str(node.get("behavior_id")) not in behavior_ids:
+                errors.append(f"behavior {behavior.get('id')} references unknown behavior {node.get('behavior_id')}")
+    for agent in collections["agents"]:
+        state = agent.get("initial_state") if isinstance(agent.get("initial_state"), dict) else {}
+        if state.get("location_id") and str(state["location_id"]) not in location_ids:
+            errors.append(f"agent {agent.get('id')} references unknown location {state['location_id']}")
+        for behavior_id in agent.get("initial_bt_ids", []) or []:
+            if str(behavior_id) not in behavior_ids:
+                errors.append(f"agent {agent.get('id')} references unknown behavior {behavior_id}")
+        for capability_id in (agent.get("capabilities") or {}):
+            if capability_ids and str(capability_id) not in capability_ids:
+                errors.append(f"agent {agent.get('id')} references unknown capability {capability_id}")
+        for key in state:
+            if key in {"location_id", "status", "injuries", "conditions", "active_bt_instance", "active_action", "remaining_minutes"}:
+                continue
+            if attribute_ids and key not in attribute_ids:
+                errors.append(f"agent {agent.get('id')} has undeclared state attribute {key}")
+    known_relation_entities = agent_ids | faction_ids
+    for relation in collections["relationships"]:
+        if str(relation.get("from") or "") not in known_relation_entities:
+            errors.append(f"relationship references unknown source {relation.get('from')}")
+        if str(relation.get("to") or "") not in known_relation_entities | {"player"}:
+            errors.append(f"relationship references unknown target {relation.get('to')}")
+    return {"valid": not errors, "errors": list(dict.fromkeys(errors))}
+
+
+def describe_config(config_dir: Path) -> dict[str, Any]:
+    """Return a concise author-facing package inventory and validation report."""
+
+    config_dir = Path(config_dir).resolve()
+    validation = validate_config(config_dir)
+    manifest = validation.get("manifest") or {}
+    counts: dict[str, int] = {}
+    for filename, key in CONFIG_COLLECTIONS.items():
+        values = (load_yaml(config_dir, filename, {}) or {}).get(key, [])
+        counts[key] = len(values) if isinstance(values, list) else 0
+    counts["behavior_trees"] += len((load_yaml(config_dir, "core_behavior_trees.yaml", {}) or {}).get("behavior_trees", []) or [])
+    locations = load_yaml(config_dir, "locations.yaml", {}) or {}
+    counts["resources"] = len(locations.get("resources", []) or [])
+    return {
+        "valid": validation["valid"],
+        "errors": validation["errors"],
+        "world_id": manifest.get("world_id"),
+        "config_version": manifest.get("config_version"),
+        "time_unit": manifest.get("time_unit", "minute"),
+        "counts": counts,
+        "files": manifest.get("files", []),
+    }
+
+
 def load_yaml(config_dir: Path, name: str, default: Any) -> Any:
     path = config_dir / name
     if not path.exists():
@@ -273,53 +490,109 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
             pass
 
 
+def write_world_package_from_template(
+    template: dict[str, Any],
+    output_dir: Path,
+    *,
+    overwrite: bool = False,
+) -> Path:
+    """Compile a WorldBuilder template into an editable YAML content package."""
+
+    validation = validate_world_template(template)
+    if not validation["valid"]:
+        raise ValueError("Invalid world template: " + "; ".join(validation["errors"]))
+    output_dir = Path(output_dir).resolve()
+    if output_dir.exists() and any(output_dir.iterdir()) and not overwrite:
+        raise FileExistsError(f"world package directory is not empty: {output_dir}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    world = dict(template.get("world") or {})
+    files: list[str] = []
+
+    def values(key: str) -> list[dict[str, Any]]:
+        raw = template.get(key, [])
+        return [dict(item) for item in raw] if isinstance(raw, list) else []
+
+    entities = values("entities")
+    collections = {
+        "locations": values("locations") or [item for item in entities if item.get("type") == "location"],
+        "objects": values("objects") or [item for item in entities if item.get("type") not in {"location", "agent", "faction", "resource"}],
+        "agents": values("agents") or [item for item in entities if item.get("type") == "agent"],
+        "factions": values("factions") or [item for item in entities if item.get("type") == "faction"],
+        "actions": values("actions"),
+        "behavior_trees": values("behavior_trees"),
+        "recipes": values("recipes"),
+        "capabilities": values("capabilities"),
+        "attributes": values("attributes"),
+    }
+
+    def write(name: str, payload: dict[str, Any]) -> None:
+        (output_dir / name).write_text(
+            yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        files.append(name)
+
+    setting = {
+        "name": world.get("title", world.get("id")),
+        "premise": world.get("premise", ""),
+        "genre": world.get("genre", ""),
+        "locale": world.get("locale", "en"),
+    }
+    for optional in ("public_history", "secrets", "calendar"):
+        if world.get(optional) is not None:
+            setting[optional] = world[optional]
+    write("setting.yaml", setting)
+    write("world_state.yaml", {"world_state": {"properties": dict(world.get("properties") or {})}})
+    write("locations.yaml", {"locations": collections["locations"], "resources": values("resources")})
+    write("objects.yaml", {"objects": collections["objects"]})
+    write("factions.yaml", {"factions": collections["factions"], "relationships": values("relationships")})
+    for filename, key in (
+        ("agents.yaml", "agents"),
+        ("actions.yaml", "actions"),
+        ("behavior_trees.yaml", "behavior_trees"),
+        ("recipes.yaml", "recipes"),
+        ("capabilities.yaml", "capabilities"),
+        ("attributes.yaml", "attributes"),
+    ):
+        write(filename, {key: collections[key]})
+    rules = template.get("rules", {})
+    write("rules.yaml", dict(rules) if isinstance(rules, dict) else {"world_rules": list(rules or [])})
+    write("opening_events.yaml", {"opening_events": values("initial_events") or values("opening_events")})
+    write("evolution.yaml", dict(template.get("evolution") or {}))
+    write("story.yaml", dict(template.get("story") or {}))
+    write("player_template.yaml", dict(template.get("player_template") or {}))
+    prompts = template.get("prompts") if isinstance(template.get("prompts"), dict) else {}
+    if prompts:
+        prompt_dir = output_dir / "prompts"
+        prompt_dir.mkdir(exist_ok=True)
+        for name, payload in prompts.items():
+            path = f"prompts/{name}.yaml"
+            (output_dir / path).write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8")
+            files.append(path)
+    manifest = {
+        "config_version": str(template.get("template_version", "template-1")),
+        "world_id": str(world.get("id")),
+        "name": str(world.get("title") or world.get("id")),
+        "time_unit": str(world.get("time_unit", "minute")),
+        "start_world_minute": int(world.get("start_world_minute", 0)),
+        "random_seed": world.get("random_seed"),
+        "files": sorted(set(files)),
+    }
+    (output_dir / "manifest.yaml").write_text(
+        yaml.safe_dump(manifest, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    package_validation = validate_config(output_dir)
+    if not package_validation["valid"]:
+        if not overwrite:
+            shutil.rmtree(output_dir, ignore_errors=True)
+        raise ValueError("Generated world package is invalid: " + "; ".join(package_validation["errors"]))
+    return output_dir
+
+
 def create_instance_from_template(template: dict[str, Any], instance_id: str, runtime_root: Path | None = None) -> Path:
-    """Normalize a WorldBuilder draft into a temporary package and bootstrap it."""
+    """Compile a WorldBuilder draft and bootstrap one independent instance."""
 
-    if not isinstance(template, dict):
-        raise ValueError("world template must be an object")
-    world = template.get("world", {}) if isinstance(template.get("world", {}), dict) else {}
     with tempfile.TemporaryDirectory(prefix="sim2-template-") as directory:
-        config_dir = Path(directory)
-        collections: dict[str, list[dict[str, Any]]] = {}
-
-        def values(key: str) -> list[dict[str, Any]]:
-            raw = template.get(key, [])
-            return list(raw) if isinstance(raw, list) else []
-
-        entities = values("entities")
-        collections["locations"] = values("locations") or [item for item in entities if item.get("type") == "location"]
-        collections["objects"] = values("objects") or [item for item in entities if item.get("type") not in {"location", "agent", "faction"}]
-        collections["agents"] = values("agents") or [item for item in entities if item.get("type") == "agent"]
-        collections["factions"] = values("factions") or [item for item in entities if item.get("type") == "faction"]
-        collections["actions"] = values("actions")
-        collections["behavior_trees"] = values("behavior_trees")
-        collections["recipes"] = values("recipes")
-        collections["capabilities"] = values("capabilities")
-        files: list[str] = []
-
-        def write(name: str, payload: dict[str, Any]) -> None:
-            (config_dir / name).write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8")
-            files.append(name)
-
-        write("setting.yaml", {"name": world.get("title", world.get("id", instance_id)), "premise": world.get("premise", "")})
-        write("world_state.yaml", {"world_state": {"properties": world.get("properties", {})}})
-        for filename, key in CONFIG_COLLECTIONS.items():
-            if key in collections:
-                write(filename, {key: collections[key]})
-        faction_payload = {"factions": collections["factions"], "relationships": template.get("relationships", [])}
-        write("factions.yaml", faction_payload)
-        rules = template.get("rules", {})
-        write("rules.yaml", rules if isinstance(rules, dict) else {"world_rules": rules})
-        write("opening_events.yaml", {"opening_events": template.get("initial_events", template.get("opening_events", []))})
-        write("evolution.yaml", template.get("evolution", {}))
-        write("player_template.yaml", template.get("player_template", {}))
-        manifest = {
-            "config_version": str(template.get("template_version", "template-1")),
-            "world_id": str(world.get("id", instance_id)),
-            "time_unit": world.get("time_unit", "minute"),
-            "start_world_minute": int(world.get("start_world_minute", 0)),
-            "files": sorted(set(files)),
-        }
-        (config_dir / "manifest.yaml").write_text(yaml.safe_dump(manifest, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        config_dir = write_world_package_from_template(template, Path(directory), overwrite=True)
         return create_instance(config_dir, instance_id, runtime_root)

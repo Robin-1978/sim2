@@ -7,6 +7,10 @@ from typing import Any
 class ModelProtocolError(ValueError):
     """The provider returned neither a usable tool call nor JSON content."""
 
+    def __init__(self, message: str, *, usage: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.usage = dict(usage or {})
+
 
 @dataclass(frozen=True)
 class ModelAdapter:

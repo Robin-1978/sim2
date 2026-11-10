@@ -186,6 +186,16 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             "</incoming_interaction>",
         ])
 
+    triggering_evidence = context.get("triggering_evidence") or []
+    if triggering_evidence:
+        lines.append("<triggering_evidence>")
+        for item in triggering_evidence[:16]:
+            lines.append(
+                f"  - minute {_line(item.get('world_minute'))}; {_line(item.get('event_type'))}; "
+                f"actor={_line(item.get('actor'))}; {_line(item.get('summary'))}"
+            )
+        lines.append("</triggering_evidence>")
+
     active_rules = context.get("active_world_rules") or []
     if active_rules:
         lines.append("<active_world_rules>")

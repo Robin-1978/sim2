@@ -16,7 +16,15 @@ sim2 status --db "$DB"
 sim2 health --db "$DB"
 ```
 
-Open the text interface as a player or observer:
+Open the live TUI with a map, timeline, character table and pause/step controls:
+
+```bash
+sim2 tui --db "$DB" --observer --run --provider remote_beam
+sim2 tui --db "$DB" --player-id player_one --origin courier --name Ari --run --provider remote_beam
+```
+
+The complete client guide is [here](docs/client.md). The smaller text interface
+remains available for scripts and diagnostics:
 
 ```bash
 sim2 mud --db "$DB" --player-id player_one --origin courier --name Ari
@@ -57,6 +65,12 @@ The text interface supports movement, messages, offers, counteroffers, acceptanc
 The first validation world is [Starter Village](docs/worlds/starter-village.md), with its importable package in [`worlds/starter_village`](worlds/starter_village/). It is a small settlement around a failing pact, with food, water, health, patrol, exploration, trade, relationships, hidden locations, scheduled reflection, and God-led world change.
 
 To add a world, provide a package with `manifest.yaml`, setting and world state, locations, objects, factions, agents, actions, behavior trees, rules, evolution schedule, player template, and optional prompts. `manifest.config_version` is recorded in the new SQLite instance. Reusing an instance ID is rejected; initialize a new ID for every world instance.
+
+Use `sim2 world-schema`, `sim2 build-world`, `sim2 validate-world` and
+`sim2 describe-world` for the complete authoring workflow. WorldBuilder can
+draft a compact template from a brief through a configured provider, but it
+must validate and submit the exact same template before YAML is written. See
+[World authoring and WorldBuilder](docs/world-authoring.md).
 
 The planned multi-region expansion is described in [Large World Expansion Plan](docs/worlds/large-world-plan.md). It keeps Starter Village as a region and adds declarative region, route, calendar, ecosystem, market, and cross-region event data without adding world-specific runtime branches.
 

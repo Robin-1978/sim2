@@ -46,7 +46,8 @@ def _json_from_text(text: str) -> dict[str, Any]:
                 value = candidate
                 break
         if value is None:
-            raise original
+            preview = " ".join(text.split())[:180]
+            raise ModelProtocolError(f"model returned unstructured content: {preview!r}") from original
     if not isinstance(value, dict):
         raise ValueError("LLM response must be a JSON object")
     return value
@@ -178,6 +179,7 @@ class OpenAICompatibleProvider:
                 data = response.json()
                 message = data["choices"][0]["message"]
                 usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
+                finish_reason = str((data.get("choices") or [{}])[0].get("finish_reason") or "unknown")
                 # Native tool calls are normalized to the same compact envelope used
                 # by local llama.cpp models that return a JSON object in content.
                 if message.get("tool_calls"):
@@ -187,7 +189,10 @@ class OpenAICompatibleProvider:
                 else:
                     content = message.get("content") or ""
                     if not isinstance(content, str) or not content.strip():
-                        raise ModelProtocolError("model returned no content or tool call")
+                        raise ModelProtocolError(
+                            f"model returned no content or tool call (finish_reason={finish_reason})",
+                            usage=usage,
+                        )
                     result = _json_from_text(content)
                 if usage:
                     result["_usage"] = usage
@@ -195,8 +200,16 @@ class OpenAICompatibleProvider:
             except httpx.HTTPStatusError as exc:
                 detail = response.text[:800].replace("authorization", "auth")
                 raise RuntimeError(f"LLM HTTP {response.status_code}: {detail}") from exc
-            except (KeyError, TypeError, ValueError, json.JSONDecodeError, ModelProtocolError):
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError, ModelProtocolError) as exc:
                 if protocol_attempt >= 1:
+                    if isinstance(exc, ModelProtocolError) and not exc.usage:
+                        try:
+                            error_data = response.json()
+                            error_usage = error_data.get("usage") if isinstance(error_data.get("usage"), dict) else {}
+                        except (TypeError, ValueError, json.JSONDecodeError):
+                            error_usage = {}
+                        exc.usage.update(error_usage or {})
+                        exc.usage["request_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 1)
                     raise
                 response = self._post(url, headers=headers, payload=payload)
         raise ModelProtocolError("model response normalization failed")

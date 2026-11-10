@@ -132,6 +132,7 @@ class AgentEngine:
         task_type: str = "decision",
         interaction: dict[str, Any] | None = None,
         source_event_id: int | None = None,
+        source_events: list[dict[str, Any]] | None = None,
     ) -> AgentTurn:
         if role not in ROLE_NAMES:
             raise ValueError(f"unknown agent role: {role}")
@@ -145,6 +146,30 @@ class AgentEngine:
                 return AgentTurn(role, task_type, {}, result, 0, [{"step": "skipped", "result": result}], {}, [])
         context = self.view.build_decision_view(actor_id, role=role, source_event_id=source_event_id)
         context["role"] = role
+        event_refs = list(source_events or [])
+        if source_event_id is not None and not any(
+            int(item.get("event_id", -1) or -1) == int(source_event_id)
+            for item in event_refs if isinstance(item, dict)
+        ):
+            event_refs.append({"event_id": int(source_event_id)})
+        event_ids = [
+            int(item.get("event_id", 0) or 0)
+            for item in event_refs
+            if isinstance(item, dict) and int(item.get("event_id", 0) or 0) > 0
+        ]
+        if event_ids:
+            verified_events = self.platform.store.events_by_ids(event_ids)
+            context["triggering_evidence"] = [
+                {
+                    "event_type": item.get("event_type"),
+                    "world_minute": item.get("world_minute"),
+                    "actor": self._visible_actor_name(item.get("actor_id")),
+                    "summary": item.get("summary") or item.get("result") or item.get("fact") or "validated event recorded",
+                }
+                for item in verified_events[-16:]
+            ]
+            if verified_events:
+                context["last_platform_result"] = verified_events[-1]
         if interaction:
             context["interaction"] = dict(interaction)
         interaction_tools = self._interaction_tools(task_type)
@@ -196,6 +221,7 @@ class AgentEngine:
                 if not isinstance(response, dict):
                     raise ValueError("LLM response must be a JSON object")
             except Exception as exc:
+                self._last_usage = dict(getattr(exc, "usage", {}) or self._last_usage)
                 last_result = {"status": "rejected", "failed_check": "llm_response", "message": str(exc)}
                 context["last_platform_result"] = last_result
                 transcript.append({"step": "llm_error", "error": str(exc)})
@@ -337,6 +363,14 @@ class AgentEngine:
                 "message": "The ReAct session reached its iteration limit before a valid final Intent.",
             }
         return AgentTurn(role, task_type, last_response, last_result, self.max_iterations, transcript, initial_context, prompt_history)
+
+    def _visible_actor_name(self, actor_id: Any) -> str:
+        if not actor_id:
+            return "the world"
+        try:
+            return str(self.platform.store.get_entity(str(actor_id)).get("name") or actor_id)
+        except KeyError:
+            return str(actor_id)
 
     @staticmethod
     def _interaction_tools(task_type: str) -> list[str] | None:
@@ -725,7 +759,7 @@ class AgentEngine:
                         "retryable": True,
                         "message": "The triggering event is already recorded. Return wait or submit one typed rule, progress, entity, relationship, or faction proposal grounded in the observed result.",
                     }
-                result = self.platform.submit_world_change(actor_id, proposal)
+                result = self.platform.submit_world_change(actor_id, proposal, origin_role=role)
                 return result
             if intent_type == "propose_story_beat":
                 proposal = dict(data)

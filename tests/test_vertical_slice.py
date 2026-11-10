@@ -23,6 +23,7 @@ from sim2.prompting.renderer import render_context
 from sim2.simulation.runner import SimulationRunner
 from sim2.llm.config import ProviderConfig
 from sim2.llm.gateway import OpenAICompatibleProvider
+from sim2.llm.adapters import ModelProtocolError
 from sim2.memory.similarity import ExperienceSimilarity
 
 
@@ -604,6 +605,31 @@ def test_provider_cooldown_stops_repeated_transient_requests(monkeypatch):
     with pytest.raises(RuntimeError, match="cooldown"):
         provider.complete_json(system="system", context="context")
     assert len(calls) == 1
+
+
+def test_provider_protocol_error_preserves_diagnostic_and_usage(monkeypatch):
+    response = httpx.Response(
+        200,
+        request=httpx.Request("POST", "http://example.test"),
+        json={
+            "choices": [{"finish_reason": "stop", "message": {"content": "I cannot choose a tool."}}],
+            "usage": {"prompt_tokens": 30, "completion_tokens": 6},
+        },
+    )
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append(kwargs)
+        return response
+
+    monkeypatch.setattr("sim2.llm.gateway.httpx.post", fake_post)
+    provider = OpenAICompatibleProvider(ProviderConfig("test", "openai_compatible", "http://example.test/v1", "test", max_retries=0))
+    with pytest.raises(ModelProtocolError, match="unstructured content") as raised:
+        provider.complete_json(system="system", context="context")
+    assert len(calls) == 2
+    assert raised.value.usage["prompt_tokens"] == 30
+    assert raised.value.usage["completion_tokens"] == 6
+    assert raised.value.usage["request_latency_ms"] >= 0
 
 
 def test_provider_failure_is_bounded_and_backed_off(tmp_path: Path):

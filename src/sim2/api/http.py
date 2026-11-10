@@ -50,6 +50,11 @@ class _Handler(BaseHTTPRequestHandler):
                 after = int(query.get("after", [0])[0])
                 ticks = query.get("ticks", ["0"])[0].lower() in {"1", "true", "yes"}
                 return self._write(200, self.server.control.timeline(limit, after, ticks))
+            if path == "/map":
+                query = parse_qs(urlparse(self.path).query)
+                viewer_id = query.get("viewer_id", [None])[0]
+                observer = query.get("observer", ["0"])[0].lower() in {"1", "true", "yes"}
+                return self._write(200, self.server.control.map(viewer_id=viewer_id, observer=observer))
             if path == "/audit":
                 return self._write(200, self.server.control.audit())
             if path == "/evolution/tasks":

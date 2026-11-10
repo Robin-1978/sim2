@@ -100,6 +100,51 @@ def test_bare_wait_is_the_only_plain_text_intent_normalized():
     assert _json_from_text("wait") == {"intent_type": "wait", "reason": "No world change is needed now."}
 
 
+def test_grouped_world_evidence_is_rendered_in_god_prompt(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "group-evidence", tmp_path / "runtime"))
+    provider = WaitProvider()
+    try:
+        first = platform.inject_event("research.completed", {"summary": "First verified sample."})["event_id"]
+        second = platform.inject_event("research.completed", {"summary": "Second verified sample."})["event_id"]
+        turn = AgentEngine(platform, provider).run(
+            role="god",
+            actor_id="god",
+            task_type="event_group:research_synthesis",
+            source_events=[{"event_id": first}, {"event_id": second}],
+        )
+        assert turn.result["status"] == "wait"
+        prompt = provider.calls[0]["context"]
+        assert "<triggering_evidence>" in prompt
+        assert "First verified sample." in prompt
+        assert "Second verified sample." in prompt
+    finally:
+        platform.close()
+
+
+def test_dynamic_signal_cannot_wake_its_proposer_role(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "self-wake-rule", tmp_path / "runtime"))
+    try:
+        result = platform.submit_world_change(
+            "god",
+            {
+                "change_type": "rule",
+                "summary": "Recheck the same report.",
+                "rule": {
+                    "id": "self-review",
+                    "condition": "event.recent.security.marks_classified == true",
+                    "effect": {"type": "signal", "name": "security.review"},
+                    "wake": ["god", "story"],
+                },
+            },
+            origin_role="god",
+        )
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "rule_self_wake"
+        assert not any(item.get("id") == "self-review" for item in platform.store.get_meta("rules", {}).get("world_rules", []))
+    finally:
+        platform.close()
+
+
 def test_native_tool_arguments_are_readable_in_audit_copy():
     raw = {"tool_calls": [{"id": "provider-call", "function": {"name": "send_message", "arguments": '{"recipient":"余歌"}'}}]}
     readable = AgentEngine._readable_model_response(raw)
