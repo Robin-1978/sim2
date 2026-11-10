@@ -587,6 +587,7 @@ class Platform(ActivityRuntimeMixin):
             "current_object": self._entity_for_context(parameters.get("object_id")),
             "mapped_areas": self.store.explored_areas(agent["id"]),
             "researched_sources": self.store.researched_sources(agent["id"]),
+            "known_fact_keys": [item.get("fact_key") for item in self.store.list_knowledge_facts(agent["id"], limit=1000) if item.get("fact_key")],
             "target": resolved_target or {},
             "target.visible": bool((resolved_target or {}).get("visible", False)),
             "target.available": bool((resolved_target or {}).get("available", False)),

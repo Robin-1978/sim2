@@ -386,6 +386,7 @@ behavior_trees:
   entry_conditions:
   - actor.alive
   - actor.can_investigate
+  - not actor.knowledge.security_north_gate_marks
   estimated_minutes: 95
   goal_tags: [safety, investigation, warning]
   drive_tags: [safety, novelty, esteem]

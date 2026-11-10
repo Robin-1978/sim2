@@ -169,7 +169,7 @@ class ConditionEngine:
             pass
         if path.startswith((
             "actor.need.", "actor.state.", "actor.inventory.",
-            "actor.permission.", "actor.can_", "actor.is_", "world.",
+            "actor.permission.", "actor.knowledge.", "actor.can_", "actor.is_", "world.",
             "context.", "event.recent.",
         )):
             return True
@@ -229,6 +229,10 @@ class ConditionEngine:
         if path.startswith("actor.permission."):
             permissions = agent.get("permissions", {})
             return permissions.get(path.removeprefix("actor.permission."), False)
+        if path.startswith("actor.knowledge."):
+            wanted = path.removeprefix("actor.knowledge.")
+            normalized = lambda value: re.sub(r"[^\w]+", "_", str(value), flags=re.UNICODE).strip("_").casefold()
+            return normalized(wanted) in {normalized(item) for item in (context.get("known_fact_keys", []) or [])}
         if path.startswith("actor.is_"):
             role = str(agent.get("role", "")).lower()
             expected = path.removeprefix("actor.is_").replace("_", " ")

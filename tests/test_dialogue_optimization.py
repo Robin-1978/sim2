@@ -198,6 +198,22 @@ def test_starter_bell_installation_closes_entity_and_inventory_loop(tmp_path: Pa
         platform.close()
 
 
+def test_classified_boundary_marks_remove_repeat_investigation(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "classified-marks-closed", tmp_path / "runtime"))
+    try:
+        before = {item["ref"] for item in platform.decision_view("he_yan")["executable_behaviors"]}
+        assert "behavior:investigate_north_gate_marks" in before
+        result = platform.submit_behavior(BehaviorIntent("he_yan", "behavior:investigate_north_gate_marks", {}, {}, "Classify the marks once.", 0.9, "classify-once"))
+        assert result["status"] == "accepted"
+        for _ in range(result["remaining_minutes"]):
+            platform.step()
+        assert any(item["fact_key"] == "security:north_gate_marks" for item in platform.store.list_knowledge_facts("he_yan", limit=50))
+        after = {item["ref"] for item in platform.decision_view("he_yan")["executable_behaviors"]}
+        assert "behavior:investigate_north_gate_marks" not in after
+    finally:
+        platform.close()
+
+
 def test_starter_bell_enables_alarm_only_when_threat_is_configured(tmp_path: Path):
     platform = Platform(create_instance(_config(), "bell-alarm-loop", tmp_path / "runtime"))
     try:

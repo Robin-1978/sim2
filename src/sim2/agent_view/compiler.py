@@ -476,6 +476,7 @@ class AgentViewCompiler:
         known_route_destinations = reachable_locations(self.store, location_id)
         mapped_areas = self.store.explored_areas(agent_id)
         researched_sources = self.store.researched_sources(agent_id)
+        known_fact_keys = [item.get("fact_key") for item in self.store.list_knowledge_facts(agent_id, limit=1000) if item.get("fact_key")]
         current_location = {}
         if location_id:
             try:
@@ -503,6 +504,7 @@ class AgentViewCompiler:
                 "known_route_destinations": known_route_destinations,
                 "mapped_areas": mapped_areas,
                 "researched_sources": researched_sources,
+                "known_fact_keys": known_fact_keys,
                 "inventory": agent.get("inventory", {}) or {},
                 "food_items": rules.get("food_items", []) or [],
                 "satiety_alert_threshold": float(rules.get("satiety_alert_threshold", 40) or 40),
