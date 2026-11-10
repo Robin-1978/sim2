@@ -2806,6 +2806,39 @@ def test_story_tool_binds_emergent_beat_to_task_source_event(tmp_path: Path):
         platform.close()
 
 
+def test_story_accepts_source_scoped_emergent_beat_without_redundant_summary(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "story-source-scoped-emergent-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            source_event = platform.store.append_event(
+                "entity.installed", "tian_yan", 12,
+                {"summary": "The warning bell was installed at the north gate.", "story_source": True},
+            )
+        view = platform.view.build_decision_view("story", role="story", source_event_id=source_event)
+        assert view["story_beats"] == []
+
+        result = AgentToolExecutor(
+            platform,
+            role="story",
+            actor_id="story",
+            source_event_ids=[source_event],
+        ).execute("propose_story_beat", {
+            "beat": "Warning bell ready",
+            "fact": "The warning bell is installed at the north gate and ready for its configured use.",
+            "goal_hint": "Watch for a verified boundary threat before raising the alarm.",
+            "audience": ["田岩"],
+            "reason": "The validated installation result has no configured continuation.",
+        })
+
+        assert result["status"] == "accepted"
+        saved = platform.store.get_meta("story_state")["emergent_beats"][-1]
+        assert saved["summary"] == "The warning bell is installed at the north gate and ready for its configured use."
+        assert saved["source_event_id"] == source_event
+    finally:
+        platform.close()
+
+
 def test_step_commits_each_tick_before_a_later_tick_fails(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "tick-commit-world", tmp_path / "runtime")

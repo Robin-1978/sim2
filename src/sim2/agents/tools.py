@@ -379,8 +379,8 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "properties": {
                 "beat": {"type": "string", "description": "The exact visible story beat choice from the current story view."},
                 "audience": {"type": "array", "items": {"type": "string"}, "description": "For an emergent beat, provide at least one exact character name from audience_candidates. A configured beat may use its configured audience."},
-                "summary": {"type": "string", "description": "Required only when creating an emergent beat not present in the configured catalog."},
-                "fact": {"type": "string", "description": "A short evidence-grounded fact to deliver to the audience."},
+                "summary": {"type": "string", "description": "Optional short summary for an emergent beat; when omitted, fact is used as the summary."},
+                "fact": {"type": "string", "description": "A short evidence-grounded fact to deliver to the audience and use as the emergent summary when summary is omitted."},
                 "goal_hint": {"type": "string", "description": "A short next objective for the audience."},
                 "unlock_choices": {"type": "array", "items": {"type": "string"}, "description": "Optional visible BT choices already registered in the world."},
                 "reason": {"type": "string"},

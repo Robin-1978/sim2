@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from ..actions.conditions import ConditionEngine
 from ..actions.effects import EffectPipeline
+from ..evolution.story import eligible_story_beats
 from ..world.schema import AttributeSchema
 
 
@@ -387,17 +388,45 @@ class WorldEvolutionRuntimeMixin:
         story_root = self.store.get_meta("story", {}) or {}
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
         beats = list(story_root.get("beats", []) or []) if isinstance(story_root, dict) else []
+        state = dict(self.store.get_meta("story_state", {}) or {})
+        recent = self.store.recent_events(limit=500)
+        bound_sources = self.store.events_by_ids([int(item) for item in (source_event_ids or []) if int(item) > 0])
+        configured_source_types = {str(item) for item in (story_root.get("emergent_source_event_types") or [])}
+        source_event = bound_sources[-1] if bound_sources else next(
+            (
+                item for item in recent[:30]
+                if bool(item.get("story_source"))
+                or str(item.get("event_type", "")) in configured_source_types
+            ),
+            None,
+        )
+        observed_events = {str(item.get("event_type", "")) for item in recent}
+        fact_rows = self.store.connection.execute("SELECT fact_key FROM knowledge_fact").fetchall()
+        observed_facts = {str(row["fact_key"]) for row in fact_rows}
+        scoped_beats = eligible_story_beats(
+            beats,
+            state,
+            source_event_type=str((source_event or {}).get("event_type") or ""),
+            observed_events=observed_events,
+            observed_facts=observed_facts,
+        )
         choice = str(proposal.get("beat", "")).strip()
         key = "".join(char for char in choice.casefold() if char.isalnum())
-        matches = [
+        all_matches = [
             beat for beat in beats if isinstance(beat, dict)
             and key == "".join(char for char in str(beat.get("agent_label") or beat.get("summary") or beat.get("id", "")).casefold() if char.isalnum())
         ]
+        matches = [
+            beat for beat in scoped_beats if isinstance(beat, dict)
+            and key == "".join(char for char in str(beat.get("agent_label") or beat.get("summary") or beat.get("id", "")).casefold() if char.isalnum())
+        ]
         emergent = False
-        if not matches and str(proposal.get("summary", "")).strip():
-            summary = str(proposal.get("summary", "")).strip()
+        emergent_summary = str(proposal.get("summary") or proposal.get("fact") or "").strip()
+        if not matches and not all_matches and not scoped_beats and emergent_summary:
+            summary = emergent_summary
             if len(summary) < 8 or len(summary) > 500:
                 return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "An emergent story beat summary must be 8 to 500 characters.", "failed_check": "story_summary", "retryable": True})
+            proposal.setdefault("summary", summary)
             beat = {
                 "id": f"emergent:{uuid4().hex[:12]}",
                 "agent_label": choice or summary[:80],
@@ -413,25 +442,13 @@ class WorldEvolutionRuntimeMixin:
         if len(matches) != 1:
             return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {
                 "status": "rejected", "message": "Choose one exact configured story beat from the current story view.", "failed_check": "story_beat_choice", "retryable": True,
-                "available_choices": [str(beat.get("agent_label") or beat.get("summary") or beat.get("id", "")) for beat in beats if isinstance(beat, dict)],
+                "available_choices": [str(beat.get("agent_label") or beat.get("summary") or beat.get("id", "")) for beat in scoped_beats if isinstance(beat, dict)],
             })
         beat = matches[0]
         beat_id = str(beat.get("id", ""))
-        state = dict(self.store.get_meta("story_state", {}) or {})
         current = state.get(beat_id) if isinstance(state.get(beat_id), dict) else {}
         if current.get("status") in {"active", "completed"}:
             return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "This story beat is already active or completed.", "failed_check": "story_beat_state", "retryable": False})
-        recent = self.store.recent_events(limit=500)
-        bound_sources = self.store.events_by_ids([int(item) for item in (source_event_ids or []) if int(item) > 0])
-        configured_source_types = {str(item) for item in (story_root.get("emergent_source_event_types") or [])}
-        source_event = bound_sources[-1] if bound_sources else next(
-            (
-                item for item in recent[:30]
-                if bool(item.get("story_source"))
-                or str(item.get("event_type", "")) in configured_source_types
-            ),
-            None,
-        )
         if emergent and source_event is None:
             return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "An emergent beat needs a recent discovery, research, recovery, or relationship result.", "failed_check": "story_evidence", "retryable": True})
         if emergent and source_event:
@@ -489,13 +506,10 @@ class WorldEvolutionRuntimeMixin:
                         },
                     )
         trigger_events = {str(item) for item in (beat.get("trigger_events", []) or [])}
-        observed_events = {str(item.get("event_type", "")) for item in recent}
         if trigger_events and not trigger_events & observed_events:
             return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "The configured story beat has no observed trigger event yet.", "failed_check": "story_trigger", "retryable": True})
         required_facts = {str(item) for item in (beat.get("trigger_facts", []) or [])}
         if required_facts:
-            rows = self.store.connection.execute("SELECT fact_key FROM knowledge_fact").fetchall()
-            observed_facts = {str(row["fact_key"]) for row in rows}
             if not required_facts <= observed_facts:
                 return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "The configured story beat is missing one or more required facts.", "failed_check": "story_facts", "retryable": True, "missing_facts": sorted(required_facts - observed_facts)})
         minute = int(self.store.get_meta("world_minute", 0))

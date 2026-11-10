@@ -10,6 +10,7 @@ from ..actions.resources import ResourceLedger
 from ..actions.targets import TargetResolver
 from ..agents.tools import tools_for_role
 from ..behavior.estimator import BehaviorDurationEstimator
+from ..evolution.story import eligible_story_beats
 from ..memory.service import MemoryService
 from ..persistence.store import WorldStore
 from ..world.drives import DriveCalculator
@@ -1046,21 +1047,17 @@ class AgentViewCompiler:
         fact_rows = self.store.connection.execute("SELECT fact_key,data_json FROM knowledge_fact ORDER BY id DESC").fetchall()
         observed_facts = {str(row["fact_key"]) for row in fact_rows}
         choices: list[dict[str, Any]] = []
-        for beat in list(story_root.get("beats", []) or []) + list(story_state.get("emergent_beats", []) or []):
-            if not isinstance(beat, dict):
-                continue
+        scoped_beats = eligible_story_beats(
+            list(story_root.get("beats", []) or []) + list(story_state.get("emergent_beats", []) or []),
+            story_state,
+            source_event_type=str((source_event or {}).get("event_type") or ""),
+            observed_events=observed_events,
+            observed_facts=observed_facts,
+        )
+        for beat in scoped_beats:
             beat_id = str(beat.get("id", ""))
-            if isinstance(story_state.get(beat_id), dict) and story_state[beat_id].get("status") in {"active", "completed"}:
-                continue
             trigger_events = {str(item) for item in (beat.get("trigger_events", []) or [])}
             trigger_facts = {str(item) for item in (beat.get("trigger_facts", []) or [])}
-            source_event_type = str((source_event or {}).get("event_type") or "")
-            if trigger_events and source_event_type and source_event_type not in trigger_events:
-                continue
-            if trigger_events and not source_event_type and not trigger_events & observed_events:
-                continue
-            if trigger_facts and not trigger_facts <= observed_facts:
-                continue
             choices.append({
                 "ref": f"story:{beat_id}",
                 "choice": str(beat.get("agent_label") or beat.get("summary") or beat_id),
