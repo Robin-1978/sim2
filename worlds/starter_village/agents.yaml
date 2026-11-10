@@ -26,10 +26,10 @@ agents:
     esteem: 70
     self_actualization: 52
   knowledge_seed:
-  - public:village
-  - public:population
-  - public:granary
-  - secret:old_pact_fragment
+  - {id: "public:village", fact: "Mist Creek Village stands at Greywood's edge and depends on public stores, routes, and a village watch.", source_type: public_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "public:population", fact: "The village's initial public roster contains nine adult residents.", source_type: public_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "public:granary", fact: "The granary is the village's public food store; its current stock must be inspected before policy changes.", source_type: public_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "secret:old_pact_fragment", fact: "A surviving fragment indicates that an old pact concerns the village boundary, but its full terms are unknown.", source_type: private_record, confidence: 0.75, claim_status: observed}
   initial_bt_ids:
   - govern_village
   - mediate_conflict
@@ -85,10 +85,10 @@ agents:
     esteem: 81
     self_actualization: 45
   knowledge_seed:
-  - public:village
-  - public:watch_routes
-  - public:north_gate
-  - event:north_gate_marks
+  - {id: "public:village", fact: "Mist Creek Village stands at Greywood's edge and depends on public stores, routes, and a village watch.", source_type: public_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "public:watch_routes", fact: "The watch route links the village square, watchtower, north gate, and Greywood edge.", source_type: watch_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "public:north_gate", fact: "The north gate is a restricted boundary watch post reached through the watchtower.", source_type: watch_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "event:north_gate_marks", fact: "Unexplained marks were reported near the north gate; their maker and meaning are unknown.", source_type: watch_report, confidence: 0.7, claim_status: observed}
   initial_bt_ids:
   - patrol_route
   - defend_village
@@ -150,10 +150,10 @@ agents:
     esteem: 60
     self_actualization: 38
   knowledge_seed:
-  - public:village
-  - public:granary
-  - public:farm_fields
-  - public:food_ration
+  - {id: "public:village", fact: "Mist Creek Village stands at Greywood's edge and depends on public stores, routes, and a village watch.", source_type: public_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "public:granary", fact: "The granary is the village's public food store; its current stock must be inspected before policy changes.", source_type: public_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "public:farm_fields", fact: "The farm fields and granary form the village's known grain supply chain.", source_type: work_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "public:food_ration", fact: "Public food is issued from the granary under ration rules; current stock must be inspected before changing them.", source_type: public_record, confidence: 1.0, claim_status: confirmed}
   initial_bt_ids:
   - manage_ration
   - gather_resource
@@ -211,10 +211,10 @@ agents:
     esteem: 64
     self_actualization: 84
   knowledge_seed:
-  - public:village
-  - public:clinic
-  - public:river_bank
-  - secret:grey_fever_source
+  - {id: "public:village", fact: "Mist Creek Village stands at Greywood's edge and depends on public stores, routes, and a village watch.", source_type: public_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "public:clinic", fact: "The clinic contains the village's medical and research facilities.", source_type: clinic_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "public:river_bank", fact: "The river bank is the known place to collect and test water samples.", source_type: clinic_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "secret:grey_fever_source", fact: "Grey fever may have an environmental source, but no source has been verified.", source_type: clinical_hypothesis, confidence: 0.45, claim_status: inferred}
   initial_bt_ids:
   - heal_target
   - gather_resource
@@ -272,10 +272,10 @@ agents:
     esteem: 79
     self_actualization: 81
   knowledge_seed:
-  - public:village
-  - public:smithy
-  - public:old_quarry
-  - resource:star_metal_hint
+  - {id: "public:village", fact: "Mist Creek Village stands at Greywood's edge and depends on public stores, routes, and a village watch.", source_type: public_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "public:smithy", fact: "The smithy is the known place for configured forging and repair work.", source_type: work_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "public:old_quarry", fact: "The old quarry is a restricted mine connected to Greywood edge and the smithy.", source_type: route_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "resource:star_metal_hint", fact: "A hint suggests rare star metal may exist near the old quarry; its exact location and availability are unverified.", source_type: craft_rumor, confidence: 0.45, claim_status: inferred}
   initial_bt_ids:
   - craft_dawn_bell
   - craft_meal
@@ -333,10 +333,10 @@ agents:
     esteem: 61
     self_actualization: 88
   knowledge_seed:
-  - public:village
-  - public:greywood_edge
-  - event:missing_sister
-  - route:old_quarry
+  - {id: "public:village", fact: "Mist Creek Village stands at Greywood's edge and depends on public stores, routes, and a village watch.", source_type: public_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "public:greywood_edge", fact: "Greywood edge is a dangerous exploration area linked to the river, fields, north gate, quarry, and bridge.", source_type: route_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "event:missing_sister", fact: "Lu Xingzhou's sister is missing; her current location and condition are unknown.", source_type: personal_observation, confidence: 1.0, claim_status: observed}
+  - {id: "route:old_quarry", fact: "A known route reaches the old quarry through Greywood edge or the smithy.", source_type: route_record, confidence: 1.0, claim_status: confirmed}
   initial_bt_ids:
   - explore_greywood
   - patrol_route
@@ -398,8 +398,8 @@ agents:
     esteem: 72
     self_actualization: 66
   knowledge_seed:
-  - public:village
-  - public:inn
+  - {id: "public:village", fact: "Mist Creek Village stands at Greywood's edge and depends on public stores, routes, and a village watch.", source_type: public_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "public:inn", fact: "Yu Ge's inn is a public place for lodging, market exchange, and information.", source_type: public_record, confidence: 1.0, claim_status: confirmed}
   - id: rumor:caravan_loss
     fact: A vague rumor says a caravan suffered a loss on an old route; the route segment, cargo, people involved, and cause are unverified.
     source_type: rumor
@@ -463,14 +463,14 @@ agents:
     esteem: 75
     self_actualization: 69
   knowledge_seed:
-  - public:village
-  - public:trade_route
+  - {id: "public:village", fact: "Mist Creek Village stands at Greywood's edge and depends on public stores, routes, and a village watch.", source_type: public_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "public:trade_route", fact: "The village trade route passes through the river bridge and Greywood edge; its current safety is uncertain.", source_type: merchant_record, confidence: 0.8, claim_status: observed}
   - id: rumor:missing_ledger
     fact: The caravan ledger is missing; its current holder and exact location are unknown.
     source_type: merchant_report
     confidence: 0.8
     claim_status: observed
-  - faction:river_trade
+  - {id: "faction:river_trade", fact: "Fei Lan is associated with the river trade network.", source_type: personal_record, confidence: 1.0, claim_status: confirmed}
   initial_bt_ids:
   - communicate
   - negotiate
@@ -529,10 +529,10 @@ agents:
     esteem: 57
     self_actualization: 96
   knowledge_seed:
-  - public:village
-  - secret:root_gate
-  - secret:old_pact
-  - secret:grey_fever_source
+  - {id: "public:village", fact: "Mist Creek Village stands at Greywood's edge and depends on public stores, routes, and a village watch.", source_type: public_record, confidence: 1.0, claim_status: confirmed}
+  - {id: "secret:root_gate", fact: "A hidden root gate exists beyond public village knowledge; its current stability requires investigation.", source_type: keeper_record, confidence: 0.9, claim_status: observed}
+  - {id: "secret:old_pact", fact: "An old pact concerns the root gate, but its original purpose and current obligations remain unverified until the tablet is researched.", source_type: keeper_record, confidence: 0.75, claim_status: observed}
+  - {id: "secret:grey_fever_source", fact: "Grey fever may be linked to water or the boundary, but its cause is not verified.", source_type: keeper_hypothesis, confidence: 0.4, claim_status: inferred}
   initial_bt_ids:
   - research_source
   - inspect_object

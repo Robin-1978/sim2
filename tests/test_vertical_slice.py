@@ -2274,6 +2274,20 @@ def test_bootstrap_imports_generic_relationships_and_knowledge(tmp_path: Path):
         platform.close()
 
 
+def test_starter_seed_knowledge_is_readable_and_source_bounded():
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    agents = yaml.safe_load((config / "agents.yaml").read_text(encoding="utf-8"))["agents"]
+    seeds = [seed for agent in agents for seed in (agent.get("knowledge_seed") or [])]
+
+    assert seeds
+    assert all(isinstance(seed, dict) for seed in seeds)
+    assert all(str(seed.get("id") or "").strip() for seed in seeds)
+    assert all(len(str(seed.get("fact") or "").split()) >= 6 for seed in seeds)
+    assert all(str(seed.get("source_type") or "").strip() for seed in seeds)
+    assert all(seed.get("claim_status") in {"observed", "confirmed", "inferred"} for seed in seeds)
+    assert all(0 <= float(seed.get("confidence", -1)) <= 1 for seed in seeds)
+
+
 def test_invalid_reference_fails_before_sqlite_creation(tmp_path: Path):
     source = Path(__file__).parents[1] / "worlds" / "starter_village"
     copied = tmp_path / "invalid-world"
