@@ -204,8 +204,10 @@ class AgentEngine:
                 # error storm; the scheduler will retry after backoff.
                 return AgentTurn(role, task_type, last_response, last_result, iteration, transcript, initial_context, prompt_history)
             last_response = response
-            transcript.append({"step": "llm", "response": response})
-            self._audit(actor_id, role, task_type, iteration, prompt, response, "response", usage=self._last_usage)
+            readable_response = self._readable_model_response(response)
+            last_response = readable_response
+            transcript.append({"step": "llm", "response": readable_response})
+            self._audit(actor_id, role, task_type, iteration, prompt, readable_response, "response", usage=self._last_usage)
 
             try:
                 call = parse_tool_call(response)
@@ -422,6 +424,41 @@ class AgentEngine:
         restored = dict(result)
         restored["entity_id"] = row["id"]
         return restored
+
+    @staticmethod
+    def _readable_model_response(response: dict[str, Any]) -> dict[str, Any]:
+        """Decode nested native-tool argument JSON for audit and operator views.
+
+        OpenAI-compatible responses carry ``function.arguments`` as a JSON
+        string, so non-ASCII names appear as ``\\uXXXX`` in a raw audit row.
+        The provider still receives the original wire shape; only the stored
+        AgentTurn/audit copy is made human-readable.
+        """
+
+        readable = copy.deepcopy(response)
+        candidates: list[Any] = []
+        for key in ("tool_calls", "tool_uses"):
+            value = readable.get(key)
+            if isinstance(value, list):
+                candidates.extend(value)
+        for key in ("tool_call", "function_call"):
+            value = readable.get(key)
+            if isinstance(value, dict):
+                candidates.append(value)
+        for call in candidates:
+            if not isinstance(call, dict):
+                continue
+            function = call.get("function") if isinstance(call.get("function"), dict) else call
+            arguments = function.get("arguments") if isinstance(function, dict) else None
+            if not isinstance(arguments, str):
+                continue
+            try:
+                parsed = json.loads(arguments)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if isinstance(parsed, dict):
+                function["arguments"] = parsed
+        return readable
 
     @classmethod
     def _model_tool_result(cls, tool_name: str, result: dict[str, Any]) -> dict[str, Any]:

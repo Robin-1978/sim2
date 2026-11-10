@@ -79,6 +79,13 @@ def test_bare_wait_is_the_only_plain_text_intent_normalized():
     assert _json_from_text("wait") == {"intent_type": "wait", "reason": "No world change is needed now."}
 
 
+def test_native_tool_arguments_are_readable_in_audit_copy():
+    raw = {"tool_calls": [{"id": "provider-call", "function": {"name": "send_message", "arguments": '{"recipient":"余歌"}'}}]}
+    readable = AgentEngine._readable_model_response(raw)
+    assert readable["tool_calls"][0]["function"]["arguments"] == {"recipient": "余歌"}
+    assert isinstance(raw["tool_calls"][0]["function"]["arguments"], str)
+
+
 def test_unbound_context_reference_does_not_leak_into_world_text():
     assert Platform._resolve_parameters({"topic": "context.topic"}, {}) == {"topic": None}
 
