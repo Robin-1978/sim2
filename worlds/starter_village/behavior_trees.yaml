@@ -84,6 +84,9 @@ behavior_trees:
   - conflict.available
   - actor.can_mediate
   estimated_minutes: 15
+  agent_parameters:
+    topic: {type: string, required: true, max_length: 120, description: The concrete dispute being mediated.}
+    message: {type: string, required: true, max_length: 1000, description: The opening mediation statement delivered to the selected participant.}
   success_results: [conflict_resolved, relationship_repaired]
   failure_results: [conflict_escalated, participant_refused]
   outcome_effects:
@@ -105,6 +108,7 @@ behavior_trees:
     parameters:
       target_id: context.target_id
       topic: context.topic
+      message: context.message
   - type: condition
     expression: conflict.resolved
   definition_source: config
@@ -187,6 +191,7 @@ behavior_trees:
     parameters:
       target_id: lin_bo
       topic: food_ration
+      message: I inspected the current reserve and want to review a sustainable ration plan before winter.
   outcome_events:
   - event_type: ration.policy_reviewed
     wake: []
@@ -253,6 +258,7 @@ behavior_trees:
   scope: personal
   entry_conditions:
   - actor.can_research
+  - context.day_phase != night
   estimated_minutes: 245
   goal_tags: [health, water, research]
   drive_tags: [safety, self_actualization]
@@ -412,6 +418,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_explore
   - actor.alive
+  - context.day_phase != night
   estimated_minutes: 305
   interrupt_policy: pause
   success_results:
@@ -443,6 +450,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_research
   - secret.source_available
+  - context.day_phase != night
   estimated_minutes: 240
   interrupt_policy: pause
   goal_tags: [research, knowledge, pact]
@@ -598,6 +606,9 @@ behavior_trees:
   - target.available
   cooldown_minutes: 1440
   estimated_minutes: 15
+  agent_parameters:
+    topic: {type: string, required: true, max_length: 120, description: A short concrete subject for this conversation.}
+    message: {type: string, required: true, max_length: 1000, description: The actual opening message the selected participant will receive.}
   goal_tags: [belonging, information, trade]
   drive_tags: [belonging, autonomy]
   success_results: [dialogue_recorded, testimony_shared]
@@ -612,6 +623,7 @@ behavior_trees:
     parameters:
       target_id: context.target_id
       topic: context.topic
+      message: context.message
   definition_source: config
   kind: base
   summary: Exchange information with another character.
@@ -623,23 +635,28 @@ behavior_trees:
   - target.available
   cooldown_minutes: 2880
   estimated_minutes: 60
+  agent_parameters:
+    topic: {type: string, required: true, max_length: 120, description: The agreement subject.}
+    message: {type: string, required: true, max_length: 1000, description: The concrete proposed terms shared with the selected participant.}
   goal_tags: [trade, belonging, autonomy]
   drive_tags: [belonging, autonomy, esteem]
-  success_results: [agreement_reached, contract_recorded]
-  failure_results: [negotiation_failed, offer_refused]
+  agent_label: Discuss concrete terms with another character.
+  success_results: [dialogue_recorded, terms_shared]
+  failure_results: [conversation_refused, participant_left]
   outcome_events:
-  - event_type: negotiation.result_recorded
-    wake: [story]
-    summary: The configured negotiation result was recorded for follow-up.
+  - event_type: negotiation.followup_requested
+    wake: []
+    summary: Proposed terms were shared; any agreement or trade requires the other participant's later accepted response.
   nodes:
   - type: action
     action_id: negotiate
     parameters:
       target_id: context.target_id
       topic: context.topic
+      message: context.message
   definition_source: config
   kind: base
-  summary: Reach an agreement with another character.
+  summary: Discuss concrete terms without treating them as an accepted agreement.
 - id: gather_resource
   version: 1
   scope: personal

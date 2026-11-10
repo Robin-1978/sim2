@@ -49,7 +49,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "send_message": {
-        "purpose": "Send a short message to a visible participant at your location; the Platform records testimony for the recipient.",
+        "purpose": "Send words to a visible participant; this records testimony only and never transfers items, pays currency, signs a contract, or completes a trade.",
         "kind": "intent",
         "parameters": {
             "type": "object",

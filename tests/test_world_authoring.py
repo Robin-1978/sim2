@@ -49,6 +49,14 @@ def orbital_template() -> dict:
             "genre": "science_fiction",
             "properties": {"reactor_stability": 0.4, "solar_flux": 0.8},
             "random_seed": 17,
+            "calendar": {
+                "minutes_per_day": 1440,
+                "day_phases": [
+                    {"id": "shift", "start_minute": 360, "end_minute": 1200},
+                    {"id": "quiet", "start_minute": 1200, "end_minute": 360},
+                ],
+            },
+            "world_clock": {"start_day": 3, "start_minute": 480, "season": "storm_cycle"},
         },
         "attributes": [
             {"id": "integrity", "kind": "state", "label": "Integrity", "unit": "%", "min": 0, "max": 100, "default": 80, "vital": True, "cost_mode": "decrease", "prompt": "Higher means the chassis is intact; zero means disabled."},
@@ -141,6 +149,7 @@ def test_completely_different_world_builds_and_runs_without_platform_changes(tmp
         assert "health" not in agent["initial_state"]
         assert "energy" not in agent["initial_state"]
         assert "satiety" not in agent["needs"]
+        assert platform.decision_view("unit_seven")["world_time"]["label"] == "Day 3, 08:00, shift, storm_cycle"
         prompt_turn = AgentEngine(platform, OneChoiceProvider()).run(role="agent_decision", actor_id="unit_seven")
         assert prompt_turn.result["status"] == "accepted"
         for _ in range(prompt_turn.result["remaining_minutes"]):

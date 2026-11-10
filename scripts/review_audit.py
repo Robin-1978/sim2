@@ -134,7 +134,7 @@ def _database_checks(data: dict[str, Any]) -> dict[str, Any]:
                 return {}
             return value if isinstance(value, dict) else {}
 
-        requested = int(data.get("minutes_requested", 0) or 0)
+        requested = int(data.get("target_minute", data.get("minutes_requested", 0)) or 0)
         runtime_status = str((data.get("world") or {}).get("status", {}).get("status", ""))
         if runtime_status and runtime_status != "running":
             issues.append(_issue("world_runtime_not_running", runtime_status))
@@ -285,7 +285,9 @@ def review(data: dict[str, Any]) -> dict[str, Any]:
     issues.extend(database_checks.get("issues") or [])
     if int(quality_counts.get("pending", 0) or 0) > 0:
         issues.append(_issue("unresolved_quality_checks", str(quality_counts.get("pending"))))
-    if int(data.get("minutes_requested", 0) or 0) >= 1440:
+    target_minute = int(data.get("target_minute", data.get("minutes_requested", 0)) or 0)
+    start_minute = int(data.get("start_minute", 0) or 0)
+    if target_minute - start_minute >= 1440:
         role_counts = {role: sum(1 for item in sessions if item.get("role") == role) for role in ("agent_decision", "agent_reflection", "story", "god")}
         missing_roles = [role for role, count in role_counts.items() if count == 0]
         if missing_roles:

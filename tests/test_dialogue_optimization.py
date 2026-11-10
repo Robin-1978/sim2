@@ -3,7 +3,7 @@ import json
 
 from sim2.agents.engine import AgentEngine, AgentTurn
 from sim2.agents.quality import evaluate_turn
-from sim2.agents.tools import parse_tool_call
+from sim2.agents.tools import parse_tool_call, tool_schemas_for_role
 from sim2.bootstrap.service import create_instance
 from sim2.platform.runtime import Platform
 from sim2.prompting.renderer import render_context
@@ -180,6 +180,20 @@ def test_native_tool_arguments_are_readable_in_audit_copy():
     readable = AgentEngine._readable_model_response(raw)
     assert readable["tool_calls"][0]["function"]["arguments"] == {"recipient": "余歌"}
     assert isinstance(raw["tool_calls"][0]["function"]["arguments"], str)
+
+
+def test_instant_message_prompt_states_transaction_boundary(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "message-boundary", tmp_path / "runtime"))
+    try:
+        context = platform.decision_view("yu_ge")
+        AgentEngine._compact_interaction_context(context, "instant:dialogue.completed", ["send_message", "wait"])
+        prompt = render_context(context, "Reply to the incoming message.")
+        assert "send_message records testimony only" in prompt
+        assert "cannot transfer items or currency" in prompt
+        schema = next(item for item in tool_schemas_for_role("agent_decision", ["send_message", "wait"]) if item["function"]["name"] == "send_message")
+        assert "never transfers items" in schema["function"]["description"]
+    finally:
+        platform.close()
 
 
 def test_react_message_compaction_keeps_native_tool_groups_intact():
@@ -455,6 +469,16 @@ def test_model_tool_view_compacts_nested_entity_state():
     assert "internal-id" not in encoded
     assert "last_outcome" not in encoded
     assert result["entity"]["name"] == "A person"
+
+
+def test_starter_decision_tool_policy_omits_redundant_behavior_preview(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "decision-tool-surface", tmp_path / "runtime"))
+    try:
+        names = {item["name"] for item in platform.decision_view("yu_ge")["tools"]}
+        assert "request_behavior" in names
+        assert "preview_behavior" not in names
+    finally:
+        platform.close()
 
 
 def test_decision_wait_alias_is_a_valid_terminal_intent(tmp_path: Path):

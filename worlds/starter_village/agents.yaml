@@ -400,8 +400,16 @@ agents:
   knowledge_seed:
   - public:village
   - public:inn
-  - rumor:caravan_loss
-  - rumor:north_gate_marks
+  - id: rumor:caravan_loss
+    fact: A vague rumor says a caravan suffered a loss on an old route; the route segment, cargo, people involved, and cause are unverified.
+    source_type: rumor
+    confidence: 0.45
+    claim_status: inferred
+  - id: rumor:north_gate_marks
+    fact: A vague rumor says unexplained marks were noticed near the north gate; their shape, exact position, maker, and meaning are unknown.
+    source_type: rumor
+    confidence: 0.4
+    claim_status: inferred
   initial_bt_ids:
   - communicate
   - mediate_conflict
@@ -457,7 +465,11 @@ agents:
   knowledge_seed:
   - public:village
   - public:trade_route
-  - rumor:missing_ledger
+  - id: rumor:missing_ledger
+    fact: The caravan ledger is missing; its current holder and exact location are unknown.
+    source_type: merchant_report
+    confidence: 0.8
+    claim_status: observed
   - faction:river_trade
   initial_bt_ids:
   - communicate

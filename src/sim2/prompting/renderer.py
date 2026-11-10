@@ -495,7 +495,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     # from a truncated or stale subset.
     for behavior in behaviors:
         lines.append("    <behavior>")
-        for label in ("name", "summary", "purpose", "when", "requires", "target", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "cooldown_minutes", "tags"):
+        for label in ("name", "summary", "purpose", "when", "requires", "target", "parameters", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "cooldown_minutes", "tags"):
             value = behavior.get(label)
             if value:
                 if isinstance(value, list):

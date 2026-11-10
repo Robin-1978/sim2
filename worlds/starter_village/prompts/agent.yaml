@@ -1,6 +1,7 @@
 agent_prompt:
   # Role tool policy is data, not world-specific engine code.
   tool_policy:
+    agent_decision: [observe_nearby, inspect_entity, listen, read_public_record, query_known_fact, recall_memory, send_message, create_trade_offer, accept_trade_offer, counter_trade_offer, reject_trade_offer, request_behavior, propose_institution, wait]
     story: [record_world_progress, propose_story_beat]
     god: [observe_nearby, inspect_entity, listen, read_public_record, query_known_fact, recall_memory, preview_behavior, record_world_progress, propose_entity, propose_definition, propose_world_change, approve_institution]
   protocol:

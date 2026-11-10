@@ -22,7 +22,7 @@ behavior tree.
 | `craft_dawn_bell` | Materials are consumed and the configured object state changes | God trend | Closed |
 | `heal_target` | Target health changes and treatment cost is committed | Next decision / Reflection | Closed when a patient target is supplied |
 | `communicate` | Dialogue exchange, testimony, relationship and belonging effects | Next decision / Reflection | Closed |
-| `negotiate` | Trust changes and a negotiation result event are persisted; item movement uses the separate configured trade offer protocol | Story / God when the result has public consequences | Closed as a negotiation signal; a contract or item exchange is a separate atomic trade intent |
+| `negotiate` | Concrete terms and the actual opening message are persisted and delivered to the other participant; no contract is claimed | Recipient instant response; item movement uses the separate atomic trade offer protocol | Closed as a terms-sharing interaction; only a later accepted response or trade intent can form an agreement |
 | `mediate_conflict` | Conversation result, configured trust change, mediation event and concise fact are persisted | Story / God / Reflection | Closed when a configured conflict relation is visible; otherwise omitted from the candidate list |
 | `inspect_object` | The selected object, quantity, and observation are recorded | Reflection | Closed when an object is selected |
 | `inspect_granary` | Granary stock is observed as a knowledge fact | Reflection / God when a risk signal exists | Closed after the object inspection |

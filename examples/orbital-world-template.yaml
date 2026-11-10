@@ -8,6 +8,12 @@ world:
     reactor_stability: 0.4
     solar_flux: 0.8
   random_seed: 17
+  calendar:
+    minutes_per_day: 1440
+    day_phases:
+    - {id: crew_shift, start_minute: 360, end_minute: 1200}
+    - {id: quiet_shift, start_minute: 1200, end_minute: 360}
+  world_clock: {start_day: 1, start_minute: 480, season: radiation_storm}
 attributes:
 - id: integrity
   kind: state

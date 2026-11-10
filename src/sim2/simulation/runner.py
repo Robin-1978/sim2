@@ -423,7 +423,10 @@ class SimulationRunner:
             task_type = str(task.get("task_type", "evolution"))
             if task.get("trigger_id"):
                 task_type = f"trigger:{task.get('trigger_id')}"
-            task_data = task.get("data") if isinstance(task.get("data"), dict) else {}
+            # WorldStore returns evolution data flattened into the task view.
+            # Some API callers may wrap it under ``data``; accept both without
+            # dropping the causal source event at the Agent boundary.
+            task_data = task.get("data") if isinstance(task.get("data"), dict) else task
             source_events = [item for item in (task_data.get("source_events") or []) if isinstance(item, dict)]
             source_event_id = task_data.get("source_event_id")
             if source_event_id is None and source_events:

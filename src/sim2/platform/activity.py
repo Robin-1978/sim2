@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from ..world.navigation import reachable_locations
+from ..world.time import world_time_view
 
 
 class ActivityRuntimeMixin:
@@ -62,6 +63,7 @@ class ActivityRuntimeMixin:
             "target.available": (resolved_target or {}).get("available", False),
             "known_route_destinations": reachable_locations(self.store, location_id),
             "recent_event_types": self._recent_event_types(),
+            "day_phase": world_time_view(self.store).get("day_phase"),
         }
         if action_id == "craft_recipe":
             recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
@@ -155,6 +157,7 @@ class ActivityRuntimeMixin:
             "target.available": (target or {}).get("available", False),
             "known_route_destinations": reachable_locations(self.store, state.get("location_id")),
             "recent_event_types": self._recent_event_types(),
+            "day_phase": world_time_view(self.store).get("day_phase"),
         }
         if action_info.get("action_id") == "craft_recipe":
             recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
@@ -628,12 +631,11 @@ class ActivityRuntimeMixin:
             role = str(role)
             if not role:
                 continue
-            target = actor_id if role == "agent_reflection" else role
             self._queue_event_consumer_task(
                 role,
                 event_id,
                 event_type,
-                target,
+                actor_id,
                 minute,
                 task_type=f"event:{event_type}",
             )
@@ -670,6 +672,7 @@ class ActivityRuntimeMixin:
         source_id = parameters.get("source_id") or information.get("source_parameter") and parameters.get(information["source_parameter"])
         target_id = parameters.get("target_id")
         topic = parameters.get("topic")
+        message = str(parameters.get("message") or "").strip()
         if area_id:
             area_id = str(area_id)
             if area_id not in self.store.explored_areas(agent["id"]):
@@ -739,13 +742,13 @@ class ActivityRuntimeMixin:
                 listener = self.store.get_agent(target_id)
             except KeyError:
                 listener = None
-            dialogue_id = self.store.put_dialogue_exchange(agent["id"], target_id if listener else None, str(topic), minute, {"source": action.get("id"), "parameters": parameters})
-            self.store.put_memory(agent["id"], "dialogue", {"topic": str(topic), "target_id": target_id, "world_minute": minute, "dialogue_id": dialogue_id})
+            dialogue_id = self.store.put_dialogue_exchange(agent["id"], target_id if listener else None, str(topic), minute, {"source": action.get("id"), "message": message, "parameters": parameters})
+            self.store.put_memory(agent["id"], "dialogue", {"topic": str(topic), "message": message, "target_id": target_id, "world_minute": minute, "dialogue_id": dialogue_id, "claim_status": "observed", "source_type": "own_statement"})
             if listener:
-                self.store.put_memory(target_id, "testimony", {"topic": str(topic), "speaker_id": agent["id"], "world_minute": minute, "dialogue_id": dialogue_id})
+                self.store.put_memory(target_id, "testimony", {"topic": str(topic), "message": message, "speaker_id": agent["id"], "world_minute": minute, "dialogue_id": dialogue_id, "claim_status": "promised", "source_type": "testimony"})
                 self._apply_configured_relationship_effect(agent, listener, "dialogue.completed", minute)
                 self.store.update_agent(listener["id"], listener)
-            event_id = self.store.append_event("dialogue.completed", agent["id"], minute, {"target_id": target_id, "topic": str(topic), "dialogue_id": dialogue_id})
+            event_id = self.store.append_event("dialogue.completed", agent["id"], minute, {"target_id": target_id, "topic": str(topic), "message": message, "dialogue_id": dialogue_id})
             result = {"result": "dialogue_recorded", "event_id": event_id}
         configured_event = information.get("event_type") or information.get("event")
         observed: dict[str, Any] = {}

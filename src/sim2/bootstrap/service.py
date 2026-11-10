@@ -718,8 +718,20 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                 state["initial_state"] = initial_state
                 store.put_agent(agent["id"], state, agent.get("name", agent["id"]))
                 for knowledge in agent.get("knowledge_seed", []):
-                    fact_key = str(knowledge)
-                    store.put_knowledge_fact(agent["id"], fact_key, {"fact": fact_key, "source_type": "config_seed", "confidence": 1.0})
+                    if isinstance(knowledge, dict):
+                        fact_key = str(knowledge.get("id") or knowledge.get("fact_key") or "").strip()
+                        if not fact_key:
+                            continue
+                        fact_data = {
+                            "fact": str(knowledge.get("fact") or knowledge.get("summary") or fact_key),
+                            "source_type": str(knowledge.get("source_type") or "config_seed"),
+                            "confidence": float(knowledge.get("confidence", 1.0)),
+                            "claim_status": str(knowledge.get("claim_status") or "observed"),
+                        }
+                    else:
+                        fact_key = str(knowledge)
+                        fact_data = {"fact": fact_key, "source_type": "config_seed", "confidence": 1.0, "claim_status": "observed"}
+                    store.put_knowledge_fact(agent["id"], fact_key, fact_data)
             schedule = evolution.get("evolution", {}).get("schedule", {}) if isinstance(evolution, dict) else {}
             for agent in load_yaml(config_dir, "agents.yaml", {}).get("agents", []):
                 agent_id = agent["id"]
@@ -821,7 +833,7 @@ def write_world_package_from_template(
         "genre": world.get("genre", ""),
         "locale": world.get("locale", "en"),
     }
-    for optional in ("public_history", "secrets", "calendar"):
+    for optional in ("public_history", "secrets", "calendar", "world_clock"):
         if world.get(optional) is not None:
             setting[optional] = world[optional]
     write("setting.yaml", setting)

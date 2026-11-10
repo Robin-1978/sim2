@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -72,6 +73,33 @@ def _quality_counts(sessions: list[dict[str, Any]]) -> dict[str, int]:
             and not provider_error(item)
         ),
     }
+
+
+def _unresolved_provider_errors(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return provider failures that did not recover at the same world boundary.
+
+    A cooldown retry is causally safe only when the same role, actor and task
+    succeeds before world time advances.  Later success cannot repair a
+    decision that the simulation already skipped.
+    """
+
+    unresolved: dict[tuple[str, str, str, int], dict[str, Any]] = {}
+    for item in sessions:
+        key = (
+            str(item.get("role") or ""),
+            str(item.get("actor_id") or ""),
+            str(item.get("task_type") or ""),
+            int((item.get("world_time") or {}).get("minute", -1) or -1),
+        )
+        provider_error = (
+            str((item.get("quality") or {}).get("grade") or "").startswith("provider_")
+            or (item.get("result") or {}).get("failed_check") == "llm_response"
+        )
+        if provider_error:
+            unresolved[key] = item
+        elif (item.get("result") or {}).get("status") in {"accepted", "wait", "skipped"}:
+            unresolved.pop(key, None)
+    return list(unresolved.values())
 
 
 def _merge_reports(reports: list[Any], *, target_minute: int) -> dict[str, Any]:
@@ -242,6 +270,12 @@ def main() -> int:
     config = LLMConfig.load()
     if args.provider not in config.providers:
         raise SystemExit(f"Configured provider not found: {args.provider}")
+    provider_config = config.providers[args.provider]
+    if provider_config.api_key_env and not os.environ.get(provider_config.api_key_env):
+        raise SystemExit(
+            f"Required API key environment variable is not set: {provider_config.api_key_env}. "
+            "Start this audit from a shell that loads the configured environment before creating a world instance."
+        )
     if args.resume_db:
         db_path = args.resume_db.resolve()
         if not db_path.is_file():
@@ -324,6 +358,7 @@ def main() -> int:
         causality = _causality(platform, sessions)
         _finalize_quality(sessions, causality)
         quality_counts = _quality_counts(sessions)
+        unresolved_provider_errors = _unresolved_provider_errors(sessions)
         output = {
             "provider": args.provider,
             "model": args.model or config.providers[args.provider].model,
@@ -343,11 +378,19 @@ def main() -> int:
                 "progress": platform.store.list_progress("world", limit=100),
                 "causality": causality,
                 "quality_counts": quality_counts,
+                "unresolved_provider_errors": len(unresolved_provider_errors),
             },
         }
         _write_json_atomic(args.output, output)
+        reached_target = int(output["world"]["status"]["world_minute"]) >= target_minute
+        audit_complete = (
+            reached_target
+            and not quality_counts["failed"]
+            and not quality_counts["pending"]
+            and not unresolved_provider_errors
+        )
         _write_json_atomic(checkpoint_path, {
-            "status": "complete" if output["world"]["status"]["world_minute"] >= target_minute else "stopped",
+            "status": "complete" if audit_complete else "stopped",
             "provider": args.provider,
             "model": args.model or config.providers[args.provider].model,
             "db_path": str(db_path),
@@ -355,6 +398,7 @@ def main() -> int:
             "target_minute": target_minute,
             "stop_reason": report.get("stop_reason"),
             "quality_counts": quality_counts,
+            "unresolved_provider_errors": len(unresolved_provider_errors),
             "sessions": sessions,
         })
         failed = quality_counts["failed"]
@@ -365,6 +409,8 @@ def main() -> int:
             "world_minute": output["world"]["status"]["world_minute"],
             "sessions": len(sessions),
             "quality_failed": failed,
+            "quality_pending": quality_counts["pending"],
+            "unresolved_provider_errors": len(unresolved_provider_errors),
             "quality_by_role": {
                 role: {
                     "sessions": sum(1 for item in sessions if item["role"] == role),
@@ -385,8 +431,7 @@ def main() -> int:
             "report": report,
             "causality": output["world"]["causality"],
         }, ensure_ascii=False, indent=2))
-        reached_target = int(output["world"]["status"]["world_minute"]) >= target_minute
-        return 0 if output["world"]["status"]["status"] == "running" and reached_target and not failed else 1
+        return 0 if output["world"]["status"]["status"] == "running" and audit_complete else 1
     finally:
         platform.close()
 

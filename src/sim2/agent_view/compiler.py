@@ -16,6 +16,7 @@ from ..world.drives import DriveCalculator
 from ..world.navigation import configured_location_tags, nearest_location_with_tag, nearest_resource_node, nearest_safe_location, reachable_locations
 from ..world.rules import RuleCompiler
 from ..world.schema import AttributeSchema
+from ..world.time import world_time_view
 
 
 def _label(value: str) -> str:
@@ -238,31 +239,9 @@ class AgentViewCompiler:
         yield from visit(behavior.get("nodes", []) or [], seen)
 
     def _world_time(self, minute: int | None = None) -> dict[str, Any]:
-        """Expose calendar meaning without leaking the internal tick counter."""
+        """Expose configured calendar meaning without leaking scheduler state."""
 
-        setting = self.store.get_meta("setting", {}) or {}
-        calendar = setting.get("calendar", {}) if isinstance(setting, dict) else {}
-        day_minutes = max(1, int(calendar.get("minutes_per_day", 1440) or 1440))
-        week_minutes = max(day_minutes, int(calendar.get("minutes_per_week", day_minutes * 7) or day_minutes * 7))
-        month_minutes = max(week_minutes, int(calendar.get("minutes_per_month", week_minutes * 4) or week_minutes * 4))
-        clock = setting.get("world_clock", {}) if isinstance(setting, dict) else {}
-        current = int(self.store.get_meta("world_minute", 0) if minute is None else minute)
-        start_day = int(clock.get("start_day", 1) or 1)
-        start_minute = int(clock.get("start_minute", 0) or 0)
-        absolute = max(0, start_minute + current)
-        day = start_day + absolute // day_minutes
-        minute_of_day = absolute % day_minutes
-        hour, minute_part = divmod(minute_of_day, 60)
-        season = str(clock.get("season") or setting.get("season") or "unknown")
-        return {
-            "minute": current,
-            "day": day,
-            "week": absolute // week_minutes + 1,
-            "month": absolute // month_minutes + 1,
-            "time_of_day": f"{hour:02d}:{minute_part:02d}",
-            "season": season,
-            "label": f"Day {day}, {hour:02d}:{minute_part:02d}, {season}",
-        }
+        return world_time_view(self.store, minute)
 
     def _prompt_sections(self, role: str) -> tuple[list[str], list[str]]:
         prompt = self.store.get_prompt("agent", {}) or {}
@@ -509,6 +488,7 @@ class AgentViewCompiler:
                 "food_items": rules.get("food_items", []) or [],
                 "satiety_alert_threshold": float(rules.get("satiety_alert_threshold", 40) or 40),
                 "recent_event_types": self._recent_event_types(),
+                "day_phase": self._world_time().get("day_phase"),
                 "target": {"id": validation_target.get("id"), "available": True} if validation_target else {"available": False},
             }
             condition_context.update(self._interaction_context(agent, participants))
@@ -642,6 +622,11 @@ class AgentViewCompiler:
                 "target": target_text,
                 "target_required": target_required,
                 "target_options": target_options if target_required else [],
+                "parameters": [
+                    f"{name} ({'required' if spec.get('required', False) else 'optional'} {spec.get('type', 'value')}): {spec.get('description', 'configured input')}"
+                    for name, raw_spec in (bt.get("agent_parameters", {}) or {}).items()
+                    for spec in [raw_spec if isinstance(raw_spec, dict) else {"type": str(raw_spec)}]
+                ],
                 "steps": steps[:5],
                 "time": f"{estimator.behavior_minutes(bt_id, {'safe_location_id': safe_location_id} if safe_location_id else {}, location_id)} minutes",
                 "cost": list(dict.fromkeys(costs))[:6] or ["Costs are defined by the selected steps."],

@@ -155,9 +155,10 @@ def test_agent_view_exposes_calendar_time_not_only_tick_number(tmp_path: Path):
         platform.store.set_meta("world_minute", 1530)
         time = platform.decision_view("lu_xingzhou")["world_time"]
         assert time["day"] == 2
-        assert time["time_of_day"] == "01:30"
+        assert time["time_of_day"] == "08:30"
+        assert time["day_phase"] == "day"
         assert time["season"] == "late_autumn"
-        assert time["label"] == "Day 2, 01:30, late_autumn"
+        assert time["label"] == "Day 2, 08:30, day, late_autumn"
     finally:
         platform.close()
 
@@ -422,7 +423,40 @@ def test_god_event_wakes_use_configured_evidence_counts(tmp_path: Path):
         with platform.store.transaction():
             incident_id = platform.store.append_event("entity.installed", "tian_yan", 2, {"summary": "A public warning device was installed."})
         platform._queue_event_consumer_task("god", incident_id, "entity.installed", "tian_yan", 2, task_type="event:entity.installed")
-        assert any(item["role"] == "god" and item["task_type"] == "event_group:public_incident" for item in platform.ready_evolution_tasks())
+        task = next(item for item in platform.ready_evolution_tasks() if item["role"] == "god" and item["task_type"] == "event_group:public_incident")
+        assert task["source_events"] == [{"event_id": incident_id, "event_type": "entity.installed", "actor_id": "tian_yan"}]
+    finally:
+        platform.close()
+
+
+def test_runner_preserves_story_source_event_in_agent_view(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "story-source-runner", tmp_path / "runtime"))
+    turns = []
+    try:
+        with platform.store.transaction():
+            source_event_id = platform.store.append_event(
+                "entity.installed", "tian_yan", 0,
+                {"summary": "The dawn bell was installed at the north gate.", "story_source": True},
+            )
+            platform._queue_event_consumer_task(
+                "story", source_event_id, "entity.installed", "tian_yan", 0,
+                task_type="event:entity.installed",
+            )
+        report = SimulationRunner(
+            platform,
+            {"story": FakeProvider({"intent_type": "wait", "reason": "No new beat is needed."})},
+            turn_observer=lambda turn, actor_id: turns.append(turn),
+        ).run(1)
+        assert report.story_sessions == 1
+        assert turns[0].initial_context["validated_source"]["event_type"] == "entity.installed"
+        assert turns[0].initial_context["validated_source"]["actor"] == "田岩"
+        assert turns[0].initial_context["triggering_evidence"] == [{
+            "event_type": "entity.installed",
+            "world_minute": 0,
+            "actor": "田岩",
+            "summary": "The dawn bell was installed at the north gate.",
+        }]
     finally:
         platform.close()
 
@@ -846,12 +880,15 @@ def test_nearby_communication_behavior_resolves_a_visible_participant(tmp_path: 
         communicate = next(item for item in view["executable_behaviors"] if item["ref"] == "behavior:communicate")
         assert "费兰" in communicate["target"]
         result = platform.submit_behavior(BehaviorIntent(
-            "yu_ge", "behavior:communicate", {}, {}, "Exchange the merchant's route information.", 0.8, "nearby-dialogue"
+            "yu_ge", "behavior:communicate", {},
+            {"topic": "route news", "message": "What verified route news can you share?"},
+            "Exchange the merchant's route information.", 0.8, "nearby-dialogue"
         ))
         assert result["status"] == "accepted"
         step_n(platform, result["remaining_minutes"])
         dialogue = next(item for item in platform.store.recent_events(limit=20) if item["event_type"] == "dialogue.completed")
-        assert dialogue["topic"] == "general"
+        assert dialogue["topic"] == "route news"
+        assert dialogue["message"] == "What verified route news can you share?"
         assert platform.store.list_memories("fei_lan", limit=5)
         assert any(item["from"] == "yu_ge" and item["to"] == "fei_lan" and item["type"] == "trust" for item in platform.store.list_relationships())
         assert "trust=0.02" in render_context(platform.decision_view("yu_ge"), "Choose one behavior.")
@@ -1573,7 +1610,11 @@ def test_multiple_visible_participants_require_explicit_target(tmp_path: Path):
         communicate = next(item for item in view["executable_behaviors"] if item["ref"] == "behavior:communicate")
         assert communicate["target_required"] is True
         assert "Choose one participant explicitly" in communicate["target"]
-        rejected = platform.submit_behavior(BehaviorIntent("fei_lan", "behavior:communicate", {}, {}, "Exchange information.", 0.8, "missing-target"))
+        rejected = platform.submit_behavior(BehaviorIntent(
+            "fei_lan", "behavior:communicate", {},
+            {"topic": "route news", "message": "What verified route news can you share?"},
+            "Exchange information.", 0.8, "missing-target",
+        ))
         assert rejected["status"] == "rejected"
         assert rejected["failed_check"] == "target_required"
         assert set(rejected["available_targets"]) == {"余歌", "林泊"}
@@ -1605,7 +1646,11 @@ def test_nested_bt_target_is_explicit_and_hidden_target_is_rejected(tmp_path: Pa
         nested_hidden = platform.submit_behavior(BehaviorIntent("fei_lan", "behavior:nested_communicate", {}, {"target_id": "lu_xingzhou"}, "Talk to a hidden person.", 0.8, "nested-hidden"))
         assert nested_hidden["status"] == "rejected"
         assert nested_hidden["failed_check"] == "target_visibility"
-        hidden = platform.submit_behavior(BehaviorIntent("fei_lan", "behavior:communicate", {}, {"target_id": "lu_xingzhou"}, "Talk to a hidden person.", 0.8, "hidden-target"))
+        hidden = platform.submit_behavior(BehaviorIntent(
+            "fei_lan", "behavior:communicate", {},
+            {"target_id": "lu_xingzhou", "topic": "route news", "message": "Can you share route news?"},
+            "Talk to a hidden person.", 0.8, "hidden-target",
+        ))
         assert hidden["status"] == "rejected"
         assert hidden["failed_check"] == "target_visibility"
     finally:
@@ -1810,6 +1855,8 @@ def test_perception_channels_are_scoped_and_model_readable(tmp_path: Path):
         executor = AgentToolExecutor(platform, role="agent_decision", actor_id="lu_xingzhou")
         listened = executor.execute("listen", {"question": "What happened nearby?"})
         assert listened["status"] == "ok"
+        assert all(item["event_type"] != "world_minute.advanced" for item in listened["events"])
+        assert all(item["event_type"] != "behavior.started" for item in listened["events"])
         known = executor.execute("query_known_fact", {"query": "village"})
         assert known["status"] == "ok"
         public = executor.execute("read_public_record", {"entity_id": "village_square"})
@@ -1841,6 +1888,80 @@ def test_read_tool_projection_hides_internal_execution_fields(tmp_path: Path):
         platform.close()
 
 
+def test_configured_day_phase_controls_behavior_availability(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "day-phase-world", tmp_path / "runtime"))
+    try:
+        morning = platform.decision_view("lu_xingzhou")
+        assert morning["world_time"]["time_of_day"] == "07:00"
+        assert morning["world_time"]["day_phase"] == "day"
+        assert any(item["ref"] == "behavior:explore_greywood" for item in morning["executable_behaviors"])
+
+        with platform.store.transaction():
+            platform.store.set_meta("world_minute", 900)  # 22:00 after the configured 07:00 start.
+        night = platform.decision_view("lu_xingzhou")
+        assert night["world_time"]["time_of_day"] == "22:00"
+        assert night["world_time"]["day_phase"] == "night"
+        assert not any(item["ref"] == "behavior:explore_greywood" for item in night["executable_behaviors"])
+    finally:
+        platform.close()
+
+
+def test_communication_behavior_requires_and_delivers_actual_message(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "behavior-message-world", tmp_path / "runtime"))
+    try:
+        communicate = next(item for item in platform.decision_view("yu_ge")["executable_behaviors"] if item["ref"] == "behavior:communicate")
+        assert any("message (required string)" in item for item in communicate["parameters"])
+        missing = platform.submit_behavior(BehaviorIntent(
+            "yu_ge", "behavior:communicate", {"name": "费兰"}, {}, "Exchange current route news.", 0.8, "missing-message",
+        ))
+        assert missing["status"] == "rejected"
+        assert "missing required behavior parameter: message" in missing["errors"]
+
+        accepted = platform.submit_behavior(BehaviorIntent(
+            "yu_ge", "behavior:communicate", {"name": "费兰"},
+            {"topic": "trade route", "message": "What verified news do you have about the missing caravan ledger?"},
+            "Ask one concrete question.", 0.9, "message-behavior",
+        ))
+        assert accepted["status"] == "accepted"
+        step_n(platform, accepted["remaining_minutes"])
+        exchange = platform.store.get_dialogue_exchange(1)
+        assert exchange is not None
+        assert exchange["message"] == "What verified news do you have about the missing caravan ledger?"
+        event = next(item for item in platform.store.recent_events(limit=20) if item["event_type"] == "dialogue.completed")
+        assert event["message"] == exchange["message"]
+    finally:
+        platform.close()
+
+
+def test_instant_agent_session_does_not_interrupt_active_behavior(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "active-instant-world", tmp_path / "runtime"))
+    provider = SequenceProvider([{"intent_type": "wait", "reason": "The message needs no reply."}])
+    try:
+        with platform.store.transaction():
+            actor = platform.store.get_agent("yu_ge")
+            actor["initial_state"].update({
+                "status": "executing", "active_bt_instance": "active-work",
+                "active_behavior_id": "inspect_granary", "active_action": "inspect_object",
+                "remaining_minutes": 10,
+            })
+            platform.store.update_agent("yu_ge", actor)
+        turn = AgentEngine(platform, provider).run(
+            role="agent_decision", actor_id="yu_ge", task_type="instant:dialogue.completed",
+            interaction={"from": "费兰", "topic": "ledger", "message": "I found no verified ledger yet."},
+        )
+        assert turn.iterations == 1
+        assert turn.result["status"] == "wait"
+        state = platform.store.get_agent("yu_ge")["initial_state"]
+        assert state["status"] == "executing"
+        assert state["active_bt_instance"] == "active-work"
+        assert state["remaining_minutes"] == 10
+    finally:
+        platform.close()
+
+
 def test_known_distant_entity_does_not_reveal_live_state(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "perception-known-world", tmp_path / "runtime"))
@@ -1868,6 +1989,12 @@ def test_bootstrap_imports_generic_relationships_and_knowledge(tmp_path: Path):
         assert any(row["person"] == "he_yan" for row in platform.store.get_relationships("lin_bo"))
         facts = platform.store.list_knowledge_facts("lu_xingzhou")
         assert any(fact["fact_key"] == "public:village" for fact in facts)
+        rumors = platform.store.list_knowledge_facts("yu_ge", limit=20)
+        marks = next(item for item in rumors if item["fact_key"] == "rumor:north_gate_marks")
+        assert "shape" in marks["fact"]
+        assert "unknown" in marks["fact"]
+        assert marks["source_type"] == "rumor"
+        assert marks["confidence"] == 0.4
         assert platform.store.get_meta("config_version") == "starter-village-0.1.0"
     finally:
         platform.close()
@@ -2868,6 +2995,11 @@ def test_dialogue_trade_negotiation_and_observer_text_view(tmp_path: Path):
         assert any(item.get("type") == "testimony" and item.get("message", "").startswith("The western road") for item in testimony)
         testimony_row = next(item for item in testimony if item.get("type") == "testimony")
         assert testimony_row.get("tags", {}).get("participants") == "费兰"
+        assert testimony_row["claim_status"] == "promised"
+        assert testimony_row["source_type"] == "testimony"
+        own_statement = next(item for item in platform.store.list_memories("fei_lan", limit=10) if item.get("type") == "dialogue")
+        assert own_statement["claim_status"] == "observed"
+        assert own_statement["source_type"] == "own_statement"
         offer = platform.create_trade_offer("fei_lan", "yu_ge", {"trade_goods": 1}, {"letter_bundle": 1})
         assert offer["status"] == "accepted"
         counter = platform.counter_trade_offer("yu_ge", offer["offer_id"], {"letter_bundle": 1}, {"trade_goods": 1})

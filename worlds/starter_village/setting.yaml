@@ -22,7 +22,12 @@ calendar:
   minutes_per_day: 1440
   minutes_per_week: 10080
   minutes_per_month: 43200
+  day_phases:
+  - {id: night, start_minute: 1200, end_minute: 300}
+  - {id: dawn, start_minute: 300, end_minute: 420}
+  - {id: day, start_minute: 420, end_minute: 1080}
+  - {id: dusk, start_minute: 1080, end_minute: 1200}
 world_clock:
   start_day: 1
   season: late_autumn
-  start_minute: 0
+  start_minute: 420

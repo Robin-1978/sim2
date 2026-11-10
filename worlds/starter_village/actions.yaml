@@ -355,6 +355,7 @@ actions:
   parameters:
     target_id: string
     topic: string
+    message: string
   parameter_defaults:
     topic: general
   preconditions:
@@ -457,6 +458,7 @@ actions:
   parameters:
     target_id: string
     topic: string
+    message: string
   preconditions:
   - actor.can_negotiate
   - counterparty.available
@@ -470,8 +472,8 @@ actions:
     on_failure: {}
     refund: {}
   success:
-    condition: contract.signed
-    result: contract_signed
+    condition: negotiation.recorded
+    result: terms_recorded
   failure:
     condition: trust.collapsed
     result: negotiation_failed
@@ -480,9 +482,9 @@ actions:
     relation: trust
     delta: 0.02
   information:
-    event_type: negotiation.completed
-    summary: A negotiation result was recorded between the participants.
-    result: contract_signed
+    event_type: negotiation.terms_recorded
+    summary: Concrete proposed terms were recorded and delivered to the other participant for a separate response.
+    result: terms_recorded
   interrupt_policy: cancel
   definition_source: config
   kind: atomic

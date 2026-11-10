@@ -12,6 +12,7 @@ _SPEC.loader.exec_module(_MODULE)
 _quality_counts = _MODULE._quality_counts
 _write_json_atomic = _MODULE._write_json_atomic
 _merge_reports = _MODULE._merge_reports
+_unresolved_provider_errors = _MODULE._unresolved_provider_errors
 
 
 def test_audit_checkpoint_is_atomic_and_provider_errors_are_separate(tmp_path: Path):
@@ -53,3 +54,20 @@ def test_segment_reports_are_aggregated_without_double_counting_world_totals():
     assert merged["event_types"] == {"tick": 10}
     assert merged["stop_reason"] is None
     assert merged["segments"] == 2
+
+
+def test_only_same_boundary_success_recovers_provider_error():
+    error = {
+        "role": "agent_decision", "actor_id": "a", "task_type": "decision",
+        "world_time": {"minute": 4},
+        "result": {"status": "rejected", "failed_check": "llm_response"},
+        "quality": {"grade": "provider_error"},
+    }
+    recovered = {
+        "role": "agent_decision", "actor_id": "a", "task_type": "decision",
+        "world_time": {"minute": 4},
+        "result": {"status": "accepted"}, "quality": {"grade": "grounded"},
+    }
+    late = {**recovered, "world_time": {"minute": 5}}
+    assert _unresolved_provider_errors([error, recovered]) == []
+    assert _unresolved_provider_errors([error, late]) == [error]

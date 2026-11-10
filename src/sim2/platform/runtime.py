@@ -22,6 +22,7 @@ from ..persistence.store import WorldStore
 from ..world.navigation import configured_location_tags, nearest_location_with_tag, nearest_resource_node, nearest_safe_location, reachable_locations
 from ..world.rules import RuleCompiler
 from ..world.schema import AttributeSchema
+from ..world.time import world_time_view
 from ..evolution import EventWakeScheduler, WorldProposalEvaluator
 from .activity import ActivityRuntimeMixin
 
@@ -303,8 +304,6 @@ class Platform(ActivityRuntimeMixin):
         return result
 
     def _validate_behavior_parameters(self, behavior_id: str, parameters: dict[str, Any]) -> list[str]:
-        if not parameters:
-            return []
         bt = next((item for item in self.store.get_definitions("bt_def") if item.get("id") == behavior_id), None)
         if not bt:
             return ["behavior is not registered"]
@@ -314,7 +313,30 @@ class Platform(ActivityRuntimeMixin):
             action = action_defs.get(node.get("action_id"), {})
             allowed.update((action.get("parameters") or {}).keys())
             allowed.update((node.get("parameters") or {}).keys())
-        return [f"unknown behavior parameter: {key}" for key in parameters if key not in allowed]
+        errors = [f"unknown behavior parameter: {key}" for key in parameters if key not in allowed]
+        type_checks = {
+            "string": lambda value: isinstance(value, str),
+            "number": lambda value: isinstance(value, (int, float)) and not isinstance(value, bool),
+            "integer": lambda value: isinstance(value, int) and not isinstance(value, bool),
+            "boolean": lambda value: isinstance(value, bool),
+            "object": lambda value: isinstance(value, dict),
+            "array": lambda value: isinstance(value, list),
+        }
+        for name, raw_spec in (bt.get("agent_parameters", {}) or {}).items():
+            spec = raw_spec if isinstance(raw_spec, dict) else {"type": str(raw_spec)}
+            value = parameters.get(str(name))
+            if spec.get("required") and value in (None, "", [], {}):
+                errors.append(f"missing required behavior parameter: {name}")
+                continue
+            if value is None:
+                continue
+            expected = str(spec.get("type", ""))
+            if expected in type_checks and not type_checks[expected](value):
+                errors.append(f"behavior parameter {name} must be {expected}")
+            max_length = spec.get("max_length", spec.get("maxLength"))
+            if isinstance(value, str) and isinstance(max_length, int) and len(value) > max_length:
+                errors.append(f"behavior parameter {name} is too long")
+        return errors
 
     def submit_behavior(self, intent: BehaviorIntent) -> dict[str, Any]:
         previous = self.store.get_intent(intent.intent_id)
@@ -600,6 +622,7 @@ class Platform(ActivityRuntimeMixin):
             "target.available": bool((resolved_target or {}).get("available", False)),
             "known_route_destinations": reachable_locations(self.store, location_id),
             "recent_event_types": self._recent_event_types(),
+            "day_phase": world_time_view(self.store).get("day_phase"),
             "conflict": {"available": conflict_available},
         }
 
@@ -960,8 +983,8 @@ class Platform(ActivityRuntimeMixin):
         with self.store.transaction():
             self.store.create_intent(intent_id, speaker_id, "send_message", {"target_id": listener_id, "topic": topic, "message": message}, minute)
             exchange_id = self.store.put_dialogue_exchange(speaker_id, listener_id, topic, minute, {"message": message, "source": "direct_text"})
-            self.store.put_memory(speaker_id, "dialogue", {"topic": topic, "message": message, "target_id": listener_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.35})
-            self.store.put_memory(listener_id, "testimony", {"topic": topic, "message": message, "speaker_id": speaker_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.45, "pending_decision": True})
+            self.store.put_memory(speaker_id, "dialogue", {"topic": topic, "message": message, "target_id": listener_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.35, "claim_status": "observed", "source_type": "own_statement"})
+            self.store.put_memory(listener_id, "testimony", {"topic": topic, "message": message, "speaker_id": speaker_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.45, "pending_decision": True, "claim_status": "promised", "source_type": "testimony"})
             self._apply_configured_need_effect(speaker, "dialogue.completed")
             self._apply_configured_need_effect(listener, "dialogue.completed")
             self._apply_configured_relationship_effect(speaker, listener, "dialogue.completed", minute)

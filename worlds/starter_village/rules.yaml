@@ -3,6 +3,7 @@ capacity_attribute: energy
 perception:
   visible_fields: [role, type, summary, description, public]
   visible_state_fields: [status, quantity, durability, created, readable, recovered, installed]
+  audible_event_types: [dialogue.completed, trade.offer_created, trade.countered, trade.completed, alarm.sounded, defense.village_response, clinic.fever_reported]
   global:
     fields: [role, type, summary, description, public]
     state_fields: [status, location_id, quantity, durability, created, readable, recovered, installed]

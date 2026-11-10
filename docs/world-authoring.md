@@ -74,6 +74,18 @@ prompts are short natural language written for people and Agents. References
 must resolve inside the same template. The validator rejects missing routes,
 locations, Actions, BTs, capabilities and undeclared state attributes.
 
+`world.world_clock.start_minute` (or the package setting equivalent) sets the local
+clock at world minute zero. Optional `calendar.day_phases` entries declare
+named ranges such as `day`, `dusk` and a range that crosses midnight. Action
+and BT conditions can then use `context.day_phase`; the Runtime computes the
+phase from configuration and contains no setting-specific day/night rule.
+
+An Agent `knowledge_seed` may be a compact string or a structured fact with
+`id`, `fact`, `source_type`, `confidence` and `claim_status`. Use structured
+facts for rumors, promises and uncertain reports. An opaque label proves only
+that the label is known; it must not stand in for details the Agent has never
+observed.
+
 ## Attribute rule
 
 No character attribute is supplied by Platform. A world declares all of them.
@@ -123,6 +135,14 @@ requirements, estimated time, costs and likely effects are compiled into short
 model-facing text. The model never receives the raw tree. Selecting a BT only
 submits intent; Platform resolves targets, reserves resources and advances its
 Actions minute by minute.
+
+When a BT needs content chosen by the Agent, declare `agent_parameters` on the
+BT. Each entry states its type, whether it is required, its length bound and a
+plain-language description. The compiled behavior shows these requirements;
+Platform rejects a missing or invalid value before starting the activity. For
+example, a communication BT requires both a topic and the actual opening
+message. A recorded message is testimony only. Inventory and currency move
+only through an accepted transaction intent.
 
 ## Package files
 

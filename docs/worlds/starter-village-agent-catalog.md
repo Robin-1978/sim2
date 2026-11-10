@@ -27,7 +27,7 @@ subset; Platform recomputes every condition, cost and effect from SQLite.
 | Research Source | You can research and the source has a new fact. | 240 minutes; energy 0.2/min; attention 0.4/min | Research progress and, at 2/2, a verified fact are recorded. |
 | Inspect Object | You can inspect and the object is reachable. | 30 minutes | An inspection report is recorded. |
 | Recover Object | You can investigate a discovered object that is not recovered. | 240 minutes; one ration reserved; energy 0.1/min | The object and its configured fact are updated. |
-| Negotiate | You can negotiate and the counterparty is available. | 60 minutes; attention 0.6/min | A contract or exchange result is recorded. |
+| Discuss Terms | You can negotiate and the counterparty is available; provide the actual topic and proposed terms. | 60 minutes; attention 0.6/min | The terms are delivered as testimony; no contract, payment or trade is completed. |
 | Attack | You are alive; the target is visible, reachable and combat is allowed. | 6 minutes | Damage, hostility and the combat result are recorded. |
 | Defend | You are alive and can protect the target. | 30 minutes; energy 0.3/min; attention 0.4/min | The protection window and result are recorded. |
 | Flee To Safety | A known route leads to a safe or defensible destination. | Route-dependent; energy 0.5/min | The actor reaches safety or fails from exhaustion. |

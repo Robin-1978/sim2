@@ -45,6 +45,22 @@ LLM work only and does not delete world history. `SimulationReport` exposes
 `interaction_replies_suppressed` and `interaction_threads_closed`; compare
 those with `llm_call` usage when reviewing a long run.
 
+Communication BTs now require the actual topic and opening message before the
+activity starts. The resulting `dialogue.completed` event and testimony memory
+contain that text; an empty topic-only interaction is rejected at the behavior
+parameter boundary. Instant replies may state only incoming, known or retained
+facts. Rumor seeds carry explicit fact text and confidence so a bare rumor name
+cannot be expanded into invented visual details. `send_message` records words
+and promises only: payment, delivery, ownership, contracts and item exchange
+remain pending until a Platform transaction confirms them.
+
+Event-driven Story/God sessions retain the exact source event ID through the
+evolution task and Runner. A real-model regression caught a dropped task data
+envelope that made Story interpret the latest unrelated relationship event as
+the source of a bell-installation task. The Runner now accepts the store's
+flattened task projection, and tests assert the source event type, actor and
+summary in the final AgentView.
+
 Completion-token spikes have a separate cause from prompt size.  The remote
 provider was allowed to choose its default completion budget, so a single
 decision could spend thousands of tokens on internal planning and several

@@ -121,7 +121,12 @@ class PerceptionService:
             agent = self.store.get_agent(agent_id)
             state = agent.get("initial_state", {})
             nearby_ids = {item["id"] for item in self.store.entities_at_location(state.get("location_id"))}
-            seeded = {str(value).split(":", 1)[-1] for value in agent.get("knowledge_seed", []) if isinstance(value, str)}
+            seeded = {
+                str(value.get("entity") or value.get("id") or value.get("fact_key") or "").split(":", 1)[-1]
+                if isinstance(value, dict) else str(value).split(":", 1)[-1]
+                for value in agent.get("knowledge_seed", [])
+                if isinstance(value, (str, dict))
+            }
             if entity_id != agent_id and entity_id not in nearby_ids and entity_id not in seeded:
                 return {"status": "rejected", "failed_check": "visibility", "retryable": True, "message": "This entity is not visible or known to the agent."}
             include_state = entity_id == agent_id or entity_id in nearby_ids
@@ -134,13 +139,20 @@ class PerceptionService:
             location_id = self.store.get_agent(agent_id).get("initial_state", {}).get("location_id")
         except KeyError:
             location_id = None
+        rules = self.store.get_meta("rules", {}) or {}
+        policy = (rules.get("perception", {}) or {}) if isinstance(rules, dict) else {}
+        audible_types = {str(item) for item in (policy.get("audible_event_types", []) or [])}
+        audible_prefixes = tuple(str(item) for item in (policy.get("audible_event_prefixes", []) or []))
         events = []
         for event in self.store.recent_events(limit=max(1, min(int(limit) * 4, 40))):
+            event_type = str(event.get("event_type", ""))
+            if (audible_types or audible_prefixes) and event_type not in audible_types and not event_type.startswith(audible_prefixes):
+                continue
             event_location = event.get("location_id") or event.get("payload", {}).get("location_id") if isinstance(event.get("payload"), dict) else event.get("location_id")
             if event_location is None or location_id is None or event_location == location_id:
-                if event.get("event_type", "").startswith("runtime.") or event.get("event_type") == "llm.call":
+                if event_type.startswith("runtime.") or event_type == "llm.call":
                     continue
-                events.append({"event_type": event.get("event_type"), "world_minute": event.get("world_minute"), "summary": event.get("result") or event.get("topic") or event.get("event_type")})
+                events.append({"event_type": event_type, "world_minute": event.get("world_minute"), "summary": event.get("summary") or event.get("result") or event.get("topic") or event_type})
             if len(events) >= limit:
                 break
         return {
