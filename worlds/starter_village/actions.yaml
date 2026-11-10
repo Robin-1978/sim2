@@ -488,6 +488,7 @@ actions:
     delta: 0.02
   information:
     event_type: negotiation.terms_recorded
+    wake: [god]
     summary: Concrete proposed terms were recorded and delivered to the other participant for a separate response.
     result: terms_recorded
   interrupt_policy: cancel

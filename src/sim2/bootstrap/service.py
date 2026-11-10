@@ -604,6 +604,11 @@ def _validate_event_wake_references(
             task_type=f"rule:{rule_id}",
         )
 
+    produced_by_role: dict[str, set[str]] = {}
+    for _, event_type, roles, _ in producers:
+        for role in roles:
+            produced_by_role.setdefault(role, set()).add(event_type)
+
     for source, event_type, roles, task_type in producers:
         for role in roles:
             policy = consumers.get(role)
@@ -630,6 +635,21 @@ def _validate_event_wake_references(
                 f"{source} wakes {role} with unregistered event {event_type}; "
                 "add it to an event group or the consumer's explicit direct-event policy"
             )
+
+    for role, policy in consumers.items():
+        if not isinstance(policy, dict):
+            continue
+        external_events = {str(value) for value in (policy.get("external_event_types") or [])}
+        produced_events = produced_by_role.get(str(role), set()) | external_events
+        for group in (policy.get("event_groups") or policy.get("groups") or []):
+            if not isinstance(group, dict):
+                continue
+            for event_type in {str(value) for value in (group.get("event_types") or [])}:
+                if event_type not in produced_events:
+                    errors.append(
+                        f"event group {group.get('id', 'group')} for {role} has no producer for {event_type}; "
+                        "add a matching wake declaration or list it as an explicit external event"
+                    )
 
 
 def validate_config(config_dir: Path) -> dict[str, Any]:

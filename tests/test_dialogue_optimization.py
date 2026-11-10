@@ -351,8 +351,8 @@ def test_starter_bell_installation_closes_entity_and_inventory_loop(tmp_path: Pa
         assert all("{" not in fact and "}" not in fact for fact in installed_facts)
         assert any(item["event_type"] == "entity.installed" for item in platform.store.timeline_events(limit=100))
         tasks = [row["task_type"] for row in platform.store.connection.execute("SELECT task_type FROM evolution_task")]
-        assert tasks.count("event:entity.installed") == 1  # Story wake
-        assert "event_group:public_incident" in tasks  # one causal world-level wake
+        assert "event:entity.installed" not in tasks  # no redundant Story goal for a closed installation
+        assert tasks.count("event_group:public_incident") == 1  # one causal world-level wake
         assert "event:warning.artifact_installed" not in tasks
     finally:
         platform.close()

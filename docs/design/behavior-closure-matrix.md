@@ -19,7 +19,7 @@ behavior tree.
 | `gather_at_known_node` | Same resource result after travel | Next decision / Reflection | Closed |
 | `craft_meal` | Inputs are consumed and food is produced | Next decision / Reflection | Closed |
 | `craft_medicine` | Inputs are consumed and medicine is produced | Next decision / Reflection | Closed |
-| `craft_dawn_bell` | Materials are consumed and the configured object state changes | God trend | Closed |
+| `craft_dawn_bell` | Materials are consumed, the carried bell is produced, and its configured object state becomes created | Next decision / Reflection | Closed; installation is a separate behavior |
 | `install_dawn_bell` | The carried bell is consumed, the entity is installed at the watch post, alarm readiness becomes true, and the installation is persisted | God evidence group / next decision | Closed; installation alone does not create a Story goal |
 | `heal_target` | Target health changes and treatment cost is committed | Next decision / Reflection | Closed when a patient target is supplied |
 | `communicate` | Dialogue exchange, testimony, relationship and belonging effects | Next decision / Reflection | Closed |
@@ -83,8 +83,9 @@ milestones that actually create a new narrative continuation.
 The behavior result owns the first state change. A configured `wake` list only
 selects which consumer interprets the persisted result. Routine governance,
 ration review, patrol, treatment, and production reports stay in the individual
-and Story loops. The world package may define evidence groups such as “three
-completed research results”, “five governance reviews”, or “one public safety
+and Story loops. The world package may define evidence groups such as “five
+completed research results”, “eight governance or ration reviews”, “six
+recorded negotiations”, or “one public safety
 incident”; Platform wakes God only when that configured count is reached. This
 is causal evidence accumulation, not a daily timer. High-impact public results
 may use a group threshold of one.

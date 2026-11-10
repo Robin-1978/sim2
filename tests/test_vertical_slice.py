@@ -491,6 +491,42 @@ def test_god_event_wakes_use_configured_evidence_counts(tmp_path: Path):
         platform.close()
 
 
+def test_configured_governance_and_trade_groups_reach_their_thresholds(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "group-threshold-world", tmp_path / "runtime"))
+    try:
+        behavior = next(item for item in platform.store.get_definitions("bt_def") if item["id"] == "govern_village")
+        governance = next(item for item in behavior["outcome_events"] if item["event_type"] == "governance.reviewed")
+        negotiation_action = next(item for item in platform.store.get_definitions("action_def") if item["id"] == "negotiate")
+        negotiation = negotiation_action["information"]
+        assert governance["wake"] == ["god"]
+        assert negotiation["wake"] == ["god"]
+
+        for minute in range(1, 8):
+            with platform.store.transaction():
+                event_id = platform.store.append_event("governance.reviewed", "lin_bo", minute, {"summary": "Verified governance review."})
+                platform._queue_configured_followups(governance, event_id, "governance.reviewed", "lin_bo", minute)
+            assert not any(task["task_type"] == "event_group:governance_capacity" for task in platform.ready_evolution_tasks())
+        with platform.store.transaction():
+            event_id = platform.store.append_event("governance.reviewed", "lin_bo", 8, {"summary": "Eighth verified governance review."})
+            platform._queue_configured_followups(governance, event_id, "governance.reviewed", "lin_bo", 8)
+        governance_task = next(task for task in platform.ready_evolution_tasks() if task["task_type"] == "event_group:governance_capacity")
+        assert len(governance_task["source_events"]) == 8
+
+        for minute in range(20, 25):
+            with platform.store.transaction():
+                event_id = platform.store.append_event("negotiation.terms_recorded", "fei_lan", minute, {"summary": "Concrete terms were recorded."})
+                platform._queue_configured_followups(negotiation, event_id, "negotiation.terms_recorded", "fei_lan", minute)
+            assert not any(task["task_type"] == "event_group:trade_network" for task in platform.ready_evolution_tasks())
+        with platform.store.transaction():
+            event_id = platform.store.append_event("negotiation.terms_recorded", "fei_lan", 25, {"summary": "Sixth concrete negotiation result."})
+            platform._queue_configured_followups(negotiation, event_id, "negotiation.terms_recorded", "fei_lan", 25)
+        trade_task = next(task for task in platform.ready_evolution_tasks() if task["task_type"] == "event_group:trade_network")
+        assert len(trade_task["source_events"]) == 6
+    finally:
+        platform.close()
+
+
 def test_runner_preserves_story_source_event_in_agent_view(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "story-source-runner", tmp_path / "runtime"))
@@ -2343,6 +2379,34 @@ def test_world_validation_rejects_unregistered_grouped_consumer_event(tmp_path: 
         "stabilize_pact" in error
         and "pact.stability_improved" in error
         and "unregistered event" in error
+        for error in report["errors"]
+    )
+
+
+def test_world_validation_rejects_event_group_without_a_producer(tmp_path: Path):
+    source = Path(__file__).parents[1] / "worlds" / "starter_village"
+    copied = tmp_path / "dead-event-group-world"
+    copied.mkdir()
+    for path in source.iterdir():
+        if path.is_file():
+            copied.joinpath(path.name).write_bytes(path.read_bytes())
+    evolution_file = copied / "evolution.yaml"
+    evolution_file.write_text(
+        evolution_file.read_text(encoding="utf-8").replace(
+            "negotiation.terms_recorded",
+            "negotiation.result_recorded",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    report = validate_config(copied)
+
+    assert report["valid"] is False
+    assert any(
+        "trade_network" in error
+        and "negotiation.result_recorded" in error
+        and "no producer" in error
         for error in report["errors"]
     )
 

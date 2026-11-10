@@ -60,7 +60,7 @@ behavior_trees:
   - {type: need_delta, need: belonging, delta: 0.2}
   outcome_events:
   - event_type: governance.reviewed
-    wake: []
+    wake: [god]
     trend: true
     summary: Food reserves and settlement risk were reviewed by the steward.
     data: {results: [rations_reviewed, risk_reviewed]}
@@ -198,7 +198,7 @@ behavior_trees:
       message: I inspected the current reserve and want to review a sustainable ration plan before winter.
   outcome_events:
   - event_type: ration.policy_reviewed
-    wake: []
+    wake: [god]
     trend: true
     summary: A ration policy discussion was recorded for the next governance review.
   outcome_facts:
