@@ -647,8 +647,8 @@ class AgentEngine:
             return f"Task type: {task_type}. Review the already-recorded world signal. Submit one validated typed proposal only if it changes a configured rule, progress key, entity, relationship, or faction; otherwise return wait. Do not create a narrative acknowledgement event. State the short observable expected_effects."
         if role == "story":
             if str(task_type).startswith("milestone:"):
-                return f"Task type: {task_type}. Review the validated civilization milestone. Record configured public progress only when the evidence supports it, then activate one configured story beat if its evidence is present; otherwise wait. Platform owns every state change."
-            return f"Task type: {task_type}. Review newly recorded discoveries and choose one configured story beat that is now unlocked; otherwise wait. Platform applies only the configured beat consequences."
+                return f"Task type: {task_type}. Review the validated civilization milestone. Record configured public progress only when the evidence supports it. Choose one listed story beat when available; if none is listed, submit one short evidence-grounded emergent beat only when it gives the milestone a useful continuation, otherwise wait. Platform owns every state change."
+            return f"Task type: {task_type}. Review the validated source event. Choose one listed story beat when available; if none is listed, submit one short evidence-grounded emergent beat only when it gives the result a useful continuation, otherwise wait. Platform applies only validated beat consequences."
         return f"Task type: {task_type}. Produce or refine one declarative world template."
 
     def _submit_response(
