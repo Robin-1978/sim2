@@ -20,6 +20,11 @@ class LLMProvider(Protocol):
 
 def _json_from_text(text: str) -> dict[str, Any]:
     text = text.strip()
+    # Models without JSON response_format support may return the unambiguous
+    # terminal choice as a bare word. Do not guess any other prose; ``wait``
+    # is the only side-effect-free intent and is safe to normalize here.
+    if text.casefold().rstrip(".") == "wait":
+        return {"intent_type": "wait", "reason": "No world change is needed now."}
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)

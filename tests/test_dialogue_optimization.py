@@ -12,6 +12,7 @@ from sim2.actions.capacity import check_action_capacity
 from sim2.actions.conditions import ConditionEngine
 from sim2.actions.effects import EffectPipeline
 from sim2.llm.adapters import IcemanAdapter, resolve_adapter
+from sim2.llm.gateway import _json_from_text
 
 
 class WaitProvider:
@@ -72,6 +73,10 @@ def test_iceman_adapter_keeps_tools_but_removes_unsupported_json_mode():
     payload = adapter.prepare_payload({"tools": [{"type": "function"}], "response_format": {"type": "json_object"}})
     assert "tools" in payload
     assert "response_format" not in payload
+
+
+def test_bare_wait_is_the_only_plain_text_intent_normalized():
+    assert _json_from_text("wait") == {"intent_type": "wait", "reason": "No world change is needed now."}
 
 
 def test_unbound_context_reference_does_not_leak_into_world_text():
