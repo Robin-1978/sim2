@@ -80,6 +80,12 @@ results from being resent as an ever-growing conversation.  A rejected read
 budget is fed back as a normal Platform error, after which the model must use
 the facts it already has or submit `wait`/one intent.
 
+Event-driven Story and God tasks now receive their exact validated source in
+the initial view and expose submission tools only. They cannot spend extra
+rounds re-reading the event from unrelated projections. Scheduled weekly or
+monthly world reviews have no single bound source and retain their configured
+read tools for targeted inspection.
+
 ## Full-run verification
 
 The latest complete run used DeepSeek v4.1 Flash for 1,440 world minutes. It

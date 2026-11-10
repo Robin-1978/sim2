@@ -176,6 +176,20 @@ class AgentEngine:
         role_tools = configured_role_tools(self.platform, role)
         if interaction_tools is not None:
             self._compact_interaction_context(context, task_type, interaction_tools)
+        session_tools = interaction_tools if interaction_tools is not None else role_tools
+        if event_ids and role in {"god", "story"} and session_tools is not None:
+            # Event tasks already carry their exact validated source and a
+            # bounded role projection. Re-reading the same fact adds latency,
+            # tool output and failure opportunities without adding evidence.
+            # Scheduled weekly/monthly reviews retain their configured reads.
+            session_tools = [
+                name for name in session_tools
+                if TOOL_DEFINITIONS.get(name, {}).get("kind") != "read"
+            ]
+            context["tools"] = [
+                item for item in (context.get("tools") or [])
+                if item.get("name") in set(session_tools)
+            ]
         view_errors = validate_agent_view(context, role=role)
         if view_errors:
             raise ValueError("invalid AgentView: " + "; ".join(view_errors))
@@ -223,7 +237,7 @@ class AgentEngine:
                     system=system_policy,
                     context=prompt,
                     messages=conversation_messages,
-                    allowed_tools=interaction_tools if interaction_tools is not None else role_tools,
+                    allowed_tools=session_tools,
                 )
                 if not isinstance(response, dict):
                     raise ValueError("LLM response must be a JSON object")
@@ -294,6 +308,14 @@ class AgentEngine:
                             "failed_check": "interaction_tool",
                             "retryable": True,
                             "message": "This interaction exposes only its direct reply or trade decision tools; return wait or use one listed tool.",
+                        }
+                    elif session_tools is not None and tool_name not in session_tools:
+                        tool_result = {
+                            "status": "rejected",
+                            "tool": tool_name,
+                            "failed_check": "task_tool",
+                            "retryable": True,
+                            "message": "This event task already includes its validated evidence. Use one listed submission tool or return wait.",
                         }
                     elif role == "god" and (str(task_type).startswith("trigger:") or str(task_type).startswith("event:")) and tool_name == "propose_world_change" and arguments.get("change_type") == "event" and not arguments.get("property"):
                         tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "event_already_recorded", "retryable": True, "message": "The triggering event is already recorded. Do not add a narrative acknowledgement; return wait or submit one typed rule, progress, entity, relationship, or faction proposal grounded in the observed result."}

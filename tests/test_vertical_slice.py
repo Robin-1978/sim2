@@ -424,6 +424,42 @@ def test_god_prompt_hides_internal_world_proposal_identifiers(tmp_path: Path):
         platform.close()
 
 
+def test_event_driven_world_review_uses_submission_tools_only(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "event-review-tools-world", tmp_path / "runtime"))
+    event_provider = SequenceProvider([{"intent_type": "wait", "reason": "The validated event needs no additional typed change."}])
+    scheduled_provider = SequenceProvider([{"intent_type": "wait", "reason": "The scheduled review finds no change."}])
+    try:
+        with platform.store.transaction():
+            event_id = platform.store.append_event(
+                "security.marks_classified", "he_yan", 4,
+                {"summary": "The configured investigation classified the marks."},
+            )
+        event_turn = AgentEngine(platform, event_provider).run(
+            role="god",
+            actor_id="god",
+            task_type="event_group:public_incident",
+            source_event_id=event_id,
+            source_events=[{"event_id": event_id}],
+        )
+        assert event_turn.result["status"] == "wait"
+        event_tool_names = {item["function"]["name"] for item in event_provider.calls[0]["tools"]}
+        assert "propose_world_change" in event_tool_names
+        assert "record_world_progress" in event_tool_names
+        assert not event_tool_names & {"observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior"}
+        assert {item["name"] for item in event_turn.initial_context["tools"]} == event_tool_names
+
+        scheduled_turn = AgentEngine(platform, scheduled_provider).run(
+            role="god", actor_id="god", task_type="god_local_review",
+        )
+        assert scheduled_turn.result["status"] == "wait"
+        scheduled_tool_names = {item["function"]["name"] for item in scheduled_provider.calls[0]["tools"]}
+        assert "query_known_fact" in scheduled_tool_names
+        assert "inspect_entity" in scheduled_tool_names
+    finally:
+        platform.close()
+
+
 def test_god_event_wakes_use_configured_evidence_counts(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "god-evidence-gates", tmp_path / "runtime"))
