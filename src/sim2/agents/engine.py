@@ -40,7 +40,7 @@ def configured_role_tools(platform: Platform, role: str) -> list[str] | None:
 ROLE_INTENTS = {
     "agent_decision": {"select_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "propose_institution", "wait"},
     "agent_reflection": {"record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "propose_institution", "wait"},
-    "god": {"record_world_progress", "propose_entity", "propose_world_change", "approve_institution", "wait"},
+    "god": {"record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "approve_institution", "wait"},
     "story": {"record_world_progress", "propose_story_beat", "propose_institution", "wait"},
     "world_builder": {"submit_world_template", "wait"},
 }
@@ -510,6 +510,8 @@ class AgentEngine:
                 intent_type_value = "propose_world_change"
             elif data.get("entity_type") and data.get("name"):
                 intent_type_value = "propose_entity"
+            elif data.get("definition_type") and data.get("definition") and data.get("name"):
+                intent_type_value = "propose_definition"
         if not intent_type_value and role == "story" and (data.get("beat") or data.get("summary")):
             intent_type_value = "propose_story_beat"
         command_value = next(
@@ -535,6 +537,7 @@ class AgentEngine:
                 "update_goal": "update_goal",
                 "propose_behavior": "propose_behavior",
                 "propose_entity": "propose_entity",
+                "propose_definition": "propose_definition",
                 "propose_world_change": "propose_world_change",
                 "propose_story_beat": "propose_story_beat",
                 "propose_institution": "propose_institution",
@@ -649,6 +652,10 @@ class AgentEngine:
                     if not proposal["location_id"]:
                         return {"status": "rejected", "failed_check": "location_name", "retryable": True, "message": "Choose an exact visible location name."}
                 return self.platform.submit_entity_proposal(actor_id, proposal)
+            if intent_type == "propose_definition":
+                proposal = dict(data)
+                proposal.pop("intent_type", None)
+                return self.platform.submit_definition_proposal(actor_id, proposal)
             if intent_type == "propose_world_change":
                 proposal = dict(data)
                 proposal.pop("intent_type", None)

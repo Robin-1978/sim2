@@ -245,6 +245,91 @@ def test_god_has_no_direct_behavior_or_action_executor():
     names = {schema["function"]["name"] for schema in tool_schemas_for_role("god")}
     assert "request_behavior" not in names
     assert "execute_action" not in names
+    story_names = {schema["function"]["name"] for schema in tool_schemas_for_role("story")}
+    assert "propose_definition" not in story_names
+
+
+def test_god_definition_proposal_registers_attribute_action_and_behavior(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "god-definition-world", tmp_path / "runtime"))
+    try:
+        executor = AgentToolExecutor(platform, role="god", actor_id="god")
+        attribute = executor.execute("propose_definition", {
+            "definition_type": "attribute",
+            "name": "Resolve",
+            "definition": {"kind": "state", "min": 0, "max": 100, "default": 50, "cost_mode": "decrease", "prompt": "Higher means more resolve."},
+            "evidence": "Repeated defense reports show a missing readiness measure.",
+        })
+        assert attribute["status"] == "accepted"
+        assert any(item["id"] == "resolve" for item in platform.store.get_meta("attributes"))
+        assert platform.store.get_agent("lu_xingzhou")["initial_state"]["resolve"] == 50
+        need = executor.execute("propose_definition", {
+            "definition_type": "attribute",
+            "name": "Composure",
+            "definition": {"kind": "need", "min": 0, "max": 100, "default": 40, "target": 60, "gamma": 1.2, "prompt": "Higher means more composed."},
+            "evidence": "Defense outcomes show a missing composure need.",
+        })
+        assert need["status"] == "accepted"
+        assert platform.store.get_agent("lu_xingzhou")["needs"]["composure"] == 40
+        assert any(item["id"] == "composure" for item in platform.store.get_meta("rules")["needs"])
+        capability = executor.execute("propose_definition", {
+            "definition_type": "capability",
+            "name": "Signal Craft",
+            "definition": {"default": 0.2, "uses": ["mark_boundary"]},
+            "evidence": "The new marking practice requires a reusable capability.",
+        })
+        assert capability["status"] == "accepted"
+        assert platform.store.get_agent("lu_xingzhou")["capabilities"]["signal_craft"] == 0.2
+        world_property = executor.execute("propose_definition", {
+            "definition_type": "world_property",
+            "name": "Boundary Readiness",
+            "definition": {"default": 0.0, "prompt": "Public readiness of the boundary."},
+            "evidence": "Repeated patrol outcomes identify a missing public readiness measure.",
+        })
+        assert world_property["status"] == "accepted"
+        assert platform.store.get_meta("world_properties")["boundary_readiness"] == 0.0
+
+        action = executor.execute("propose_definition", {
+            "definition_type": "action",
+            "name": "Mark Boundary",
+            "definition": {
+                "parameters": {},
+                "preconditions": ["actor.alive"],
+                "duration": {"minutes": 1},
+                "costs": {"reserve": {}, "per_minute": {}},
+                "effects": [{"type": "attribute_delta", "attribute": "reputation", "delta": 1}],
+                "success": {"condition": "mark.recorded", "result": "mark_recorded"},
+                "failure": {"condition": "actor.incapacitated", "result": "mark_failed"},
+            },
+            "evidence": "The patrol reports require a repeatable marking action.",
+        })
+        assert action["status"] == "accepted"
+
+        behavior = executor.execute("propose_definition", {
+            "definition_type": "behavior",
+            "name": "Mark Boundary Route",
+            "definition": {
+                "summary": "Record a verified boundary mark.",
+                "entry_conditions": ["actor.alive"],
+                "success_results": ["mark_recorded"],
+                "failure_results": ["mark_failed"],
+                "actions": ["Mark Boundary"],
+            },
+            "assign_to": ["陆行舟"],
+            "evidence": "A patrol report identifies a repeatable boundary task.",
+        })
+        assert behavior["status"] == "accepted"
+        assert behavior["assigned_to"] == ["陆行舟"]
+        assert any(item.get("id") == "mark_boundary_route" for item in platform.store.get_definitions("bt_def"))
+        assert "mark_boundary_route" in platform.store.get_agent("lu_xingzhou")["unlocked_bt_ids"]
+
+        selected = platform.submit_behavior(BehaviorIntent("lu_xingzhou", "behavior:mark_boundary_route", {}, {}, "Record the reported mark.", 0.8, "god-definition-run"))
+        assert selected["status"] == "accepted"
+        for _ in range(selected["remaining_minutes"]):
+            platform.step()
+        assert platform.store.get_agent("lu_xingzhou")["initial_state"]["status"] == "idle"
+    finally:
+        platform.close()
 
 
 def test_provider_retries_transient_disconnect_without_logging_credentials(monkeypatch):

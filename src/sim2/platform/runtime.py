@@ -1146,6 +1146,303 @@ class Platform:
             self.store.finish_intent(intent_id, "accepted", result)
         return result
 
+    @staticmethod
+    def _definition_slug(value: Any) -> str:
+        text = re.sub(r"[^a-z0-9]+", "_", str(value or "").casefold()).strip("_")
+        return text[:80]
+
+    @staticmethod
+    def _definition_name_key(value: Any) -> str:
+        return "".join(char for char in str(value or "").casefold() if char.isalnum())
+
+    def _resolve_registered_definition(self, table: str, value: Any) -> tuple[str | None, list[str]]:
+        """Resolve a visible definition name without exposing registry IDs."""
+
+        key = self._definition_name_key(value)
+        if not key:
+            return None, []
+        matches: list[str] = []
+        for item in self.store.get_definitions(table):
+            candidates = [item.get("id"), item.get("name"), item.get("label"), item.get("agent_label"), item.get("summary"), item.get("description")]
+            if any(key == self._definition_name_key(candidate) for candidate in candidates if candidate):
+                matches.append(str(item["id"]))
+        return (matches[0] if len(matches) == 1 else None), matches
+
+    def _validate_definition_effects(self, definition: dict[str, Any]) -> list[str]:
+        allowed = {
+            "need_delta", "state_delta", "attribute_delta", "attribute_set",
+            "inventory_add", "inventory_remove", "inventory.consume_item",
+            "relationship_delta", "public_event", "world_property_delta",
+            "entity_state_set", "status_add", "status_remove", "location_set",
+            "capability_xp", "capability.add_xp",
+        }
+        errors: list[str] = []
+        for field in ("effects", "progress_effects"):
+            values = definition.get(field, []) or []
+            if not isinstance(values, list):
+                errors.append(f"{field} must be a list")
+                continue
+            for index, effect in enumerate(values):
+                if not isinstance(effect, dict):
+                    errors.append(f"{field}[{index}] must be an object")
+                    continue
+                effect_type = str(effect.get("type") or effect.get("op") or "")
+                if effect_type not in allowed:
+                    errors.append(f"unsupported effect type: {effect_type or '<missing>'}")
+        return errors
+
+    def _validate_definition_proposal(self, definition_type: str, name: str, raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+        """Validate and normalize a God definition before SQLite registration."""
+
+        kind = str(definition_type or "").strip().casefold()
+        definition = copy.deepcopy(raw if isinstance(raw, dict) else {})
+        errors: list[str] = []
+        if kind not in {"attribute", "world_property", "action", "behavior", "recipe", "capability"}:
+            return definition, [f"unsupported definition_type: {kind}"]
+        if not str(name or "").strip():
+            errors.append("name is required")
+        forbidden = {"handler", "python", "script", "sql", "executor_code", "code"}
+        errors.extend(f"field is not declarative: {field}" for field in forbidden if field in definition)
+
+        if kind == "attribute":
+            attr_kind = str(definition.get("kind") or "").casefold()
+            if attr_kind not in {"state", "need"}:
+                errors.append("attribute.kind must be state or need")
+            for field in ("min", "max", "default"):
+                if not isinstance(definition.get(field), (int, float)) or isinstance(definition.get(field), bool):
+                    errors.append(f"attribute.{field} must be numeric")
+            if all(isinstance(definition.get(field), (int, float)) for field in ("min", "max", "default")):
+                if float(definition["min"]) > float(definition["max"]):
+                    errors.append("attribute.min must not exceed attribute.max")
+                if not float(definition["min"]) <= float(definition["default"]) <= float(definition["max"]):
+                    errors.append("attribute.default must be within min and max")
+            if attr_kind == "state" and definition.get("cost_mode") not in {"increase", "decrease"}:
+                errors.append("state attributes must declare cost_mode")
+            if not str(definition.get("label") or name).strip():
+                errors.append("attribute.label is required")
+            definition.update({"id": str(definition.get("id") or self._definition_slug(name) or f"attribute_{uuid4().hex[:10]}"), "label": definition.get("label") or name, "prompt": definition.get("prompt") or str(name)})
+            existing = self.store.get_meta("attributes", []) or []
+            if any(str(item.get("id")) == definition["id"] for item in existing if isinstance(item, dict)):
+                errors.append(f"attribute already exists: {definition['id']}")
+            if any(self._definition_name_key(name) == self._definition_name_key(item.get("label") or item.get("id")) for item in existing if isinstance(item, dict)):
+                errors.append(f"attribute name already exists: {name}")
+            if definition.get("vital") and any(item.get("vital") is True for item in existing if isinstance(item, dict)):
+                errors.append("only one vital attribute may be configured")
+            if definition.get("capacity") and any(item.get("capacity") is True for item in existing if isinstance(item, dict)):
+                errors.append("only one capacity attribute may be configured")
+            return definition, errors
+
+        if kind == "world_property":
+            property_id = str(definition.get("id") or self._definition_slug(name) or f"property_{uuid4().hex[:10]}")
+            default = definition.get("default")
+            if not isinstance(default, (int, float, str, bool)) or isinstance(default, bool):
+                errors.append("world_property.default must be a number or string")
+            if property_id in {str(key) for key in (self.store.get_meta("world_properties", {}) or {})}:
+                errors.append(f"world property already exists: {property_id}")
+            if property_id not in {str(key) for key in (self.store.get_meta("world_properties", {}) or {})} and any(self._definition_name_key(name) == self._definition_name_key(item) for item in (self.store.get_meta("world_property_labels", {}) or {}).values()):
+                errors.append(f"world property name already exists: {name}")
+            definition.update({"id": property_id, "label": definition.get("label") or name, "prompt": definition.get("prompt") or str(name)})
+            return definition, errors
+        table = {"action": "action_def", "behavior": "bt_def", "recipe": "recipe_def", "capability": "capability_def"}[kind]
+        explicit_id = str(definition.get("id") or "").strip()
+        definition_id = explicit_id or self._definition_slug(name) or f"definition_{uuid4().hex[:10]}"
+        if any(str(item.get("id")) == definition_id for item in self.store.get_definitions(table)):
+            errors.append(f"definition already exists: {definition_id}")
+        if any(self._definition_name_key(name) in {self._definition_name_key(item.get(field)) for field in ("name", "label", "agent_label", "summary", "description") if item.get(field)} for item in self.store.get_definitions(table)):
+            errors.append(f"definition name already exists: {name}")
+
+        if kind == "action":
+            duration = definition.get("duration") if isinstance(definition.get("duration"), dict) else {}
+            if not duration or not (isinstance(duration.get("minutes"), (int, float)) or duration.get("mode") in {"route_distance", "recipe_duration"}):
+                errors.append("action.duration must declare minutes or a supported mode")
+            if isinstance(duration.get("minutes"), (int, float)) and float(duration["minutes"]) <= 0:
+                errors.append("action.duration.minutes must be positive")
+            for field in ("preconditions", "effects", "progress_effects"):
+                if field in definition and not isinstance(definition[field], list):
+                    errors.append(f"action.{field} must be a list")
+            errors.extend(self._validate_definition_effects(definition))
+            for field in ("success", "failure"):
+                if not isinstance(definition.get(field), dict) or not str((definition.get(field) or {}).get("result") or "").strip():
+                    errors.append(f"action.{field} must declare an object with result")
+            definition.update({"id": definition_id, "description": definition.get("description") or str(name), "definition_source": "god_proposal", "kind": "atomic", "executor": "effect_pipeline", "validation_status": "validated"})
+        elif kind == "behavior":
+            nodes = definition.get("nodes")
+            if nodes is None and isinstance(definition.get("actions"), list):
+                nodes = [{"type": "action", "action": item} for item in definition["actions"]]
+            if not isinstance(nodes, list) or not nodes:
+                errors.append("behavior.nodes or behavior.actions must contain at least one step")
+                nodes = []
+            normalized_nodes: list[dict[str, Any]] = []
+            if len(nodes) > 32:
+                errors.append("a behavior may contain at most 32 nodes")
+            node_count = 0
+
+            def normalize_node(node: Any, path: str, depth: int = 0) -> dict[str, Any] | None:
+                nonlocal node_count
+                node_count += 1
+                if node_count > 32:
+                    return None
+                if isinstance(node, str):
+                    node = {"type": "behavior", "behavior": node}
+                if not isinstance(node, dict):
+                    errors.append(f"behavior node {path} must be an object")
+                    return None
+                node_copy = copy.deepcopy(node)
+                node_type = str(node_copy.get("type") or "action")
+                if node_type == "action":
+                    ref = node_copy.get("action_id") or node_copy.get("action") or node_copy.get("name")
+                    resolved, matches = self._resolve_registered_definition("action_def", ref)
+                    if not resolved:
+                        errors.append(f"unknown or ambiguous action in node {path}: {ref}; matches={matches}")
+                    else:
+                        node_copy["action_id"] = resolved
+                    node_copy.pop("action", None)
+                    node_copy.pop("name", None)
+                elif node_type in {"behavior", "subtree"}:
+                    ref = node_copy.get("behavior_id") or node_copy.get("behavior") or node_copy.get("name")
+                    resolved, matches = self._resolve_registered_definition("bt_def", ref)
+                    if not resolved:
+                        errors.append(f"unknown or ambiguous behavior in node {path}: {ref}; matches={matches}")
+                    else:
+                        node_copy["behavior_id"] = resolved
+                    node_copy.pop("behavior", None)
+                    node_copy.pop("name", None)
+                elif node_type not in {"sequence", "selector", "parallel", "condition", "wait"}:
+                    errors.append(f"unsupported behavior node type: {node_type}")
+                children = node_copy.get("children")
+                if children is not None:
+                    if not isinstance(children, list):
+                        errors.append(f"behavior node {path}.children must be a list")
+                    elif depth >= 8:
+                        errors.append(f"behavior node {path} exceeds maximum nesting depth")
+                    else:
+                        normalized_children = []
+                        for child_index, child in enumerate(children):
+                            normalized = normalize_node(child, f"{path}.{child_index}", depth + 1)
+                            if normalized is not None:
+                                normalized_children.append(normalized)
+                        node_copy["children"] = normalized_children
+                return node_copy
+
+            for index, node in enumerate(nodes[:32]):
+                normalized = normalize_node(node, str(index))
+                if normalized is not None:
+                    normalized_nodes.append(normalized)
+            if node_count > 32:
+                errors.append("a behavior may contain at most 32 nodes")
+            definition["nodes"] = normalized_nodes
+            definition.pop("actions", None)
+            definition.update({"id": definition_id, "summary": definition.get("summary") or definition.get("description") or str(name), "agent_label": definition.get("agent_label") or name, "definition_source": "god_proposal", "kind": "proposed", "validation_status": "validated"})
+        elif kind == "recipe":
+            duration = definition.get("duration_minutes")
+            if not isinstance(duration, (int, float)) or isinstance(duration, bool) or float(duration) <= 0:
+                errors.append("recipe.duration_minutes must be positive")
+            for field in ("inputs", "outputs"):
+                values = definition.get(field)
+                if not isinstance(values, list) or not values:
+                    errors.append(f"recipe.{field} must be a non-empty list")
+                elif any(not isinstance(item, dict) or not item.get("item") or not isinstance(item.get("quantity"), (int, float)) or float(item.get("quantity", 0)) <= 0 for item in values):
+                    errors.append(f"recipe.{field} entries need item and positive quantity")
+            definition.update({"id": definition_id, "name": definition.get("name") or name, "definition_source": "god_proposal", "validation_status": "validated"})
+        elif kind == "capability":
+            default = definition.get("default", definition.get("initial", 0))
+            if not isinstance(default, (int, float)) or isinstance(default, bool) or not 0 <= float(default) <= 1:
+                errors.append("capability.default must be between 0 and 1")
+            definition.update({"id": definition_id, "name": definition.get("name") or name, "default": float(default) if isinstance(default, (int, float)) else 0.0, "value_path": definition.get("value_path") or f"agent.capabilities.{definition_id}", "definition_source": "god_proposal", "validation_status": "validated"})
+        return definition, errors
+
+    def submit_definition_proposal(self, actor_id: str, proposal: dict[str, Any]) -> dict[str, Any]:
+        """Validate and register a new declarative definition in this instance."""
+
+        intent_id = str(uuid4())
+        definition_type = str(proposal.get("definition_type") or "").casefold()
+        name = str(proposal.get("name") or "").strip()
+        raw_definition = proposal.get("definition") if isinstance(proposal.get("definition"), dict) else {}
+        definition, errors = self._validate_definition_proposal(definition_type, name, raw_definition)
+        if actor_id != "god":
+            errors.append("only God may register world definitions")
+        assign_to = list(proposal.get("assign_to") or [])
+        resolved_agents: list[tuple[str, str]] = []
+        if definition_type != "behavior" and assign_to:
+            errors.append("assign_to is only valid for behavior definitions")
+        for name_or_id in assign_to:
+            resolved = self.targets.canonical_id(name_or_id)
+            try:
+                agent = self.store.get_agent(str(resolved or name_or_id))
+            except KeyError:
+                errors.append(f"unknown character in assign_to: {name_or_id}")
+                continue
+            resolved_agents.append((str(agent["id"]), str(agent.get("name") or agent["id"])))
+        data = {**proposal, "actor_id": actor_id, "definition": definition}
+        if errors:
+            return self._reject_intent(intent_id, actor_id, "propose_definition", data, {"status": "rejected", "message": "Definition proposal failed validation.", "failed_check": "definition_schema", "errors": errors, "retryable": True})
+        world_minute = int(self.store.get_meta("world_minute", 0))
+        table = {"action": "action_def", "behavior": "bt_def", "recipe": "recipe_def", "capability": "capability_def"}.get(definition_type)
+        with self.store.transaction():
+            self.store.create_intent(intent_id, actor_id, "propose_definition", data, world_minute)
+            if definition_type == "attribute":
+                attributes = list(self.store.get_meta("attributes", []) or [])
+                attributes.append(definition)
+                self.store.set_meta("attributes", attributes)
+                schema = AttributeSchema(attributes, self.store.get_meta("rules", {}) or {})
+                if definition.get("kind") == "need":
+                    rules = dict(self.store.get_meta("rules", {}) or {})
+                    needs = list(rules.get("needs", []) or [])
+                    needs.append({
+                        "id": definition["id"],
+                        "target": definition.get("target", definition.get("default", 0)),
+                        "minimum": definition.get("min", 0),
+                        "gamma": definition.get("gamma", 1.0),
+                        "critical_threshold": definition.get("critical_threshold", 0.75),
+                        "critical_gain": definition.get("critical_gain", 1.0),
+                    })
+                    rules["needs"] = needs
+                    self.store.set_meta("rules", rules)
+                    schema = AttributeSchema(attributes, rules)
+                for agent in self.store.list_agents():
+                    state = dict(agent.get("initial_state") or {})
+                    needs = dict(agent.get("needs") or {})
+                    if definition.get("kind") == "state" and definition["id"] not in state:
+                        state[definition["id"]] = schema.default(definition["id"], 0)
+                    if definition.get("kind") == "need" and definition["id"] not in needs:
+                        needs[definition["id"]] = schema.default(definition["id"], definition.get("target", 0))
+                    agent["initial_state"] = state
+                    agent["needs"] = needs
+                    self.store.update_agent(agent["id"], agent)
+            elif definition_type == "world_property":
+                properties = dict(self.store.get_meta("world_properties", {}) or {})
+                properties[str(definition["id"])] = definition.get("default")
+                self.store.set_meta("world_properties", properties)
+                labels = dict(self.store.get_meta("world_property_labels", {}) or {})
+                labels[str(definition["id"])] = str(definition.get("label") or name)
+                self.store.set_meta("world_property_labels", labels)
+            elif table:
+                self.store.put_definition(table, str(definition["id"]), definition)
+                if definition_type == "capability":
+                    for agent in self.store.list_agents():
+                        capabilities = dict(agent.get("capabilities") or {})
+                        capabilities.setdefault(definition["id"], definition.get("default", 0.0))
+                        agent["capabilities"] = capabilities
+                        self.store.update_agent(agent["id"], agent)
+                if definition_type == "behavior":
+                    for agent_id, _ in resolved_agents:
+                        agent = self.store.get_agent(agent_id)
+                        unlocked = list(agent.get("unlocked_bt_ids", []) or [])
+                        if definition["id"] not in unlocked:
+                            unlocked.append(definition["id"])
+                            agent["unlocked_bt_ids"] = unlocked
+                            self.store.update_agent(agent_id, agent)
+            event_id = self.store.append_event("definition.registered", actor_id, world_minute, {"definition_type": definition_type, "name": name, "definition_id": definition.get("id"), "assigned_to": [visible for _, visible in resolved_agents], "evidence": str(proposal.get("evidence") or "")})
+            result = {"status": "accepted", "intent_id": intent_id, "definition_type": definition_type, "name": name, "registered": True, "assigned_to": [visible for _, visible in resolved_agents], "event_id": event_id}
+            self.store.finish_intent(intent_id, "accepted", result)
+        if definition_type == "attribute":
+            attributes = self.store.get_meta("attributes", []) or []
+            self.attribute_schema = AttributeSchema(attributes, self.store.get_meta("rules", {}) or {})
+            self.effects = EffectPipeline(attributes)
+            self.conditions = ConditionEngine(self.store.get_meta("rules", {}) or {})
+            self.rule_compiler = self._new_rule_compiler()
+        return result
+
     def submit_entity_proposal(self, actor_id: str, proposal: dict[str, Any]) -> dict[str, Any]:
         intent_id = str(uuid4())
         entity_id = str(proposal.get("entity_id") or f"entity_{uuid4().hex[:10]}")

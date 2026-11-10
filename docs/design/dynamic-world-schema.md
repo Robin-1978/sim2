@@ -41,3 +41,33 @@ or an entirely different institution without adding a new Python branch.
    installation, and boundary investigation.
 4. Run a custom-world fixture with different attributes and a 240-minute
    semantic audit before repeating the full 1,440-minute run.
+
+## Runtime definition evolution
+
+YAML is an authoring and bootstrap format. After a SQLite instance is created,
+its metadata and definition tables are authoritative: `attributes` and
+`world_properties` live in instance metadata, while Actions, behavior trees,
+recipes and capabilities live in `*_def` tables. The original YAML is not read
+during minute advancement.
+
+God may submit one `propose_definition` intent for a declarative attribute,
+world property, capability, Action, behavior tree or recipe. Platform validates
+field types, identifiers, references, node depth, duration, effect primitives,
+capacity and duplicate names in one transaction. A valid proposal writes the
+normalized definition, a `definition.registered` event and the intent result to
+SQLite. A behavior can optionally be assigned to named characters; otherwise it
+is registered but appears in no executable catalog. A new attribute also writes
+its configured default into every existing character projection.
+
+The proposal never executes the new definition. Characters can use a newly
+registered behavior only in a later decision view, and its Actions still pass
+normal preconditions, reservations, time, capacity, postconditions and effects.
+God cannot use this channel to grant inventory, resource quantities, needs,
+relationships or production outcomes. Those values still require an observed
+behavior result.
+
+Story and God share the same Agent Engine but have different tool scopes. Story
+may activate evidence-backed beats, progress and registered BT unlocks. God
+may create mechanisms and structural definitions. Story can surface a need for
+new mechanics, but Platform does not let narrative text register an Action or
+attribute directly.

@@ -305,6 +305,22 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "additionalProperties": False,
         },
     },
+    "propose_definition": {
+        "purpose": "Submit a declarative attribute, Action, behavior tree, recipe, or capability definition. Platform validates it and registers it in this SQLite world; it never executes the definition during the proposal.",
+        "kind": "intent",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "definition_type": {"type": "string", "enum": ["attribute", "world_property", "action", "behavior", "recipe", "capability"]},
+                "name": {"type": "string", "description": "A short visible name. Platform derives the internal registry key."},
+                "definition": {"type": "object", "description": "Declarative fields for the selected type. Use visible action/behavior names; no code, handlers, SQL, or internal IDs."},
+                "assign_to": {"type": "array", "items": {"type": "string"}, "description": "Optional visible character names to receive a new behavior. An unassigned behavior is registered but not executable by anyone."},
+                "evidence": {"type": "string", "description": "The observed result that justifies this new definition."},
+            },
+            "required": ["definition_type", "name", "definition"],
+            "additionalProperties": False,
+        },
+    },
     "propose_world_change": {
         "purpose": "Propose an evidence-backed rule or narrative change. World behavior, not God, must produce resource and social values.",
         "kind": "intent",
@@ -403,7 +419,7 @@ ROLE_TOOLS: dict[str, list[str]] = {
     # a read-only loop over names that are not public records; it must turn the
     # supplied evidence into one beat/progress proposal or wait.
     "story": ["record_world_progress", "propose_story_beat"],
-    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_world_change", "approve_institution"],
+    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "approve_institution"],
     "world_builder": ["validate_world_template", "submit_world_template"],
 }
 
@@ -780,6 +796,25 @@ class AgentToolExecutor:
             "failure_results": list(failure_results or []),
         }
         return self.platform.submit_behavior_proposal(self.actor_id, proposal)
+
+    def _propose_definition(
+        self,
+        definition_type: str,
+        name: str,
+        definition: dict[str, Any],
+        assign_to: list[str] | None = None,
+        evidence: str = "",
+    ) -> dict[str, Any]:
+        return self.platform.submit_definition_proposal(
+            self.actor_id,
+            {
+                "definition_type": definition_type,
+                "name": name,
+                "definition": dict(definition or {}),
+                "assign_to": list(assign_to or []),
+                "evidence": evidence,
+            },
+        )
 
     def _propose_entity(
         self,

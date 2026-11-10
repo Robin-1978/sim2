@@ -79,6 +79,8 @@ def _final_submission(turn: AgentTurn) -> tuple[str, dict[str, Any]]:
                 inferred = "propose_world_change"
             elif response.get("entity_type") and response.get("name"):
                 inferred = "propose_entity"
+            elif response.get("definition_type") and response.get("definition") and response.get("name"):
+                inferred = "propose_definition"
             elif response.get("beat") or response.get("summary") and response.get("audience"):
                 inferred = "propose_story_beat"
             elif isinstance(response.get("intent"), str):
@@ -197,6 +199,14 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         elif name == "propose_entity":
             checks.append(_check("god_entity_has_type_and_name", bool(payload.get("entity_type")) and len(str(payload.get("name", "")).strip()) >= 2, f"type={payload.get('entity_type')}; name={payload.get('name')}"))
             checks.append(_check("god_entity_platform_created", bool(turn.result.get("entity_id")), f"entity_id={turn.result.get('entity_id')}"))
+        elif name == "propose_definition":
+            definition_type = str(payload.get("definition_type") or "")
+            definition = payload.get("definition") if isinstance(payload.get("definition"), dict) else {}
+            allowed_types = {"attribute", "world_property", "capability", "action", "behavior", "recipe"}
+            checks.append(_check("god_definition_type_known", definition_type in allowed_types, f"definition_type={definition_type}"))
+            checks.append(_check("god_definition_has_name", len(str(payload.get("name") or "").strip()) >= 2, f"name={payload.get('name')}"))
+            checks.append(_check("god_definition_is_declarative", not any(key in definition for key in {"handler", "python", "script", "sql", "code"}), "definition contains only declarative fields"))
+            checks.append(_check("god_definition_registered", turn.result.get("status") == "accepted" and bool(turn.result.get("registered")), f"status={turn.result.get('status')}; registered={turn.result.get('registered')}"))
         elif name == "propose_world_change":
             checks.append(_check("god_world_change_has_summary", len(str(payload.get("summary", "")).strip()) >= 8, f"summary_length={len(str(payload.get('summary', '')))}"))
             checks.append(_check("god_world_change_applied", turn.result.get("status") == "accepted" and bool(turn.result.get("applied")), f"applied={turn.result.get('applied')}; effects={turn.result.get('applied_effects')}"))
@@ -238,7 +248,7 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
                 missing_paths = [path for path in sorted(declared_paths) if path not in normalized_rule]
                 checks.append(_check("god_rule_conditions_match", not missing_paths, "declared machine fields are represented in the rule condition" if not missing_paths else f"declared condition fields are absent from rule condition: {missing_paths}"))
         else:
-            checks.append(_check("god_submission_is_known", name in {"propose_entity", "propose_world_change"}, f"submission={name}"))
+            checks.append(_check("god_submission_is_known", name in {"propose_entity", "propose_definition", "propose_world_change"}, f"submission={name}"))
     elif turn.role == "story":
         if name == "record_world_progress" or payload.get("intent_type") == "record_world_progress":
             evidence = str(payload.get("evidence") or "")

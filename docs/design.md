@@ -29,7 +29,7 @@
 
 能力成长、发现、文明进度和规则的因果链见 [进步与文明设计](design/progression-and-civilization.md)。
 
-属性由世界包导入，Platform 只保留执行信封；动态社会制度、账本和完全不同属性世界的边界见 [动态世界 Schema](design/dynamic-world-schema.md)。
+属性由世界包导入，Platform 只保留执行信封；实例创建后，SQLite 作为唯一事实来源，God 可通过声明式定义提案动态注册属性、世界属性、能力、Action、BT 和 Recipe，Platform 校验后写回 SQLite。动态社会制度、账本和完全不同属性世界的边界见 [动态世界 Schema](design/dynamic-world-schema.md)。
 
 - ReAct 采用“工具反馈修正计划”，但副作用由 Platform 控制。
 - Generative Agents 采用观察、记忆、反思和计划分层。
@@ -87,6 +87,8 @@ Platform 采用通用 `target_resolver`、`condition_engine`、`effect_pipeline`
 每次初始化都生成新的 `world_instance_id` 和新的 `world.sqlite3`。Bootstrap 在事务中导入初始实体、Agent、需求、初始知识、元动作、BT、提示词、调度任务和事件，并记录 `config_version`、`config_hash` 和 `bootstrap_report`。已有实例 ID 直接拒绝，不做同实例配置升级或数据库迁移。
 
 初始化后 SQLite 是实例唯一事实来源。数据库保存世界状态、Agent 状态、知识、记忆、能力、配方、BT 定义和实例、意图、事件、调度、提示词和 LLM 审计。原始配置文件不参与模拟分钟推进。
+
+YAML 只负责初始化。运行中 God 可以提交声明式定义提案，Platform 校验后把新的属性、世界属性、能力、Action、BT 或 Recipe 写入当前 SQLite；新定义不会立即执行，必须在后续 AgentView 中通过正常条件、成本、时间和效果管线使用。Story 只能推进剧情、进度和已注册 BT 解锁，不能通过叙事直接注册底层机制。
 
 ### 模拟分钟、Action 与 BT
 
