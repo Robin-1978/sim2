@@ -49,6 +49,42 @@ def test_prompt_formats_float_state_without_binary_noise():
     assert "0.020000000000000004" not in prompt
 
 
+def test_experience_records_claim_provenance(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "experience-provenance", tmp_path / "runtime"))
+    try:
+        result = platform.submit_experience("yu_ge", "event:dialogue", "The participant promised to bring a route note.", 0.6, "promised")
+        assert result["status"] == "accepted"
+        memory = platform.store.list_memories("yu_ge", limit=5)[0]
+        assert memory["claim_status"] == "promised"
+    finally:
+        platform.close()
+
+
+def test_story_rejects_unverified_public_movement_claim(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "story-evidence", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            platform.store.append_event(
+                "object.recovered",
+                "lu_xingzhou",
+                10,
+                {"object_id": "caravan_ledger", "fact": "The ledger confirms a safe northern boundary is required."},
+            )
+        result = platform.submit_story_beat(
+            "story",
+            {
+                "summary": "The recovered ledger is brought to the north gate and read aloud.",
+                "fact": "The ledger confirms a safe northern boundary is required.",
+                "goal_hint": "Check the northern boundary.",
+                "audience": ["陆行舟"],
+            },
+        )
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "story_unverified_action_claim"
+    finally:
+        platform.close()
+
+
 def test_world_relationship_proposal_uses_visible_names(tmp_path: Path):
     platform = Platform(create_instance(_config(), "relationship-proposal", tmp_path / "runtime"))
     try:

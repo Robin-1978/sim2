@@ -177,6 +177,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "event": {"type": "string", "description": "A short visible description of the experience being reviewed."},
                 "summary": {"type": "string", "maxLength": 500},
                 "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "claim_status": {"type": "string", "enum": ["observed", "confirmed", "promised", "inferred", "failed"], "description": "How strongly the evidence supports the lesson. Use inferred when it is a conclusion rather than a directly observed fact."},
             },
             "required": ["summary"],
             "additionalProperties": False,

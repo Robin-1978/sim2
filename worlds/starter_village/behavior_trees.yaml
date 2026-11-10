@@ -140,7 +140,6 @@ behavior_trees:
   interrupt_policy: pause
   success_results:
   - patrol_reported
-  - marks_classified
   failure_results:
   - emergency
   outcome_effects:

@@ -879,6 +879,39 @@ class AgentViewCompiler:
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
         story_state = self.store.get_meta("story_state", {}) or {}
         recent_events = self.store.recent_events(limit=80)
+        source_event = next(
+            (
+                item for item in recent_events
+                if str(item.get("event_type", "")) in {
+                    "exploration.completed", "research.completed", "object.recovered",
+                    "relationship.changed", "negotiation.result_recorded", "behavior.completed",
+                }
+                and item.get("actor_id") not in {"story", "god"}
+            ),
+            None,
+        )
+        validated_source: dict[str, Any] = {}
+        if source_event:
+            outcome = source_event.get("outcome") if isinstance(source_event.get("outcome"), dict) else {}
+            actual = outcome.get("actual") if isinstance(outcome.get("actual"), dict) else {}
+            actor_id = source_event.get("actor_id")
+            try:
+                actor_name = self.store.get_entity(str(actor_id)).get("name", actor_id) if actor_id else "The world"
+            except KeyError:
+                actor_name = actor_id or "The world"
+            location_id = actual.get("location") or source_event.get("location_id")
+            try:
+                location_name = self.store.get_entity(str(location_id)).get("name", location_id) if location_id else "unknown"
+            except KeyError:
+                location_name = location_id or "unknown"
+            validated_source = {
+                "event_type": source_event.get("event_type"),
+                "actor": actor_name,
+                "location": location_name,
+                "result": outcome.get("result") or source_event.get("result") or source_event.get("fact") or "recorded",
+                "fact": source_event.get("fact") or (outcome.get("expected") or {}).get("summary") or "",
+                "world_minute": source_event.get("world_minute"),
+            }
         audience_candidates = self._story_audience_candidates(recent_events)
         observed_events = {str(item.get("event_type", "")) for item in recent_events}
         fact_rows = self.store.connection.execute("SELECT fact_key,data_json FROM knowledge_fact ORDER BY id DESC").fetchall()
@@ -925,6 +958,7 @@ class AgentViewCompiler:
             "identity": {"traits": {}, "beliefs": [], "capabilities": {"story_scope": True}},
             "needs": {}, "inventory": {}, "injuries": [], "drives": [],
             "observation": {"facts": [str(item.get("event_type", "event")) + ": " + str(item.get("summary") or item.get("fact") or item.get("result") or "validated world result") for item in recent_events[:10]], "source": "validated_world_events"},
+            "validated_source": validated_source,
             "nearby_entities": [], "known_facts": [{"fact": fact, "source_type": "world_knowledge", "confidence": 1.0} for fact in known_facts],
             "audience_candidates": audience_candidates,
             "recent_actions": recent_events[:8], "recent_story_events": [item for item in recent_events if str(item.get("event_type", "")).startswith("story.")][:8],

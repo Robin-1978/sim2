@@ -94,6 +94,9 @@ def _memory_line(item: dict[str, Any]) -> str:
     source = item.get("source_type") or item.get("source")
     if source:
         metadata.append(f"source={_plain(source)}")
+    claim_status = item.get("claim_status")
+    if claim_status:
+        metadata.append(f"claim={_plain(claim_status)}")
     confidence = item.get("confidence")
     if isinstance(confidence, (int, float)):
         metadata.append(f"confidence={float(confidence):.2f}")
@@ -315,10 +318,22 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 )
         else:
             lines.append("  - no completed or interrupted behavior needs review")
-        lines.append("  Keep an experience only when it is new, durable, and useful for a future decision; otherwise return wait. Write one to three concise sentences, under 500 characters.")
+        lines.append("  Keep an experience only when it is new, durable, and useful for a future decision; otherwise return wait. Never treat a topic or promise as a confirmed fact. Set claim_status: observed, confirmed, promised, inferred, or failed. Write one to three concise sentences, under 500 characters.")
         lines.append("</outcome_review>")
 
     if role == "story":
+        source = context.get("validated_source") or {}
+        lines.append("<validated_source>")
+        if source:
+            lines.append(f"  event: {source.get('event_type', 'validated event')} at world minute {source.get('world_minute', 'unknown')}")
+            lines.append(f"  actor: {_line(source.get('actor'))}; recorded location: {_line(source.get('location'))}")
+            lines.append(f"  result: {_line(source.get('result'))}")
+            if source.get("fact"):
+                lines.append(f"  fact: {_line(source.get('fact'))}")
+            lines.append("  Narrative must not add an unrecorded move, delivery, public reading, or gathering.")
+        else:
+            lines.append("  no validated source event; return wait")
+        lines.append("</validated_source>")
         lines.append("<story_state>")
         lines.append("  Choose one configured beat whose evidence is present. If none is listed, propose an emergent beat grounded in the latest validated event.")
         candidates = context.get("audience_candidates") or []

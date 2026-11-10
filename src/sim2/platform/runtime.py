@@ -561,9 +561,10 @@ class Platform:
         except KeyError:
             return {}
 
-    def submit_experience(self, actor_id: str, event_ref: str, summary: str, confidence: float) -> dict[str, Any]:
+    def submit_experience(self, actor_id: str, event_ref: str, summary: str, confidence: float, claim_status: str = "inferred") -> dict[str, Any]:
         summary = str(summary).strip()
-        data = {"event_ref": event_ref, "summary": summary, "confidence": confidence}
+        claim_status = str(claim_status or "inferred").strip().casefold()
+        data = {"event_ref": event_ref, "summary": summary, "confidence": confidence, "claim_status": claim_status}
         intent_id = str(uuid4())
         if not summary.strip():
             return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Experience summary is required.", "failed_check": "summary", "retryable": True})
@@ -571,6 +572,8 @@ class Platform:
             return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Experience summary must be at most 500 characters.", "failed_check": "summary_length", "retryable": True})
         if not 0 <= confidence <= 1:
             return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Confidence must be between 0 and 1.", "failed_check": "confidence", "retryable": True})
+        if claim_status not in {"observed", "confirmed", "promised", "inferred", "failed"}:
+            return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "claim_status must be observed, confirmed, promised, inferred, or failed.", "failed_check": "claim_status", "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             agent = self.store.get_agent(actor_id)
@@ -1119,6 +1122,46 @@ class Platform:
             if any(int(item.get("source_event_id", -1)) == int(source_event.get("event_id", -2)) for item in prior_emergent if isinstance(item, dict)):
                 return {"status": "wait", "reason": "This validated result already has an active emergent story beat; wait for a new discovery or relationship result."}
             beat["source_event_id"] = int(source_event.get("event_id"))
+            # An emergent beat may interpret a validated result, but it cannot
+            # silently invent a later delivery, public reading, gathering, or
+            # movement. Require a matching event in the same chain before
+            # allowing those claims into persistent story state.
+            narrative = " ".join(str(proposal.get(key, "")) for key in ("summary", "fact", "goal_hint"))
+            action_claims = (
+                "brought", "delivered", "read aloud", "gathered", "met", "arrived",
+                "带到", "送到", "宣读", "聚集", "会面", "到达", "公开",
+            )
+            if any(term in narrative.casefold() for term in action_claims):
+                source_actor = str(source_event.get("actor_id") or "")
+                source_event_id = int(source_event.get("event_id", 0) or 0)
+                followup = next(
+                    (
+                        item for item in recent
+                        if int(item.get("event_id", 0) or 0) > source_event_id
+                        and str(item.get("actor_id") or "") == source_actor
+                        and (
+                            str(item.get("event_type", "")) in {"dialogue.completed", "dialogue.behavior_completed", "trade.completed"}
+                            or (
+                                str(item.get("event_type", "")) == "behavior.completed"
+                                and str(item.get("behavior_id", "")) in {"travel", "communicate", "negotiate"}
+                            )
+                        )
+                    ),
+                    None,
+                )
+                if followup is None:
+                    return self._reject_intent(
+                        intent_id,
+                        actor_id,
+                        "propose_story_beat",
+                        proposal,
+                        {
+                            "status": "rejected",
+                            "message": "This emergent beat claims a later delivery, meeting, reading, or movement that is not present in a validated follow-up event. State only the source fact or wait until the action occurs.",
+                            "failed_check": "story_unverified_action_claim",
+                            "retryable": True,
+                        },
+                    )
         trigger_events = {str(item) for item in (beat.get("trigger_events", []) or [])}
         observed_events = {str(item.get("event_type", "")) for item in recent}
         if trigger_events and not trigger_events & observed_events:

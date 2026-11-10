@@ -511,7 +511,13 @@ class AgentEngine:
                             "retryable": True,
                             "message": "No completed outcome, meaningful event, or prior memory is available for a durable experience.",
                         }
-                return self.platform.submit_experience(actor_id, str(data.get("event") or data.get("event_ref") or ""), str(data.get("summary") or ""), float(data.get("confidence", 1.0)))
+                return self.platform.submit_experience(
+                    actor_id,
+                    str(data.get("event") or data.get("event_ref") or ""),
+                    str(data.get("summary") or ""),
+                    float(data.get("confidence", 1.0)),
+                    str(data.get("claim_status") or "inferred"),
+                )
             if intent_type == "update_capability":
                 return self.platform.submit_capability_update(actor_id, str(data.get("capability") or ""), float(data.get("delta", 0)), str(data.get("evidence") or ""))
             if intent_type == "record_world_progress":
