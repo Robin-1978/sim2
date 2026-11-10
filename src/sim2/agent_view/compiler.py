@@ -791,7 +791,16 @@ class AgentViewCompiler:
             "active_task": {"bt": active_behavior.get("summary") or ("in progress" if active_behavior_id else None), "action": active_action.get("description") or (_label(str(active_action_id)) if active_action_id else None), "remaining_minutes": state.get("remaining_minutes", 0)},
             "open_trade_offers": self._trade_offer_view(agent_id),
             "available_actions": available_actions if role == "agent_reflection" else [],
-            "active_world_rules": self.rule_compiler.model_view(self._world_rule_labels()),
+            "active_world_rules": self.rule_compiler.model_view(
+                self._world_rule_labels(),
+                agent=agent,
+                context={
+                    "location_id": location_id,
+                    "current_location": current_location,
+                    "recent_event_types": self._recent_event_types(),
+                },
+                world=self.store.get_meta("world_properties", {}) or {},
+            ),
             "pending_institutions": pending_institutions,
             "active_institutions": active_institutions,
             "institution_ledgers": institution_ledgers,
@@ -1056,7 +1065,11 @@ class AgentViewCompiler:
                 for key, value in ((self.store.get_meta("rules", {}) or {}).get("civilization_progress", {}) or {}).items()
                 if isinstance(value, dict)
             ],
-            "active_world_rules": self.rule_compiler.model_view(self._world_rule_labels()),
+            "active_world_rules": self.rule_compiler.model_view(
+                self._world_rule_labels(),
+                context={"recent_event_types": self._recent_event_types()},
+                world=self.store.get_meta("world_properties", {}) or {},
+            ),
             "last_platform_result": recent_events[0] if recent_events else None,
             "tools": self._role_tools(role),
         }
@@ -1189,7 +1202,11 @@ class AgentViewCompiler:
                 {"name": str(item.get("name", "")), "entries": self.store.institution_ledger_totals(str(item.get("institution_id")), None)[:20]}
                 for item in self.store.list_institutions(status="active", limit=20)
             ],
-            "active_world_rules": self.rule_compiler.model_view(self._world_rule_labels()),
+            "active_world_rules": self.rule_compiler.model_view(
+                self._world_rule_labels(),
+                context={"recent_event_types": self._recent_event_types()},
+                world=world_properties,
+            ),
             "registered_behaviors": behavior_catalog[:32],
             "registered_actions": action_catalog[:32],
             "rule_condition_fields": condition_fields[:24],

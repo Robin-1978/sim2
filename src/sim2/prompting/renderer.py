@@ -196,17 +196,18 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             )
         lines.append("</triggering_evidence>")
 
-    active_rules = context.get("active_world_rules") or []
-    if active_rules:
-        lines.append("<active_world_rules>")
-        for rule in active_rules[:8]:
+    world_rules = context.get("active_world_rules") or []
+    if world_rules:
+        lines.append("<world_rules>")
+        lines.append("  A rule applies only when its condition is currently active.")
+        for rule in world_rules[:8]:
             description = f"; {rule.get('description')}" if rule.get("description") else ""
             applies = f"; applies to {_plain(rule.get('applies_to'))}" if rule.get("applies_to") else ""
             lines.append(
-                f"  - {rule.get('name', 'world policy')}: when {rule.get('condition', 'configured condition')}, "
+                f"  - {rule.get('name', 'world policy')} [currently {rule.get('current_status', 'unknown')}]: when {rule.get('condition', 'configured condition')}, "
                 f"the platform applies {rule.get('effect', 'configured effect')}{applies}{description}"
             )
-        lines.append("</active_world_rules>")
+        lines.append("</world_rules>")
 
     lines.extend([
         "<self>",

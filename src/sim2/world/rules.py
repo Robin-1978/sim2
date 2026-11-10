@@ -279,7 +279,14 @@ class RuleCompiler:
         # should add action_names/action_ids when a denial is location-specific.
         return True
 
-    def model_view(self, labels: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    def model_view(
+        self,
+        labels: dict[str, str] | None = None,
+        *,
+        agent: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
+        world: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         """Return concise policy text; internal ids stay out of the prompt."""
 
         labels = {str(key): str(value) for key, value in (labels or {}).items()}
@@ -293,7 +300,12 @@ class RuleCompiler:
                 condition = condition.replace(f"resource.{key}", label).replace(f"world.{key}", label)
                 condition = re.sub(rf"(?<![A-Za-z0-9_]){re.escape(key)}(?![A-Za-z0-9_])", label, condition)
             display_name = str(rule["raw"].get("label") or rule["raw"].get("name") or rule["description"] or "world policy")
-            item = {"name": display_name, "condition": condition, "effect": effect_text}
+            item = {
+                "name": display_name,
+                "condition": condition,
+                "effect": effect_text,
+                "current_status": "active" if self.matches(raw, agent=agent or {}, target=None, context=context or {}, world=world or {}) else "inactive",
+            }
             if rule["description"] and display_name != rule["description"]:
                 item["description"] = rule["description"]
             if rule["behavior_names"]:

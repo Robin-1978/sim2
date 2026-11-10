@@ -191,6 +191,25 @@ def test_prompt_formats_float_state_without_binary_noise():
         "Choose one.",
     )
     assert "81.2" in prompt
+
+
+def test_registered_world_rules_show_current_condition_status(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "rule-status-view", tmp_path / "runtime"))
+    try:
+        view = platform.decision_view("liang_he")
+        ration = next(item for item in view["active_world_rules"] if "food" in item["condition"].casefold())
+        assert ration["current_status"] == "inactive"
+        prompt = render_context(view, "Choose one behavior.")
+        assert "<world_rules>" in prompt
+        assert "currently inactive" in prompt
+        assert "<active_world_rules>" not in prompt
+
+        platform._set_world_property("village_food", 100)
+        changed = platform.decision_view("liang_he")
+        ration = next(item for item in changed["active_world_rules"] if "food" in item["condition"].casefold())
+        assert ration["current_status"] == "active"
+    finally:
+        platform.close()
     assert "0.02" in prompt
     assert "81.200000000004" not in prompt
     assert "0.020000000000000004" not in prompt
