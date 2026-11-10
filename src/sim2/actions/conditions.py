@@ -264,8 +264,22 @@ class ConditionEngine:
         if path == "research.new_fact_available":
             source_id = target.get("source_id") or context.get("source_id")
             return bool(source_id) and str(source_id) not in {str(item) for item in context.get("researched_sources", [])}
+        if path == "source.accessible":
+            source = context.get("source", {}) or {}
+            if not isinstance(source, dict) or not source:
+                return False
+            source_state = source.get("initial_state", {}) if isinstance(source.get("initial_state"), dict) else {}
+            source_location = source_state.get("location_id") or source.get("location_id")
+            if source_location and str(source_location) != str(state.get("location_id") or ""):
+                return False
+            return not bool(source_state.get("destroyed", source.get("destroyed", False)))
         if path == "secret.source_available":
-            return any(str(item).startswith("secret:") for item in agent.get("knowledge_seed", []))
+            seeded = {
+                str(item.get("id") or "") if isinstance(item, dict) else str(item)
+                for item in (agent.get("knowledge_seed", []) or [])
+            }
+            known = {str(item) for item in (context.get("known_fact_keys", []) or [])}
+            return any(item.startswith("secret:") for item in seeded | known)
         if path in {"actor.exhausted", "actor.stunned"}:
             capacity_zero = self.capacity_attribute and float(state.get(self.capacity_attribute, 0) or 0) <= 0
             return bool(capacity_zero or path.removeprefix("actor.") in state.get("conditions", []))
@@ -306,7 +320,7 @@ class ConditionEngine:
             return not required or bool(required & current)
         if path in {"patient.available", "counterparty.available"}:
             return bool(context.get(path, target.get("available", False)))
-        if path in {"location.safe", "destination.safe_or_defensible", "target.available", "patient.in_clinic", "source.accessible", "resource.available", "inputs.available", "recipe.available", "medicine.available", "communication.channel_open", "location.reachable"}:
+        if path in {"location.safe", "destination.safe_or_defensible", "target.available", "patient.in_clinic", "resource.available", "inputs.available", "recipe.available", "medicine.available", "communication.channel_open", "location.reachable"}:
             if path == "location.safe":
                 location = context.get("current_location", {})
                 safe_tags = self.location_tag_groups.get("safe", {"safe"})

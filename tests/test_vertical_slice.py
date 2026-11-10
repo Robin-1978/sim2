@@ -86,6 +86,17 @@ def step_n(platform: Platform, minutes: int):
     return result
 
 
+def grant_research_fact(platform: Platform, agent_id: str, fact_key: str) -> None:
+    with platform.store.transaction():
+        platform.store.merge_knowledge_fact(agent_id, fact_key, {
+            "fact": f"Verified research result: {fact_key}.",
+            "source_type": "research",
+            "source_id": fact_key,
+            "confidence": 1.0,
+            "observed_at": int(platform.store.get_meta("world_minute", 0)),
+        })
+
+
 def test_bootstrap_and_agent_intent(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "test-world", tmp_path / "runtime")
@@ -616,6 +627,7 @@ def test_configured_postcondition_uses_numeric_tolerance_and_publishes_success_o
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "water-postcondition-world", tmp_path / "runtime"))
     try:
+        grant_research_fact(platform, "qiao_ning", "researched:clean_water:contamination")
         accepted = platform.submit_behavior(BehaviorIntent("qiao_ning", "behavior:mitigate_water", {}, {}, "Apply the measured water safety step.", 0.9, "water-postcondition"))
         assert accepted["status"] == "accepted"
         for _ in range(accepted["remaining_minutes"]):
@@ -631,6 +643,7 @@ def test_failed_postcondition_rolls_back_effects_and_information_events(tmp_path
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "water-rollback-world", tmp_path / "runtime"))
     try:
+        grant_research_fact(platform, "qiao_ning", "researched:clean_water:contamination")
         with platform.store.transaction():
             action = next(item for item in platform.store.get_definitions("action_def") if item["id"] == "mitigate_water")
             broken = dict(action)
@@ -653,6 +666,7 @@ def test_outcome_projection_does_not_embed_previous_outcome_history(tmp_path: Pa
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "outcome-size-world", tmp_path / "runtime"))
     try:
+        grant_research_fact(platform, "qiao_ning", "researched:clean_water:contamination")
         for index in range(2):
             accepted = platform.submit_behavior(BehaviorIntent("qiao_ning", "behavior:mitigate_water", {}, {}, "Apply the next measured water step.", 0.9, f"outcome-size-{index}"))
             assert accepted["status"] == "accepted"
@@ -1120,7 +1134,7 @@ def test_inspection_behaviors_have_configured_cooldowns(tmp_path: Path):
     platform = Platform(create_instance(config, "inspection-cooldown-world", tmp_path / "runtime"))
     try:
         su_wu = platform.store.get_agent("su_wu")
-        su_wu["initial_state"]["location_id"] = "hidden_root_gate"
+        su_wu["initial_state"]["location_id"] = "old_well"
         platform.store.update_agent("su_wu", su_wu)
         platform.store.connection.commit()
         intent = BehaviorIntent("su_wu", "behavior:inspect_object", {}, {}, "Check the current source.", 0.8, "inspection-cooldown")
@@ -2550,6 +2564,45 @@ def test_water_research_path_records_a_specific_fact(tmp_path: Path):
         platform.close()
 
 
+def test_research_facts_unlock_remediation_and_sources_require_colocation(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "research-remediation-gate-world", tmp_path / "runtime"))
+    try:
+        qiao_choices = {item["ref"] for item in platform.decision_view("qiao_ning")["executable_behaviors"]}
+        su_choices = {item["ref"] for item in platform.decision_view("su_wu")["executable_behaviors"]}
+        assert "behavior:research_water" in qiao_choices
+        assert "behavior:mitigate_water" not in qiao_choices
+        assert "behavior:research_source" in su_choices
+        assert "behavior:stabilize_pact" not in su_choices
+
+        # A registered source at another location is not remotely researchable.
+        tablet = platform.store.get_entity("old_pact_tablet")
+        tablet["initial_state"]["location_id"] = "hidden_root_gate"
+        with platform.store.transaction():
+            platform.store.put_entity(
+                tablet["id"], tablet["entity_type"], tablet["name"],
+                {key: value for key, value in tablet.items() if key not in {"id", "entity_type", "name"}},
+            )
+        su_choices = {item["ref"] for item in platform.decision_view("su_wu")["executable_behaviors"]}
+        assert "behavior:research_source" not in su_choices
+
+        tablet["initial_state"]["location_id"] = "old_well"
+        with platform.store.transaction():
+            platform.store.put_entity(
+                tablet["id"], tablet["entity_type"], tablet["name"],
+                {key: value for key, value in tablet.items() if key not in {"id", "entity_type", "name"}},
+            )
+        grant_research_fact(platform, "qiao_ning", "researched:clean_water:contamination")
+        grant_research_fact(platform, "su_wu", "researched:old_pact_tablet:origin")
+
+        qiao_choices = {item["ref"] for item in platform.decision_view("qiao_ning")["executable_behaviors"]}
+        su_choices = {item["ref"] for item in platform.decision_view("su_wu")["executable_behaviors"]}
+        assert "behavior:mitigate_water" in qiao_choices
+        assert "behavior:stabilize_pact" in su_choices
+    finally:
+        platform.close()
+
+
 def test_story_feedback_runs_at_completion_boundary_and_updates_audience(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "story-boundary-world", tmp_path / "runtime"))
@@ -2639,6 +2692,7 @@ def test_incremental_remediation_records_result_without_story_wake(tmp_path: Pat
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "remediation-wake-world", tmp_path / "runtime"))
     try:
+        grant_research_fact(platform, "su_wu", "researched:old_pact_tablet:origin")
         started = platform.submit_behavior(BehaviorIntent(
             "su_wu", "behavior:stabilize_pact", {}, {},
             "Apply one measured stabilization after the completed research.", 0.9, "stabilize-once",
@@ -2659,6 +2713,7 @@ def test_completed_action_respects_existing_public_incident_cooldown(tmp_path: P
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "action-incident-cooldown-world", tmp_path / "runtime"))
     try:
+        grant_research_fact(platform, "su_wu", "researched:old_pact_tablet:origin")
         with platform.store.transaction():
             first_event = platform.store.append_event(
                 "security.marks_classified", "he_yan", 96,

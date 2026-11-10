@@ -886,6 +886,7 @@ class AgentViewCompiler:
             "location_id": (agent.get("initial_state") or {}).get("location_id"),
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "area_id": parameters.get("area_id"),
+            "source_id": parameters.get("source_id"),
             "item_id": parameters.get("item_id"),
             "object_id": parameters.get("object_id"),
             "current_object": {},
@@ -895,11 +896,21 @@ class AgentViewCompiler:
             "known_route_destinations": reachable_locations(self.store, (agent.get("initial_state") or {}).get("location_id")),
             "mapped_areas": self.store.explored_areas(str(agent.get("id", ""))),
             "researched_sources": self.store.researched_sources(str(agent.get("id", ""))),
+            "known_fact_keys": [
+                item.get("fact_key")
+                for item in self.store.list_knowledge_facts(str(agent.get("id", "")), limit=1000)
+                if item.get("fact_key")
+            ],
             "recent_event_types": self._recent_event_types(),
         }
         if parameters.get("object_id"):
             try:
                 context["current_object"] = self.store.get_entity(str(parameters["object_id"]))
+            except KeyError:
+                return False
+        if parameters.get("source_id"):
+            try:
+                context["source"] = self.store.get_entity(str(parameters["source_id"]))
             except KeyError:
                 return False
         if (

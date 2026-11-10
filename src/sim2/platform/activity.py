@@ -49,6 +49,7 @@ class ActivityRuntimeMixin:
             "location_id": location_id,
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "area_id": parameters.get("area_id"),
+            "source_id": parameters.get("source_id"),
             "item_id": parameters.get("item_id"),
             "object_id": parameters.get("object_id"),
             "inventory": agent.get("inventory", {}) or {},
@@ -56,8 +57,14 @@ class ActivityRuntimeMixin:
             "station_tags": [],
             "current_location": current_location,
             "current_object": self._entity_for_context(parameters.get("object_id")),
+            "source": self._entity_for_context(parameters.get("source_id")),
             "mapped_areas": self.store.explored_areas(agent["id"]),
             "researched_sources": self.store.researched_sources(agent["id"]),
+            "known_fact_keys": [
+                item.get("fact_key")
+                for item in self.store.list_knowledge_facts(agent["id"], limit=1000)
+                if item.get("fact_key")
+            ],
             "target": resolved_target or {},
             "target.visible": (resolved_target or {}).get("visible", False),
             "target.available": (resolved_target or {}).get("available", False),
@@ -146,6 +153,7 @@ class ActivityRuntimeMixin:
             "location_id": state.get("location_id"),
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "area_id": parameters.get("area_id"),
+            "source_id": parameters.get("source_id"),
             "item_id": parameters.get("item_id"),
             "object_id": parameters.get("object_id"),
             "inventory": agent.get("inventory", {}) or {},
@@ -153,8 +161,14 @@ class ActivityRuntimeMixin:
             "station_tags": [],
             "current_location": current_location,
             "current_object": self._entity_for_context(parameters.get("object_id")),
+            "source": self._entity_for_context(parameters.get("source_id")),
             "mapped_areas": self.store.explored_areas(agent["id"]),
             "researched_sources": self.store.researched_sources(agent["id"]),
+            "known_fact_keys": [
+                item.get("fact_key")
+                for item in self.store.list_knowledge_facts(agent["id"], limit=1000)
+                if item.get("fact_key")
+            ],
             "target": target or {},
             "target.visible": (target or {}).get("visible", False),
             "target.available": (target or {}).get("available", False),
@@ -558,10 +572,16 @@ class ActivityRuntimeMixin:
         return {
             "location_id": location_id,
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
+            "source_id": source_id,
             "item_id": parameters.get("item_id"),
             "current_location": location,
             "location": location,
             "source": source,
+            "known_fact_keys": [
+                item.get("fact_key")
+                for item in self.store.list_knowledge_facts(agent["id"], limit=1000)
+                if item.get("fact_key")
+            ],
             "station": location,
             "target": target or {},
             "danger": {"detected": "danger" in (state.get("conditions") or [])},

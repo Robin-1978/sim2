@@ -781,6 +781,7 @@ actions:
   preconditions:
   - actor.alive
   - actor.can_research
+  - actor.knowledge.researched:clean_water:contamination
   - world.water_quality < 0.9
   duration:
     minutes: 120
@@ -820,6 +821,7 @@ actions:
   preconditions:
   - actor.alive
   - actor.can_research
+  - actor.knowledge.researched:old_pact_tablet:origin
   - world.root_gate_stability < 0.9
   duration:
     minutes: 180

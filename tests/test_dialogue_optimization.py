@@ -499,6 +499,13 @@ def test_decision_wait_alias_is_a_valid_terminal_intent(tmp_path: Path):
 def test_starter_water_pact_and_mark_followups_change_world_or_knowledge(tmp_path: Path):
     platform = Platform(create_instance(_config(), "followup-loops", tmp_path / "runtime"))
     try:
+        with platform.store.transaction():
+            platform.store.merge_knowledge_fact("qiao_ning", "researched:clean_water:contamination", {
+                "fact": "River contamination was verified.", "source_type": "research", "confidence": 1.0,
+            })
+            platform.store.merge_knowledge_fact("su_wu", "researched:old_pact_tablet:origin", {
+                "fact": "The old pact's stabilizing purpose was verified.", "source_type": "research", "confidence": 1.0,
+            })
         cases = [
             ("qiao_ning", "behavior:mitigate_water", "water_quality", 0.80, "water.mitigation.applied"),
             ("su_wu", "behavior:stabilize_pact", "root_gate_stability", 0.72, "pact.stability.improved"),

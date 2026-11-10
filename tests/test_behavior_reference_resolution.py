@@ -106,7 +106,7 @@ def test_remote_fixed_object_is_not_offered_or_executed(tmp_path: Path):
         assert rejected["failed_check"] == "behavior_unavailable"
 
         actor = platform.store.get_agent("su_wu")
-        actor["initial_state"]["location_id"] = "hidden_root_gate"
+        actor["initial_state"]["location_id"] = "old_well"
         platform.store.update_agent("su_wu", actor)
         platform.store.connection.commit()
         offered = {item["ref"] for item in platform.decision_view("su_wu")["executable_behaviors"]}

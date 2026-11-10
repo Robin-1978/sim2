@@ -12,7 +12,7 @@ objects:
   - id: old_pact_tablet
     type: document
     name: 旧契约石板
-    initial_state: {location_id: hidden_root_gate, readable: false}
+    initial_state: {location_id: old_well, readable: false}
     tags: [secret, lore]
     research_discovery: {id: researched:old_pact_tablet:origin, fact: "The old pact was made to keep the root gate stable, and its stability is now declining."}
   - id: caravan_ledger
