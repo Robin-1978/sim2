@@ -290,13 +290,13 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "value": {},
                 "rule": {
                     "type": "object",
-                    "description": "A declarative policy. Use a supported condition expression; the rule signals or gates later configured behavior and never changes resources by itself.",
+                    "description": "A declarative policy. Use a supported condition expression; the rule signals or gates later configured behavior and never changes resources by itself. Do not chain one same-role signal rule from another world.rule signal.",
                     "properties": {
                         "id": {"type": "string", "description": "A short unique rule name for the world."},
                         "label": {"type": "string", "description": "A human-readable policy name."},
                         "description": {"type": "string", "description": "One short sentence describing the policy."},
                         "condition": {"type": "string", "description": "A declarative condition such as world[\"water quality\"] < 0.5, event.recent.clinic.fever_reported == true, or actor.permission.old_well == false."},
-                        "effect": {"description": "One effect name such as council.ration_alert or deny_access, or an object like {type: behavior_constraint, message: ...} when the rule must block a named behavior."},
+                        "effect": {"description": "One dot-separated effect name without spaces, such as policy.review_signal, or an object like {type: signal, message: ...}. Use {type: behavior_constraint, message: ...} only when the rule must block one named behavior."},
                         "wake": {"type": "array", "items": {"type": "string"}, "description": "Optional visible roles to wake, such as god or story."},
                         "behavior_names": {"type": "array", "items": {"type": "string"}, "description": "Optional visible BT names. For a behavior_constraint, every listed BT is blocked; list only the blocked BT. For a signal, names identify the follow-up outcome."},
                         "action_names": {"type": "array", "items": {"type": "string"}, "description": "Optional visible Action names to gate when the condition is true."},
@@ -318,7 +318,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "type": "object",
             "properties": {
                 "beat": {"type": "string", "description": "The exact visible story beat choice from the current story view."},
-                "audience": {"type": "array", "items": {"type": "string"}, "description": "Optional visible character names; Platform limits this to the configured audience."},
+                "audience": {"type": "array", "items": {"type": "string"}, "description": "For an emergent beat, provide at least one exact character name from audience_candidates. A configured beat may use its configured audience."},
                 "summary": {"type": "string", "description": "Required only when creating an emergent beat not present in the configured catalog."},
                 "fact": {"type": "string", "description": "A short evidence-grounded fact to deliver to the audience."},
                 "goal_hint": {"type": "string", "description": "A short next objective for the audience."},

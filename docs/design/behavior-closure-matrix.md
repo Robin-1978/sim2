@@ -80,6 +80,12 @@ resource quantities, personal needs, relationships, and production outcomes
 must be changed by configured behavior effects. A God proposal cannot directly
 increase food, trust, safety, or another behavior-owned value.
 
+Signal rules are bounded as well: Platform rejects a duplicate event/follow-up
+signal and a same-role `world.rule.*` signal chain. A signal wakes its consumer
+once; the named behavior result is the next causal step. Emergent Story beats
+carry the validated evidence event and are deduplicated until a new discovery,
+research result, recovery, or relationship result arrives.
+
 Writing a rule is only a proposal result. The God quality audit remains open
 until a later behavior outcome shows that the rule was used and produced its
 configured effect. `RuleCompiler` now exposes active rules, gates configured

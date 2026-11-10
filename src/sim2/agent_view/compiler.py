@@ -879,6 +879,7 @@ class AgentViewCompiler:
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
         story_state = self.store.get_meta("story_state", {}) or {}
         recent_events = self.store.recent_events(limit=80)
+        audience_candidates = self._story_audience_candidates(recent_events)
         observed_events = {str(item.get("event_type", "")) for item in recent_events}
         fact_rows = self.store.connection.execute("SELECT fact_key,data_json FROM knowledge_fact ORDER BY id DESC").fetchall()
         observed_facts = {str(row["fact_key"]) for row in fact_rows}
@@ -925,6 +926,7 @@ class AgentViewCompiler:
             "needs": {}, "inventory": {}, "injuries": [], "drives": [],
             "observation": {"facts": [str(item.get("event_type", "event")) + ": " + str(item.get("summary") or item.get("fact") or item.get("result") or "validated world result") for item in recent_events[:10]], "source": "validated_world_events"},
             "nearby_entities": [], "known_facts": [{"fact": fact, "source_type": "world_knowledge", "confidence": 1.0} for fact in known_facts],
+            "audience_candidates": audience_candidates,
             "recent_actions": recent_events[:8], "recent_story_events": [item for item in recent_events if str(item.get("event_type", "")).startswith("story.")][:8],
             "recent_world_changes": [], "recent_agent_outcomes": [], "direct_relationships": [],
             "active_task": {"bt": None, "action": None, "remaining_minutes": 0},
@@ -938,6 +940,48 @@ class AgentViewCompiler:
             "last_platform_result": recent_events[0] if recent_events else None,
             "tools": tools_for_role(role),
         }
+
+    def _story_audience_candidates(self, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Expose exact character names found in recent validated events.
+
+        Story delivery is global, so the audience need not be co-located with
+        the Story Agent.  The candidate list is derived from event participants
+        and contains names only; internal identifiers remain Platform-owned.
+        """
+
+        candidate_ids: list[str] = []
+        participant_keys = {"target_id", "recipient_id", "speaker_id", "listener_id", "counterparty_id", "participant_id", "actor_id", "from_id", "to_id"}
+
+        def collect(value: Any, key: str = "") -> None:
+            if isinstance(value, dict):
+                for child_key, child_value in value.items():
+                    collect(child_value, str(child_key))
+            elif isinstance(value, list):
+                for child in value:
+                    collect(child, key)
+            elif isinstance(value, str) and (key in participant_keys or key in {"from", "to", "source", "target", "participant", "recipient"}):
+                candidate_ids.append(value)
+
+        for event in events[:40]:
+            actor_id = event.get("actor_id")
+            if actor_id:
+                candidate_ids.append(str(actor_id))
+            collect(event)
+        result: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for candidate_id in candidate_ids:
+            try:
+                agent = self.store.get_agent(str(candidate_id))
+            except KeyError:
+                continue
+            name = str(agent.get("name") or candidate_id).strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            result.append({"name": name, "reason": "participant in a recent validated event"})
+            if len(result) >= 12:
+                break
+        return result
 
     def _build_world_view(self, actor_id: str, role: str) -> dict[str, Any]:
         minute = self.store.get_meta("world_minute", 0)

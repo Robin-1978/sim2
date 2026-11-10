@@ -1105,8 +1105,20 @@ class Platform:
         if current.get("status") in {"active", "completed"}:
             return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "This story beat is already active or completed.", "failed_check": "story_beat_state", "retryable": False})
         recent = self.store.recent_events(limit=500)
-        if emergent and not any(str(item.get("event_type", "")) in {"exploration.completed", "research.completed", "object.recovered", "relationship.changed"} for item in recent[:30]):
+        source_event = next(
+            (
+                item for item in recent[:30]
+                if str(item.get("event_type", "")) in {"exploration.completed", "research.completed", "object.recovered", "relationship.changed"}
+            ),
+            None,
+        )
+        if emergent and source_event is None:
             return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "An emergent beat needs a recent discovery, research, recovery, or relationship result.", "failed_check": "story_evidence", "retryable": True})
+        if emergent and source_event:
+            prior_emergent = list(state.get("emergent_beats", []) or [])
+            if any(int(item.get("source_event_id", -1)) == int(source_event.get("event_id", -2)) for item in prior_emergent if isinstance(item, dict)):
+                return {"status": "wait", "reason": "This validated result already has an active emergent story beat; wait for a new discovery or relationship result."}
+            beat["source_event_id"] = int(source_event.get("event_id"))
         trigger_events = {str(item) for item in (beat.get("trigger_events", []) or [])}
         observed_events = {str(item.get("event_type", "")) for item in recent}
         if trigger_events and not trigger_events & observed_events:
@@ -1212,6 +1224,16 @@ class Platform:
                 return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": declared_message, "failed_check": "rule_effect_semantics", "retryable": True})
             proposed_id = str(proposal["rule"].get("id") or proposal["rule"].get("name") or "").strip()
             existing_rules = (self.store.get_meta("rules", {}) or {}).get("world_rules", []) or []
+            signal_conflict = self.rule_compiler.signal_conflict(dict(proposal["rule"]), existing_rules)
+            if signal_conflict:
+                conflict_type, conflict_name = signal_conflict
+                if conflict_type == "cycle":
+                    message = "A signal rule cannot wake the same consumer from another signal rule. Use the behavior result as the next state change, or wait for a new world event."
+                    failed_check = "rule_signal_cycle"
+                else:
+                    message = f"A signal for this event and follow-up already exists ({conflict_name}); review its outcome instead of adding another signal."
+                    failed_check = "rule_duplicate"
+                return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": message, "failed_check": failed_check, "retryable": True})
             if proposed_id and any(str(item.get("id") or item.get("name") or "").strip() == proposed_id for item in existing_rules if isinstance(item, dict)):
                 return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "A world rule with this name is already registered; review its existing outcome instead of adding a duplicate.", "failed_check": "rule_duplicate", "retryable": True})
         if change_type == "relationship" and not isinstance(proposal.get("relationship"), dict):

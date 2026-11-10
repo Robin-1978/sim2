@@ -64,6 +64,41 @@ def _causality(platform: Platform, sessions: list[dict[str, Any]]) -> dict[str, 
         for row in platform.store.connection.execute("SELECT execution_id, status FROM bt_instance")
     }
     session_roles = {role: sum(1 for item in sessions if item["role"] == role) for role in ("agent_decision", "agent_reflection", "story", "god")}
+    rule_changes: list[dict[str, Any]] = []
+    rule_followups: list[dict[str, Any]] = []
+    for row in events:
+        data = json.loads(row["data_json"] or "{}")
+        if row["event_type"] == "world.change.rule":
+            added = ((data.get("effect") or {}).get("rule_added") or {})
+            names = [str(item) for item in (added.get("id"), added.get("name"), added.get("label")) if str(item or "").strip()]
+            behavior_names = [str(item) for item in (added.get("behavior_names") or added.get("behavior_ids") or added.get("action_names") or [])]
+            rule_changes.append({
+                "event_id": row["event_id"],
+                "world_minute": row["world_minute"],
+                "rule_id": str(added.get("id") or added.get("name") or ""),
+                "rule_names": names,
+                "behavior_names": behavior_names,
+                "followup_count": 0,
+                "first_followup_event_id": None,
+                "status": "pending",
+            })
+        elif row["event_type"] == "world.rule.followed":
+            rule_followups.append({"event_id": row["event_id"], "world_minute": row["world_minute"], **data})
+    def norm(value: Any) -> str:
+        return "".join(char for char in str(value or "").casefold() if char.isalnum())
+    for change in rule_changes:
+        names = {norm(item) for item in change["rule_names"]}
+        expected_behaviors = {norm(item) for item in change["behavior_names"]}
+        matches = [item for item in rule_followups if item["event_id"] > change["event_id"] and norm(item.get("rule")) in names and (not expected_behaviors or norm(item.get("behavior_id")) in expected_behaviors or any(norm(item.get("behavior_id")) == norm(known.get("id")) for known in platform.store.get_definitions("bt_def") if norm(known.get("agent_label")) in expected_behaviors))]
+        change["followup_count"] = len(matches)
+        if matches:
+            change["status"] = "verified"
+            change["first_followup_event_id"] = matches[0]["event_id"]
+    god_direct_property_changes = [
+        {"event_id": row["event_id"], "world_minute": row["world_minute"], "event_type": row["event_type"]}
+        for row in events
+        if row["actor_id"] == "god" and row["event_type"] in {"world.change.world_property"}
+    ]
     return {
         "accepted_intents": len(accepted),
         "accepted_behavior_intents": len(behavior_intents),
@@ -80,8 +115,60 @@ def _causality(platform: Platform, sessions: list[dict[str, Any]]) -> dict[str, 
             for item in behavior_intents
             if bt_status.get(str(json.loads(item["result_json"] or "{}").get("execution_id", ""))) in {"executing", "paused"}
         ],
+        "world_rule_changes": rule_changes,
+        "world_rule_followups": rule_followups,
+        "god_direct_property_changes": god_direct_property_changes,
         "event_types": platform.store.event_type_counts(),
     }
+
+
+def _finalize_quality(sessions: list[dict[str, Any]], causality: dict[str, Any]) -> None:
+    """Reconcile deferred proposal checks against the completed SQLite run.
+
+    A God rule cannot be verified in the same session that registers it.  The
+    live evaluator therefore marks it pending.  Once the run ends, this pass
+    uses the persisted rule-followup event and changes only that deferred check;
+    it does not turn a rejected proposal into a success.
+    """
+
+    by_rule = {str(item.get("rule_id")): item for item in causality.get("world_rule_changes", [])}
+    for session in sessions:
+        if session.get("role") != "god" or session.get("result", {}).get("status") != "accepted":
+            continue
+        payload = session.get("response") or {}
+        if not isinstance(payload, dict) or not payload.get("change_type"):
+            for step in reversed(session.get("transcript") or []):
+                if step.get("step") == "tool" and step.get("name") == "propose_world_change":
+                    payload = dict(step.get("arguments") or {})
+                    break
+                if step.get("step") == "intent" and isinstance(step.get("response"), dict):
+                    candidate = dict(step.get("response") or {})
+                    if candidate.get("change_type"):
+                        payload = candidate
+                        break
+        if payload.get("change_type") != "rule":
+            continue
+        rule = payload.get("rule") if isinstance(payload.get("rule"), dict) else {}
+        rule_id = str(rule.get("id") or rule.get("name") or "")
+        change = by_rule.get(rule_id)
+        if change is None and session.get("result", {}).get("event_id") is not None:
+            change = next((item for item in causality.get("world_rule_changes", []) if item.get("event_id") == session["result"].get("event_id")), None)
+        if not change:
+            continue
+        quality = session.setdefault("quality", {})
+        check = next((item for item in quality.get("checks", []) if item.get("name") == "god_rule_has_behavior_followup"), None)
+        if not check:
+            continue
+        if change.get("status") == "verified":
+            check["passed"] = True
+            check["detail"] = f"{change['followup_count']} later behavior outcome(s) verified the rule"
+            quality.pop("pending", None)
+            quality["passed"] = all(item.get("passed") for item in quality.get("checks", []))
+            if quality["passed"]:
+                quality["grade"] = "grounded"
+        else:
+            quality["pending"] = ["god_rule_has_behavior_followup"]
+            quality["grade"] = "accepted_pending_world_followup"
 
 
 def main() -> int:
@@ -108,6 +195,13 @@ def main() -> int:
 
     try:
         report = platform.run(args.minutes, provider_name=args.provider, turn_observer=observe)
+        causality = _causality(platform, sessions)
+        _finalize_quality(sessions, causality)
+        quality_counts = {
+            "passed": sum(1 for item in sessions if item["quality"].get("passed")),
+            "pending": sum(1 for item in sessions if item["quality"].get("pending")),
+            "failed": sum(1 for item in sessions if not item["quality"].get("passed") and not item["quality"].get("pending")),
+        }
         output = {
             "provider": args.provider,
             "model": config.providers[args.provider].model,
@@ -122,12 +216,13 @@ def main() -> int:
                 "observer": platform.observer_view(event_limit=100),
                 "agents": platform.store.list_agents(),
                 "progress": platform.store.list_progress("world", limit=100),
-                "causality": _causality(platform, sessions),
+                "causality": causality,
+                "quality_counts": quality_counts,
             },
         }
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
-        failed = sum(1 for item in sessions if not item["quality"].get("passed"))
+        failed = quality_counts["failed"]
         print(json.dumps({
             "audit_file": str(args.output),
             "db_path": str(db_path),
@@ -138,7 +233,9 @@ def main() -> int:
             "quality_by_role": {
                 role: {
                     "sessions": sum(1 for item in sessions if item["role"] == role),
-                    "failed": sum(1 for item in sessions if item["role"] == role and not item["quality"].get("passed")),
+                    "passed": sum(1 for item in sessions if item["role"] == role and item["quality"].get("passed")),
+                    "pending": sum(1 for item in sessions if item["role"] == role and item["quality"].get("pending")),
+                    "failed": sum(1 for item in sessions if item["role"] == role and not item["quality"].get("passed") and not item["quality"].get("pending")),
                 }
                 for role in ("agent_decision", "agent_reflection", "story", "god")
             },

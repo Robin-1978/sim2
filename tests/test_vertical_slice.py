@@ -1617,6 +1617,36 @@ def test_story_feedback_runs_at_completion_boundary_and_updates_audience(tmp_pat
         platform.close()
 
 
+def test_emergent_story_beat_is_not_repeated_for_one_validated_result(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "story-dedup-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            source_event_id = platform.store.append_event(
+                "relationship.changed",
+                "fei_lan",
+                0,
+                {"target_id": "yu_ge", "relation": "trust", "delta": 0.1},
+            )
+        proposal = {
+            "beat": "emergent: route testimony",
+            "summary": "A validated testimony changes how the village reads the trade route.",
+            "fact": "The trade route testimony was recorded.",
+            "goal_hint": "Compare the testimony with the next route report.",
+            "audience": ["林泊"],
+        }
+        first = platform.submit_story_beat("story", proposal)
+        second = platform.submit_story_beat("story", {**proposal, "summary": "A second wording for the same validated testimony."})
+        assert first["status"] == "accepted"
+        assert second["status"] == "wait"
+        assert second["reason"].startswith("This validated result already")
+        assert platform.store.recent_events(limit=20)[0]["event_type"] == "story.beat.activated"
+        saved = platform.store.get_meta("story_state")["emergent_beats"]
+        assert saved[-1]["source_event_id"] == source_event_id
+    finally:
+        platform.close()
+
+
 def test_step_commits_each_tick_before_a_later_tick_fails(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "tick-commit-world", tmp_path / "runtime")

@@ -90,7 +90,7 @@ class RuleCompiler:
             return False, "A behavior_constraint blocks every listed behavior; list only the behavior that must be blocked."
         raw_effect = rule.get("effect", rule.get("enforcement"))
         if isinstance(raw_effect, str) and (behavior_selectors or action_selectors) and not re.fullmatch(r"[A-Za-z0-9_.-]+", raw_effect.strip()):
-            return False, "A rule with a behavior follow-up needs one supported effect name or a typed effect object."
+            return False, "A rule with a behavior follow-up needs one supported effect name without spaces (for example policy.review_signal) or a typed effect object such as {type: signal, message: ...}."
         if normalized["effect"].get("type") not in self._DENY_EFFECTS | self._SIGNAL_EFFECTS | {"policy", "behavior_constraint"}:
             return False, "Rule effect type is not supported."
         unknown_behaviors = [value for value in behavior_selectors if not self._known_behavior(value)]
@@ -119,12 +119,40 @@ class RuleCompiler:
         configured = self.rules.get("rule_enforcement_terms", []) if isinstance(self.rules, dict) else []
         terms = [str(item).casefold() for item in configured if str(item).strip()]
         if not terms:
-            terms = ["gate", "gated", "must", "priorit", "defer", "block", "restrict", "required", "only when", "until", "必须", "优先", "阻止", "限制", "直到"]
+            # ``gate`` by itself is deliberately absent.  It is commonly part
+            # of a place or object name (for example ``gate mark``), while a
+            # real enforcement claim is expressed as ``gated access`` or a
+            # typed denial/constraint effect.  The latter is checked below by
+            # the structured effect validator.
+            terms = ["gated", "must", "priorit", "defer", "block", "restrict", "required", "only when", "until", "必须", "优先", "阻止", "限制", "直到"]
         text = " ".join(str(item).casefold() for item in (statements or []) if item not in (None, ""))
         text += " " + str(rule.get("description") or rule.get("label") or "").casefold()
-        if any(term in text for term in terms):
+        if any(self._enforcement_term_matches(text, term) for term in terms):
             return False, "Signal-only rule rejected: remove priority, gating, blocking, or until language from the proposal text, or use effect.type behavior_constraint and list only the blocked BT. Submit one corrected proposal now."
         return True, ""
+
+    @staticmethod
+    def _enforcement_term_matches(text: str, term: str) -> bool:
+        """Match an enforcement phrase without matching it inside a name.
+
+        Configured terms historically used short prefixes such as ``priorit``
+        and ``block``.  Preserve that useful behavior, but require a token
+        boundary so names such as ``gate-mark`` or ``blocked_marker`` are not
+        treated as policy prose.  A configured phrase containing spaces keeps
+        phrase semantics.
+        """
+
+        term = str(term or "").strip().casefold()
+        if not term:
+            return False
+        escaped = re.escape(term).replace(r"\ ", r"\s+")
+        # Prefixes are intentionally limited to the terms used by the generic
+        # default vocabulary; arbitrary package terms remain exact matches.
+        if term in {"priorit", "defer", "block", "restrict", "required"}:
+            pattern = rf"(?<![a-z0-9_]){escaped}[a-z0-9]*(?![a-z0-9_])"
+        else:
+            pattern = rf"(?<![a-z0-9_]){escaped}(?![a-z0-9_])"
+        return re.search(pattern, text, flags=re.IGNORECASE) is not None
 
     def validate_declared_conditions(self, rule: dict[str, Any], declared: list[Any] | None = None) -> tuple[bool, str]:
         """Ensure explicit machine conditions are represented by the rule."""
@@ -138,10 +166,52 @@ class RuleCompiler:
                 return False, f"Declared condition fields are absent from the rule condition: {', '.join(missing)}."
         return True, ""
 
+    def signal_conflict(self, rule: dict[str, Any], existing_rules: list[dict[str, Any]] | None = None) -> tuple[str, str] | None:
+        """Find generic signal duplication or same-role signal chaining.
+
+        A signal rule is a notification boundary, not a stream processor.  If
+        God registers another signal for the same validated event and the same
+        follow-up, or wires one God-woken signal into another God-woken signal,
+        the proposal would create an endless policy chain instead of world
+        progress.  The check uses only declarative event paths, wake roles and
+        selectors; it contains no package-specific event or behavior names.
+        """
+
+        compiled = self.compile(rule)
+        effect_type = str(compiled["effect"].get("type", "")).casefold()
+        if effect_type not in self._SIGNAL_EFFECTS | {"policy"}:
+            return None
+        event_paths = set(self._event_paths(compiled["condition"]))
+        selectors = {self._normal(item) for item in (compiled["behavior_ids"] + compiled["behavior_names"] + compiled["action_names"]) if self._normal(item)}
+        wake = {self._normal(item) for item in compiled["wake"] if self._normal(item)}
+        effect_name = self._normal(compiled["effect"].get("name") or compiled["effect"].get("event") or compiled["effect"].get("type"))
+        for raw in existing_rules or []:
+            if not isinstance(raw, dict):
+                continue
+            other = self.compile(raw)
+            other_type = str(other["effect"].get("type", "")).casefold()
+            if other_type not in self._SIGNAL_EFFECTS | {"policy"}:
+                continue
+            other_paths = set(self._event_paths(other["condition"]))
+            other_selectors = {self._normal(item) for item in (other["behavior_ids"] + other["behavior_names"] + other["action_names"]) if self._normal(item)}
+            other_wake = {self._normal(item) for item in other["wake"] if self._normal(item)}
+            other_effect_name = self._normal(other["effect"].get("name") or other["effect"].get("event") or other["effect"].get("type"))
+            if event_paths and event_paths & other_paths and selectors == other_selectors and wake == other_wake and effect_name == other_effect_name:
+                return "duplicate", str(other.get("name") or raw.get("id") or "existing signal")
+            source_ids = {path.removeprefix("event.recent.world.rule.") for path in event_paths if path.startswith("event.recent.world.rule.")}
+            existing_id = str(raw.get("id") or raw.get("name") or "")
+            if source_ids and self._normal(existing_id) in {self._normal(item) for item in source_ids} and wake & other_wake:
+                return "cycle", str(other.get("name") or existing_id or "existing signal")
+        return None
+
     @staticmethod
     def _condition_paths(expression: str) -> list[str]:
         paths = re.findall(r"(?<![A-Za-z0-9_])((?:world|resource|actor|target|context|event\.recent)(?:\.[A-Za-z0-9_]+)+)", expression)
         return list(dict.fromkeys(paths))
+
+    @staticmethod
+    def _event_paths(expression: str) -> list[str]:
+        return list(dict.fromkeys(re.findall(r"(?<![A-Za-z0-9_])(event\.recent(?:\.[A-Za-z0-9_]+)+)", str(expression or "").casefold())))
 
     def _condition_supported(self, expression: str) -> tuple[bool, str]:
         """Reject structured paths that the condition engine cannot observe."""

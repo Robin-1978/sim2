@@ -18,6 +18,73 @@ def _terms(value: Any) -> set[str]:
     return terms
 
 
+def _outcome_evidence(item: dict[str, Any]) -> tuple[str, str]:
+    """Return searchable evidence and a normalized kind for one outcome."""
+
+    outcome = item.get("outcome") if isinstance(item.get("outcome"), dict) else {}
+    evidence = " ".join([
+        str(outcome.get("result", "")),
+        str((outcome.get("expected") or {}).get("summary", "")),
+        str(outcome.get("delta", {})),
+        str(outcome.get("actual", {})),
+        str(item.get("event_type", "")),
+        str(item.get("behavior_id", "")),
+        str(item.get("behavior_choice", "")),
+    ])
+    kind = " ".join(str(value).casefold() for value in (
+        item.get("event_type"), item.get("behavior_id"), outcome.get("result"), item.get("behavior_choice")
+    ))
+    return evidence, kind
+
+
+def _experience_matches_outcome(summary: str, item: dict[str, Any]) -> bool:
+    """Require a lesson to cite one visible outcome in the recent window.
+
+    Reflection may legitimately consolidate a result from the second or third
+    recent entry instead of repeating the newest event.  Matching is still
+    evidence-based: either terms overlap or the outcome's configured behavior
+    family has a matching plain-language signal in the lesson.
+    """
+
+    evidence, event_kind = _outcome_evidence(item)
+    summary_terms = _terms(summary)
+    if summary_terms & _terms(evidence):
+        return True
+    semantic_signals = {
+        "dialogue": ("dialogue", "conversation", "communicat", "exchange", "talk", "对话", "交谈", "交流", "沟通", "谈", "消息"),
+        "research": ("research", "study", "fact", "研究", "调查", "事实"),
+        "explor": ("explor", "survey", "route", "map", "探索", "勘察", "地图", "路线"),
+        "rest": ("rest", "recover", "energy", "休息", "恢复", "体力", "能量"),
+        "food": ("food", "ration", "satiety", "meal", "吃", "食物", "口粮", "饱食", "饱腹", "粮仓", "谷物", "配给"),
+        "patrol": ("patrol", "watch", "security", "巡逻", "警戒", "安全"),
+        "inspect": ("inspect", "check", "stock", "report", "检查", "巡查", "盘点", "库存", "报告"),
+        "craft": ("craft", "forge", "recipe", "制作", "锻造", "晨钟", "工具"),
+        "negotiate": ("negotiat", "agreement", "contract", "协商", "谈判", "协议"),
+        "gather": ("gather", "collect", "resource", "采集", "收集", "资源", "谷物"),
+        "travel": ("travel", "move", "arrive", "route", "移动", "到达", "路线"),
+    }
+    return any(
+        key in event_kind and any(term in summary.casefold() for term in terms)
+        for key, terms in semantic_signals.items()
+    )
+
+
+def _claims_enforcement(text: str) -> bool:
+    """Detect enforcement claims without treating a place name as a gate."""
+
+    text = str(text or "").casefold()
+    terms = ("gated", "must", "priorit", "defer", "block", "restrict", "required", "only when", "until", "必须", "优先", "阻止", "限制", "直到")
+    for term in terms:
+        escaped = re.escape(term).replace(r"\ ", r"\s+")
+        if term in {"priorit", "defer", "block", "restrict", "required"}:
+            pattern = rf"(?<![a-z0-9_]){escaped}[a-z0-9]*(?![a-z0-9_])"
+        else:
+            pattern = rf"(?<![a-z0-9_]){escaped}(?![a-z0-9_])"
+        if re.search(pattern, text):
+            return True
+    return False
+
+
 def _final_submission(turn: AgentTurn) -> tuple[str, dict[str, Any]]:
     for step in reversed(turn.transcript):
         if step.get("step") == "tool" and step.get("result", {}).get("status") in {"accepted", "wait"}:
@@ -94,37 +161,16 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
             checks.append(_check("reflection_experience_is_specific_and_bounded", (len(summary.split()) >= 4 or len(summary) >= 16) and len(summary) <= 500, f"summary_length={len(summary)}"))
             outcomes = view.get("recent_outcomes") or []
             if outcomes:
-                outcome = outcomes[0].get("outcome") or {}
-                evidence = " ".join([
-                    str(outcome.get("result", "")),
-                    str((outcome.get("expected") or {}).get("summary", "")),
-                    str(outcome.get("delta", {})),
-                    str(outcomes[0].get("event_type", "")),
-                    str(outcomes[0].get("behavior_choice", "")),
-                ])
-                summary_terms = _terms(summary)
-                evidence_terms = _terms(evidence)
-                event_kind = " ".join(str(value).casefold() for value in (outcomes[0].get("event_type"), outcome.get("result"), outcomes[0].get("behavior_choice")))
-                semantic_signals = {
-                    "dialogue": ("dialogue", "conversation", "communicat", "exchange", "talk", "对话", "交谈", "交流", "沟通", "谈", "消息"),
-                    "research": ("research", "study", "fact", "研究", "调查", "事实"),
-                    "explor": ("explor", "survey", "route", "map", "探索", "勘察", "地图", "路线"),
-                    "rest": ("rest", "recover", "energy", "休息", "恢复", "体力", "能量"),
-                    "food": ("food", "ration", "satiety", "meal", "吃", "食物", "口粮", "饱食", "饱腹"),
-                    "patrol": ("patrol", "watch", "security", "巡逻", "警戒", "安全"),
-                    "inspect": ("inspect", "check", "stock", "report", "检查", "巡查", "盘点", "库存", "报告"),
-                    "craft": ("craft", "forge", "recipe", "制作", "锻造", "晨钟", "工具"),
-                    "negotiate": ("negotiat", "agreement", "contract", "协商", "谈判", "协议"),
-                    "gather": ("gather", "collect", "resource", "采集", "收集", "资源"),
-                    "travel": ("travel", "move", "arrive", "route", "移动", "到达", "路线"),
-                }
-                signal_match = any(
-                    any(term in summary.casefold() for term in terms)
-                    for key, terms in semantic_signals.items()
-                    if key in event_kind
-                )
-                grounded = bool(summary_terms & evidence_terms) or signal_match
-                checks.append(_check("reflection_experience_matches_outcome", grounded, "summary overlaps the observed outcome" if grounded else "summary does not cite the observed outcome"))
+                matched = [
+                    item for item in outcomes
+                    if isinstance(item, dict) and _experience_matches_outcome(summary, item)
+                ]
+                matched_labels = [str(item.get("behavior_id") or item.get("event_type") or "outcome") for item in matched[:3]]
+                checks.append(_check(
+                    "reflection_experience_matches_outcome",
+                    bool(matched),
+                    f"summary matches recent outcome(s): {matched_labels}" if matched else "summary does not cite any recent observed outcome",
+                ))
         elif name == "update_capability" or payload.get("intent_type") == "update_capability":
             evidence = str(payload.get("evidence") or "")
             delta = payload.get("delta")
@@ -177,7 +223,7 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
                 claims_denial = any(term in expected_text for term in ("deny", "refus", "restrict", "禁止", "拒绝"))
                 effect_is_denial = effect_text in {"deny", "deny_access", "deny_action", "forbid"} or (isinstance(rule.get("effect"), dict) and str(rule["effect"].get("type", "")).casefold() in {"deny", "deny_access", "deny_action", "forbid"})
                 checks.append(_check("god_rule_expected_effect_matches", not claims_denial or effect_is_denial, "expected denial is represented by a denial effect" if not claims_denial or effect_is_denial else "expected denial is not represented by the submitted rule effect"))
-                claims_gate = any(term in expected_text or term in " ".join(str(item).casefold() for item in (payload.get("effects") or [])) for term in ("gate", "gated", "priorit", "defer", "must"))
+                claims_gate = _claims_enforcement(expected_text + " " + " ".join(str(item) for item in (payload.get("effects") or [])))
                 effect_is_gate = effect_is_denial or (isinstance(rule.get("effect"), dict) and str(rule["effect"].get("type", "")).casefold() in {"behavior_constraint", "policy"})
                 checks.append(_check("god_rule_claims_match_enforcement", not claims_gate or effect_is_gate, "the rule effect can enforce the stated gate" if not claims_gate or effect_is_gate else "the proposal claims priority or gating but submits only a signal"))
                 rule_condition_text = str(rule.get("condition") or "").casefold()

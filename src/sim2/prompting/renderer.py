@@ -294,6 +294,13 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     if role == "story":
         lines.append("<story_state>")
         lines.append("  Choose one configured beat whose evidence is present. If none is listed, propose an emergent beat grounded in the latest validated event.")
+        candidates = context.get("audience_candidates") or []
+        lines.append("  <audience_candidates>")
+        lines.extend([
+            f"    - exact character name: {item.get('name')}; {item.get('reason', 'recent validated participant')}"
+            for item in candidates[:12]
+        ] or ["    - none available; return wait instead of inventing a character name"])
+        lines.append("  </audience_candidates>")
         progress_candidates = context.get("world_progress_candidates") or []
         if progress_candidates:
             lines.append("  Configured public progress keys: " + "; ".join(str(item.get("progress_key")) for item in progress_candidates[:8]))

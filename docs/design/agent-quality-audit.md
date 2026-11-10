@@ -76,4 +76,9 @@ fields and maps visible entity names such as “旧井” back to configured key
 the Platform boundary. A stored rule is still not an applied world change: the
 God grade remains pending until the named behavior completes and its observed
 result is visible in a later world review. A signal cannot claim to gate or
-prioritize a behavior; that requires a typed `behavior_constraint` effect.
+prioritize a behavior; that requires a typed `behavior_constraint` effect. The
+Platform also rejects a second signal for the same event/follow-up pair and a
+same-role signal chain sourced from `world.rule.*`, preventing a notification
+from recursively generating notifications without a behavior result. Story
+context exposes exact character names from recent event participants; one
+emergent beat is recorded per validated evidence event.
