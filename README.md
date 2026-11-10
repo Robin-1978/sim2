@@ -76,6 +76,8 @@ python scripts/verify_agent_models.py
 python scripts/verify_core_interaction.py --provider remote
 # Full context/output/world causality audit (runs every role through one provider)
 bash -ic 'python scripts/audit_real_world.py --minutes 1440 --provider remote'
+# Review every recorded session and the persisted SQLite execution closure
+python scripts/review_audit.py artifacts/real-agent-audit-1440-final-complete.json
 ```
 
 `audit_real_world.py` writes a reviewable JSON artifact under `artifacts/` with

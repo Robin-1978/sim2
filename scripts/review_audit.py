@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +75,150 @@ def _feedback_checks(session: dict[str, Any], index: int) -> list[dict[str, Any]
     return issues
 
 
+def _database_checks(data: dict[str, Any]) -> dict[str, Any]:
+    """Verify persisted execution and evolution closure for the full run.
+
+    Prompt checks can prove what the model saw, but only the instance database
+    can prove that Platform subsequently completed or retained every long
+    action.  This pass deliberately checks all rows, not a recent-event
+    window.
+    """
+
+    db_path = data.get("db_path")
+    if not db_path or not Path(str(db_path)).is_file():
+        return {"passed": False, "issues": [_issue("missing_audit_database", str(db_path))]}
+    issues: list[dict[str, Any]] = []
+    connection = sqlite3.connect(str(db_path))
+    connection.row_factory = sqlite3.Row
+    try:
+        def rows(query: str, args: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+            return [dict(row) for row in connection.execute(query, args).fetchall()]
+
+        def payload(row: dict[str, Any], key: str = "data_json") -> dict[str, Any]:
+            try:
+                value = json.loads(row.get(key) or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return {}
+            return value if isinstance(value, dict) else {}
+
+        requested = int(data.get("minutes_requested", 0) or 0)
+        runtime_status = str((data.get("world") or {}).get("status", {}).get("status", ""))
+        if runtime_status and runtime_status != "running":
+            issues.append(_issue("world_runtime_not_running", runtime_status))
+        minute_row = connection.execute("SELECT value FROM instance_meta WHERE key='world_minute'").fetchone()
+        final_minute = int(json.loads(minute_row["value"])) if minute_row else None
+        if requested and final_minute != requested:
+            issues.append(_issue("world_run_incomplete", f"requested={requested}; persisted={final_minute}"))
+
+        bt_rows = rows("SELECT execution_id,status,data_json FROM bt_instance")
+        bt_status = {str(row["execution_id"]): str(row["status"]) for row in bt_rows}
+        event_rows = rows("SELECT event_id,event_type,actor_id,world_minute,data_json FROM event_log ORDER BY event_id")
+        started = {}
+        outcomes = {}
+        for row in event_rows:
+            item = payload(row)
+            execution_id = str(item.get("execution_id") or item.get("intent_id") or "")
+            if row["event_type"] == "behavior.started" and execution_id:
+                started[execution_id] = row
+            elif row["event_type"] in {"behavior.completed", "behavior.failed", "behavior.interrupted"} and execution_id:
+                outcomes[execution_id] = row
+                outcome = item.get("outcome") if isinstance(item.get("outcome"), dict) else {}
+                required = {"expected", "actual", "delta", "result", "status"}
+                missing = sorted(key for key in required if key not in outcome)
+                if missing:
+                    issues.append(_issue("behavior_outcome_incomplete", f"execution={execution_id}; missing={missing}"))
+        for execution_id, row in started.items():
+            if execution_id not in outcomes and bt_status.get(execution_id) not in {"executing", "paused"}:
+                issues.append(_issue("behavior_execution_not_closed", f"execution={execution_id}; status={bt_status.get(execution_id)}"))
+
+        action_started: set[str] = set()
+        action_finished: set[str] = set()
+        action_started_events = 0
+        action_finished_events = 0
+        for row in event_rows:
+            item = payload(row)
+            execution_id = str(item.get("execution_id") or "")
+            if not execution_id:
+                continue
+            if row["event_type"] == "action.started":
+                action_started_events += 1
+                action_started.add(execution_id)
+            elif row["event_type"] in {"action.completed", "action.failed", "action.interrupted"}:
+                action_finished_events += 1
+                action_finished.add(execution_id)
+        running_actions = {str(row["execution_id"]) for row in rows("SELECT execution_id FROM action_instance WHERE status IN ('running','paused')")}
+        for execution_id in sorted(action_started - action_finished - running_actions):
+            issues.append(_issue("action_execution_not_closed", f"action_instance={execution_id}"))
+
+        scheduled_due = rows("SELECT task_id,status,due_minute FROM evolution_task WHERE due_minute<=?", (final_minute if final_minute is not None else (requested or 10**9),))
+        open_statuses = {"ready", "claimed", "running", "scheduled"}
+        open_tasks = [row for row in scheduled_due if str(row["status"]) in open_statuses]
+        if open_tasks:
+            issues.append(_issue("evolution_tasks_unresolved", str([{key: row[key] for key in ("task_id", "status", "due_minute")} for row in open_tasks])))
+
+        accepted_behavior_intents = rows("SELECT intent_id,result_json FROM intent WHERE status IN ('accepted','completed') AND intent_type IN ('select_behavior','request_behavior')")
+        for row in accepted_behavior_intents:
+            result = payload(row, "result_json")
+            execution_id = str(result.get("execution_id") or "")
+            if execution_id and execution_id not in outcomes and bt_status.get(execution_id) not in {"executing", "paused"}:
+                issues.append(_issue("accepted_behavior_without_execution", f"intent={row['intent_id']}; execution={execution_id}"))
+
+        god_property = [
+            row for row in event_rows
+            if row["actor_id"] == "god" and row["event_type"] in {"world.change.world_property", "world.property_changed"}
+        ]
+        if god_property:
+            issues.append(_issue("god_direct_property_change", str([row["event_id"] for row in god_property])))
+
+        exchange_rows = rows("SELECT id,speaker_id,listener_id,topic,world_minute,data_json FROM dialogue_exchange ORDER BY id")
+        entity_ids = {str(row["id"]) for row in rows("SELECT id FROM entity")}
+        empty_messages = 0
+        placeholder_topics = []
+        oversized_messages = []
+        exact_repeats = 0
+        prior: dict[tuple[str, str, str], list[tuple[int, str]]] = {}
+        for row in exchange_rows:
+            data_json = payload(row)
+            message = str(data_json.get("message") or "").strip()
+            if not message:
+                empty_messages += 1
+            if str(row["topic"]).strip().startswith("context.") or "{context." in str(row["topic"]):
+                placeholder_topics.append({"id": row["id"], "topic": row["topic"]})
+            if len(message) > 1000:
+                oversized_messages.append(row["id"])
+            if row["speaker_id"] not in entity_ids or (row["listener_id"] and row["listener_id"] not in entity_ids):
+                issues.append(_issue("dialogue_unknown_participant", f"exchange={row['id']}"))
+            key = (str(row["speaker_id"]), str(row["listener_id"] or ""), str(row["topic"]))
+            if message:
+                for previous_minute, previous in prior.get(key, []):
+                    if int(row["world_minute"]) - previous_minute <= 360 and message.casefold() == previous.casefold():
+                        exact_repeats += 1
+                        break
+                prior.setdefault(key, []).append((int(row["world_minute"]), message))
+                prior[key] = prior[key][-8:]
+        if placeholder_topics:
+            issues.append(_issue("dialogue_placeholder_topic", str(placeholder_topics[:8])))
+        if oversized_messages:
+            issues.append(_issue("dialogue_message_over_limit", str(oversized_messages[:8])))
+
+        return {
+            "passed": not issues,
+            "world_minute": final_minute,
+            "behavior_started": len(started),
+            "behavior_closed": len(outcomes),
+            "action_started": action_started_events,
+            "action_closed": action_finished_events,
+            "action_running": len(running_actions),
+            "evolution_due": len(scheduled_due),
+            "dialogue_exchanges": len(exchange_rows),
+            "dialogue_empty_messages": empty_messages,
+            "dialogue_exact_repeats_within_window": exact_repeats,
+            "issues": issues,
+        }
+    finally:
+        connection.close()
+
+
 def review(data: dict[str, Any]) -> dict[str, Any]:
     sessions = list(data.get("sessions") or [])
     issues: list[dict[str, Any]] = []
@@ -101,13 +246,23 @@ def review(data: dict[str, Any]) -> dict[str, Any]:
         if change.get("status") not in {"pending", "verified"}:
             issues.append(_issue("unknown_rule_followup_status", str(change)))
     quality_counts = world.get("quality_counts") or {}
+    database_checks = _database_checks(data)
+    issues.extend(database_checks.get("issues") or [])
+    if int(quality_counts.get("pending", 0) or 0) > 0:
+        issues.append(_issue("unresolved_quality_checks", str(quality_counts.get("pending"))))
+    if int(data.get("minutes_requested", 0) or 0) >= 1440:
+        role_counts = {role: sum(1 for item in sessions if item.get("role") == role) for role in ("agent_decision", "agent_reflection", "story", "god")}
+        missing_roles = [role for role, count in role_counts.items() if count == 0]
+        if missing_roles:
+            issues.append(_issue("missing_agent_phase_coverage", str(missing_roles)))
     return {
-        "passed": not issues and int(quality_counts.get("failed", 0) or 0) == 0,
+        "passed": not issues and int(quality_counts.get("failed", 0) or 0) == 0 and int(quality_counts.get("pending", 0) or 0) == 0,
         "sessions": len(sessions),
         "quality_counts": quality_counts,
         "role_stats": role_stats,
         "rule_count": len(causality.get("world_rule_changes") or []),
         "rule_followup_status": {status: sum(1 for item in causality.get("world_rule_changes") or [] if item.get("status") == status) for status in ("verified", "pending")},
+        "database_checks": database_checks,
         "issues": issues,
     }
 

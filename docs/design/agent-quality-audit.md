@@ -45,6 +45,28 @@ LLM work only and does not delete world history. `SimulationReport` exposes
 `interaction_replies_suppressed` and `interaction_threads_closed`; compare
 those with `llm_call` usage when reviewing a long run.
 
+## Full-run verification
+
+The latest complete run used DeepSeek v4.1 Flash for 1,440 world minutes. It
+recorded 279 Agent sessions: 244 decisions, 11 reflections, 18 God sessions,
+and 6 Story sessions. All 279 quality checks passed; there were no LLM errors,
+rejected turns, orphan behavior intents, unresolved evolution tasks, or direct
+God property changes. The Platform persisted 86 started behaviors and 82
+closed behaviors. It recorded 141 action starts and 137 action completions; the
+remaining four actions were still validly executing at the exact end minute.
+
+The run produced 90 dialogue exchanges and 55 instant reply calls. The
+instant-reply prompt averaged 1,976 provider prompt tokens. Thirty replies were
+suppressed as repeated content and 28 topic threads were closed by the
+configured round/window policy. The full prompt, transcript, output, and
+SQLite path are in `artifacts/real-agent-audit-1440-final-complete.json`.
+
+`scripts/review_audit.py` now performs the final audit over every session and
+the complete SQLite database. It checks prompt order and feedback continuity,
+role quality, behavior/action closure, evolution-task status, world-minute
+completion, dialogue participants and placeholders, and God's property-change
+boundary. A pending quality check or unresolved database row fails the audit.
+
 ## Quality evidence
 
 | Role | Observed result | Assessment |
