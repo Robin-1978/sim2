@@ -56,3 +56,25 @@ and the strict structural/database audit is in
 The water follow-up BTs and warning-bell installation remain configuration
 work items. They need explicit Actions and observable result events before
 their research/production stories can be considered closed.
+
+## Review boundary and remaining risks
+
+The 1,440-minute SQLite run referenced above predates the changes listed in
+the previous section. It is valid evidence for the original defects, but it
+is not a post-fix acceptance run. The strict audit currently proves schema,
+tool, intent, and database closure; its `279/279` quality count does not prove
+that a model's causal interpretation is true. A post-fix run must re-check
+locations, event provenance, and resulting world state.
+
+The negotiation at minute 43 also produced two legitimate but semantically
+overlapping wake events (`negotiation.completed` and
+`negotiation.result_recorded`) for both God and Story. They have unique task
+IDs, so this is not a database duplicate, but the scheduler should eventually
+deduplicate one outcome chain or choose one canonical wake event.
+
+The current Story guard rejects unsupported movement or delivery claims, but
+its phrase list lives in Platform code. Replace that temporary guard with
+typed, configuration-backed claim/evidence references before adding another
+world. Likewise, `claim_status` labels memory provenance but does not yet
+verify a `confirmed` claim against a specific event payload; that remains a
+semantic validation task.
