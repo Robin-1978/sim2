@@ -27,10 +27,12 @@ The adapter also accepts `SIM2_BGE_CACHE` or the BieTheirBed-compatible
 already downloaded `model_optimized.onnx` and `tokenizer.json` pair is reused
 without another download. The Starter Village preloads the model; other
 packages can set `SIM2_BGE_PRELOAD=1` or `semantic_similarity.preload: true`.
-The model and candidate embeddings are process-cached: the first load/first
-new candidate pays the encoding cost, and later queries reuse the encoder and
-vectors. A 1,000-candidate cold batch is about 1.5 seconds on the current CPU;
-the same corpus is about 0.1 seconds on a subsequent query.
+The model is preloaded once per process. Candidate embeddings are also cached
+in the instance SQLite database, so a new Agent session or process restart can
+reuse vectors for unchanged text. A 128-candidate cold batch is about 0.15
+seconds on the current CPU; after reopening the same SQLite instance it is
+about 0.02 seconds. Query vectors remain in process memory only because they
+are transient and should not grow the world database.
 ONNX Runtime does not require PyTorch. GPU execution requires an
 `onnxruntime-gpu` build exposing `CUDAExecutionProvider` plus a working CUDA
 and cuDNN runtime; a CUDA-enabled PyTorch installation alone is not enough.
@@ -41,20 +43,17 @@ used.
 ## Persistence and scale status
 
 The current implementation persists memory prose, tier, tags, importance,
-salience, and access counts in SQLite. BGE vectors are **not yet persisted**:
-they live in the process cache and are recomputed after a restart or cache
-eviction. Retrieval currently ranks at most 1,000 permitted records per tier,
-then exposes a small bounded slice to the Agent. This is acceptable for the
-present Starter Village evidence, but it is not the final design for a large
-world or a long-lived instance.
+salience, access counts, and content-hash keyed BGE vectors in SQLite. The
+vector table is a rebuildable cache, never authoritative memory; its `model_key`
+separates model/backend revisions. Retrieval ranks at most 1,000 permitted
+records per tier, but BGE reranking is bounded by `embedding_candidate_limit`
+(256 by default). FTS/lexical ranking produces that candidate set first.
 
-The next persistence step is an additive `memory_embedding` table keyed by
-`memory_id`, `model_key`, and `model_revision`, with `dimensions`, `dtype`,
-`normalized`, `vector_blob`, and `updated_at`. New instances should create it
-from the package schema; a development instance may use an additive migration.
-If the model revision changes, old vectors remain identifiable and are rebuilt
-in the background or on demand. SQLite FTS5 remains the lexical index, while
-the embedding table is a durable cache rather than authoritative memory.
+LanceDB is intentionally not required for the current scale. Each world has
+one SQLite file and roughly 10,000 records still fit a lexical-candidate plus
+NumPy rerank path without a second service or storage format. If a future
+world exceeds the bounded candidate scan, `sqlite-vec` or LanceDB can be added
+behind the same retrieval interface; correctness does not depend on either.
 
 At roughly 10,000 memories per Agent, SQLite storage is not the limiting risk;
 candidate generation, encoding time, and prompt size are. The planned query

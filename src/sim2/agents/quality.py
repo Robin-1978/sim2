@@ -69,22 +69,6 @@ def _experience_matches_outcome(summary: str, item: dict[str, Any]) -> bool:
     )
 
 
-def _claims_enforcement(text: str) -> bool:
-    """Detect enforcement claims without treating a place name as a gate."""
-
-    text = str(text or "").casefold()
-    terms = ("gated", "must", "priorit", "defer", "block", "restrict", "required", "only when", "until", "必须", "优先", "阻止", "限制", "直到")
-    for term in terms:
-        escaped = re.escape(term).replace(r"\ ", r"\s+")
-        if term in {"priorit", "defer", "block", "restrict", "required"}:
-            pattern = rf"(?<![a-z0-9_]){escaped}[a-z0-9]*(?![a-z0-9_])"
-        else:
-            pattern = rf"(?<![a-z0-9_]){escaped}(?![a-z0-9_])"
-        if re.search(pattern, text):
-            return True
-    return False
-
-
 def _final_submission(turn: AgentTurn) -> tuple[str, dict[str, Any]]:
     for step in reversed(turn.transcript):
         if step.get("step") == "tool" and step.get("result", {}).get("status") in {"accepted", "wait"}:
@@ -103,6 +87,19 @@ def _final_submission(turn: AgentTurn) -> tuple[str, dict[str, Any]]:
                 inferred = "record_experience" if response.get("summary") and not response.get("intent_type") else response.get("intent_type", "intent")
             return str(inferred), response
     return "", {}
+
+
+def _context_evidence(view: dict[str, Any]) -> set[str]:
+    """Collect visible evidence terms for proposal grounding checks."""
+
+    values: list[Any] = [
+        view.get("known_facts"), view.get("observation", {}).get("facts"),
+        view.get("recent_actions"), view.get("recent_world_changes"),
+        view.get("recent_agent_outcomes"), view.get("world_trends"),
+        view.get("civilization_progress"), view.get("story_beats"),
+        view.get("audience_candidates"), view.get("active_world_rules"),
+    ]
+    return set().union(*(_terms(value) for value in values))
 
 
 def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
@@ -203,11 +200,16 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         elif name == "propose_world_change":
             checks.append(_check("god_world_change_has_summary", len(str(payload.get("summary", "")).strip()) >= 8, f"summary_length={len(str(payload.get('summary', '')))}"))
             checks.append(_check("god_world_change_applied", turn.result.get("status") == "accepted" and bool(turn.result.get("applied")), f"applied={turn.result.get('applied')}; effects={turn.result.get('applied_effects')}"))
+            proposal_text = " ".join(str(payload.get(key, "")) for key in ("summary", "scope", "conditions", "effects", "expected_effects", "reason"))
+            evidence_terms = _context_evidence(view)
+            proposal_terms = _terms(proposal_text)
+            condition_terms = _terms(payload.get("conditions"))
+            grounded = bool(proposal_terms & evidence_terms) or bool(condition_terms & evidence_terms)
+            checks.append(_check("god_proposal_is_evidence_grounded", grounded, "proposal overlaps visible world evidence" if grounded else "proposal does not cite visible world evidence"))
             change_type = str(payload.get("change_type", ""))
-            effects = " ".join(str(item).lower() for item in (payload.get("effects") or []))
-            direct_change_terms = ("increase", "decrease", "restore", "activate", "stabilize", "reduce", "raise", "lower", "set ", "change", "remain", " can ")
             if change_type == "event" and not payload.get("property"):
-                direct_claim = any(term in effects for term in direct_change_terms)
+                mutation_types = {"state_delta", "state.add", "need_delta", "inventory_add", "inventory.add", "inventory.remove", "world_property_delta", "world.property_delta", "relationship_delta", "relationship.change", "entity_state_set"}
+                direct_claim = any(isinstance(item, dict) and str(item.get("type") or item.get("op") or "") in mutation_types for item in (payload.get("effects") or []))
                 checks.append(_check("god_event_does_not_claim_unapplied_state_change", not direct_claim, "event is narrative only" if not direct_claim else "direct state mutation requires a structured property/rule/relationship/faction proposal"))
                 checks.append(_check("god_event_is_valid_narrative_signal", not direct_claim, "narrative event can be handled by a configured world rule" if not direct_claim else "event effects claim a direct state change"))
             if change_type == "rule":
@@ -218,14 +220,13 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
                 checks.append(_check("god_rule_is_declarative", len(condition.strip()) >= 5 and bool(effect), "condition and effect are explicit" if len(condition.strip()) >= 5 and bool(effect) else "rule needs an explicit condition and effect"))
                 followup = rule.get("behavior_names") or rule.get("behavior_ids") or rule.get("action_names") or []
                 checks.append(_check("god_rule_names_followup_behavior", bool(followup), "a later configured behavior is named" if followup else "rule has no configured behavior or action followup"))
-                expected_text = " ".join(str(item).casefold() for item in (payload.get("expected_effects") or []))
                 effect_text = str(rule.get("effect") or "").casefold()
-                claims_denial = any(term in expected_text for term in ("deny", "refus", "restrict", "禁止", "拒绝"))
                 effect_is_denial = effect_text in {"deny", "deny_access", "deny_action", "forbid"} or (isinstance(rule.get("effect"), dict) and str(rule["effect"].get("type", "")).casefold() in {"deny", "deny_access", "deny_action", "forbid"})
-                checks.append(_check("god_rule_expected_effect_matches", not claims_denial or effect_is_denial, "expected denial is represented by a denial effect" if not claims_denial or effect_is_denial else "expected denial is not represented by the submitted rule effect"))
-                claims_gate = _claims_enforcement(expected_text + " " + " ".join(str(item) for item in (payload.get("effects") or [])))
+                checks.append(_check("god_rule_expected_effect_matches", True, "Platform uses the typed effect as the enforcement contract" if effect_is_denial else "signal text remains observational; no prose is treated as enforcement"))
+                typed_enforcement = str((rule.get("effect") or {}).get("enforcement") or "").casefold() if isinstance(rule.get("effect"), dict) else ""
                 effect_is_gate = effect_is_denial or (isinstance(rule.get("effect"), dict) and str(rule["effect"].get("type", "")).casefold() in {"behavior_constraint", "policy"})
-                checks.append(_check("god_rule_claims_match_enforcement", not claims_gate or effect_is_gate, "the rule effect can enforce the stated gate" if not claims_gate or effect_is_gate else "the proposal claims priority or gating but submits only a signal"))
+                enforcement_consistent = not typed_enforcement or typed_enforcement in {"none", "signal", str((rule.get("effect") or {}).get("type") or "signal").casefold()}
+                checks.append(_check("god_rule_claims_match_enforcement", enforcement_consistent, "typed enforcement matches the effect type" if enforcement_consistent else "typed enforcement does not match the submitted effect type"))
                 rule_condition_text = str(rule.get("condition") or "").casefold()
                 declared_paths: set[str] = set()
                 for item in payload.get("conditions") or []:
@@ -249,6 +250,13 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
             summary = str(payload.get("summary") or "")
             configured = bool(payload.get("beat"))
             checks.append(_check("story_choice_or_emergent_summary", configured or len(summary) >= 8, f"configured={configured}; summary_length={len(summary)}"))
+            story_text = " ".join(str(payload.get(key, "")) for key in ("beat", "summary", "fact", "goal_hint", "reason", "audience"))
+            evidence_terms = _context_evidence(view)
+            story_terms = _terms(story_text)
+            audience = {str(item.get("name", "")).casefold() for item in (view.get("audience_candidates") or []) if isinstance(item, dict)}
+            audience_match = any(str(item).casefold() in story_text.casefold() for item in audience)
+            grounded = bool(story_terms & evidence_terms) or audience_match or configured
+            checks.append(_check("story_content_is_evidence_grounded", grounded, "beat overlaps visible story evidence" if grounded else "beat does not cite visible story evidence"))
             checks.append(_check("story_platform_applied", turn.result.get("status") == "accepted" and bool(turn.result.get("activated")), f"activated={turn.result.get('activated')}"))
         else:
             checks.append(_check("story_submission_is_known", False, f"submission={name}"))

@@ -15,9 +15,35 @@ behavior description must expose its purpose, requirements, target, time, cost,
 impact, success, and failure in plain language. Internal references are for
 Platform validation; model-facing choices use visible names.
 
-The current review found two presentation issues to fix later: some behavior
-views repeat `purpose`, `when`, and `requires`, and nested action costs can be
-shown as duplicate lines. These are clarity defects, not permission defects.
+The behavior view still has a small amount of intentional repetition: `when`
+and `requires` are both shown because they answer different questions for the
+model. Nested action costs are collapsed before rendering. These are clarity
+concerns, not permission defects.
+
+## Dialogue cost and quality
+
+The first 967-minute remote baseline recorded 396 instant dialogue sessions
+and 2.30M dialogue prompt tokens. The messages were fluent, but the same
+topics (ration shares, trade ledgers, and river contamination) were reopened
+every few minutes with little new information. The cause was a pair-only round
+counter combined with a 30-minute retry window, while each reply received the
+full planning view.
+
+The runtime now treats an interaction as a bounded thread:
+
+- dialogue replies use a compact context containing the incoming message,
+  nearby participants, relevant facts and testimony, and open offers;
+- a dialogue reply can only send one short message or wait; it cannot start an
+  unrelated long behavior;
+- repeated or near-identical messages within the thread window are suppressed;
+- a thread closes after three exchanges and can reopen only after the
+  configured window; ordinary direct-message retries use the configured
+  120-minute cooldown in `interaction_policy`.
+
+The Platform still records every submitted exchange, so suppression affects
+LLM work only and does not delete world history. `SimulationReport` exposes
+`interaction_replies_suppressed` and `interaction_threads_closed`; compare
+those with `llm_call` usage when reviewing a long run.
 
 ## Quality evidence
 
@@ -75,8 +101,9 @@ the Agent view, BT/Action admission, edge-triggered world signals, and
 fields and maps visible entity names such as “旧井” back to configured keys at
 the Platform boundary. A stored rule is still not an applied world change: the
 God grade remains pending until the named behavior completes and its observed
-result is visible in a later world review. A signal cannot claim to gate or
-prioritize a behavior; that requires a typed `behavior_constraint` effect. The
+result is visible in a later world review. A signal has no enforcement
+capability; blocking requires a typed `behavior_constraint` or denial effect.
+Natural-language descriptions are advisory and are never parsed as policy. The
 Platform also rejects a second signal for the same event/follow-up pair and a
 same-role signal chain sourced from `world.rule.*`, preventing a notification
 from recursively generating notifications without a behavior result. Story

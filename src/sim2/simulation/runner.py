@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
+import unicodedata
 from typing import Any, Callable
 
 from ..agents.engine import AgentEngine, AgentTurn
@@ -18,6 +20,8 @@ class SimulationReport:
     waits: int = 0
     llm_errors: int = 0
     rejected_turns: int = 0
+    interaction_replies_suppressed: int = 0
+    interaction_threads_closed: int = 0
     event_types: dict[str, int] = field(default_factory=dict)
     selected_behaviors: dict[str, int] = field(default_factory=dict)
     degeneration_flags: list[str] = field(default_factory=list)
@@ -34,6 +38,8 @@ class SimulationReport:
             "waits": self.waits,
             "llm_errors": self.llm_errors,
             "rejected_turns": self.rejected_turns,
+            "interaction_replies_suppressed": self.interaction_replies_suppressed,
+            "interaction_threads_closed": self.interaction_threads_closed,
             "event_types": self.event_types,
             "selected_behaviors": self.selected_behaviors,
             "degeneration_flags": self.degeneration_flags,
@@ -44,19 +50,23 @@ class SimulationReport:
 class SimulationRunner:
     """Drive Platform minutes and invoke Agent phases only at boundaries."""
 
-    def __init__(self, platform: Platform, providers: dict[str, Any], *, wait_cooldown_minutes: int = 30, llm_error_cooldown_minutes: int = 60, max_interaction_rounds: int = 4, interaction_cooldown_minutes: int = 30, turn_observer: Callable[[AgentTurn, str], None] | None = None):
+    def __init__(self, platform: Platform, providers: dict[str, Any], *, wait_cooldown_minutes: int = 30, llm_error_cooldown_minutes: int = 60, max_interaction_rounds: int | None = None, interaction_cooldown_minutes: int | None = None, interaction_thread_window_minutes: int | None = None, turn_observer: Callable[[AgentTurn, str], None] | None = None):
         self.platform = platform
         self.providers = providers
+        interaction_policy = (self.platform.store.get_meta("rules", {}) or {}).get("interaction_policy", {}) or {}
         self.wait_cooldown_minutes = max(1, int(wait_cooldown_minutes))
         self.llm_error_cooldown_minutes = max(1, int(llm_error_cooldown_minutes))
-        self.max_interaction_rounds = max(1, int(max_interaction_rounds))
-        self.interaction_cooldown_minutes = max(1, int(interaction_cooldown_minutes))
+        self.max_interaction_rounds = max(1, int(interaction_policy.get("max_rounds", 3) if max_interaction_rounds is None else max_interaction_rounds))
+        self.interaction_cooldown_minutes = max(1, int(interaction_policy.get("reply_cooldown_minutes", 120) if interaction_cooldown_minutes is None else interaction_cooldown_minutes))
+        self.interaction_thread_window_minutes = max(self.interaction_cooldown_minutes, int(interaction_policy.get("thread_window_minutes", 360) if interaction_thread_window_minutes is None else interaction_thread_window_minutes))
         self._decision_not_before: dict[str, int] = {}
         self._llm_error_count: dict[str, int] = {}
         self._llm_retry_until: dict[str, int] = {}
         self._failure_seen: dict[str, int] = {}
         self._interaction_events_seen: set[int] = set()
         self._interaction_rounds: dict[tuple[str, ...], tuple[int, int]] = {}
+        self._interaction_messages: dict[tuple[str, str], list[tuple[int, str]]] = {}
+        self._interaction_topic_families: dict[tuple[str, str], list[tuple[str, set[str]]]] = {}
         self._interaction_not_before: dict[str, int] = {}
         self.turn_observer = turn_observer
 
@@ -112,16 +122,38 @@ class SimulationRunner:
             if not actor_id or not recipient_id or actor_id == recipient_id:
                 continue
             pair = tuple(sorted((actor_id, recipient_id)))
-            last_minute, rounds = self._interaction_rounds.get(pair, (minute, 0))
-            if minute - last_minute >= self.interaction_cooldown_minutes:
+            dialogue = None
+            event_data = event.get("data") if isinstance(event.get("data"), dict) else event
+            dialogue_id = event_data.get("dialogue_id") if isinstance(event_data, dict) else None
+            if dialogue_id is not None:
+                dialogue = self.platform.store.get_dialogue_exchange(dialogue_id)
+            topic = str((dialogue or {}).get("topic") or event_data.get("topic") or "general")
+            message = str((dialogue or {}).get("message") or "").strip()
+            thread_key = (*pair, self._topic_family_key(pair, topic))
+            last_minute, rounds = self._interaction_rounds.get(thread_key, (minute, 0))
+            if minute - last_minute >= self.interaction_thread_window_minutes:
                 rounds = 0
-            if rounds >= self.max_interaction_rounds:
+            if event.get("event_type") == "dialogue.completed" and self._is_repeated_message(pair, minute, message):
+                report.interaction_replies_suppressed += 1
                 continue
-            self._interaction_rounds[pair] = (minute, rounds + 1)
+            if rounds >= self.max_interaction_rounds:
+                report.interaction_replies_suppressed += 1
+                report.interaction_threads_closed += 1
+                continue
+            self._interaction_rounds[thread_key] = (minute, rounds + 1)
+            if message:
+                self._interaction_messages.setdefault(pair, []).append((minute, message))
+                self._interaction_messages[pair] = self._interaction_messages[pair][-8:]
+            interaction = {
+                "from": self._visible_name(actor_id),
+                "topic": topic,
+                "message": message or "The other participant opened this topic without a written message.",
+            }
             turn = AgentEngine(self.platform, provider).run(
                 role="agent_decision",
                 actor_id=recipient_id,
                 task_type=f"instant:{event['event_type']}",
+                interaction=interaction,
             )
             self._observe_turn(turn, recipient_id)
             report.decisions += 1
@@ -135,6 +167,67 @@ class SimulationRunner:
                 self._interaction_not_before[actor_id] = minute + self.interaction_cooldown_minutes
             if turn.result.get("status") == "wait":
                 report.waits += 1
+
+    @staticmethod
+    def _normalize_topic(topic: str) -> str:
+        text = unicodedata.normalize("NFKC", str(topic or "general")).casefold()
+        text = re.sub(r"[\W_]+", "", text, flags=re.UNICODE)
+        return text[:120] or "general"
+
+    @classmethod
+    def _topic_components(cls, topic: str) -> set[str]:
+        """Extract stable subject components without a world-specific list."""
+
+        normalized = unicodedata.normalize("NFKC", str(topic or "general")).casefold()
+        parts = [item for item in re.split(r"[与和及/、,:：&+]+", normalized) if item]
+        return {re.sub(r"[\W_]+", "", item, flags=re.UNICODE) for item in parts if len(item) >= 2} or {cls._normalize_topic(normalized)}
+
+    def _topic_family_key(self, pair: tuple[str, ...], topic: str) -> str:
+        """Merge reordered or shared-subject labels into one conversation thread."""
+
+        components = self._topic_components(topic)
+        pair_key = tuple(pair)
+        families = self._interaction_topic_families.setdefault(pair_key, [])
+        for key, known in families:
+            if components & known:
+                return key
+        key = self._normalize_topic(topic)
+        families.append((key, components))
+        return key
+
+    @staticmethod
+    def _message_similarity(left: str, right: str) -> float:
+        """Cheap language-independent overlap check for repeated replies."""
+
+        def units(value: str) -> set[str]:
+            text = unicodedata.normalize("NFKC", str(value or "")).casefold()
+            text = re.sub(r"\s+", "", text)
+            words = set(re.findall(r"[a-z0-9]+", text))
+            cjk = "".join(re.findall(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]", text))
+            words.update(cjk[index:index + 2] for index in range(max(0, len(cjk) - 1)))
+            return words
+
+        if not left or not right:
+            return 0.0
+        if unicodedata.normalize("NFKC", left).casefold() == unicodedata.normalize("NFKC", right).casefold():
+            return 1.0
+        a, b = units(left), units(right)
+        return len(a & b) / max(1, len(a | b))
+
+    def _is_repeated_message(self, pair: tuple[str, ...], minute: int, message: str) -> bool:
+        if not message:
+            return False
+        recent = self._interaction_messages.get(tuple(pair), [])
+        for previous_minute, previous in recent:
+            if minute - previous_minute <= self.interaction_thread_window_minutes and self._message_similarity(message, previous) >= 0.72:
+                return True
+        return False
+
+    def _visible_name(self, actor_id: str) -> str:
+        try:
+            return str(self.platform.store.get_entity(actor_id).get("name", actor_id))
+        except KeyError:
+            return actor_id
 
     def _run_idle_decisions(self, report: SimulationReport) -> None:
         provider = self.providers.get("agent_decision")

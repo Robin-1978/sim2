@@ -290,21 +290,33 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "value": {},
                 "rule": {
                     "type": "object",
-                    "description": "A declarative policy. Use a supported condition expression; the rule signals or gates later configured behavior and never changes resources by itself. Do not chain one same-role signal rule from another world.rule signal.",
+                    "description": "A declarative policy. Use a supported condition expression; a typed signal wakes work, while a typed denial or behavior_constraint blocks a target. A rule never changes resources by itself. Do not chain one same-role signal rule from another world.rule signal.",
                     "properties": {
                         "id": {"type": "string", "description": "A short unique rule name for the world."},
                         "label": {"type": "string", "description": "A human-readable policy name."},
                         "description": {"type": "string", "description": "One short sentence describing the policy."},
                         "condition": {"type": "string", "description": "A declarative condition such as world[\"water quality\"] < 0.5, event.recent.clinic.fever_reported == true, or actor.permission.old_well == false."},
-                        "effect": {"description": "One dot-separated effect name without spaces, such as policy.review_signal, or an object like {type: signal, message: ...}. Use {type: behavior_constraint, message: ...} only when the rule must block one named behavior."},
+                        "effect": {"description": "Use a typed object when enforcement matters: {type: signal, name: policy.review_signal, message: ...} records or wakes work; {type: deny, ...} or {type: behavior_constraint, ...} blocks one named target. A dot-separated string such as policy.review_signal is also a signal. Descriptions are explanatory text, not enforcement."},
                         "wake": {"type": "array", "items": {"type": "string"}, "description": "Optional visible roles to wake, such as god or story."},
                         "behavior_names": {"type": "array", "items": {"type": "string"}, "description": "Optional visible BT names. For a behavior_constraint, every listed BT is blocked; list only the blocked BT. For a signal, names identify the follow-up outcome."},
-                        "action_names": {"type": "array", "items": {"type": "string"}, "description": "Optional visible Action names to gate when the condition is true."},
+                        "action_names": {"type": "array", "items": {"type": "string"}, "description": "Optional visible Action names to block when the typed effect is a denial."},
                     },
                     "required": ["id", "condition", "effect"],
                     "additionalProperties": False,
                 },
-                "relationship": {"type": "object", "description": "Use visible participant names, never database identifiers."},
+                "relationship": {
+                    "type": "object",
+                    "description": "Record one relationship between two visible participants; use names, never database identifiers.",
+                    "properties": {
+                        "from": {"type": "string", "description": "Exact visible name of the first participant."},
+                        "to": {"type": "string", "description": "Exact visible name of the second participant."},
+                        "type": {"type": "string", "description": "Short relationship kind, such as trust or information_exchange."},
+                        "description": {"type": "string"},
+                        "delta": {"type": "number"},
+                    },
+                    "required": ["from", "to", "type"],
+                    "additionalProperties": False,
+                },
                 "faction": {"type": "object", "description": "Use visible member or location names, never database identifiers."},
             },
             "required": ["change_type", "summary"],
@@ -361,10 +373,19 @@ ROLE_TOOLS: dict[str, list[str]] = {
 }
 
 
-def tools_for_role(role: str) -> list[dict[str, Any]]:
-    """Return compact, human-readable descriptions used in AgentView."""
+def tools_for_role(role: str, allowed_names: list[str] | set[str] | None = None) -> list[dict[str, Any]]:
+    """Return compact, human-readable descriptions used in AgentView.
 
-    return [_tool_for_role(role, name) for name in ROLE_TOOLS.get(role, [])]
+    A bounded interaction session only needs the tools that can answer that
+    interaction.  Filtering here keeps the function schema and the prose
+    view aligned, instead of asking the model to ignore unrelated tools.
+    """
+
+    names = ROLE_TOOLS.get(role, [])
+    if allowed_names is not None:
+        allowed = set(allowed_names)
+        names = [name for name in names if name in allowed]
+    return [_tool_for_role(role, name) for name in names]
 
 
 def _tool_for_role(role: str, name: str) -> dict[str, Any]:
@@ -384,7 +405,7 @@ def _tool_for_role(role: str, name: str) -> dict[str, Any]:
     return {"name": name, **definition, "input": definition["parameters"]}
 
 
-def tool_schemas_for_role(role: str) -> list[dict[str, Any]]:
+def tool_schemas_for_role(role: str, allowed_names: list[str] | set[str] | None = None) -> list[dict[str, Any]]:
     """Return OpenAI-compatible function schemas for providers that support them."""
 
     return [
@@ -396,7 +417,7 @@ def tool_schemas_for_role(role: str) -> list[dict[str, Any]]:
                 "parameters": tool["parameters"],
             },
         }
-        for tool in tools_for_role(role)
+        for tool in tools_for_role(role, allowed_names)
     ]
 
 
@@ -777,6 +798,11 @@ def parse_tool_call(response: dict[str, Any]) -> tuple[str, dict[str, Any]] | No
     if candidate is None and response.get("tool_calls"):
         candidate = response["tool_calls"][0]
     if candidate is None and response.get("type") == "tool_call":
+        candidate = response
+    # Some OpenAI-compatible gateways flatten one function call to
+    # ``{"name": ..., "arguments": {...}}``.  Accept that wire shape at the
+    # protocol boundary; the role and schema checks still happen below.
+    if candidate is None and isinstance(response.get("name"), str) and "arguments" in response:
         candidate = response
     if isinstance(candidate, list):
         candidate = candidate[0] if candidate else None

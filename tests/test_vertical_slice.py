@@ -1126,6 +1126,18 @@ def test_memory_bge_cache_discovery_matches_fastembed_layout(tmp_path: Path, mon
     assert resolved == str(snapshot)
 
 
+def test_semantic_embeddings_persist_in_instance_sqlite(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "memory-embedding-store-world", tmp_path / "runtime"))
+    try:
+        blob = b"\x00\x00\x80?\x00\x00\x00?"
+        platform.store.put_semantic_embeddings("embedding-model:test", {"stable memory text": (2, blob)})
+        assert platform.store.semantic_embedding_count("embedding-model:test") == 1
+        assert platform.store.get_semantic_embeddings("embedding-model:test", ["stable memory text"]) == {"stable memory text": (2, blob)}
+    finally:
+        platform.close()
+
+
 def test_multiple_visible_participants_require_explicit_target(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "explicit-target-world", tmp_path / "runtime"))
@@ -2026,7 +2038,7 @@ def test_god_reacts_after_event_effect_rejection(tmp_path: Path):
     db_path = create_instance(config, "god-quality-world", tmp_path / "runtime")
     platform = Platform(db_path)
     provider = SequenceProvider([
-        {"intent_type": "propose_world_change", "change_type": "event", "summary": "Mobilize a public response.", "effects": ["stabilize the clinic"]},
+        {"intent_type": "propose_world_change", "change_type": "event", "summary": "Mobilize a public response.", "effects": [{"type": "world_property_delta", "property": "clinic_safety", "delta": 0.1}]},
         {"intent_type": "propose_world_change", "change_type": "rule", "summary": "Record the clinic report rule.", "rule": {"id": "clinic_fever_response", "condition": "clinic fever is reported", "effect": "open the configured treatment response"}},
     ])
     try:
@@ -2143,8 +2155,22 @@ def test_invalid_world_rule_is_rejected_before_persistence(tmp_path: Path):
             "expected_effects": ["The named behavior must wait until review."],
             "rule": {"id": "signal-claimed-as-gate", "condition": "world.water_quality < 0.8", "effect": "council.review_alert", "behavior_names": ["Manage Ration"]},
         })
-        assert signal_claiming_gate["status"] == "rejected"
-        assert signal_claiming_gate["failed_check"] == "rule_effect_semantics"
+        # Prose is advisory; the string effect is structurally a signal and
+        # cannot gate anything. Platform stores the signal without treating
+        # the words "prioritized" or "must wait" as executable policy.
+        assert signal_claiming_gate["status"] == "accepted"
+        typed_mismatch = platform.submit_world_change("god", {
+            "change_type": "rule",
+            "summary": "Typed enforcement mismatch.",
+            "rule": {
+                "id": "typed-enforcement-mismatch",
+                "condition": "world.water_quality < 0.8",
+                "effect": {"type": "signal", "enforcement": "behavior_constraint", "message": "Review signal."},
+                "behavior_names": ["Manage Ration"],
+            },
+        })
+        assert typed_mismatch["status"] == "rejected"
+        assert typed_mismatch["failed_check"] == "rule_effect_semantics"
         temporal_signal = platform.submit_world_change("god", {
             "change_type": "rule",
             "summary": "Record the patrol follow-up before the next cycle.",

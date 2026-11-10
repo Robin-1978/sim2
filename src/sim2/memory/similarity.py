@@ -106,7 +106,7 @@ class ExperienceSimilarity:
     _MODEL_CACHE: dict[tuple[str, str], tuple[Any, str]] = {}
     _MODEL_CACHE_LOCK = threading.Lock()
 
-    def __init__(self, config: dict[str, Any] | None = None):
+    def __init__(self, config: dict[str, Any] | None = None, *, embedding_store: Any | None = None):
         config = config or {}
         self.enabled = bool(config.get("enabled", False))
         self.threshold = float(config.get("threshold", 0.88))
@@ -116,6 +116,7 @@ class ExperienceSimilarity:
         self.model_name = self._resolve_model_name(config)
         self._model: Any = None
         self._method = "token_jaccard"
+        self._embedding_store = embedding_store
         self._embedding_cache: dict[str, Any] = {}
         self._embedding_cache_limit = max(128, int(config.get("embedding_cache_limit", 2048) or 2048))
         self._embedding_candidate_limit = max(32, int(config.get("embedding_candidate_limit", 256) or 256))
@@ -129,6 +130,11 @@ class ExperienceSimilarity:
         return self._method
 
     def status(self) -> dict[str, Any]:
+        model_key = self._model_key()
+        try:
+            persistent_count = self._embedding_store.semantic_embedding_count(model_key) if self._embedding_store and model_key else 0
+        except Exception:
+            persistent_count = 0
         return {
             "enabled": self.enabled,
             "backend": self._method,
@@ -137,6 +143,7 @@ class ExperienceSimilarity:
             "embedding_cache_size": len(self._embedding_cache),
             "embedding_cache_limit": self._embedding_cache_limit,
             "embedding_candidate_limit": self._embedding_candidate_limit,
+            "persistent_embedding_count": persistent_count,
             "providers": list(getattr(self._model, "providers", []) or []),
         }
 
@@ -205,13 +212,32 @@ class ExperienceSimilarity:
             self._model = False
             self._method = "token_jaccard_fallback"
 
-    def _encode_embeddings(self, texts: list[str]) -> Any:
-        """Encode text while reusing durable candidate vectors in this process."""
+    def _model_key(self) -> str:
+        return f"{self._method}:{self.model_name}"
+
+    def _encode_embeddings(self, texts: list[str], *, persist_texts: list[str] | None = None) -> Any:
+        """Encode text using the per-instance SQLite vector cache when available."""
 
         self._load_model()
         if not self._model or not self._method.startswith("embedding_cosine"):
             return None
-        missing = [text for text in texts if text not in self._embedding_cache]
+        import numpy as np  # type: ignore
+
+        array_module = getattr(self._model, "_np", np)
+        texts = [str(text) for text in texts if str(text)]
+        unique_texts = list(dict.fromkeys(texts))
+        persistent = set(str(text) for text in (persist_texts or []) if str(text))
+        model_key = self._model_key()
+        if self._embedding_store:
+            try:
+                stored = self._embedding_store.get_semantic_embeddings(model_key, [text for text in unique_texts if text not in self._embedding_cache])
+                for text, (dimension, blob) in stored.items():
+                    vector = array_module.frombuffer(blob, dtype=array_module.float32).copy()
+                    if int(dimension) == int(vector.size) and vector.size:
+                        self._embedding_cache[text] = vector
+            except Exception:
+                pass
+        missing = [text for text in unique_texts if text not in self._embedding_cache]
         if missing:
             try:
                 try:
@@ -220,8 +246,17 @@ class ExperienceSimilarity:
                     vectors = self._model.encode(missing)
             except Exception:
                 return None
+            to_persist: dict[str, tuple[int, bytes]] = {}
             for text, vector in zip(missing, vectors):
-                self._embedding_cache[text] = vector
+                normalized = array_module.asarray(vector, dtype=array_module.float32).reshape(-1)
+                self._embedding_cache[text] = normalized
+                if text in persistent:
+                    to_persist[text] = (int(normalized.size), normalized.tobytes())
+            if to_persist and self._embedding_store:
+                try:
+                    self._embedding_store.put_semantic_embeddings(model_key, to_persist)
+                except Exception:
+                    pass
             if len(self._embedding_cache) > self._embedding_cache_limit:
                 for key in list(self._embedding_cache)[: len(self._embedding_cache) - self._embedding_cache_limit]:
                     self._embedding_cache.pop(key, None)
@@ -235,7 +270,7 @@ class ExperienceSimilarity:
         self._load_model()
         if self._model and self._method.startswith("embedding_cosine"):
             try:
-                vectors = self._encode_embeddings([left, right])
+                vectors = self._encode_embeddings([left, right], persist_texts=[right])
                 if vectors is not None:
                     return max(0.0, min(1.0, float(sum(a * b for a, b in zip(vectors[0], vectors[1])))))
             except Exception:
@@ -268,7 +303,7 @@ class ExperienceSimilarity:
         if not self._model or not self._method.startswith("embedding_cosine"):
             return None
         try:
-            vectors = self._encode_embeddings([query, *texts])
+            vectors = self._encode_embeddings([query, *texts], persist_texts=texts)
             query_vector = vectors[0]
             return [max(0.0, min(1.0, float(sum(a * b for a, b in zip(query_vector, vector))))) for vector in vectors[1:]]
         except Exception:

@@ -72,6 +72,16 @@ CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
   content,
   memory_id UNINDEXED
 );
+CREATE TABLE IF NOT EXISTS semantic_embedding (
+  model_key TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  content TEXT NOT NULL,
+  dimension INTEGER NOT NULL,
+  vector_blob BLOB NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (model_key, content_hash)
+);
+CREATE INDEX IF NOT EXISTS semantic_embedding_model_idx ON semantic_embedding(model_key);
 CREATE TABLE IF NOT EXISTS knowledge_fact (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   agent_id TEXT NOT NULL,
@@ -365,6 +375,46 @@ class WorldStore:
         ).fetchall()
         return [{"id": row["id"], "fact_key": row["fact_key"], **json.loads(row["data_json"])} for row in rows]
 
+    def get_semantic_embeddings(self, model_key: str, texts: list[str]) -> dict[str, tuple[int, bytes]]:
+        """Load persisted vectors for exact content in the current instance."""
+
+        values = [str(text) for text in texts if str(text)]
+        if not values:
+            return {}
+        hashes = [hashlib.sha256(value.encode("utf-8")).hexdigest() for value in values]
+        placeholders = ",".join("?" for _ in hashes)
+        rows = self.connection.execute(
+            f"SELECT content,dimension,vector_blob FROM semantic_embedding WHERE model_key=? AND content_hash IN ({placeholders})",
+            (str(model_key), *hashes),
+        ).fetchall()
+        return {str(row["content"]): (int(row["dimension"]), bytes(row["vector_blob"])) for row in rows}
+
+    def put_semantic_embeddings(self, model_key: str, vectors: dict[str, tuple[int, bytes]]) -> None:
+        """Persist candidate vectors without coupling them to a memory row."""
+
+        if not vectors:
+            return
+        rows = []
+        for text, (dimension, blob) in vectors.items():
+            text = str(text)
+            rows.append((str(model_key), hashlib.sha256(text.encode("utf-8")).hexdigest(), text, int(dimension), sqlite3.Binary(blob)))
+        with self._write_lock:
+            was_in_transaction = self.connection.in_transaction
+            self.connection.executemany(
+                "INSERT INTO semantic_embedding(model_key,content_hash,content,dimension,vector_blob) VALUES (?,?,?,?,?) "
+                "ON CONFLICT(model_key,content_hash) DO UPDATE SET content=excluded.content,dimension=excluded.dimension,vector_blob=excluded.vector_blob,updated_at=CURRENT_TIMESTAMP",
+                rows,
+            )
+            if not was_in_transaction:
+                self.connection.commit()
+
+    def semantic_embedding_count(self, model_key: str | None = None) -> int:
+        if model_key:
+            row = self.connection.execute("SELECT COUNT(*) AS n FROM semantic_embedding WHERE model_key=?", (str(model_key),)).fetchone()
+        else:
+            row = self.connection.execute("SELECT COUNT(*) AS n FROM semantic_embedding").fetchone()
+        return int(row["n"] if row else 0)
+
     def explored_areas(self, agent_id: str) -> set[str]:
         rows = self.connection.execute(
             "SELECT DISTINCT area_id FROM exploration_result WHERE agent_id=?",
@@ -465,6 +515,31 @@ class WorldStore:
             (speaker_id, listener_id, topic, int(world_minute), json_dumps(data)),
         )
         return int(cur.lastrowid)
+
+    def get_dialogue_exchange(self, exchange_id: int | str) -> dict[str, Any] | None:
+        """Return one recorded exchange with its human-readable payload.
+
+        The interaction scheduler uses this small projection to decide whether
+        a reply adds new information.  It deliberately stays separate from
+        memories: a transcript is audit data, while memories are the facts an
+        agent may later retrieve.
+        """
+
+        row = self.connection.execute(
+            "SELECT id,speaker_id,listener_id,topic,world_minute,data_json "
+            "FROM dialogue_exchange WHERE id=?",
+            (int(exchange_id),),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "dialogue_id": int(row["id"]),
+            "speaker_id": row["speaker_id"],
+            "listener_id": row["listener_id"],
+            "topic": row["topic"],
+            "world_minute": int(row["world_minute"]),
+            **json.loads(row["data_json"] or "{}"),
+        }
 
     def put_trade_offer(self, offer_id: str, offerer_id: str, recipient_id: str, give: dict[str, Any], want: dict[str, Any], world_minute: int, *, parent_offer_id: str | None = None, round_number: int = 1) -> None:
         self.connection.execute(

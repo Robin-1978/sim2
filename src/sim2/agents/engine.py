@@ -70,7 +70,15 @@ class AgentEngine:
         self.view = AgentViewCompiler(platform.store)
         self._last_usage: dict[str, Any] = {}
 
-    def _complete(self, *, role: str, system: str, context: str, messages: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    def _complete(
+        self,
+        *,
+        role: str,
+        system: str,
+        context: str,
+        messages: list[dict[str, Any]] | None = None,
+        allowed_tools: list[str] | set[str] | None = None,
+    ) -> dict[str, Any]:
         """Call old test providers and native tool-capable providers alike."""
 
         method = self.provider.complete_json
@@ -80,7 +88,7 @@ class AgentEngine:
         except (TypeError, ValueError):
             parameters = {}
         if "tools" in parameters:
-            kwargs["tools"] = tool_schemas_for_role(role)
+            kwargs["tools"] = tool_schemas_for_role(role, allowed_tools)
         if "role" in parameters:
             kwargs["role"] = role
         if "messages" in parameters:
@@ -106,7 +114,14 @@ class AgentEngine:
             for item in (context.get("recent_actions") or [])
         )
 
-    def run(self, *, role: str, actor_id: str, task_type: str = "decision") -> AgentTurn:
+    def run(
+        self,
+        *,
+        role: str,
+        actor_id: str,
+        task_type: str = "decision",
+        interaction: dict[str, Any] | None = None,
+    ) -> AgentTurn:
         if role not in ROLE_NAMES:
             raise ValueError(f"unknown agent role: {role}")
         if role == "agent_decision":
@@ -119,6 +134,11 @@ class AgentEngine:
                 return AgentTurn(role, task_type, {}, result, 0, [{"step": "skipped", "result": result}], {}, [])
         context = self.view.build_decision_view(actor_id, role=role)
         context["role"] = role
+        if interaction:
+            context["interaction"] = dict(interaction)
+        interaction_tools = self._interaction_tools(task_type)
+        if interaction_tools is not None:
+            self._compact_interaction_context(context, task_type, interaction_tools)
         view_errors = validate_agent_view(context, role=role)
         if view_errors:
             raise ValueError("invalid AgentView: " + "; ".join(view_errors))
@@ -146,7 +166,13 @@ class AgentEngine:
             prompt_history.append(prompt)
             try:
                 self._last_usage = {}
-                response = self._complete(role=role, system=system_policy, context=prompt, messages=conversation_messages)
+                response = self._complete(
+                    role=role,
+                    system=system_policy,
+                    context=prompt,
+                    messages=conversation_messages,
+                    allowed_tools=interaction_tools,
+                )
                 if not isinstance(response, dict):
                     raise ValueError("LLM response must be a JSON object")
             except Exception as exc:
@@ -197,6 +223,14 @@ class AgentEngine:
                         tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "read_budget", "message": "Read budget exhausted; use the facts already collected and submit one final Intent."}
                     elif repeated[signature_key] > self.max_repeated_tool_calls:
                         tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "repeated_tool_call", "message": "The same tool request was repeated; use the previous result or choose the previous result."}
+                    elif interaction_tools is not None and tool_name not in interaction_tools:
+                        tool_result = {
+                            "status": "rejected",
+                            "tool": tool_name,
+                            "failed_check": "interaction_tool",
+                            "retryable": True,
+                            "message": "This interaction exposes only its direct reply or trade decision tools; return wait or use one listed tool.",
+                        }
                     elif role == "god" and str(task_type).startswith("trigger:") and tool_name == "propose_world_change" and arguments.get("change_type") == "event" and not arguments.get("property"):
                         tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "trigger_requires_state_change", "retryable": True, "message": "This trigger requires a direct state-changing proposal; a narrative-only event does not resolve it."}
                     else:
@@ -256,6 +290,78 @@ class AgentEngine:
             }
         return AgentTurn(role, task_type, last_response, last_result, self.max_iterations, transcript, initial_context, prompt_history)
 
+    @staticmethod
+    def _interaction_tools(task_type: str) -> list[str] | None:
+        """Return the small tool surface for a zero-minute interaction.
+
+        A reply to a message is not a new planning session.  It may answer,
+        settle a trade offer, or wait; unrelated BT selection is deferred to
+        the next ordinary decision boundary.  Keeping this contract explicit
+        prevents the model from spending tokens reconsidering travel, food,
+        and other long-running work while replying to one message.
+        """
+
+        task = str(task_type or "")
+        if not task.startswith("instant:"):
+            return None
+        event_type = task.removeprefix("instant:")
+        if event_type == "dialogue.completed":
+            return ["send_message"]
+        if event_type in {"trade.offer_created", "trade.countered"}:
+            return ["accept_trade_offer", "counter_trade_offer", "reject_trade_offer"]
+        return ["send_message"]
+
+    @staticmethod
+    def _compact_interaction_context(context: dict[str, Any], task_type: str, tools: list[str]) -> None:
+        """Trim unrelated planning state from an instant interaction view.
+
+        The complete decision view remains available for ordinary planning.
+        Interaction replies only need the participant, the incoming testimony,
+        relevant facts, open offers, and enough state to avoid an impossible
+        response.  This keeps the model-facing prompt legible and lowers both
+        latency and provider token use without changing Platform validation.
+        """
+
+        context["interaction_only"] = True
+        context["tools"] = [item for item in (context.get("tools") or []) if item.get("name") in set(tools)]
+        if "trade" in str(task_type):
+            context["prompt_protocol"] = [
+                "This is one bounded instant trade response.",
+                "Choose exactly one listed trade decision or wait; Platform owns inventory and time.",
+                "Use the exact visible offer choice and participant name; never output internal identifiers.",
+            ]
+        else:
+            context["prompt_protocol"] = [
+                "This is one bounded instant message response.",
+                "Send one short reply only when the incoming message adds information or needs a decision; otherwise wait.",
+                "Use the exact visible participant name; Platform owns every state change and world time.",
+            ]
+        context["platform_rules"] = [
+            "Only the incoming interaction is being handled; do not start an unrelated behavior.",
+            "A reply is at most two concise sentences. Repeating known information is a reason to wait.",
+            "The Platform validates visibility, availability, inventory, and all state changes.",
+        ]
+        context["executable_behaviors"] = []
+        context["available_behaviors"] = []
+        context["recent_outcomes"] = []
+        context["capability_history"] = []
+        context["capability_update_candidates"] = []
+        context["drives"] = []
+        context["drive_model"] = {}
+        context["identity"] = {"traits": {}, "beliefs": [], "capabilities": {}}
+        context["recent_actions"] = (context.get("recent_actions") or [])[:1]
+        context["known_facts"] = (context.get("known_facts") or [])[:4]
+        context["nearby_entities"] = (context.get("nearby_entities") or [])[:4]
+        context["direct_relationships"] = (context.get("direct_relationships") or [])[:3]
+        context["short_term_memories"] = (context.get("short_term_memories") or [])[:4]
+        context["long_term_memories"] = (context.get("long_term_memories") or [])[:2]
+        context["memories"] = (context.get("memories") or [])[:6]
+        context["decision_constraints"] = []
+        if "trade" not in str(task_type):
+            context["open_trade_offers"] = []
+        context["interaction_history"] = []
+        context.setdefault("interaction", {})
+
     def _restore_internal_tool_result(self, tool_name: str, arguments: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
         """Keep internal audit details on AgentTurn without exposing them to the model."""
 
@@ -277,7 +383,13 @@ class AgentEngine:
     def _task_text(role: str, task_type: str) -> str:
         if role == "agent_decision":
             if task_type.startswith("instant:"):
-                return f"Task type: {task_type}. Review the incoming instant interaction and choose one response, trade decision, behavior, or wait. Do not advance world time."
+                if task_type == "instant:dialogue.completed":
+                    return (
+                        f"Task type: {task_type}. Reply to the incoming message only when it adds new information, "
+                        "asks a clear question, or requires a decision. Send one short reply of at most two sentences; "
+                        "if it repeats known information or needs no response, return wait. Do not start a behavior or advance world time."
+                    )
+                return f"Task type: {task_type}. Resolve the incoming trade interaction with one accept, counter, reject, or wait. Do not start a behavior or advance world time."
             return f"Task type: {task_type}. Select the best available behavior for the current goal, or wait if none is appropriate."
         if role == "agent_reflection":
             return f"Task type: {task_type}. Review the latest behavior outcome and existing memories. Submit one new durable lesson or evolution proposal only if it improves a future decision; otherwise wait."
@@ -349,6 +461,14 @@ class AgentEngine:
             intent_type = "wait"
         if intent_type not in ROLE_INTENTS.get(role, set()):
             return {"status": "rejected", "failed_check": "intent_type", "retryable": True, "message": "This intent type is not allowed for the current role."}
+        interaction_allowed = self._interaction_intents(task_type)
+        if interaction_allowed is not None and intent_type not in interaction_allowed:
+            return {
+                "status": "rejected",
+                "failed_check": "interaction_intent_type",
+                "retryable": True,
+                "message": "This interaction accepts only a direct reply or the listed trade decision; choose wait when no response is needed.",
+            }
         if intent_type == "wait":
             return {"status": "wait", "reason": str(data.get("reason") or data.get("message") or "No suitable behavior now.")}
         try:
@@ -439,6 +559,18 @@ class AgentEngine:
         except (TypeError, ValueError, KeyError) as exc:
             return {"status": "rejected", "failed_check": "intent_schema", "message": str(exc)}
         return {"status": "rejected", "failed_check": "intent_type", "message": "Intent was not handled."}
+
+    @staticmethod
+    def _interaction_intents(task_type: str) -> set[str] | None:
+        task = str(task_type or "")
+        if not task.startswith("instant:"):
+            return None
+        event_type = task.removeprefix("instant:")
+        if event_type == "dialogue.completed":
+            return {"send_message", "wait"}
+        if event_type in {"trade.offer_created", "trade.countered"}:
+            return {"accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "wait"}
+        return {"send_message", "wait"}
 
     def _resolve_action_names(self, actions: Any) -> list[str]:
         definitions = self.platform.store.get_definitions("action_def")

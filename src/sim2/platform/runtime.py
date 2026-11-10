@@ -1241,9 +1241,9 @@ class Platform:
         if change_type == "faction" and not isinstance(proposal.get("faction"), dict):
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "faction object is required for a faction change.", "failed_check": "faction", "retryable": True})
         if change_type == "event" and not proposal.get("property"):
-            effects_text = " ".join(str(item).casefold() for item in (proposal.get("effects") or []))
-            direct_terms = ("increase", "decrease", "restore", "activate", "stabilize", "reduce", "raise", "lower", "set ", "change", "remain", " can ")
-            if any(term in effects_text for term in direct_terms):
+            structured_mutation_types = {"state_delta", "state.add", "need_delta", "inventory_add", "inventory.add", "inventory.remove", "world_property_delta", "world.property_delta", "relationship_delta", "relationship.change", "entity_state_set"}
+            structured_mutation = [item.get("type") or item.get("op") for item in (proposal.get("effects") or []) if isinstance(item, dict) and str(item.get("type") or item.get("op") or "") in structured_mutation_types]
+            if structured_mutation:
                 return self._reject_intent(
                     intent_id,
                     actor_id,
@@ -1251,7 +1251,7 @@ class Platform:
                     proposal,
                     {
                         "status": "rejected",
-                        "message": "Event effects must be narrative only: remove claims that a resource, need, relationship, safety, hold, gate, or other state changes. Use a rule with a typed effect for enforcement or a behavior outcome for state changes.",
+                        "message": "Event effects must be narrative only: remove typed state-mutating effects. Use a world_property, relationship, faction, or rule proposal for structured change, or let a behavior outcome change state.",
                         "failed_check": "event_effects",
                         "retryable": True,
                     },
@@ -1319,6 +1319,14 @@ class Platform:
                 relation = dict(proposal["relationship"])
                 source = relation.pop("from", relation.pop("from_id", ""))
                 target = relation.pop("to", relation.pop("to_id", ""))
+                # God and Story use visible names at the model boundary. Keep
+                # the persisted relationship graph canonical so later views
+                # and effects can resolve both directions reliably.
+                participants = relation.pop("participants", None)
+                if (not source or not target) and isinstance(participants, list) and len(participants) >= 2:
+                    source, target = participants[0], participants[1]
+                source = self.targets.canonical_id(str(source)) if source else None
+                target = self.targets.canonical_id(str(target)) if target else None
                 relation_type = str(relation.pop("type", "related"))
                 if not source or not target:
                     self.store.finish_intent(intent_id, "rejected", {"status": "rejected", "message": "relationship from and to are required.", "failed_check": "relationship", "retryable": True})
@@ -1531,7 +1539,11 @@ class Platform:
 
         def resolve(value: Any) -> Any:
             if isinstance(value, str) and value.startswith("context."):
-                return context.get(value.removeprefix("context."), value)
+                # An unbound declarative reference is absent data, never a
+                # literal value such as ``context.topic`` in world history.
+                # Action defaults are applied immediately after this pass;
+                # required targets then fail their configured condition.
+                return context.get(value.removeprefix("context."))
             if isinstance(value, dict):
                 return {key: resolve(item) for key, item in value.items()}
             if isinstance(value, list):

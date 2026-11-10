@@ -157,6 +157,10 @@ decision_signals:
   alert_threshold: 40
   below_message: "Food choices are relevant to this need."
   above_message: "Food choices remain available; weigh their costs against other needs."
+interaction_policy:
+  max_rounds: 3
+  reply_cooldown_minutes: 120
+  thread_window_minutes: 360
 need_effects:
   dialogue.completed:
     belonging: 1

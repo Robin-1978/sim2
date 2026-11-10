@@ -156,6 +156,17 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         "</world_state>",
     ])
 
+    interaction = context.get("interaction") or {}
+    if interaction:
+        lines.extend([
+            "<incoming_interaction>",
+            f"  from: {_line(interaction.get('from'))}",
+            f"  topic: {_line(interaction.get('topic'))}",
+            f"  message: {_line(interaction.get('message'))}",
+            "  Reply only if this adds information, asks a question, or needs a decision; otherwise return wait.",
+            "</incoming_interaction>",
+        ])
+
     active_rules = context.get("active_world_rules") or []
     if active_rules:
         lines.append("<active_world_rules>")
@@ -323,7 +334,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("  - rule.behavior_names must use exact BT names from world_behavior_catalog.")
         lines.append("  - In a behavior_constraint, every listed BT is blocked; list only the blocked BT, never the desired follow-up BT.")
         lines.append("  - rule.action_names must use exact Action names from world_action_catalog; a BT name is not an Action name.")
-        lines.append("  - A signal records or wakes work. To block, order, or defer behavior, use effect type behavior_constraint or a denial effect.")
+        lines.append("  - A typed signal records or wakes work; prose descriptions never enforce policy. To block behavior, use effect type behavior_constraint or a denial effect.")
         lines.append("</world_proposal_contract>")
         lines.append("<rule_condition_fields>")
         fields = context.get("rule_condition_fields") or []

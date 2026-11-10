@@ -102,57 +102,24 @@ class RuleCompiler:
         return True, ""
 
     def validate_declared_effects(self, rule: dict[str, Any], statements: list[Any] | None = None) -> tuple[bool, str]:
-        """Reject prose that promises enforcement a signal cannot perform.
+        """Validate declared enforcement from the typed effect object.
 
-        A signal may wake an Agent, but it cannot order, block, gate, or
-        prioritize a behavior.  Those claims require a typed enforcement
-        effect so the same rule can be checked by ``behavior_denial``.  The
-        vocabulary is package-configurable and intentionally generic; it does
-        not name any world property or behavior.
+        Natural-language descriptions are evidence for an Agent, not an
+        execution contract.  Inferring enforcement from words such as
+        ``gate`` or ``must`` causes false positives for ordinary names and
+        translations.  The effect type is the only enforcement source of
+        truth; Platform never lets a signal mutate or block state.
         """
 
-        compiled = self.compile(rule)
-        effect_type = str(compiled["effect"].get("type", "")).casefold()
-        enforcement_types = self._DENY_EFFECTS | {"policy"}
-        if effect_type in enforcement_types:
+        del statements
+        raw_effect = rule.get("effect", rule.get("enforcement"))
+        if not isinstance(raw_effect, dict):
             return True, ""
-        configured = self.rules.get("rule_enforcement_terms", []) if isinstance(self.rules, dict) else []
-        terms = [str(item).casefold() for item in configured if str(item).strip()]
-        if not terms:
-            # ``gate`` by itself is deliberately absent.  It is commonly part
-            # of a place or object name (for example ``gate mark``), while a
-            # real enforcement claim is expressed as ``gated access`` or a
-            # typed denial/constraint effect.  The latter is checked below by
-            # the structured effect validator.
-            terms = ["gated", "must", "priorit", "defer", "block", "restrict", "required", "only when", "until", "必须", "优先", "阻止", "限制", "直到"]
-        text = " ".join(str(item).casefold() for item in (statements or []) if item not in (None, ""))
-        text += " " + str(rule.get("description") or rule.get("label") or "").casefold()
-        if any(self._enforcement_term_matches(text, term) for term in terms):
-            return False, "Signal-only rule rejected: remove priority, gating, blocking, or until language from the proposal text, or use effect.type behavior_constraint and list only the blocked BT. Submit one corrected proposal now."
+        effect_type = str(raw_effect.get("type") or "signal").casefold()
+        declared = str(raw_effect.get("enforcement") or "").casefold()
+        if declared and declared not in {"none", "signal", effect_type}:
+            return False, f"Typed effect enforcement '{declared}' does not match effect type '{effect_type}'. Use a matching denial or behavior_constraint effect."
         return True, ""
-
-    @staticmethod
-    def _enforcement_term_matches(text: str, term: str) -> bool:
-        """Match an enforcement phrase without matching it inside a name.
-
-        Configured terms historically used short prefixes such as ``priorit``
-        and ``block``.  Preserve that useful behavior, but require a token
-        boundary so names such as ``gate-mark`` or ``blocked_marker`` are not
-        treated as policy prose.  A configured phrase containing spaces keeps
-        phrase semantics.
-        """
-
-        term = str(term or "").strip().casefold()
-        if not term:
-            return False
-        escaped = re.escape(term).replace(r"\ ", r"\s+")
-        # Prefixes are intentionally limited to the terms used by the generic
-        # default vocabulary; arbitrary package terms remain exact matches.
-        if term in {"priorit", "defer", "block", "restrict", "required"}:
-            pattern = rf"(?<![a-z0-9_]){escaped}[a-z0-9]*(?![a-z0-9_])"
-        else:
-            pattern = rf"(?<![a-z0-9_]){escaped}(?![a-z0-9_])"
-        return re.search(pattern, text, flags=re.IGNORECASE) is not None
 
     def validate_declared_conditions(self, rule: dict[str, Any], declared: list[Any] | None = None) -> tuple[bool, str]:
         """Ensure explicit machine conditions are represented by the rule."""

@@ -82,7 +82,9 @@ increase food, trust, safety, or another behavior-owned value.
 
 Signal rules are bounded as well: Platform rejects a duplicate event/follow-up
 signal and a same-role `world.rule.*` signal chain. A signal wakes its consumer
-once; the named behavior result is the next causal step. Emergent Story beats
+once; the named behavior result is the next causal step. Natural-language
+signal descriptions do not enforce ordering or blocking; only the typed effect
+does. Emergent Story beats
 carry the validated evidence event and are deduplicated until a new discovery,
 research result, recovery, or relationship result arrives.
 

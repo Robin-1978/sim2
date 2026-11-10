@@ -16,7 +16,7 @@ class MemoryService:
         self.store = store
         rules = store.get_meta("rules", {}) or {}
         config = rules.get("memory_quality", {}).get("semantic_similarity", {}) if isinstance(rules, dict) else {}
-        self.similarity = similarity or ExperienceSimilarity(config)
+        self.similarity = similarity or ExperienceSimilarity(config, embedding_store=store)
         preload = bool(config.get("preload", False)) or os.getenv("SIM2_BGE_PRELOAD", "").strip().casefold() in {"1", "true", "yes", "on"}
         if preload:
             self.similarity.preload()
