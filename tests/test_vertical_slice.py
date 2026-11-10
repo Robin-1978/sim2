@@ -241,6 +241,12 @@ def test_god_schema_does_not_offer_direct_world_property_mutation():
     assert "value" not in parameters["properties"]
 
 
+def test_god_has_no_direct_behavior_or_action_executor():
+    names = {schema["function"]["name"] for schema in tool_schemas_for_role("god")}
+    assert "request_behavior" not in names
+    assert "execute_action" not in names
+
+
 def test_provider_retries_transient_disconnect_without_logging_credentials(monkeypatch):
     responses = [httpx.RemoteProtocolError("disconnect"), httpx.Response(200, request=httpx.Request("POST", "http://example.test"), json={"choices": [{"message": {"content": '{"intent_type":"wait"}'}}]})]
     calls = []
@@ -393,8 +399,8 @@ def test_food_store_bt_supplies_agents_without_carried_food(tmp_path: Path):
             reason="Withdraw a ration before the next task.", confidence=0.9, intent_id="get-food-intent",
         ))
         assert result["status"] == "accepted"
-        assert result["remaining_minutes"] == 11
-        for _ in range(11):
+        assert result["remaining_minutes"] == 16
+        for _ in range(16):
             platform.step()
         after = platform.store.get_agent("liang_he")
         assert after["inventory"]["rations"] == 1
@@ -420,7 +426,7 @@ def test_market_food_path_uses_coin_and_market_stock(tmp_path: Path):
             "fei_lan", "behavior:buy_food", {}, {}, "Buy food because carried food is unavailable.", 0.9, "market-food"
         ))
         assert result["status"] == "accepted"
-        step_n(platform, 5)
+        step_n(platform, result["remaining_minutes"])
         after = platform.store.get_agent("fei_lan")
         assert after["inventory"]["coin"] == before_coin - 1
         assert after["inventory"]["rations"] == before_rations + 1
@@ -440,7 +446,7 @@ def test_nearby_communication_behavior_resolves_a_visible_participant(tmp_path: 
             "yu_ge", "behavior:communicate", {}, {}, "Exchange the merchant's route information.", 0.8, "nearby-dialogue"
         ))
         assert result["status"] == "accepted"
-        step_n(platform, 6)
+        step_n(platform, result["remaining_minutes"])
         dialogue = next(item for item in platform.store.recent_events(limit=20) if item["event_type"] == "dialogue.completed")
         assert dialogue["topic"] == "general"
         assert platform.store.list_memories("fei_lan", limit=5)
@@ -476,7 +482,7 @@ def test_patrol_report_closes_personal_world_and_knowledge_loop(tmp_path: Path):
         before_needs = platform.store.get_agent("he_yan")["needs"].copy()
         result = platform.submit_behavior(BehaviorIntent("he_yan", "behavior:patrol_route", {}, {}, "Inspect the known boundary route.", 0.9, "patrol-closure"))
         assert result["status"] == "accepted"
-        step_n(platform, 97)
+        step_n(platform, result["remaining_minutes"])
         after = platform.store.get_meta("world_properties")["north_gate_threat_level"]
         assert after == before
         agent = platform.store.get_agent("he_yan")
@@ -498,7 +504,7 @@ def test_governance_report_closes_personal_world_and_knowledge_loop(tmp_path: Pa
     try:
         result = platform.submit_behavior(BehaviorIntent("lin_bo", "behavior:govern_village", {}, {}, "Review current reserves and risk.", 0.9, "governance-closure"))
         assert result["status"] == "accepted"
-        step_n(platform, 24)
+        step_n(platform, result["remaining_minutes"])
         assert platform.store.get_meta("world_properties")["public_trust"] == 0.55
         facts = platform.store.list_knowledge_facts("lin_bo", limit=20)
         assert any(item["fact_key"] == "governance:latest_review" for item in facts)
@@ -590,10 +596,11 @@ def test_inspection_behaviors_have_configured_cooldowns(tmp_path: Path):
     platform = Platform(create_instance(config, "inspection-cooldown-world", tmp_path / "runtime"))
     try:
         intent = BehaviorIntent("su_wu", "behavior:inspect_object", {}, {}, "Check the current source.", 0.8, "inspection-cooldown")
-        assert platform.submit_behavior(intent)["status"] == "accepted"
-        step_n(platform, 24)
+        accepted = platform.submit_behavior(intent)
+        assert accepted["status"] == "accepted"
+        step_n(platform, accepted["remaining_minutes"])
         assert not any(item["ref"] == "behavior:inspect_object" for item in platform.decision_view("su_wu")["executable_behaviors"])
-        platform.store.set_meta("world_minute", 1464)
+        platform.store.set_meta("world_minute", accepted["remaining_minutes"] + 1440)
         assert any(item["ref"] == "behavior:inspect_object" for item in platform.decision_view("su_wu")["executable_behaviors"])
     finally:
         platform.close()
@@ -638,7 +645,7 @@ def test_core_gather_bt_travels_to_nearest_resource_node(tmp_path: Path):
             "liang_he", "behavior:gather_at_known_node", {}, {}, "Collect available grain for production.", 0.8, "gather-core-intent"
         ))
         assert result["status"] == "accepted"
-        platform.step()
+        step_n(platform, result["remaining_minutes"])
         assert platform.store.get_agent("liang_he")["initial_state"]["location_id"] == "granary"
     finally:
         platform.close()
@@ -660,7 +667,7 @@ def test_core_treatment_bt_travels_to_health_service_and_restores_health(tmp_pat
             "qiao_ning", "behavior:seek_treatment", {}, {}, "Recover from an injury.", 0.9, "health-core-intent"
         ))
         assert result["status"] == "accepted"
-        step_n(platform, 76)
+        step_n(platform, result["remaining_minutes"])
         healed = platform.store.get_agent("qiao_ning")
         assert healed["initial_state"]["health"] == 100
         assert healed["inventory"]["medicine"] == 0
@@ -980,8 +987,9 @@ def test_reflection_summary_alias_is_committed_once(tmp_path: Path):
     platform = Platform(create_instance(config, "reflection-summary-world", tmp_path / "runtime"))
     try:
         intent = BehaviorIntent("lin_bo", "behavior:rest_and_recover", {}, {}, "Recover readiness.", 0.8, "reflection-summary-outcome")
-        assert platform.submit_behavior(intent)["status"] == "accepted"
-        step_n(platform, 48)
+        accepted = platform.submit_behavior(intent)
+        assert accepted["status"] == "accepted"
+        step_n(platform, accepted["remaining_minutes"])
         provider = FakeProvider({"summary": "Rest restored energy while satiety continued to decline."})
         turn = AgentEngine(platform, provider).run(role="agent_reflection", actor_id="lin_bo", task_type="daily_reflection")
         assert turn.result["status"] == "accepted"
@@ -1269,8 +1277,9 @@ def test_successful_recipe_records_capability_evidence_without_auto_upgrade(tmp_
         with platform.store.transaction():
             platform.store.update_agent("liang_he", agent)
         intent = BehaviorIntent("liang_he", "behavior:craft_meal", {}, {}, "Prepare food", 0.8, "capability-intent")
-        assert platform.submit_behavior(intent)["status"] == "accepted"
-        step_n(platform, 60)
+        accepted = platform.submit_behavior(intent)
+        assert accepted["status"] == "accepted"
+        step_n(platform, accepted["remaining_minutes"])
         history = platform.store.list_capability_progress("liang_he")
         assert history == []
         evidence = platform.store.recent_events_for_actor("liang_he", limit=20)
@@ -1447,14 +1456,18 @@ def test_platform_advances_persisted_action_progress_without_llm(tmp_path: Path)
         assert first["to_minute"] == 1
         state = platform.store.get_agent("lu_xingzhou")["initial_state"]
         assert state["status"] == "executing"
+        assert state["active_action_index"] == 0
+        for _ in range(4):
+            platform.step()
+        state = platform.store.get_agent("lu_xingzhou")["initial_state"]
         assert state["active_action_index"] == 1
         platform.step()
         state = platform.store.get_agent("lu_xingzhou")["initial_state"]
         assert state["active_action"] == "explore_area"
-        assert state["remaining_minutes"] == 239
+        assert state["remaining_minutes"] == 299
         row = platform.store.connection.execute("SELECT status,remaining_minutes FROM action_instance WHERE execution_id=? AND action_id=?", ("progress-intent", "explore_area")).fetchone()
         assert row["status"] == "running"
-        assert row["remaining_minutes"] == 239
+        assert row["remaining_minutes"] == 299
     finally:
         platform.close()
 
@@ -1465,7 +1478,7 @@ def test_route_duration_is_derived_from_configured_route_distance(tmp_path: Path
     try:
         result = platform.submit_behavior(BehaviorIntent("lu_xingzhou", "behavior:travel", {"location": "inn"}, {}, "Travel to the inn.", 0.8, "route-duration"))
         assert result["status"] == "accepted"
-        assert result["remaining_minutes"] == 3
+        assert result["remaining_minutes"] == 15
     finally:
         platform.close()
 
@@ -1560,6 +1573,44 @@ def test_action_failure_condition_is_evaluated_at_completion(tmp_path: Path):
         platform.close()
 
 
+def test_machine_success_condition_is_evaluated_after_action_progress(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "action-success-condition-world", tmp_path / "runtime"))
+    try:
+        action = {
+            "id": "readiness_check",
+            "parameters": {},
+            "preconditions": ["actor.alive"],
+            "duration": {"minutes": 1},
+            "costs": {"reserve": {}, "per_minute": {}},
+            "success": {"condition": "actor.state.energy >= 80", "result": "ready"},
+        }
+        behavior = {
+            "id": "readiness_check_behavior",
+            "version": 1,
+            "scope": "personal",
+            "entry_conditions": ["actor.alive"],
+            "nodes": [{"type": "action", "action_id": "readiness_check"}],
+            "success_results": ["ready"],
+            "failure_results": ["not_ready"],
+        }
+        platform.store.put_definition("action_def", action["id"], action)
+        platform.store.put_definition("bt_def", behavior["id"], behavior)
+        agent = platform.store.get_agent("su_wu")
+        agent["initial_state"]["energy"] = 20
+        agent["initial_bt_ids"].append(behavior["id"])
+        platform.store.update_agent("su_wu", agent)
+        platform.store.connection.commit()
+        result = platform.submit_behavior(BehaviorIntent("su_wu", "behavior:readiness_check_behavior", {}, {}, "Check readiness.", 0.8, "success-condition"))
+        assert result["status"] == "accepted"
+        platform.step()
+        outcome = platform.store.get_agent("su_wu")["initial_state"]["last_platform_result"]
+        assert outcome["status"] == "failed"
+        assert "success condition failed" in outcome["outcome"]["result"]
+    finally:
+        platform.close()
+
+
 def test_role_goal_paths_produce_medicine_and_dawn_bell(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "goal-production-world", tmp_path / "runtime"))
@@ -1568,7 +1619,7 @@ def test_role_goal_paths_produce_medicine_and_dawn_bell(tmp_path: Path):
         bell = platform.submit_behavior(BehaviorIntent("tian_yan", "behavior:craft_dawn_bell", {}, {}, "Forge the warning bell before the fog cycle.", 0.9, "bell-goal"))
         assert medicine["status"] == "accepted"
         assert bell["status"] == "accepted"
-        for _ in range(120):
+        for _ in range(180):
             platform.step()
         assert platform.store.get_agent("qiao_ning")["inventory"].get("medicine", 0) == 1
         assert platform.store.get_agent("tian_yan")["inventory"].get("dawn_bell", 0) == 1
@@ -1699,7 +1750,7 @@ def test_platform_interrupt_updates_bt_and_action_instances(tmp_path: Path):
     try:
         starting_rations = platform.store.get_agent("lu_xingzhou")["inventory"]["rations"]
         platform.submit_behavior(intent)
-        step_n(platform, 2)
+        step_n(platform, 6)
         assert platform.store.get_agent("lu_xingzhou")["inventory"]["rations"] == starting_rations - 1
         paused = platform.interrupt_behavior("lu_xingzhou", "urgent boundary signal", hard=False)
         assert paused["status"] == "paused"
@@ -1755,8 +1806,9 @@ def test_behavior_outcome_is_available_to_nightly_reflection(tmp_path: Path):
     platform = Platform(db_path)
     try:
         intent = BehaviorIntent("lin_bo", "behavior:rest_and_recover", {}, {}, "Recover before the next duty.", 0.8, "outcome-intent")
-        assert platform.submit_behavior(intent)["status"] == "accepted"
-        step_n(platform, 49)
+        accepted = platform.submit_behavior(intent)
+        assert accepted["status"] == "accepted"
+        step_n(platform, accepted["remaining_minutes"])
         events = platform.store.recent_events_for_actor("lin_bo", limit=20)
         outcome_event = next(item for item in events if item["event_type"] == "behavior.completed")
         outcome = outcome_event["outcome"]
@@ -1778,8 +1830,9 @@ def test_configured_behavior_outcome_updates_social_and_growth_needs(tmp_path: P
     try:
         before = platform.store.get_agent("lin_bo")["needs"]
         intent = BehaviorIntent("lin_bo", "behavior:govern_village", {}, {}, "Review village stability.", 0.9, "need-outcome-intent")
-        assert platform.submit_behavior(intent)["status"] == "accepted"
-        step_n(platform, 24)
+        accepted = platform.submit_behavior(intent)
+        assert accepted["status"] == "accepted"
+        step_n(platform, accepted["remaining_minutes"])
         after = platform.store.get_agent("lin_bo")["needs"]
         assert after["esteem"] == before["esteem"] + 0.5
         assert after["belonging"] == before["belonging"] + 0.2
@@ -1805,7 +1858,7 @@ def test_parallel_bt_runs_action_instances_concurrently(tmp_path: Path):
         assert len(rows) == 2
         assert rows[0]["status"] == "running" or rows[1]["status"] == "running"
         assert platform.store.get_agent("lu_xingzhou")["initial_state"]["active_action"] == "parallel"
-        step_n(platform, 47)
+        step_n(platform, 59)
         assert platform.store.get_agent("lu_xingzhou")["initial_state"]["status"] == "idle"
     finally:
         platform.close()
@@ -1854,8 +1907,8 @@ def test_exploration_completion_persists_result_and_knowledge(tmp_path: Path):
     )
     try:
         platform.submit_behavior(intent)
-        report = step_n(platform, 241)
-        assert report["to_minute"] == 241
+        report = step_n(platform, 305)
+        assert report["to_minute"] == 305
         fact = platform.store.connection.execute("SELECT area_id FROM exploration_result WHERE agent_id=?", ("lu_xingzhou",)).fetchone()
         assert fact["area_id"] == "greywood_edge"
         assert any(item["fact_key"] == "explored:greywood_edge" for item in platform.store.list_knowledge_facts("lu_xingzhou"))
@@ -1870,7 +1923,7 @@ def test_completed_exploration_is_not_offered_again_and_keeps_discoveries(tmp_pa
         assert platform.submit_behavior(BehaviorIntent(
             "lu_xingzhou", "behavior:explore_greywood", {}, {}, "Survey the unknown edge.", 0.9, "exploration-novelty"
         ))["status"] == "accepted"
-        step_n(platform, 241)
+        step_n(platform, 305)
         facts = platform.store.list_knowledge_facts("lu_xingzhou", limit=20)
         assert any(item["fact_key"] == "explored:greywood_edge:route" for item in facts)
         assert not any(item["ref"] == "behavior:explore_greywood" for item in platform.decision_view("lu_xingzhou")["executable_behaviors"])
@@ -1887,13 +1940,13 @@ def test_exploration_unlocks_a_concrete_follow_up_and_changes_the_world(tmp_path
         assert platform.submit_behavior(BehaviorIntent(
             "lu_xingzhou", "behavior:explore_greywood", {}, {}, "Survey the unknown edge.", 0.9, "exploration-follow-up"
         ))["status"] == "accepted"
-        step_n(platform, 241)
+        step_n(platform, 305)
         offered = {item["ref"] for item in platform.decision_view("lu_xingzhou")["executable_behaviors"]}
         assert "behavior:recover_caravan_ledger" in offered
         assert platform.submit_behavior(BehaviorIntent(
             "lu_xingzhou", "behavior:recover_caravan_ledger", {}, {}, "Recover the ledger found during the survey.", 0.9, "recover-ledger"
         ))["status"] == "accepted"
-        step_n(platform, 180)
+        step_n(platform, 240)
         ledger = platform.store.get_entity("caravan_ledger")
         assert ledger["initial_state"]["recovered"] is True
         after_trust = float((platform.store.get_meta("world_properties", {}) or {})["public_trust"])
@@ -1920,7 +1973,7 @@ def test_completed_research_records_fact_and_is_not_offered_again(tmp_path: Path
             assert platform.submit_behavior(BehaviorIntent(
                 "su_wu", "behavior:research_source", {}, {}, "Study the pact source.", 0.9, f"research-novelty-{attempt}"
             ))["status"] == "accepted"
-            step_n(platform, 192)
+            step_n(platform, 240)
         facts = platform.store.list_knowledge_facts("su_wu", limit=20)
         assert any(item["fact_key"] == "researched:old_pact_tablet:origin" for item in facts)
         assert not any(item["ref"] == "behavior:research_source" for item in platform.decision_view("su_wu")["executable_behaviors"])
@@ -2404,7 +2457,7 @@ def test_player_text_session_can_enter_and_move_without_direct_state_write(tmp_p
         # it does not mutate the player's location directly.
         travel = platform.submit_behavior(BehaviorIntent("player_text", "behavior:travel", {}, {"location_id": "village_square"}, "Enter the village.", 0.8, "player-travel"))
         assert travel["status"] == "accepted"
-        step_n(platform, 2)
+        step_n(platform, travel["remaining_minutes"])
         assert platform.store.get_agent("player_text")["initial_state"]["location_id"] == "village_square"
     finally:
         platform.close()
@@ -2569,7 +2622,7 @@ def test_starter_village_end_to_end_scenario(tmp_path: Path):
         decision_provider = SequenceProvider([{"behavior_ref": "behavior:explore_greywood", "reason": "Map the unknown area.", "confidence": 0.9}])
         decision = AgentEngine(platform, decision_provider).run(role="agent_decision", actor_id="lu_xingzhou")
         assert decision.result["status"] == "accepted"
-        step_n(platform, 241)
+        step_n(platform, 305)
         assert any(item["fact_key"] == "explored:greywood_edge" for item in platform.store.list_knowledge_facts("lu_xingzhou"))
         reflection_provider = SequenceProvider([{"intent_type": "record_experience", "event_ref": "exploration.completed", "summary": "The survey revealed a route boundary.", "confidence": 0.9}])
         reflection = AgentEngine(platform, reflection_provider).run(role="agent_reflection", actor_id="lu_xingzhou", task_type="daily_reflection")

@@ -22,7 +22,7 @@ actions:
     on_failure: {}
     refund: {}
   success:
-    condition: actor.state.location == target.location
+    condition: actor.state.location_id == context.destination_id
     result: arrived
   effects:
   - type: location_set
@@ -79,7 +79,7 @@ actions:
   - actor.permission.food_withdrawal
   - location.tag.food_store
   duration:
-    minutes: 10
+    minutes: 15
   costs:
     reserve:
       village_food: 1
@@ -109,7 +109,7 @@ actions:
   - actor.alive
   - location.tag.market
   duration:
-    minutes: 5
+    minutes: 10
   costs:
     reserve:
       coin: 1
@@ -142,7 +142,7 @@ actions:
   - actor.at_location
   - location.safe
   duration:
-    minutes: 48
+    minutes: 60
   costs:
     reserve: {}
     per_minute:
@@ -153,7 +153,7 @@ actions:
   progress_effects:
   - type: need_delta
     need: energy
-    delta: 1.5
+    delta: 2.0
   - type: state_delta
     state: exposure
     delta: -1
@@ -184,7 +184,7 @@ actions:
   parameter_defaults:
     resource_tag: first_available_resource
   duration:
-    minutes: 144
+    minutes: 180
   costs:
     reserve:
       resource_parameter: resource_tag
@@ -217,7 +217,7 @@ actions:
   - actor.role == watch_captain or actor.can_patrol
   - route.known
   duration:
-    minutes: 96
+    minutes: 120
   costs:
     reserve: {}
     per_minute:
@@ -257,7 +257,7 @@ actions:
   - patient.in_clinic
   - medicine.available
   duration:
-    minutes: 72
+    minutes: 90
   costs:
     reserve:
       medicine: 1
@@ -295,7 +295,7 @@ actions:
   - location.health_service
   - medicine.available
   duration:
-    minutes: 72
+    minutes: 90
   costs:
     reserve:
       medicine: 1
@@ -329,13 +329,13 @@ actions:
   - route.known
   - area.not_fully_mapped
   duration:
-    minutes: 240
+    minutes: 300
   costs:
     reserve:
       rations: 1
     per_minute:
-      energy: 0.25
-      exposure: 0.4
+      energy: 0.2
+      exposure: 0.3
     on_success: {}
     on_failure: {}
     refund: {}
@@ -362,7 +362,7 @@ actions:
   - target.available
   - communication.channel_open
   duration:
-    minutes: 6
+    minutes: 15
   costs:
     reserve: {}
     per_minute:
@@ -390,7 +390,7 @@ actions:
   - source.accessible
   - research.new_fact_available
   duration:
-    minutes: 192
+    minutes: 240
   costs:
     reserve: {}
     per_minute:
@@ -424,7 +424,7 @@ actions:
   - actor.can_inspect
   - location.reachable
   duration:
-    minutes: 24
+    minutes: 30
   costs:
     reserve: {}
     per_minute:
@@ -461,7 +461,7 @@ actions:
   - actor.can_negotiate
   - counterparty.available
   duration:
-    minutes: 36
+    minutes: 60
   costs:
     reserve: {}
     per_minute:
@@ -540,7 +540,7 @@ actions:
   - actor.can_defend
   - protected_target.available
   duration:
-    minutes: 24
+    minutes: 30
   costs:
     reserve: {}
     per_minute:
@@ -610,7 +610,7 @@ actions:
   - location.tag.watch_post
   - world.north_gate_alarm_ready >= 1
   duration:
-    minutes: 6
+    minutes: 3
   costs:
     reserve: {}
     per_minute:
@@ -674,7 +674,7 @@ actions:
   - actor.can_investigate
   - object.available
   duration:
-    minutes: 180
+    minutes: 240
   costs:
     reserve:
       rations: 1
@@ -719,7 +719,7 @@ actions:
   - inventory.item_available
   - location.tag.watch_post
   duration:
-    minutes: 12
+    minutes: 20
   costs:
     reserve: {}
     per_minute:
@@ -769,7 +769,7 @@ actions:
   - actor.can_research
   - world.water_quality < 0.9
   duration:
-    minutes: 90
+    minutes: 120
   costs:
     reserve: {}
     per_minute:
@@ -808,7 +808,7 @@ actions:
   - actor.can_research
   - world.root_gate_stability < 0.9
   duration:
-    minutes: 120
+    minutes: 180
   costs:
     reserve: {}
     per_minute:
@@ -847,7 +847,7 @@ actions:
   - actor.can_investigate
   - location.tag.watch_post
   duration:
-    minutes: 72
+    minutes: 90
   costs:
     reserve: {}
     per_minute:

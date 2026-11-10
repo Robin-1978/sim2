@@ -5,7 +5,7 @@ recipes:
     inputs: [{item: grain, quantity: 1}, {item: clean_water, quantity: 1}]
     outputs: [{item: cooked_meal, quantity: 2}]
     requires: [{capability: cooking, min_level: 0.30}]
-    duration_minutes: 60
+    duration_minutes: 90
     effects:
       - {op: capability.add_xp, capability: cooking, value: 0.02}
   - id: field_ration
@@ -14,7 +14,7 @@ recipes:
     inputs: [{item: grain, quantity: 1}, {item: herb_bundle, quantity: 1}]
     outputs: [{item: ration, quantity: 2}]
     requires: [{capability: cooking, min_level: 0.40}]
-    duration_minutes: 90
+    duration_minutes: 120
     effects:
       - {op: capability.add_xp, capability: cooking, value: 0.03}
   - id: herbal_medicine
@@ -24,7 +24,7 @@ recipes:
     outputs: [{item: medicine, quantity: 1}]
     limits: [{item: medicine, max_total: 2}]
     requires: [{capability: herbalism, min_level: 0.40}]
-    duration_minutes: 120
+    duration_minutes: 180
     effects:
       - {op: capability.add_xp, capability: herbalism, value: 0.03}
   - id: dawn_bell
@@ -34,7 +34,7 @@ recipes:
     outputs: [{item: dawn_bell, quantity: 1}]
     limits: [{item: dawn_bell, max_total: 1}]
     requires: [{capability: forging, min_level: 0.80}]
-    duration_minutes: 120
+    duration_minutes: 180
     effects:
       - {type: entity_state_set, entity_id: dawn_bell, state: created, value: true}
       - {op: capability.add_xp, capability: forging, value: 0.02}

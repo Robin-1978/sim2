@@ -122,7 +122,7 @@ def test_starter_bell_installation_closes_entity_and_inventory_loop(tmp_path: Pa
             platform.store.update_agent("tian_yan", agent)
         result = platform.submit_behavior(BehaviorIntent("tian_yan", "behavior:install_dawn_bell", {}, {}, "Install the completed warning artifact.", 0.9, "bell-install"))
         assert result["status"] == "accepted"
-        for _ in range(20):
+        for _ in range(result["remaining_minutes"]):
             platform.step()
         assert platform.store.get_agent("tian_yan")["inventory"].get("dawn_bell", 0) == 0
         assert platform.store.get_entity("dawn_bell")["initial_state"]["installed"] is True
@@ -143,7 +143,7 @@ def test_starter_bell_enables_alarm_only_when_threat_is_configured(tmp_path: Pat
             platform.store.update_agent("tian_yan", agent)
         install = platform.submit_behavior(BehaviorIntent("tian_yan", "behavior:install_dawn_bell", {}, {}, "Install the warning artifact.", 0.9, "bell-alarm-install"))
         assert install["status"] == "accepted"
-        for _ in range(20):
+        for _ in range(install["remaining_minutes"]):
             platform.step()
         assert platform.store.get_meta("world_properties")["north_gate_alarm_ready"] == 1
         assert not any(item["ref"] == "behavior:sound_alarm" for item in platform.decision_view("he_yan")["executable_behaviors"])
@@ -155,7 +155,7 @@ def test_starter_bell_enables_alarm_only_when_threat_is_configured(tmp_path: Pat
         assert any(item["ref"] == "behavior:sound_alarm" for item in platform.decision_view("he_yan")["executable_behaviors"])
         alarm = platform.submit_behavior(BehaviorIntent("he_yan", "behavior:sound_alarm", {}, {}, "Raise the installed north gate alarm for the detected threat.", 0.9, "bell-alarm-raise"))
         assert alarm["status"] == "accepted"
-        for _ in range(10):
+        for _ in range(alarm["remaining_minutes"]):
             platform.step()
         assert any(item["event_type"] == "alarm.raised" for item in platform.store.timeline_events(limit=100))
     finally:

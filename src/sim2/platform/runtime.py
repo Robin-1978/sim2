@@ -2190,6 +2190,10 @@ class Platform:
                     return
                 self._apply_success_effects(agent, action, entry["parameters"], minute, target=entry.get("target"))
                 information_result = self._record_information_result(agent, action, entry["parameters"], minute)
+                success_failure = self._action_success_reason(agent, action, entry["parameters"], entry.get("target"))
+                if success_failure:
+                    self._finish_behavior(agent, execution_id, behavior_id, "failed", success_failure, minute)
+                    return
                 action_result = str((information_result or {}).get("result") or action.get("success", {}).get("result", "completed"))
                 state = dict(agent.get("initial_state") or {})
                 state["last_action_result"] = action_result
@@ -2281,6 +2285,10 @@ class Platform:
             return
         self._apply_success_effects(agent, action, action_parameters, minute, target=self.targets.resolve(agent, action_parameters)[0])
         information_result = self._record_information_result(agent, action, state.get("active_action_parameters", {}), minute)
+        success_failure = self._action_success_reason(agent, action, action_parameters, self.targets.resolve(agent, action_parameters)[0])
+        if success_failure:
+            self._finish_behavior(agent, execution_id, behavior_id, "failed", success_failure, minute)
+            return
         action_result = str((information_result or {}).get("result") or action.get("success", {}).get("result", "completed"))
         state = dict(agent.get("initial_state") or {})
         state["last_action_result"] = action_result
@@ -2418,10 +2426,7 @@ class Platform:
                 if capability:
                     self.store.append_event("capability.evidence", agent["id"], minute, {"capability": str(capability), "source": f"recipe:{recipe_id}", "configured_delta": float(effect.get("value", 0) or 0), "requires_agent_review": True})
 
-    def _action_failure_reason(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], target: dict[str, Any] | None) -> str | None:
-        condition = str((action.get("failure") or {}).get("condition") or "").strip()
-        if not condition:
-            return None
+    def _action_condition_context(self, agent: dict[str, Any], parameters: dict[str, Any], target: dict[str, Any] | None) -> dict[str, Any]:
         state = agent.get("initial_state", {}) or {}
         location = {}
         location_id = state.get("location_id")
@@ -2437,7 +2442,7 @@ class Platform:
                 source = self.store.get_entity(str(source_id))
             except KeyError:
                 source = {}
-        context = {
+        return {
             "location_id": location_id,
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "item_id": parameters.get("item_id"),
@@ -2451,8 +2456,39 @@ class Platform:
             "target.refused": "target_refused" in (state.get("conditions") or []),
             "known_route_destinations": reachable_locations(self.store, location_id),
         }
+
+    def _action_failure_reason(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], target: dict[str, Any] | None) -> str | None:
+        condition = str((action.get("failure") or {}).get("condition") or "").strip()
+        if not condition:
+            return None
+        context = self._action_condition_context(agent, parameters, target)
         if self.conditions.evaluate(condition, agent=agent, target=target or {}, context=context, world=self.store.get_meta("world_properties", {}) or {}):
             return str((action.get("failure") or {}).get("result") or condition)
+        return None
+
+    def _action_success_reason(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], target: dict[str, Any] | None) -> str | None:
+        """Return a failure result when a machine-checkable postcondition fails.
+
+        Configured result labels remain descriptive contracts.  Only predicates
+        understood by the generic ConditionEngine are enforced here; unknown
+        labels are satisfied by the configured effect/information pipeline and
+        retain their normal result text.
+        """
+
+        success = action.get("success") or {}
+        condition = str(success.get("condition") or "").strip()
+        if not condition:
+            return None
+        context = self._action_condition_context(agent, parameters, target)
+        verdict = self.conditions.evaluate_known(
+            condition,
+            agent=agent,
+            target=target or {},
+            context=context,
+            world=self.store.get_meta("world_properties", {}) or {},
+        )
+        if verdict is False:
+            return str(success.get("failure_result") or f"success condition failed: {condition}")
         return None
 
     def _apply_relationship_effect(self, agent: dict[str, Any], target: dict[str, Any], effect: dict[str, Any], minute: int) -> None:

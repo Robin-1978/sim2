@@ -6,7 +6,7 @@ behavior_trees:
   description: Move along a known route to the selected destination.
   entry_conditions:
   - actor.mobile
-  estimated_minutes: 1
+  estimated_minutes: 5
   interrupt_policy: cancel
   goal_tags: [movement, access]
   drive_tags: [autonomy, novelty]
@@ -27,7 +27,7 @@ behavior_trees:
   entry_conditions:
   - actor.alive
   - actor.state.energy < 100
-  estimated_minutes: 48
+  estimated_minutes: 60
   interrupt_policy: pause
   goal_tags: [recovery, readiness]
   drive_tags: [safety]
@@ -83,7 +83,7 @@ behavior_trees:
   entry_conditions:
   - conflict.available
   - actor.can_mediate
-  estimated_minutes: 6
+  estimated_minutes: 15
   success_results: [conflict_resolved, relationship_repaired]
   failure_results: [conflict_escalated, participant_refused]
   outcome_effects:
@@ -114,7 +114,7 @@ behavior_trees:
   scope: personal
   entry_conditions:
   - actor.can_inspect
-  estimated_minutes: 25
+  estimated_minutes: 35
   cooldown_minutes: 720
   goal_tags: [food, reserve, winter]
   drive_tags: [safety]
@@ -136,7 +136,8 @@ behavior_trees:
   scope: village_watch
   entry_conditions:
   - actor.role == watch_captain or actor.can_patrol
-  estimated_minutes: 97
+  estimated_minutes: 125
+  cooldown_minutes: 720
   interrupt_policy: pause
   success_results:
   - patrol_reported
@@ -163,7 +164,7 @@ behavior_trees:
   scope: personal
   entry_conditions:
   - actor.role == granary_keeper
-  estimated_minutes: 30
+  estimated_minutes: 50
   cooldown_minutes: 720
   success_results: [ration_policy_reviewed, ration_plan_shared]
   failure_results: [stock_report_failed, participant_unavailable]
@@ -205,7 +206,7 @@ behavior_trees:
   entry_conditions:
   - actor.role == herbalist
   - patient.available
-  estimated_minutes: 72
+  estimated_minutes: 90
   success_results: [patient_stabilized, treatment_recorded]
   failure_results: [treatment_failed, patient_unavailable]
   outcome_events:
@@ -229,7 +230,7 @@ behavior_trees:
   - actor.can_craft
   - recipe.available
   - inputs.available
-  estimated_minutes: 120
+  estimated_minutes: 180
   goal_tags: [health, medicine, water]
   drive_tags: [safety, self_actualization]
   interrupt_policy: pause
@@ -252,7 +253,7 @@ behavior_trees:
   scope: personal
   entry_conditions:
   - actor.can_research
-  estimated_minutes: 194
+  estimated_minutes: 245
   goal_tags: [health, water, research]
   drive_tags: [safety, self_actualization]
   interrupt_policy: pause
@@ -276,7 +277,7 @@ behavior_trees:
   - actor.can_craft
   - recipe.available
   - inputs.available
-  estimated_minutes: 120
+  estimated_minutes: 180
   goal_tags: [crafting, defense, warning]
   drive_tags: [safety, esteem, self_actualization]
   interrupt_policy: pause
@@ -303,7 +304,7 @@ behavior_trees:
   - actor.alive
   - actor.inventory.dawn_bell >= 1
   - route.known
-  estimated_minutes: 14
+  estimated_minutes: 35
   goal_tags: [warning, safety, public_infrastructure]
   drive_tags: [safety, esteem, belonging]
   interrupt_policy: pause
@@ -334,7 +335,7 @@ behavior_trees:
   - actor.alive
   - actor.can_research
   - world.water_quality < 0.9
-  estimated_minutes: 92
+  estimated_minutes: 125
   goal_tags: [health, water, public_health]
   drive_tags: [safety, belonging, self_actualization]
   interrupt_policy: pause
@@ -362,7 +363,7 @@ behavior_trees:
   - actor.alive
   - actor.can_research
   - world.root_gate_stability < 0.9
-  estimated_minutes: 120
+  estimated_minutes: 180
   goal_tags: [pact, stability, public_safety]
   drive_tags: [safety, self_actualization, social_norms]
   interrupt_policy: pause
@@ -385,7 +386,7 @@ behavior_trees:
   entry_conditions:
   - actor.alive
   - actor.can_investigate
-  estimated_minutes: 72
+  estimated_minutes: 95
   goal_tags: [safety, investigation, warning]
   drive_tags: [safety, novelty, esteem]
   interrupt_policy: pause
@@ -410,7 +411,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_explore
   - actor.alive
-  estimated_minutes: 247
+  estimated_minutes: 305
   interrupt_policy: pause
   success_results:
   - exploration_completed
@@ -441,7 +442,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_research
   - secret.source_available
-  estimated_minutes: 192
+  estimated_minutes: 240
   interrupt_policy: pause
   goal_tags: [research, knowledge, pact]
   drive_tags: [self_actualization, safety]
@@ -468,7 +469,7 @@ behavior_trees:
   scope: personal
   entry_conditions:
   - actor.can_inspect
-  estimated_minutes: 24
+  estimated_minutes: 30
   cooldown_minutes: 1440
   success_results: [observation_recorded]
   failure_results: [access_denied, interrupted]
@@ -485,7 +486,7 @@ behavior_trees:
   entry_conditions:
   - actor.role == watch_captain or actor.can_patrol
   - threat.at_village
-  estimated_minutes: 36
+  estimated_minutes: 39
   interrupt_policy: interruptible
   success_results:
   - threat_contained
@@ -516,7 +517,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_defend
   - threat.reachable
-  estimated_minutes: 30
+  estimated_minutes: 36
   interrupt_policy: interruptible
   success_results: [position_held, target_protected]
   failure_results: [defense_interrupted, target_lost]
@@ -540,7 +541,6 @@ behavior_trees:
   entry_conditions:
   - actor.alive
   - threat.overwhelming
-  estimated_minutes: 96
   success_results: [safe_location_reached, escaped]
   failure_results: [exhausted, route_blocked]
   nodes:
@@ -555,7 +555,7 @@ behavior_trees:
   - actor.can_sound_alarm
   - world.north_gate_alarm_ready >= 1
   - world.north_gate_threat_level >= 0.7
-  estimated_minutes: 6
+  estimated_minutes: 3
   success_results: [alarm_raised]
   failure_results: [alarm_failed, device_broken]
   nodes:
@@ -571,7 +571,7 @@ behavior_trees:
   - actor.can_craft
   - recipe.available
   - inputs.available
-  estimated_minutes: 60
+  estimated_minutes: 90
   goal_tags: [food, cooking, winter]
   drive_tags: [safety, belonging]
   interrupt_policy: pause
@@ -596,7 +596,7 @@ behavior_trees:
   - actor.can_communicate
   - target.available
   cooldown_minutes: 1440
-  estimated_minutes: 6
+  estimated_minutes: 15
   goal_tags: [belonging, information, trade]
   drive_tags: [belonging, autonomy]
   success_results: [dialogue_recorded, testimony_shared]
@@ -621,7 +621,7 @@ behavior_trees:
   - actor.can_communicate
   - target.available
   cooldown_minutes: 2880
-  estimated_minutes: 36
+  estimated_minutes: 60
   goal_tags: [trade, belonging, autonomy]
   drive_tags: [belonging, autonomy, esteem]
   success_results: [agreement_reached, contract_recorded]
@@ -645,7 +645,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_gather
   - resource.available
-  estimated_minutes: 144
+  estimated_minutes: 180
   interrupt_policy: pause
   goal_tags: [resources, production, survival]
   drive_tags: [safety, autonomy, self_actualization]
@@ -738,7 +738,7 @@ behavior_trees:
   entry_conditions:
   - actor.alive
   - actor.can_investigate
-  estimated_minutes: 180
+  estimated_minutes: 240
   requirements: ["The Greywood ledger clue has been discovered and you can investigate." ]
   goal_tags: [trade, knowledge, route, autonomy]
   drive_tags: [autonomy, esteem, self_actualization]
