@@ -46,6 +46,10 @@ def test_compatible_tool_use_envelopes_are_normalized():
         "record_world_progress",
         {"progress_key": "security", "delta": 0.2},
     )
+    assert parse_tool_call({"tool": "preview_behavior", "choice": "Explore Greywood"}) == (
+        "preview_behavior",
+        {"choice": "Explore Greywood"},
+    )
 
 
 def test_unbound_context_reference_does_not_leak_into_world_text():

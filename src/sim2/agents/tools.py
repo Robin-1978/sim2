@@ -941,6 +941,16 @@ def parse_tool_call(response: dict[str, Any]) -> tuple[str, dict[str, Any]] | No
             ),
         ),
     )
+    # Some JSON-mode adapters put the arguments beside the tool name rather
+    # than under ``arguments``/``params``.  Keep only fields that are not
+    # protocol envelope metadata; the normal tool-schema validator still
+    # rejects anything unknown for the selected tool.
+    if not arguments and isinstance(candidate, dict):
+        envelope_fields = {
+            "tool", "name", "type", "id", "function", "arguments", "args",
+            "parameters", "params", "input",
+        }
+        arguments = {key: value for key, value in candidate.items() if key not in envelope_fields}
     if not isinstance(name, str) or not name:
         return None
     if isinstance(arguments, str):
