@@ -1105,7 +1105,7 @@ def test_attribute_context_comes_from_config_and_food_stays_inventory(tmp_path: 
         assert labels == {"Health", "Energy", "Exposure", "Attention load", "Reputation", "Threat level", "Satiety", "Safety", "Belonging", "Esteem", "Self-actualization"}
         assert "food" not in {label.casefold() for label in labels}
         assert "rations" in view["inventory"]
-        assert any("Only listed BTs" in rule for rule in view["platform_rules"])
+        assert any("Only listed behaviors" in rule for rule in view["platform_rules"])
     finally:
         platform.close()
 
@@ -1121,7 +1121,7 @@ def test_all_configured_needs_have_direct_agent_facing_attribute_meanings(tmp_pa
             meaning = str(definitions[need_id].get("prompt", ""))
             assert "100" in meaning and "0" in meaning
         prompt = render_context(platform.decision_view("liang_he"), "Choose one behavior.")
-        assert "Satiety" in prompt and "higher means more full" in prompt
+        assert "Satiety" in prompt and "time lowers it and eating raises it" in prompt
     finally:
         platform.close()
 
