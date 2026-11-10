@@ -117,7 +117,7 @@ follow-up is needed. An event may describe what happened or wake another loop,
 but it cannot imply that a numeric, resource, relationship, or condition value
 changed.
 
-The controlled game audit then advanced one Agent from world minute 0 to 241.
+The controlled world audit then advanced one Agent from world minute 0 to 241.
 Its exploration outcome was persisted, Reflection wrote one grounded long-term
 lesson, and the next Decision retrieved that lesson and chose recovery before
 the newly unlocked ledger task. A second God audit showed why the boundary is

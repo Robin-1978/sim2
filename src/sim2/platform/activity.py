@@ -65,7 +65,10 @@ class ActivityRuntimeMixin:
             "recent_event_types": self._recent_event_types(),
             "day_phase": world_time_view(self.store).get("day_phase"),
         }
-        if action_id == "craft_recipe":
+        if (
+            action.get("duration", {}).get("mode") == "recipe_duration"
+            or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
+        ):
             recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
             condition_context["station_tags"] = list((recipe or {}).get("station_tags", []) or [])
         denial = self.rule_compiler.denial(
@@ -159,7 +162,10 @@ class ActivityRuntimeMixin:
             "recent_event_types": self._recent_event_types(),
             "day_phase": world_time_view(self.store).get("day_phase"),
         }
-        if action_info.get("action_id") == "craft_recipe":
+        if (
+            action.get("duration", {}).get("mode") == "recipe_duration"
+            or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
+        ):
             recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
             context["station_tags"] = list((recipe or {}).get("station_tags", []) or [])
         condition_target = {**parameters, **(target or {})}
@@ -355,6 +361,7 @@ class ActivityRuntimeMixin:
         if success_failure:
             self._finish_behavior(agent, execution_id, behavior_id, "failed", success_failure, minute)
             return
+        self._record_declared_capability_evidence(agent, action, action_parameters, minute)
         action_result = str((information_result or {}).get("result") or action.get("success", {}).get("result", "completed"))
         state = dict(agent.get("initial_state") or {})
         state["last_action_result"] = action_result
@@ -381,9 +388,47 @@ class ActivityRuntimeMixin:
         else:
             self.store.update_agent(agent["id"], agent)
 
-    def _add_capability_progress(self, agent: dict[str, Any], capability: str, delta: float, source: str, minute: int) -> None:
-        agent.setdefault("capabilities", {})[capability] = min(1.0, float(agent["capabilities"].get(capability, 0)) + float(delta))
-        self.store.put_capability_progress(agent["id"], capability, float(delta), source, minute)
+    def _record_declared_capability_evidence(
+        self,
+        agent: dict[str, Any],
+        action: dict[str, Any],
+        parameters: dict[str, Any],
+        minute: int,
+    ) -> None:
+        """Record only capability evidence declared for the completed Action.
+
+        Recipe effects may name a narrower capability than the generic craft
+        Action, so those explicit declarations take precedence. Other Actions
+        use the imported Capability ``uses`` catalog. This records evidence;
+        Reflection still decides whether to request a bounded level update.
+        """
+
+        explicit: set[str] = set()
+        for effect in list(action.get("effects") or []) + list(action.get("capability_effects") or []):
+            if not isinstance(effect, dict):
+                continue
+            if str(effect.get("type") or effect.get("op") or "") in {"capability_xp", "capability.add_xp"} and effect.get("capability"):
+                explicit.add(str(effect["capability"]))
+        recipe_id = parameters.get("recipe_id")
+        if recipe_id:
+            recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == recipe_id), None)
+            for effect in (recipe or {}).get("effects", []) or []:
+                if isinstance(effect, dict) and str(effect.get("type") or effect.get("op") or "") == "capability.add_xp" and effect.get("capability"):
+                    explicit.add(str(effect["capability"]))
+
+        owned = {str(item) for item in (agent.get("capabilities") or {})}
+        action_id = str(action.get("id") or "")
+        for definition in self.store.get_definitions("capability_def"):
+            capability = str(definition.get("id") or "")
+            uses = {str(item) for item in (definition.get("uses") or [])}
+            if not capability or capability not in owned or capability in explicit or action_id not in uses:
+                continue
+            self.store.append_event(
+                "capability.evidence",
+                agent["id"],
+                minute,
+                {"capability": capability, "source": action_id, "xp_rule": definition.get("xp_rule"), "requires_agent_review": True},
+            )
 
     def _apply_success_effects(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int, *, target: dict[str, Any] | None = None) -> None:
         effects = list(action.get("effects", []) or [])
@@ -765,7 +810,7 @@ class ActivityRuntimeMixin:
                     "name": entity.get("name", observed_id),
                     "entity_type": entity.get("entity_type"),
                     "amount": amount,
-                    "location": entity_state.get("location_id"),
+                    "location": entity_state.get("location_id") or entity.get("location_id"),
                     "status": {key: value for key, value in entity_state.items() if key in {"recovered", "created", "readable", "durability"}},
                 }
         if configured_event:

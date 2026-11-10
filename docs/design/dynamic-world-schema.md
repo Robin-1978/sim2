@@ -32,15 +32,18 @@ requests evidence-backed backfill.
 This lets a world invent a public-work ledger, ration policy, reputation code,
 or an entirely different institution without adding a new Python branch.
 
-## Implementation order
+## Verification status
 
-1. Replace remaining fixed attribute fallbacks with the imported schema.
-2. Add generic institution, policy, and ledger tables and proposal/activation
-   intents.
-3. Add configured follow-up behaviors for research mitigation, artifact
-   installation, and boundary investigation.
-4. Run a custom-world fixture with different attributes and a 240-minute
-   semantic audit before repeating the full 1,440-minute run.
+- Character attributes and needs come from the imported schema; the orbital
+  relay fixture runs with integrity, charge and signal clarity and contains no
+  health, energy or satiety state.
+- Institutions, policies and ledgers are generic SQLite definitions activated
+  through validated proposal intents.
+- Research mitigation, artifact installation and boundary investigation are
+  configured follow-up behaviors with persisted outcomes.
+- The different-ontology world fixture, runtime smoke test and cross-reference
+  validator run without changing Platform code. A fresh real-provider long run
+  remains the final semantic release gate for the Starter Village package.
 
 ## Runtime definition evolution
 

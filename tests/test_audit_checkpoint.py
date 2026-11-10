@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import json
 import importlib.util
+import sqlite3
 from pathlib import Path
+
+from sim2.bootstrap.service import create_instance
+from sim2.platform.runtime import Platform
 
 
 _SPEC = importlib.util.spec_from_file_location("audit_real_world", Path(__file__).parents[1] / "scripts" / "audit_real_world.py")
@@ -13,6 +17,13 @@ _quality_counts = _MODULE._quality_counts
 _write_json_atomic = _MODULE._write_json_atomic
 _merge_reports = _MODULE._merge_reports
 _unresolved_provider_errors = _MODULE._unresolved_provider_errors
+
+_REVIEW_SPEC = importlib.util.spec_from_file_location("review_audit", Path(__file__).parents[1] / "scripts" / "review_audit.py")
+assert _REVIEW_SPEC and _REVIEW_SPEC.loader
+_REVIEW_MODULE = importlib.util.module_from_spec(_REVIEW_SPEC)
+_REVIEW_SPEC.loader.exec_module(_REVIEW_MODULE)
+_database_checks = _REVIEW_MODULE._database_checks
+_review_unresolved_provider_errors = _REVIEW_MODULE._unresolved_provider_errors
 
 
 def test_audit_checkpoint_is_atomic_and_provider_errors_are_separate(tmp_path: Path):
@@ -71,3 +82,43 @@ def test_only_same_boundary_success_recovers_provider_error():
     late = {**recovered, "world_time": {"minute": 5}}
     assert _unresolved_provider_errors([error, recovered]) == []
     assert _unresolved_provider_errors([error, late]) == [error]
+    assert _review_unresolved_provider_errors([error, recovered]) == []
+    assert _review_unresolved_provider_errors([error, late]) == [error]
+
+
+def test_audit_verifies_capability_update_sources(tmp_path: Path):
+    world = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(world, "audit-capability-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        with platform.store.transaction():
+            source_ids = [
+                platform.store.append_event(
+                    "capability.evidence", "liang_he", minute,
+                    {"capability": "cooking", "source": "recipe:craft_meal"},
+                )
+                for minute in (1, 2, 3)
+            ]
+        result = platform.submit_capability_update(
+            "liang_he", "cooking", 0.04,
+            "Three configured cooking outcomes support one bounded update.",
+        )
+        assert result["status"] == "accepted"
+    finally:
+        platform.close()
+
+    valid = _database_checks({"db_path": str(db_path), "world": {}})
+    assert valid["capability_updates"] == 1
+    assert not [item for item in valid["issues"] if str(item["kind"]).startswith("capability_")]
+
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute(
+            "UPDATE event_log SET data_json=? WHERE event_id=?",
+            (json.dumps({"capability": "forging", "source": "recipe:craft_meal"}), source_ids[0]),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    invalid = _database_checks({"db_path": str(db_path), "world": {}})
+    assert any(item["kind"] == "capability_evidence_mismatch" for item in invalid["issues"])

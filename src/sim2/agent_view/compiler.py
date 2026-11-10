@@ -545,7 +545,11 @@ class AgentViewCompiler:
                 if not self._action_available(simulated_agent, action, parameters, simulated_location, rules.get("food_items", []) or [], action_minutes):
                     action_unavailable = True
                     break
-                recipe = recipe_defs.get(str(parameters.get("recipe_id"))) if action.get("id") == "craft_recipe" else None
+                recipe_action = (
+                    action.get("duration", {}).get("mode") == "recipe_duration"
+                    or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
+                )
+                recipe = recipe_defs.get(str(parameters.get("recipe_id"))) if recipe_action else None
                 view = _action_view(action, recipe, parameters)
                 steps.append(view["name"])
                 costs.extend(view["cost"])
@@ -565,7 +569,12 @@ class AgentViewCompiler:
                 # Validate a sequential BT against the state produced by its
                 # earlier configured steps. This keeps a travel-then-service
                 # behavior executable without adding action-specific code.
-                if action.get("id") == "travel_to" and parameters.get("location_id"):
+                moves_actor = any(
+                    str(effect.get("type") or effect.get("op") or "") == "location_set"
+                    for effect in (action.get("effects") or [])
+                    if isinstance(effect, dict)
+                )
+                if moves_actor and parameters.get("location_id"):
                     simulated_state["location_id"] = str(parameters["location_id"])
                     try:
                         simulated_location = self.store.get_entity(str(parameters["location_id"]))
@@ -749,12 +758,19 @@ class AgentViewCompiler:
             decision_constraints.append("No BT is executable in this state; return wait.")
         capability_update_candidates = []
         progression_rules = rules.get("capability_progression", {}) or {}
+        capability_defs = {str(item.get("id")): item for item in self.store.get_definitions("capability_def")}
+        owned_capabilities = agent.get("capabilities") or {}
         for capability, definition in progression_rules.items():
+            capability = str(capability)
+            catalog_entry = capability_defs.get(capability)
+            if not catalog_entry or (capability not in owned_capabilities and not bool(catalog_entry.get("acquirable", False))):
+                continue
             last = self.store.connection.execute("SELECT MAX(world_minute) AS minute FROM capability_progress WHERE agent_id=? AND capability=?", (agent_id, str(capability))).fetchone()["minute"]
-            completed = self.store.connection.execute("SELECT COUNT(*) AS n FROM event_log WHERE actor_id=? AND event_type='behavior.completed' AND world_minute>?", (agent_id, int(last or -1))).fetchone()["n"]
+            evidence_events = self.store.capability_evidence(agent_id, capability, after_minute=int(last) if last is not None else -1)
+            completed = len(evidence_events)
             required = int((definition or {}).get("minimum_completed_outcomes", 3) or 3)
             if int(completed or 0) >= required:
-                capability_update_candidates.append({"capability": str(capability), "completed_outcomes": int(completed), "required_outcomes": required, "max_delta": float((definition or {}).get("max_delta", 0.1) or 0.1)})
+                capability_update_candidates.append({"capability": capability, "completed_outcomes": int(completed), "required_outcomes": required, "max_delta": float((definition or {}).get("max_delta", 0.1) or 0.1), "evidence_sources": list(dict.fromkeys(str(item.get("source") or "configured result") for item in evidence_events))})
         pending_institutions = [
             {"name": str(item.get("name", "")), "purpose": str(item.get("purpose", "")), "scope": str(item.get("scope", "world")), "status": "proposed"}
             for item in self.store.list_institutions(status="proposed", limit=12)
@@ -886,7 +902,10 @@ class AgentViewCompiler:
                 context["current_object"] = self.store.get_entity(str(parameters["object_id"]))
             except KeyError:
                 return False
-        if action.get("id") == "craft_recipe":
+        if (
+            action.get("duration", {}).get("mode") == "recipe_duration"
+            or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
+        ):
             recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
             if recipe is None:
                 return False
@@ -1042,16 +1061,25 @@ class AgentViewCompiler:
             })
         prompt_protocol, platform_rules = self._prompt_sections(role)
         known_facts: list[str] = []
-        for row in fact_rows[:12]:
+        seen_fact_keys: set[str] = set()
+        seen_fact_text: set[str] = set()
+        for row in fact_rows:
             try:
                 data = json.loads(row["data_json"])
             except (TypeError, json.JSONDecodeError):
                 data = {}
             fact = data.get("fact") or data.get("summary")
-            if fact:
-                known_facts.append(str(fact))
-            else:
-                known_facts.append(str(row["fact_key"]).replace(":", " — ").replace("_", " "))
+            text = str(fact or str(row["fact_key"]).replace(":", " — ").replace("_", " ")).strip()
+            fact_key = str(row["fact_key"] or "").strip()
+            normalized_text = text.casefold()
+            if (fact_key and fact_key in seen_fact_keys) or normalized_text in seen_fact_text:
+                continue
+            if fact_key:
+                seen_fact_keys.add(fact_key)
+            seen_fact_text.add(normalized_text)
+            known_facts.append(text)
+            if len(known_facts) >= 12:
+                break
         return {
             "context_version": "1", "role": role,
             "prompt_protocol": prompt_protocol, "platform_rules": platform_rules,
@@ -1074,6 +1102,7 @@ class AgentViewCompiler:
                     "description": str((value or {}).get("description") or ""),
                     "evidence_event_types": [str(item) for item in ((value or {}).get("evidence_event_types") or [])],
                     "evidence_behaviors": [str(item) for item in ((value or {}).get("evidence_behaviors") or [])],
+                    "evidence_sources": list((value or {}).get("evidence_sources") or []),
                 }
                 for key, value in ((self.store.get_meta("rules", {}) or {}).get("civilization_progress", {}) or {}).items()
                 if isinstance(value, dict)
@@ -1208,6 +1237,7 @@ class AgentViewCompiler:
                     "description": str((value or {}).get("description") or ""),
                     "evidence_event_types": [str(item) for item in ((value or {}).get("evidence_event_types") or [])],
                     "evidence_behaviors": [str(item) for item in ((value or {}).get("evidence_behaviors") or [])],
+                    "evidence_sources": list((value or {}).get("evidence_sources") or []),
                 }
                 for key, value in ((self.store.get_meta("rules", {}) or {}).get("civilization_progress", {}) or {}).items()
                 if isinstance(value, dict)

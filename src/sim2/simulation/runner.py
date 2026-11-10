@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from ..agents.engine import AgentEngine, AgentTurn
 from ..platform.runtime import Platform
+from ..world.time import minutes_until_next_day_phase
 
 
 @dataclass
@@ -348,7 +349,9 @@ class SimulationRunner:
                 report.waits += 1
                 streak = self._wait_streak.get(agent_id, 0) + 1
                 self._wait_streak[agent_id] = streak
-                self._decision_not_before[agent_id] = minute + self._wait_delay(streak)
+                empty_catalog = not (turn.initial_context.get("executable_behaviors") or turn.initial_context.get("open_trade_offers"))
+                delay = self._empty_catalog_delay(minute) if empty_catalog else self._wait_delay(streak)
+                self._decision_not_before[agent_id] = minute + delay
             elif turn.result.get("status") == "accepted":
                 self._llm_error_count.pop(agent_id, None)
                 self._wait_streak.pop(agent_id, None)
@@ -371,6 +374,14 @@ class SimulationRunner:
         if not delays:
             delays = [self.wait_cooldown_minutes]
         return delays[min(max(1, int(streak)) - 1, len(delays) - 1)]
+
+    def _empty_catalog_delay(self, minute: int) -> int:
+        """Retry at the next likely catalog change without another empty LLM call."""
+
+        policy = (self.platform.store.get_meta("rules", {}) or {}).get("decision_policy", {}) or {}
+        maximum = max(1, int(policy.get("empty_catalog_retry_minutes", 360) or 360))
+        phase_change = minutes_until_next_day_phase(self.platform.store, minute)
+        return min(maximum, phase_change) if phase_change is not None else maximum
 
     def _refresh_decision_wakes(self, minute: int) -> None:
         """Clear wait backoff for configured events without semantic branches."""

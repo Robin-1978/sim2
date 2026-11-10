@@ -72,6 +72,10 @@ behavior_trees:
     confidence: 0.9
   nodes:
   - type: action
+    action_id: travel_to
+    parameters:
+      location_id: granary
+  - type: action
     action_id: inspect_object
     parameters:
       object_id: village_food

@@ -23,6 +23,37 @@ def _issue(kind: str, detail: str, session: int | None = None) -> dict[str, Any]
     return result
 
 
+def _provider_error(session: dict[str, Any]) -> bool:
+    result = session.get("result") if isinstance(session.get("result"), dict) else {}
+    quality = session.get("quality") if isinstance(session.get("quality"), dict) else {}
+    return result.get("failed_check") == "llm_response" or "provider_error" in str(quality.get("grade") or "")
+
+
+def _unresolved_provider_errors(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return provider failures without a same-boundary successful retry."""
+
+    successful = {
+        (
+            str(item.get("role") or ""),
+            str(item.get("actor_id") or ""),
+            str(item.get("task_type") or ""),
+            int((item.get("world_time") or {}).get("minute", -1)),
+        )
+        for item in sessions
+        if not _provider_error(item) and (item.get("result") or {}).get("status") in {"accepted", "wait"}
+    }
+    return [
+        item for item in sessions
+        if _provider_error(item)
+        and (
+            str(item.get("role") or ""),
+            str(item.get("actor_id") or ""),
+            str(item.get("task_type") or ""),
+            int((item.get("world_time") or {}).get("minute", -1)),
+        ) not in successful
+    ]
+
+
 def _prompt_checks(session: dict[str, Any], index: int) -> list[dict[str, Any]]:
     prompts = list(session.get("prompt_history") or [])
     if not prompts:
@@ -205,6 +236,117 @@ def _database_checks(data: dict[str, Any]) -> dict[str, Any]:
                     f"actor={actor_id}; behavior={behavior_id}; result={result}; minutes={minutes[:12]}",
                 ))
 
+        event_by_id = {int(row["event_id"]): {**row, **payload(row)} for row in event_rows}
+        completed_locations: dict[tuple[str, int], str] = {}
+        for row in event_rows:
+            if row["event_type"] != "behavior.completed":
+                continue
+            item = payload(row)
+            outcome = item.get("outcome") if isinstance(item.get("outcome"), dict) else {}
+            actual = outcome.get("actual") if isinstance(outcome.get("actual"), dict) else {}
+            if actual.get("location"):
+                completed_locations[(str(row["actor_id"] or ""), int(row["world_minute"]))] = str(actual["location"])
+
+        spatial_observations = 0
+        for row in event_rows:
+            item = payload(row)
+            observed = item.get("observed") if isinstance(item.get("observed"), dict) else {}
+            parameters = item.get("parameters") if isinstance(item.get("parameters"), dict) else {}
+            if not parameters.get("object_id") or not observed.get("location"):
+                continue
+            spatial_observations += 1
+            actor_location = completed_locations.get((str(row["actor_id"] or ""), int(row["world_minute"])))
+            if actor_location and actor_location != str(observed["location"]):
+                issues.append(_issue(
+                    "remote_object_observation",
+                    f"event={row['event_id']}; actor_location={actor_location}; object_location={observed['location']}",
+                ))
+
+        rules_row = connection.execute("SELECT value FROM instance_meta WHERE key='rules'").fetchone()
+        rules = json.loads(rules_row["value"]) if rules_row else {}
+        progress_definitions = rules.get("civilization_progress", {}) if isinstance(rules, dict) else {}
+        progress_sources: set[tuple[str, int]] = set()
+        progress_evidence_rows = 0
+
+        def progress_source_matches(definition: dict[str, Any], source: dict[str, Any]) -> bool:
+            clauses = [item for item in (definition.get("evidence_sources") or []) if isinstance(item, dict)]
+            if clauses:
+                identifiers = {
+                    str(source.get(key)) for key in ("entity_id", "object_id", "source_id", "target_id", "resource_id")
+                    if source.get(key) is not None
+                }
+                for clause in clauses:
+                    event_types = {str(value) for value in (clause.get("event_types") or ([clause["event_type"]] if clause.get("event_type") else []))}
+                    behavior_ids = {str(value) for value in (clause.get("behavior_ids") or ([clause["behavior_id"]] if clause.get("behavior_id") else []))}
+                    action_ids = {str(value) for value in (clause.get("action_ids") or ([clause["action_id"]] if clause.get("action_id") else []))}
+                    entity_ids = {str(value) for value in (clause.get("entity_ids") or ([clause["entity_id"]] if clause.get("entity_id") else []))}
+                    if event_types and str(source.get("event_type") or "") not in event_types:
+                        continue
+                    if behavior_ids and str(source.get("behavior_id") or "") not in behavior_ids:
+                        continue
+                    if action_ids and str(source.get("action_id") or "") not in action_ids:
+                        continue
+                    if entity_ids and not identifiers & entity_ids:
+                        continue
+                    return True
+                return False
+            events = {str(value) for value in (definition.get("evidence_event_types") or [])}
+            behaviors = {str(value) for value in (definition.get("evidence_behaviors") or [])}
+            return (not events and not behaviors) or str(source.get("event_type") or "") in events or str(source.get("behavior_id") or "") in behaviors
+
+        for row in event_rows:
+            if row["event_type"] not in {"civilization.progressed", "civilization.milestone"}:
+                continue
+            progress_evidence_rows += 1
+            item = payload(row)
+            key = str(item.get("progress_key") or (item.get("progress") or {}).get("progress_key") or "")
+            source_id = int(item.get("source_event_id", 0) or 0)
+            definition = progress_definitions.get(key) if isinstance(progress_definitions, dict) else None
+            source = event_by_id.get(source_id)
+            if not key or source is None:
+                issues.append(_issue("progress_source_missing", f"event={row['event_id']}; progress={key}; source={source_id}"))
+                continue
+            source_key = (key, source_id)
+            if source_key in progress_sources:
+                issues.append(_issue("duplicate_progress_evidence", f"progress={key}; source={source_id}"))
+            progress_sources.add(source_key)
+            if isinstance(definition, dict) and not progress_source_matches(definition, source):
+                issues.append(_issue("progress_source_mismatch", f"progress={key}; source={source_id}; type={source.get('event_type')}"))
+            progress = item.get("progress") if isinstance(item.get("progress"), dict) else {}
+            actual_delta = float(progress.get("after", 0) or 0) - float(progress.get("before", 0) or 0)
+            expected_delta = float((definition or {}).get("evidence_value", 1) or 1) if isinstance(definition, dict) else actual_delta
+            if abs(actual_delta - expected_delta) > 1e-9:
+                issues.append(_issue("progress_delta_mismatch", f"progress={key}; source={source_id}; expected={expected_delta}; actual={actual_delta}"))
+
+        capability_source_uses: set[tuple[str, int]] = set()
+        capability_updates = 0
+        for row in event_rows:
+            if row["event_type"] != "capability.updated":
+                continue
+            capability_updates += 1
+            item = payload(row)
+            capability = str(item.get("capability") or "")
+            source_ids = [int(value) for value in (item.get("source_event_ids") or []) if int(value) > 0]
+            if not capability or not source_ids:
+                issues.append(_issue("capability_evidence_missing", f"event={row['event_id']}; capability={capability}"))
+                continue
+            for source_id in source_ids:
+                source = event_by_id.get(source_id)
+                source_key = (capability, source_id)
+                if source_key in capability_source_uses:
+                    issues.append(_issue("duplicate_capability_evidence", f"capability={capability}; source={source_id}"))
+                capability_source_uses.add(source_key)
+                if (
+                    source is None
+                    or str(source.get("event_type") or "") != "capability.evidence"
+                    or str(source.get("actor_id") or "") != str(row["actor_id"] or "")
+                    or str(source.get("capability") or "") != capability
+                ):
+                    issues.append(_issue(
+                        "capability_evidence_mismatch",
+                        f"update={row['event_id']}; capability={capability}; source={source_id}",
+                    ))
+
         scheduled_due = rows("SELECT task_id,status,due_minute FROM evolution_task WHERE due_minute<=?", (final_minute if final_minute is not None else (requested or 10**9),))
         open_statuses = {"ready", "claimed", "running", "scheduled"}
         open_tasks = [row for row in scheduled_due if str(row["status"]) in open_statuses]
@@ -268,6 +410,9 @@ def _database_checks(data: dict[str, Any]) -> dict[str, Any]:
             "dialogue_exchanges": len(exchange_rows),
             "dialogue_empty_messages": empty_messages,
             "dialogue_exact_repeats_within_window": exact_repeats,
+            "spatial_observations": spatial_observations,
+            "progress_evidence_rows": progress_evidence_rows,
+            "capability_updates": capability_updates,
             "issues": issues,
         }
     finally:
@@ -283,9 +428,10 @@ def review(data: dict[str, Any]) -> dict[str, Any]:
         stats = role_stats.setdefault(role, {"sessions": 0, "quality_failed": 0, "prompt_issues": 0, "feedback_issues": 0})
         stats["sessions"] += 1
         quality = session.get("quality") or {}
-        if not quality.get("passed") and not quality.get("pending") and session.get("result", {}).get("status") != "skipped":
+        provider_error = _provider_error(session)
+        if not provider_error and not quality.get("passed") and not quality.get("pending") and session.get("result", {}).get("status") != "skipped":
             stats["quality_failed"] += 1
-        prompt_issues = _prompt_checks(session, index) if session.get("result", {}).get("status") != "skipped" else []
+        prompt_issues = _prompt_checks(session, index) if not provider_error and session.get("result", {}).get("status") != "skipped" else []
         feedback_issues = _feedback_checks(session, index)
         tool_view_issues = _tool_view_checks(session, index)
         stats["prompt_issues"] += len(prompt_issues)
@@ -293,6 +439,17 @@ def review(data: dict[str, Any]) -> dict[str, Any]:
         issues.extend(prompt_issues)
         issues.extend(feedback_issues)
         issues.extend(tool_view_issues)
+    unresolved_provider_errors = _unresolved_provider_errors(sessions)
+    if unresolved_provider_errors:
+        issues.append(_issue("unresolved_provider_errors", str([
+            {
+                "role": item.get("role"),
+                "actor": item.get("actor_id"),
+                "task": item.get("task_type"),
+                "minute": (item.get("world_time") or {}).get("minute"),
+            }
+            for item in unresolved_provider_errors[:12]
+        ])))
     world = data.get("world") or {}
     causality = world.get("causality") or {}
     if causality.get("orphan_behavior_intents"):

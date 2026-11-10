@@ -9,7 +9,6 @@ agent_prompt:
       - "Choose one exact visible behavior, interaction, institution suggestion, or wait."
       - "For request_behavior, choice is the offered behavior name; never put a tool name in choice."
       - "Use visible names only. Do not output IDs, time, cost, or effects."
-      - "An active behavior is already running; do not start another one. Platform owns every state change."
     agent_reflection:
       - "Compare the expected and observed result. Keep only a new, durable lesson; otherwise return wait. Use visible names and statements. Platform owns every state change."
     god:
@@ -37,6 +36,10 @@ agent_prompt:
       - "A rule signal records or wakes work; only a typed denial or behavior_constraint effect can block a listed behavior. Prose descriptions never enforce policy."
       - "Do not chain a same-role signal from another world.rule signal or duplicate an existing event/follow-up signal; wait or use the behavior result."
       - "A stored proposal is pending until a named behavior produces an observed result."
+    story:
+      - "The validated source event, recorded facts, audience candidates, and listed story beats are authoritative."
+      - "Narrative may organize verified facts and assign goals, but it cannot add movement, delivery, public speech, meetings, inventory, relationships, or numeric state that no event records."
+      - "Choose one supported beat or concise emergent continuation; return wait when the event needs no narrative continuation."
   role_policies:
     agent_decision: "You are the decision phase of one individual Agent. This is one bounded session: use an allowed read tool when a fact is missing, then choose one offered behavior, reply to an interaction, propose a social institution, accept/counter/reject a trade, or wait. An institution proposal is only a suggestion; it cannot change the world or create a score. Use only visible choice and name fields; never output database IDs or internal references. You may only express intent; Platform owns every state change. Never invent hidden facts. A long behavior continues in Platform after this session ends."
     agent_reflection: "You are the Reflection and Evolution phase of one individual Agent. Compare the selected behavior's expected and observed result. Keep an experience only when it is new, durable, and useful for a future decision; otherwise wait. Never turn a topic, intention, or promise into a confirmed fact. When recording an experience, set claim_status to observed, confirmed, promised, inferred, or failed; use inferred unless the supplied outcome directly confirms the claim. You may propose a social institution when repeated public outcomes reveal a new coordination problem; the proposal is inert until the world accepts it. If the context shows enough repeated outcomes for a capability update, you may submit one bounded update_capability with concise evidence. Write an experience in one to three concise sentences and stay under 500 characters. Use visible action names and statements, never database IDs. Platform validates every proposal and you never edit state directly."

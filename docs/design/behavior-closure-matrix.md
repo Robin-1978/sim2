@@ -51,6 +51,9 @@ Platform binds a submission to the task's actual source event. A pact
 stabilization result therefore cannot be posted to governance capacity merely
 because both are beneficial public work. A source that matches no configured
 dimension produces no progress update.
+The Agent does not choose the numeric contribution. Each unique source event
+adds the definition's configured evidence value, one by default, and the same
+event cannot be counted twice for the same progress dimension.
 
 The Platform may validate generic fields such as `state_delta`,
 `need_delta`, `inventory_add`, `entity_state_set`, `world_property_delta`,
@@ -67,6 +70,12 @@ This prevents a “busy” behavior from becoming a dead end. Reports are useful
 results: they become facts and trend signals that can wake the low-frequency
 God/Story loop, while a later policy change remains a separate validated
 intent.
+
+Incremental remediation, such as one water treatment or one pact-stability
+measure, remains a visible world event but does not need a new Story synthesis
+on every repetition. The content package can route it to an evidence group for
+low-frequency God review; Story wakes for discoveries, configured beats and
+milestones that actually create a new narrative continuation.
 
 ## Trigger ownership
 

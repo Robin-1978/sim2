@@ -69,6 +69,13 @@ The template uses these top-level sections. The machine-readable source is
 | `initial_events` | Opening facts recorded at configured world minutes. |
 | `prompts` | Optional world-owned runtime prompt policies. |
 
+`story.emergent_source_event_types` declares which recorded events may seed a
+fallback emergent beat when no task-bound source is supplied. A
+`story.narrative_claim_guard` may list locale-specific claim terms plus the
+event types or BT tags that prove a later movement, meeting, delivery or public
+statement. Runtime Story tasks always bind their exact causal event IDs first;
+these fields are a configurable validation fallback, not a source guess.
+
 IDs are internal references and use stable `snake_case`. Labels, summaries and
 prompts are short natural language written for people and Agents. References
 must resolve inside the same template. The validator rejects missing routes,
@@ -117,6 +124,12 @@ Character attributes describe the individual. Environmental, institutional,
 vehicle and facility values belong to world properties or entity state. For
 example, a diver may have `suit_integrity` while a station has
 `hull_integrity`; the same number must not appear in both scopes.
+
+Civilization progress definitions may declare `evidence_event_types`,
+`evidence_behaviors`, or precise `evidence_sources` clauses combining an event,
+behavior, Action and entity. `evidence_value` is the contribution of one unique
+matching source and defaults to one. Story and God choose a matching category;
+Platform owns the number and rejects reused or cross-domain evidence.
 
 ## Action and BT rule
 

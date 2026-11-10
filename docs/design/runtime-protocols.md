@@ -63,6 +63,13 @@ use N=1.  There is no implicit daily God call.  The next God or Story view
 receives the expected/observed comparison and may wait, revise, or propose a
 bounded successor.
 
+An event-driven Story session also carries the exact source event IDs through
+the tool executor and intent submission. Platform never replaces that source
+with whichever event happened most recently. Optional emergent-source types,
+narrative claim terms, valid follow-up event types, and follow-up BT tags live
+in `story.yaml`; a different content pack can replace them without Python
+changes.
+
 Social institutions follow the same path: no contribution metric exists until
 a person proposes an institution and the world activates it.  After activation,
 configured selectors append verified ledger entries from real behavior events;

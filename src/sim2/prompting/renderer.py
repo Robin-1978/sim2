@@ -284,12 +284,13 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         memories = context.get("memories") or []
         short_memories = [item for item in memories if item.get("tier") == "short_term"]
         long_memories = [item for item in memories if item.get("tier") != "short_term"]
-    lines.append("    <short_term_memory>")
-    lines.extend([f"      {_memory_line(item)}" for item in (short_memories or [])[:3]] or ["      memory: none"])
-    lines.append("    </short_term_memory>")
-    lines.append("    <long_term_memory>")
-    lines.extend([f"      {_memory_line(item)}" for item in (long_memories or [])[:4]] or ["      memory: none"])
-    lines.append("    </long_term_memory>")
+    if role != "story":
+        lines.append("    <short_term_memory>")
+        lines.extend([f"      {_memory_line(item)}" for item in (short_memories or [])[:3]] or ["      memory: none"])
+        lines.append("    </short_term_memory>")
+        lines.append("    <long_term_memory>")
+        lines.extend([f"      {_memory_line(item)}" for item in (long_memories or [])[:4]] or ["      memory: none"])
+        lines.append("    </long_term_memory>")
     lines.append("  </knowledge_and_memory>")
     lines.append("<recent_actions>")
     recent_actions = context.get("recent_actions") or []
@@ -358,7 +359,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         if progress_candidates:
             lines.append("  Configured public progress (submit only when the validated source matches):")
             for item in progress_candidates[:8]:
-                evidence = list(item.get("evidence_event_types") or []) + list(item.get("evidence_behaviors") or [])
+                evidence = list(item.get("evidence_sources") or []) or (list(item.get("evidence_event_types") or []) + list(item.get("evidence_behaviors") or []))
                 lines.append(f"  - {item.get('progress_key')}: {item.get('description') or 'configured progress'}; accepted evidence={_plain(evidence) or 'any validated outcome'}")
         beats = context.get("story_beats") or []
         for beat in beats[:12]:
@@ -385,7 +386,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("<configured_public_progress>")
         if progress_candidates:
             for item in progress_candidates[:12]:
-                evidence = list(item.get("evidence_event_types") or []) + list(item.get("evidence_behaviors") or [])
+                evidence = list(item.get("evidence_sources") or []) or (list(item.get("evidence_event_types") or []) + list(item.get("evidence_behaviors") or []))
                 lines.append(
                     f"  - {item.get('progress_key')} target={_number(item.get('required', 1))}: "
                     f"{item.get('description') or 'configured progress'}; accepted evidence={_plain(evidence) or 'any validated outcome'}"
@@ -539,15 +540,18 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     lines.append("</interaction_history>")
     lines.extend(["<decision>", f"  {task}", "</decision>"])
     rendered = "\n".join(lines)
-    if role == "god":
-        # God has a world projection, not a character body, inventory, or
-        # private memory. Remove empty character sections that add repeated
-        # protocol noise without evidence.
-        for tag in (
+    if role in {"god", "story"}:
+        # World-level roles have projections rather than a character body,
+        # inventory, personal drives, or an executable BT catalog. Keep the
+        # evidence sections that differ by role and remove empty scaffolding.
+        shared_empty_sections = (
             "self", "state_attributes", "identity", "needs_and_state", "drives",
-            "nearby_entities", "relationships", "knowledge_and_memory",
+            "nearby_entities", "relationships",
             "recent_actions", "open_trade_offers", "active_execution",
-        ):
+            "executable_behaviors",
+        )
+        role_empty_sections = ("knowledge_and_memory",) if role == "god" else ()
+        for tag in shared_empty_sections + role_empty_sections:
             rendered, _ = _remove_block(rendered, tag)
     if len(rendered) <= max_chars:
         return rendered

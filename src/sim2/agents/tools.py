@@ -199,16 +199,15 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "record_world_progress": {
-        "purpose": "Propose public progress backed by completed behavior or research results; Platform wakes milestone consumers at the configured threshold.",
+        "purpose": "Assign the triggering result to one matching public progress category; Platform derives the configured contribution and wakes milestone consumers at the threshold.",
         "kind": "intent",
         "parameters": {
             "type": "object",
             "properties": {
                 "progress_key": {"type": "string", "description": "A configured world progress name."},
-                "delta": {"type": "number", "minimum": 0, "maximum": 5},
                 "evidence": {"type": "string", "description": "A concise public result that supports this progress."},
             },
-            "required": ["progress_key", "delta", "evidence"],
+            "required": ["progress_key", "evidence"],
             "additionalProperties": False,
         },
     },
@@ -542,11 +541,15 @@ class AgentToolExecutor:
         role: str,
         actor_id: str,
         source_event_ids: list[int] | None = None,
+        observed_world_revision: int | None = None,
+        observed_agent_revision: int | None = None,
     ):
         self.platform = platform
         self.role = role
         self.actor_id = actor_id
         self.source_event_ids = [int(value) for value in (source_event_ids or []) if int(value) > 0]
+        self.observed_world_revision = observed_world_revision
+        self.observed_agent_revision = observed_agent_revision
         self.allowed = set(ROLE_TOOLS.get(role, []))
 
     def execute(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -722,6 +725,8 @@ class AgentToolExecutor:
             reason=reason,
             confidence=float(confidence),
             intent_id=str(uuid4()),
+            observed_world_revision=self.observed_world_revision,
+            observed_agent_revision=self.observed_agent_revision,
         )
         result = self.platform.submit_behavior(intent)
         if isinstance(result, dict) and result.get("behavior_ref"):
@@ -758,11 +763,11 @@ class AgentToolExecutor:
     def _update_capability(self, capability: str, delta: float, evidence: str) -> dict[str, Any]:
         return self.platform.submit_capability_update(self.actor_id, capability, float(delta), evidence)
 
-    def _record_world_progress(self, progress_key: str, delta: float, evidence: str) -> dict[str, Any]:
+    def _record_world_progress(self, progress_key: str, evidence: str) -> dict[str, Any]:
         return self.platform.submit_world_progress(
             self.actor_id,
             progress_key,
-            float(delta),
+            None,
             evidence,
             source_event_ids=self.source_event_ids,
         )
@@ -903,7 +908,11 @@ class AgentToolExecutor:
         return self.platform.submit_world_change(self.actor_id, proposal, origin_role=self.role)
 
     def _propose_story_beat(self, beat: str = "", audience: list[str] | None = None, summary: str = "", fact: str = "", goal_hint: str = "", unlock_choices: list[str] | None = None, reason: str = "") -> dict[str, Any]:
-        return self.platform.submit_story_beat(self.actor_id, {"beat": beat, "audience": list(audience or []), "summary": summary, "fact": fact, "goal_hint": goal_hint, "unlock_choices": list(unlock_choices or []), "reason": reason})
+        return self.platform.submit_story_beat(
+            self.actor_id,
+            {"beat": beat, "audience": list(audience or []), "summary": summary, "fact": fact, "goal_hint": goal_hint, "unlock_choices": list(unlock_choices or []), "reason": reason},
+            source_event_ids=self.source_event_ids,
+        )
 
     def _validate_world_template(self, template: dict[str, Any]) -> dict[str, Any]:
         return self.platform.validate_world_template(template)

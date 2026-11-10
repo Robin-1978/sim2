@@ -1,4 +1,9 @@
 story:
+  emergent_source_event_types: [exploration.completed, research.completed, object.recovered, relationship.changed]
+  narrative_claim_guard:
+    terms: [brought, delivered, read aloud, gathered, met, arrived, 带到, 送到, 宣读, 聚集, 会面, 到达, 公开]
+    followup_event_types: [dialogue.completed, dialogue.behavior_completed, trade.completed]
+    followup_behavior_tags: [movement, conversation, trade]
   beats:
   - id: greywood_route_found
     agent_label: Follow the Greywood caravan trail

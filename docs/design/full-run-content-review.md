@@ -96,6 +96,9 @@ review still found two defects that the earlier structural audit missed:
   `粮仓` with the SQLite ID `granary` and failed `route.known` each time.
 - God posted a pact-stabilization result to `governance_capacity`; the evidence
   was real but belonged to a different progress domain.
+- A fixed-object inspection was offered while the actor and old pact tablet
+  were at different locations because the Action checked generic reachability
+  instead of object co-location.
 
 The reference boundary now canonicalizes visible names after all aliases are
 merged. The audit rejects three repeated identical behavior failures. Public
@@ -103,3 +106,6 @@ progress definitions now declare accepted event and behavior evidence, and
 Platform binds God/Story submissions to the evolution task's causal source
 event. The next release audit must run from a fresh instance because the first
 post-fix database contains the pre-repair failures and incorrect progress row.
+Fixed-object inspection now requires `object.available` in both candidate
+compilation and execution. Progress contributions are derived from one unique
+configured source event; the model no longer supplies a numeric delta.

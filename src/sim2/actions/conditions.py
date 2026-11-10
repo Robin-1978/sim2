@@ -257,9 +257,10 @@ class ConditionEngine:
         if path == "object.available":
             obj = context.get("current_object", {}) or {}
             obj_state = obj.get("initial_state", {}) if isinstance(obj, dict) else {}
-            object_location = obj_state.get("location_id")
+            object_location = obj_state.get("location_id") or (obj.get("location_id") if isinstance(obj, dict) else None)
             current_location = state.get("location_id")
-            return bool(obj and object_location == current_location and not obj_state.get("recovered", False))
+            recovered = obj_state.get("recovered", obj.get("recovered", False) if isinstance(obj, dict) else False)
+            return bool(obj and object_location == current_location and not recovered)
         if path == "research.new_fact_available":
             source_id = target.get("source_id") or context.get("source_id")
             return bool(source_id) and str(source_id) not in {str(item) for item in context.get("researched_sources", [])}

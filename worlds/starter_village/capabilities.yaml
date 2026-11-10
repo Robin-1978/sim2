@@ -23,6 +23,12 @@ capabilities:
   uses:
   - craft_recipe
   xp_rule: one_successful_recipe
+- id: herbalism
+  name: 草药制作
+  value_path: agent.capabilities.herbalism
+  uses:
+  - craft_recipe
+  xp_rule: one_successful_medicine_recipe
 - id: combat
   name: 战斗
   value_path: agent.capabilities.combat

@@ -49,3 +49,21 @@ def configured_day_phase(setting: dict[str, Any], minute_of_day: int, *, day_min
         if active:
             return str(item["id"])
     return "unknown"
+
+
+def minutes_until_next_day_phase(store: Any, minute: int | None = None) -> int | None:
+    """Return the next configured phase boundary in world minutes."""
+
+    setting = store.get_meta("setting", {}) or {}
+    calendar = setting.get("calendar", {}) if isinstance(setting, dict) else {}
+    phases = [item for item in (calendar.get("day_phases", []) or []) if isinstance(item, dict) and item.get("id")]
+    if not phases:
+        return None
+    day_minutes = max(1, int(calendar.get("minutes_per_day", 1440) or 1440))
+    current = world_time_view(store, minute).get("minute_of_day", 0)
+    deltas = [
+        (int(item.get("start_minute", 0) or 0) % day_minutes - int(current)) % day_minutes
+        for item in phases
+    ]
+    positive = [value for value in deltas if value > 0]
+    return min(positive) if positive else day_minutes

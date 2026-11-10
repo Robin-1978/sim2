@@ -31,6 +31,7 @@ actions:
     condition: actor.incapacitated
     result: failed
   interrupt_policy: pause
+  interaction_policy: allow
   definition_source: config
   kind: atomic
   executor: effect_pipeline
@@ -205,6 +206,7 @@ actions:
     condition: resource.empty or actor.incapacitated
     result: gathering_failed
   interrupt_policy: pause
+  interaction_policy: allow
   definition_source: config
   kind: atomic
   executor: effect_pipeline
@@ -346,6 +348,7 @@ actions:
     condition: actor.incapacitated
     result: failed
   interrupt_policy: pause
+  interaction_policy: allow
   definition_source: config
   kind: atomic
   executor: effect_pipeline
@@ -378,6 +381,7 @@ actions:
     condition: target.refused
     result: conversation_refused
   interrupt_policy: cancel
+  interaction_policy: allow
   definition_source: config
   kind: atomic
   executor: effect_pipeline
@@ -413,6 +417,7 @@ actions:
     required: 2
     wake: [story, god]
   interrupt_policy: pause
+  interaction_policy: allow
   definition_source: config
   kind: atomic
   executor: effect_pipeline
@@ -423,7 +428,7 @@ actions:
     object_id: string
   preconditions:
   - actor.can_inspect
-  - location.reachable
+  - object.available
   duration:
     minutes: 30
   costs:
@@ -486,6 +491,7 @@ actions:
     summary: Concrete proposed terms were recorded and delivered to the other participant for a separate response.
     result: terms_recorded
   interrupt_policy: cancel
+  interaction_policy: allow
   definition_source: config
   kind: atomic
   executor: effect_pipeline
@@ -531,6 +537,7 @@ actions:
     relation: hostility
     delta: 0.15
   interrupt_policy: cancel
+  interaction_policy: deny
   executor: effect_pipeline
 - id: defend
   version: 1
@@ -600,6 +607,7 @@ actions:
     event_type: safety.escaped
     result: escaped
   interrupt_policy: cancel
+  interaction_policy: deny
   executor: effect_pipeline
 - id: sound_alarm
   version: 1
@@ -663,6 +671,7 @@ actions:
     condition: inputs.lost or station.damaged
     result: crafting_failed
   interrupt_policy: pause
+  interaction_policy: allow
   definition_source: config
   kind: atomic
   executor: effect_pipeline
@@ -796,7 +805,7 @@ actions:
     result: water_measure_failed
   information:
     event_type: water.mitigation.applied
-    wake: [story, god]
+    wake: [god]
     summary: A configured water-safety measure was applied and its world result was recorded.
     result: water_measure_applied
   interrupt_policy: pause
@@ -835,7 +844,7 @@ actions:
     result: pact_stabilization_failed
   information:
     event_type: pact.stability_improved
-    wake: [story, god]
+    wake: [god]
     summary: A configured pact-stabilization measure was completed and its world result was recorded.
     result: pact_stabilized
   interrupt_policy: pause

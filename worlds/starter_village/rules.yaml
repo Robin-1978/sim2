@@ -130,9 +130,13 @@ motivation_model:
   - social_norms_and_external_pressure
 capability_progression:
   cooking: {minimum_completed_outcomes: 3, max_delta: 0.08, max_value: 1.0}
-  gather: {minimum_completed_outcomes: 3, max_delta: 0.08, max_value: 1.0}
+  farming: {minimum_completed_outcomes: 4, max_delta: 0.08, max_value: 1.0}
+  forging: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
+  herbalism: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
+  combat: {minimum_completed_outcomes: 3, max_delta: 0.08, max_value: 1.0}
+  exploration: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
+  conversation: {minimum_completed_outcomes: 6, max_delta: 0.08, max_value: 1.0}
   research: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
-  navigation: {minimum_completed_outcomes: 3, max_delta: 0.08, max_value: 1.0}
 civilization_progress:
   governance_capacity:
     required: 5
@@ -150,8 +154,13 @@ civilization_progress:
     required: 4
     wake: [story, god]
     description: Verified trade, negotiation, or route-recovery results strengthen the trade network.
-    evidence_event_types: [trade.completed, trade.ledger_recovered, negotiation.result_recorded]
-    evidence_behaviors: [recover_caravan_ledger, negotiate]
+    evidence_sources:
+    - {event_type: trade.completed}
+    - {event_type: trade.ledger_recovered}
+    - {event_type: negotiation.result_recorded}
+    - {event_type: object.recovered, entity_id: caravan_ledger}
+    - {behavior_id: recover_caravan_ledger}
+    - {behavior_id: negotiate}
   food_system:
     required: 5
     wake: [story, god]
@@ -208,6 +217,7 @@ interaction_policy:
   thread_window_minutes: 360
 decision_policy:
   wait_backoff_minutes: [60, 120, 240, 480, 720]
+  empty_catalog_retry_minutes: 360
   wake_events:
   - need.satiety_low
   - need.starvation_damage

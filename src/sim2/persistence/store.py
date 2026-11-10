@@ -300,7 +300,7 @@ class WorldStore:
         row = self.connection.execute("SELECT value FROM instance_meta WHERE key=?", (key,)).fetchone()
         return default if row is None else json.loads(row["value"])
 
-    def world_snapshot(self) -> dict[str, Any]:
+    def world_snapshot(self, *, include_agent_revisions: bool = True) -> dict[str, Any]:
         """Return the read-only boundary used by a decision or tick.
 
         The snapshot is deliberately a projection rather than a copy of every
@@ -308,15 +308,17 @@ class WorldStore:
         commit code compares the revision again before accepting a write.
         """
 
-        return {
+        snapshot = {
             "world_id": self.get_meta("world_id", self.get_meta("instance_id", "")),
             "world_minute": int(self.get_meta("world_minute", 0) or 0),
             "world_revision": int(self.get_meta("world_revision", 0) or 0),
-            "agent_revisions": {
+        }
+        if include_agent_revisions:
+            snapshot["agent_revisions"] = {
                 str(agent["id"]): int((agent.get("agent_revision", 0) or 0))
                 for agent in self.list_agents()
-            },
-        }
+            }
+        return snapshot
 
     def sync_world_property_from_resource(self, entity_id: str, amount: Any) -> dict[str, Any] | None:
         """Keep a shared resource and its existing world-property label equal."""
@@ -714,6 +716,20 @@ class WorldStore:
             (agent_id, max(1, min(int(limit), 100))),
         ).fetchall()
         return [{"id": row["id"], "capability": row["capability"], "delta": row["delta"], "source": row["source"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
+
+    def capability_evidence(self, agent_id: str, capability: str, *, after_minute: int = -1) -> list[dict[str, Any]]:
+        """Return successful, capability-specific evidence after the last review."""
+
+        rows = self.connection.execute(
+            "SELECT event_id,world_minute,data_json FROM event_log "
+            "WHERE actor_id=? AND event_type='capability.evidence' AND world_minute>? "
+            "AND json_extract(data_json,'$.capability')=? ORDER BY event_id",
+            (str(agent_id), int(after_minute), str(capability)),
+        ).fetchall()
+        return [
+            {"event_id": int(row["event_id"]), "world_minute": int(row["world_minute"]), **json.loads(row["data_json"])}
+            for row in rows
+        ]
 
     def put_institution(self, institution_id: str, status: str, data: dict[str, Any], created_minute: int, activated_minute: int | None = None) -> None:
         self.connection.execute(
@@ -1146,6 +1162,7 @@ class WorldStore:
         for agent in agents:
             item = dict(agent)
             item["agent_revision"] = int(item.get("agent_revision", 0) or 0) + 1
+            agent["agent_revision"] = item["agent_revision"]
             rows.append((json_dumps(item), item["id"]))
         self.connection.executemany("UPDATE agent_state SET data_json=? WHERE id=?", rows)
         self.connection.executemany("UPDATE entity SET data_json=? WHERE id=?", rows)

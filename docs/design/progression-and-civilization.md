@@ -67,6 +67,12 @@ Platform 验证 evidence 是否对应该角色真实 outcome、能力是否在�
 声明的条件、时间、成本或成功率；代码不写
 `if cooking > ...`。例如：
 
+能力证据按 Capability 的 `uses` 或配方中的 `capability.add_xp` 产生
+`capability.evidence`。Reflection 看到的候选和 Platform 的提交校验只统计该
+角色、该能力、上次更新之后的匹配证据；普通 `behavior.completed` 不能给任意
+能力充数。角色必须已具备该能力，除非 Capability 明确声明
+`acquirable: true`。因此研究不会提高烹饪，巡逻也不会提高采集。
+
 ```yaml
 capability_modifiers:
   cooking:

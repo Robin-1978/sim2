@@ -75,3 +75,41 @@ def test_deterministic_long_run_provider_skips_choices_requiring_semantic_input(
     response = provider.complete_json(system="Decision Agent", context=context)
 
     assert response["choice"] == "Recover at a safe location."
+
+
+def test_remote_fixed_object_is_not_offered_or_executed(tmp_path: Path):
+    platform = Platform(create_instance(WORLD, "object-location", tmp_path / "runtime"))
+    try:
+        actor = platform.store.get_agent("su_wu")
+        actor["initial_state"]["location_id"] = "village_square"
+        platform.store.update_agent("su_wu", actor)
+        platform.store.connection.commit()
+
+        offered = {item["ref"] for item in platform.decision_view("su_wu")["executable_behaviors"]}
+        assert "behavior:inspect_object" not in offered
+        view = platform.decision_view("su_wu")
+
+        rejected = platform.submit_behavior(
+            BehaviorIntent(
+                actor_id="su_wu",
+                behavior_ref="behavior:inspect_object",
+                target={"object": "旧契约石板"},
+                parameters={},
+                reason="Inspect the tablet from the village square.",
+                confidence=0.8,
+                intent_id="remote-object-inspection",
+                observed_world_revision=view["world_revision"],
+                observed_agent_revision=view["agent_revision"],
+            )
+        )
+        assert rejected["status"] == "rejected"
+        assert rejected["failed_check"] == "behavior_unavailable"
+
+        actor = platform.store.get_agent("su_wu")
+        actor["initial_state"]["location_id"] = "hidden_root_gate"
+        platform.store.update_agent("su_wu", actor)
+        platform.store.connection.commit()
+        offered = {item["ref"] for item in platform.decision_view("su_wu")["executable_behaviors"]}
+        assert "behavior:inspect_object" in offered
+    finally:
+        platform.close()

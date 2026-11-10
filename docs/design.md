@@ -119,7 +119,7 @@ Action 启动时由 Platform 预锁定所需资源；暂停保留游标、进度
 
 ### Agent 与上下文
 
-两类运行时参与者都只产生 Intent：
+三类运行时逻辑角色都只产生 Intent：
 
 - `Individual Agent`：在决策阶段读取自身视角、需求驱动、知识、记忆、关系、活动 BT 和 `eligible_bt_catalog`，选择已有 BT、分支或等待；在反思/演化阶段读取行为 outcome，只保留值得复用的经验并提出记忆、信念、目标和 `BehaviorTreeProposalIntent`。
 - `God Agent`：按周/月或带来源的行为结果触发，读取世界提案的实际影响和长期指标，生成创建世界实体、规则、势力、技术和事件的 Intent，再在后续窗口复盘结果。它不直接增加资源、需求、关系或生产数值。
@@ -167,6 +167,6 @@ System Prompt 定义身份、职责和不变量；Function Schema 使用简短�
 
 ## 影响评估
 
-首版新增配置导入、单实例 SQLite、Platform、12 个业务模块和两类运行时参与者，不改变现有空仓库行为。发布顺序为：固定 SQLite Schema、配置创世、世界与分钟推进、元动作和 BT、Intent 校验、感知与知识、LLM Agent、控制接口和回放工具。最高风险是 LLM 成本、延迟和意图错误，通过决策边界调用、Token 预算、Function 白名单、Platform 拒绝反馈和安全待机控制。详细模块实现见 [docs/design/details.md](design/details.md)，资料依据见 [docs/design/references.md](design/references.md)，AgentView 协议见 [docs/design/agent-world-schema.md](design/agent-world-schema.md)。
+首版新增配置导入、单实例 SQLite、Platform、12 个业务模块和三类运行时逻辑角色，不改变现有空仓库行为。发布顺序为：固定 SQLite Schema、配置创世、世界与分钟推进、元动作和 BT、Intent 校验、感知与知识、LLM Agent、控制接口和回放工具。最高风险是 LLM 成本、延迟和意图错误，通过决策边界调用、Token 预算、Function 白名单、Platform 拒绝反馈和安全待机控制。详细模块实现见 [docs/design/details.md](design/details.md)，资料依据见 [docs/design/references.md](design/references.md)，AgentView 协议见 [docs/design/agent-world-schema.md](design/agent-world-schema.md)。
 
 第一个验收世界为 [雾溪村设计](worlds/starter-village.md)，其配置包位于 `worlds/starter_village/`，包含 9 个 Agent、17 个通用元动作、19 棵基础 BT、14 个地点、10 个物体、能力、配方、世界属性、初始知识和玩家入口。

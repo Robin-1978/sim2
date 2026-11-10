@@ -188,6 +188,8 @@ class AgentEngine:
             role=role,
             actor_id=actor_id,
             source_event_ids=event_ids,
+            observed_world_revision=context.get("world_revision"),
+            observed_agent_revision=context.get("agent_revision"),
         )
         last_response: dict[str, Any] = {}
         last_result: dict[str, Any] = {"status": "no_result"}
@@ -771,7 +773,7 @@ class AgentEngine:
                 return self.platform.submit_world_progress(
                     actor_id,
                     str(data.get("progress_key") or ""),
-                    float(data.get("delta", 0)),
+                    None,
                     str(data.get("evidence") or ""),
                     source_event_ids=source_event_ids,
                 )
@@ -823,7 +825,7 @@ class AgentEngine:
             if intent_type == "propose_story_beat":
                 proposal = dict(data)
                 proposal.pop("intent_type", None)
-                return self.platform.submit_story_beat(actor_id, proposal)
+                return self.platform.submit_story_beat(actor_id, proposal, source_event_ids=source_event_ids)
             if intent_type == "submit_world_template":
                 return self.platform.submit_world_template(actor_id, data.get("template") or {})
         except (TypeError, ValueError, KeyError) as exc:

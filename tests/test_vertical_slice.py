@@ -175,6 +175,17 @@ def test_agent_view_scene_describes_current_location_and_nearby_participants(tmp
         platform.close()
 
 
+def test_idle_decision_protocol_does_not_claim_an_active_behavior(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "idle-protocol-world", tmp_path / "runtime"))
+    try:
+        view = platform.decision_view("yu_ge")
+        assert view["self"]["status"] == "idle"
+        assert not any("active behavior is already running" in line.lower() for line in view["prompt_protocol"])
+    finally:
+        platform.close()
+
+
 def test_context_compaction_preserves_choices_and_task(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "context-compaction-world", tmp_path / "runtime"))
@@ -253,6 +264,10 @@ def test_god_schema_does_not_offer_direct_world_property_mutation():
     assert parameters["properties"]["change_type"]["enum"] == ["rule", "relationship", "faction", "event"]
     assert "property" not in parameters["properties"]
     assert "value" not in parameters["properties"]
+    progress = next(schema for schema in tool_schemas_for_role("god") if schema["function"]["name"] == "record_world_progress")
+    progress_parameters = progress["function"]["parameters"]
+    assert "delta" not in progress_parameters["properties"]
+    assert progress_parameters["required"] == ["progress_key", "evidence"]
 
 
 def test_god_has_no_direct_behavior_or_action_executor():
@@ -699,6 +714,38 @@ def test_provider_failure_is_bounded_and_backed_off(tmp_path: Path):
         platform.close()
 
 
+def test_empty_behavior_catalog_uses_phase_aware_backoff_and_event_wake(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "empty-catalog-backoff-world", tmp_path / "runtime"))
+    provider = SequenceProvider([{"intent_type": "wait", "reason": "No behavior or interaction is currently available."}])
+    try:
+        with platform.store.transaction():
+            platform.store.set_meta("world_minute", 780)
+            for agent in platform.store.list_agents():
+                state = agent["initial_state"]
+                state["status"] = "paused" if agent["id"] != "fei_lan" else "idle"
+                if agent["id"] == "fei_lan":
+                    state["energy"] = 100
+                    agent["needs"]["satiety"] = 80
+                if agent["id"] == "yu_ge":
+                    state["location_id"] = "village_square"
+                platform.store.update_agent(agent["id"], agent)
+        runner = SimulationRunner(platform, {"agent_decision": provider})
+        report = runner.run(1)
+        assert report.decisions == 1
+        assert len(provider.calls) == 1
+        current = int(platform.store.get_meta("world_minute"))
+        assert runner._decision_not_before["fei_lan"] == current + 360
+
+        with platform.store.transaction():
+            platform.store.append_event("need.satiety_low", "fei_lan", current, {"summary": "A configured need crossed its alert boundary."})
+        runner._refresh_decision_wakes(current)
+        assert runner._decision_not_before["fei_lan"] <= current
+        assert "fei_lan" not in runner._wait_streak
+    finally:
+        platform.close()
+
+
 def test_provider_cooldown_stops_world_time_instead_of_skipping_a_day(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "cooldown-time-world", tmp_path / "runtime"))
@@ -1036,6 +1083,10 @@ def test_inspection_behaviors_have_configured_cooldowns(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "inspection-cooldown-world", tmp_path / "runtime"))
     try:
+        su_wu = platform.store.get_agent("su_wu")
+        su_wu["initial_state"]["location_id"] = "hidden_root_gate"
+        platform.store.update_agent("su_wu", su_wu)
+        platform.store.connection.commit()
         intent = BehaviorIntent("su_wu", "behavior:inspect_object", {}, {}, "Check the current source.", 0.8, "inspection-cooldown")
         accepted = platform.submit_behavior(intent)
         assert accepted["status"] == "accepted"
@@ -1088,6 +1139,9 @@ def test_core_gather_bt_travels_to_nearest_resource_node(tmp_path: Path):
         assert result["status"] == "accepted"
         step_n(platform, result["remaining_minutes"])
         assert platform.store.get_agent("liang_he")["initial_state"]["location_id"] == "granary"
+        evidence = [item for item in platform.store.recent_events_for_actor("liang_he", limit=30) if item["event_type"] == "capability.evidence"]
+        assert any(item["capability"] == "farming" and item["source"] == "gather_resource" for item in evidence)
+        assert not any(item["capability"] == "cooking" for item in evidence)
     finally:
         platform.close()
 
@@ -1753,10 +1807,37 @@ def test_capability_update_requires_repeated_outcomes_and_is_agent_proposed(tmp_
         for minute in (1, 2, 3):
             platform.store.append_event("behavior.completed", "liang_he", minute, {"behavior_id": "craft_meal", "result": "recipe_completed"})
         platform.store.connection.commit()
+        unrelated = platform.submit_capability_update("liang_he", "cooking", 0.04, "Three unrelated behavior outcomes completed.")
+        assert unrelated["status"] == "rejected"
+        assert unrelated["completed_outcomes"] == 0
+        for minute in (4, 5, 6):
+            platform.store.append_event("capability.evidence", "liang_he", minute, {"capability": "cooking", "source": "recipe:craft_meal", "requires_agent_review": True})
+        platform.store.connection.commit()
         accepted = platform.submit_capability_update("liang_he", "cooking", 0.04, "Three configured meals completed without a failure.")
         assert accepted["status"] == "accepted"
         assert platform.store.get_agent("liang_he")["capabilities"]["cooking"] == 0.49
-        assert platform.store.list_capability_progress("liang_he")[0]["source"] == "agent_review"
+        progress = platform.store.list_capability_progress("liang_he")[0]
+        assert progress["source"] == "agent_review"
+        assert len(progress["source_event_ids"]) == 3
+    finally:
+        platform.close()
+
+
+def test_capability_candidates_require_owned_skill_and_matching_evidence(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "capability-evidence-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            for minute in range(1, 4):
+                platform.store.append_event("capability.evidence", "su_wu", minute, {"capability": "cooking", "source": "recipe:craft_meal"})
+            for minute in range(4, 6):
+                platform.store.append_event("capability.evidence", "su_wu", minute, {"capability": "research", "source": "research_source"})
+        view = platform.decision_view("su_wu", role="agent_reflection")
+        assert [item["capability"] for item in view["capability_update_candidates"]] == ["research"]
+        assert view["capability_update_candidates"][0]["evidence_sources"] == ["research_source"]
+        rejected = platform.submit_capability_update("su_wu", "cooking", 0.04, "Three meal records exist but do not belong to this skill path.")
+        assert rejected["status"] == "rejected"
+        assert rejected["failed_check"] == "capability_ownership"
     finally:
         platform.close()
 
@@ -1765,9 +1846,18 @@ def test_world_progress_milestone_wakes_story_and_god_from_agent_proposal(tmp_pa
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "civilization-progress-world", tmp_path / "runtime"))
     try:
-        platform.store.append_event("behavior.completed", "lin_bo", 1, {"behavior_id": "govern_village", "result": "behavior_completed"})
-        platform.store.connection.commit()
-        result = platform.submit_world_progress("story", "governance_capacity", 5, "Five governance reviews produced public reserve and risk reports.")
+        result = None
+        for minute in range(1, 6):
+            event_id = platform.store.append_event("governance.reviewed", "lin_bo", minute, {"behavior_id": "govern_village", "result": "stock_reported"})
+            platform.store.connection.commit()
+            result = platform.submit_world_progress(
+                "story",
+                "governance_capacity",
+                None,
+                f"Governance review {minute} produced a verified reserve and risk report.",
+                source_event_ids=[event_id],
+            )
+        assert result is not None
         assert result["status"] == "accepted"
         assert result["milestone"] is True
         assert platform.store.get_progress(platform.store.get_meta("world_id"), "governance_capacity")["current"] == 5
@@ -1787,7 +1877,7 @@ def test_world_progress_has_no_implicit_consumers_without_configured_wake(tmp_pa
         with platform.store.transaction():
             platform.store.set_meta("rules", rules)
             platform.store.append_event("behavior.completed", "lin_bo", 1, {"behavior_id": "govern_village", "result": "behavior_completed"})
-        result = platform.submit_world_progress("story", "quiet_progress", 1, "One verified behavior produced this configured progress result.")
+        result = platform.submit_world_progress("story", "quiet_progress", None, "One verified behavior produced this configured progress result.")
         assert result["status"] == "accepted"
         assert result["milestone"] is True
         assert platform.ready_evolution_tasks() == []
@@ -1809,7 +1899,7 @@ def test_world_progress_rejects_a_trigger_from_the_wrong_configured_domain(tmp_p
         rejected = platform.submit_world_progress(
             "god",
             "governance_capacity",
-            1,
+            None,
             "A pact stabilization measure completed.",
             source_event_ids=[pact_event],
         )
@@ -1826,13 +1916,56 @@ def test_world_progress_rejects_a_trigger_from_the_wrong_configured_domain(tmp_p
         accepted = platform.submit_world_progress(
             "god",
             "governance_capacity",
-            1,
+            None,
             "A governance review produced a verified stock report.",
             source_event_ids=[governance_event],
         )
         assert accepted["status"] == "accepted"
         assert accepted["source_event_type"] == "governance.reviewed"
         assert accepted["source_behavior_id"] == "govern_village"
+        duplicate = platform.submit_world_progress(
+            "story",
+            "governance_capacity",
+            None,
+            "The same governance review should not count twice.",
+            source_event_ids=[governance_event],
+        )
+        assert duplicate["status"] == "rejected"
+        assert duplicate["failed_check"] == "duplicate_progress_evidence"
+
+        with platform.store.transaction():
+            another_event = platform.store.append_event(
+                "governance.reviewed",
+                "lin_bo",
+                12,
+                {"behavior_id": "govern_village", "result": "stock_reported"},
+            )
+        wrong_delta = platform.submit_world_progress(
+            "god",
+            "governance_capacity",
+            2,
+            "A single governance review cannot choose its own weight.",
+            source_event_ids=[another_event],
+        )
+        assert wrong_delta["status"] == "rejected"
+        assert wrong_delta["failed_check"] == "progress_delta"
+
+        with platform.store.transaction():
+            ledger_event = platform.store.append_event(
+                "object.recovered",
+                "lu_xingzhou",
+                13,
+                {"object_id": "caravan_ledger", "result": "object_recovered"},
+            )
+        trade = platform.submit_world_progress(
+            "story",
+            "trade_network",
+            None,
+            "The recovered caravan ledger supplies verified trade-route evidence.",
+            source_event_ids=[ledger_event],
+        )
+        assert trade["status"] == "accepted"
+        assert trade["progress"]["after"] == 1
     finally:
         platform.close()
 
@@ -1856,7 +1989,6 @@ def test_god_reacts_to_progress_domain_rejection_and_waits(tmp_path: Path):
                     "name": "record_world_progress",
                     "arguments": json.dumps({
                         "progress_key": "governance_capacity",
-                        "delta": 1,
                         "evidence": "A pact stabilization measure completed.",
                     }),
                 },
@@ -2397,6 +2529,52 @@ def test_story_catalog_is_scoped_to_the_triggering_event(tmp_path: Path):
         platform.close()
 
 
+def test_story_view_deduplicates_shared_world_facts(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "story-fact-dedup-world", tmp_path / "runtime"))
+    try:
+        fact = "River samples confirm one shared contamination finding."
+        with platform.store.transaction():
+            for actor in ("qiao_ning", "su_wu"):
+                platform.store.merge_knowledge_fact(actor, "shared:water_finding", {
+                    "fact": fact,
+                    "source_type": "research",
+                    "confidence": 1.0,
+                    "observed_at": 3,
+                })
+            source_event_id = platform.store.append_event(
+                "research.completed", "qiao_ning", 3, {"fact": fact},
+            )
+        view = platform.view.build_decision_view("story", role="story", source_event_id=source_event_id)
+        assert [item["fact"] for item in view["known_facts"]].count(fact) == 1
+        prompt = render_context(view, "Continue only from the validated research result.")
+        assert fact in prompt
+        assert "Food is inventory" not in prompt
+        assert "<self>" not in prompt
+        assert "<needs_and_state>" not in prompt
+        assert "<executable_behaviors>" not in prompt
+    finally:
+        platform.close()
+
+
+def test_incremental_remediation_records_result_without_story_wake(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "remediation-wake-world", tmp_path / "runtime"))
+    try:
+        started = platform.submit_behavior(BehaviorIntent(
+            "su_wu", "behavior:stabilize_pact", {}, {},
+            "Apply one measured stabilization after the completed research.", 0.9, "stabilize-once",
+        ))
+        assert started["status"] == "accepted"
+        step_n(platform, started["remaining_minutes"])
+        assert any(item["event_type"] == "pact.stability_improved" for item in platform.store.recent_events(limit=30))
+        tasks = platform.ready_evolution_tasks()
+        assert any(item["role"] == "god" for item in tasks)
+        assert not any(item["role"] == "story" for item in tasks)
+    finally:
+        platform.close()
+
+
 def test_emergent_story_beat_is_not_repeated_for_one_validated_result(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "story-dedup-world", tmp_path / "runtime"))
@@ -2427,16 +2605,47 @@ def test_emergent_story_beat_is_not_repeated_for_one_validated_result(tmp_path: 
         platform.close()
 
 
+def test_story_tool_binds_emergent_beat_to_task_source_event(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "story-source-binding-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            intended = platform.store.append_event(
+                "relationship.changed", "fei_lan", 4,
+                {"target_id": "yu_ge", "relation": "trust", "delta": 0.1},
+            )
+            platform.store.append_event(
+                "research.completed", "qiao_ning", 5,
+                {"fact": "A newer but unrelated research result."},
+            )
+        result = AgentToolExecutor(
+            platform,
+            role="story",
+            actor_id="story",
+            source_event_ids=[intended],
+        ).execute("propose_story_beat", {
+            "summary": "The recorded exchange creates a new question about trust.",
+            "fact": "A trust change was recorded between two participants.",
+            "goal_hint": "Verify the next exchange before drawing a conclusion.",
+            "audience": ["费兰"],
+        })
+        assert result["status"] == "accepted"
+        saved = platform.store.get_meta("story_state")["emergent_beats"]
+        assert saved[-1]["source_event_id"] == intended
+    finally:
+        platform.close()
+
+
 def test_step_commits_each_tick_before_a_later_tick_fails(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "tick-commit-world", tmp_path / "runtime")
     platform = Platform(db_path)
     original = platform._apply_minute_effects
 
-    def fail_on_second_tick(minute: int):
+    def fail_on_second_tick(minute: int, **kwargs):
         if minute == 2:
             raise RuntimeError("synthetic tick failure")
-        return original(minute)
+        return original(minute, **kwargs)
 
     platform._apply_minute_effects = fail_on_second_tick
     try:
@@ -2483,7 +2692,7 @@ def test_platform_interrupt_updates_bt_and_action_instances(tmp_path: Path):
         platform.close()
 
 
-def test_direct_interaction_does_not_interrupt_active_behavior(tmp_path: Path):
+def test_direct_interaction_does_not_interrupt_active_crafting(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "interaction-boundary-world", tmp_path / "runtime")
     platform = Platform(db_path)
@@ -2498,15 +2707,67 @@ def test_direct_interaction_does_not_interrupt_active_behavior(tmp_path: Path):
         )
         assert platform.submit_behavior(intent)["status"] == "accepted"
         platform.step()
+        before = dict(platform.store.get_agent("liang_he")["initial_state"])
         result = platform.submit_dialogue("liang_he", "qiao_ning", "trade", "Can we trade now?")
-        assert result["status"] == "rejected"
-        assert result["failed_check"] == "participant_busy"
-        trade = platform.create_trade_offer("liang_he", "qiao_ning", {"grain": 1}, {"medicine": 1})
-        assert trade["status"] == "rejected"
-        assert trade["failed_check"] == "participant_busy"
+        assert result["status"] == "accepted"
         state = platform.store.get_agent("liang_he")["initial_state"]
         assert state["status"] == "executing"
         assert state["active_bt_instance"] == "interaction-boundary-intent"
+        assert state["active_action"] == before["active_action"]
+        assert state["action_progress"] == before["action_progress"]
+        assert state["remaining_minutes"] == before["remaining_minutes"]
+    finally:
+        platform.close()
+
+
+def test_dangerous_action_blocks_instant_interaction(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "danger-interaction-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        with platform.store.transaction():
+            actor = platform.store.get_agent("yu_ge")
+            actor["initial_state"].update({
+                "status": "executing",
+                "active_bt_instance": "dangerous-action",
+                "active_action": "attack",
+                "remaining_minutes": 5,
+            })
+            platform.store.update_agent("yu_ge", actor)
+        result = platform.submit_dialogue(
+            "fei_lan", "yu_ge", "route", "Can you answer while fighting?",
+        )
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "participant_busy"
+    finally:
+        platform.close()
+
+
+def test_allowed_interaction_preserves_active_travel_progress(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "travel-interaction-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        started = platform.submit_behavior(BehaviorIntent(
+            "yu_ge", "behavior:travel", {}, {"location_id": "village_square"},
+            "Travel from the inn to the village square.", 0.9, "travel-interaction-intent",
+        ))
+        assert started["status"] == "accepted"
+        platform.step()
+        before = dict(platform.store.get_agent("yu_ge")["initial_state"])
+        assert before["active_action"] == "travel_to"
+        assert before["status"] == "executing"
+
+        dialogue = platform.submit_dialogue(
+            "fei_lan", "yu_ge", "route", "What did you learn about the northern route?",
+        )
+        assert dialogue["status"] == "accepted"
+        after = platform.store.get_agent("yu_ge")["initial_state"]
+        assert after["status"] == "executing"
+        assert after["active_bt_instance"] == before["active_bt_instance"]
+        assert after["active_action"] == before["active_action"]
+        assert after["action_progress"] == before["action_progress"]
+        assert after["remaining_minutes"] == before["remaining_minutes"]
     finally:
         platform.close()
 
