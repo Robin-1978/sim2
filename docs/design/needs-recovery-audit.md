@@ -4,8 +4,8 @@ Every numeric state must have a configured way to decline, recover, or receive a
 
 | Attribute | Meaning shown to Agent | Pressure source | Required BT/effect | Current audit |
 |---|---|---|---|---|
-| Health | 0 = incapacitated; 100 = healthy | damage, illness, accidents | Seek treatment / heal self; `health_restore` must target the actor or a permitted clinic service | **Covered**: `seek_treatment` travels to a configured health service and `heal_self` applies the actor-targeted restore effect; `heal_target` covers treatment of another participant |
-| Energy | 0 = unable to continue; 100 = ready | long actions and movement | Rest at current safe place; move to a configured safe place then rest | **Covered** after `recover_at_safe_location` |
+| Configured vital attribute | The world-defined value at its incapacitation bound | damage, illness, accidents | A configured treatment or recovery BT applies `attribute_delta` to the declared vital attribute | **Covered by package configuration** |
+| Configured capacity attribute | The world-defined short-term action capacity | long actions and movement | Rest at current safe place; move to a configured safe place then rest | **Covered after `recover_at_safe_location` in the starter package** |
 | Satiety | 0 = starving; 100 = full | world-time decay | Eat carried food; withdraw from the granary; buy at the configured market; produce food through gather → craft → store | **Covered for survival**: missing food now has a coin-and-market path, and starvation damages health through a configured hourly rule |
 | Safety | 0 = threatened; 100 = secure | threats, exposure, hostile events | Flee/seek shelter, defend, alarm, and a resolved safe-location state | **Covered at the action boundary**: response reports wake Story/God; policy changes remain external |
 | Belonging | 0 = socially isolated; 100 = connected | relationship loss, exclusion, conflict | Communicate, socialize, mediate, and apply configured relationship/need outcomes | **Covered**: communication applies configured belonging/trust effects; `mediate_conflict` records a mediation result and trust change when a visible conflict exists |

@@ -1816,12 +1816,16 @@ def test_generic_condition_and_effect_components():
     result = effects.apply(agent, {"type": "inventory_add", "item": "map", "quantity": 1})
     assert result["applied"] is True
     assert agent["inventory"]["map"] == 1
-    effects.apply(agent, {"type": "need_delta", "need": "energy", "delta": 5})
+    effects = EffectPipeline([
+        {"id": "health", "kind": "state", "min": 0, "max": 100},
+        {"id": "energy", "kind": "state", "min": 0, "max": 100},
+    ])
+    effects.apply(agent, {"type": "attribute_delta", "attribute": "energy", "delta": 5})
     assert agent["initial_state"]["energy"] == 25
     target = {"id": "target", "name": "Target", "entity_type": "agent", "initial_state": {"location_id": "entry", "health": 100}, "combat_stats": {"defense": 2}}
     # TargetResolver is store-backed in production; the formula behavior is
     # validated separately here with the same public projection shape.
-    damage = EffectPipeline().apply(agent, {"type": "damage", "formula": "actor.attack_power - target.defense"}, target={"defense": 2})
+    damage = effects.apply(agent, {"type": "attribute_delta", "attribute": "health", "direction": "subtract", "formula": "actor.attack_power - target.defense"}, target={"defense": 2})
     assert damage["applied"] is True
 
 

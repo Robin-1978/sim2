@@ -34,8 +34,10 @@ Decision Agent 只选择 Platform 已经注册、校验并过滤过的行为。�
     "role": "watch_captain",
     "status": "injured",
     "location": "north_gate",
-    "health": 72,
-    "energy": 44,
+    "attributes": [
+      {"label": "Vitality", "value": 72, "unit": "points", "meaning": "Physical integrity."},
+      {"label": "Focus", "value": 44, "unit": "points", "meaning": "Short-term action capacity."}
+    ],
     "goal": "Build a reliable warning and patrol system"
   },
   "drives": [
@@ -92,7 +94,7 @@ Agent 需要更远或更详细的信息时，通过 `observe_nearby`、`recall_m
 
 LLM 永远不接收 BT JSON/AST、节点类型、内部 predicate 或 Action handler。Bootstrap 将 BT 定义存入 SQLite；AgentViewCompiler 只把当前可执行 BT 翻译成简短自然语言：目的、何时适用、需要满足的条件、步骤名称、预计时间、成本、影响、成功/失败结果和中断方式。Agent 只提交当前视图中的人类可读 `choice`（例如 `Explore Greywood`），Platform 在同一份候选视图中做规范化的精确映射，再用 SQLite 中的原始 BT 执行。
 
-`behavior_ref`（例如 `behavior:explore_greywood`）仍然是 Platform、SQLite、审计和重放使用的内部键，不进入模型可见的上下文、工具参数或工具结果。选择映射不做模糊搜索：大小写、空格和标点归一化后必须唯一匹配；未知、重名或已经过期的 choice 会被拒绝，并返回当前可选名称。配置可为重名行为声明 `agent_label`；如果仍重名，编译器只添加人类可读的 `(option 1)` 后缀。旧集成可以在 Platform 边界暂时提交内部 ref，但它不是 Agent 协议。
+`behavior_ref`（例如 `behavior:explore_greywood`）仍然是 Platform、SQLite、审计和重放使用的内部键，不进入模型可见的上下文、工具参数或工具结果。选择映射不做模糊搜索：大小写、空格和标点归一化后必须唯一匹配；未知、重名或已经过期的 choice 会被拒绝，并返回当前可选名称。配置可为重名行为声明 `agent_label`；如果仍重名，编译器只添加人类可读的 `(option 1)` 后缀。Agent 协议只接受当前上下文中的可读 choice。
 
 同一规则适用于可见地点、人物、物体和交互对象：上下文显示名称，Agent 提交名称，Platform 只在当前权限和可见范围内做精确解析。两个实体同名时返回歧义错误和带上下文的可选名称；Platform 不做模糊猜测，也不接受 Agent 自己填写的数据库 ID。交易 offer 使用当前互动会话中的人类可读描述，内部 offer ID 只留在 Platform 事务和审计中。
 

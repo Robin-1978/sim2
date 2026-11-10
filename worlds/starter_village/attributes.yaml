@@ -69,6 +69,7 @@ attributes:
     unit: points
     min: 0
     max: 100
+    default: 70
     prompt: Higher value means more secure; 100 means secure; 0 means threatened.
   - id: belonging
     kind: need
@@ -76,6 +77,7 @@ attributes:
     unit: points
     min: 0
     max: 100
+    default: 60
     prompt: Higher value means stronger social connection; 100 means connected; 0 means isolated.
   - id: esteem
     kind: need
@@ -83,6 +85,7 @@ attributes:
     unit: points
     min: 0
     max: 100
+    default: 60
     prompt: Higher value means more recognized competence; 100 means respected; 0 means unrecognized.
   - id: self_actualization
     kind: need
@@ -90,4 +93,5 @@ attributes:
     unit: points
     min: 0
     max: 100
+    default: 40
     prompt: Higher value means more meaningful goal fulfillment; 100 means fulfilled; 0 means no progress.

@@ -214,7 +214,7 @@ class Platform:
                 "role": agent.get("role", "agent"),
                 "location": state.get("location_id"),
                 "status": state.get("status", "idle"),
-                "health": state.get("health"),
+                "attributes": self.attribute_schema.values(state, agent.get("needs", {}) or {}),
                 "active_behavior": state.get("active_behavior_id"),
                 "remaining_minutes": state.get("remaining_minutes", 0),
             })
@@ -1405,7 +1405,7 @@ class Platform:
         if change_type == "faction" and not isinstance(proposal.get("faction"), dict):
             return self._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "faction object is required for a faction change.", "failed_check": "faction", "retryable": True})
         if change_type == "event" and not proposal.get("property"):
-            structured_mutation_types = {"state_delta", "state.add", "need_delta", "inventory_add", "inventory.add", "inventory.remove", "world_property_delta", "world.property_delta", "relationship_delta", "relationship.change", "entity_state_set"}
+            structured_mutation_types = {"state_delta", "need_delta", "attribute_delta", "attribute_set", "inventory_add", "inventory_remove", "world_property_delta", "relationship_delta", "entity_state_set"}
             structured_mutation = [item.get("type") or item.get("op") for item in (proposal.get("effects") or []) if isinstance(item, dict) and str(item.get("type") or item.get("op") or "") in structured_mutation_types]
             if structured_mutation:
                 return self._reject_intent(
@@ -1666,12 +1666,10 @@ class Platform:
         """Return a small, JSON-safe state projection for outcome review."""
 
         state = dict(agent.get("initial_state") or {})
-        execution_fields = {"location_id", "status", "active_bt_instance", "active_behavior_id", "active_action", "active_action_instance", "active_action_parameters", "active_action_reservation", "active_parallel_actions", "active_parameters", "remaining_minutes", "action_progress", "conditions", "injuries"}
+        execution_fields = {"location_id", "status", "active_bt_instance", "active_behavior_id", "active_action", "active_action_instance", "active_action_parameters", "active_action_reservation", "active_parallel_actions", "active_parameters", "remaining_minutes", "action_progress", "conditions", "injuries", "current_goal_id", "last_action_result", "last_platform_result"}
         attributes = {key: value for key, value in state.items() if key not in execution_fields}
         return {
             "location": state.get("location_id"),
-            "health": state.get("health"),
-            "energy": state.get("energy"),
             "attributes": attributes,
             "needs": dict(agent.get("needs") or {}),
             "inventory": dict(agent.get("inventory") or {}),
@@ -1683,9 +1681,8 @@ class Platform:
         """Describe only changed values so the next Agent sees consequences."""
 
         delta: dict[str, Any] = {}
-        for key in ("location", "health", "energy"):
-            if before.get(key) != after.get(key):
-                delta[key] = {"before": before.get(key), "after": after.get(key)}
+        if before.get("location") != after.get("location"):
+            delta["location"] = {"before": before.get("location"), "after": after.get("location")}
         old_attributes = before.get("attributes") or {}
         new_attributes = after.get("attributes") or {}
         attribute_changes = {
@@ -1810,6 +1807,8 @@ class Platform:
                 continue
             numeric = float(value)
             mode = self.attribute_schema.cost_mode(str(key))
+            if mode is None:
+                continue
             target = state if key in state or key not in needs else needs
             current = float(target.get(key, self.attribute_schema.default(str(key), 0)) or 0)
             changed = current + numeric if mode == "increase" else current - numeric
@@ -1900,12 +1899,7 @@ class Platform:
                     self.store.put_relationship(relation["from"], relation["to"], relation["type"], data)
 
     def _apply_simple_effect(self, agent: dict[str, Any], effect: dict[str, Any]) -> None:
-        configured = dict(effect)
-        if configured.get("need") and not configured.get("type") and not configured.get("op"):
-            configured["type"] = "need_delta"
-        elif configured.get("state") and not configured.get("type") and not configured.get("op"):
-            configured["type"] = "state_delta"
-        self.effects.apply(agent, configured)
+        self.effects.apply(agent, effect)
 
     def _emit_minute_effect_events(
         self,
@@ -2327,17 +2321,17 @@ class Platform:
                     receiver = self.store.get_agent(str(target["id"]))
                 except KeyError:
                     receiver = agent
-            if effect.get("type") == "damage" and parameters.get("weapon_id"):
+            if effect.get("formula") and parameters.get("weapon_id"):
                 combat = agent.get("combat_stats", {}) or {}
                 weapon_damage = (combat.get("weapon_damage", {}) or {}).get(str(parameters["weapon_id"]), 0)
                 effect_target = {**effect_target, "weapon": {"damage": weapon_damage}}
             effect_type = str(effect.get("type") or effect.get("op") or "")
-            if effect_type in {"relationship_delta", "relationship.delta"}:
+            if effect_type == "relationship_delta":
                 self._apply_relationship_effect(agent, target or effect_target, effect, minute)
-            elif effect_type in {"public_event", "event.public"}:
+            elif effect_type == "public_event":
                 event_type = str(effect.get("event") or "public.event")
                 self.store.append_event(event_type, agent["id"], minute, {"action_id": action.get("id"), "parameters": parameters})
-            elif effect_type in {"world_property_delta", "world.property_delta"}:
+            elif effect_type == "world_property_delta":
                 property_id = str(effect.get("property") or effect.get("world_property") or "")
                 if property_id:
                     properties = dict(self.store.get_meta("world_properties", {}) or {})
@@ -2352,7 +2346,7 @@ class Platform:
                         "world.property_changed", agent["id"], minute,
                         {"property": property_id, "before": before_value, "after": value, "delta": value - float(before_value or 0), "source": action.get("id")},
                     )
-            elif effect_type in {"entity_state_set", "entity.state_set"}:
+            elif effect_type == "entity_state_set":
                 entity_id = resolved_effect.get("entity_id") or resolved_effect.get("target_entity")
                 state_key = resolved_effect.get("state") or resolved_effect.get("property")
                 if entity_id and state_key:
@@ -2396,7 +2390,7 @@ class Platform:
             agent.setdefault("inventory", {})[item] = agent["inventory"].get(item, 0) + output.get("quantity", 0)
         for effect in recipe.get("effects", []) or []:
             effect_type = str(effect.get("type") or effect.get("op") or "")
-            if effect_type in {"entity_state_set", "entity.state_set"}:
+            if effect_type == "entity_state_set":
                 entity_id = effect.get("entity_id") or effect.get("target_entity")
                 state_key = effect.get("state") or effect.get("property")
                 if entity_id and state_key:

@@ -107,11 +107,11 @@ Platform 从 Agent 能力表、伤势、疲劳、工具和目标状态判断 Act
 
 Platform 只解释受 Schema 约束的效果原语：
 
-- `state.add`、`state.set`、`state.multiply`
-- `inventory.consume`、`inventory.add`、`inventory.transfer`
+- `attribute_delta`、`attribute_set`
+- `inventory_remove`、`inventory_add`、`inventory_transfer`
 - `resource.consume`、`resource.regenerate`
-- `health.damage`、`health.heal`、`condition.add`、`condition.remove`
-- `location.move`、`route.discover`
+- `status_add`、`status_remove`
+- `location_set`、`route.discover`
 - `knowledge.add`、`knowledge.update_confidence`
 - `relationship.adjust`
 - `entity.create`、`entity.update`
@@ -138,7 +138,7 @@ requires:
 duration_minutes: 144
 costs:
   reserve: [{path: actor.inventory.tool_durability, amount: 1}]
-  per_minute: [{path: actor.energy, op: add, value: 0.8}]
+  per_minute: [{path: actor.state.focus, op: add, value: 0.8}]
 progress_effects:
   - op: resource.consume
     target: target
@@ -146,7 +146,7 @@ progress_effects:
 success:
   condition: target.resource_remaining > 0
   effects:
-    - {op: inventory.add, item: food, quantity_formula: target.yield_per_action}
+    - {type: inventory_add, item: food, quantity_formula: target.yield_per_action}
     - {op: capability.add_xp, capability: gather, value: 0.01}
   event_types: [resource.gathered]
 failure:
@@ -176,12 +176,10 @@ recipe:
   requires: [{id: cooking, min_level: 0.30}]
   duration_minutes: 60
   effects:
-    - {op: inventory.consume_inputs}
-    - {op: inventory.add_outputs}
     - {op: capability.add_xp, capability: cooking, value: 0.02}
 ```
 
-`craft` Action 的目标是 `recipe_def`，Platform 校验工作站、材料、能力和库存后执行同一套 `consume_inputs` 与 `add_outputs` 原语。新增配方只增加配置和 SQLite 记录，不增加 Platform 分支代码。
+`craft` Action 的目标是 `recipe_def`，Platform 校验工作站、材料、能力和库存后按配方的 `inputs` 与 `outputs` 完成结算。新增配方只增加配置和 SQLite 记录，不增加 Platform 分支代码。
 
 ## 示例：攻击与受伤
 
@@ -196,15 +194,15 @@ requires:
   conditions: [actor.alive, target.visible, target.reachable]
 duration_minutes: 6
 costs:
-  per_minute: [{path: actor.energy, op: add, value: -1.0}]
+  per_minute: [{path: actor.state.focus, op: add, value: -1.0}]
   reserve: [{path: weapon.durability, amount: 0.1}]
 success:
   condition: attack.resolved
   effects:
-    - {op: health.damage, target: target, formula: actor.attack_power + weapon.damage - target.defense}
+    - {type: attribute_delta, attribute: vitality, direction: subtract, target: target, formula: actor.attack_power + weapon.damage - target.defense}
     - {op: relationship.adjust, target: target, relation: hostility, value: 0.15}
     - {op: event.emit, type: combat.attack_resolved}
-    - {op: condition.add, target: target, condition: injured, duration_minutes: 240}
+    - {type: status_add, target: target, status: injured, duration_minutes: 240}
 interrupt_policy: cancel
 visibility: participants_and_witnesses
 executor: effect_pipeline

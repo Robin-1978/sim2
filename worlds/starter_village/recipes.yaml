@@ -7,8 +7,6 @@ recipes:
     requires: [{capability: cooking, min_level: 0.30}]
     duration_minutes: 60
     effects:
-      - {op: inventory.consume_inputs}
-      - {op: inventory.add_outputs}
       - {op: capability.add_xp, capability: cooking, value: 0.02}
   - id: field_ration
     name: 旅行口粮
@@ -18,8 +16,6 @@ recipes:
     requires: [{capability: cooking, min_level: 0.40}]
     duration_minutes: 90
     effects:
-      - {op: inventory.consume_inputs}
-      - {op: inventory.add_outputs}
       - {op: capability.add_xp, capability: cooking, value: 0.03}
   - id: herbal_medicine
     name: 草药药剂
@@ -30,8 +26,6 @@ recipes:
     requires: [{capability: herbalism, min_level: 0.40}]
     duration_minutes: 120
     effects:
-      - {op: inventory.consume_inputs}
-      - {op: inventory.add_outputs}
       - {op: capability.add_xp, capability: herbalism, value: 0.03}
   - id: dawn_bell
     name: 晨钟
@@ -42,7 +36,5 @@ recipes:
     requires: [{capability: forging, min_level: 0.80}]
     duration_minutes: 120
     effects:
-      - {op: inventory.consume_inputs}
-      - {op: inventory.add_outputs}
-      - {op: entity.state_set, entity_id: dawn_bell, state: created, value: true}
+      - {type: entity_state_set, entity_id: dawn_bell, state: created, value: true}
       - {op: capability.add_xp, capability: forging, value: 0.02}

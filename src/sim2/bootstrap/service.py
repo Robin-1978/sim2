@@ -76,6 +76,14 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
         errors.append("core_behavior_trees.yaml.behavior_trees must be a list")
         core_behaviors = []
     data["behavior_trees"] = list(core_behaviors) + data["behavior_trees"]
+    for attribute in data["attributes"]:
+        if not isinstance(attribute, dict) or not attribute.get("id"):
+            continue
+        for field in ("kind", "min", "max", "default", "label", "prompt"):
+            if field not in attribute:
+                errors.append(f"attribute {attribute.get('id')} is missing {field}")
+        if attribute.get("kind") == "state" and attribute.get("cost_mode") not in {"increase", "decrease"}:
+            errors.append(f"state attribute {attribute.get('id')} must declare cost_mode")
     ids_by_key = {key: _ids(values, key, errors) for key, values in data.items()}
 
     location_ids = ids_by_key["locations"]

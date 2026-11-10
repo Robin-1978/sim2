@@ -271,8 +271,9 @@ actions:
     need: belonging
     delta: 0.2
   effects:
-  - type: health_restore
-    amount: 30
+  - type: attribute_delta
+    attribute: health
+    delta: 30
     target: target
   success:
     condition: patient.fever_reduced
@@ -304,8 +305,9 @@ actions:
     on_failure: {}
     refund: {}
   effects:
-  - type: health_restore
-    amount: 30
+  - type: attribute_delta
+    attribute: health
+    delta: 30
   success:
     condition: treatment.completed
     result: self_stabilized
@@ -517,7 +519,9 @@ actions:
     condition: target.out_of_range
     result: attack_blocked
   effects:
-  - type: damage
+  - type: attribute_delta
+    attribute: health
+    direction: subtract
     formula: actor.attack_power + weapon.damage - target.defense
     target: target
   - type: relationship_delta

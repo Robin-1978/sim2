@@ -208,7 +208,7 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
             checks.append(_check("god_proposal_is_evidence_grounded", grounded, "proposal overlaps visible world evidence" if grounded else "proposal does not cite visible world evidence"))
             change_type = str(payload.get("change_type", ""))
             if change_type == "event" and not payload.get("property"):
-                mutation_types = {"state_delta", "state.add", "need_delta", "inventory_add", "inventory.add", "inventory.remove", "world_property_delta", "world.property_delta", "relationship_delta", "relationship.change", "entity_state_set"}
+                mutation_types = {"state_delta", "need_delta", "attribute_delta", "attribute_set", "inventory_add", "inventory_remove", "world_property_delta", "relationship_delta", "entity_state_set"}
                 direct_claim = any(isinstance(item, dict) and str(item.get("type") or item.get("op") or "") in mutation_types for item in (payload.get("effects") or []))
                 checks.append(_check("god_event_does_not_claim_unapplied_state_change", not direct_claim, "event is narrative only" if not direct_claim else "direct state mutation requires a structured property/rule/relationship/faction proposal"))
                 checks.append(_check("god_event_is_valid_narrative_signal", not direct_claim, "narrative event can be handled by a configured world rule" if not direct_claim else "event effects claim a direct state change"))

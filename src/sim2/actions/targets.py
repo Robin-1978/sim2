@@ -74,6 +74,6 @@ class TargetResolver:
             "location_id": target_location,
             "visible": visible,
             "available": visible,
-            "health": target_state.get("health"),
+            "attributes": dict(target_state),
             "defense": entity.get("combat_stats", {}).get("defense", target_state.get("defense", 0)),
         }, None

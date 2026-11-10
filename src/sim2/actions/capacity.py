@@ -25,12 +25,14 @@ def check_action_capacity(
         if isinstance(item, dict) and item.get("id")
     }
     maxima = {
-        key: float(item.get("max", 100))
+        key: float(item["max"])
         for key, item in definitions.items()
+        if isinstance(item.get("max"), (int, float))
     }
     minima = {
-        key: float(item.get("min", 0))
+        key: float(item["min"])
         for key, item in definitions.items()
+        if isinstance(item.get("min"), (int, float))
     }
     modes = {
         key: str(item.get("cost_mode"))
@@ -40,19 +42,23 @@ def check_action_capacity(
     for key, rate in (action.get("costs", {}).get("per_minute", {}) or {}).items():
         if key == "time" or not isinstance(rate, (int, float)) or rate <= 0:
             continue
+        if key not in definitions or str(key) not in minima or str(key) not in maxima:
+            return False, f"{key} cost references an undefined configured attribute"
         required = float(rate) * duration
         if key in state or key in needs:
             current = float(state.get(key, needs.get(key, 0)) or 0)
-            mode = modes.get(str(key), "decrease" if key in needs else "increase")
-            if mode == "decrease" and current - required < minima.get(str(key), 0.0) - 1e-9:
+            mode = modes.get(str(key))
+            if mode is None:
+                return False, f"{key} cost has no configured cost_mode"
+            if mode == "decrease" and current - required < minima[str(key)] - 1e-9:
                 return False, f"{key} cost {required:g} exceeds available {current:g}"
-            if mode == "increase" and current + required > maxima.get(str(key), 100.0) + 1e-9:
-                return False, f"{key} load {current + required:g} exceeds maximum {maxima.get(str(key), 100.0):g}"
+            if mode == "increase" and current + required > maxima[str(key)] + 1e-9:
+                return False, f"{key} load {current + required:g} exceeds maximum {maxima[str(key)]:g}"
             continue
         if key not in state:
             continue
         current = float(state.get(key, 0) or 0)
-        maximum = maxima.get(str(key), 100.0)
+        maximum = maxima[str(key)]
         if current + required > maximum + 1e-9:
             return False, f"{key} load {current + required:g} exceeds maximum {maximum:g}"
     return True, ""

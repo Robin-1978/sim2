@@ -5,6 +5,7 @@ minute_effects:
   scope: agent
   every_minutes: 1
   effect:
+    type: need_delta
     need: satiety
     delta: -0.02
   events:
@@ -27,7 +28,8 @@ minute_effects:
   every_minutes: 60
   condition: actor.need.satiety <= 5
   effect:
-    state: health
+    type: attribute_delta
+    attribute: health
     delta: -2
   events:
   - id: starvation_damage
@@ -35,27 +37,30 @@ minute_effects:
     edge: each
     trend: true
     summary: Critical low satiety caused health damage.
-    data: {need: satiety, threshold: 5, health_delta: -2}
+    data: {need: satiety, threshold: 5, attribute: health, delta: -2}
 - id: energy_recovery_idle
   scope: agent
   every_minutes: 1
   condition: action.none
   effect:
-    need: energy
+    type: attribute_delta
+    attribute: energy
     delta: 0.5
 - id: exposure_recovery_idle
   scope: agent
   every_minutes: 1
   condition: action.none
   effect:
-    state: exposure
+    type: attribute_delta
+    attribute: exposure
     delta: -0.2
 - id: attention_recovery_idle
   scope: agent
   every_minutes: 1
   condition: action.none
   effect:
-    state: attention
+    type: attribute_delta
+    attribute: attention
     delta: -1
 - id: relation_decay
   scope: relationship

@@ -45,11 +45,11 @@ class AttributeSchema:
         maximum = self.maximum(name)
         return max(minimum, min(maximum, float(value)))
 
-    def cost_mode(self, name: str) -> str:
+    def cost_mode(self, name: str) -> str | None:
         configured = self.by_id.get(str(name), {}).get("cost_mode")
         if configured in {"increase", "decrease"}:
             return str(configured)
-        return "decrease" if self.kind(name) == "need" else "increase"
+        return None
 
     def state_defaults(self) -> dict[str, Any]:
         result: dict[str, Any] = {}

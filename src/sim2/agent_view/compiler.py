@@ -80,17 +80,24 @@ def _effect_text(action: dict[str, Any], recipe: dict[str, Any] | None = None, p
         effect_type = str(effect.get("type") or effect.get("op") or "")
         if effect_type == "need_delta":
             impacts.append(f"{_display_item(effect.get('need', 'need')).title()} {float(effect.get('delta', 0)):g}")
-        elif effect_type in {"state_delta", "state.add"}:
+        elif effect_type == "state_delta":
             impacts.append(f"{_display_item(effect.get('state', 'state')).title()} {float(effect.get('delta', 0)):g}")
-        elif effect_type in {"inventory_add", "inventory.add"}:
+        elif effect_type == "inventory_add":
             impacts.append(f"Inventory +{effect.get('quantity', 1)} {_display_item(resolved(effect.get('item', 'item')))}")
-        elif effect_type in {"inventory.consume_item", "inventory.remove"}:
+        elif effect_type == "inventory_remove":
             impacts.append(f"Inventory -{effect.get('quantity', 1)} {_display_item(resolved(effect.get('item', 'item')))}")
-        elif effect_type == "health_restore":
-            impacts.append(f"Health +{effect.get('amount', 0)}")
-        elif effect_type in {"location_set", "location.set"}:
+        elif effect_type in {"attribute_delta", "attribute_set"}:
+            attribute = _display_item(effect.get("attribute", "attribute"))
+            if effect_type == "attribute_set":
+                impacts.append(f"{attribute.title()} becomes {effect.get('value')}")
+            elif effect.get("formula"):
+                direction = "decreases" if str(effect.get("direction", "add")) == "subtract" else "increases"
+                impacts.append(f"{attribute.title()} {direction} by the configured formula")
+            else:
+                impacts.append(f"{attribute.title()} changes by {effect.get('delta', 0)}")
+        elif effect_type == "location_set":
             impacts.append("Arrive at the selected location")
-        elif effect_type in {"world_property_delta", "world.property_delta"}:
+        elif effect_type == "world_property_delta":
             impacts.append(f"World {_display_item(effect.get('property', 'property'))} changes by {effect.get('delta', effect.get('value', 0))}")
         elif effect_type:
             impacts.append(f"Platform applies configured {effect_type.replace('_', ' ')} effect")
@@ -763,7 +770,7 @@ class AgentViewCompiler:
             "prompt_protocol": prompt_protocol,
             "platform_rules": platform_rules,
             "world_time": self._world_time(),
-            "self": {"id": agent_id, "name": agent.get("name", agent_id), "role": agent.get("role", "agent"), "status": state.get("status", "idle"), "location": current_location.get("name", location_id) if isinstance(current_location, dict) else location_id, "known_routes": known_routes, "health": state.get("health"), "energy": state.get("energy"), "attributes": self._attribute_values(agent, state), "goal": agent.get("ultimate_goal")},
+            "self": {"id": agent_id, "name": agent.get("name", agent_id), "role": agent.get("role", "agent"), "status": state.get("status", "idle"), "location": current_location.get("name", location_id) if isinstance(current_location, dict) else location_id, "known_routes": known_routes, "attributes": self._attribute_values(agent, state), "goal": agent.get("ultimate_goal")},
             "identity": {"traits": agent.get("traits", {}), "beliefs": agent.get("beliefs", []), "capabilities": agent.get("capabilities", {})},
             "goal_tags": agent.get("goal_tags", []),
             "capability_history": self.store.list_capability_progress(agent_id, limit=5),
