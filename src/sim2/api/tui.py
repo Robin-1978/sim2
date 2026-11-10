@@ -12,6 +12,8 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, DataTable, Footer, Header, Input, RichLog, Static
 
 from ..platform.runtime import Platform
+from ..llm.gateway import LLMRouter
+from ..simulation.runner import SimulationRunner
 from .map_view import render_topology_map
 from .service import ControlService
 from .text import TextWorldSession
@@ -45,16 +47,36 @@ class AutonomousWorldWorker:
     def _run(self) -> None:
         platform = Platform(self.db_path)
         try:
+            router = LLMRouter.from_default_config()
+            if self.provider_name:
+                providers = {
+                    role: router.new_provider_for_name(self.provider_name)
+                    for role in ("agent_decision", "agent_reflection", "god", "story")
+                }
+            else:
+                providers = {
+                    role: router.provider_for_role(role)
+                    for role in ("agent_decision", "agent_reflection", "god", "story")
+                }
+            runner = SimulationRunner(platform, providers)
             while not self.stop_event.is_set():
                 if platform.status().get("status") != "running":
                     time.sleep(0.2)
                     continue
                 try:
-                    platform.run(self.chunk_minutes, provider_name=self.provider_name)
-                    self.last_error = ""
+                    report = runner.run(self.chunk_minutes)
+                    if str(report.stop_reason or "").startswith("provider_cooldown"):
+                        remaining = max(
+                            (float(getattr(provider, "cooldown_remaining", 0.0) or 0.0) for provider in providers.values()),
+                            default=1.0,
+                        )
+                        self.last_error = f"Provider cooling down for {remaining:.1f}s; world time is held."
+                        self.stop_event.wait(max(0.25, min(30.0, remaining)))
+                    else:
+                        self.last_error = ""
                 except Exception as exc:  # pragma: no cover - provider failures are integration concerns
                     self.last_error = str(exc)
-                    time.sleep(1.0)
+                    self.stop_event.wait(1.0)
         finally:
             platform.close()
 

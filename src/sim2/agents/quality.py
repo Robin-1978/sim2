@@ -112,6 +112,15 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
     checks.append(_check("bounded_session", 0 <= turn.iterations <= 6, f"iterations={turn.iterations}"))
     rejected = [step for step in turn.transcript if step.get("result", {}).get("status") == "rejected"]
     checks.append(_check("platform_feedback_visible", not rejected or any(step.get("step") in {"tool", "intent"} for step in turn.transcript), f"rejections={len(rejected)}"))
+    if turn.result.get("failed_check") == "llm_response":
+        checks.append(_check("provider_response_available", False, str(turn.result.get("message") or "provider returned no usable response")))
+        return {
+            "role": turn.role,
+            "iterations": turn.iterations,
+            "checks": checks,
+            "grade": "provider_error",
+            "passed": False,
+        }
     name, payload = _final_submission(turn)
 
     if turn.role == "agent_decision":

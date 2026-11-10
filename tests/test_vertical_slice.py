@@ -68,6 +68,17 @@ class FailingProvider:
         raise RuntimeError(self.message)
 
 
+class CoolingFailureProvider(FailingProvider):
+    def __init__(self):
+        super().__init__("rate limited")
+        self.cooldown_remaining = 0.0
+
+    def complete_json(self, *, system, context, tools=None, messages=None):
+        self.calls += 1
+        self.cooldown_remaining = 30.0
+        raise RuntimeError(self.message)
+
+
 def step_n(platform: Platform, minutes: int):
     result = None
     for _ in range(minutes):
@@ -650,6 +661,25 @@ def test_provider_failure_is_bounded_and_backed_off(tmp_path: Path):
         assert provider.calls == len(platform.store.list_agents())
         assert report.llm_errors == provider.calls
         assert report.rejected_turns == provider.calls
+    finally:
+        platform.close()
+
+
+def test_provider_cooldown_stops_world_time_instead_of_skipping_a_day(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "cooldown-time-world", tmp_path / "runtime"))
+    provider = CoolingFailureProvider()
+    try:
+        report = SimulationRunner(platform, {"agent_decision": provider}).run(1440)
+        assert report.end_minute == 1
+        assert platform.status()["world_minute"] == 1
+        assert report.stop_reason == "provider_cooldown:agent_decision"
+        assert provider.calls == 1
+        provider.cooldown_remaining = 0.0
+        resumed = SimulationRunner(platform, {"agent_decision": provider}).run(1440)
+        assert resumed.end_minute == 1
+        assert resumed.stop_reason == "provider_cooldown:agent_decision"
+        assert provider.calls == 2
     finally:
         platform.close()
 

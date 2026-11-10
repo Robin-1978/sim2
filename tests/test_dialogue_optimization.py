@@ -1,7 +1,8 @@
 from pathlib import Path
 import json
 
-from sim2.agents.engine import AgentEngine
+from sim2.agents.engine import AgentEngine, AgentTurn
+from sim2.agents.quality import evaluate_turn
 from sim2.agents.tools import parse_tool_call
 from sim2.bootstrap.service import create_instance
 from sim2.platform.runtime import Platform
@@ -173,6 +174,21 @@ def test_react_message_compaction_keeps_native_tool_groups_intact():
             declared.update(call["id"] for call in message.get("tool_calls") or [])
         if message.get("role") == "tool":
             assert message["tool_call_id"] in declared
+
+
+def test_quality_separates_provider_failure_from_agent_content_failure():
+    turn = AgentTurn(
+        role="agent_decision",
+        task_type="agent_plan_selection",
+        response={},
+        result={"status": "rejected", "failed_check": "llm_response", "message": "HTTP 429"},
+        iterations=1,
+        transcript=[{"step": "llm_error", "error": "HTTP 429"}],
+    )
+    quality = evaluate_turn(turn, {"executable_behaviors": [{"ref": "behavior:test"}]})
+    assert quality["passed"] is False
+    assert quality["grade"] == "provider_error"
+    assert not any(item["name"] == "behavior_is_offered" for item in quality["checks"])
 
 
 def test_unbound_context_reference_does_not_leak_into_world_text():
@@ -620,5 +636,24 @@ def test_repeated_dialogue_message_is_suppressed_by_thread_scheduler(tmp_path: P
         runner._run_instant_interactions(report)
         assert len(provider.calls) == 1
         assert report.interaction_replies_suppressed == 1
+    finally:
+        platform.close()
+
+
+def test_interaction_dispatch_cursor_survives_runner_restart(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "dialogue-resume", tmp_path / "runtime"))
+    provider = WaitProvider()
+    try:
+        sent = platform.submit_dialogue("fei_lan", "yu_ge", "route", "The western road is open before dusk.")
+        assert sent["status"] == "accepted"
+        first = SimulationRunner(platform, {"agent_decision": provider})
+        first._run_instant_interactions(SimulationReport(0, 0))
+        assert len(provider.calls) == 1
+
+        resumed = SimulationRunner(platform, {"agent_decision": provider})
+        resumed._run_instant_interactions(SimulationReport(0, 0))
+        assert len(provider.calls) == 1
+        state = platform.store.get_meta("runtime_scheduler_state")
+        assert sent["event_id"] in state["interaction_events_seen"]
     finally:
         platform.close()

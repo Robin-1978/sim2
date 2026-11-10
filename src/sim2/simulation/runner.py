@@ -26,6 +26,7 @@ class SimulationReport:
     selected_behaviors: dict[str, int] = field(default_factory=dict)
     degeneration_flags: list[str] = field(default_factory=list)
     diversity: dict[str, Any] = field(default_factory=dict)
+    stop_reason: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -44,6 +45,7 @@ class SimulationReport:
             "selected_behaviors": self.selected_behaviors,
             "degeneration_flags": self.degeneration_flags,
             "diversity": self.diversity,
+            "stop_reason": self.stop_reason,
         }
 
 
@@ -68,7 +70,59 @@ class SimulationRunner:
         self._interaction_messages: dict[tuple[str, str], list[tuple[int, str]]] = {}
         self._interaction_topic_families: dict[tuple[str, str], list[tuple[str, set[str]]]] = {}
         self._interaction_not_before: dict[str, int] = {}
+        self._provider_retry_pending = False
         self.turn_observer = turn_observer
+        self._load_scheduler_state()
+
+    def _load_scheduler_state(self) -> None:
+        state = self.platform.store.get_meta("runtime_scheduler_state", {}) or {}
+        self._decision_not_before = {str(key): int(value) for key, value in (state.get("decision_not_before") or {}).items()}
+        self._llm_error_count = {str(key): int(value) for key, value in (state.get("llm_error_count") or {}).items()}
+        self._llm_retry_until = {str(key): int(value) for key, value in (state.get("llm_retry_until") or {}).items()}
+        self._failure_seen = {str(key): int(value) for key, value in (state.get("failure_seen") or {}).items()}
+        self._interaction_not_before = {str(key): int(value) for key, value in (state.get("interaction_not_before") or {}).items()}
+        self._interaction_events_seen = {int(value) for value in (state.get("interaction_events_seen") or [])}
+        self._provider_retry_pending = bool(state.get("provider_retry_pending", False))
+        self._interaction_rounds = {
+            tuple(str(value) for value in item.get("key", [])): (int(item.get("last_minute", 0)), int(item.get("rounds", 0)))
+            for item in (state.get("interaction_rounds") or []) if isinstance(item, dict) and item.get("key")
+        }
+        self._interaction_messages = {
+            tuple(str(value) for value in item.get("key", [])): [(int(row[0]), str(row[1])) for row in (item.get("messages") or []) if isinstance(row, list) and len(row) == 2]
+            for item in (state.get("interaction_messages") or []) if isinstance(item, dict) and item.get("key")
+        }
+        self._interaction_topic_families = {
+            tuple(str(value) for value in item.get("key", [])): [
+                (str(family[0]), {str(part) for part in family[1]})
+                for family in (item.get("families") or []) if isinstance(family, list) and len(family) == 2
+            ]
+            for item in (state.get("interaction_topic_families") or []) if isinstance(item, dict) and item.get("key")
+        }
+
+    def _persist_scheduler_state(self) -> None:
+        state = {
+            "decision_not_before": self._decision_not_before,
+            "llm_error_count": self._llm_error_count,
+            "llm_retry_until": self._llm_retry_until,
+            "failure_seen": self._failure_seen,
+            "interaction_not_before": self._interaction_not_before,
+            "interaction_events_seen": sorted(self._interaction_events_seen)[-2000:],
+            "provider_retry_pending": self._provider_retry_pending,
+            "interaction_rounds": [
+                {"key": list(key), "last_minute": value[0], "rounds": value[1]}
+                for key, value in sorted(self._interaction_rounds.items())
+            ],
+            "interaction_messages": [
+                {"key": list(key), "messages": [[minute, message] for minute, message in values[-8:]]}
+                for key, values in sorted(self._interaction_messages.items())
+            ],
+            "interaction_topic_families": [
+                {"key": list(key), "families": [[name, sorted(parts)] for name, parts in values]}
+                for key, values in sorted(self._interaction_topic_families.items())
+            ],
+        }
+        with self.platform.store.transaction():
+            self.platform.store.set_meta("runtime_scheduler_state", state)
 
     def _observe_turn(self, turn: AgentTurn, actor_id: str) -> None:
         if self.turn_observer is not None:
@@ -82,7 +136,22 @@ class SimulationRunner:
         report = SimulationReport(start, start + minutes)
         for _ in range(minutes):
             if self.platform.status().get("status") != "running":
+                report.stop_reason = "runtime_not_running"
                 break
+            cooling_roles = self._cooling_provider_roles()
+            if cooling_roles:
+                report.stop_reason = "provider_cooldown:" + ",".join(cooling_roles)
+                break
+            if self._provider_retry_pending:
+                self._provider_retry_pending = False
+                self._run_instant_interactions(report)
+                self._run_due_evolution(report)
+                self._run_idle_decisions(report)
+                cooling_roles = self._cooling_provider_roles()
+                if cooling_roles:
+                    report.stop_reason = "provider_cooldown:" + ",".join(cooling_roles)
+                    break
+                self._persist_scheduler_state()
             # A completed discovery creates a Story task at the current
             # boundary. Resolve that feedback before the next world minute so
             # the story cannot lag one tick behind the fact it is meant to
@@ -101,7 +170,11 @@ class SimulationRunner:
         report.selected_behaviors = self.platform.store.behavior_start_counts()
         report.diversity = self._diversity(report)
         report.degeneration_flags = self._degeneration_flags(report)
+        self._persist_scheduler_state()
         return report
+
+    def _cooling_provider_roles(self) -> list[str]:
+        return sorted(role for role, provider in self.providers.items() if self._provider_cooling_down(provider))
 
     def _run_instant_interactions(self, report: SimulationReport) -> None:
         """Dispatch zero-minute dialogue/trade events as bounded micro-turns."""
@@ -118,6 +191,7 @@ class SimulationRunner:
             if event.get("event_type") not in {"dialogue.completed", "trade.offer_created", "trade.countered"}:
                 continue
             self._interaction_events_seen.add(event_id)
+            self._persist_scheduler_state()
             minute = int(self.platform.store.get_meta("world_minute", 0))
             actor_id = str(event.get("actor_id") or "")
             recipient_id = str(event.get("target_id") or event.get("recipient_id") or "")
@@ -146,6 +220,7 @@ class SimulationRunner:
             if message:
                 self._interaction_messages.setdefault(pair, []).append((minute, message))
                 self._interaction_messages[pair] = self._interaction_messages[pair][-8:]
+            self._persist_scheduler_state()
             interaction = {
                 "from": self._visible_name(actor_id),
                 "topic": topic,
@@ -164,6 +239,7 @@ class SimulationRunner:
                 # A provider outage must not consume the interaction event;
                 # it remains eligible after the scheduler backoff.
                 self._interaction_events_seen.discard(event_id)
+                self._persist_scheduler_state()
             if turn.result.get("status") == "accepted" and (
                 turn.result.get("interaction_committed")
                 or turn.result.get("trade_committed")
@@ -275,6 +351,7 @@ class SimulationRunner:
                 # A rejected turn has already consumed its bounded ReAct
                 # budget. Let the world advance before trying again.
                 self._decision_not_before[agent_id] = minute + self.wait_cooldown_minutes
+            self._persist_scheduler_state()
 
     def _run_due_evolution(self, report: SimulationReport) -> None:
         for task in list(self.platform.ready_evolution_tasks()):
@@ -320,7 +397,8 @@ class SimulationRunner:
             if turn.result.get("status") in {"accepted", "wait"}:
                 self.platform.complete_evolution_task(task["task_id"])
             else:
-                retry_delay = self.llm_error_cooldown_minutes if turn.result.get("failed_check") == "llm_response" else 60
+                provider_cooldown = self._provider_cooling_down(provider)
+                retry_delay = 0 if provider_cooldown else self.llm_error_cooldown_minutes if turn.result.get("failed_check") == "llm_response" else 60
                 self.platform.retry_evolution_task(
                     task["task_id"],
                     int(self.platform.store.get_meta("world_minute", 0)) + retry_delay,
@@ -350,6 +428,9 @@ class SimulationRunner:
         if result.get("failed_check") != "llm_response":
             return
         report.llm_errors += 1
+        if self._cooling_provider_roles():
+            self._provider_retry_pending = True
+            return
         self._record_llm_failure(actor_id, int(self.platform.store.get_meta("world_minute", 0)))
 
     def _record_llm_failure(self, actor_id: str, minute: int) -> None:

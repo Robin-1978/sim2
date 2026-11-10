@@ -44,6 +44,31 @@ def _safe_result(turn: Any, context: dict[str, Any], actor_id: str) -> dict[str,
     }
 
 
+def _write_json_atomic(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(path)
+
+
+def _quality_counts(sessions: list[dict[str, Any]]) -> dict[str, int]:
+    provider_errors = sum(
+        1 for item in sessions
+        if str((item.get("quality") or {}).get("grade") or "").startswith("provider_")
+    )
+    return {
+        "passed": sum(1 for item in sessions if item["quality"].get("passed")),
+        "pending": sum(1 for item in sessions if item["quality"].get("pending")),
+        "provider_errors": provider_errors,
+        "failed": sum(
+            1 for item in sessions
+            if not item["quality"].get("passed")
+            and not item["quality"].get("pending")
+            and not str(item["quality"].get("grade") or "").startswith("provider_")
+        ),
+    }
+
+
 def _causality(platform: Platform, sessions: list[dict[str, Any]]) -> dict[str, Any]:
     intents = platform.store.connection.execute(
         "SELECT intent_id, actor_id, intent_type, status, data_json, result_json, created_minute FROM intent ORDER BY created_minute, intent_id"
@@ -177,36 +202,63 @@ def main() -> int:
     parser.add_argument("--provider", default="remote", help="Configured provider name; remote is the default real-model path.")
     parser.add_argument("--model", default=None, help="Override the configured model for this provider.")
     parser.add_argument("--output", type=Path, default=Path("artifacts/real-agent-audit.json"))
+    parser.add_argument("--resume-db", type=Path, help="continue the same SQLite world instead of creating a new instance")
+    parser.add_argument("--target-minute", type=int, help="run until this absolute world minute; recommended with --resume-db")
+    parser.add_argument("--checkpoint", type=Path, help="per-turn checkpoint path (default: OUTPUT.checkpoint.json)")
     args = parser.parse_args()
     if args.minutes < 1:
         raise SystemExit("--minutes must be at least 1")
     config = LLMConfig.load()
     if args.provider not in config.providers:
         raise SystemExit(f"Configured provider not found: {args.provider}")
-    world_config = Path(__file__).parents[1] / "worlds" / "starter_village"
-    runtime_root = Path("artifacts") / f"audit-runtime-{int(time.time())}"
-    instance_id = "real-agent-audit"
-    db_path = create_instance(world_config, instance_id, runtime_root)
+    if args.resume_db:
+        db_path = args.resume_db.resolve()
+        if not db_path.is_file():
+            raise SystemExit(f"--resume-db does not exist: {db_path}")
+    else:
+        world_config = Path(__file__).parents[1] / "worlds" / "starter_village"
+        runtime_root = Path("artifacts") / f"audit-runtime-{int(time.time())}"
+        instance_id = "real-agent-audit"
+        db_path = create_instance(world_config, instance_id, runtime_root)
     platform = Platform(db_path)
+    checkpoint_path = args.checkpoint or args.output.with_name(args.output.stem + ".checkpoint.json")
     sessions: list[dict[str, Any]] = []
+    for prior_path in (checkpoint_path, args.output):
+        if args.resume_db and prior_path.is_file():
+            try:
+                prior = json.loads(prior_path.read_text(encoding="utf-8"))
+                sessions = list(prior.get("sessions") or [])
+                break
+            except (OSError, TypeError, ValueError, json.JSONDecodeError):
+                pass
 
     def observe(turn: Any, actor_id: str) -> None:
         context = turn.initial_context or {}
         sessions.append(_safe_result(turn, context, actor_id))
+        _write_json_atomic(checkpoint_path, {
+            "status": "running",
+            "provider": args.provider,
+            "model": args.model or config.providers[args.provider].model,
+            "db_path": str(db_path),
+            "world_minute": platform.status()["world_minute"],
+            "sessions": sessions,
+        })
 
     try:
-        report = platform.run(args.minutes, provider_name=args.provider, provider_model=args.model, turn_observer=observe)
+        start_minute = int(platform.status()["world_minute"])
+        target_minute = int(args.target_minute) if args.target_minute is not None else start_minute + int(args.minutes)
+        if target_minute <= start_minute:
+            raise SystemExit(f"target minute {target_minute} must be greater than current minute {start_minute}")
+        report = platform.run(target_minute - start_minute, provider_name=args.provider, provider_model=args.model, turn_observer=observe)
         causality = _causality(platform, sessions)
         _finalize_quality(sessions, causality)
-        quality_counts = {
-            "passed": sum(1 for item in sessions if item["quality"].get("passed")),
-            "pending": sum(1 for item in sessions if item["quality"].get("pending")),
-            "failed": sum(1 for item in sessions if not item["quality"].get("passed") and not item["quality"].get("pending")),
-        }
+        quality_counts = _quality_counts(sessions)
         output = {
             "provider": args.provider,
             "model": args.model or config.providers[args.provider].model,
             "minutes_requested": args.minutes,
+            "start_minute": start_minute,
+            "target_minute": target_minute,
             "db_path": str(db_path),
             "sessions": sessions,
             "world": {
@@ -221,8 +273,17 @@ def main() -> int:
                 "quality_counts": quality_counts,
             },
         }
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
+        _write_json_atomic(args.output, output)
+        _write_json_atomic(checkpoint_path, {
+            "status": "complete" if output["world"]["status"]["world_minute"] >= target_minute else "stopped",
+            "provider": args.provider,
+            "model": args.model or config.providers[args.provider].model,
+            "db_path": str(db_path),
+            "world_minute": output["world"]["status"]["world_minute"],
+            "target_minute": target_minute,
+            "quality_counts": quality_counts,
+            "sessions": sessions,
+        })
         failed = quality_counts["failed"]
         print(json.dumps({
             "audit_file": str(args.output),
@@ -236,14 +297,22 @@ def main() -> int:
                     "sessions": sum(1 for item in sessions if item["role"] == role),
                     "passed": sum(1 for item in sessions if item["role"] == role and item["quality"].get("passed")),
                     "pending": sum(1 for item in sessions if item["role"] == role and item["quality"].get("pending")),
-                    "failed": sum(1 for item in sessions if item["role"] == role and not item["quality"].get("passed") and not item["quality"].get("pending")),
+                    "provider_errors": sum(1 for item in sessions if item["role"] == role and str(item["quality"].get("grade") or "").startswith("provider_")),
+                    "failed": sum(
+                        1 for item in sessions
+                        if item["role"] == role
+                        and not item["quality"].get("passed")
+                        and not item["quality"].get("pending")
+                        and not str(item["quality"].get("grade") or "").startswith("provider_")
+                    ),
                 }
                 for role in ("agent_decision", "agent_reflection", "story", "god")
             },
             "report": report.as_dict(),
             "causality": output["world"]["causality"],
         }, ensure_ascii=False, indent=2))
-        return 0 if output["world"]["status"]["status"] == "running" and not failed else 1
+        reached_target = int(output["world"]["status"]["world_minute"]) >= target_minute
+        return 0 if output["world"]["status"]["status"] == "running" and reached_target and not failed else 1
     finally:
         platform.close()
 
