@@ -130,11 +130,18 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         wait_choice = turn.result.get("status") == "wait" or name == "wait" or payload.get("intent") == "wait"
         platform_guarded = turn.result.get("status") == "skipped"
         interaction = name in {"send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer"} or str(payload.get("intent_type") or "") in {"send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer"}
+        institution_intent = name in {"propose_institution", "approve_institution"} or str(payload.get("intent_type") or "") in {"propose_institution", "approve_institution"}
         selected_by_choice = next((item for item in behaviors if str(item.get("choice") or item.get("name", "")).casefold() == str(choice or "").casefold()), None)
         behavior_ref = payload.get("behavior_ref") or turn.result.get("behavior_ref") or (selected_by_choice or {}).get("ref")
         if behavior_ref and not str(behavior_ref).startswith("behavior:"):
             behavior_ref = f"behavior:{behavior_ref}"
-        checks.append(_check("behavior_is_offered", wait_choice or platform_guarded or interaction or behavior_ref in refs, f"selected={behavior_ref}; offered={sorted(refs)}"))
+        checks.append(_check("behavior_is_offered", wait_choice or platform_guarded or interaction or institution_intent or behavior_ref in refs, f"selected={behavior_ref}; offered={sorted(refs)}"))
+        if institution_intent:
+            institution_name = str(payload.get("name") or payload.get("institution") or "").strip()
+            evidence = str(payload.get("evidence") or payload.get("reason") or "").strip()
+            checks.append(_check("institution_name_is_specific", len(institution_name) >= 2, f"name_length={len(institution_name)}"))
+            checks.append(_check("institution_platform_applied", turn.result.get("status") in {"accepted", "wait"}, f"status={turn.result.get('status')}"))
+            checks.append(_check("institution_evidence_is_specific", len(evidence) >= 12 or institution_intent and bool(payload.get("purpose")), f"evidence_length={len(evidence)}"))
         reason = str(payload.get("reason") or "")
         checks.append(_check("decision_reason_advisory", True, f"reason_length={len(reason.strip())}; detailed rationale is optional and reviewed by Reflection"))
         parameters = payload.get("parameters") or {}
@@ -161,8 +168,8 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         # in visible goals/drives; a supplied rationale still must overlap
         # visible evidence.
         choice_only_grounded = turn.result.get("status") == "accepted" and behavior_ref in refs and not reason.strip()
-        reason_grounded = wait_choice or platform_guarded or interaction or choice_only_grounded or bool(reason_terms & evidence_terms) or bool(alignment)
-        semantic_ok = wait_choice or platform_guarded or interaction or choice_only_grounded or bool(alignment) or bool(reason_terms & evidence_terms) or len(behaviors) <= 1
+        reason_grounded = wait_choice or platform_guarded or interaction or institution_intent or choice_only_grounded or bool(reason_terms & evidence_terms) or bool(alignment)
+        semantic_ok = wait_choice or platform_guarded or interaction or institution_intent or choice_only_grounded or bool(alignment) or bool(reason_terms & evidence_terms) or len(behaviors) <= 1
         checks.append(_check("decision_semantic_signal", semantic_ok, f"alignment={sorted(alignment)}; reason_overlap={bool(reason_terms & evidence_terms)}; candidates={len(behaviors)}"))
         reason_detail = "reason overlaps visible evidence" if reason_terms & evidence_terms else ("choice aligned with visible goals/drives; explanation language is advisory" if reason.strip() and alignment else ("choice-only response selected a currently executable Platform candidate; explanation is optional" if choice_only_grounded else ("choice aligned with visible goals/drives; no explanation emitted" if not reason.strip() and alignment else "no overlap with selected behavior, goals, drives or capabilities")))
         checks.append(_check("decision_reason_grounding", reason_grounded, reason_detail))
@@ -211,6 +218,10 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
             checks.append(_check("god_progress_evidence_is_specific", len(evidence.strip()) >= 12, f"evidence_length={len(evidence)}"))
             checks.append(_check("god_progress_update_applied", turn.result.get("status") == "accepted" and bool(turn.result.get("progress")), f"status={turn.result.get('status')}; progress={bool(turn.result.get('progress'))}"))
             checks.append(_check("god_progress_source_matches_definition", bool(turn.result.get("source_event_type") or turn.result.get("source_behavior_id")), f"source_event={turn.result.get('source_event_type')}; source_behavior={turn.result.get('source_behavior_id')}"))
+        elif name == "approve_institution":
+            checks.append(_check("god_institution_platform_applied", turn.result.get("status") == "accepted" and str((turn.result.get("institution") or {}).get("status", "")) == "active", f"status={turn.result.get('status')}; institution_status={(turn.result.get('institution') or {}).get('status')}"))
+        elif name == "propose_institution":
+            checks.append(_check("god_institution_platform_applied", turn.result.get("status") == "accepted" and bool(turn.result.get("institution")), f"status={turn.result.get('status')}; institution={bool(turn.result.get('institution'))}"))
         elif name == "propose_entity":
             checks.append(_check("god_entity_has_type_and_name", bool(payload.get("entity_type")) and len(str(payload.get("name", "")).strip()) >= 2, f"type={payload.get('entity_type')}; name={payload.get('name')}"))
             checks.append(_check("god_entity_platform_created", bool(turn.result.get("entity_id")), f"entity_id={turn.result.get('entity_id')}"))

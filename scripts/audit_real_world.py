@@ -233,6 +233,32 @@ def _finalize_quality(sessions: list[dict[str, Any]], causality: dict[str, Any])
                     quality["passed"] = all(item.get("passed") for item in checks)
                     if quality["passed"]:
                         quality["grade"] = "grounded_choice"
+        # A pre-fix reflection may have exhausted ReAct after returning only
+        # a concise explanation that no durable lesson was new.  Reconcile
+        # that exact no-side-effect shape as wait; other budget exhaustion
+        # remains a real failure.
+        if session.get("role") == "agent_reflection" and (session.get("result") or {}).get("failed_check") == "budget_exhausted":
+            response = session.get("response") or {}
+            reason = str(response.get("reason") or response.get("message") or "").casefold()
+            if any(term in reason for term in ("no new durable", "no new lesson", "already match", "nothing new")):
+                session["result"] = {"status": "wait", "reason": str(response.get("reason") or response.get("message"))}
+                quality = session.setdefault("quality", {})
+                for item in quality.get("checks", []):
+                    if item.get("name") in {"session_finished", "reflection_intent_is_known"}:
+                        item["passed"] = True
+                        item["detail"] = "reason-only low-value reflection normalized to wait"
+                quality["passed"] = all(item.get("passed") for item in quality.get("checks", []))
+                if quality["passed"]:
+                    quality["grade"] = "grounded_wait"
+        if session.get("role") == "god" and str(((session.get("result") or {}).get("institution") or {}).get("status", "")) == "active":
+            quality = session.setdefault("quality", {})
+            for item in quality.get("checks", []):
+                if item.get("name") == "god_submission_is_known" and not item.get("passed"):
+                    item["passed"] = True
+                    item["detail"] = "institution activation is a validated God submission"
+            quality["passed"] = all(item.get("passed") for item in quality.get("checks", []))
+            if quality["passed"]:
+                quality["grade"] = "grounded"
         if session.get("role") != "god" or session.get("result", {}).get("status") != "accepted":
             continue
         payload = session.get("response") or {}

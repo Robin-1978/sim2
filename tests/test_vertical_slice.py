@@ -1704,6 +1704,21 @@ def test_reflection_summary_alias_is_committed_once(tmp_path: Path):
         platform.close()
 
 
+def test_reflection_reason_only_response_becomes_wait(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "reflection-reason-world", tmp_path / "runtime"))
+    provider = SequenceProvider([{"reason": "No new durable lesson; existing memories already match the observed outcomes."}])
+    try:
+        accepted = platform.submit_behavior(BehaviorIntent("lin_bo", "behavior:rest_and_recover", {}, {}, "Recover readiness.", 0.8, "reflection-reason-outcome"))
+        assert accepted["status"] == "accepted"
+        step_n(platform, accepted["remaining_minutes"])
+        turn = AgentEngine(platform, provider).run(role="agent_reflection", actor_id="lin_bo", task_type="daily_reflection")
+        assert turn.result["status"] == "wait"
+        assert turn.iterations == 1
+    finally:
+        platform.close()
+
+
 def test_reflection_can_update_goal_through_platform(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "goal-world", tmp_path / "runtime")

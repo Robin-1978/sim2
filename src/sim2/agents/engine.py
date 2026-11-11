@@ -738,6 +738,17 @@ class AgentEngine:
             and not any(data.get(key) for key in ("message", "recipient", "offer", "give", "want"))
         ):
             intent_type = "wait"
+        if (
+            not intent_type
+            and role == "agent_reflection"
+            and str(data.get("reason") or "").strip()
+            and not any(data.get(key) for key in ("summary", "statement", "belief", "goal", "capability", "definition"))
+        ):
+            # A reflection model may answer with only a short explanation
+            # that no durable lesson is new. Treat that as the explicit
+            # low-value ``wait`` outcome instead of retrying the same empty
+            # response until the ReAct budget is exhausted.
+            intent_type = "wait"
         if intent_type not in ROLE_INTENTS.get(role, set()):
             return {"status": "rejected", "failed_check": "intent_type", "retryable": True, "message": "This intent type is not allowed for the current role."}
         interaction_allowed = self._interaction_intents(task_type)
