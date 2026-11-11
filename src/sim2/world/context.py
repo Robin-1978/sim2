@@ -62,4 +62,10 @@ def configured_context_values(
                 ),
                 None,
             )
+    # The first imported starter package used ``first_food`` as the action
+    # default name before context resolvers were named explicitly.  Preserve
+    # that declarative alias only when it is present in a legacy rules shape;
+    # Platform still resolves the value from the configured inventory group.
+    if "item_id" in result and "first_food" not in result and isinstance(rules.get("food_items"), list):
+        result["first_food"] = result.get("item_id")
     return result

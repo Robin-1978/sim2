@@ -845,6 +845,11 @@ class Platform(
                 protected_key = str(rules.get("resource_protected_state", "protected"))
                 source = next((item for item in sources if item.get("entity_type") in entity_types and not (item.get("initial_state") or {}).get(protected_key) and self._entity_quantity(item) > 0), None)
                 result[key] = source.get("id") if source else value
+            elif isinstance(default, str) and default in configured_context:
+                # Declarative legacy aliases (for example ``first_food``)
+                # resolve through the package context projection rather than
+                # becoming a literal inventory key.
+                result[key] = configured_context.get(default, value)
             elif value in (None, "") or (isinstance(value, str) and value.startswith("context.")):
                 result[key] = default
         return result

@@ -116,6 +116,18 @@ def test_legacy_rule_context_keeps_recovery_resolvers_available():
     assert values["item_id"] == "rations"
 
 
+def test_legacy_food_action_default_resolves_to_carried_item(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "legacy-food-default-world", tmp_path / "runtime"))
+    try:
+        agent = platform.store.get_agent("lin_bo")
+        action = next(item for item in platform.store.get_definitions("action_def") if item.get("id") == "consume_food")
+        action["parameter_defaults"] = {"item_id": "first_food"}
+        assert platform._apply_action_parameter_defaults(agent, action, {"item_id": None})["item_id"] == "rations"
+    finally:
+        platform.close()
+
+
 def step_n(platform: Platform, minutes: int):
     result = None
     for _ in range(minutes):
