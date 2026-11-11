@@ -86,6 +86,7 @@ class Platform(
         providers: dict[str, Any] | None = None,
         provider_name: str | None = None,
         provider_model: str | None = None,
+        provider_max_completion_tokens: int | None = None,
         wait_cooldown_minutes: int = 30,
         llm_error_cooldown_minutes: int = 60,
         turn_observer: Callable[[Any, str], None] | None = None,
@@ -104,7 +105,11 @@ class Platform(
             router = LLMRouter.from_default_config()
             if provider_name:
                 providers = {
-                    role: router.new_provider_for_name(provider_name, provider_model)
+                    role: router.new_provider_for_name(
+                        provider_name,
+                        provider_model,
+                        max_completion_tokens=provider_max_completion_tokens,
+                    )
                     for role in ("agent_decision", "agent_reflection", "god", "story")
                 }
             else:

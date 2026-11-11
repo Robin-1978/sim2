@@ -257,6 +257,7 @@ def main() -> int:
     parser.add_argument("--minutes", type=int, default=1440)
     parser.add_argument("--provider", default="remote", help="Configured provider name; remote is the default real-model path.")
     parser.add_argument("--model", default=None, help="Override the configured model for this provider.")
+    parser.add_argument("--max-completion-tokens", type=int, default=None, help="Override the provider completion budget for this audit (use a larger value for reasoning-heavy free models).")
     parser.add_argument("--output", type=Path, default=Path("artifacts/real-agent-audit.json"))
     parser.add_argument("--resume-db", type=Path, help="continue the same SQLite world instead of creating a new instance")
     parser.add_argument("--target-minute", type=int, help="run until this absolute world minute; recommended with --resume-db")
@@ -332,6 +333,7 @@ def main() -> int:
                 target_minute - int(platform.status()["world_minute"]),
                 provider_name=args.provider,
                 provider_model=args.model,
+                provider_max_completion_tokens=args.max_completion_tokens,
                 turn_observer=observe,
             )
             reports.append(segment)
