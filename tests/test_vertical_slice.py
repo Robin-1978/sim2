@@ -88,6 +88,26 @@ def test_agent_condition_text_preserves_numeric_decimals():
     assert "0 9" not in rendered
 
 
+def test_agent_prompt_humanizes_resource_and_location_keys(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "agent-visible-keys-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            platform.store.put_knowledge_fact("lin_bo", "inspection:village_food", {
+                "fact": "Inspected village_food; current amount is 320.",
+                "source_type": "inspection",
+                "confidence": 0.9,
+                "observed_at": 0,
+            })
+        view = platform.decision_view("lin_bo")
+        prompt = render_context(view, "Choose one behavior.")
+        assert "village_food" not in prompt
+        assert "north_gate" not in prompt
+        assert "village food" in prompt.lower() or "公共粮食" in prompt
+    finally:
+        platform.close()
+
+
 def step_n(platform: Platform, minutes: int):
     result = None
     for _ in range(minutes):

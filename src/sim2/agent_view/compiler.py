@@ -448,7 +448,7 @@ class AgentViewCompiler:
                     entity_name = self.store.get_entity(value).get("name")
                 except KeyError:
                     entity_name = None
-                visible_parts.append(str(entity_name or value.replace("_", " ")))
+                visible_parts.append(str(entity_name if entity_name and entity_name != value else value.replace("_", " ")))
             return self._visible_text(f"{prefix.replace('_', ' ').title()}: {' — '.join(visible_parts)}")
         if isinstance(fact, dict) and "fact" in fact:
             item = dict(fact)
@@ -471,8 +471,8 @@ class AgentViewCompiler:
         for entity in self.store.entities_of_type("location") + self.store.entities_of_type("agent") + self.store.entities_of_type("object"):
             key = str(entity.get("id") or "")
             name = str(entity.get("name") or key)
-            if key and name and key != name:
-                entities.append((key, name))
+            if key and name:
+                entities.append((key, name if name != key else key.replace("_", " ")))
         # Include resource/material/artifact/document keys without assuming a
         # particular world vocabulary; ``entities_of_type`` is cheap for the
         # bounded Agent projection and keeps new worlds generic.
@@ -480,11 +480,22 @@ class AgentViewCompiler:
             for entity in self.store.entities_of_type(entity_type):
                 key = str(entity.get("id") or "")
                 name = str(entity.get("name") or key)
-                if key and name and key != name:
-                    entities.append((key, name))
+                if key and name:
+                    entities.append((key, name if name != key else key.replace("_", " ")))
         for key, name in sorted(set(entities), key=lambda item: len(item[0]), reverse=True):
             text = re.sub(rf"(?<![A-Za-z0-9]){re.escape(key)}(?![A-Za-z0-9])", name, text)
         return text
+
+    def _humanize_record(self, value: Any, *, field: str = "") -> Any:
+        """Apply visible entity names to nested outcome/event projections."""
+
+        if isinstance(value, dict):
+            return {str(key): self._humanize_record(item, field=str(key)) for key, item in value.items()}
+        if isinstance(value, list):
+            return [self._humanize_record(item, field=field) for item in value]
+        if isinstance(value, str):
+            return self._humanize_fact(value) if field in {"fact", "summary", "message", "reason"} else self._visible_text(value)
+        return value
 
     def build_decision_view(
         self,
@@ -788,7 +799,7 @@ class AgentViewCompiler:
         # Compiling a snapshot is read-only. Explicit ``recall_memory`` calls
         # touch rows so opening a new decision view cannot reorder a just-written
         # experience by incrementing its predecessor's access count.
-        memories = self.memory.retrieve(agent_id, query=memory_query, limit=6, touch=False, dimensions=memory_dimensions)
+        memories = [self._humanize_record(item) for item in self.memory.retrieve(agent_id, query=memory_query, limit=6, touch=False, dimensions=memory_dimensions)]
         short_term_memories = [item for item in memories if item.get("tier") == "short_term"]
         long_term_memories = [item for item in memories if item.get("tier") == "long_term"]
         known_facts = [self._humanize_fact(item) for item in self.memory.relevant_facts(agent_id, query=memory_query, limit=8, dimensions=memory_dimensions)]
@@ -805,8 +816,8 @@ class AgentViewCompiler:
                 except KeyError:
                     pass
         actor_events = self.store.recent_events_for_actor(agent_id, limit=8)
-        recent_actions = actor_events[:2]
-        recent_outcomes = self.store.recent_outcomes_for_actor(agent_id, limit=3)
+        recent_actions = [self._humanize_record(item) for item in actor_events[:2]]
+        recent_outcomes = [self._humanize_record(item) for item in self.store.recent_outcomes_for_actor(agent_id, limit=3)]
         for outcome in recent_outcomes:
             behavior = bt_defs.get(str(outcome.get("behavior_id", "")), {})
             outcome["behavior_choice"] = behavior.get("agent_label") or behavior.get("summary") or behavior.get("description") or "a behavior"
@@ -907,7 +918,7 @@ class AgentViewCompiler:
             "institution_ledgers": institution_ledgers,
             "executable_behaviors": self._assign_choices(available) if role == "agent_decision" else [],
             "decision_constraints": decision_constraints if role == "agent_decision" else [],
-            "last_platform_result": state.get("last_platform_result"), "tools": self._role_tools(role),
+            "last_platform_result": self._humanize_record(state.get("last_platform_result")), "tools": self._role_tools(role),
         }
         if include_diagnostics:
             result["unavailable_behavior_diagnostics"] = diagnostics
