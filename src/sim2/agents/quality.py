@@ -160,10 +160,11 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         # A missing rationale is acceptable when the selected BT is grounded
         # in visible goals/drives; a supplied rationale still must overlap
         # visible evidence.
-        reason_grounded = wait_choice or platform_guarded or interaction or bool(reason_terms & evidence_terms) or bool(alignment)
-        semantic_ok = wait_choice or platform_guarded or interaction or bool(alignment) or bool(reason_terms & evidence_terms) or len(behaviors) <= 1
+        choice_only_grounded = turn.result.get("status") == "accepted" and behavior_ref in refs and not reason.strip()
+        reason_grounded = wait_choice or platform_guarded or interaction or choice_only_grounded or bool(reason_terms & evidence_terms) or bool(alignment)
+        semantic_ok = wait_choice or platform_guarded or interaction or choice_only_grounded or bool(alignment) or bool(reason_terms & evidence_terms) or len(behaviors) <= 1
         checks.append(_check("decision_semantic_signal", semantic_ok, f"alignment={sorted(alignment)}; reason_overlap={bool(reason_terms & evidence_terms)}; candidates={len(behaviors)}"))
-        reason_detail = "reason overlaps visible evidence" if reason_terms & evidence_terms else ("choice aligned with visible goals/drives; explanation language is advisory" if reason.strip() and alignment else ("choice aligned with visible goals/drives; no explanation emitted" if not reason.strip() and alignment else "no overlap with selected behavior, goals, drives or capabilities"))
+        reason_detail = "reason overlaps visible evidence" if reason_terms & evidence_terms else ("choice aligned with visible goals/drives; explanation language is advisory" if reason.strip() and alignment else ("choice-only response selected a currently executable Platform candidate; explanation is optional" if choice_only_grounded else ("choice aligned with visible goals/drives; no explanation emitted" if not reason.strip() and alignment else "no overlap with selected behavior, goals, drives or capabilities")))
         checks.append(_check("decision_reason_grounding", reason_grounded, reason_detail))
     elif turn.role == "agent_reflection":
         if name == "wait" or payload.get("intent_type") == "wait" or turn.result.get("status") == "wait":

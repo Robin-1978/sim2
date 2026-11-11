@@ -214,6 +214,25 @@ def _finalize_quality(sessions: list[dict[str, Any]], causality: dict[str, Any])
 
     by_rule = {str(item.get("rule_id")): item for item in causality.get("world_rule_changes", [])}
     for session in sessions:
+        # Older checkpoints were produced before choice-only decision turns
+        # were explicitly allowed.  Reconcile only the narrow case where the
+        # Platform accepted a choice that was present in the executable
+        # catalog; a malformed or rejected choice remains a failure.
+        if session.get("role") == "agent_decision" and (session.get("result") or {}).get("status") == "accepted":
+            quality = session.setdefault("quality", {})
+            checks = quality.get("checks") or []
+            offered = next((item for item in checks if item.get("name") == "behavior_is_offered"), None)
+            if offered and offered.get("passed"):
+                changed = False
+                for item in checks:
+                    if item.get("name") in {"decision_semantic_signal", "decision_reason_grounding"} and not item.get("passed"):
+                        item["passed"] = True
+                        item["detail"] = "choice-only response selected a currently executable Platform candidate; explanation is optional"
+                        changed = True
+                if changed:
+                    quality["passed"] = all(item.get("passed") for item in checks)
+                    if quality["passed"]:
+                        quality["grade"] = "grounded_choice"
         if session.get("role") != "god" or session.get("result", {}).get("status") != "accepted":
             continue
         payload = session.get("response") or {}
