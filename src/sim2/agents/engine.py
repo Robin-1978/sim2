@@ -727,6 +727,17 @@ class AgentEngine:
         intent_type = str(intent_type_value or ("select_behavior" if data.get("choice") or data.get("behavior_ref") or data.get("behavior_id") or data.get("behavior") else ""))
         if data.get("wait") is True or str(command_value).casefold() == "wait":
             intent_type = "wait"
+        # Reasoning models sometimes finish an instant reply with only a
+        # concise ``{"reason": ...}`` object after deciding that no answer
+        # is needed.  In an interaction, that shape is an explicit wait; do
+        # not send it through six rejected planning iterations.
+        if (
+            not intent_type
+            and str(task_type).startswith("instant:")
+            and str(data.get("reason") or "").strip()
+            and not any(data.get(key) for key in ("message", "recipient", "offer", "give", "want"))
+        ):
+            intent_type = "wait"
         if intent_type not in ROLE_INTENTS.get(role, set()):
             return {"status": "rejected", "failed_check": "intent_type", "retryable": True, "message": "This intent type is not allowed for the current role."}
         interaction_allowed = self._interaction_intents(task_type)

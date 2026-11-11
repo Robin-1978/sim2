@@ -2376,6 +2376,22 @@ def test_instant_agent_session_does_not_interrupt_active_behavior(tmp_path: Path
         platform.close()
 
 
+def test_instant_reason_only_response_is_normalized_to_wait(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "instant-reason-world", tmp_path / "runtime"))
+    provider = SequenceProvider([{"reason": "The incoming message repeats known information."}])
+    try:
+        turn = AgentEngine(platform, provider).run(
+            role="agent_decision", actor_id="yu_ge", task_type="instant:dialogue.completed",
+            interaction={"from": "费兰", "topic": "ledger", "message": "No new verified ledger information."},
+        )
+        assert turn.result["status"] == "wait"
+        assert turn.iterations == 1
+        assert len(provider.calls) == 1
+    finally:
+        platform.close()
+
+
 def test_known_distant_entity_does_not_reveal_live_state(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "perception-known-world", tmp_path / "runtime"))
@@ -2925,6 +2941,35 @@ def test_emergent_story_beat_is_not_repeated_for_one_validated_result(tmp_path: 
         assert platform.store.recent_events(limit=20)[0]["event_type"] == "story.beat.activated"
         saved = platform.store.get_meta("story_state")["emergent_beats"]
         assert saved[-1]["source_event_id"] == source_event_id
+    finally:
+        platform.close()
+
+
+def test_emergent_story_beat_deduplicates_same_fact_across_events(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "story-fact-dedup-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            first_event = platform.store.append_event("water.mitigation.applied", "qiao_ning", 10, {"fact": "River water safety was improved and verified.", "story_source": True})
+        first = platform.submit_story_beat("story", {
+            "summary": "The water safety result is recorded.",
+            "fact": "River water safety was improved and verified.",
+            "goal_hint": "Continue monitoring the river.",
+            "audience": ["乔宁"],
+        })
+        assert first["status"] == "accepted"
+        with platform.store.transaction():
+            platform.store.append_event("water.mitigation.applied", "qiao_ning", 20, {"fact": "River water safety was improved and verified.", "story_source": True})
+        second = platform.submit_story_beat("story", {
+            "summary": "Water safety improvement recorded again.",
+            "fact": "River water safety was improved and verified.",
+            "goal_hint": "Continue monitoring the river.",
+            "audience": ["乔宁"],
+        })
+        assert second["status"] == "wait"
+        assert "materially identical" in second["reason"]
+        saved = platform.store.get_meta("story_state")["emergent_beats"]
+        assert saved[-1]["source_event_id"] == first_event
     finally:
         platform.close()
 

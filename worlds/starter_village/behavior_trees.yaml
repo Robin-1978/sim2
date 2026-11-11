@@ -486,6 +486,8 @@ behavior_trees:
   - actor.can_inspect
   estimated_minutes: 30
   cooldown_minutes: 1440
+  goal_tags: [knowledge, pact]
+  drive_tags: [self_actualization, safety]
   success_results: [observation_recorded]
   failure_results: [access_denied, interrupted]
   nodes:

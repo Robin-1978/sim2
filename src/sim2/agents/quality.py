@@ -140,7 +140,11 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         parameters = payload.get("parameters") or {}
         checks.append(_check("decision_does_not_fill_execution_costs", not any(key in parameters for key in {"duration", "energy", "exposure", "cost", "effects"}), f"parameter_keys={sorted(parameters)}"))
         selected = next((item for item in behaviors if item.get("ref") == behavior_ref), selected_by_choice or {})
-        drive_ids = {item.get("id") for item in (view.get("drives") or [])[:3]}
+        # The view orders drives by current urgency, but a valid choice may
+        # serve a lower-urgency configured drive (for example inspecting a
+        # pact record for a scholar).  Grounding must consider the complete
+        # bounded drive list, not only the top three display entries.
+        drive_ids = {item.get("id") for item in (view.get("drives") or [])}
         goal_tags = set(view.get("goal_tags") or [])
         alignment = (goal_tags & set(selected.get("goal_tags") or [])) | (drive_ids & set(selected.get("drive_tags") or []))
         tokens = lambda value: set(re.findall(r"[a-z0-9]+", str(value).lower().replace("_", " ")))

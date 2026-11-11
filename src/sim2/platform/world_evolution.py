@@ -469,6 +469,22 @@ class WorldEvolutionRuntimeMixin:
             if any(int(item.get("source_event_id", -1)) == int(source_event.get("event_id", -2)) for item in prior_emergent if isinstance(item, dict)):
                 return {"status": "wait", "reason": "This validated result already has an active emergent story beat; wait for a new discovery or relationship result."}
             beat["source_event_id"] = int(source_event.get("event_id"))
+            beat["source_event_type"] = str(source_event.get("event_type") or "validated.result")
+            # A new event does not automatically make a new story beat useful.
+            # Repeated water-safety or pact-stability outcomes often arrive as
+            # separate validated events but carry the same fact. Keep one
+            # durable narrative thread until the fact itself changes; the
+            # source event remains in the audit log for causal analysis.
+            def story_signature(value: Any) -> str:
+                return "".join(char for char in str(value or "").casefold() if char.isalnum())
+
+            candidate_signature = story_signature(beat.get("fact") or beat.get("summary"))
+            if len(candidate_signature) >= 16 and any(
+                story_signature(item.get("fact") or item.get("summary")) == candidate_signature
+                for item in prior_emergent
+                if isinstance(item, dict)
+            ):
+                return {"status": "wait", "reason": "A materially identical validated result already has a story beat; wait for new evidence or a changed result."}
             # An emergent beat may interpret a validated result, but it cannot
             # silently invent a later delivery, public reading, gathering, or
             # movement. Require a matching event in the same chain before
