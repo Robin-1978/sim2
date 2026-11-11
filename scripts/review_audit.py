@@ -490,6 +490,47 @@ def _response_choice(session: dict[str, Any]) -> str:
     return ""
 
 
+def _llm_call_statistics(data: dict[str, Any]) -> dict[str, Any]:
+    """Read per-call billing and latency from the audited SQLite instance."""
+
+    db_path = data.get("db_path")
+    if not db_path or not Path(str(db_path)).is_file():
+        return {}
+    connection = sqlite3.connect(str(db_path))
+    connection.row_factory = sqlite3.Row
+    try:
+        rows = [dict(row) for row in connection.execute(
+            "SELECT role,prompt_tokens,cached_tokens,completion_tokens,request_latency_ms,iteration FROM llm_call"
+        ).fetchall()]
+    except sqlite3.Error:
+        return {}
+    finally:
+        connection.close()
+    by_role: dict[str, dict[str, Any]] = {}
+    iterations: dict[str, int] = {}
+    for row in rows:
+        role = str(row.get("role") or "unknown")
+        bucket = by_role.setdefault(role, {"calls": 0, "prompt_tokens": [], "cached_tokens": [], "completion_tokens": [], "latency_ms": []})
+        bucket["calls"] += 1
+        for key in ("prompt_tokens", "cached_tokens", "completion_tokens", "latency_ms"):
+            source = "request_latency_ms" if key == "latency_ms" else key
+            if row.get(source) is not None:
+                bucket[key].append(float(row[source]))
+        iteration = str(int(row.get("iteration", 0) or 0))
+        iterations[iteration] = iterations.get(iteration, 0) + 1
+    for bucket in by_role.values():
+        prompt_total = sum(bucket["prompt_tokens"])
+        cached_total = sum(bucket["cached_tokens"])
+        for key in ("prompt_tokens", "cached_tokens", "completion_tokens", "latency_ms"):
+            bucket[key] = _summary(bucket[key])
+        bucket["cache_hit_rate"] = round(cached_total / prompt_total, 4) if prompt_total else None
+    return {
+        "calls": len(rows),
+        "by_role": by_role,
+        "iteration_counts": dict(sorted(iterations.items(), key=lambda item: int(item[0]))),
+    }
+
+
 def _content_statistics(data: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Summarize what models saw and emitted, including semantic ground checks."""
 
@@ -622,6 +663,7 @@ def _content_statistics(data: dict[str, Any]) -> tuple[dict[str, Any], list[dict
         "waits_without_executable_candidates": waits_without_candidates,
         "wait_with_candidates_samples": wait_samples[:20],
         "llm_cache": llm_cache,
+        "llm_database": _llm_call_statistics(data),
         "world_report": {
             key: report.get(key)
             for key in (
@@ -689,6 +731,21 @@ def _markdown_report(result: dict[str, Any]) -> str:
         f"{cache.get('completion_to_prompt_ratio', 0)}; cached tokens {cache.get('cached_tokens', 0)}; "
         f"provider cache hit {cache.get('provider_cache_hit_rate', 0)}; "
         f"static-prefix reuse {cache.get('static_prefix_reuse_rate', 0)}.",
+        "",
+        "| Role | Calls | Prompt tokens p50/p95/max | Completion tokens p50/p95/max | Latency ms p50/p95/max | Cache hit |",
+        "|---|---:|---:|---:|---:|---:|",
+    ])
+    for role, item in sorted((stats.get("llm_database") or {}).get("by_role", {}).items()):
+        prompt = item.get("prompt_tokens") or {}
+        completion = item.get("completion_tokens") or {}
+        latency = item.get("latency_ms") or {}
+        lines.append(
+            f"| {role} | {item.get('calls', 0)} | "
+            f"{prompt.get('p50')}/{prompt.get('p95')}/{prompt.get('max')} | "
+            f"{completion.get('p50')}/{completion.get('p95')}/{completion.get('max')} | "
+            f"{latency.get('p50')}/{latency.get('p95')}/{latency.get('max')} | {item.get('cache_hit_rate')} |"
+        )
+    lines.extend([
         "",
         "## World causality",
         "",

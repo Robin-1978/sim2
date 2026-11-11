@@ -25,6 +25,7 @@ _REVIEW_SPEC.loader.exec_module(_REVIEW_MODULE)
 _database_checks = _REVIEW_MODULE._database_checks
 _review_unresolved_provider_errors = _REVIEW_MODULE._unresolved_provider_errors
 _content_statistics = _REVIEW_MODULE._content_statistics
+_llm_call_statistics = _REVIEW_MODULE._llm_call_statistics
 _markdown_report = _REVIEW_MODULE._markdown_report
 
 
@@ -111,6 +112,33 @@ def test_content_statistics_check_prompt_choices_and_output_semantics():
     assert "Result: **PASS**" in markdown
     assert "Grounded behavior requests: 1" in markdown
     assert "Inspect the granary" in markdown
+
+
+def test_llm_call_statistics_reads_per_role_token_and_latency_usage(tmp_path: Path):
+    db_path = tmp_path / "audit.sqlite3"
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute(
+            "CREATE TABLE llm_call (role TEXT, prompt_tokens INTEGER, cached_tokens INTEGER, completion_tokens INTEGER, request_latency_ms REAL, iteration INTEGER)"
+        )
+        connection.executemany(
+            "INSERT INTO llm_call VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                ("agent_decision", 1000, 400, 100, 50, 1),
+                ("agent_decision", 2000, 1200, 200, 250, 2),
+                ("god", 3000, 2000, 80, 500, 1),
+            ],
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    stats = _llm_call_statistics({"db_path": str(db_path)})
+
+    assert stats["calls"] == 3
+    assert stats["by_role"]["agent_decision"]["cache_hit_rate"] == 0.5333
+    assert stats["by_role"]["agent_decision"]["prompt_tokens"]["p95"] == 2000.0
+    assert stats["iteration_counts"] == {"1": 2, "2": 1}
 
 
 def test_only_same_boundary_success_recovers_provider_error():
