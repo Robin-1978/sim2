@@ -1229,13 +1229,24 @@ class Platform(
         """Return a failed low-frequency task to the scheduler with an audit event."""
 
         minute = int(self.store.get_meta("world_minute", 0))
+        # A provider circuit breaker stops the runner before another request
+        # can be issued, so a retry at the current minute cannot spin.  Keep
+        # that boundary intact: advancing one world minute would make the
+        # failed reflection/evolution turn observe a different world.  Other
+        # rejections pass a future retry minute and retain their backoff.
+        scheduled_minute = max(minute, int(retry_minute))
         with self.store.transaction():
-            self.store.reschedule_evolution_task(task_id, max(minute + 1, int(retry_minute)))
+            self.store.reschedule_evolution_task(task_id, scheduled_minute)
+            if scheduled_minute == minute:
+                # ``step()`` normally promotes due tasks to ready. A provider
+                # retry intentionally does not step, so promote this one now
+                # and let the resumed runner claim it before time advances.
+                self.store.mark_evolution_task_ready(task_id)
             self.store.append_event(
                 "evolution.task_retry",
                 None,
                 minute,
-                {"task_id": task_id, "retry_minute": max(minute + 1, int(retry_minute)), "reason": str(reason)},
+                {"task_id": task_id, "retry_minute": scheduled_minute, "reason": str(reason)},
             )
 
     def step(self) -> dict[str, Any]:

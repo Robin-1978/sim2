@@ -229,6 +229,9 @@ def test_reflection_and_god_prompts_use_readable_outcome_names(tmp_path: Path):
         assert "behavior:rest_and_recover" not in reflection_prompt
         assert "rest_and_recover" not in reflection_prompt
         assert "Recover energy at the current safe location." in reflection_prompt
+        assert "<executable_behaviors>" not in reflection_prompt
+        assert "No BT is executable" not in reflection_prompt
+        assert "<registered_actions>" in reflection_prompt
         assert "behavior:rest_and_recover" not in god_prompt
         assert "lin_bo" not in god_prompt
         assert "林泊" in god_prompt
@@ -873,6 +876,53 @@ def test_story_provider_failure_retries_without_pausing_world(tmp_path: Path):
         platform.close()
 
 
+def test_evolution_provider_cooldown_retries_at_same_world_minute(tmp_path: Path):
+    class RecoveringCoolingProvider:
+        def __init__(self):
+            self.calls = 0
+            self.cooldown_remaining = 0.0
+
+        def complete_json(self, *, system, context, tools=None, messages=None):
+            self.calls += 1
+            if self.calls == 1:
+                self.cooldown_remaining = 30.0
+                raise RuntimeError("rate limited")
+            return {"intent_type": "wait", "reason": "No narrative continuation is needed."}
+
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "evolution-cooldown-boundary", tmp_path / "runtime"))
+    provider = RecoveringCoolingProvider()
+    try:
+        with platform.store.transaction():
+            event_id = platform.store.append_event(
+                "security.marks_classified",
+                "he_yan",
+                1,
+                {"story_source": True, "summary": "The boundary marks were classified."},
+            )
+        platform._queue_event_consumer_task(
+            "story", event_id, "security.marks_classified", "he_yan", 1,
+            task_type="event:security.marks_classified",
+        )
+        first = SimulationRunner(platform, {"story": provider}).run(2)
+        assert first.end_minute == 1
+        assert first.stop_reason == "provider_cooldown:story"
+        task = next(item for item in platform.store.ready_evolution_tasks() if item["role"] == "story")
+        assert task["due_minute"] == 1
+
+        provider.cooldown_remaining = 0.0
+        resumed = SimulationRunner(platform, {"story": provider}).run(1)
+        assert resumed.end_minute == 2
+        rows = platform.store.connection.execute(
+            "SELECT status,world_minute FROM llm_call WHERE role='story' ORDER BY call_id"
+        ).fetchall()
+        assert [(row["status"], row["world_minute"]) for row in rows] == [
+            ("llm_error", 1), ("response", 1),
+        ]
+    finally:
+        platform.close()
+
+
 def test_platform_run_owns_autonomous_scheduler(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "platform-runtime-world", tmp_path / "runtime")
@@ -1218,7 +1268,11 @@ def test_core_gather_bt_travels_to_nearest_resource_node(tmp_path: Path):
         platform.store.update_agent("liang_he", liang)
         platform.store.connection.commit()
         view = platform.decision_view("liang_he")
-        assert any(item["ref"] == "behavior:gather_at_known_node" for item in view["executable_behaviors"])
+        gather = next(item for item in view["executable_behaviors"] if item["ref"] == "behavior:gather_at_known_node")
+        assert "Collect 谷物 from 粮仓" in gather["target"]
+        assert "Source stock decreases and carried inventory increases" in gather["target"]
+        assert any("Source stock -2" in item for item in gather["cost"])
+        assert "Inventory +2 grain" in gather["impact"]
         result = platform.submit_behavior(BehaviorIntent(
             "liang_he", "behavior:gather_at_known_node", {}, {}, "Collect available grain for production.", 0.8, "gather-core-intent"
         ))

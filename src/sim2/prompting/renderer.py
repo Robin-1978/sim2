@@ -493,32 +493,34 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("  A proposal is only a recorded suggestion. It changes the world only after an authorized activation.")
         lines.append("</social_institutions>")
 
-    active = context.get("active_task") or {}
-    lines.extend([
-        "  <active_execution>",
-        f"    behavior: {_line(active.get('bt'))}",
-        f"    action: {_line(active.get('action'))}",
-        f"    remaining_minutes: {_line(active.get('remaining_minutes'))}",
-        "  </active_execution>",
-        "  <executable_behaviors>",
-    ])
-    behaviors = context.get("executable_behaviors") or context.get("available_behaviors") or []
-    # The view already contains only Platform-validated executable BTs. Keep
-    # the complete current catalog visible so the model never has to choose
-    # from a truncated or stale subset.
-    for behavior in behaviors:
-        lines.append("    <behavior>")
-        for label in ("name", "summary", "purpose", "when", "requires", "target", "parameters", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "cooldown_minutes", "tags"):
-            value = behavior.get(label)
-            if value:
-                if isinstance(value, list):
-                    value = "; ".join(str(item) for item in value)
-                lines.append(f"      {label}: {value}")
-        lines.append(f"      choice: {behavior.get('choice') or behavior.get('name') or 'unnamed behavior'}")
-        lines.append("    </behavior>")
-    if not behaviors:
-        lines.append("    - none; return wait")
-    lines.append("  </executable_behaviors>")
+    if role == "agent_decision":
+        active = context.get("active_task") or {}
+        lines.extend([
+            "  <active_execution>",
+            f"    behavior: {_line(active.get('bt'))}",
+            f"    action: {_line(active.get('action'))}",
+            f"    remaining_minutes: {_line(active.get('remaining_minutes'))}",
+            "  </active_execution>",
+            "  <executable_behaviors>",
+        ])
+        behaviors = context.get("executable_behaviors") or context.get("available_behaviors") or []
+        # The view already contains only Platform-validated executable BTs.
+        # Reflection receives outcomes and the registered Action vocabulary,
+        # not an unrelated planning catalog or a misleading instruction to
+        # wait because no behavior is currently executable.
+        for behavior in behaviors:
+            lines.append("    <behavior>")
+            for label in ("name", "summary", "purpose", "when", "requires", "target", "parameters", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "cooldown_minutes", "tags"):
+                value = behavior.get(label)
+                if value:
+                    if isinstance(value, list):
+                        value = "; ".join(str(item) for item in value)
+                    lines.append(f"      {label}: {value}")
+            lines.append(f"      choice: {behavior.get('choice') or behavior.get('name') or 'unnamed behavior'}")
+            lines.append("    </behavior>")
+        if not behaviors:
+            lines.append("    - none; return wait")
+        lines.append("  </executable_behaviors>")
 
     if role == "agent_reflection":
         lines.append("  <registered_actions>")

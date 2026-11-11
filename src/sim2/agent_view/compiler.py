@@ -64,11 +64,14 @@ def _cost_text(action: dict[str, Any], recipe: dict[str, Any] | None = None) -> 
                     out.append(f"Recipe inputs: {inputs or 'configured inputs'} (reserved before start)")
                     continue
                 if key == "item_parameter":
-                    out.append(f"One selected item (reserved before start)")
+                    out.append("Carried stock -1 selected item on success (reserved before start)")
                     continue
                 if key == "resource_parameter":
                     amount = values.get("resource_amount", 1)
-                    out.append(f"{amount} units of the selected resource (reserved before start)")
+                    out.append(
+                        f"Source stock -{amount} selected resource on success "
+                        "(reserved before start)"
+                    )
                     continue
                 if key == "resource_amount":
                     continue
@@ -607,11 +610,17 @@ class AgentViewCompiler:
                     target_text = f"Health service: {self.store.get_entity(bound_value).get('name', bound_value)}."
                 except KeyError:
                     target_text = "Configured health service is available."
-            elif bound_value and any(str(resolver) == "nearest_resource_node" for resolver in bindings.values()):
+            elif resource_node and any(str(resolver) == "nearest_resource_node" for resolver in bindings.values()):
                 try:
-                    target_text = f"Resource node: {self.store.get_entity(bound_value).get('name', bound_value)}."
+                    resource = self.store.get_entity(resource_node["resource_tag"])
+                    location = self.store.get_entity(resource_node["location_id"])
+                    target_text = (
+                        f"Collect {resource.get('name', resource_node['resource_tag'])} from "
+                        f"{location.get('name', resource_node['location_id'])}. "
+                        "Source stock decreases and carried inventory increases."
+                    )
                 except KeyError:
-                    target_text = "Configured resource node is available."
+                    target_text = "Collect the configured resource from the nearest known node; source stock decreases."
             elif resource_node and any(
                 node.get("type") == "action"
                 and any(value == "context.resource_tag" for value in (node.get("parameters") or {}).values())
@@ -816,7 +825,9 @@ class AgentViewCompiler:
             "pending_institutions": pending_institutions,
             "active_institutions": active_institutions,
             "institution_ledgers": institution_ledgers,
-            "executable_behaviors": self._assign_choices(available), "decision_constraints": decision_constraints, "last_platform_result": state.get("last_platform_result"), "tools": self._role_tools(role),
+            "executable_behaviors": self._assign_choices(available) if role == "agent_decision" else [],
+            "decision_constraints": decision_constraints if role == "agent_decision" else [],
+            "last_platform_result": state.get("last_platform_result"), "tools": self._role_tools(role),
         }
 
     @staticmethod
