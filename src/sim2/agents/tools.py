@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import json
 import copy
+import json
+import re
 from typing import Any, TYPE_CHECKING
 from uuid import uuid4
 
@@ -56,7 +57,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "properties": {
                 "recipient": {"type": "string", "description": "The visible participant name."},
                 "topic": {"type": "string"},
-                "message": {"type": "string", "maxLength": 1000},
+                "message": {"type": "string", "maxLength": 240, "description": "At most two concise sentences grounded in visible evidence."},
             },
             "required": ["recipient", "topic", "message"],
             "additionalProperties": False,
@@ -178,7 +179,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "event": {"type": "string", "description": "A short visible description of the experience being reviewed."},
                 "summary": {"type": "string", "maxLength": 500},
                 "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-                "claim_status": {"type": "string", "enum": ["observed", "confirmed", "promised", "inferred", "failed"], "description": "How strongly the evidence supports the lesson. Use inferred when it is a conclusion rather than a directly observed fact."},
+                "claim_status": {"type": "string", "enum": ["observed", "confirmed", "reported", "promised", "inferred", "disputed", "false", "failed"], "description": "Evidence provenance. Use reported or promised for unverified testimony, inferred for a conclusion, and disputed or false only with corroborating event evidence."},
             },
             "required": ["summary"],
             "additionalProperties": False,
@@ -646,6 +647,19 @@ class AgentToolExecutor:
         return self.platform.perception.listen(self.actor_id, question, limit)
 
     def _send_message(self, recipient: str, topic: str, message: str) -> dict[str, Any]:
+        # Keep instant testimony compact enough that the model does not turn a
+        # short reply into a second narrative scene. The prompt still carries
+        # the evidence-grounding rule; this boundary only enforces the length
+        # contract advertised to every instant interaction.
+        text = str(message or "")
+        sentences = [part for part in re.split(r"(?<=[.!?。！？])", text) if part.strip()]
+        if len(sentences) > 2 or len(text) > 240:
+            return {
+                "status": "rejected",
+                "failed_check": "message_too_long",
+                "retryable": True,
+                "message": "Send at most two sentences and 240 characters. Keep only facts visible in this turn and say when a detail is unknown.",
+            }
         return self.platform.submit_dialogue(self.actor_id, recipient, topic, message)
 
     def _wait(self, reason: str = "") -> dict[str, Any]:

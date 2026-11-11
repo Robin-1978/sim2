@@ -18,8 +18,9 @@ class LearningRuntimeMixin:
             return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Experience summary must be at most 500 characters.", "failed_check": "summary_length", "retryable": True})
         if not 0 <= confidence <= 1:
             return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Confidence must be between 0 and 1.", "failed_check": "confidence", "retryable": True})
-        if claim_status not in {"observed", "confirmed", "promised", "inferred", "failed"}:
-            return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "claim_status must be observed, confirmed, promised, inferred, or failed.", "failed_check": "claim_status", "retryable": True})
+        allowed_claims = {"observed", "confirmed", "reported", "promised", "inferred", "disputed", "false", "failed"}
+        if claim_status not in allowed_claims:
+            return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "claim_status must be observed, confirmed, reported, promised, inferred, disputed, false, or failed.", "failed_check": "claim_status", "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             agent = self.store.get_agent(actor_id)
@@ -42,7 +43,7 @@ class LearningRuntimeMixin:
                     "source_event_type": str(source_event["event_type"]),
                     "source_world_minute": int(source_event["world_minute"]),
                 })
-            elif claim_status in {"observed", "confirmed", "failed"}:
+            elif claim_status in {"observed", "confirmed", "disputed", "false", "failed"}:
                 result = {
                     "status": "rejected",
                     "message": "Observed, confirmed, and failed lessons must cite a recorded event or completed outcome. Use inferred for a conclusion or promised for an unverified commitment.",

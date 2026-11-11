@@ -808,13 +808,14 @@ class ActivityRuntimeMixin:
                 listener = self.store.get_agent(target_id)
             except KeyError:
                 listener = None
+            testimony = self._testimony_metadata(agent, listener) if listener else {}
             dialogue_id = self.store.put_dialogue_exchange(agent["id"], target_id if listener else None, str(topic), minute, {"source": action.get("id"), "message": message, "parameters": parameters})
             self.store.put_memory(agent["id"], "dialogue", {"topic": str(topic), "message": message, "target_id": target_id, "world_minute": minute, "dialogue_id": dialogue_id, "claim_status": "observed", "source_type": "own_statement"})
             if listener:
-                self.store.put_memory(target_id, "testimony", {"topic": str(topic), "message": message, "speaker_id": agent["id"], "world_minute": minute, "dialogue_id": dialogue_id, "claim_status": "promised", "source_type": "testimony"})
+                self.store.put_memory(target_id, "testimony", {"topic": str(topic), "message": message, "speaker_id": agent["id"], "world_minute": minute, "dialogue_id": dialogue_id, "claim_status": "reported", "source_type": "testimony", **testimony})
                 self._apply_configured_relationship_effect(agent, listener, "dialogue.completed", minute)
                 self.store.update_agent(listener["id"], listener)
-            event_id = self.store.append_event("dialogue.completed", agent["id"], minute, {"target_id": target_id, "topic": str(topic), "message": message, "dialogue_id": dialogue_id})
+            event_id = self.store.append_event("dialogue.completed", agent["id"], minute, {"target_id": target_id, "topic": str(topic), "message": message, "dialogue_id": dialogue_id, **testimony})
             result = {"result": "dialogue_recorded", "event_id": event_id}
         configured_event = information.get("event_type") or information.get("event")
         observed: dict[str, Any] = {}

@@ -3,7 +3,7 @@ import json
 
 from sim2.agents.engine import AgentEngine, AgentTurn
 from sim2.agents.quality import evaluate_turn
-from sim2.agents.tools import parse_tool_call, tool_schemas_for_role
+from sim2.agents.tools import AgentToolExecutor, parse_tool_call, tool_schemas_for_role
 from sim2.bootstrap.service import create_instance
 from sim2.platform.runtime import Platform
 from sim2.prompting.renderer import render_context
@@ -229,6 +229,21 @@ def test_instant_message_prompt_states_transaction_boundary(tmp_path: Path):
         schema = next(item for item in tool_schemas_for_role("agent_decision", ["send_message", "wait"]) if item["function"]["name"] == "send_message")
         assert "never transfers state" in schema["function"]["description"]
         assert "physical details absent" in schema["function"]["description"]
+    finally:
+        platform.close()
+
+
+def test_message_rejects_multi_sentence_instant_testimony(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "ungrounded-testimony", tmp_path / "runtime"))
+    try:
+        executor = AgentToolExecutor(platform, role="agent_decision", actor_id="fei_lan")
+        result = executor.execute("send_message", {
+            "recipient": "余歌",
+            "topic": "route",
+            "message": "第一句话给出回应。第二句话说明条件。第三句话补充推测。",
+        })
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "message_too_long"
     finally:
         platform.close()
 

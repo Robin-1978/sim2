@@ -100,6 +100,12 @@ def _memory_line(item: dict[str, Any]) -> str:
     confidence = item.get("confidence")
     if isinstance(confidence, (int, float)):
         metadata.append(f"confidence={float(confidence):.2f}")
+    credibility = item.get("credibility")
+    if isinstance(credibility, (int, float)):
+        metadata.append(f"credibility={float(credibility):.2f}")
+    verification = item.get("verification_status")
+    if verification:
+        metadata.append(f"verification={_plain(verification)}")
     tags = item.get("tags") if isinstance(item.get("tags"), dict) else {}
     for key, label in (("location", "where"), ("participants", "people"), ("behavior", "behavior"), ("topic", "topic"), ("goal", "goal")):
         value = tags.get(key)
@@ -338,7 +344,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 )
         else:
             lines.append("  - no completed or interrupted behavior needs review")
-        lines.append("  Keep an experience only when it is new, durable, and useful for a future decision; otherwise return wait. Never treat a topic or promise as a confirmed fact. Set claim_status: observed, confirmed, promised, inferred, or failed. Write one to three concise sentences, under 500 characters.")
+        lines.append("  Keep an experience only when it is new, durable, and useful for a future decision; otherwise return wait. Never treat a topic, report, or promise as a confirmed fact. Set claim_status: observed, confirmed, reported, promised, inferred, disputed, false, or failed. Use disputed or false only when event evidence contradicts the claim. Write one to three concise sentences, under 500 characters.")
         lines.append("</outcome_review>")
 
     if role == "story":

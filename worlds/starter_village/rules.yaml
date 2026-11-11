@@ -239,6 +239,14 @@ relationship_effects:
     - {relation: trust, delta: 0.02}
   trade.completed:
     - {relation: trust, delta: 0.05}
+social_credibility:
+  base: 0.5
+  trust_weight: 0.35
+  reputation_weight: 0.15
+  trust_relations: [trust]
+  reputation_attribute: reputation
+  reputation_min: -100
+  reputation_max: 100
 needs:
 - id: satiety
   target: 80

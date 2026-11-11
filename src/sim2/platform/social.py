@@ -156,6 +156,53 @@ class SocialRuntimeMixin:
         action = next((item for item in self.store.get_definitions("action_def") if item.get("id") == action_id), None)
         return bool(action and action.get("interaction_policy") == "allow")
 
+    def _testimony_metadata(self, speaker: dict[str, Any], listener: dict[str, Any]) -> dict[str, Any]:
+        """Attach a configured credibility prior without deciding truth."""
+
+        rules = self.store.get_meta("rules", {}) or {}
+        policy = rules.get("social_credibility", {}) or {}
+        base = float(policy.get("base", 0.5) or 0.5)
+        trust_weight = float(policy.get("trust_weight", 0.35) or 0.0)
+        reputation_weight = float(policy.get("reputation_weight", 0.15) or 0.0)
+        trust_relations = {str(item) for item in (policy.get("trust_relations", ["trust"]) or [])}
+        trust_values = [
+            float(item.get("relation_strength", item.get("value", 0)) or 0)
+            for item in self.store.get_relationships(str(listener.get("id")))
+            if str(item.get("relation")) in trust_relations
+        ]
+        trust = max(-1.0, min(1.0, trust_values[0] if trust_values else 0.0))
+        state = speaker.get("initial_state", {}) or {}
+        reputation_key = str(policy.get("reputation_attribute", "reputation") or "reputation")
+        reputation = float(state.get(reputation_key, 0) or 0)
+        rep_min = float(policy.get("reputation_min", -100) or -100)
+        rep_max = float(policy.get("reputation_max", 100) or 100)
+        midpoint = (rep_min + rep_max) / 2.0
+        half_range = max(1e-9, (rep_max - rep_min) / 2.0)
+        reputation_signal = max(-1.0, min(1.0, (reputation - midpoint) / half_range))
+        trait_signals: dict[str, float] = {}
+        for config_key, weight_key, sign in (
+            ("honesty_trait", "honesty_weight", 1.0),
+            ("deception_trait", "deception_weight", -1.0),
+        ):
+            trait_key = policy.get(config_key)
+            if not trait_key:
+                continue
+            value = float((speaker.get("traits", {}) or {}).get(str(trait_key), 0) or 0)
+            bounded = max(0.0, min(1.0, value))
+            trait_signals[str(trait_key)] = bounded
+            base += sign * float(policy.get(weight_key, 0.0) or 0.0) * bounded
+        credibility = max(0.0, min(1.0, base + trust_weight * trust + reputation_weight * reputation_signal))
+        return {
+            "statement_kind": "reported",
+            "verification_status": "unverified",
+            "credibility": round(credibility, 3),
+            "credibility_basis": {
+                "listener_trust": round(trust, 3),
+                "speaker_reputation": round(reputation, 3),
+                "trait_signals": trait_signals,
+            },
+        }
+
     def submit_dialogue(self, speaker_id: str, listener_id: str, topic: str, message: str) -> dict[str, Any]:
         """Record a direct, permission-checked text exchange."""
 
@@ -177,17 +224,18 @@ class SocialRuntimeMixin:
         if not self._available_for_instant_interaction(speaker) or not self._available_for_instant_interaction(listener):
             return {"status": "rejected", "message": "A participant is busy with an action that does not allow instant interaction.", "failed_check": "participant_busy", "retryable": True}
         minute = int(self.store.get_meta("world_minute", 0))
+        testimony = self._testimony_metadata(speaker, listener)
         with self.store.transaction():
             self.store.create_intent(intent_id, speaker_id, "send_message", {"target_id": listener_id, "topic": topic, "message": message}, minute)
             exchange_id = self.store.put_dialogue_exchange(speaker_id, listener_id, topic, minute, {"message": message, "source": "direct_text"})
             self.store.put_memory(speaker_id, "dialogue", {"topic": topic, "message": message, "target_id": listener_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.35, "claim_status": "observed", "source_type": "own_statement"})
-            self.store.put_memory(listener_id, "testimony", {"topic": topic, "message": message, "speaker_id": speaker_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.45, "pending_decision": True, "claim_status": "promised", "source_type": "testimony"})
+            self.store.put_memory(listener_id, "testimony", {"topic": topic, "message": message, "speaker_id": speaker_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.45, "pending_decision": True, "claim_status": "reported", "source_type": "testimony", **testimony})
             self._apply_configured_need_effect(speaker, "dialogue.completed")
             self._apply_configured_need_effect(listener, "dialogue.completed")
             self._apply_configured_relationship_effect(speaker, listener, "dialogue.completed", minute)
             self.store.update_agent(speaker_id, speaker)
             self.store.update_agent(listener_id, listener)
-            event_id = self.store.append_event("dialogue.completed", speaker_id, minute, {"dialogue_id": exchange_id, "target_id": listener_id, "topic": topic, "summary": "A direct exchange was recorded.", "activation": "recipient_next_decision_or_reflection", "duration_minutes": 0, "priority": "normal"})
+            event_id = self.store.append_event("dialogue.completed", speaker_id, minute, {"dialogue_id": exchange_id, "target_id": listener_id, "topic": topic, "summary": "A direct exchange was recorded as unverified testimony.", "activation": "recipient_next_decision_or_reflection", "duration_minutes": 0, "priority": "normal", **testimony})
             result = {"status": "accepted", "intent_id": intent_id, "dialogue_id": exchange_id, "event_id": event_id, "topic": topic}
             self.store.finish_intent(intent_id, "accepted", result)
         return result

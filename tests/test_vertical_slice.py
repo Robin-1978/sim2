@@ -3978,8 +3978,14 @@ def test_dialogue_trade_negotiation_and_observer_text_view(tmp_path: Path):
         assert any(item.get("type") == "testimony" and item.get("message", "").startswith("The western road") for item in testimony)
         testimony_row = next(item for item in testimony if item.get("type") == "testimony")
         assert testimony_row.get("tags", {}).get("participants") == "费兰"
-        assert testimony_row["claim_status"] == "promised"
+        assert testimony_row["claim_status"] == "reported"
         assert testimony_row["source_type"] == "testimony"
+        assert testimony_row["verification_status"] == "unverified"
+        assert 0 <= testimony_row["credibility"] <= 1
+        assert testimony_row["credibility_basis"]["listener_trust"] == pytest.approx(0)
+        testimony_prompt = render_context(platform.decision_view("yu_ge"), "Choose one behavior.")
+        assert "credibility=" in testimony_prompt
+        assert "verification=unverified" in testimony_prompt
         own_statement = next(item for item in platform.store.list_memories("fei_lan", limit=10) if item.get("type") == "dialogue")
         assert own_statement["claim_status"] == "observed"
         assert own_statement["source_type"] == "own_statement"

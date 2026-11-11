@@ -54,7 +54,12 @@ Execution cursors and the previous outcome are excluded from the projection;
 one result cannot recursively embed the entire prior history.
 Reflection may retain a short experience only when it is new and useful.
 `observed`, `confirmed`, and `failed` claims must resolve to a recorded event;
-`promised` and `inferred` remain explicitly weaker claims.  Similarity is a
+`reported`, `promised`, and `inferred` remain explicitly weaker claims.
+Dialogue is stored as reported testimony with `verification_status=unverified`
+and a configured credibility prior based on the listener's trust, the
+speaker's reputation, and optional content-defined traits. Credibility is a
+prior, not a truth result: later observation can mark a claim confirmed,
+disputed, or false. Similarity is a
 deduplication hint, not an automatic merge, and long-term memory has no
 time-only decay.
 
