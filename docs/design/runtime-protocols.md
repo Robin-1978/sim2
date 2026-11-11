@@ -22,6 +22,14 @@ changed after the view was compiled, Platform rejects the intent with
 conditions, permissions, reservations, and targets are always rechecked at
 the commit barrier.
 
+The store uses WAL with `synchronous=NORMAL`. Large worlds disable SQLite's
+threshold auto-checkpoint and run bounded passive checkpoints on a separate
+connection, so a 1,000-person minute does not block while copying the WAL.
+Snapshot, restore and close wait for maintenance checkpoint work; close then
+performs a final truncate checkpoint. A process or OS crash leaves the database
+consistent. A host power loss may lose the latest WAL commit, so operators use
+snapshots as explicit recovery points.
+
 ## Activity lifecycle
 
 One primary activity is represented by one `bt_instance` (`execution_id`).

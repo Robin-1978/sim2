@@ -43,6 +43,13 @@ must first call `validate_world_template` and then submit the exact validated
 object. Platform rejects changed or invalid submissions. The command writes
 human-editable YAML before any optional `--instance-id` bootstrap.
 
+Validation checks executable condition paths, declared attributes and world
+properties, required effect fields such as `delta`, entity types, Action/BT
+references, and generic context resolvers. It then creates a disposable SQLite
+instance and executes one initial behavior per individual. When that smoke test
+cannot start a behavior, its feedback names the failed BT conditions or Action
+preconditions so WorldBuilder can correct the actual cause instead of guessing.
+
 ## Unified template
 
 The template uses these top-level sections. The machine-readable source is
@@ -201,6 +208,11 @@ opening_events.yaml
 player_template.yaml
 prompts/*.yaml        # optional
 ```
+
+Prompt files are optional. Runtime supplies a compact world-neutral protocol
+for Decision, Reflection, Story and God roles when a package omits them. A
+package prompt may replace that wording, while tool schemas and Platform's
+state-mutation boundary remain enforced by code.
 
 `manifest.yaml` lists every imported file. `sim2 validate-world` checks the
 whole package before SQLite exists. Every actual execution mechanism also has

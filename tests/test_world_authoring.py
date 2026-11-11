@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sim2.agents.engine import AgentEngine
+from sim2.agents.engine import AgentEngine, role_policy
 from sim2.bootstrap.service import (
     create_instance,
     describe_config,
@@ -157,6 +157,9 @@ def test_completely_different_world_builds_and_runs_without_platform_changes(tmp
         orbital_prompt = render_context(orbital_view, "Choose one behavior.")
         assert "Satiety" not in orbital_prompt
         assert "Food is inventory" not in orbital_prompt
+        assert "Choose one exact visible behavior" in orbital_prompt
+        assert "Platform reserves costs and applies all state changes" in orbital_prompt
+        assert role_policy(platform, "agent_decision").startswith("You are the decision phase")
         prompt_turn = AgentEngine(platform, OneChoiceProvider()).run(role="agent_decision", actor_id="unit_seven")
         assert prompt_turn.result["status"] == "accepted"
         for _ in range(prompt_turn.result["remaining_minutes"]):
@@ -198,6 +201,20 @@ def test_world_template_validates_generic_context_resolvers():
     assert validate_world_template(template) == {"valid": True, "errors": []}
 
 
+def test_world_template_rejects_unexecutable_condition_and_misspelled_effect_fields():
+    template = orbital_template()
+    template["actions"][0]["preconditions"] = ["actor.location_id == 'reactor_bay'"]
+    template["actions"][0]["effects"][0].pop("delta")
+    template["actions"][0]["effects"][0]["amount"] = 0.1
+    template["rules"]["minute_effects"][0]["effect"].pop("delta")
+    template["rules"]["minute_effects"][0]["effect"]["amount"] = -0.01
+    template["objects"][0].pop("type")
+    errors = validate_world_template(template)["errors"]
+    assert any("unsupported condition path: actor.location_id" in item for item in errors)
+    assert sum("requires numeric delta" in item for item in errors) == 2
+    assert any("fusion_core requires a non-empty type" in item for item in errors)
+
+
 def test_world_builder_agent_validates_exact_template_before_submission():
     provider = BuilderProvider(orbital_template())
     draft = WorldBuilderService(provider).build("Create an orbital relay during a radiation storm.")
@@ -216,3 +233,4 @@ def test_world_builder_runtime_smoke_rejects_structurally_valid_dead_start():
     assert validate_world_template(template)["valid"] is True
     errors = smoke_test_world_template(template)
     assert any("no executable initial behavior" in item for item in errors)
+    assert any("actor.state.charge < 0" in item for item in errors)

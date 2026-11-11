@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from ..actions.conditions import ConditionEngine
 from ..persistence.store import WorldStore, config_hash
 from ..world.schema import AttributeSchema
 
@@ -33,6 +34,18 @@ def world_template_schema() -> dict[str, Any]:
         "type": "object",
         "properties": {"id": {"type": "string", "minLength": 1}, "name": {"type": "string"}},
         "required": ["id"],
+        "additionalProperties": True,
+    }
+    typed_entity = {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "minLength": 1},
+            "type": {"type": "string", "minLength": 1},
+            "name": {"type": "string"},
+            "location_id": {"type": "string"},
+            "initial_state": {"type": "object"},
+        },
+        "required": ["id", "type"],
         "additionalProperties": True,
     }
     location = {
@@ -90,7 +103,19 @@ def world_template_schema() -> dict[str, Any]:
                 "minItems": 1,
                 "items": {
                     "type": "object",
-                    "properties": {"type": {"type": "string"}},
+                    "properties": {
+                        "type": {"type": "string"},
+                        "attribute": {"type": "string"},
+                        "state": {"type": "string"},
+                        "need": {"type": "string"},
+                        "property": {"type": "string"},
+                        "delta": {"type": "number"},
+                        "item": {"type": "string"},
+                        "quantity": {"type": "number"},
+                        "location_id": {"type": "string"},
+                        "entity_id": {"type": "string"},
+                        "value": {},
+                    },
                     "required": ["type"],
                     "additionalProperties": True,
                 },
@@ -119,7 +144,23 @@ def world_template_schema() -> dict[str, Any]:
             "summary": {"type": "string"},
             "entry_conditions": {"type": "array", "items": {"type": "string"}},
             "estimated_minutes": {"type": "integer", "minimum": 1},
-            "nodes": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+            "nodes": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string", "enum": ["action", "subtree", "behavior", "sequence", "parallel", "selector", "condition"]},
+                        "action_id": {"type": "string"},
+                        "behavior_id": {"type": "string"},
+                        "parameters": {"type": "object"},
+                        "expression": {"type": "string"},
+                        "children": {"type": "array", "items": {"type": "object"}},
+                    },
+                    "required": ["type"],
+                    "additionalProperties": True,
+                },
+            },
         },
         "required": ["id", "agent_label", "summary", "nodes"],
         "additionalProperties": True,
@@ -223,8 +264,8 @@ def world_template_schema() -> dict[str, Any]:
             },
             "attributes": {"type": "array", "items": attribute},
             "locations": {"type": "array", "minItems": 1, "items": location},
-            "resources": {"type": "array", "items": identified},
-            "objects": {"type": "array", "items": identified},
+            "resources": {"type": "array", "items": typed_entity},
+            "objects": {"type": "array", "items": typed_entity},
             "factions": {"type": "array", "items": identified},
             "agents": {"type": "array", "minItems": 1, "items": agent},
             "capabilities": {"type": "array", "items": identified},
@@ -236,7 +277,20 @@ def world_template_schema() -> dict[str, Any]:
             "evolution": {"type": "object"},
             "story": {"type": "object"},
             "player_template": {"type": "object"},
-            "initial_events": {"type": "array", "items": identified},
+            "initial_events": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string", "minLength": 1},
+                        "type": {"type": "string", "minLength": 1},
+                        "world_minute": {"type": "integer", "minimum": 0},
+                        "payload": {"type": "object"},
+                    },
+                    "required": ["id", "type", "world_minute", "payload"],
+                    "additionalProperties": True,
+                },
+            },
             "prompts": {"type": "object"},
         },
         "required": ["template_version", "world", "attributes", "locations", "agents", "actions", "behavior_trees", "rules"],
@@ -294,6 +348,8 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
     duplicate_scopes = attribute_ids & {str(key) for key in world_properties}
     if duplicate_scopes:
         errors.append("character attributes and world properties must use distinct ids: " + ", ".join(sorted(duplicate_scopes)))
+    rules = template.get("rules") if isinstance(template.get("rules"), dict) else {}
+    condition_engine = ConditionEngine(rules)
 
     for attribute in collections["attributes"]:
         for field in ("kind", "label", "min", "max", "default", "prompt"):
@@ -316,6 +372,8 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
             if str(route) not in location_ids:
                 errors.append(f"location {location.get('id')} references unknown route {route}")
     for item in collections["resources"] + collections["objects"]:
+        if not str(item.get("type") or "").strip():
+            errors.append(f"{item.get('id')} requires a non-empty type")
         location_id = item.get("location_id") or (item.get("initial_state") or {}).get("location_id")
         if location_id and str(location_id) not in location_ids:
             errors.append(f"{item.get('id')} references unknown location {location_id}")
@@ -334,11 +392,49 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
 
     def validate_expression(expression: Any, owner: str) -> None:
         text = str(expression or "")
+        if text and condition_engine.evaluate_known(text, agent={}, target={}, context={}, world={}) is None:
+            errors.append(f"{owner} uses an unsupported condition path: {text}")
+        for path in re.findall(r"actor\.state\.([A-Za-z0-9_]+)", text):
+            if path not in state_ids:
+                errors.append(f"{owner} references undeclared state attribute {path}")
+        for path in re.findall(r"actor\.need\.([A-Za-z0-9_]+)", text):
+            if path not in need_ids:
+                errors.append(f"{owner} references undeclared need {path}")
+        for path in re.findall(r"world\.([A-Za-z0-9_]+)", text):
+            if path not in world_properties:
+                errors.append(f"{owner} references undeclared world property {path}")
         for attribute_id in attribute_ids:
             if re.search(rf"(?<![A-Za-z0-9_]){re.escape(attribute_id)}(?![A-Za-z0-9_])", text) and not any(
                 path in text for path in (f"actor.state.{attribute_id}", f"actor.need.{attribute_id}", f"target.state.{attribute_id}")
             ):
                 errors.append(f"{owner} must reference {attribute_id} through actor.state, actor.need or target.state")
+
+    def validate_effect(effect: dict[str, Any], owner: str) -> None:
+        effect_type = str(effect.get("type") or "")
+        if effect_type in {"need_delta", "state_delta", "world_property_delta", "relationship_delta"}:
+            if not isinstance(effect.get("delta"), (int, float)):
+                errors.append(f"{owner} {effect_type} requires numeric delta")
+        elif effect_type == "attribute_delta":
+            if not isinstance(effect.get("delta"), (int, float)) and not str(effect.get("formula") or "").strip():
+                errors.append(f"{owner} attribute_delta requires numeric delta or formula")
+        elif effect_type == "attribute_set" and "value" not in effect:
+            errors.append(f"{owner} attribute_set requires value")
+        elif effect_type in {"inventory_add", "inventory_remove", "inventory.consume_item"}:
+            if not str(effect.get("item") or "").strip() or not isinstance(effect.get("quantity", 1), (int, float)):
+                errors.append(f"{owner} {effect_type} requires item and numeric quantity")
+        elif effect_type == "location_set" and not str(effect.get("location_id") or "").strip():
+            errors.append(f"{owner} location_set requires location_id")
+        elif effect_type == "entity_state_set":
+            if not str(effect.get("entity_id") or "").strip() or not str(effect.get("state") or "").strip() or "value" not in effect:
+                errors.append(f"{owner} entity_state_set requires entity_id, state and value")
+        elif effect_type == "public_event" and not str(effect.get("event") or "").strip():
+            errors.append(f"{owner} public_event requires event")
+        elif effect_type in {"status_add", "status_remove"} and not str(effect.get("status") or "").strip():
+            errors.append(f"{owner} {effect_type} requires status")
+        if effect_type == "world_property_delta" and not str(effect.get("property") or "").strip():
+            errors.append(f"{owner} world_property_delta requires property")
+        if effect_type == "relationship_delta" and not str(effect.get("relation") or "").strip():
+            errors.append(f"{owner} relationship_delta requires relation")
 
     for action in collections["actions"]:
         duration = action.get("duration")
@@ -377,6 +473,7 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
                 errors.append(f"action {action.get('id')} has unsupported or missing effect type")
                 continue
             effect_type = str(effect["type"])
+            validate_effect(effect, f"action {action.get('id')} effect")
             if effect_type in {"state_delta", "attribute_delta", "attribute_set"}:
                 key = str(effect.get("attribute") or effect.get("state") or "")
                 if key not in state_ids:
@@ -464,7 +561,6 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
     for behavior_id in behavior_ids - assigned_behaviors:
         errors.append(f"behavior {behavior_id} is not assigned to any agent")
 
-    rules = template.get("rules") if isinstance(template.get("rules"), dict) else {}
     context_values = rules.get("context_values", {}) or {}
     item_groups = rules.get("item_groups", {}) or {}
     context_resolvers = rules.get("context_resolvers", {}) or {}
@@ -536,6 +632,7 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
             continue
         validate_expression(minute_effect.get("condition"), f"minute effect {minute_effect.get('id')} condition")
         effect_type = str(effect.get("type") or "")
+        validate_effect(effect, f"minute effect {minute_effect.get('id')} effect")
         if effect_type in {"state_delta", "attribute_delta", "attribute_set"}:
             key = str(effect.get("attribute") or effect.get("state") or "")
             if key not in state_ids:
@@ -550,6 +647,13 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
             errors.append(f"relationship references unknown source {relation.get('from')}")
         if str(relation.get("to") or "") not in known_relation_entities | {"player"}:
             errors.append(f"relationship references unknown target {relation.get('to')}")
+    for event in collections["initial_events"]:
+        if not str(event.get("type") or "").strip():
+            errors.append(f"initial event {event.get('id')} requires type")
+        if not isinstance(event.get("world_minute"), int) or int(event.get("world_minute", -1)) < 0:
+            errors.append(f"initial event {event.get('id')} requires non-negative integer world_minute")
+        if not isinstance(event.get("payload"), dict):
+            errors.append(f"initial event {event.get('id')} requires payload object")
     return {"valid": not errors, "errors": list(dict.fromkeys(errors))}
 
 

@@ -163,13 +163,21 @@ def smoke_test_world_template(template: dict[str, Any]) -> list[str]:
             try:
                 for agent in platform.store.list_agents():
                     actor_id = str(agent["id"])
-                    view = platform.decision_view(actor_id)
+                    view = platform.view.build_decision_view(actor_id, include_diagnostics=True)
                     candidates = [
                         item for item in (view.get("executable_behaviors") or [])
                         if not item.get("target_required") and not item.get("requires_target")
                     ]
                     if not candidates:
-                        errors.append(f"runtime smoke: agent {actor_id} has no executable initial behavior without an unresolved target")
+                        diagnostics = view.get("unavailable_behavior_diagnostics") or []
+                        detail = "; ".join(
+                            f"{item.get('behavior_id')}: {', '.join(str(value) for value in (item.get('failed') or []))}"
+                            for item in diagnostics[:8]
+                        )
+                        errors.append(
+                            f"runtime smoke: agent {actor_id} has no executable initial behavior"
+                            + (f"; {detail}" if detail else "")
+                        )
                         continue
                     choice = candidates[0]
                     behavior_ref = str(choice.get("behavior_ref") or choice.get("ref") or "")

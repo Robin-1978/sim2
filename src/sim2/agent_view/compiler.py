@@ -9,6 +9,7 @@ from ..actions.capacity import check_action_capacity
 from ..actions.resources import ResourceLedger
 from ..actions.targets import TargetResolver
 from ..agents.tools import tools_for_role
+from ..agents.policies import default_platform_rules, default_protocol
 from ..behavior.estimator import BehaviorDurationEstimator
 from ..evolution.story import eligible_story_beats
 from ..memory.service import MemoryService
@@ -263,8 +264,12 @@ class AgentViewCompiler:
         prompt = prompt.get("agent_prompt", prompt) if isinstance(prompt, dict) else {}
         protocol = prompt.get("protocol", {}) if isinstance(prompt, dict) else {}
         protocol_lines = list(protocol.get(role, []) or []) if isinstance(protocol, dict) else []
+        if not protocol_lines:
+            protocol_lines = default_protocol(role)
         role_rules = prompt.get("role_platform_rules", {}) if isinstance(prompt, dict) else {}
         rules = list((role_rules.get(role) if isinstance(role_rules, dict) else None) or prompt.get("platform_rules", []) or []) if isinstance(prompt, dict) else []
+        if not rules:
+            rules = default_platform_rules(role)
         attributes = self.store.get_meta("attributes", []) or []
         attribute_rules = [
             f"{item.get('label', item.get('id'))}: {item.get('prompt')}"
@@ -433,7 +438,14 @@ class AgentViewCompiler:
             return item
         return fact
 
-    def build_decision_view(self, agent_id: str, role: str = "agent_decision", *, source_event_id: int | None = None) -> dict[str, Any]:
+    def build_decision_view(
+        self,
+        agent_id: str,
+        role: str = "agent_decision",
+        *,
+        source_event_id: int | None = None,
+        include_diagnostics: bool = False,
+    ) -> dict[str, Any]:
         rules = self.store.get_meta("rules", {}) or {}
         self.conditions = ConditionEngine(rules)
         self.rule_compiler = self._new_rule_compiler()
@@ -457,6 +469,7 @@ class AgentViewCompiler:
             capability_modifiers=(self.store.get_meta("rules", {}) or {}).get("capability_modifiers", {}),
         )
         available = []
+        diagnostics: list[dict[str, Any]] = []
         fallback_ids = (self.store.get_meta("rules", {}) or {}).get("fallback_behavior_ids", [])
         catalog_ids = list(dict.fromkeys(
             list(agent.get("initial_bt_ids", []))
@@ -487,6 +500,7 @@ class AgentViewCompiler:
         for bt_id in catalog_ids:
             bt = bt_defs.get(bt_id)
             if not bt:
+                diagnostics.append({"behavior_id": bt_id, "failed": ["behavior definition is not registered"]})
                 continue
             rules = self.store.get_meta("rules", {}) or {}
             condition_context = {
@@ -507,20 +521,33 @@ class AgentViewCompiler:
             }
             condition_context.update(configured_context)
             condition_context.update(self._interaction_context(agent, participants))
-            if any(not self.conditions.evaluate(str(predicate), agent=agent, target=condition_context["target"], context=condition_context, world=self.store.get_meta("world_properties", {}) or {}) for predicate in bt.get("entry_conditions", []) or []):
+            failed_conditions = [
+                str(predicate)
+                for predicate in bt.get("entry_conditions", []) or []
+                if not self.conditions.evaluate(
+                    str(predicate), agent=agent, target=condition_context["target"],
+                    context=condition_context,
+                    world=self.store.get_meta("world_properties", {}) or {},
+                )
+            ]
+            if failed_conditions:
+                diagnostics.append({"behavior_id": bt_id, "failed": failed_conditions})
                 continue
-            if self.rule_compiler.behavior_denial(
+            denial = self.rule_compiler.behavior_denial(
                 behavior=bt,
                 agent=agent,
                 context=condition_context,
                 world=self.store.get_meta("world_properties", {}) or {},
-            ):
+            )
+            if denial:
+                diagnostics.append({"behavior_id": bt_id, "failed": [str(denial.get("message") or "denied by an active rule")]})
                 continue
             cooldown_minutes = max(0, int(bt.get("cooldown_minutes", 0) or 0))
             if cooldown_minutes:
                 last_minute = self.store.last_behavior_minute(agent_id, bt_id)
                 current_minute = int(self.store.get_meta("world_minute", 0))
                 if last_minute is not None and current_minute - last_minute < cooldown_minutes:
+                    diagnostics.append({"behavior_id": bt_id, "failed": [f"cooldown until world minute {last_minute + cooldown_minutes}"]})
                     continue
             steps = []
             costs = []
@@ -528,6 +555,7 @@ class AgentViewCompiler:
             action_successes = []
             action_failures = []
             action_unavailable = False
+            unavailable_action = ""
             simulated_agent = copy.deepcopy(agent)
             estimator.capabilities = simulated_agent.get("capabilities", {}) or {}
             simulated_location = dict(current_location)
@@ -549,6 +577,7 @@ class AgentViewCompiler:
                 action_minutes = estimator._action_minutes(action, parameters, simulated_state.get("location_id"))
                 if not self._action_available(simulated_agent, action, parameters, simulated_location, action_minutes):
                     action_unavailable = True
+                    unavailable_action = str(action.get("id") or "unknown action")
                     break
                 recipe_action = (
                     action.get("duration", {}).get("mode") == "recipe_duration"
@@ -586,8 +615,10 @@ class AgentViewCompiler:
                     except KeyError:
                         simulated_location = {}
             if action_unavailable:
+                diagnostics.append({"behavior_id": bt_id, "failed": [f"Action {unavailable_action} failed its resolved preconditions or costs"]})
                 continue
             if not steps:
+                diagnostics.append({"behavior_id": bt_id, "failed": ["behavior has no executable Action steps"]})
                 continue
             target_text = "Platform resolves permitted targets from the current view."
             target_keys = self._target_parameter_keys(bt, bt_defs)
@@ -796,7 +827,7 @@ class AgentViewCompiler:
                 "name": str(item.get("name", "")),
                 "entries": self.store.institution_ledger_totals(str(item.get("institution_id")), None)[:12],
             })
-        return {
+        result = {
             "context_version": "1", "role": role,
             "world_revision": int(self.store.get_meta("world_revision", 0) or 0),
             "agent_revision": int(agent.get("agent_revision", 0) or 0),
@@ -830,6 +861,9 @@ class AgentViewCompiler:
             "decision_constraints": decision_constraints if role == "agent_decision" else [],
             "last_platform_result": state.get("last_platform_result"), "tools": self._role_tools(role),
         }
+        if include_diagnostics:
+            result["unavailable_behavior_diagnostics"] = diagnostics
+        return result
 
     @staticmethod
     def _view_action_parameters(parameters: dict[str, Any], state: dict[str, Any], context_values: dict[str, Any], *, safe_location_id: str | None = None, resource_node: dict[str, str] | None = None, health_location_id: str | None = None, default_target_id: str | None = None) -> dict[str, Any]:

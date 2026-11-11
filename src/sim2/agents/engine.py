@@ -17,6 +17,7 @@ from .tools import (
     parse_tool_call,
     tool_schemas_for_role,
 )
+from .policies import default_role_policy
 
 
 ROLE_NAMES = {"agent_decision", "agent_reflection", "god", "story", "world_builder"}
@@ -26,7 +27,7 @@ def role_policy(platform: Platform, role: str) -> str:
     prompt = platform.store.get_prompt("agent", {}) or {}
     prompt = prompt.get("agent_prompt", prompt) if isinstance(prompt, dict) else {}
     policies = prompt.get("role_policies", {}) if isinstance(prompt, dict) else {}
-    return str(policies.get(role) or "")
+    return str(policies.get(role) or default_role_policy(role))
 
 
 def configured_role_tools(platform: Platform, role: str) -> list[str] | None:
