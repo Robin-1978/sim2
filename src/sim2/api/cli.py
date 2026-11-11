@@ -45,7 +45,7 @@ def main() -> None:
     build_world.add_argument("--instance-id")
     build_world.add_argument("--runtime-root", type=Path, default=Path.home() / ".sim2")
     build_world.add_argument("--provider", default="remote_beam", help="configured provider used for --brief")
-    build_world.add_argument("--max-completion-tokens", type=int, default=8192, help="creation-time output budget; ordinary runtime roles keep their configured smaller budget")
+    build_world.add_argument("--max-completion-tokens", type=int, help="optional one-off override; otherwise roles.world_builder owns the budget")
     build_world.add_argument("--audit-output", type=Path, help="optional JSON transcript path without credentials")
 
     decide = sub.add_parser("decide", help="run one Decision Agent turn")

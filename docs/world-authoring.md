@@ -44,6 +44,10 @@ sim2 describe-world --config worlds/my_world
 sim2 init --config worlds/my_world --instance-id my-world-001
 ```
 
+WorldBuilder normally uses the provider and budget from
+`roles.world_builder` in `~/.sim2/llm.json`. Pass `--max-completion-tokens`
+only for a deliberate one-run override.
+
 `build-world` never edits an existing instance. With `--brief`, WorldBuilder
 must first call `validate_world_template` and then submit the exact validated
 object. Platform rejects changed or invalid submissions. The command writes

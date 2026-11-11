@@ -15,10 +15,11 @@ behavior description must expose its purpose, requirements, target, time, cost,
 impact, success, and failure in plain language. Internal references are for
 Platform validation; model-facing choices use visible names.
 
-The behavior view still has a small amount of intentional repetition: `when`
-and `requires` are both shown because they answer different questions for the
-model. Nested action costs are collapsed before rendering. These are clarity
-concerns, not permission defects.
+The behavior view keeps `when` and `requires` when their wording communicates
+different information. If a configured `purpose` exactly repeats `summary`, or
+`requires` exactly repeats `when`, the compiler renders the sentence once.
+Nested action costs are collapsed before rendering. These are clarity and
+cost controls, not permission boundaries.
 
 ## Dialogue cost and quality
 
@@ -65,17 +66,16 @@ the source of a bell-installation task. The Runner now accepts the store's
 flattened task projection, and tests assert the source event type, actor and
 summary in the final AgentView.
 
-Completion-token spikes have a separate cause from prompt size.  The remote
-provider was allowed to choose its default completion budget, so a single
-decision could spend thousands of tokens on internal planning and several
-read-tool calls before returning one small choice.  The gateway now sends a
-bounded `max_tokens` value (default 2048; configurable per provider) while the
-existing ReAct read/tool budgets remain in force.  The larger bound leaves
-free providers enough room for one tool call and a concise decision while
-remaining below the unbounded 3k+ completions seen in the baseline. `llm_call`
-records prompt, completion, latency, and tool iteration counts, so a review
-can distinguish a large dynamic context from a verbose model response.  A
-provider requiring a different field can override it through `extra_body`.
+Completion-token spikes have a separate cause from prompt size. Remote models
+could choose an unbounded completion budget, so one decision might spend
+thousands of tokens on internal planning and several read-tool calls before
+returning one small choice. Budgets now belong to Agent roles in
+`~/.sim2/llm.json`; `max_completion_tokens` and `max_agent_iterations` are one
+setting under each role, while providers describe only connection and model
+details. The gateway sends the resolved role's `max_tokens` value. `llm_call`
+records prompt, completion, latency, and tool iteration counts, so a review can
+distinguish a large dynamic context from a verbose model response. A provider
+requiring a different transport field can override it through `extra_body`.
 
 Decision, Story, and God sessions also cap ordinary read tools at two per
 turn and retain only the initial snapshot plus a short ReAct tail.  This keeps
