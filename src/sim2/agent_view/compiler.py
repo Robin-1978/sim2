@@ -440,17 +440,51 @@ class AgentViewCompiler:
         """Replace compact config references in facts with visible names."""
 
         if isinstance(fact, str) and ":" in fact:
-            prefix, value = fact.split(":", 1)
-            try:
-                visible_value = self.store.get_entity(value).get("name", value)
-            except KeyError:
-                visible_value = value.replace("_", " ")
-            return f"{prefix.replace('_', ' ').title()}: {visible_value}"
+            prefix, raw_value = fact.split(":", 1)
+            visible_parts: list[str] = []
+            for value in raw_value.split(":"):
+                value = value.strip()
+                try:
+                    entity_name = self.store.get_entity(value).get("name")
+                except KeyError:
+                    entity_name = None
+                visible_parts.append(str(entity_name or value.replace("_", " ")))
+            return self._visible_text(f"{prefix.replace('_', ' ').title()}: {' — '.join(visible_parts)}")
         if isinstance(fact, dict) and "fact" in fact:
             item = dict(fact)
             item["fact"] = self._humanize_fact(item["fact"])
             return item
-        return fact
+        return self._visible_text(fact) if isinstance(fact, str) else fact
+
+    def _visible_text(self, value: Any) -> str:
+        """Replace configured entity keys in prose shown to an Agent.
+
+        Event and discovery facts are authored as ordinary text, so a package
+        can mention a location or object by its stable key.  Those keys are
+        useful to SQLite but are not readable Agent choices.  Resolve exact
+        entity tokens here without changing event types, fact keys, or
+        free-form text that merely contains a similar word.
+        """
+
+        text = str(value)
+        entities: list[tuple[str, str]] = []
+        for entity in self.store.entities_of_type("location") + self.store.entities_of_type("agent") + self.store.entities_of_type("object"):
+            key = str(entity.get("id") or "")
+            name = str(entity.get("name") or key)
+            if key and name and key != name:
+                entities.append((key, name))
+        # Include resource/material/artifact/document keys without assuming a
+        # particular world vocabulary; ``entities_of_type`` is cheap for the
+        # bounded Agent projection and keeps new worlds generic.
+        for entity_type in ("resource", "material", "artifact", "document", "tool", "consumable", "shared_stock", "market_stock"):
+            for entity in self.store.entities_of_type(entity_type):
+                key = str(entity.get("id") or "")
+                name = str(entity.get("name") or key)
+                if key and name and key != name:
+                    entities.append((key, name))
+        for key, name in sorted(set(entities), key=lambda item: len(item[0]), reverse=True):
+            text = re.sub(rf"(?<![A-Za-z0-9]){re.escape(key)}(?![A-Za-z0-9])", name, text)
+        return text
 
     def build_decision_view(
         self,
@@ -1070,8 +1104,8 @@ class AgentViewCompiler:
                 "event_type": source_event.get("event_type"),
                 "actor": actor_name,
                 "location": location_name,
-                "result": outcome.get("result") or source_event.get("result") or source_event.get("fact") or "recorded",
-                "fact": source_event.get("fact") or (outcome.get("expected") or {}).get("summary") or "",
+                "result": self._visible_text(outcome.get("result") or source_event.get("result") or source_event.get("fact") or "recorded"),
+                "fact": self._humanize_fact(source_event.get("fact") or (outcome.get("expected") or {}).get("summary") or ""),
                 "world_minute": source_event.get("world_minute"),
             }
             # Information facts are persisted separately from the event
@@ -1098,7 +1132,7 @@ class AgentViewCompiler:
                 if str(row["agent_id"] or "") != str(actor_id) or fact_data.get("observed_at") not in {source_minute, str(source_minute)}:
                     continue
                 if fact_data.get("fact"):
-                    validated_source["fact"] = str(fact_data["fact"])
+                    validated_source["fact"] = self._humanize_fact(str(fact_data["fact"]))
                     validated_source["fact_key"] = str(row["fact_key"] or fact_data.get("source_id") or "")
                     break
         audience_candidates = self._story_audience_candidates(recent_events)
@@ -1120,10 +1154,10 @@ class AgentViewCompiler:
             choices.append({
                 "ref": f"story:{beat_id}",
                 "choice": str(beat.get("agent_label") or beat.get("summary") or beat_id),
-                "summary": str(beat.get("summary", "")),
-                "when": "; ".join(sorted(trigger_events)) or "The latest evidence supports a new story direction.",
-                "requires": "; ".join(sorted(trigger_facts)) or "A recent validated discovery is required.",
-                "audience": [str(item) for item in (beat.get("audience", []) or [])],
+                "summary": self._visible_text(str(beat.get("summary", ""))),
+                "when": self._visible_text("; ".join(sorted(trigger_events))) or "The latest evidence supports a new story direction.",
+                "requires": "; ".join(self._humanize_fact(item) for item in sorted(trigger_facts)) or "A recent validated discovery is required.",
+                "audience": [self._visible_text(str(item)) for item in (beat.get("audience", []) or [])],
                 "impact": ["Platform records the beat, informs its configured audience, and unlocks only configured behaviors."],
             })
         prompt_protocol, platform_rules = self._prompt_sections(role)
@@ -1136,7 +1170,7 @@ class AgentViewCompiler:
             except (TypeError, json.JSONDecodeError):
                 data = {}
             fact = data.get("fact") or data.get("summary")
-            text = str(fact or str(row["fact_key"]).replace(":", " — ").replace("_", " ")).strip()
+            text = str(self._humanize_fact(str(fact or str(row["fact_key"]).replace(":", " — ").replace("_", " ")))).strip()
             fact_key = str(row["fact_key"] or "").strip()
             normalized_text = text.casefold()
             if (fact_key and fact_key in seen_fact_keys) or normalized_text in seen_fact_text:
@@ -1154,7 +1188,7 @@ class AgentViewCompiler:
             "self": {"id": actor_id, "name": "Story Agent", "role": role, "status": "ready", "location": "world", "goal": "Turn validated discoveries into coherent continuing story beats."},
             "identity": {"traits": {}, "beliefs": [], "capabilities": {"story_scope": True}},
             "needs": {}, "inventory": {}, "injuries": [], "drives": [],
-            "observation": {"facts": [str(item.get("event_type", "event")) + ": " + str(item.get("summary") or item.get("fact") or item.get("result") or "validated world result") for item in recent_events[:10]], "source": "validated_world_events"},
+            "observation": {"facts": [self._visible_text(str(item.get("event_type", "event")) + ": " + str(item.get("summary") or item.get("fact") or item.get("result") or "validated world result")) for item in recent_events[:10]], "source": "validated_world_events"},
             "validated_source": validated_source,
             "nearby_entities": [], "known_facts": [{"fact": fact, "source_type": "world_knowledge", "confidence": 1.0} for fact in known_facts],
             "audience_candidates": audience_candidates,
