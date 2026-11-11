@@ -366,7 +366,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             lines.append("  no validated source event; return wait")
         lines.append("</validated_source>")
         lines.append("<story_state>")
-        lines.append("  Choose one configured beat whose evidence is present. If none is listed, propose an emergent beat grounded in the latest validated event.")
+        lines.append("  Choose one configured beat whose evidence is present. If none is listed, propose an emergent beat using only the latest validated event's fact, actor, location, and result; do not add numbers, measurements, causes, or details from an unrelated memory.")
         candidates = context.get("audience_candidates") or []
         lines.append("  <audience_candidates>")
         lines.extend([

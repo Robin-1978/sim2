@@ -490,6 +490,25 @@ class WorldEvolutionRuntimeMixin:
             # movement. Require a matching event in the same chain before
             # allowing those claims into persistent story state.
             narrative = " ".join(str(proposal.get(key, "")) for key in ("summary", "fact", "goal_hint"))
+            source_text = " ".join(
+                str(source_event.get(key, ""))
+                for key in ("event_type", "summary", "fact", "result", "actor_id", "location")
+            )
+            narrative_numbers = set(re.findall(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?", narrative))
+            source_numbers = set(re.findall(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?", source_text))
+            if not narrative_numbers <= source_numbers:
+                return self._reject_intent(
+                    intent_id,
+                    actor_id,
+                    "propose_story_beat",
+                    proposal,
+                    {
+                        "status": "rejected",
+                        "message": "An emergent beat adds a numeric detail absent from the validated source event. State only the source result or wait for a confirming observation.",
+                        "failed_check": "story_unverified_numeric_detail",
+                        "retryable": True,
+                    },
+                )
             claim_guard = story_root.get("narrative_claim_guard", {}) or {}
             action_claims = tuple(str(item).casefold() for item in (claim_guard.get("terms") or []))
             if any(term in narrative.casefold() for term in action_claims):

@@ -3172,6 +3172,29 @@ def test_story_accepts_source_scoped_emergent_beat_without_redundant_summary(tmp
         platform.close()
 
 
+def test_story_rejects_numeric_detail_absent_from_source_event(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "story-numeric-grounding-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            source_event = platform.store.append_event(
+                "exploration.completed", "lu_xingzhou", 12,
+                {"summary": "The Greywood route was surveyed.", "fact": "A route was recorded."},
+            )
+        result = AgentToolExecutor(
+            platform, role="story", actor_id="story", source_event_ids=[source_event]
+        ).execute("propose_story_beat", {
+            "beat": "Route surveyed",
+            "fact": "The route was surveyed and its stock is 48.",
+            "summary": "The route survey is complete.",
+            "audience": ["陆行舟"],
+        })
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "story_unverified_numeric_detail"
+    finally:
+        platform.close()
+
+
 def test_step_commits_each_tick_before_a_later_tick_fails(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "tick-commit-world", tmp_path / "runtime")
