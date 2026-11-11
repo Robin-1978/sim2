@@ -400,6 +400,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("  - In a behavior_constraint, every listed BT is blocked; list only the blocked BT, never the desired follow-up BT.")
         lines.append("  - rule.action_names must use exact Action names from world_action_catalog; a BT name is not an Action name.")
         lines.append("  - A typed signal records or wakes work; prose descriptions never enforce policy. To block behavior, use effect type behavior_constraint or a denial effect.")
+        lines.append("  - Use the exact machine field in rule_condition_fields, including underscores inside world[\"...\"]. A God proposal must not wake God itself; use a character/follow-up behavior or wait.")
         lines.append("</world_proposal_contract>")
         progress_candidates = context.get("world_progress_candidates") or []
         lines.append("<configured_public_progress>")

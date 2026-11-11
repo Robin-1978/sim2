@@ -1385,7 +1385,7 @@ class AgentViewCompiler:
                 "purpose": action.get("agent_summary") or action.get("description") or "configured action",
             })
         condition_fields = [
-            {"condition": f'world["{str(key).replace("_", " ")}"]', "meaning": str(key).replace("_", " ")}
+            {"condition": f'world["{str(key)}"]', "meaning": str(key).replace("_", " ")}
             for key in (self.store.get_meta("world_properties", {}) or {})
         ]
         condition_fields.extend(
