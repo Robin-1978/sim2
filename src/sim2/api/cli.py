@@ -10,6 +10,7 @@ from ..agents.engine import AgentEngine
 from ..bootstrap.service import create_instance, describe_config, validate_config, world_template_schema, write_world_package_from_template
 from ..llm.gateway import LLMRouter
 from ..platform.runtime import Platform
+from worlds import world_path
 from .text import TextWorldSession
 from .http import ControlHTTPServer
 from .map_view import render_topology_map
@@ -20,7 +21,9 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     init = sub.add_parser("init", help="create a new SQLite world instance")
-    init.add_argument("--config", type=Path, required=True)
+    init_source = init.add_mutually_exclusive_group()
+    init_source.add_argument("--config", type=Path, help="world package directory; defaults to the bundled Starter Village")
+    init_source.add_argument("--world", help="bundled world id; defaults to starter_village")
     init.add_argument("--instance-id", required=True)
     init.add_argument("--runtime-root", type=Path, default=Path.home() / ".sim2")
 
@@ -104,7 +107,8 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.command == "init":
-        db = create_instance(args.config, args.instance_id, args.runtime_root)
+        config = args.config or world_path(args.world or "starter_village")
+        db = create_instance(config, args.instance_id, args.runtime_root)
         print(json.dumps({"db_path": str(db)}, ensure_ascii=False))
         return
     if args.command == "validate-world":

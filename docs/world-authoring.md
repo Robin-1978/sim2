@@ -12,6 +12,12 @@ source of truth. The original package and its `config_version` remain an audit
 reference; runtime evolution writes validated definitions and state only to the
 instance database.
 
+Wheels include Starter Village as the `worlds.starter_village` package. A fresh
+installation can therefore run `sim2 init --instance-id my-world-001` without a
+source checkout. Additional bundled worlds use sibling packages under `worlds/`;
+`--world <id>` selects one, while `--config <path>` initializes a reviewed local
+package.
+
 ## Authoring commands
 
 ```bash

@@ -24,8 +24,14 @@ bge = [
 [project.scripts]
 sim2 = "sim2.api.cli:main"
 
+[tool.setuptools.packages.find]
+where = ["src", "."]
+include = ["sim2*", "worlds", "worlds.*"]
+exclude = ["artifacts*", "docs*", "examples*", "scripts*", "tests*"]
+
 [tool.setuptools.package-data]
 sim2 = ["world_builder/*.yaml"]
+"worlds.starter_village" = ["*.yaml", "prompts/*.yaml"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

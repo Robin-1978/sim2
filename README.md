@@ -10,11 +10,15 @@ Each individual Agent has two phases: a short decision phase that selects a Plat
 
 ```bash
 python -m pip install -e .
-sim2 init --config worlds/starter_village --instance-id mist-village-001
+sim2 init --instance-id mist-village-001
 DB=~/.sim2/instances/mist-village-001/world.sqlite3
 sim2 status --db "$DB"
 sim2 health --db "$DB"
 ```
+
+The installed package includes Starter Village. Use `--world` to select another
+bundled world or `--config worlds/my_world` to initialize a world package from
+the current checkout.
 
 Open the live TUI with a map, timeline, character table and pause/step controls:
 
