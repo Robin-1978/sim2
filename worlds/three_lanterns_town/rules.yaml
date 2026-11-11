@@ -27,6 +27,13 @@ fallback_behavior_ids:
 - inspect_cistern
 - survey_old_road
 - secure_north_watch
+capability_progression:
+  research: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
+  gathering: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
+  watch: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
+  exploration: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
+  conversation: {minimum_completed_outcomes: 4, max_delta: 0.08, max_value: 1.0}
+  stewardship: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
 capability_aliases:
   inspect:
   - stewardship

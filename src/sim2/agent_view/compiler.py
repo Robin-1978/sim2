@@ -955,6 +955,21 @@ class AgentViewCompiler:
                 "name": str(item.get("name", "")),
                 "entries": self.store.institution_ledger_totals(str(item.get("institution_id")), None)[:12],
             })
+        story_goals = list(agent.get("story_goals", []) or [])[-3:]
+        agent_name = str(agent.get("name", agent_id))
+        active_story_beats: list[dict[str, Any]] = []
+        for item in self.store.recent_events(limit=40):
+            if str(item.get("event_type", "")) != "story.beat.activated":
+                continue
+            audience = [str(value) for value in (item.get("audience", []) or [])]
+            if agent_id in audience or agent_name in audience:
+                active_story_beats.append({
+                    "summary": str(item.get("summary", "")),
+                    "beat_id": str(item.get("beat_id", "")),
+                    "world_minute": int(item.get("world_minute", 0) or 0),
+                })
+            if len(active_story_beats) >= 3:
+                break
         result = {
             "context_version": "1", "role": role,
             "world_revision": int(self.store.get_meta("world_revision", 0) or 0),
@@ -985,6 +1000,8 @@ class AgentViewCompiler:
             "pending_institutions": pending_institutions,
             "active_institutions": active_institutions,
             "institution_ledgers": institution_ledgers,
+            "story_goals": story_goals,
+            "active_story_beats": active_story_beats,
             "executable_behaviors": self._assign_choices(available) if role == "agent_decision" else [],
             "decision_constraints": decision_constraints if role == "agent_decision" else [],
             "last_platform_result": self._with_behavior_choice(

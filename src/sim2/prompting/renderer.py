@@ -303,6 +303,18 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.extend([f"      {_memory_line(item)}" for item in (long_memories or [])[:4]] or ["      memory: none"])
         lines.append("    </long_term_memory>")
     lines.append("  </knowledge_and_memory>")
+    story_goals = context.get("story_goals") or []
+    active_beats = context.get("active_story_beats") or []
+    if story_goals or active_beats:
+        lines.append("  <story_directives>")
+        for goal in story_goals[:3]:
+            lines.append(f"    goal: {_line(goal)}")
+        for beat in active_beats[:3]:
+            if isinstance(beat, dict):
+                lines.append(
+                    f"    beat: {_line(beat.get('summary'))} at world minute {_line(beat.get('world_minute'))}"
+                )
+        lines.append("  </story_directives>")
     lines.append("<recent_actions>")
     recent_actions = context.get("recent_actions") or []
     recent_lines = []

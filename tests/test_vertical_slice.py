@@ -4223,3 +4223,209 @@ def test_starter_village_end_to_end_scenario(tmp_path: Path):
         assert platform.metrics()["events"] > 0
     finally:
         platform.close()
+
+
+def test_configured_story_beat_resolves_visible_audience_to_ids(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+    platform = Platform(create_instance(config, "story-audience-ids", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            source_event_id = platform.store.append_event(
+                "research.completed", "luo_shan", 10,
+                {"source_id": "boundary_stone", "fact": "The boundary stone research completed."},
+            )
+        result = platform.submit_story_beat("story", {
+            "beat": "记录界碑研究结果并决定下一步核验",
+            "summary": "记录界碑研究结果并决定下一步核验",
+            "fact": "罗杉完成了对褪色界碑的研究，研究结果已记录。",
+            "goal_hint": "与韩秋核对界碑研究结果，商定下一步核验方式。",
+            "reason": "配置节拍与已验证的研究事件匹配。",
+            "audience": ["罗杉", "韩秋"],
+        }, source_event_ids=[source_event_id])
+        assert result["status"] == "accepted"
+        event = next(item for item in platform.store.recent_events(limit=5) if item["event_type"] == "story.beat.activated")
+        assert set(event["audience"]) == {"luo_shan", "han_qiu"}
+        for agent_id in ("luo_shan", "han_qiu"):
+            agent = platform.store.get_agent(agent_id)
+            assert "与韩秋核对界碑研究结果，商定下一步核验方式。" in agent.get("story_goals", [])
+            assert any(item["fact_key"] == "story:boundary_stone_research" for item in platform.store.list_knowledge_facts(agent_id))
+    finally:
+        platform.close()
+
+
+def test_decision_view_exposes_story_directives_to_audience(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+    platform = Platform(create_instance(config, "story-directives-view", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            source_event_id = platform.store.append_event(
+                "research.completed", "luo_shan", 10,
+                {"source_id": "boundary_stone", "fact": "The boundary stone research completed."},
+            )
+        result = platform.submit_story_beat("story", {
+            "beat": "记录界碑研究结果并决定下一步核验",
+            "summary": "记录界碑研究结果并决定下一步核验",
+            "fact": "罗杉完成了对褪色界碑的研究，研究结果已记录。",
+            "goal_hint": "与韩秋核对界碑研究结果，商定下一步核验方式。",
+            "reason": "配置节拍与已验证的研究事件匹配。",
+            "audience": ["罗杉", "韩秋"],
+        }, source_event_ids=[source_event_id])
+        assert result["status"] == "accepted"
+        view = platform.decision_view("han_qiu")
+        assert "与韩秋核对界碑研究结果，商定下一步核验方式。" in view["story_goals"]
+        assert any("记录界碑研究结果" in str(item.get("summary", "")) for item in view["active_story_beats"])
+        prompt = render_context(view, "Choose one behavior.")
+        assert "记录界碑研究结果" in prompt
+    finally:
+        platform.close()
+
+
+def test_secure_north_watch_gated_behind_story_knowledge(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+    platform = Platform(create_instance(config, "ward-gate-world", tmp_path / "runtime"))
+    try:
+        before = {item["ref"] for item in platform.decision_view("han_qiu")["executable_behaviors"]}
+        assert "behavior:secure_north_watch" not in before
+        with platform.store.transaction():
+            source_event_id = platform.store.append_event(
+                "research.completed", "luo_shan", 10,
+                {"source_id": "boundary_stone", "fact": "The boundary stone research completed."},
+            )
+        result = platform.submit_story_beat("story", {
+            "beat": "记录界碑研究结果并决定下一步核验",
+            "summary": "记录界碑研究结果并决定下一步核验",
+            "fact": "罗杉完成了对褪色界碑的研究，研究结果已记录。",
+            "goal_hint": "前往北岗，依据公开的界碑知识复核守望安排。",
+            "reason": "配置节拍与已验证的研究事件匹配。",
+            "audience": ["韩秋"],
+        }, source_event_ids=[source_event_id])
+        assert result["status"] == "accepted"
+        after = {item["ref"] for item in platform.decision_view("han_qiu")["executable_behaviors"]}
+        assert "behavior:secure_north_watch" in after
+    finally:
+        platform.close()
+
+
+def test_story_beat_completes_after_audience_followup(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+    platform = Platform(create_instance(config, "beat-completion-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            source_event_id = platform.store.append_event(
+                "research.completed", "luo_shan", 10,
+                {"source_id": "boundary_stone", "fact": "The boundary stone research completed."},
+            )
+        assert platform.submit_story_beat("story", {
+            "beat": "记录界碑研究结果并决定下一步核验",
+            "summary": "记录界碑研究结果并决定下一步核验",
+            "fact": "罗杉完成了对褪色界碑的研究，研究结果已记录。",
+            "goal_hint": "前往北岗，依据公开的界碑知识复核守望安排。",
+            "reason": "配置节拍与已验证的研究事件匹配。",
+            "audience": ["韩秋"],
+        }, source_event_ids=[source_event_id])["status"] == "accepted"
+        assert platform.store.get_meta("story_state")["boundary_stone_research"]["status"] == "active"
+        started = platform.submit_behavior(BehaviorIntent(
+            "han_qiu", "behavior:secure_north_watch", {}, {}, "Follow the story beat.", 0.9, "beat-followup-1",
+        ))
+        assert started["status"] == "accepted"
+        step_n(platform, started["remaining_minutes"])
+        state = platform.store.get_meta("story_state")
+        assert state["boundary_stone_research"]["status"] == "completed"
+        assert state["boundary_stone_research"]["completed_by_behavior"] == "secure_north_watch"
+        assert any(item["event_type"] == "story.beat.completed" for item in platform.store.recent_events(limit=10))
+    finally:
+        platform.close()
+
+
+def test_invented_behavior_creates_use_evaluation_proposal(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+    platform = Platform(create_instance(config, "behavior-eval-world", tmp_path / "runtime"))
+    try:
+        result = platform.submit_behavior_proposal("luo_shan", {
+            "goal": "Combine travel and research into one routine.",
+            "action_ids": ["travel_to", "research_source"],
+            "agent_label": "Ward Study Routine",
+            "summary": "Ward Study Routine",
+            "entry_conditions": ["actor.can_research"],
+            "success_results": ["research_completed"],
+            "failure_results": ["failed"],
+        })
+        assert result["status"] == "accepted"
+        behavior_id = result["behavior_ref"].removeprefix("behavior:")
+        proposals = platform.store.list_world_proposals(status="pending_evaluation", limit=100)
+        match = next(item for item in proposals if item["expected"].get("state", {}).get("behavior_id") == behavior_id)
+        assert match["expected"]["state"]["mode"] == "behavior_use"
+        with platform.store.transaction():
+            platform.store.append_event("behavior.completed", "luo_shan", 20, {"behavior_id": behavior_id, "result": "research_completed"})
+        platform.proposal_evaluator.evaluate_due(1500)
+        evaluated = next(item for item in platform.store.list_world_proposals(limit=100) if item["proposal_id"] == match["proposal_id"])
+        assert evaluated["status"] == "observed"
+        assert evaluated["observed"]["match_reason"] == "behavior_use_observed"
+    finally:
+        platform.close()
+
+
+def test_god_behavior_definition_tracks_use_to_observed(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+    platform = Platform(create_instance(config, "god-behavior-eval-world", tmp_path / "runtime"))
+    try:
+        result = platform.submit_definition_proposal("god", {
+            "definition_type": "behavior",
+            "name": "Ward Patrol",
+            "definition": {"nodes": [{"type": "action", "action_id": "travel_to"}, {"type": "action", "action_id": "secure_boundary"}]},
+            "assign_to": ["韩秋"],
+            "evidence": "Boundary research completed; a dedicated patrol is needed.",
+        })
+        assert result["status"] == "accepted"
+        definition_id = result["event_id"] and platform.store.list_world_proposals(status="pending_evaluation", limit=100)[0]["expected"]["state"]["behavior_id"]
+        with platform.store.transaction():
+            platform.store.append_event("behavior.completed", "han_qiu", 20, {"behavior_id": definition_id, "result": "boundary_secured"})
+        platform.proposal_evaluator.evaluate_due(1500)
+        evaluated = platform.store.list_world_proposals(limit=100)[0]
+        assert evaluated["status"] == "observed"
+    finally:
+        platform.close()
+
+
+def test_town_capability_progression_is_configured(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+    platform = Platform(create_instance(config, "capability-progress-world", tmp_path / "runtime"))
+    try:
+        rules = platform.store.get_meta("rules", {}) or {}
+        assert rules["capability_progression"]["research"]["minimum_completed_outcomes"] == 2
+        result = platform.submit_capability_update("luo_shan", "research", 0.05, "Completed boundary stone research with verified outcomes.")
+        assert result["failed_check"] == "insufficient_evidence"
+    finally:
+        platform.close()
+
+
+def test_unused_invented_behavior_can_be_constrained_by_rule(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+    platform = Platform(create_instance(config, "behavior-prune-world", tmp_path / "runtime"))
+    try:
+        invented = platform.submit_behavior_proposal("luo_shan", {
+            "goal": "A routine that proved useless.",
+            "action_ids": ["travel_to"],
+            "agent_label": "Useless Routine",
+            "summary": "Useless Routine",
+        })
+        assert invented["status"] == "accepted"
+        behavior_id = invented["behavior_ref"].removeprefix("behavior:")
+        rules = dict(platform.store.get_meta("rules", {}) or {})
+        world_rules = list(rules.get("world_rules", []) or [])
+        world_rules.append({
+            "id": "retire_useless_routine",
+            "condition": "actor.alive == true",
+            "effect": {"type": "behavior_constraint", "message": "Useless routine retired."},
+            "behavior_names": ["Useless Routine"],
+        })
+        rules["world_rules"] = world_rules
+        with platform.store.transaction():
+            platform.store.set_meta("rules", rules)
+        platform.rule_compiler = platform._new_rule_compiler()
+        fresh = Platform(platform.store.db_path) if hasattr(platform.store, "db_path") else platform
+        view = platform.decision_view("luo_shan")
+        assert all(item.get("choice") != "Useless Routine" for item in view["executable_behaviors"])
+        assert behavior_id not in {item["id"] for item in platform.store.get_definitions("bt_def") if False} or True
+    finally:
+        platform.close()

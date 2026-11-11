@@ -120,6 +120,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_watch
   - actor.alive
+  - actor.knowledge.story:boundary_stone_research
   estimated_minutes: 46
   cooldown_minutes: 720
   nodes:

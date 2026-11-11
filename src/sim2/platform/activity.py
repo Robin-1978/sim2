@@ -1053,4 +1053,40 @@ class ActivityRuntimeMixin:
         behavior_event_id = self.store.append_event(f"behavior.{status}", agent["id"], minute, {"execution_id": execution_id, "behavior_id": behavior_id, "result": result, "outcome": outcome})
         if status == "completed":
             self._record_active_institution_entries(behavior_event_id, "behavior.completed", agent["id"], minute, {"execution_id": execution_id, "behavior_id": behavior_id, "result": result, "outcome": outcome})
+            self._complete_story_beats_for_actor(agent["id"], behavior_id, minute)
+
+    def _complete_story_beats_for_actor(self, actor_id: str, behavior_id: str, minute: int) -> None:
+        """Mark active audience beats completed after a follow-up behavior.
+
+        Beats are one-shot narrative threads.  Completing them when an
+        audience member executes any behavior keeps the story catalog from
+        filling with stale threads and gives Story a verifiable close-out.
+        """
+
+        try:
+            state = dict(self.store.get_meta("story_state", {}) or {})
+        except Exception:
+            return
+        changed = False
+        for beat_id, entry in list(state.items()):
+            if beat_id == "emergent_beats" or not isinstance(entry, dict):
+                continue
+            if entry.get("status") != "active":
+                continue
+            audience = [str(item) for item in (entry.get("audience", []) or [])]
+            try:
+                agent_name = str(self.store.get_agent(actor_id).get("name", actor_id))
+            except KeyError:
+                agent_name = str(actor_id)
+            if str(actor_id) not in audience and agent_name not in audience:
+                continue
+            entry = dict(entry)
+            entry["status"] = "completed"
+            entry["completed_minute"] = int(minute)
+            entry["completed_by_behavior"] = str(behavior_id)
+            state[beat_id] = entry
+            changed = True
+            self.store.append_event("story.beat.completed", actor_id, minute, {"beat_id": beat_id, "behavior_id": behavior_id})
+        if changed:
+            self.store.set_meta("story_state", state)
 

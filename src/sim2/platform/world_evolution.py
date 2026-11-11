@@ -301,6 +301,12 @@ class WorldEvolutionRuntimeMixin:
                             unlocked.append(definition["id"])
                             agent["unlocked_bt_ids"] = unlocked
                             self.store.update_agent(agent_id, agent)
+                    self.store.put_world_proposal(
+                        f"behavior_use:{definition['id']}:{intent_id}", intent_id, actor_id, "behavior_definition",
+                        "pending_evaluation", world_minute, world_minute + 1440,
+                        {"summary": f"Invented behavior {definition['id']} is used.", "state": {"mode": "behavior_use", "behavior_id": str(definition["id"]), "minimum_completions": 1}},
+                        {"definition_id": str(definition["id"])},
+                    )
             event_id = self.store.append_event("definition.registered", actor_id, world_minute, {"definition_type": definition_type, "name": name, "definition_id": definition.get("id"), "assigned_to": [visible for _, visible in resolved_agents], "evidence": str(proposal.get("evidence") or "")})
             result = {"status": "accepted", "intent_id": intent_id, "definition_type": definition_type, "name": name, "registered": True, "assigned_to": [visible for _, visible in resolved_agents], "event_id": event_id}
             self.store.finish_intent(intent_id, "accepted", result)
@@ -561,16 +567,17 @@ class WorldEvolutionRuntimeMixin:
             if not required_facts <= observed_facts:
                 return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "The configured story beat is missing one or more required facts.", "failed_check": "story_facts", "retryable": True, "missing_facts": sorted(required_facts - observed_facts)})
         minute = int(self.store.get_meta("world_minute", 0))
-        audience = [str(item) for item in (beat.get("audience", []) or [])]
+        raw_audience = [str(item) for item in (beat.get("audience", []) or [])]
+        resolved_audience: list[str] = []
+        for value in raw_audience[:8]:
+            canonical = self.targets.canonical_id(value)
+            if canonical and self.store.connection.execute("SELECT 1 FROM agent_state WHERE id=?", (canonical,)).fetchone():
+                resolved_audience.append(canonical)
+        if raw_audience and not resolved_audience:
+            return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "An emergent beat needs at least one exact visible character audience.", "failed_check": "story_audience", "retryable": True})
+        audience = resolved_audience
         if emergent:
-            resolved_audience: list[str] = []
-            for value in audience[:8]:
-                canonical = self.targets.canonical_id(value)
-                if canonical and self.store.connection.execute("SELECT 1 FROM agent_state WHERE id=?", (canonical,)).fetchone():
-                    resolved_audience.append(canonical)
-            audience = resolved_audience
-            if not audience:
-                return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "An emergent beat needs at least one exact visible character audience.", "failed_check": "story_audience", "retryable": True})
+            beat["audience"] = list(audience)
         registered = {item["id"] for item in self.store.get_definitions("bt_def")}
         if emergent:
             labels = {
@@ -580,7 +587,7 @@ class WorldEvolutionRuntimeMixin:
             beat["unlock_behavior_ids"] = [labels["".join(char for char in str(value).casefold() if char.isalnum())] for value in beat.get("unlock_choices", []) if "".join(char for char in str(value).casefold() if char.isalnum()) in labels]
         with self.store.transaction():
             self.store.create_intent(intent_id, actor_id, "propose_story_beat", proposal, minute)
-            state[beat_id] = {"status": "active", "started_minute": minute, "actor_id": actor_id}
+            state[beat_id] = {"status": "active", "started_minute": minute, "actor_id": actor_id, "audience": list(audience)}
             if emergent:
                 emergent_beats = list(state.get("emergent_beats", []) or [])
                 emergent_beats.append({key: value for key, value in beat.items() if key != "unlock_choices"})
@@ -591,10 +598,11 @@ class WorldEvolutionRuntimeMixin:
                     target = self.store.get_agent(audience_id)
                 except KeyError:
                     continue
-                if beat.get("goal_hint"):
+                goal_hint = str(beat.get("goal_hint") or proposal.get("goal_hint") or "").strip()
+                if goal_hint:
                     goals = list(target.get("story_goals", []) or [])
-                    if str(beat["goal_hint"]) not in goals:
-                        goals.append(str(beat["goal_hint"]))
+                    if goal_hint not in goals:
+                        goals.append(goal_hint)
                     target["story_goals"] = goals[-8:]
                 for behavior_id in beat.get("unlock_behavior_ids", []) or []:
                     behavior_id = str(behavior_id)
@@ -603,8 +611,9 @@ class WorldEvolutionRuntimeMixin:
                         if behavior_id not in unlocked and behavior_id not in (target.get("initial_bt_ids", []) or []):
                             unlocked.append(behavior_id)
                         target["unlocked_bt_ids"] = unlocked
-                if beat.get("fact"):
-                    self.store.merge_knowledge_fact(target["id"], f"story:{beat_id}", {"fact": str(beat["fact"]), "source_type": "story", "source_id": beat_id, "confidence": 0.9, "observed_at": minute})
+                fact = str(beat.get("fact") or proposal.get("fact") or "").strip()
+                if fact:
+                    self.store.merge_knowledge_fact(target["id"], f"story:{beat_id}", {"fact": fact, "source_type": "story", "source_id": beat_id, "confidence": 0.9, "observed_at": minute})
                 self.store.update_agent(target["id"], target)
             event_id = self.store.append_event("story.beat.activated", actor_id, minute, {"beat_id": beat_id, "summary": beat.get("summary", ""), "audience": audience, "public_event": beat.get("public_event"), "reason": proposal.get("reason", "")})
             self.store.finish_intent(intent_id, "accepted", {"status": "accepted", "intent_id": intent_id, "beat": beat.get("agent_label") or beat_id, "event_id": event_id, "activated": True})
