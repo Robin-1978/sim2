@@ -117,6 +117,14 @@ them. A science-fiction world can use `integrity` and `charge`; a biological
 world can use different terms. Platform does not inject `health`, `energy`,
 `satiety`, food or village concepts.
 
+Rules may expose package-owned constants through `context_values` and generic
+inventory selection through `item_groups` plus `context_resolvers`. For
+example, Starter Village defines its eating threshold as a context value and
+resolves `item_id` to the first carried item in its configured `food` group.
+The Runtime sees only a named context value and a generic
+`first_inventory_item` resolver; another world can use the same mechanism for
+oxygen canisters, batteries or ritual tokens without adding Python code.
+
 `rules.perception` is the information boundary between SQLite truth and an
 Agent observation. `visible_fields` and `visible_state_fields` list properties
 that a nearby inspection may reveal. The optional `types` map overrides those

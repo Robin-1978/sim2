@@ -10,6 +10,7 @@ from sim2.bootstrap.service import (
     write_world_package_from_template,
 )
 from sim2.platform.runtime import Platform
+from sim2.prompting.renderer import render_context
 from sim2.world_builder import WorldBuilderService
 from sim2.world_builder.service import smoke_test_world_template
 
@@ -149,7 +150,13 @@ def test_completely_different_world_builds_and_runs_without_platform_changes(tmp
         assert "health" not in agent["initial_state"]
         assert "energy" not in agent["initial_state"]
         assert "satiety" not in agent["needs"]
-        assert platform.decision_view("unit_seven")["world_time"]["label"] == "Day 3, 08:00, shift, storm_cycle"
+        orbital_view = platform.decision_view("unit_seven")
+        assert orbital_view["world_time"]["label"] == "Day 3, 08:00, shift, storm_cycle"
+        assert "food_items" not in orbital_view
+        assert "satiety_alert_threshold" not in orbital_view
+        orbital_prompt = render_context(orbital_view, "Choose one behavior.")
+        assert "Satiety" not in orbital_prompt
+        assert "Food is inventory" not in orbital_prompt
         prompt_turn = AgentEngine(platform, OneChoiceProvider()).run(role="agent_decision", actor_id="unit_seven")
         assert prompt_turn.result["status"] == "accepted"
         for _ in range(prompt_turn.result["remaining_minutes"]):
@@ -176,6 +183,19 @@ def test_world_template_reports_cross_reference_errors_before_writing(tmp_path: 
     else:  # pragma: no cover - protects the no-write invariant
         raise AssertionError("invalid world template was written")
     assert not (tmp_path / "invalid").exists()
+
+
+def test_world_template_validates_generic_context_resolvers():
+    template = orbital_template()
+    template["rules"]["context_resolvers"] = {
+        "cell_id": {"type": "first_inventory_item", "group": "power_cells"},
+    }
+    report = validate_world_template(template)
+    assert report["valid"] is False
+    assert any("unknown item group power_cells" in item for item in report["errors"])
+
+    template["rules"]["item_groups"] = {"power_cells": ["charged_cell"]}
+    assert validate_world_template(template) == {"valid": True, "errors": []}
 
 
 def test_world_builder_agent_validates_exact_template_before_submission():

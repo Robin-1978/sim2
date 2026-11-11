@@ -17,6 +17,7 @@ from ..world.drives import DriveCalculator
 from ..world.navigation import configured_location_tags, nearest_location_with_tag, nearest_resource_node, nearest_safe_location, reachable_locations
 from ..world.rules import RuleCompiler
 from ..world.schema import AttributeSchema
+from ..world.context import configured_context_values
 from ..world.time import world_time_view
 
 
@@ -444,6 +445,7 @@ class AgentViewCompiler:
                     return self._build_story_view(agent_id, role, source_event_id=source_event_id)
                 return self._build_world_view(agent_id, role)
             raise
+        configured_context = configured_context_values(rules, agent)
         bt_defs = {x["id"]: x for x in self.store.get_definitions("bt_def")}
         action_defs = {x["id"]: x for x in self.store.get_definitions("action_def")}
         recipe_defs = {x["id"]: x for x in self.store.get_definitions("recipe_def")}
@@ -499,12 +501,11 @@ class AgentViewCompiler:
                 "researched_sources": researched_sources,
                 "known_fact_keys": known_fact_keys,
                 "inventory": agent.get("inventory", {}) or {},
-                "food_items": rules.get("food_items", []) or [],
-                "satiety_alert_threshold": float(rules.get("satiety_alert_threshold", 40) or 40),
                 "recent_event_types": self._recent_event_types(),
                 "day_phase": self._world_time().get("day_phase"),
                 "target": {"id": validation_target.get("id"), "available": True} if validation_target else {"available": False},
             }
+            condition_context.update(configured_context)
             condition_context.update(self._interaction_context(agent, participants))
             if any(not self.conditions.evaluate(str(predicate), agent=agent, target=condition_context["target"], context=condition_context, world=self.store.get_meta("world_properties", {}) or {}) for predicate in bt.get("entry_conditions", []) or []):
                 continue
@@ -535,7 +536,7 @@ class AgentViewCompiler:
                 if not action:
                     continue
                 simulated_state = simulated_agent.setdefault("initial_state", {})
-                parameters = self._view_action_parameters(node.get("parameters") or {}, simulated_state, simulated_agent.get("inventory", {}) or {}, rules.get("food_items", []) or [], safe_location_id=safe_location_id, resource_node=resource_node, health_location_id=health_location_id, default_target_id=(validation_target or {}).get("id"))
+                parameters = self._view_action_parameters(node.get("parameters") or {}, simulated_state, configured_context, safe_location_id=safe_location_id, resource_node=resource_node, health_location_id=health_location_id, default_target_id=(validation_target or {}).get("id"))
                 # A configured destination Action is complete when the actor
                 # is already there. It contributes no visible step to the
                 # surrounding BT, while the remaining steps stay executable.
@@ -546,7 +547,7 @@ class AgentViewCompiler:
                 ):
                     continue
                 action_minutes = estimator._action_minutes(action, parameters, simulated_state.get("location_id"))
-                if not self._action_available(simulated_agent, action, parameters, simulated_location, rules.get("food_items", []) or [], action_minutes):
+                if not self._action_available(simulated_agent, action, parameters, simulated_location, action_minutes):
                     action_unavailable = True
                     break
                 recipe_action = (
@@ -831,9 +832,8 @@ class AgentViewCompiler:
         }
 
     @staticmethod
-    def _view_action_parameters(parameters: dict[str, Any], state: dict[str, Any], inventory: dict[str, Any], food_items: list[str], *, safe_location_id: str | None = None, resource_node: dict[str, str] | None = None, health_location_id: str | None = None, default_target_id: str | None = None) -> dict[str, Any]:
+    def _view_action_parameters(parameters: dict[str, Any], state: dict[str, Any], context_values: dict[str, Any], *, safe_location_id: str | None = None, resource_node: dict[str, str] | None = None, health_location_id: str | None = None, default_target_id: str | None = None) -> dict[str, Any]:
         resolved = {}
-        first_food = next((item for item in food_items if float(inventory.get(item, 0) or 0) >= 1), None)
         for key, value in parameters.items():
             if value == "context.location_id" or value == "context.station_id":
                 resolved[key] = state.get("location_id")
@@ -845,10 +845,10 @@ class AgentViewCompiler:
                 resolved[key] = (resource_node or {}).get("resource_tag")
             elif value == "context.health_location_id":
                 resolved[key] = health_location_id
-            elif value == "context.item_id":
-                resolved[key] = first_food
             elif value == "context.target_id":
                 resolved[key] = default_target_id
+            elif isinstance(value, str) and value.startswith("context."):
+                resolved[key] = context_values.get(value.removeprefix("context."))
             else:
                 resolved[key] = value
         return resolved
@@ -882,7 +882,7 @@ class AgentViewCompiler:
         ).fetchall()
         return [str(row["event_type"]) for row in rows]
 
-    def _action_available(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], location: dict[str, Any], food_items: list[str], duration_minutes: int | None = None) -> bool:
+    def _action_available(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], location: dict[str, Any], duration_minutes: int | None = None) -> bool:
         resource_parameters = (action.get("parameter_defaults", {}) or {})
         resource_key = next((key for key, value in resource_parameters.items() if value == "first_available_resource"), None)
         if resource_key and parameters.get(resource_key) in {None, "", "context.resource_tag"}:
@@ -903,7 +903,6 @@ class AgentViewCompiler:
             "object_id": parameters.get("object_id"),
             "current_object": {},
             "inventory": agent.get("inventory", {}) or {},
-            "food_items": food_items,
             "station_tags": [],
             "known_route_destinations": reachable_locations(self.store, (agent.get("initial_state") or {}).get("location_id")),
             "mapped_areas": self.store.explored_areas(str(agent.get("id", ""))),
@@ -915,6 +914,7 @@ class AgentViewCompiler:
             ],
             "recent_event_types": self._recent_event_types(),
         }
+        context.update(configured_context_values(self.store.get_meta("rules", {}) or {}, agent))
         if parameters.get("object_id"):
             try:
                 context["current_object"] = self.store.get_entity(str(parameters["object_id"]))

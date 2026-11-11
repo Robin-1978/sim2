@@ -41,7 +41,7 @@ actions:
   parameters:
     item_id: string
   parameter_defaults:
-    item_id: first_food
+    item_id: {resolver: context_value, key: item_id}
   preconditions:
   - actor.alive
   - inventory.available

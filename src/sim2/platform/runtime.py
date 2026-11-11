@@ -20,6 +20,7 @@ from ..world.navigation import configured_location_tags, nearest_location_with_t
 from ..world.rules import RuleCompiler
 from ..world.schema import AttributeSchema
 from ..world.time import world_time_view
+from ..world.context import configured_context_values
 from ..evolution import EventWakeScheduler, WorldProposalEvaluator
 from .activity import ActivityRuntimeMixin
 from .learning import LearningRuntimeMixin
@@ -632,7 +633,7 @@ class Platform(
                 conflict_available = False
             if conflict_available:
                 break
-        return {
+        result = {
             "location_id": location_id,
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "area_id": parameters.get("area_id"),
@@ -640,8 +641,6 @@ class Platform(
             "entity_id": parameters.get("entity_id"),
             "object_id": parameters.get("object_id"),
             "inventory": agent.get("inventory", {}) or {},
-            "food_items": (self.store.get_meta("rules", {}) or {}).get("food_items", []) or [],
-            "satiety_alert_threshold": float((self.store.get_meta("rules", {}) or {}).get("satiety_alert_threshold", 40) or 40),
             "current_location": location,
             "current_object": self._entity_for_context(parameters.get("object_id")),
             "mapped_areas": self.store.explored_areas(agent["id"]),
@@ -655,6 +654,8 @@ class Platform(
             "day_phase": world_time_view(self.store).get("day_phase"),
             "conflict": {"available": conflict_available},
         }
+        result.update(configured_context_values(self.store.get_meta("rules", {}) or {}, agent))
+        return result
 
     def _entity_for_context(self, entity_id: Any) -> dict[str, Any]:
         """Return a configured entity for a declarative condition context."""
@@ -824,13 +825,13 @@ class Platform(
         """Resolve declarative defaults without making the LLM fill hidden plumbing."""
 
         result = dict(parameters)
-        food_items = (self.store.get_meta("rules", {}) or {}).get("food_items", []) or []
+        configured_context = configured_context_values(self.store.get_meta("rules", {}) or {}, agent)
         for key, default in (action.get("parameter_defaults", {}) or {}).items():
             value = result.get(key)
             if value not in (None, "") and not (isinstance(value, str) and value.startswith("context.")):
                 continue
-            if default == "first_food":
-                result[key] = next((item for item in food_items if float((agent.get("inventory") or {}).get(item, 0) or 0) >= 1), value)
+            if isinstance(default, dict) and str(default.get("resolver") or "") == "context_value":
+                result[key] = configured_context.get(str(default.get("key") or key), value)
             elif default == "first_available_resource":
                 location_id = (agent.get("initial_state") or {}).get("location_id")
                 sources = self.store.entities_at_location(location_id) if location_id else []
@@ -887,6 +888,7 @@ class Platform(
         minute_event_state = dict(self.store.get_meta("minute_effect_event_state", {}) or {})
         minute_event_state_changed = False
         world_properties = self.store.get_meta("world_properties", {}) or {}
+        static_context_values = configured_context_values(rules, include_resolvers=False)
         for regeneration in rules.get("resource_regeneration", []) or []:
             every = max(1, int(regeneration.get("every_minutes", 1)))
             if minute % every != 0:
@@ -934,7 +936,10 @@ class Platform(
                         condition,
                         agent=agent,
                         target={},
-                        context={"current_location": self._entity_for_context(state.get("location_id"))},
+                        context={
+                            **static_context_values,
+                            "current_location": self._entity_for_context(state.get("location_id")),
+                        },
                         world=world_properties,
                     ):
                         continue
@@ -950,6 +955,7 @@ class Platform(
                             event_state=minute_event_state,
                             rules=rules,
                             world=world_properties,
+                            static_context=static_context_values,
                         ) or minute_event_state_changed
                     state = dict(agent.get("initial_state") or {})
                     vital_value = float(state.get(vital, 1) or 0) if vital else 1
@@ -1006,6 +1012,7 @@ class Platform(
         event_state: dict[str, Any],
         rules: dict[str, Any],
         world: dict[str, Any],
+        static_context: dict[str, Any],
     ) -> bool:
         """Emit configured threshold or recurring events after a minute effect."""
 
@@ -1024,10 +1031,13 @@ class Platform(
             else {}
         )
         context = {
+            **static_context,
             "current_location": location,
             "location_id": (agent.get("initial_state") or {}).get("location_id"),
-            "satiety_alert_threshold": float(rules.get("satiety_alert_threshold", 40) or 40),
         }
+        resolver_names = (rules.get("context_resolvers", {}) or {}).keys()
+        if any(f"context.{name}" in conditions for name in resolver_names):
+            context.update(configured_context_values(rules, agent))
         for index, item in enumerate(configured):
             if not isinstance(item, dict):
                 continue
@@ -1315,6 +1325,7 @@ class Platform(
     def snapshot(self, destination: Path) -> Path:
         destination = Path(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
+        self.store.wait_for_checkpoint()
         backup = sqlite3.connect(destination)
         try:
             self.store.connection.backup(backup)
@@ -1326,6 +1337,7 @@ class Platform(
         source = Path(source)
         if not source.is_file():
             raise FileNotFoundError(source)
+        self.store.wait_for_checkpoint()
         backup = sqlite3.connect(source)
         try:
             backup.backup(self.store.connection)

@@ -181,6 +181,23 @@ def world_template_schema() -> dict[str, Any]:
             },
             "fallback_behavior_ids": {"type": "array", "items": {"type": "string"}},
             "memory_quality": {"type": "object"},
+            "context_values": {"type": "object"},
+            "item_groups": {
+                "type": "object",
+                "additionalProperties": {"type": "array", "items": {"type": "string"}},
+            },
+            "context_resolvers": {
+                "type": "object",
+                "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string", "enum": ["first_inventory_item"]},
+                        "group": {"type": "string"},
+                    },
+                    "required": ["type", "group"],
+                    "additionalProperties": False,
+                },
+            },
         },
         "required": ["vital_attribute", "capacity_attribute", "needs"],
         "additionalProperties": True,
@@ -448,6 +465,41 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
         errors.append(f"behavior {behavior_id} is not assigned to any agent")
 
     rules = template.get("rules") if isinstance(template.get("rules"), dict) else {}
+    context_values = rules.get("context_values", {}) or {}
+    item_groups = rules.get("item_groups", {}) or {}
+    context_resolvers = rules.get("context_resolvers", {}) or {}
+    if not isinstance(context_values, dict):
+        errors.append("rules.context_values must be an object")
+        context_values = {}
+    if not isinstance(item_groups, dict):
+        errors.append("rules.item_groups must be an object of string lists")
+        item_groups = {}
+    else:
+        for group, items in item_groups.items():
+            if not isinstance(items, list) or not items or any(not isinstance(item, str) or not item for item in items):
+                errors.append(f"rules.item_groups.{group} must be a non-empty list of item names")
+    if not isinstance(context_resolvers, dict):
+        errors.append("rules.context_resolvers must be an object")
+        context_resolvers = {}
+    else:
+        for name, resolver in context_resolvers.items():
+            if not isinstance(resolver, dict) or str(resolver.get("type") or "") != "first_inventory_item":
+                errors.append(f"rules.context_resolvers.{name} has an unsupported resolver")
+                continue
+            group = str(resolver.get("group") or "")
+            if group not in item_groups:
+                errors.append(f"rules.context_resolvers.{name} references unknown item group {group or 'missing'}")
+    available_context_values = {str(key) for key in context_values} | {str(key) for key in context_resolvers}
+    for action in collections["actions"]:
+        for parameter, default in (action.get("parameter_defaults", {}) or {}).items():
+            if not isinstance(default, dict):
+                continue
+            if str(default.get("resolver") or "") != "context_value":
+                errors.append(f"action {action.get('id')} parameter default {parameter} has an unsupported resolver")
+                continue
+            key = str(default.get("key") or parameter)
+            if key not in available_context_values:
+                errors.append(f"action {action.get('id')} parameter default {parameter} references unknown context value {key}")
     vital = str(rules.get("vital_attribute") or "")
     capacity = str(rules.get("capacity_attribute") or "")
     if vital not in state_ids:

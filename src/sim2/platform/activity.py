@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from ..world.navigation import reachable_locations
 from ..world.time import world_time_view
+from ..world.context import configured_context_values
 
 
 class ActivityRuntimeMixin:
@@ -53,7 +54,6 @@ class ActivityRuntimeMixin:
             "item_id": parameters.get("item_id"),
             "object_id": parameters.get("object_id"),
             "inventory": agent.get("inventory", {}) or {},
-            "food_items": (self.store.get_meta("rules", {}) or {}).get("food_items", []) or [],
             "station_tags": [],
             "current_location": current_location,
             "current_object": self._entity_for_context(parameters.get("object_id")),
@@ -72,6 +72,7 @@ class ActivityRuntimeMixin:
             "recent_event_types": self._recent_event_types(),
             "day_phase": world_time_view(self.store).get("day_phase"),
         }
+        condition_context.update(configured_context_values(self.store.get_meta("rules", {}) or {}, agent))
         if (
             action.get("duration", {}).get("mode") == "recipe_duration"
             or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
@@ -157,7 +158,6 @@ class ActivityRuntimeMixin:
             "item_id": parameters.get("item_id"),
             "object_id": parameters.get("object_id"),
             "inventory": agent.get("inventory", {}) or {},
-            "food_items": (self.store.get_meta("rules", {}) or {}).get("food_items", []) or [],
             "station_tags": [],
             "current_location": current_location,
             "current_object": self._entity_for_context(parameters.get("object_id")),
@@ -176,6 +176,7 @@ class ActivityRuntimeMixin:
             "recent_event_types": self._recent_event_types(),
             "day_phase": world_time_view(self.store).get("day_phase"),
         }
+        context.update(configured_context_values(self.store.get_meta("rules", {}) or {}, agent))
         if (
             action.get("duration", {}).get("mode") == "recipe_duration"
             or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})

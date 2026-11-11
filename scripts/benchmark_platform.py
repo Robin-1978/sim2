@@ -22,7 +22,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--agents", type=int, default=1000)
     parser.add_argument("--runs", type=int, default=5)
-    parser.add_argument("--warmup", type=int, default=1, help="unmeasured startup ticks before steady-state samples")
+    parser.add_argument("--warmup", type=int, default=3, help="unmeasured startup ticks before steady-state samples")
     args = parser.parse_args()
     if args.agents < 1:
         raise SystemExit("--agents must be positive")

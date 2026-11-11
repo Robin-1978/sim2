@@ -204,8 +204,12 @@ memory_quality:
 world_change_policy:
   god_direct_properties: []
 fallback_behavior_ids: [rest_and_recover, recover_at_safe_location, seek_treatment, eat_food, buy_food, get_food, gather_at_known_node, travel]
-food_items: [rations, ration, cooked_meal]
-satiety_alert_threshold: 40
+item_groups:
+  food: [rations, ration, cooked_meal]
+context_values:
+  satiety_alert_threshold: 40
+context_resolvers:
+  item_id: {type: first_inventory_item, group: food}
 decision_signals:
 - need: satiety
   alert_threshold: 40

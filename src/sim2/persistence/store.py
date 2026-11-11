@@ -249,6 +249,19 @@ class WorldStore:
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys = ON")
         self.connection.execute("PRAGMA journal_mode = WAL")
+        # WAL + NORMAL preserves atomic database consistency across process or
+        # OS failure while avoiding a full device sync for every simulated
+        # minute. A host power loss may drop the most recent WAL commit, while
+        # the database remains consistent; snapshots provide explicit recovery
+        # points for long-running worlds.
+        self.connection.execute("PRAGMA synchronous = NORMAL")
+        # Large worlds rewrite many compact state rows per minute. SQLite's
+        # default 1,000-page auto-checkpoint can therefore run on almost every
+        # tick. Keep commits short and checkpoint at a bounded store cadence.
+        self.connection.execute("PRAGMA wal_autocheckpoint = 0")
+        self._commits_since_checkpoint = 0
+        self._checkpoint_interval = 64
+        self._checkpoint_thread: threading.Thread | None = None
         self.connection.execute("PRAGMA busy_timeout = 5000")
         self.connection.executescript(SCHEMA)
         # The current schema is used for new instances.  Keep an additive
@@ -282,12 +295,45 @@ class WorldStore:
                 self.set_meta("world_revision", next_revision)
                 yield self.connection
                 self.connection.commit()
+                self._commits_since_checkpoint += 1
+                if self._commits_since_checkpoint >= self._checkpoint_interval:
+                    if self._checkpoint_thread is None or not self._checkpoint_thread.is_alive():
+                        self._checkpoint_thread = threading.Thread(
+                            target=self._checkpoint_passive,
+                            name=f"sim2-checkpoint-{self.db_path.stem}",
+                            daemon=True,
+                        )
+                        self._checkpoint_thread.start()
+                        self._commits_since_checkpoint = 0
             except Exception:
                 self.connection.rollback()
                 raise
 
     def close(self) -> None:
+        self.wait_for_checkpoint()
+        if not self.connection.in_transaction:
+            self.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         self.connection.close()
+
+    def wait_for_checkpoint(self) -> None:
+        """Join the optional maintenance checkpoint before backup or replace."""
+
+        if self._checkpoint_thread is not None:
+            self._checkpoint_thread.join()
+
+    def _checkpoint_passive(self) -> None:
+        """Copy committed WAL pages without blocking the simulation writer."""
+
+        connection = sqlite3.connect(self.db_path)
+        try:
+            connection.execute("PRAGMA busy_timeout = 5000")
+            connection.execute("PRAGMA wal_checkpoint(PASSIVE)")
+        except sqlite3.Error:
+            # A later cadence or the final TRUNCATE checkpoint retries it. The
+            # committed WAL remains the source of truth in the meantime.
+            pass
+        finally:
+            connection.close()
 
     def set_meta(self, key: str, value: Any) -> None:
         self.connection.execute(

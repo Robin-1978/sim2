@@ -209,11 +209,11 @@ class ConditionEngine:
             return self._value("actor.alive", agent, target, world, context)
         if path == "inventory.available":
             inventory = agent.get("inventory", {}) or {}
-            food_items = context.get("food_items", []) or []
             item_id = context.get("item_id") or target.get("item_id")
             if item_id:
-                return str(item_id) in {str(item) for item in food_items} and float(inventory.get(str(item_id), 0) or 0) >= 1
-            return any(float(inventory.get(str(item), 0) or 0) >= 1 for item in food_items)
+                return float(inventory.get(str(item_id), 0) or 0) >= 1
+            candidates = context.get("inventory_items", []) or []
+            return any(float(inventory.get(str(item), 0) or 0) >= 1 for item in candidates)
         if path in {"inventory.item_available", "actor.inventory_item_available"}:
             inventory = agent.get("inventory", {}) or {}
             item_id = context.get("item_id") or target.get("item_id") or context.get("entity_id") or target.get("entity_id")
