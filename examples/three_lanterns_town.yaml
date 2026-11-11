@@ -277,6 +277,7 @@ behavior_trees:
   summary: Exchange Town Information
   entry_conditions: [actor.can_speak, target.available]
   estimated_minutes: 15
+  cooldown_minutes: 240
   agent_parameters:
     topic: {type: string, required: true, max_length: 120, description: A short subject.}
     message: {type: string, required: true, max_length: 240, description: Two concise sentences grounded in visible evidence.}

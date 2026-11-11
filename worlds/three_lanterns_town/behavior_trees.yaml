@@ -90,6 +90,7 @@ behavior_trees:
   - actor.can_speak
   - target.available
   estimated_minutes: 15
+  cooldown_minutes: 240
   agent_parameters:
     topic:
       type: string
