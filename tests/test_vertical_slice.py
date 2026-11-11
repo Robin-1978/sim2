@@ -26,6 +26,7 @@ from sim2.llm.config import ProviderConfig
 from sim2.llm.gateway import OpenAICompatibleProvider
 from sim2.llm.adapters import ModelProtocolError
 from sim2.memory.similarity import ExperienceSimilarity
+from sim2.world.navigation import reachable_locations
 
 
 class FakeProvider:
@@ -3336,6 +3337,28 @@ def test_god_proposal_creates_entity_only_through_platform(tmp_path: Path):
         assert turn.result["status"] == "accepted"
         entity = platform.store.get_entity(turn.result["entity_id"])
         assert entity["entity_type"] == "resource_node"
+    finally:
+        platform.close()
+
+
+def test_god_created_location_preserves_configured_topology(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "god-location-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        result = platform.submit_entity_proposal("god", {
+            "entity_type": "location",
+            "name": "下游镇",
+            "state": {"routes": ["river_bridge"], "tags": ["settlement", "market"], "public": True},
+            "description": "A settlement discovered beyond the southern road.",
+        })
+        assert result["status"] == "accepted"
+        location = platform.store.get_entity(result["entity_id"])
+        assert location["routes"] == ["river_bridge"]
+        assert location["tags"] == ["settlement", "market"]
+        assert location["public"] is True
+        assert "routes" not in location["initial_state"]
+        assert "river_bridge" in reachable_locations(platform.store, result["entity_id"])
     finally:
         platform.close()
 

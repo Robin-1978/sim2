@@ -343,7 +343,20 @@ class WorldEvolutionRuntimeMixin:
             failed_check = "god_resource_creation" if any("stocked resource" in error for error in errors) else "entity_schema"
             return self._reject_intent(intent_id, actor_id, "propose_entity", data, {"status": "rejected", "message": "Entity proposal failed validation.", "failed_check": failed_check, "errors": errors, "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
-        entity_data = {"description": proposal.get("description", ""), "initial_state": dict(proposal.get("state") or {})}
+        # Entity proposals use one compact ``state`` object at the Agent
+        # boundary.  Location topology is the one structural exception: the
+        # navigation engine reads routes/tags/public/safe from the location
+        # definition itself, while ``initial_state`` is reserved for mutable
+        # state such as a location condition.  Promote only the configured
+        # structural fields so a God-created settlement is immediately
+        # navigable without adding a world-specific branch.
+        proposed_state = dict(proposal.get("state") or {})
+        entity_data = {"description": proposal.get("description", ""), "initial_state": proposed_state}
+        if str(proposal.get("entity_type") or "") == "location":
+            for field in ("routes", "tags", "public", "safe", "discoveries", "map_position", "region_id"):
+                if field in proposed_state:
+                    entity_data[field] = proposed_state.pop(field)
+            entity_data["initial_state"] = proposed_state
         if proposal.get("location_id"):
             entity_data["initial_state"]["location_id"] = proposal["location_id"]
         with self.store.transaction():

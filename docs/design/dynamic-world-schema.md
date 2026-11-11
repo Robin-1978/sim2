@@ -19,6 +19,15 @@ Actions use generic effect forms such as `attribute_delta`, `need_delta`,
 `relationship_delta`. Conditions resolve configured paths and aliases. The
 engine must not branch on a starter-world name, item, location, or need.
 
+Stocks are entities, not an implicit global variable. A resource declares its
+physical `location_id` and may declare `storage_scope`, `owner_id`, and
+`access_policy`; a reservation resolves that configured entity and changes its
+quantity transactionally. This permits a story to add another settlement with
+its own warehouse and stock without changing Platform code. A God structural
+proposal may add a location with declarative routes/tags, but it cannot grant a
+positive stock; production, gathering, trade, or delivery behavior must create
+that quantity. See [Storage, settlements, and map growth](storage-and-settlements.md).
+
 ## Emergent social institutions
 
 An institution is absent until a person proposes it and the world accepts it.

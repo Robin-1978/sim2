@@ -61,7 +61,7 @@ The template uses these top-level sections. The machine-readable source is
 | `world` | ID, title, premise, genre, locale, clock, seed and initial world properties. |
 | `attributes` | Every numeric state or need, including direct meaning, range and default. |
 | `locations` | Place nodes, visible names, tags, safety, optional map position and route IDs. |
-| `resources` | Finite or regenerating world stocks at configured locations. |
+| `resources` | Finite or regenerating world stocks at configured locations. A stock is an entity with a physical `location_id`; optional `storage_scope`, `owner_id`, and `access_policy` keep separate settlements or institutions from sharing it accidentally. |
 | `objects` | Machines, documents, hazards, items and other non-location entities. |
 | `factions` / `relationships` | Initial social structures and typed links. |
 | `agents` | Identity, goal, beliefs, needs, capabilities, state, inventory and initial BTs. |
