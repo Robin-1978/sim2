@@ -1,11 +1,33 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import uuid4
 
 
 class SocialRuntimeMixin:
     """Institution, dialogue and atomic trade transactions."""
+
+    def _wake_configured_evolution_consumers(self, event_id: int, event_type: str, actor_id: str, minute: int) -> None:
+        """Deliver a social event only to roles explicitly subscribed by the world.
+
+        Institution creation and activation are ordinary world events.  The
+        package decides whether Story or God should receive them; the runtime
+        does not assume that every world has either consumer enabled.
+        """
+
+        root = self.store.get_meta("evolution", {}) or {}
+        config = root.get("evolution", root) if isinstance(root, dict) else {}
+        policy = config.get("event_wake_policy", {}) if isinstance(config, dict) else {}
+        consumers = policy.get("consumers", {}) if isinstance(policy, dict) else {}
+        if not isinstance(consumers, dict):
+            return
+        for role, raw in consumers.items():
+            if not isinstance(raw, dict):
+                continue
+            direct = {str(value) for value in (raw.get("direct_event_types") or [])}
+            if str(event_type) in direct:
+                self._queue_event_consumer_task(str(role), event_id, event_type, actor_id, minute, task_type=f"event:{event_type}")
 
     def submit_institution_proposal(self, actor_id: str, proposal: dict[str, Any]) -> dict[str, Any]:
         """Record a proposed social institution without activating it.
@@ -16,12 +38,64 @@ class SocialRuntimeMixin:
         """
 
         intent_id = str(uuid4())
+        if str(actor_id) != "god":
+            return self._reject_intent(
+                intent_id,
+                actor_id,
+                "propose_institution",
+                proposal,
+                {
+                    "status": "rejected",
+                    "message": "Only God may create a world institution. Submit the observed problem or let the configured evolution trigger wake God.",
+                    "failed_check": "institution_authority",
+                    "retryable": False,
+                },
+            )
         name = str(proposal.get("name") or "").strip()
         purpose = str(proposal.get("purpose") or "").strip()
         if len(name) < 2 or len(name) > 120:
             return self._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "Institution name must be 2 to 120 characters.", "failed_check": "name", "retryable": True})
         if len(purpose) < 12 or len(purpose) > 500:
             return self._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "Institution purpose must be 12 to 500 characters.", "failed_check": "purpose", "retryable": True})
+        evidence_count = 0
+        evidence_sources = [item for item in (proposal.get("evidence_sources") or []) if isinstance(item, dict)]
+        minimum_evidence = max(1, int(proposal.get("minimum_evidence", 1) or 1))
+        matched_evidence_ids: set[int] = set()
+        if evidence_sources:
+            for clause in evidence_sources:
+                event_types = [str(item) for item in (clause.get("event_types") or ([clause["event_type"]] if clause.get("event_type") else []))]
+                behavior_ids = [str(item) for item in (clause.get("behavior_ids") or ([clause["behavior_id"]] if clause.get("behavior_id") else []))]
+                if not event_types and not behavior_ids:
+                    continue
+                if event_types:
+                    placeholders = ",".join("?" for _ in event_types)
+                    rows = self.store.connection.execute(
+                        f"SELECT event_id,data_json FROM event_log WHERE event_type IN ({placeholders})",
+                        tuple(event_types),
+                    ).fetchall()
+                else:
+                    # A behavior-only selector is useful for generic evidence
+                    # such as any completed run of one BT.  Do not require an
+                    # event type merely because the first implementation did.
+                    rows = self.store.connection.execute("SELECT event_id,data_json FROM event_log").fetchall()
+                for row in rows:
+                    try:
+                        payload = json.loads(row["data_json"] or "{}")
+                    except (TypeError, json.JSONDecodeError):
+                        continue
+                    if behavior_ids and str(payload.get("behavior_id") or "") not in behavior_ids:
+                        continue
+                    matched_evidence_ids.add(int(row["event_id"]))
+            evidence_count = len(matched_evidence_ids)
+        if not evidence_sources or evidence_count < minimum_evidence:
+            return self._reject_intent(intent_id, actor_id, "propose_institution", proposal, {
+                "status": "rejected",
+                "message": "An institution needs configured evidence sources and the required number of verified events.",
+                "failed_check": "institution_evidence",
+                "retryable": True,
+                "required_evidence": minimum_evidence,
+                "observed_evidence": evidence_count,
+            })
         existing = self.store.list_institutions(limit=200)
         if any(str(item.get("name", "")).casefold() == name.casefold() and item.get("status") in {"proposed", "active"} for item in existing):
             return self._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "An institution with this name is already proposed or active.", "failed_check": "duplicate_institution", "retryable": False})
@@ -32,6 +106,9 @@ class SocialRuntimeMixin:
             "purpose": purpose,
             "scope": str(proposal.get("scope") or "world"),
             "evidence": str(proposal.get("evidence") or ""),
+            "evidence_sources": evidence_sources,
+            "minimum_evidence": minimum_evidence,
+            "evidence_count_at_creation": evidence_count,
             "ledger": dict(proposal.get("ledger") or {}) if isinstance(proposal.get("ledger"), dict) else {},
             "policy": dict(proposal.get("policy") or {}) if isinstance(proposal.get("policy"), dict) else {},
             "proposed_by": actor_id,
@@ -39,6 +116,7 @@ class SocialRuntimeMixin:
         with self.store.transaction():
             self.store.put_institution(institution_id, "proposed", data, minute)
             event_id = self.store.append_event("institution.proposed", actor_id, minute, {"institution": {"name": name, "purpose": purpose, "scope": data["scope"]}, "status": "proposed"})
+            self._wake_configured_evolution_consumers(event_id, "institution.proposed", actor_id, minute)
             self.store.create_intent(intent_id, actor_id, "propose_institution", {**data, "institution_name": name}, minute)
             result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "institution": {"name": name, "status": "proposed"}}
             self.store.finish_intent(intent_id, "accepted", result)
@@ -48,6 +126,19 @@ class SocialRuntimeMixin:
         """Activate one pending institution after a world-level decision."""
 
         intent_id = str(uuid4())
+        if str(actor_id) != "god":
+            return self._reject_intent(
+                intent_id,
+                actor_id,
+                "approve_institution",
+                {"institution": institution, "reason": reason},
+                {
+                    "status": "rejected",
+                    "message": "Only God may activate a world institution.",
+                    "failed_check": "institution_authority",
+                    "retryable": False,
+                },
+            )
         choice = str(institution or "").strip()
         candidates = [item for item in self.store.list_institutions(status="proposed", limit=200) if str(item.get("name", "")).casefold() == choice.casefold() or str(item.get("institution_id", "")) == choice]
         if len(candidates) != 1:
@@ -58,6 +149,7 @@ class SocialRuntimeMixin:
             institution_data = {key: value for key, value in selected.items() if key not in {"institution_id", "status", "created_minute", "activated_minute"}}
             self.store.put_institution(str(selected["institution_id"]), "active", institution_data, int(selected.get("created_minute", minute)), minute)
             event_id = self.store.append_event("institution.activated", actor_id, minute, {"institution": {"name": selected.get("name"), "purpose": selected.get("purpose")}, "reason": reason, "status": "active"})
+            self._wake_configured_evolution_consumers(event_id, "institution.activated", actor_id, minute)
             self.store.create_intent(intent_id, actor_id, "activate_institution", {"institution": choice, "reason": reason}, minute)
             result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "institution": {"name": selected.get("name"), "status": "active"}}
             self.store.finish_intent(intent_id, "accepted", result)
@@ -122,6 +214,72 @@ class SocialRuntimeMixin:
             bonus = bonus_pool * weights[subject] / weight_total if weight_total > 0 else 0.0
             rows.append({"subject": subject, "minimum": minimum, "bonus": bonus, "total": minimum + bonus, "verified_weight": weights[subject]})
         return {"status": "accepted", "institution": {"name": selected.get("name")}, "period": period or "world", "allocations": rows, "unallocated": remaining - bonus_pool}
+
+    def apply_institution_allocation(
+        self,
+        institution: str,
+        pool_entity: str,
+        item: str,
+        period: str | None,
+        actor_id: str,
+        minute: int,
+        subjects: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Apply a declarative institution allocation through one transaction.
+
+        The institution supplies the policy and ledger selectors. The Action
+        supplies only the resource pool and output item, so this primitive is
+        reusable for food, water, fuel, wages, or any other configured stock.
+        """
+
+        try:
+            pool = self.store.get_entity(str(pool_entity))
+        except KeyError:
+            return {"status": "rejected", "failed_check": "pool_entity", "message": "The configured allocation pool does not exist."}
+        state = dict(pool.get("initial_state") or {})
+        before = pool.get("amount", state.get("quantity", state.get("amount", 0)))
+        available = float(before or 0)
+        subject_ids = [str(value) for value in (subjects or []) if str(value)]
+        if not subject_ids or subject_ids == ["all_agents"]:
+            subject_ids = [str(agent["id"]) for agent in self.store.list_agents()]
+        result = self.calculate_institution_allocation(institution, subject_ids, available, period)
+        if result.get("status") != "accepted":
+            return result
+        allocations = list(result.get("allocations") or [])
+        consumed = sum(float(row.get("total", 0) or 0) for row in allocations)
+        if consumed > available + 1e-9:
+            return {"status": "rejected", "failed_check": "pool_capacity", "message": "The allocation exceeds the current pool."}
+        with self.store.transaction():
+            new_amount = available - consumed
+            if "amount" in pool:
+                pool["amount"] = new_amount
+            else:
+                state["quantity"] = new_amount
+                pool["initial_state"] = state
+            self.store.put_entity(
+                pool["id"], pool["entity_type"], pool["name"],
+                {key: value for key, value in pool.items() if key not in {"id", "entity_type", "name"}},
+            )
+            self.store.append_event(
+                "resource.changed", actor_id, minute,
+                {"resource_id": pool["id"], "before": available, "after": new_amount, "delta": -consumed, "source": "institution_allocation"},
+            )
+            for row in allocations:
+                subject_id = str(row.get("subject"))
+                try:
+                    recipient = self.store.get_agent(subject_id)
+                except KeyError:
+                    continue
+                inventory = dict(recipient.get("inventory") or {})
+                quantity = float(row.get("total", 0) or 0)
+                inventory[str(item)] = float(inventory.get(str(item), 0) or 0) + quantity
+                recipient["inventory"] = inventory
+                self.store.update_agent(subject_id, recipient)
+                self.store.append_event(
+                    "institution.allocation_applied", actor_id, minute,
+                    {"institution": institution, "subject_id": subject_id, "item": str(item), "amount": quantity, "period": period or "world", "verified_weight": row.get("verified_weight", 0)},
+                )
+        return {"status": "accepted", "institution": institution, "pool_entity": pool["id"], "item": str(item), "period": period or "world", "allocations": allocations, "consumed": consumed, "remaining": available - consumed}
 
     @staticmethod
     def _valid_transfer(bundle: dict[str, Any]) -> bool:

@@ -1,14 +1,36 @@
 reflection_cadence_minutes: 1440
+schedule:
+  agent_reflection_minutes: 1440
+  god_local_minutes: 1440
+triggers:
+- id: town_security_milestone
+  when: world.town_security >= 0.8
+  invoke: [god_local]
+- id: cistern_review_threshold
+  when: world.cistern_reviews >= 3
+  invoke: [god_local]
 event_wake_policy:
   consumers:
     god:
       direct_event_types:
       - civilization.milestone
+      - institution.proposed
+      - entity.created
+      - definition.registered
+      external_event_types:
+      - institution.ledger_entry
       event_groups:
       - id: research_synthesis
         event_types:
         - research.completed
-        minimum_events: 1
+        minimum_events: 2
+        cooldown_minutes: 10080
+      - id: institution_ledger_review
+        event_types:
+        - institution.ledger_entry
+        minimum_events: 3
         cooldown_minutes: 10080
     story:
       batch_minutes: 0
+      direct_event_types:
+      - institution.activated

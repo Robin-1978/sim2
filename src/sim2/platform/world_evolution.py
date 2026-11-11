@@ -301,13 +301,8 @@ class WorldEvolutionRuntimeMixin:
                             unlocked.append(definition["id"])
                             agent["unlocked_bt_ids"] = unlocked
                             self.store.update_agent(agent_id, agent)
-                    self.store.put_world_proposal(
-                        f"behavior_use:{definition['id']}:{intent_id}", intent_id, actor_id, "behavior_definition",
-                        "pending_evaluation", world_minute, world_minute + 1440,
-                        {"summary": f"Invented behavior {definition['id']} is used.", "state": {"mode": "behavior_use", "behavior_id": str(definition["id"]), "minimum_completions": 1}},
-                        {"definition_id": str(definition["id"])},
-                    )
             event_id = self.store.append_event("definition.registered", actor_id, world_minute, {"definition_type": definition_type, "name": name, "definition_id": definition.get("id"), "assigned_to": [visible for _, visible in resolved_agents], "evidence": str(proposal.get("evidence") or "")})
+            self._wake_configured_evolution_consumers(event_id, "definition.registered", actor_id, world_minute)
             result = {"status": "accepted", "intent_id": intent_id, "definition_type": definition_type, "name": name, "registered": True, "assigned_to": [visible for _, visible in resolved_agents], "event_id": event_id}
             self.store.finish_intent(intent_id, "accepted", result)
         if definition_type == "attribute":
@@ -369,6 +364,7 @@ class WorldEvolutionRuntimeMixin:
             self.store.create_intent(intent_id, actor_id, "propose_entity", data, world_minute)
             self.store.put_entity(entity_id, str(proposal["entity_type"]), str(proposal["name"]), entity_data)
             event_id = self.store.append_event("entity.created", actor_id, world_minute, {"intent_id": intent_id, "entity_id": entity_id, "entity_type": proposal["entity_type"], "summary": proposal.get("description", "")})
+            self._wake_configured_evolution_consumers(event_id, "entity.created", actor_id, world_minute)
             result = {"status": "accepted", "intent_id": intent_id, "entity_id": entity_id, "event_id": event_id, "applied": True}
             self.store.finish_intent(intent_id, "accepted", result)
         return result
@@ -579,12 +575,15 @@ class WorldEvolutionRuntimeMixin:
         if emergent:
             beat["audience"] = list(audience)
         registered = {item["id"] for item in self.store.get_definitions("bt_def")}
-        if emergent:
-            labels = {
-                "".join(char for char in str(item.get("agent_label") or item.get("summary") or item.get("id", "")).casefold() if char.isalnum()): str(item.get("id"))
-                for item in self.store.get_definitions("bt_def")
-            }
-            beat["unlock_behavior_ids"] = [labels["".join(char for char in str(value).casefold() if char.isalnum())] for value in beat.get("unlock_choices", []) if "".join(char for char in str(value).casefold() if char.isalnum()) in labels]
+        labels = {
+            "".join(char for char in str(item.get("agent_label") or item.get("summary") or item.get("id", "")).casefold() if char.isalnum()): str(item.get("id"))
+            for item in self.store.get_definitions("bt_def")
+        }
+        beat["unlock_behavior_ids"] = [
+            labels["".join(char for char in str(value).casefold() if char.isalnum())]
+            for value in beat.get("unlock_choices", [])
+            if "".join(char for char in str(value).casefold() if char.isalnum()) in labels
+        ]
         with self.store.transaction():
             self.store.create_intent(intent_id, actor_id, "propose_story_beat", proposal, minute)
             state[beat_id] = {"status": "active", "started_minute": minute, "actor_id": actor_id, "audience": list(audience)}

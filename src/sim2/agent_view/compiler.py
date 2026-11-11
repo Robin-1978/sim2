@@ -866,6 +866,34 @@ class AgentViewCompiler:
         ])[:8]
         if not known_facts:
             known_facts = [{"fact": self._humanize_fact(fact), "source_type": "config_seed", "confidence": 1.0} for fact in agent.get("knowledge_seed", [])[:8]]
+        research_tracks: list[dict[str, Any]] = []
+        known_fact_set = set(known_fact_keys)
+        seen_sources: set[str] = set()
+        for behavior_id in catalog_ids:
+            for node in self._iter_behavior_actions(str(behavior_id)):
+                params = node.get("parameters") or {}
+                source_id = params.get("source_id")
+                if not source_id or str(source_id).startswith("context.") or str(source_id) in seen_sources:
+                    continue
+                discoveries = self.store.research_discoveries(str(source_id))
+                if not discoveries:
+                    continue
+                seen_sources.add(str(source_id))
+                try:
+                    source_name = self.store.get_entity(str(source_id)).get("name", source_id)
+                except KeyError:
+                    source_name = source_id
+                research_tracks.append({
+                    "source": str(source_name),
+                    "stages": [
+                        {
+                            "fact_key": str(item.get("id")),
+                            "status": str(item.get("status") or "active"),
+                            "available": str(item.get("id")) not in known_fact_set and str(item.get("status") or "active").casefold() not in {"obsolete", "disabled"},
+                        }
+                        for item in discoveries
+                    ],
+                })
         relationships = self.store.get_related_relationships(agent_id, limit=5)
         for relationship in relationships:
             person_id = relationship.get("person")
@@ -983,7 +1011,7 @@ class AgentViewCompiler:
             "capability_history": self.store.list_capability_progress(agent_id, limit=5),
             "capability_update_candidates": capability_update_candidates,
             "needs": needs, "inventory": agent.get("inventory", {}), "injuries": state.get("injuries", []),
-            "drives": drives[:5], "drive_model": drive_model, "observation": {"facts": observation_facts[:6], "source": "current_state"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "memories": memories, "short_term_memories": short_term_memories, "long_term_memories": long_term_memories, "memory_query": memory_query, "recent_actions": recent_actions, "recent_outcomes": recent_outcomes, "direct_relationships": relationships,
+            "drives": drives[:5], "drive_model": drive_model, "observation": {"facts": observation_facts[:6], "source": "current_state"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "research_tracks": research_tracks[:8], "memories": memories, "short_term_memories": short_term_memories, "long_term_memories": long_term_memories, "memory_query": memory_query, "recent_actions": recent_actions, "recent_outcomes": recent_outcomes, "direct_relationships": relationships,
             "active_task": {"bt": active_behavior.get("summary") or ("in progress" if active_behavior_id else None), "action": active_action.get("description") or (_label(str(active_action_id)) if active_action_id else None), "remaining_minutes": state.get("remaining_minutes", 0)},
             "open_trade_offers": self._trade_offer_view(agent_id),
             "available_actions": available_actions if role == "agent_reflection" else [],
@@ -1107,6 +1135,7 @@ class AgentViewCompiler:
                 context["source"] = self.store.get_entity(str(parameters["source_id"]))
             except KeyError:
                 return False
+            context["research_discoveries"] = self.store.research_discoveries(str(parameters["source_id"]))
         if (
             action.get("duration", {}).get("mode") == "recipe_duration"
             or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})

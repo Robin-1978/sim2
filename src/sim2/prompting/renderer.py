@@ -133,6 +133,11 @@ def _fact_line(item: Any) -> str:
         metadata.append(f"source={_plain(source)}")
     if isinstance(confidence, (int, float)):
         metadata.append(f"confidence={float(confidence):.2f}")
+    status = item.get("status")
+    if status and str(status) != "active":
+        metadata.append(f"status={_plain(status)}")
+    if item.get("superseded_by"):
+        metadata.append(f"superseded_by={_plain(item.get('superseded_by'))}")
     suffix = f" [{'; '.join(metadata)}]" if metadata else ""
     return f"{_plain(fact)}{suffix}"
 
@@ -303,6 +308,17 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.extend([f"      {_memory_line(item)}" for item in (long_memories or [])[:4]] or ["      memory: none"])
         lines.append("    </long_term_memory>")
     lines.append("  </knowledge_and_memory>")
+    tracks = context.get("research_tracks") or []
+    if tracks:
+        lines.append("  <research_tracks>")
+        lines.append("    Research is staged. A completed stage does not end a source; choose another available stage or a newly proposed source.")
+        for track in tracks[:8]:
+            stages = "; ".join(
+                f"{item.get('fact_key')}: {'available' if item.get('available') else item.get('status', 'completed')}"
+                for item in (track.get("stages") or [])[:8]
+            )
+            lines.append(f"    - {track.get('source')}: {stages or 'no stage metadata'}")
+        lines.append("  </research_tracks>")
     story_goals = context.get("story_goals") or []
     active_beats = context.get("active_story_beats") or []
     if story_goals or active_beats:
@@ -413,6 +429,8 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("  - rule.action_names must use exact Action names from world_action_catalog; a BT name is not an Action name.")
         lines.append("  - A typed signal records or wakes work; prose descriptions never enforce policy. To block behavior, use effect type behavior_constraint or a denial effect.")
         lines.append("  - Use the exact machine field in rule_condition_fields, including underscores inside world[\"...\"]. A God proposal must not wake God itself; use a character/follow-up behavior or wait.")
+        lines.append("  - Research is open-ended: when validated results leave a concrete unanswered question, you may propose one new declarative research source or behavior. Do not invent a result; let a character perform the next research.")
+        lines.append("  - A newer verified research fact may supersede an older one. Preserve the old fact for audit and use the configured lifecycle status instead of silently deleting it.")
         lines.append("</world_proposal_contract>")
         progress_candidates = context.get("world_progress_candidates") or []
         lines.append("<configured_public_progress>")

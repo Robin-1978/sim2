@@ -414,6 +414,7 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
         "inventory_add", "inventory_remove", "inventory.consume_item",
         "relationship_delta", "public_event", "world_property_delta",
         "entity_state_set", "status_add", "status_remove", "location_set",
+        "institution_allocation",
     }
 
     def validate_expression(expression: Any, owner: str) -> None:
@@ -453,6 +454,10 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
         elif effect_type == "entity_state_set":
             if not str(effect.get("entity_id") or "").strip() or not str(effect.get("state") or "").strip() or "value" not in effect:
                 errors.append(f"{owner} entity_state_set requires entity_id, state and value")
+        elif effect_type == "institution_allocation":
+            required = ("institution", "pool_entity", "item")
+            if any(not str(effect.get(key) or "").strip() for key in required):
+                errors.append(f"{owner} institution_allocation requires institution, pool_entity and item")
         elif effect_type == "public_event" and not str(effect.get("event") or "").strip():
             errors.append(f"{owner} public_event requires event")
         elif effect_type in {"status_add", "status_remove"} and not str(effect.get("status") or "").strip():
@@ -1041,7 +1046,7 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                         fact_key = str(knowledge)
                         fact_data = {"fact": fact_key, "source_type": "config_seed", "confidence": 1.0, "claim_status": "observed"}
                     store.put_knowledge_fact(agent["id"], fact_key, fact_data)
-            schedule = evolution.get("evolution", {}).get("schedule", {}) if isinstance(evolution, dict) else {}
+            schedule = evolution.get("evolution", evolution).get("schedule", {}) if isinstance(evolution, dict) else {}
             for agent in load_yaml(config_dir, "agents.yaml", {}).get("agents", []):
                 agent_id = agent["id"]
                 reflection_cadence = int(schedule.get("agent_reflection_minutes", 0) or 0)

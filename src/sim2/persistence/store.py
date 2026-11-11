@@ -481,6 +481,32 @@ class WorldStore:
         tags = self._memory_tags(data)
         if tags:
             data["tags"] = tags
+        # A later verified result may revise an earlier claim.  Keep both
+        # records for audit/replay, but mark the older claim so retrieval and
+        # Agent prompts can distinguish the current result from history.
+        supersedes = data.get("supersedes", [])
+        if isinstance(supersedes, str):
+            supersedes = [supersedes]
+        supersedes = {str(item) for item in (supersedes or []) if str(item).strip()}
+        if supersedes:
+            rows = self.connection.execute(
+                "SELECT id,fact_key,data_json FROM knowledge_fact WHERE agent_id=?",
+                (agent_id,),
+            ).fetchall()
+            for old_row in rows:
+                if str(old_row["fact_key"]) not in supersedes:
+                    continue
+                try:
+                    old_data = json.loads(old_row["data_json"] or "{}")
+                except (TypeError, json.JSONDecodeError):
+                    old_data = {}
+                if str(old_data.get("status") or "active") in {"superseded", "obsolete"}:
+                    continue
+                old_data.update({"status": "superseded", "superseded_by": str(fact_key)})
+                self.connection.execute(
+                    "UPDATE knowledge_fact SET data_json=? WHERE id=?",
+                    (json_dumps(old_data), int(old_row["id"])),
+                )
         confidence = float(data.get("confidence", 0.5))
         row = self.connection.execute("SELECT id,data_json FROM knowledge_fact WHERE agent_id=? AND fact_key=? ORDER BY id DESC LIMIT 1", (agent_id, fact_key)).fetchone()
         if row is None:
@@ -490,6 +516,46 @@ class WorldStore:
         merged = {**current, **data, "confidence": round((old_confidence + confidence) / 2, 4), "evidence_count": int(current.get("evidence_count", 1)) + 1}
         self.connection.execute("UPDATE knowledge_fact SET data_json=? WHERE id=?", (json_dumps(merged), row["id"]))
         return int(row["id"])
+
+    def research_discoveries(self, source_id: str) -> list[dict[str, Any]]:
+        """Return the declarative research stages exposed by one source.
+
+        A source may publish one legacy ``research_discovery`` object or an
+        open-ended ``research_discoveries`` list.  The latter is intentionally
+        stored as ordinary entity data so God can add a new source or a new
+        stage through the normal declarative entity proposal path.
+        """
+
+        try:
+            source = self.get_entity(str(source_id))
+        except KeyError:
+            return []
+        state = source.get("initial_state") if isinstance(source.get("initial_state"), dict) else {}
+        raw = source.get("research_discoveries")
+        if raw is None:
+            raw = state.get("research_discoveries")
+        if raw is None:
+            raw = source.get("research_discovery")
+        if isinstance(raw, dict):
+            raw = [raw]
+        if not isinstance(raw, list):
+            return []
+        discoveries: list[dict[str, Any]] = []
+        for index, item in enumerate(raw):
+            if isinstance(item, str):
+                item = {"fact": item}
+            if not isinstance(item, dict):
+                continue
+            value = dict(item)
+            value["id"] = str(
+                value.get("id")
+                or value.get("fact_key")
+                or f"researched:{source_id}:stage_{index + 1}"
+            )
+            value.setdefault("status", "active")
+            value.setdefault("source_id", str(source_id))
+            discoveries.append(value)
+        return discoveries
 
     def list_knowledge_facts(self, agent_id: str, *, limit: int = 8) -> list[dict[str, Any]]:
         rows = self.connection.execute(

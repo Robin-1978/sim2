@@ -263,7 +263,23 @@ class ConditionEngine:
             return bool(obj and object_location == current_location and not recovered)
         if path == "research.new_fact_available":
             source_id = target.get("source_id") or context.get("source_id")
-            return bool(source_id) and str(source_id) not in {str(item) for item in context.get("researched_sources", [])}
+            if not source_id:
+                return False
+            known = {str(item) for item in (context.get("known_fact_keys", []) or [])}
+            discoveries = context.get("research_discoveries") or []
+            if isinstance(discoveries, dict):
+                discoveries = [discoveries]
+            # A source can expose multiple stages.  A completed first stage
+            # must not make later, independently configured questions
+            # disappear from the executable catalog.
+            if discoveries:
+                return any(
+                    str(item.get("id") or "") not in known
+                    and str(item.get("status") or "active").casefold() not in {"obsolete", "disabled"}
+                    for item in discoveries
+                    if isinstance(item, dict)
+                )
+            return str(source_id) not in {str(item) for item in context.get("researched_sources", [])}
         if path == "source.accessible":
             source = context.get("source", {}) or {}
             if not isinstance(source, dict) or not source:

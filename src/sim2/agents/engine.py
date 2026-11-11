@@ -38,10 +38,10 @@ def configured_role_tools(platform: Platform, role: str) -> list[str] | None:
     return [str(item) for item in names if str(item)] if isinstance(names, list) else None
 
 ROLE_INTENTS = {
-    "agent_decision": {"select_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "propose_institution", "wait"},
-    "agent_reflection": {"record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "propose_institution", "wait"},
-    "god": {"record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "approve_institution", "wait"},
-    "story": {"record_world_progress", "propose_story_beat", "propose_institution", "wait"},
+    "agent_decision": {"select_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "wait"},
+    "agent_reflection": {"record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "wait"},
+    "god": {"record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "propose_institution", "approve_institution", "wait"},
+    "story": {"record_world_progress", "propose_story_beat", "wait"},
     "world_builder": {"submit_world_template", "wait"},
 }
 
@@ -669,7 +669,7 @@ class AgentEngine:
         if role == "god":
             if str(task_type).startswith("trigger:"):
                 return f"Task type: {task_type}. A world trigger is active. Submit one validated direct state-changing proposal that resolves the trigger; a narrative-only event does not resolve it. State the short observable expected_effects."
-            return f"Task type: {task_type}. Review the already-recorded world signal. Submit one validated typed proposal only if it changes a configured rule, progress key, entity, relationship, or faction; otherwise return wait. Do not create a narrative acknowledgement event. State the short observable expected_effects."
+            return f"Task type: {task_type}. Review the already-recorded world signal. Submit one validated typed proposal only if it changes a configured rule, progress key, entity, relationship, or faction; otherwise return wait. For a completed research stage, an unanswered question may justify one new declarative research source or behavior, but do not claim its result before a character performs it. Do not create a narrative acknowledgement event. State the short observable expected_effects."
         if role == "story":
             if str(task_type).startswith("milestone:"):
                 return f"Task type: {task_type}. Review the validated civilization milestone. Record configured public progress only when the evidence supports it. Choose one listed story beat when available; if none is listed, submit one short evidence-grounded emergent beat only when it gives the milestone a useful continuation, otherwise wait. Platform owns every state change."
@@ -850,7 +850,8 @@ class AgentEngine:
             if intent_type == "propose_institution":
                 return self.platform.submit_institution_proposal(actor_id, {
                     "name": data.get("name"), "purpose": data.get("purpose"), "scope": data.get("scope"),
-                    "evidence": data.get("evidence"), "ledger": data.get("ledger"), "policy": data.get("policy"),
+                    "evidence": data.get("evidence"), "evidence_sources": data.get("evidence_sources"),
+                    "minimum_evidence": data.get("minimum_evidence", 1), "ledger": data.get("ledger"), "policy": data.get("policy"),
                 })
             if intent_type == "approve_institution":
                 return self.platform.activate_institution(actor_id, str(data.get("institution") or ""), str(data.get("reason") or ""))

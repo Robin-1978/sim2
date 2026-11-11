@@ -20,6 +20,10 @@ behavior_trees:
   failure_results:
   - denied
   - interrupted
+  outcome_events:
+  - event_type: cistern.reviewed
+    wake: [story]
+    summary: 蓄水记录已核对，配给底数需要决断。
 - id: gather_reeds
   agent_label: Gather Lantern Reeds
   summary: Gather Lantern Reeds
@@ -136,3 +140,7 @@ behavior_trees:
   failure_results:
   - boundary_failed
   - interrupted
+  outcome_events:
+  - event_type: watch.secured
+    wake: [story]
+    summary: 北岗守望完成一次复核，界碑状况需要记录与跟进。

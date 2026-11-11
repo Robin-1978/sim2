@@ -67,23 +67,6 @@ class WorldProposalEvaluator:
                     matched = True
                     break
                 match_reason = "configured_followup_observed" if matched else "configured_followup_not_observed"
-            elif mode == "behavior_use":
-                behavior_id = str(expected.get("behavior_id") or "")
-                minimum = max(1, int(expected.get("minimum_completions", 1) or 1))
-                completions = 0
-                for row in rows:
-                    if row["event_type"] != "behavior.completed":
-                        continue
-                    try:
-                        payload = json.loads(row["data_json"] or "{}")
-                    except (TypeError, ValueError):
-                        continue
-                    if behavior_id and str(payload.get("behavior_id") or "") != behavior_id:
-                        continue
-                    completions += 1
-                matched = completions >= minimum
-                current_value = completions
-                match_reason = "behavior_use_observed" if matched else "behavior_use_not_observed"
             else:
                 match_reason = "signal_only_no_state_claim"
             observed = {

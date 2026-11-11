@@ -54,6 +54,11 @@ locations:
   map_position:
     x: 1
     y: 1
+  discoveries:
+  - id: explored:old_road:post
+    fact: 旧商路废弃驿站门柱上留有与界碑同源的三层叠压刻痕，门柱朝北岗方向倾倒。
+  - id: explored:old_road:ruts
+    fact: 驿站外有重载车辙通向北岗，辙印新旧不一，最近的一道约在半月内。
 resources:
 - id: reed_bundle
   type: resource

@@ -463,6 +463,8 @@ class SimulationRunner:
                 report.god_sessions += 1
             elif role == "story":
                 report.story_sessions += 1
+            elif role == "agent_decision":
+                report.decisions += 1
             else:
                 report.reflections += 1
             self._record_turn(report, turn.result, actor_id)

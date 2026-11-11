@@ -84,10 +84,24 @@ in `story.yaml`; a different content pack can replace them without Python
 changes.
 
 Social institutions follow the same path: no contribution metric exists until
-a person proposes an institution and the world activates it.  After activation,
+NPC behavior produces the configured evidence threshold. Story may connect that
+evidence to a continuing chapter, but only God may propose and activate the
+institution. The proposal declares evidence selectors and a minimum count;
+Platform checks persisted events before accepting it. After activation,
 configured selectors append verified ledger entries from real behavior events;
 allocation is a later declarative settlement and never grants resources at
 proposal time.
+
+Research follows the same open-ended event protocol. A source can expose one
+legacy `research_discovery` or a list of independently tracked
+`research_discoveries`; each completion emits the stage key and the exact
+source event. Completing a stage does not mark the whole source as exhausted
+while another active stage remains. God may later create a new source or
+research behavior through the normal declarative entity/BT proposal path, so
+the future research sequence is not a prewritten technology tree. A new fact
+may declare `supersedes` and is stored as the current `active` claim while the
+old claim remains auditable as `superseded`; `obsolete` and `disabled` stages
+are retained for replay but are excluded from executable research choices.
 
 ## Breaking schema and audit boundaries
 

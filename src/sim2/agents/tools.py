@@ -222,6 +222,8 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "purpose": {"type": "string", "description": "What public problem the institution is meant to solve."},
                 "scope": {"type": "string", "description": "Who or what the institution covers."},
                 "evidence": {"type": "string", "description": "The observed problem or event motivating the proposal."},
+                "evidence_sources": {"type": "array", "items": {"type": "object"}, "description": "Configured event or behavior selectors that prove the threshold was reached."},
+                "minimum_evidence": {"type": "integer", "minimum": 1, "description": "Minimum number of matching verified events required before creation."},
                 "ledger": {"type": "object", "description": "Optional declarative future ledger selectors; these are inert until activation."},
                 "policy": {"type": "object", "description": "Optional declarative policy data; Platform validates it when the world accepts the proposal."},
             },
@@ -424,14 +426,14 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
 
 
 ROLE_TOOLS: dict[str, list[str]] = {
-    "agent_decision": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "request_behavior", "propose_institution", "wait"],
-    "agent_reflection": ["recall_memory", "query_known_fact", "record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "propose_institution", "wait"],
+    "agent_decision": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "request_behavior", "wait"],
+    "agent_reflection": ["recall_memory", "query_known_fact", "record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "wait"],
     # Story receives the validated source, required facts, and unlocked beats
     # in its world view.  Keeping generic lookup tools out of this role avoids
     # a read-only loop over names that are not public records; it must turn the
     # supplied evidence into one beat/progress proposal or wait.
     "story": ["record_world_progress", "propose_story_beat", "wait"],
-    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "approve_institution", "wait"],
+    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "propose_institution", "approve_institution", "wait"],
     "world_builder": ["validate_world_template", "submit_world_template", "wait"],
 }
 
@@ -792,12 +794,14 @@ class AgentToolExecutor:
         purpose: str,
         scope: str = "world",
         evidence: str = "",
+        evidence_sources: list[dict[str, Any]] | None = None,
+        minimum_evidence: int = 1,
         ledger: dict[str, Any] | None = None,
         policy: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return self.platform.submit_institution_proposal(
             self.actor_id,
-            {"name": name, "purpose": purpose, "scope": scope, "evidence": evidence, "ledger": dict(ledger or {}), "policy": dict(policy or {})},
+            {"name": name, "purpose": purpose, "scope": scope, "evidence": evidence, "evidence_sources": list(evidence_sources or []), "minimum_evidence": int(minimum_evidence), "ledger": dict(ledger or {}), "policy": dict(policy or {})},
         )
 
     def _approve_institution(self, institution: str, reason: str = "") -> dict[str, Any]:

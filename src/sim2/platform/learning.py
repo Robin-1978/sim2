@@ -381,12 +381,6 @@ class LearningRuntimeMixin:
                 ids.append(behavior_id)
             agent["initial_bt_ids"] = ids
             self.store.update_agent(actor_id, agent)
-            self.store.put_world_proposal(
-                f"behavior_use:{behavior_id}:{intent_id}", intent_id, actor_id, "behavior_proposal",
-                "pending_evaluation", world_minute, world_minute + 1440,
-                {"summary": f"Invented behavior {behavior_id} is used.", "state": {"mode": "behavior_use", "behavior_id": str(behavior_id), "minimum_completions": 1}},
-                {"definition_id": str(behavior_id)},
-            )
             self.store.append_event("behavior.registered", actor_id, world_minute, {"behavior_id": behavior_id, "source": "agent_proposal"})
             result = {"status": "accepted", "intent_id": intent_id, "behavior_ref": f"behavior:{behavior_id}", "registered": True}
             self.store.finish_intent(intent_id, "accepted", result)

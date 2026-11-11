@@ -2,4 +2,5 @@ world_state:
   properties:
     town_security: 0.55
     cistern_reserve: 48
+    cistern_reviews: 0
     trade_confidence: 0.42

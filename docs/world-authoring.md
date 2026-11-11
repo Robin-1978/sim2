@@ -110,6 +110,26 @@ one of those groups. Exceptional channels use `direct_event_types` or
 `direct_task_type_prefixes`. `validate-world` rejects mismatches before a
 SQLite instance is created.
 
+An object or resource may expose research content declaratively:
+
+```yaml
+research_discoveries:
+  - id: researched:source:first_reading
+    fact: "The first measurement identifies a seasonal pattern."
+    required: 2
+  - id: researched:source:revision
+    fact: "A later measurement narrows the pattern to the dry phase."
+    supersedes: researched:source:first_reading
+```
+
+The generic `research_source` Action selects the first active stage whose fact
+has not been recorded for the researcher. A completed stage wakes only the
+configured event consumers; it does not create a permanent source-specific
+branch in Platform. God can add another source or a new behavior later using
+the regular validated proposal tools. `active`, `superseded`, `obsolete`, and
+`disabled` are data lifecycle values, so a world can revise or retire a result
+without deleting its audit trail.
+
 IDs are internal references and use stable `snake_case`. Labels, summaries and
 prompts are short natural language written for people and Agents. References
 must resolve inside the same template. The validator rejects missing routes,

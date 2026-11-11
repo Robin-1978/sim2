@@ -68,6 +68,9 @@ actions:
   - type: need_delta
     need: purpose
     delta: 0.2
+  - type: world_property_delta
+    property: cistern_reviews
+    delta: 1
   interrupt_policy: cancel
   interaction_policy: allow
   kind: atomic
@@ -243,6 +246,42 @@ actions:
   failure:
     condition: actor.incapacitated
     result: boundary_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: settle_institution_allocation
+  version: 1
+  description: 按已激活制度的账本结算一次公共资源分配
+  parameters:
+    institution: string
+    pool_entity: string
+    item: string
+    period: string
+  preconditions:
+  - actor.can_inspect
+  duration:
+    minutes: 30
+  costs:
+    reserve: {}
+    per_minute:
+      vigor: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: institution_allocation
+    institution: context.institution
+    pool_entity: context.pool_entity
+    item: context.item
+    period: context.period
+    subjects: [all_agents]
+  success:
+    condition: actor.alive
+    result: allocation_completed
+  failure:
+    condition: actor.incapacitated
+    result: allocation_failed
   interrupt_policy: pause
   interaction_policy: allow
   kind: atomic

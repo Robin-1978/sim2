@@ -58,6 +58,7 @@ class ActivityRuntimeMixin:
             "current_location": current_location,
             "current_object": self._entity_for_context(parameters.get("object_id")),
             "source": self._entity_for_context(parameters.get("source_id")),
+            "research_discoveries": self.store.research_discoveries(str(parameters.get("source_id"))) if parameters.get("source_id") else [],
             "mapped_areas": self.store.explored_areas(agent["id"]),
             "researched_sources": self.store.researched_sources(agent["id"]),
             "known_fact_keys": [
@@ -505,6 +506,26 @@ class ActivityRuntimeMixin:
                             "entity.state_changed", agent["id"], minute,
                             {"entity_id": entity["id"], "state": str(state_key), "before": before_value, "after": entity_state[str(state_key)], "action_id": action.get("id")},
                         )
+            elif effect_type == "institution_allocation":
+                allocation = self.apply_institution_allocation(
+                    str(resolved_effect.get("institution") or ""),
+                    str(resolved_effect.get("pool_entity") or ""),
+                    str(resolved_effect.get("item") or ""),
+                    str(resolved_effect.get("period") or "world"),
+                    agent["id"],
+                    minute,
+                    list(resolved_effect.get("subjects") or []),
+                )
+                if allocation.get("status") == "accepted":
+                    for row in allocation.get("allocations", []) or []:
+                        if str(row.get("subject")) == str(agent.get("id")):
+                            inventory = dict(agent.get("inventory") or {})
+                            key = str(resolved_effect.get("item") or "")
+                            inventory[key] = float(inventory.get(key, 0) or 0) + float(row.get("total", 0) or 0)
+                            agent["inventory"] = inventory
+                    self.store.append_event("institution.allocation_completed", agent["id"], minute, allocation)
+                else:
+                    self.store.append_event("institution.allocation_failed", agent["id"], minute, allocation)
             else:
                 self.effects.apply(receiver, resolved_effect, target=effect_target, formula_agent=agent)
             if receiver is not agent:
@@ -578,6 +599,7 @@ class ActivityRuntimeMixin:
             "current_location": location,
             "location": location,
             "source": source,
+            "research_discoveries": self.store.research_discoveries(str(source_id)) if source_id else [],
             "known_fact_keys": [
                 item.get("fact_key")
                 for item in self.store.list_knowledge_facts(agent["id"], limit=1000)
@@ -687,8 +709,27 @@ class ActivityRuntimeMixin:
             data={"source_event_id": int(event_id), "source_event_type": event_type, "source_actor_id": actor_id},
         )
 
-    def _queue_event_consumer_task(self, consumer: str, event_id: int, event_type: str, actor_id: str | None, minute: int, *, task_type: str | None = None) -> None:
-        self.event_wakes.queue(consumer, event_id, event_type, actor_id, minute, task_type=task_type)
+    def _queue_event_consumer_task(self, consumer: str, event_id: int, event_type: str, actor_id: str | None, minute: int, *, task_type: str | None = None) -> str | None:
+        role, resolved_actor = self._resolve_evolution_consumer(consumer, actor_id)
+        if role in {"agent_decision", "agent_reflection"} and resolved_actor:
+            task_id = f"{role}:event:{int(event_id)}:{resolved_actor}"
+            self.store.put_evolution_task(
+                task_id,
+                role,
+                resolved_actor,
+                str(task_type or f"event:{event_type}"),
+                int(minute),
+                0,
+                status="ready",
+                data={
+                    "source_events": [{"event_id": int(event_id), "event_type": str(event_type), "actor_id": actor_id}],
+                    "source_event_id": int(event_id),
+                    "source_event_type": str(event_type),
+                    "source_actor_id": actor_id,
+                },
+            )
+            return task_id
+        return self.event_wakes.queue(role, event_id, event_type, resolved_actor, minute, task_type=task_type)
 
     def _queue_configured_followups(self, configured: dict[str, Any], event_id: int, event_type: str, actor_id: str, minute: int) -> None:
         """Wake configured result consumers without knowing story-specific IDs."""
@@ -710,14 +751,33 @@ class ActivityRuntimeMixin:
         definition = action.get("progress") or {}
         if not isinstance(definition, dict) or not definition.get("key"):
             return None
+        source_id = str(parameters.get("source_id") or "")
+        discoveries = self.store.research_discoveries(source_id) if source_id else []
+        known_fact_keys = {
+            str(item.get("fact_key"))
+            for item in self.store.list_knowledge_facts(agent["id"], limit=1000)
+            if item.get("fact_key")
+        }
+        pending = [
+            item for item in discoveries
+            if str(item.get("id") or "") not in known_fact_keys
+            and str(item.get("status") or "active").casefold() not in {"obsolete", "disabled"}
+        ]
+        discovery = pending[0] if pending else None
         key = str(definition["key"])
         for name, value in parameters.items():
             key = key.replace("{" + str(name) + "}", str(value))
+        # Preserve the original key for one-stage legacy sources.  Multi-stage
+        # sources receive an independent progress record per question, so a
+        # completed stage never consumes the entire source.
+        if discovery and len(discoveries) > 1:
+            key = f"{key}:{discovery['id']}"
         scope = str(definition.get("scope", "agent"))
         owner = str(self.store.get_meta("world_id", "world")) if scope == "world" else str(agent["id"])
-        progress = self.store.advance_progress(owner, key, float(definition.get("amount", 1) or 1), float(definition.get("required", 1) or 1), minute, {"source_action": action.get("id"), "source_agent": agent["id"]})
+        required = float((discovery or {}).get("required", definition.get("required", 1)) or 1)
+        progress = self.store.advance_progress(owner, key, float(definition.get("amount", 1) or 1), required, minute, {"source_action": action.get("id"), "source_agent": agent["id"], "stage_id": (discovery or {}).get("id")})
         event_type = "research.completed" if progress["completed"] else "research.progressed"
-        event_id = self.store.append_event(event_type, agent["id"], minute, {"progress_key": key, "progress": progress, "source_action": action.get("id"), "parameters": parameters})
+        event_id = self.store.append_event(event_type, agent["id"], minute, {"progress_key": key, "progress": progress, "source_action": action.get("id"), "parameters": parameters, "source_id": source_id, "stage_id": (discovery or {}).get("id"), "discovery_status": (discovery or {}).get("status", "active")})
         # Partial work is retained in SQLite for the next attempt. Story
         # feedback is a completion boundary, so an incomplete sample does not
         # pause the world or wake the Story Agent without a new fact.
@@ -727,7 +787,7 @@ class ActivityRuntimeMixin:
                 self._queue_story_task(event_id, event_type, agent["id"], minute)
             else:
                 self._queue_configured_followups({"wake": wake}, event_id, event_type, agent["id"], minute)
-        return progress
+        return {**progress, "discovery": discovery, "stage_id": (discovery or {}).get("id"), "progress_key": key}
 
     def _record_information_result(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> dict[str, Any]:
         """Persist information produced by configured information channels."""
@@ -770,12 +830,16 @@ class ActivityRuntimeMixin:
             source_id = str(source_id)
             progress = self._advance_information_progress(agent, action, parameters, minute)
             if progress is None or progress["completed"]:
-                if source_id not in self.store.researched_sources(agent["id"]):
+                discovery = (progress or {}).get("discovery") if isinstance(progress, dict) else None
+                if discovery is None:
+                    candidates = [item for item in self.store.research_discoveries(source_id) if str(item.get("id") or "") not in {str(row.get("fact_key")) for row in self.store.list_knowledge_facts(agent["id"], limit=1000)}]
+                    discovery = candidates[0] if candidates else None
+                if discovery is not None or source_id not in self.store.researched_sources(agent["id"]):
                     source = self.store.get_entity(source_id) if source_id else {}
-                    discovery = (source.get("research_discovery") or {}) if isinstance(source, dict) else {}
+                    discovery = discovery or ((source.get("research_discovery") or {}) if isinstance(source, dict) else {})
                     fact_key = str(discovery.get("id") or f"researched:{source_id}")
                     fact = str(discovery.get("fact") or f"Source {source_id} was researched.")
-                    self.store.merge_knowledge_fact(agent["id"], fact_key, {"fact": fact, "source_type": "research", "source_id": source_id, "behavior": action.get("id"), "confidence": 0.8, "observed_at": minute})
+                    self.store.merge_knowledge_fact(agent["id"], fact_key, {"fact": fact, "source_type": "research", "source_id": source_id, "behavior": action.get("id"), "confidence": 0.8, "observed_at": minute, "status": str(discovery.get("status") or "active"), "supersedes": discovery.get("supersedes", [])})
                     # A configured progress action already emitted the
                     # completion event; without progress keep the legacy
                     # single-attempt event contract.
@@ -920,9 +984,17 @@ class ActivityRuntimeMixin:
                     int(event_id), "verified", {"event_type": event_type, "source": payload.get("behavior_id") or payload.get("action_id") or event_type}, minute,
                 )
                 if entry_id is not None:
-                    self.store.append_event(
+                    ledger_event_id = self.store.append_event(
                         "institution.ledger_entry", actor_id, minute,
                         {"institution": {"name": institution.get("name"), "category": category}, "period": period, "amount": amount, "source_event_id": int(event_id), "status": "verified"},
+                    )
+                    # The package decides whether a ledger accumulation is
+                    # enough to wake God or Story. Event groups apply their
+                    # own evidence count and cooldown; this call does not
+                    # hard-code any institution or quota semantics.
+                    self._queue_event_consumer_task(
+                        "god", ledger_event_id, "institution.ledger_entry", actor_id, minute,
+                        task_type="event:institution.ledger_entry",
                     )
 
     def _finish_behavior(self, agent: dict[str, Any], execution_id: str, behavior_id: str, status: str, result: str, minute: int) -> None:
@@ -1056,17 +1128,46 @@ class ActivityRuntimeMixin:
             self._complete_story_beats_for_actor(agent["id"], behavior_id, minute)
 
     def _complete_story_beats_for_actor(self, actor_id: str, behavior_id: str, minute: int) -> None:
-        """Mark active audience beats completed after a follow-up behavior.
+        """Close active audience beats after a matching follow-up behavior.
 
-        Beats are one-shot narrative threads.  Completing them when an
-        audience member executes any behavior keeps the story catalog from
-        filling with stale threads and gives Story a verifiable close-out.
+        Beats are one-shot narrative threads.  When a beat declares
+        ``followup_behaviors``, only those behaviors close it, so a chapter
+        stays open until its dramatically relevant action happens.  Beats
+        without a declared followup keep the legacy close-on-any-behavior
+        rule.  Either way the story catalog cannot fill with stale threads
+        and Story gets a verifiable close-out.
         """
 
         try:
             state = dict(self.store.get_meta("story_state", {}) or {})
         except Exception:
             return
+        story_root = self.store.get_meta("story", {}) or {}
+        story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
+        package_beats = {str(item.get("id")): item for item in (story_root.get("beats", []) or []) if isinstance(item, dict)}
+        for item in state.get("emergent_beats", []) or []:
+            if isinstance(item, dict) and item.get("id"):
+                package_beats.setdefault(str(item["id"]), item)
+        definitions = {str(item.get("id")): item for item in self.store.get_definitions("bt_def")}
+
+        def declared_followups(beat_id: str) -> list[str] | None:
+            beat = package_beats.get(str(beat_id))
+            if not isinstance(beat, dict):
+                return None
+            raw = beat.get("followup_behaviors")
+            if raw is None:
+                return None
+            return [str(item) for item in (raw if isinstance(raw, list) else [raw])]
+
+        def behavior_matches(behavior_id: str, declaration: str) -> bool:
+            key = "".join(char for char in str(declaration or "").casefold() if char.isalnum())
+            if not key:
+                return False
+            candidates = {str(behavior_id)}
+            definition = definitions.get(str(behavior_id), {})
+            candidates.update(str(definition.get(field) or "") for field in ("agent_label", "summary", "description"))
+            return any(key == "".join(char for char in str(candidate).casefold() if char.isalnum()) for candidate in candidates if candidate)
+
         changed = False
         for beat_id, entry in list(state.items()):
             if beat_id == "emergent_beats" or not isinstance(entry, dict):
@@ -1079,6 +1180,9 @@ class ActivityRuntimeMixin:
             except KeyError:
                 agent_name = str(actor_id)
             if str(actor_id) not in audience and agent_name not in audience:
+                continue
+            followups = declared_followups(beat_id)
+            if followups and not any(behavior_matches(behavior_id, item) for item in followups):
                 continue
             entry = dict(entry)
             entry["status"] = "completed"

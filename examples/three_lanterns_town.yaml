@@ -8,6 +8,7 @@ world:
   properties:
     town_security: 0.55
     cistern_reserve: 48
+    cistern_reviews: 0
     trade_confidence: 0.42
   random_seed: 3117
   calendar:
@@ -93,6 +94,9 @@ locations:
   tags: [route, resource, exploration]
   routes: [lantern_square, north_watch]
   map_position: {x: 1, y: 1}
+  discoveries:
+  - {id: explored:old_road:post, fact: 旧商路废弃驿站门柱上留有与界碑同源的三层叠压刻痕，门柱朝北岗方向倾倒。}
+  - {id: explored:old_road:ruts, fact: 驿站外有重载车辙通向北岗，辙印新旧不一，最近的一道约在半月内。}
 resources:
 - id: reed_bundle
   type: resource
@@ -109,6 +113,7 @@ objects:
   type: document
   name: 褪色界碑
   initial_state: {location_id: north_watch, readable: true, recovered: false}
+  research_discovery: {id: researched:boundary_stone:markings, fact: 界碑北侧刻痕呈三层叠压，与旧商路废弃驿站门柱上的标记同源；褪色由外向内，最外层约在三年内磨灭。}
 - id: cistern_record
   type: public_record
   name: 蓄水记录册
@@ -166,7 +171,7 @@ actions:
     confidence: 0.85
     result: record_inspected
     record_object_discovery: false
-  effects: [{type: need_delta, need: purpose, delta: 0.2}]
+  effects: [{type: need_delta, need: purpose, delta: 0.2}, {type: world_property_delta, property: cistern_reviews, delta: 1}]
   interrupt_policy: cancel
   interaction_policy: allow
   kind: atomic
@@ -256,6 +261,7 @@ behavior_trees:
   - {type: action, action_id: inspect_object, parameters: {object_id: cistern_water}}
   success_results: [record_inspected]
   failure_results: [denied, interrupted]
+  outcome_events: [{event_type: cistern.reviewed, wake: [story], summary: 蓄水记录已核对，配给底数需要决断。}]
 - id: gather_reeds
   agent_label: Gather Lantern Reeds
   summary: Gather Lantern Reeds
@@ -310,6 +316,7 @@ behavior_trees:
   - {type: action, action_id: secure_boundary, parameters: {}}
   success_results: [boundary_secured]
   failure_results: [boundary_failed, interrupted]
+  outcome_events: [{event_type: watch.secured, wake: [story], summary: 北岗守望完成一次复核，界碑状况需要记录与跟进。}]
 rules:
   vital_attribute: integrity
   capacity_attribute: vigor
@@ -380,17 +387,25 @@ relationships:
 - {from: luo_shan, to: mei_lan, type: trust, relation_strength: 0.12}
 evolution:
   reflection_cadence_minutes: 1440
+  schedule: {agent_reflection_minutes: 1440, god_local_minutes: 1440}
+  triggers:
+  - {id: town_security_milestone, when: 'world.town_security >= 0.8', invoke: [god_local]}
+  - {id: cistern_review_threshold, when: 'world.cistern_reviews >= 3', invoke: [god_local]}
   event_wake_policy:
     consumers:
       god:
-        direct_event_types: [civilization.milestone]
+        direct_event_types: [civilization.milestone, institution.proposed, entity.created, definition.registered]
+        external_event_types: [institution.ledger_entry]
         event_groups:
-        - {id: research_synthesis, event_types: [research.completed], minimum_events: 1, cooldown_minutes: 10080}
-      story: {batch_minutes: 0}
+        - {id: research_synthesis, event_types: [research.completed], minimum_events: 2, cooldown_minutes: 10080}
+        - {id: institution_ledger_review, event_types: [institution.ledger_entry], minimum_events: 3, cooldown_minutes: 10080}
+      story:
+        batch_minutes: 0
+        direct_event_types: [institution.activated]
 story:
-  emergent_source_event_types: [research.completed, exploration.completed]
+  emergent_source_event_types: [research.completed, exploration.completed, institution.activated]
   beats:
-  - {id: boundary_stone_research, trigger_events: [research.completed], summary: 记录界碑研究结果并决定下一步核验, audience: [罗杉, 韩秋]}
+  - {id: boundary_stone_research, trigger_events: [research.completed], summary: 记录界碑研究结果并决定下一步核验, audience: [罗杉, 韩秋], followup_behaviors: [Secure North Watch]}
 initial_events:
 - id: dry_season_begins
   type: season.dry_started

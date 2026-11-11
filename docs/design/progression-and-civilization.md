@@ -45,9 +45,10 @@ evidence: "Three completed meals used the configured recipe without failure."
 ## Emergent contribution institutions
 
 Contribution is not an initial person attribute. A world may begin with no
-contribution metric, no ledger, and no quota policy. A person can propose a
-public-allocation institution during play; the proposal is only an event until
-the world accepts it.
+contribution metric, no ledger, and no quota policy. NPC behavior only produces
+the verified evidence and threshold event; only God can create or activate a
+public-allocation institution. The institution proposal must name its evidence
+selectors and minimum count, which Platform checks against persisted events.
 
 After acceptance, Platform stores the institution and its policy as declarative
 SQLite data. The policy names the event evidence that can create ledger
@@ -95,11 +96,25 @@ capability_modifiers:
 写入 `progress_state`；未完成时只保留进度，完成时写入知识事实并产生
 `research.completed`。
 
+研究来源不是一次性开关。一个来源可以在实体数据中声明一个
+`research_discovery`，也可以声明任意长度的 `research_discoveries` 阶段列表。
+每个阶段有自己的事实键、所需进度和可选 `supersedes` / `status`。完成一个阶段
+只关闭这个阶段；只要仍有可用阶段，通用 `research_source` Action 继续出现在
+执行目录中。阶段耗尽也不代表世界停止研究：God 可以根据已验证结果提出新的
+研究来源实体或新的研究行为，Platform 按普通实体/BT Schema 校验后写入 SQLite。
+因此后续问题由运行中的证据和 Agent 提案产生，而不是预先写死完整科技树。
+
+知识事实保留生命周期：`active` 是当前采用的结论，`superseded` 表示被新的
+已验证结果替代，`obsolete` / `disabled` 表示当前不再可用。旧事实不会被删除，
+回放和审计仍能看到它；检索和研究门控会跳过已淘汰阶段，避免 Agent 继续依据
+过时结论行动。
+
 完成研究后的闭环是：
 
 `研究进度 → 新事实 → Story 解锁目标/BT/剧情 → 角色执行新行为 → 世界状态变化`
 
-如果事实影响公共水源、贸易路线或派系制度，事件同时唤醒 God。God 只能
+如果事实影响公共水源、贸易路线或派系制度，事件按世界包配置的累计证据门控
+唤醒 God。God 只能
 提出规则、制度、势力策略或结构实体；实际水质、库存和生产结果仍由角色
 行为执行。
 
