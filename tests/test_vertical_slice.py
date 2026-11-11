@@ -3986,6 +3986,7 @@ def test_dialogue_trade_negotiation_and_observer_text_view(tmp_path: Path):
         testimony_prompt = render_context(platform.decision_view("yu_ge"), "Choose one behavior.")
         assert "credibility=" in testimony_prompt
         assert "verification=unverified" in testimony_prompt
+        assert "The western road is open before dusk." in testimony_prompt
         own_statement = next(item for item in platform.store.list_memories("fei_lan", limit=10) if item.get("type") == "dialogue")
         assert own_statement["claim_status"] == "observed"
         assert own_statement["source_type"] == "own_statement"

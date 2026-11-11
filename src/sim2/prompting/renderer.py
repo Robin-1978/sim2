@@ -79,14 +79,19 @@ def _history_line(item: dict[str, Any]) -> str:
 def _memory_line(item: dict[str, Any]) -> str:
     """Keep durable memory useful without copying a raw transcript into context."""
 
-    summary = (
-        item.get("summary")
-        or item.get("lesson")
-        or item.get("fact")
-        or item.get("topic")
-        or item.get("message")
-        or "unlabeled experience"
-    )
+    if item.get("type") in {"dialogue", "testimony"} or item.get("source_type") in {"testimony", "own_statement"}:
+        # A topic is only a retrieval key. The Agent needs the actual words to
+        # distinguish a report, promise, uncertainty, and fabrication.
+        summary = item.get("message") or item.get("summary") or item.get("topic") or "unlabeled dialogue"
+    else:
+        summary = (
+            item.get("summary")
+            or item.get("lesson")
+            or item.get("fact")
+            or item.get("topic")
+            or item.get("message")
+            or "unlabeled experience"
+        )
     summary = " ".join(str(summary).split())
     if len(summary) > 360:
         summary = summary[:357] + "..."
