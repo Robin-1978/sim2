@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import yaml
+
 from sim2.api.map_view import render_topology_map
 from sim2.api.text import TextWorldSession
 from sim2.api.tui import WorldTUI
-from sim2.bootstrap.service import create_instance
+from sim2.bootstrap.service import create_instance, write_world_package_from_template
 from sim2.platform.runtime import Platform
 
 
@@ -64,3 +66,19 @@ def test_tui_mounts_map_timeline_controls_and_character_table(tmp_path: Path):
             assert int(app.service.status()["world_minute"]) == before + 1
 
     asyncio.run(exercise())
+
+
+def test_map_projection_works_for_a_non_village_world(tmp_path: Path):
+    template = yaml.safe_load((Path(__file__).parents[1] / "examples" / "orbital-world-template.yaml").read_text(encoding="utf-8"))
+    package = write_world_package_from_template(template, tmp_path / "orbital")
+    platform = Platform(create_instance(package, "orbital-map", tmp_path / "runtime"))
+    try:
+        view = platform.map_view(observer=True)
+        assert {node["name"] for node in view["nodes"]} == {"Docking Ring", "Reactor Bay"}
+        reactor = next(node for node in view["nodes"] if node["id"] == "reactor_bay")
+        assert [item["id"] for item in reactor["occupants"]] == ["unit_seven"]
+        rendered = render_topology_map(view)
+        assert "Reactor Bay" in rendered
+        assert "Unit Seven" in rendered
+    finally:
+        platform.close()
