@@ -489,13 +489,23 @@ def test_starter_bell_enables_alarm_only_when_threat_is_configured(tmp_path: Pat
         platform.close()
 
 
-def test_food_behaviors_are_available_only_when_satiety_is_low(tmp_path: Path):
+def test_food_choices_follow_necessary_preconditions_not_a_satiety_gate(tmp_path: Path):
     platform = Platform(create_instance(_config(), "food-hunger-gate", tmp_path / "runtime"))
     try:
         view = platform.decision_view("fei_lan")
         refs = {item["ref"] for item in view["executable_behaviors"]}
-        assert "behavior:eat_food" not in refs
+        assert "behavior:eat_food" in refs
         assert "behavior:get_food" not in refs
+        assert "behavior:buy_food" in refs
+
+        with platform.store.transaction():
+            agent = platform.store.get_agent("fei_lan")
+            agent["needs"]["satiety"] = 90
+            agent["inventory"]["rations"] = 1
+            platform.store.update_agent("fei_lan", agent)
+        view = platform.decision_view("fei_lan")
+        refs = {item["ref"] for item in view["executable_behaviors"]}
+        assert "behavior:eat_food" in refs
 
         with platform.store.transaction():
             agent = platform.store.get_agent("fei_lan")

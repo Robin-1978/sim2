@@ -456,6 +456,59 @@ class AgentViewCompiler:
             return item
         return self._visible_text(fact) if isinstance(fact, str) else fact
 
+    @staticmethod
+    def _merge_visible_facts(facts: list[Any]) -> list[Any]:
+        """Merge duplicate evidence while preserving every source in the prompt."""
+
+        merged: list[Any] = []
+        positions: dict[str, int] = {}
+        sources: dict[str, list[str]] = {}
+        for fact in facts:
+            if isinstance(fact, dict):
+                text = str(fact.get("fact") or fact.get("statement") or "")
+                visible = dict(fact)
+            else:
+                text = str(fact)
+                visible = fact
+            key = " ".join(text.split()).casefold()
+            if not key:
+                continue
+            source = ""
+            if isinstance(fact, dict):
+                source = str(fact.get("source_type") or fact.get("source") or "").strip()
+            if key not in positions:
+                positions[key] = len(merged)
+                merged.append(visible)
+                sources[key] = [source] if source else []
+                continue
+            if source and source not in sources[key]:
+                sources[key].append(source)
+            current = merged[positions[key]]
+            if isinstance(current, dict) and isinstance(fact, dict):
+                current["confidence"] = max(
+                    float(current.get("confidence", 0) or 0),
+                    float(fact.get("confidence", 0) or 0),
+                )
+                if len(sources[key]) > 1:
+                    current["source_type"] = ", ".join(sorted(sources[key]))
+        return merged
+
+    @staticmethod
+    def _with_behavior_choice(record: Any, bt_defs: dict[str, dict[str, Any]]) -> Any:
+        """Attach the readable chosen behavior to outcome feedback."""
+
+        if not isinstance(record, dict):
+            return record
+        item = dict(record)
+        reference = str(item.get("behavior_ref") or item.get("behavior_id") or "").removeprefix("behavior:")
+        behavior = bt_defs.get(reference) or {}
+        if behavior:
+            summary = str(behavior.get("summary") or "")
+            item["behavior_choice"] = behavior.get("agent_label") or (
+                summary if summary and summary != reference else _label(reference)
+            )
+        return item
+
     def _visible_text(self, value: Any) -> str:
         """Replace configured entity keys in prose shown to an Agent.
 
@@ -807,7 +860,10 @@ class AgentViewCompiler:
         memories = [self._humanize_record(item) for item in self.memory.retrieve(agent_id, query=memory_query, limit=6, touch=False, dimensions=memory_dimensions)]
         short_term_memories = [item for item in memories if item.get("tier") == "short_term"]
         long_term_memories = [item for item in memories if item.get("tier") == "long_term"]
-        known_facts = [self._humanize_fact(item) for item in self.memory.relevant_facts(agent_id, query=memory_query, limit=8, dimensions=memory_dimensions)]
+        known_facts = self._merge_visible_facts([
+            self._humanize_fact(item)
+            for item in self.memory.relevant_facts(agent_id, query=memory_query, limit=12, dimensions=memory_dimensions)
+        ])[:8]
         if not known_facts:
             known_facts = [{"fact": self._humanize_fact(fact), "source_type": "config_seed", "confidence": 1.0} for fact in agent.get("knowledge_seed", [])[:8]]
         relationships = self.store.get_related_relationships(agent_id, limit=5)
@@ -821,9 +877,17 @@ class AgentViewCompiler:
                 except KeyError:
                     pass
         actor_events = self.store.recent_events_for_actor(agent_id, limit=8)
-        recent_actions = [self._humanize_record(item) for item in actor_events[:2]]
-        recent_outcomes = [self._humanize_record(item) for item in self.store.recent_outcomes_for_actor(agent_id, limit=3)]
+        recent_actions = [
+            self._with_behavior_choice(self._humanize_record(item), bt_defs)
+            for item in actor_events[:2]
+        ]
+        recent_outcomes = [
+            self._with_behavior_choice(self._humanize_record(item), bt_defs)
+            for item in self.store.recent_outcomes_for_actor(agent_id, limit=3)
+        ]
         for outcome in recent_outcomes:
+            if outcome.get("behavior_choice"):
+                continue
             behavior = bt_defs.get(str(outcome.get("behavior_id", "")), {})
             outcome["behavior_choice"] = behavior.get("agent_label") or behavior.get("summary") or behavior.get("description") or "a behavior"
         observation_facts = []
@@ -923,7 +987,10 @@ class AgentViewCompiler:
             "institution_ledgers": institution_ledgers,
             "executable_behaviors": self._assign_choices(available) if role == "agent_decision" else [],
             "decision_constraints": decision_constraints if role == "agent_decision" else [],
-            "last_platform_result": self._humanize_record(state.get("last_platform_result")), "tools": self._role_tools(role),
+            "last_platform_result": self._with_behavior_choice(
+                self._humanize_record(state.get("last_platform_result")), bt_defs
+            ),
+            "tools": self._role_tools(role),
         }
         if include_diagnostics:
             result["unavailable_behavior_diagnostics"] = diagnostics

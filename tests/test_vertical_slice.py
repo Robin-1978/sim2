@@ -12,7 +12,7 @@ from sim2.agents.tools import AgentToolExecutor
 from sim2.agents.tools import tool_schemas_for_role
 from sim2.agents.quality import evaluate_turn
 from sim2.agent_view.validator import validate_agent_view
-from sim2.agent_view.compiler import _predicate_text
+from sim2.agent_view.compiler import AgentViewCompiler, _predicate_text
 from sim2.actions.conditions import ConditionEngine
 from sim2.actions.effects import EffectPipeline
 from sim2.world.drives import DriveCalculator
@@ -39,6 +39,40 @@ class FakeProvider:
     def complete_json(self, *, system, context):
         self.calls.append((system, context))
         return dict(self.response)
+
+
+def test_duplicate_visible_facts_merge_all_sources():
+    merged = AgentViewCompiler._merge_visible_facts([
+        {"fact": "River water is contaminated.", "source_type": "story", "confidence": 0.9},
+        {"fact": "  river   water is contaminated. ", "source_type": "research", "confidence": 0.8},
+        {"fact": "A separate fact.", "source_type": "public_record", "confidence": 1.0},
+    ])
+
+    assert len(merged) == 2
+    assert merged[0]["confidence"] == 0.9
+    assert merged[0]["source_type"] == "research, story"
+
+
+def test_failed_behavior_feedback_names_the_selected_behavior(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "named-outcome-feedback", tmp_path / "runtime"))
+    try:
+        agent = platform.store.get_agent("liang_he")
+        agent["initial_state"]["last_platform_result"] = {
+            "behavior_ref": "behavior:manage_ration",
+            "status": "failed",
+            "result": "precondition failed: target.available",
+            "outcome": {"status": "failed", "result": "precondition failed: target.available"},
+        }
+        platform.store.update_agent("liang_he", agent)
+        platform.store.connection.commit()
+
+        prompt = render_context(platform.decision_view("liang_he"), "Choose one behavior.")
+
+        assert "latest_platform_result: status=failed; behavior_choice=Manage Ration" in prompt
+        assert "precondition failed: target.available" in prompt
+    finally:
+        platform.close()
 
 
 class SequenceProvider:
@@ -880,6 +914,7 @@ def test_empty_behavior_catalog_uses_phase_aware_backoff_and_event_wake(tmp_path
                 if agent["id"] == "fei_lan":
                     state["energy"] = 100
                     agent["needs"]["satiety"] = 80
+                    agent["inventory"] = {}
                 if agent["id"] == "yu_ge":
                     state["location_id"] = "village_square"
                 platform.store.update_agent(agent["id"], agent)
@@ -1049,19 +1084,19 @@ def test_food_bt_is_available_with_food_and_closes_satiety_loop(tmp_path: Path):
         platform.close()
 
 
-def test_food_bt_is_hidden_when_satiety_is_adequate(tmp_path: Path):
+def test_food_bt_remains_available_when_satiety_is_adequate(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "food-trigger-world", tmp_path / "runtime"))
     try:
         agent = platform.store.get_agent("lu_xingzhou")
         agent["needs"]["satiety"] = 79
+        agent["inventory"]["rations"] = 1
         with platform.store.transaction():
             platform.store.update_agent("lu_xingzhou", agent)
         view = platform.decision_view("lu_xingzhou")
-        assert not any(item["ref"] == "behavior:eat_food" for item in view["executable_behaviors"])
+        assert any(item["ref"] == "behavior:eat_food" for item in view["executable_behaviors"])
         accepted = platform.submit_behavior(BehaviorIntent("lu_xingzhou", "behavior:eat_food", {}, {}, "Choose food before the next task.", 0.8, "early-food"))
-        assert accepted["status"] == "rejected"
-        assert accepted["failed_check"] == "entry_condition"
+        assert accepted["status"] == "accepted"
     finally:
         platform.close()
 
@@ -1203,15 +1238,15 @@ def test_governance_report_closes_personal_world_and_knowledge_loop(tmp_path: Pa
         platform.close()
 
 
-def test_satiety_threshold_is_both_a_signal_and_food_choice_gate(tmp_path: Path):
+def test_satiety_threshold_signals_need_without_hiding_food_choices(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "satiety-signal-world", tmp_path / "runtime"))
     try:
-        agent = platform.store.get_agent("lu_xingzhou")
+        agent = platform.store.get_agent("fei_lan")
         agent["needs"]["satiety"] = 40.01
-        platform.store.update_agent("lu_xingzhou", agent)
+        platform.store.update_agent("fei_lan", agent)
         platform.store.connection.commit()
-        assert not any(item["ref"] == "behavior:eat_food" for item in platform.decision_view("lu_xingzhou")["executable_behaviors"])
+        assert any(item["ref"] == "behavior:buy_food" for item in platform.decision_view("fei_lan")["executable_behaviors"])
         platform.step()
         event = next(item for item in platform.store.recent_events(limit=30) if item["event_type"] == "need.satiety_low")
         assert event["need"] == "satiety"
@@ -1219,7 +1254,7 @@ def test_satiety_threshold_is_both_a_signal_and_food_choice_gate(tmp_path: Path)
         platform.close()
 
 
-def test_rest_fallback_disappears_but_food_is_gated_by_satiety(tmp_path: Path):
+def test_rest_fallback_stays_gated_while_food_uses_resource_preconditions(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "satisfied-needs-world", tmp_path / "runtime")
     platform = Platform(db_path)
@@ -1230,7 +1265,7 @@ def test_rest_fallback_disappears_but_food_is_gated_by_satiety(tmp_path: Path):
         platform.store.connection.commit()
         offered = {item["ref"] for item in platform.decision_view("liang_he")["executable_behaviors"]}
         assert "behavior:eat_food" not in offered
-        assert "behavior:get_food" not in offered
+        assert "behavior:get_food" in offered
         liang["needs"]["satiety"] = 40
         platform.store.update_agent("liang_he", liang)
         platform.store.connection.commit()
@@ -1305,6 +1340,8 @@ def test_decision_context_explains_single_recovery_candidate(tmp_path: Path):
         liang = platform.store.get_agent("liang_he")
         liang["initial_state"]["energy"] = 6.5
         liang["needs"]["satiety"] = 100
+        liang["permissions"]["food_withdrawal"] = False
+        liang["inventory"] = {}
         platform.store.update_agent("liang_he", liang)
         platform.store.connection.commit()
         view = platform.decision_view("liang_he")
@@ -1317,7 +1354,7 @@ def test_decision_context_explains_single_recovery_candidate(tmp_path: Path):
         assert any("not safe for rest" in item for item in view["decision_constraints"])
         prompt = render_context(view, "Choose one behavior.")
         assert "<decision_constraints>" in prompt
-        assert "Food is not currently needed" in prompt
+        assert "food choices remain available" in prompt
     finally:
         platform.close()
 
@@ -1392,9 +1429,9 @@ def test_core_treatment_bt_travels_to_health_service_and_restores_health(tmp_pat
         platform.close()
 
 
-def test_platform_rejects_stale_food_choice_when_satiety_is_adequate(tmp_path: Path):
+def test_platform_accepts_food_choice_when_only_necessary_preconditions_hold(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
-    db_path = create_instance(config, "stale-food-world", tmp_path / "runtime")
+    db_path = create_instance(config, "food-preconditions-world", tmp_path / "runtime")
     platform = Platform(db_path)
     try:
         liang = platform.store.get_agent("liang_he")
@@ -1410,8 +1447,7 @@ def test_platform_rejects_stale_food_choice_when_satiety_is_adequate(tmp_path: P
             confidence=0.5,
             intent_id="stale-food-intent",
         ))
-        assert result["status"] == "rejected"
-        assert result["failed_check"] == "entry_condition"
+        assert result["status"] == "accepted"
     finally:
         platform.close()
 

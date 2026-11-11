@@ -698,7 +698,6 @@ behavior_trees:
   description: Consume one carried food item to restore satiety before choosing another task.
   entry_conditions:
   - actor.alive
-  - actor.need.satiety <= context.satiety_alert_threshold
   - inventory.available
   estimated_minutes: 1
   requirements: ["Carry one food item: rations, ration, or cooked_meal."]
@@ -721,7 +720,6 @@ behavior_trees:
   description: Walk to the shared food store, then complete the configured ration service.
   entry_conditions:
   - actor.alive
-  - actor.need.satiety <= context.satiety_alert_threshold
   - actor.permission.food_withdrawal
   - route.known
   requirements: ["A known route to the granary and permission to withdraw food."]
@@ -746,8 +744,8 @@ behavior_trees:
   description: Spend one coin at the market for one ration when carried food is unavailable.
   entry_conditions:
   - actor.alive
-  - actor.need.satiety <= context.satiety_alert_threshold
   - location.tag.market
+  - actor.inventory.coin >= 1
   requirements: ["You are at the market and carry at least one coin; market stock must remain." ]
   goal_tags: [food, survival, trade]
   drive_tags: [physiological_homeostasis, autonomy]

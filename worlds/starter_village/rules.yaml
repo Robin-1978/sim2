@@ -213,8 +213,8 @@ context_resolvers:
 decision_signals:
 - need: satiety
   alert_threshold: 40
-  below_message: "Food choices are relevant to this need."
-  above_message: "Food is not currently needed. Choose another behavior."
+  below_message: "This is at or below the alert level; eating or obtaining food now addresses a strong physiological need."
+  above_message: "This is above the alert level; food choices remain available, but choose them only when other immediate needs or goals justify the time and resources."
 interaction_policy:
   max_rounds: 3
   reply_cooldown_minutes: 120

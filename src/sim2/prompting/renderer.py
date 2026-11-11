@@ -294,7 +294,15 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     lines.append("  </knowledge_and_memory>")
     lines.append("<recent_actions>")
     recent_actions = context.get("recent_actions") or []
-    lines.extend([f"  - {item.get('event_type')}: {item.get('result') or item.get('summary') or 'completed'} at world minute {item.get('world_minute', 'unknown')}" for item in recent_actions[:2]] or ["  - none"])
+    recent_lines = []
+    for item in recent_actions[:2]:
+        label = f" ({item['behavior_choice']})" if item.get("behavior_choice") else ""
+        recent_lines.append(
+            f"  - {item.get('event_type')}{label}: "
+            f"{item.get('result') or item.get('summary') or 'completed'} "
+            f"at world minute {item.get('world_minute', 'unknown')}"
+        )
+    lines.extend(recent_lines or ["  - none"])
     lines.append("</recent_actions>")
 
     lines.append("<open_trade_offers>")
