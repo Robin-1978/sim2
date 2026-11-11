@@ -510,12 +510,22 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         # wait because no behavior is currently executable.
         for behavior in behaviors:
             lines.append("    <behavior>")
+            previous_values: dict[str, str] = {}
             for label in ("name", "summary", "purpose", "when", "requires", "target", "parameters", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "cooldown_minutes", "tags"):
                 value = behavior.get(label)
                 if value:
                     if isinstance(value, list):
                         value = "; ".join(str(item) for item in value)
-                    lines.append(f"      {label}: {value}")
+                    value_text = str(value)
+                    # Purpose commonly repeats summary and requires commonly
+                    # repeats when. Keep one authoritative sentence in the
+                    # model view instead of charging tokens for duplication.
+                    if label == "purpose" and value_text == previous_values.get("summary"):
+                        continue
+                    if label == "requires" and value_text == previous_values.get("when"):
+                        continue
+                    previous_values[label] = value_text
+                    lines.append(f"      {label}: {value_text}")
             lines.append(f"      choice: {behavior.get('choice') or behavior.get('name') or 'unnamed behavior'}")
             lines.append("    </behavior>")
         if not behaviors:

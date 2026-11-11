@@ -1453,6 +1453,34 @@ def test_context_uses_role_tools_and_plain_sections():
     assert "A fresh mark is visible." in prompt
 
 
+def test_context_deduplicates_repeated_behavior_summary_and_requirements():
+    context = {
+        "self": {"name": "A", "role": "watcher", "status": "idle", "location": "gate", "goal": "protect"},
+        "drives": [],
+        "observation": {"facts": [], "source": "direct sight"},
+        "direct_relationships": [],
+        "known_facts": [],
+        "active_task": {},
+        "executable_behaviors": [{
+            "ref": "behavior:patrol_route",
+            "name": "Patrol Route",
+            "summary": "Walk the north wall and record what is visible.",
+            "purpose": "Walk the north wall and record what is visible.",
+            "when": ["The north wall has not been inspected today."],
+            "requires": ["The north wall has not been inspected today."],
+            "time": "30 minutes",
+        }],
+        "tools": [{"name": "request_behavior", "purpose": "Ask Platform to start one offered behavior."}],
+    }
+
+    prompt = render_context(context, "Choose a behavior.")
+
+    assert prompt.count("Walk the north wall and record what is visible.") == 1
+    assert prompt.count("The north wall has not been inspected today.") == 1
+    assert "purpose:" not in prompt.split("<behavior>", 1)[1].split("</behavior>", 1)[0]
+    assert "requires:" not in prompt.split("<behavior>", 1)[1].split("</behavior>", 1)[0]
+
+
 def test_context_compacts_raw_memory_messages_and_keeps_provenance():
     context = {
         "self": {"name": "A", "role": "watcher", "status": "idle", "location": "gate", "goal": "protect"},
