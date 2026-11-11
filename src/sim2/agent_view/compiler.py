@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from typing import Any
 
 from ..actions.conditions import ConditionEngine
@@ -35,7 +36,11 @@ def _choice_key(value: Any) -> str:
 def _predicate_text(predicate: str) -> str:
     """Turn a configured predicate into one short sentence for the model."""
 
-    text = str(predicate).replace("_", " ").replace(".", " ").strip()
+    text = str(predicate).replace("_", " ")
+    # Dots in configured paths are separators (``actor.state.energy``), but
+    # dots between digits are numeric decimals.  Replacing every dot made
+    # thresholds such as ``0.9`` appear as ``0 9`` to the Agent.
+    text = re.sub(r"(?<=[A-Za-z_])\.(?=[A-Za-z_])", " ", text).strip()
     return f"Configured condition: {text[:1].upper() + text[1:]}."
 
 

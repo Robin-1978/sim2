@@ -12,6 +12,7 @@ from sim2.agents.tools import AgentToolExecutor
 from sim2.agents.tools import tool_schemas_for_role
 from sim2.agents.quality import evaluate_turn
 from sim2.agent_view.validator import validate_agent_view
+from sim2.agent_view.compiler import _predicate_text
 from sim2.actions.conditions import ConditionEngine
 from sim2.actions.effects import EffectPipeline
 from sim2.world.drives import DriveCalculator
@@ -78,6 +79,13 @@ class CoolingFailureProvider(FailingProvider):
         self.calls += 1
         self.cooldown_remaining = 30.0
         raise RuntimeError(self.message)
+
+
+def test_agent_condition_text_preserves_numeric_decimals():
+    rendered = _predicate_text("world.root_gate_stability < 0.9")
+    assert "0.9" in rendered
+    assert "root gate stability" in rendered
+    assert "0 9" not in rendered
 
 
 def step_n(platform: Platform, minutes: int):
