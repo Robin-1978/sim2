@@ -24,6 +24,8 @@ _REVIEW_MODULE = importlib.util.module_from_spec(_REVIEW_SPEC)
 _REVIEW_SPEC.loader.exec_module(_REVIEW_MODULE)
 _database_checks = _REVIEW_MODULE._database_checks
 _review_unresolved_provider_errors = _REVIEW_MODULE._unresolved_provider_errors
+_content_statistics = _REVIEW_MODULE._content_statistics
+_markdown_report = _REVIEW_MODULE._markdown_report
 
 
 def test_audit_checkpoint_is_atomic_and_provider_errors_are_separate(tmp_path: Path):
@@ -65,6 +67,50 @@ def test_segment_reports_are_aggregated_without_double_counting_world_totals():
     assert merged["event_types"] == {"tick": 10}
     assert merged["stop_reason"] is None
     assert merged["segments"] == 2
+
+
+def test_content_statistics_check_prompt_choices_and_output_semantics():
+    data = {
+        "sessions": [{
+            "role": "agent_decision",
+            "actor_id": "actor",
+            "world_time": {"minute": 7},
+            "iterations": 2,
+            "initial_context": {
+                "executable_behaviors": [{"choice": "Inspect the granary"}],
+                "memories": [{"text": "A reserve was reported."}],
+                "known_facts": [{"fact": "The gate is closed."}],
+                "direct_relationships": [{"name": "Keeper"}],
+            },
+            "prompt_history": ["x" * 100, "x" * 140],
+            "transcript": [{"step": "llm"}, {"step": "tool", "name": "request_behavior", "arguments": {"choice": "Inspect the granary", "reason": "Stock is relevant."}}, {"step": "llm"}],
+            "response": {"tool_calls": [{"function": {"name": "request_behavior", "arguments": {"choice": "Inspect the granary", "reason": "Stock is relevant."}}}]},
+            "result": {"status": "accepted", "choice": "Inspect the granary"},
+            "quality": {"passed": True, "grade": "comparative_grounded_choice"},
+        }],
+        "world": {"metrics": {"llm_cache": {"calls": 2}}, "report": {"decisions": 1}},
+    }
+
+    stats, issues = _content_statistics(data)
+
+    assert issues == []
+    assert stats["grounded_behavior_requests"] == 1
+    assert stats["choice_counts"] == {"Inspect the granary": 1}
+    assert stats["context_totals"] == {"behaviors": 1, "memories": 1, "known_facts": 1, "relationships": 1}
+    assert stats["roles"]["agent_decision"]["prompt_chars"]["count"] == 2
+    assert stats["llm_cache"] == {"calls": 2}
+
+    markdown = _markdown_report({
+        "passed": True,
+        "sessions": 1,
+        "quality_counts": {"passed": 1, "pending": 0, "provider_errors": 0, "failed": 0},
+        "database_checks": {"world_minute": 7, "behavior_started": 1, "behavior_closed": 1},
+        "content_statistics": stats,
+        "issues": [],
+    })
+    assert "Result: **PASS**" in markdown
+    assert "Grounded behavior requests: 1" in markdown
+    assert "Inspect the granary" in markdown
 
 
 def test_only_same_boundary_success_recovers_provider_error():

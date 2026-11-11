@@ -419,6 +419,302 @@ def _database_checks(data: dict[str, Any]) -> dict[str, Any]:
         connection.close()
 
 
+def _summary(values: list[int | float]) -> dict[str, int | float | None]:
+    if not values:
+        return {"count": 0, "mean": None, "p50": None, "p95": None, "max": None}
+    ordered = sorted(float(value) for value in values)
+
+    def percentile(fraction: float) -> float:
+        index = min(len(ordered) - 1, max(0, round((len(ordered) - 1) * fraction)))
+        return ordered[index]
+
+    return {
+        "count": len(ordered),
+        "mean": round(sum(ordered) / len(ordered), 2),
+        "p50": round(percentile(0.50), 2),
+        "p95": round(percentile(0.95), 2),
+        "max": round(ordered[-1], 2),
+    }
+
+
+def _tool_calls(session: dict[str, Any]) -> list[dict[str, Any]]:
+    response = session.get("response") if isinstance(session.get("response"), dict) else {}
+    raw_calls = response.get("tool_calls")
+    if isinstance(raw_calls, list):
+        return [item for item in raw_calls if isinstance(item, dict)]
+    calls = []
+    for step in session.get("transcript") or []:
+        if step.get("step") == "tool" and step.get("name"):
+            calls.append({
+                "function": {
+                    "name": step.get("name"),
+                    "arguments": step.get("arguments") or {},
+                }
+            })
+    return calls
+
+
+def _call_parts(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    function = call.get("function") if isinstance(call.get("function"), dict) else {}
+    name = str(function.get("name") or "")
+    arguments = function.get("arguments") or {}
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            arguments = {}
+    return name, arguments if isinstance(arguments, dict) else {}
+
+
+def _offered_choices(session: dict[str, Any]) -> list[str]:
+    context = session.get("initial_context") if isinstance(session.get("initial_context"), dict) else {}
+    behaviors = context.get("executable_behaviors") or context.get("available_behaviors") or []
+    return [
+        str(item.get("choice") or item.get("name") or "")
+        for item in behaviors
+        if isinstance(item, dict) and (item.get("choice") or item.get("name"))
+    ]
+
+
+def _response_choice(session: dict[str, Any]) -> str:
+    result = session.get("result") if isinstance(session.get("result"), dict) else {}
+    if result.get("choice"):
+        return str(result["choice"])
+    response = session.get("response") if isinstance(session.get("response"), dict) else {}
+    if response.get("choice"):
+        return str(response["choice"])
+    for call in _tool_calls(session):
+        name, arguments = _call_parts(call)
+        if name == "request_behavior" and arguments.get("choice"):
+            return str(arguments["choice"])
+    return ""
+
+
+def _content_statistics(data: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Summarize what models saw and emitted, including semantic ground checks."""
+
+    sessions = list(data.get("sessions") or [])
+    issues: list[dict[str, Any]] = []
+    roles: dict[str, dict[str, Any]] = {}
+    choices: dict[str, int] = {}
+    tools: dict[str, int] = {}
+    iterations: dict[str, int] = {}
+    grades: dict[str, int] = {}
+    reason_lengths: list[int] = []
+    waits_with_candidates = 0
+    waits_without_candidates = 0
+    wait_samples: list[dict[str, Any]] = []
+    grounded_behavior_requests = 0
+    context_totals = {"behaviors": 0, "memories": 0, "known_facts": 0, "relationships": 0}
+
+    for index, session in enumerate(sessions):
+        role = str(session.get("role") or "unknown")
+        stats = roles.setdefault(role, {
+            "sessions": 0,
+            "prompt_chars": [],
+            "llm_calls": 0,
+            "tool_calls": 0,
+            "wait": 0,
+            "behavior_requests": 0,
+            "messages": 0,
+        })
+        stats["sessions"] += 1
+        stats["prompt_chars"].extend(len(item) for item in (session.get("prompt_history") or []) if isinstance(item, str))
+        stats["llm_calls"] += sum(1 for item in (session.get("transcript") or []) if item.get("step") == "llm")
+        iterations[str(int(session.get("iterations", 0) or 0))] = iterations.get(str(int(session.get("iterations", 0) or 0)), 0) + 1
+        quality = session.get("quality") if isinstance(session.get("quality"), dict) else {}
+        grade = str(quality.get("grade") or "unknown")
+        grades[grade] = grades.get(grade, 0) + 1
+        context = session.get("initial_context") if isinstance(session.get("initial_context"), dict) else {}
+        behaviors = context.get("executable_behaviors") or context.get("available_behaviors") or []
+        memories = list(context.get("memories") or [])
+        memories.extend(context.get("short_term_memories") or [])
+        memories.extend(context.get("long_term_memories") or [])
+        facts = list(context.get("known_facts") or [])
+        relationships = list(context.get("direct_relationships") or [])
+        context_totals["behaviors"] += len(behaviors)
+        context_totals["memories"] += len(memories)
+        context_totals["known_facts"] += len(facts)
+        context_totals["relationships"] += len(relationships)
+
+        calls = _tool_calls(session)
+        response = session.get("response") if isinstance(session.get("response"), dict) else {}
+        names = []
+        for call in calls:
+            name, arguments = _call_parts(call)
+            names.append(name)
+            stats["tool_calls"] += 1
+            tools[name or "unknown"] = tools.get(name or "unknown", 0) + 1
+            reason = str(arguments.get("reason") or "")
+            if reason:
+                reason_lengths.append(len(reason))
+            if name == "request_behavior":
+                stats["behavior_requests"] += 1
+                choice = str(arguments.get("choice") or "")
+                choices[choice or "missing"] = choices.get(choice or "missing", 0) + 1
+                offered = _offered_choices(session)
+                if choice and choice in offered:
+                    grounded_behavior_requests += 1
+                elif choice:
+                    issues.append(_issue("choice_not_offered", f"choice={choice!r}", index))
+            elif name == "send_message":
+                stats["messages"] += 1
+                if not str(arguments.get("message") or "").strip():
+                    issues.append(_issue("empty_message", "send_message has no message", index))
+            elif name == "wait":
+                stats["wait"] += 1
+                if behaviors:
+                    waits_with_candidates += 1
+                    wait_samples.append({
+                        "actor_id": session.get("actor_id"),
+                        "world_minute": (session.get("world_time") or {}).get("minute"),
+                        "offered_choices": [str(item.get("choice") or item.get("name") or "") for item in behaviors if isinstance(item, dict)],
+                        "reason": str(arguments.get("reason") or "")[:300],
+                    })
+                else:
+                    waits_without_candidates += 1
+        if not names:
+            choice = _response_choice(session)
+            if choice:
+                choices[choice] = choices.get(choice, 0) + 1
+                stats["behavior_requests"] += 1
+                if choice not in _offered_choices(session):
+                    issues.append(_issue("choice_not_offered", f"choice={choice!r}", index))
+                else:
+                    grounded_behavior_requests += 1
+            reason = str(response.get("reason") or "")
+            if reason:
+                reason_lengths.append(len(reason))
+            if response.get("intent_type") == "wait" or (session.get("result") or {}).get("status") == "wait":
+                stats["wait"] += 1
+                if behaviors:
+                    waits_with_candidates += 1
+                    wait_samples.append({
+                        "actor_id": session.get("actor_id"),
+                        "world_minute": (session.get("world_time") or {}).get("minute"),
+                        "offered_choices": [str(item.get("choice") or item.get("name") or "") for item in behaviors if isinstance(item, dict)],
+                        "reason": reason[:300],
+                    })
+                else:
+                    waits_without_candidates += 1
+
+    for stats in roles.values():
+        prompt_values = stats.pop("prompt_chars", [])
+        stats["prompt_chars"] = _summary(prompt_values)
+    world = data.get("world") if isinstance(data.get("world"), dict) else {}
+    metrics = world.get("metrics") if isinstance(world.get("metrics"), dict) else {}
+    report = world.get("report") if isinstance(world.get("report"), dict) else {}
+    llm_cache = dict(metrics.get("llm_cache") or {})
+    prompt_tokens = float(llm_cache.get("prompt_tokens", 0) or 0)
+    completion_tokens = float(llm_cache.get("completion_tokens", 0) or 0)
+    if prompt_tokens:
+        llm_cache["completion_to_prompt_ratio"] = round(completion_tokens / prompt_tokens, 4)
+    return {
+        "roles": roles,
+        "context_totals": context_totals,
+        "choice_counts": dict(sorted(choices.items(), key=lambda item: (-item[1], item[0]))),
+        "tool_counts": dict(sorted(tools.items(), key=lambda item: (-item[1], item[0]))),
+        "iteration_counts": dict(sorted(iterations.items(), key=lambda item: int(item[0]))),
+        "quality_grades": dict(sorted(grades.items())),
+        "reason_chars": _summary(reason_lengths),
+        "grounded_behavior_requests": grounded_behavior_requests,
+        "waits_with_executable_candidates": waits_with_candidates,
+        "waits_without_executable_candidates": waits_without_candidates,
+        "wait_with_candidates_samples": wait_samples[:20],
+        "llm_cache": llm_cache,
+        "world_report": {
+            key: report.get(key)
+            for key in (
+                "start_minute", "end_minute", "decisions", "reflections",
+                "story_sessions", "god_sessions", "waits", "rejected_turns",
+                "interaction_replies_suppressed", "interaction_threads_closed",
+                "selected_behaviors", "diversity", "degeneration_flags",
+            )
+        },
+        "semantic_issues": issues,
+    }, issues
+
+
+def _markdown_report(result: dict[str, Any]) -> str:
+    """Render an operator-readable report from one completed review."""
+
+    stats = result["content_statistics"]
+    quality = result.get("quality_counts") or {}
+    database = result.get("database_checks") or {}
+    cache = stats.get("llm_cache") or {}
+    lines = [
+        "# Agent content and world-causality audit",
+        "",
+        f"Result: **{'PASS' if result.get('passed') else 'FAIL'}**. "
+        f"Sessions: {result.get('sessions', 0)}; world minute: {database.get('world_minute')}.",
+        "",
+        "## Quality",
+        "",
+        f"Passed {quality.get('passed', 0)}, pending {quality.get('pending', 0)}, "
+        f"provider errors {quality.get('provider_errors', 0)}, failed {quality.get('failed', 0)}.",
+        "",
+        "## Context by role",
+        "",
+        "| Role | Sessions | LLM calls | Tool calls | Waits | Behavior choices | Messages | Prompt chars p50/p95/max |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for role, item in sorted(stats.get("roles", {}).items()):
+        prompt = item.get("prompt_chars") or {}
+        lines.append(
+            f"| {role} | {item.get('sessions', 0)} | {item.get('llm_calls', 0)} | "
+            f"{item.get('tool_calls', 0)} | {item.get('wait', 0)} | "
+            f"{item.get('behavior_requests', 0)} | {item.get('messages', 0)} | "
+            f"{prompt.get('p50')}/{prompt.get('p95')}/{prompt.get('max')} |"
+        )
+    lines.extend(["", "## Outputs", "", "Choice counts:", ""])
+    for choice, count in (stats.get("choice_counts") or {}).items():
+        lines.append(f"- {count} × {choice}")
+    lines.extend(["", "Tool counts:", ""])
+    for name, count in (stats.get("tool_counts") or {}).items():
+        lines.append(f"- {count} × `{name}`")
+    lines.extend([
+        "",
+        "Iteration counts: " + ", ".join(f"{key}: {value}" for key, value in (stats.get("iteration_counts") or {}).items()),
+        "",
+        f"Grounded behavior requests: {stats.get('grounded_behavior_requests', 0)}. "
+        f"Waits with candidates: {stats.get('waits_with_executable_candidates', 0)}; "
+        f"waits without candidates: {stats.get('waits_without_executable_candidates', 0)}. "
+        f"Reason chars p50/p95/max: {(stats.get('reason_chars') or {}).get('p50')}/"
+        f"{(stats.get('reason_chars') or {}).get('p95')}/{(stats.get('reason_chars') or {}).get('max')}.",
+        "",
+        "## Model usage",
+        "",
+        f"Calls {cache.get('calls', 0)}; prompt tokens {cache.get('prompt_tokens', 0)}; "
+        f"completion tokens {cache.get('completion_tokens', 0)}; completion/prompt "
+        f"{cache.get('completion_to_prompt_ratio', 0)}; cached tokens {cache.get('cached_tokens', 0)}; "
+        f"provider cache hit {cache.get('provider_cache_hit_rate', 0)}; "
+        f"static-prefix reuse {cache.get('static_prefix_reuse_rate', 0)}.",
+        "",
+        "## World causality",
+        "",
+        f"Behaviors started {database.get('behavior_started')} / closed {database.get('behavior_closed')}; "
+        f"Actions started {database.get('action_started')} / closed {database.get('action_closed')} / "
+        f"running at boundary {database.get('action_running')}; dialogue exchanges "
+        f"{database.get('dialogue_exchanges')}; empty messages {database.get('dialogue_empty_messages')}; "
+        f"exact repeats {database.get('dialogue_exact_repeats_within_window')}.",
+        "",
+        f"Selected behaviors: `{json.dumps(stats.get('world_report', {}).get('selected_behaviors') or {}, ensure_ascii=False, sort_keys=True)}`",
+        "",
+        "## Review issues",
+        "",
+    ])
+    issues = result.get("issues") or []
+    lines.extend([f"- {item.get('kind')}: {item.get('detail')}" for item in issues] or ["- None."])
+    if stats.get("wait_with_candidates_samples"):
+        lines.extend(["", "## Waits with available candidates", ""])
+        for item in stats["wait_with_candidates_samples"]:
+            lines.append(
+                f"- Minute {item.get('world_minute')} `{item.get('actor_id')}` waited instead of "
+                f"`{item.get('offered_choices')}`: {item.get('reason')}"
+            )
+    return "\n".join(lines) + "\n"
+
+
 def review(data: dict[str, Any]) -> dict[str, Any]:
     sessions = list(data.get("sessions") or [])
     issues: list[dict[str, Any]] = []
@@ -471,6 +767,8 @@ def review(data: dict[str, Any]) -> dict[str, Any]:
         missing_roles = [role for role, count in role_counts.items() if count == 0]
         if missing_roles:
             issues.append(_issue("missing_agent_phase_coverage", str(missing_roles)))
+    content_statistics, content_issues = _content_statistics(data)
+    issues.extend(content_issues)
     return {
         "passed": not issues and int(quality_counts.get("failed", 0) or 0) == 0 and int(quality_counts.get("pending", 0) or 0) == 0,
         "sessions": len(sessions),
@@ -479,6 +777,7 @@ def review(data: dict[str, Any]) -> dict[str, Any]:
         "rule_count": len(causality.get("world_rule_changes") or []),
         "rule_followup_status": {status: sum(1 for item in causality.get("world_rule_changes") or [] if item.get("status") == status) for status in ("verified", "pending")},
         "database_checks": database_checks,
+        "content_statistics": content_statistics,
         "issues": issues,
     }
 
@@ -487,11 +786,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("audit", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--markdown-output", type=Path)
     args = parser.parse_args()
     result = review(json.loads(args.audit.read_text(encoding="utf-8")))
     text = json.dumps(result, ensure_ascii=False, indent=2)
     if args.output:
         args.output.write_text(text, encoding="utf-8")
+    if args.markdown_output:
+        args.markdown_output.write_text(_markdown_report(result), encoding="utf-8")
     print(text)
     return 0 if result["passed"] else 1
 
