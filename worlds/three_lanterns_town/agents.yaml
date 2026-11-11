@@ -47,6 +47,7 @@ agents:
     conversation: 0.55
   initial_bt_ids:
   - survey_old_road
+  - secure_north_watch
   - communicate
   initial_state:
     location_id: north_watch

@@ -216,3 +216,34 @@ actions:
   interaction_policy: allow
   kind: atomic
   executor: effect_pipeline
+- id: secure_boundary
+  version: 1
+  description: 加固北岗边界并记录守望结果
+  parameters: {}
+  preconditions:
+  - actor.can_watch
+  - location.tag.boundary
+  duration:
+    minutes: 45
+  costs:
+    reserve: {}
+    per_minute:
+      vigor: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: town_security
+    delta: 0.05
+    maximum: 1.0
+  success:
+    condition: actor.alive
+    result: boundary_secured
+  failure:
+    condition: actor.incapacitated
+    result: boundary_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline

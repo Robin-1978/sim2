@@ -114,3 +114,24 @@ behavior_trees:
   failure_results:
   - conversation_refused
   - participant_left
+- id: secure_north_watch
+  agent_label: Secure North Watch
+  summary: Secure North Watch
+  entry_conditions:
+  - actor.can_watch
+  - actor.alive
+  estimated_minutes: 46
+  cooldown_minutes: 720
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: north_watch
+  - type: action
+    action_id: secure_boundary
+    parameters: {}
+  success_results:
+  - boundary_secured
+  failure_results:
+  - boundary_failed
+  - interrupted

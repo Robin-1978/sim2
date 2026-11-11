@@ -230,6 +230,20 @@ actions:
   interaction_policy: allow
   kind: atomic
   executor: effect_pipeline
+- id: secure_boundary
+  version: 1
+  description: 加固北岗边界并记录守望结果
+  parameters: {}
+  preconditions: [actor.can_watch, location.tag.boundary]
+  duration: {minutes: 45}
+  costs: {reserve: {}, per_minute: {vigor: 0.15}, on_success: {}, on_failure: {}, refund: {}}
+  effects: [{type: world_property_delta, property: town_security, delta: 0.05, maximum: 1.0}]
+  success: {condition: actor.alive, result: boundary_secured}
+  failure: {condition: actor.incapacitated, result: boundary_failed}
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
 behavior_trees:
 - id: inspect_cistern
   agent_label: Inspect Cistern
@@ -285,6 +299,17 @@ behavior_trees:
   - {type: action, action_id: communicate, parameters: {target_id: context.target_id, topic: context.topic, message: context.message}}
   success_results: [dialogue_recorded]
   failure_results: [conversation_refused, participant_left]
+- id: secure_north_watch
+  agent_label: Secure North Watch
+  summary: Secure North Watch
+  entry_conditions: [actor.can_watch, actor.alive]
+  estimated_minutes: 46
+  cooldown_minutes: 720
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: north_watch}}
+  - {type: action, action_id: secure_boundary, parameters: {}}
+  success_results: [boundary_secured]
+  failure_results: [boundary_failed, interrupted]
 rules:
   vital_attribute: integrity
   capacity_attribute: vigor
@@ -292,12 +317,20 @@ rules:
     visible_fields: [role, type, summary, description, public]
     visible_state_fields: [status, quantity, readable, recovered]
     global: {fields: [role, type, summary, description, public], state_fields: [status, location_id, quantity]}
-  fallback_behavior_ids: [inspect_cistern, survey_old_road]
+  fallback_behavior_ids: [inspect_cistern, survey_old_road, secure_north_watch]
   capability_aliases:
-    inspect: [stewardship]
+    inspect: [stewardship, watch]
     speak: [conversation]
     explore: [exploration]
     gather: [gathering]
+  civilization_progress:
+    boundary_knowledge:
+      required: 2
+      evidence_value: 2
+      description: 两阶段研究完成后，镇上形成关于界碑的可用公共知识。
+      evidence_event_types: [research.completed]
+      evidence_behaviors: [research_boundary_stone]
+      wake: [story, god]
   needs:
   - {id: belonging, target: 70, minimum: 0, gamma: 1.5, critical_threshold: 0.7, critical_gain: 1.0}
   - {id: purpose, target: 70, minimum: 0, gamma: 1.5, critical_threshold: 0.7, critical_gain: 1.0}
@@ -326,7 +359,7 @@ agents:
   beliefs: [{id: evidence_before_alarm, statement: 未核实的痕迹不能直接当成袭击, confidence: 0.82}]
   needs: {belonging: 50, purpose: 75}
   capabilities: {watch: 0.92, exploration: 0.85, conversation: 0.55}
-  initial_bt_ids: [survey_old_road, communicate]
+  initial_bt_ids: [survey_old_road, secure_north_watch, communicate]
   initial_state: {location_id: north_watch, status: idle, integrity: 100, vigor: 90, reputation: 0}
   inventory: {rations: 1, map_kit: 1}
 - id: luo_shan
@@ -346,7 +379,13 @@ relationships:
 - {from: luo_shan, to: mei_lan, type: trust, relation_strength: 0.12}
 evolution:
   reflection_cadence_minutes: 1440
-  event_wake_policy: {event_groups: {}, direct_event_types: [research.completed, exploration.completed]}
+  event_wake_policy:
+    consumers:
+      god:
+        direct_event_types: [civilization.milestone]
+        event_groups:
+        - {id: research_synthesis, event_types: [research.completed], minimum_events: 1, cooldown_minutes: 10080}
+      story: {batch_minutes: 0}
 story:
   emergent_source_event_types: [research.completed, exploration.completed]
   beats:

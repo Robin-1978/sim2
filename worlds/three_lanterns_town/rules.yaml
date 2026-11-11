@@ -26,15 +26,29 @@ perception:
 fallback_behavior_ids:
 - inspect_cistern
 - survey_old_road
+- secure_north_watch
 capability_aliases:
   inspect:
   - stewardship
+  - watch
   speak:
   - conversation
   explore:
   - exploration
   gather:
   - gathering
+civilization_progress:
+  boundary_knowledge:
+    required: 2
+    evidence_value: 2
+    description: 两阶段研究完成后，镇上形成关于界碑的可用公共知识。
+    evidence_event_types:
+    - research.completed
+    evidence_behaviors:
+    - research_boundary_stone
+    wake:
+    - story
+    - god
 needs:
 - id: belonging
   target: 70
