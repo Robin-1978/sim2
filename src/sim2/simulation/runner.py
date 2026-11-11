@@ -76,6 +76,9 @@ class SimulationRunner:
         self._decision_event_cursor = 0
         self.turn_observer = turn_observer
         self._load_scheduler_state()
+        # Claims are transient.  Restore due work before this runner starts
+        # scheduling new minutes so a crash cannot strand an evolution task.
+        self.platform.recover_claimed_evolution_tasks()
 
     def _load_scheduler_state(self) -> None:
         state = self.platform.store.get_meta("runtime_scheduler_state", {}) or {}

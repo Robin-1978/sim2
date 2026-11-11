@@ -734,6 +734,31 @@ class WorldStore:
         self.connection.execute("UPDATE evolution_task SET status='claimed' WHERE task_id=?", (task_id,))
         return {"task_id": row["task_id"], "role": row["role"], "actor_id": row["actor_id"], "task_type": row["task_type"], "due_minute": row["due_minute"], "cadence_minutes": row["cadence_minutes"], **json.loads(row["data_json"])}
 
+    def recover_claimed_evolution_tasks(self, world_minute: int) -> list[str]:
+        """Return tasks left claimed by a process that stopped unexpectedly.
+
+        ``claimed`` is a transient hand-off state between the scheduler and an
+        Agent session.  A provider failure is explicitly rescheduled by the
+        runner, but a process crash can occur after the claim and before that
+        cleanup.  On the next process start, due claimed tasks are safe to
+        put back into the ready queue because this runtime has one logical
+        evolution worker and does not execute a claimed task concurrently.
+        """
+
+        rows = self.connection.execute(
+            "SELECT task_id FROM evolution_task "
+            "WHERE status='claimed' AND due_minute<=? ORDER BY due_minute,task_id",
+            (int(world_minute),),
+        ).fetchall()
+        task_ids = [str(row["task_id"]) for row in rows]
+        if task_ids:
+            self.connection.execute(
+                "UPDATE evolution_task SET status='ready' "
+                "WHERE status='claimed' AND due_minute<=?",
+                (int(world_minute),),
+            )
+        return task_ids
+
     def reschedule_evolution_task(self, task_id: str, due_minute: int) -> None:
         self.connection.execute("UPDATE evolution_task SET due_minute=?,status='scheduled' WHERE task_id=?", (int(due_minute), task_id))
 

@@ -139,9 +139,13 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         if institution_intent:
             institution_name = str(payload.get("name") or payload.get("institution") or "").strip()
             evidence = str(payload.get("evidence") or payload.get("reason") or "").strip()
+            purpose = str(payload.get("purpose") or "").strip()
             checks.append(_check("institution_name_is_specific", len(institution_name) >= 2, f"name_length={len(institution_name)}"))
             checks.append(_check("institution_platform_applied", turn.result.get("status") in {"accepted", "wait"}, f"status={turn.result.get('status')}"))
-            checks.append(_check("institution_evidence_is_specific", len(evidence) >= 12 or institution_intent and bool(payload.get("purpose")), f"evidence_length={len(evidence)}"))
+            context_terms = _context_evidence(view)
+            proposal_terms = _terms(" ".join((institution_name, purpose, evidence)))
+            grounded = len(evidence) >= 12 and len(purpose) >= 12 and bool(proposal_terms & context_terms)
+            checks.append(_check("institution_evidence_is_specific", grounded, f"evidence_length={len(evidence)}; purpose_length={len(purpose)}; context_overlap={bool(proposal_terms & context_terms)}"))
         reason = str(payload.get("reason") or "")
         checks.append(_check("decision_reason_advisory", True, f"reason_length={len(reason.strip())}; detailed rationale is optional and reviewed by Reflection"))
         parameters = payload.get("parameters") or {}
@@ -167,9 +171,13 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         # A missing rationale is acceptable when the selected BT is grounded
         # in visible goals/drives; a supplied rationale still must overlap
         # visible evidence.
-        choice_only_grounded = turn.result.get("status") == "accepted" and behavior_ref in refs and not reason.strip()
-        reason_grounded = wait_choice or platform_guarded or interaction or institution_intent or choice_only_grounded or bool(reason_terms & evidence_terms) or bool(alignment)
-        semantic_ok = wait_choice or platform_guarded or interaction or institution_intent or choice_only_grounded or bool(alignment) or bool(reason_terms & evidence_terms) or len(behaviors) <= 1
+        # A valid catalog choice still needs visible grounding.  The catalog
+        # proves that Platform can execute it; goals, drives, or a concise
+        # reason prove that the Agent selected it for a coherent purpose.
+        choice_only_grounded = turn.result.get("status") == "accepted" and behavior_ref in refs and not reason.strip() and bool(alignment)
+        institution_grounded = institution_intent and next((item.get("passed") for item in checks if item.get("name") == "institution_evidence_is_specific"), False)
+        reason_grounded = wait_choice or platform_guarded or interaction or institution_grounded or choice_only_grounded or bool(reason_terms & evidence_terms) or bool(alignment)
+        semantic_ok = wait_choice or platform_guarded or interaction or institution_grounded or choice_only_grounded or bool(alignment) or bool(reason_terms & evidence_terms)
         checks.append(_check("decision_semantic_signal", semantic_ok, f"alignment={sorted(alignment)}; reason_overlap={bool(reason_terms & evidence_terms)}; candidates={len(behaviors)}"))
         reason_detail = "reason overlaps visible evidence" if reason_terms & evidence_terms else ("choice aligned with visible goals/drives; explanation language is advisory" if reason.strip() and alignment else ("choice-only response selected a currently executable Platform candidate; explanation is optional" if choice_only_grounded else ("choice aligned with visible goals/drives; no explanation emitted" if not reason.strip() and alignment else "no overlap with selected behavior, goals, drives or capabilities")))
         checks.append(_check("decision_reason_grounding", reason_grounded, reason_detail))

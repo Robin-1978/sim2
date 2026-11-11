@@ -483,7 +483,12 @@ class AgentViewCompiler:
                 if key and name:
                     entities.append((key, name if name != key else key.replace("_", " ")))
         for key, name in sorted(set(entities), key=lambda item: len(item[0]), reverse=True):
-            text = re.sub(rf"(?<![A-Za-z0-9]){re.escape(key)}(?![A-Za-z0-9])", name, text)
+            # Entity identifiers are snake_case tokens.  Treat underscore as
+            # part of a token so ``village_food`` cannot rewrite the prefix
+            # of a different configured identifier such as
+            # ``village_food_store``.  This keeps humanization exact without
+            # adding world-specific names to the compiler.
+            text = re.sub(rf"(?<![A-Za-z0-9_]){re.escape(key)}(?![A-Za-z0-9_])", name, text)
         return text
 
     def _humanize_record(self, value: Any, *, field: str = "") -> Any:

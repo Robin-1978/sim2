@@ -83,3 +83,39 @@ a person proposes an institution and the world activates it.  After activation,
 configured selectors append verified ledger entries from real behavior events;
 allocation is a later declarative settlement and never grants resources at
 proposal time.
+
+## Breaking schema and audit boundaries
+
+The runtime is still in development and does not silently preserve obsolete
+world-specific aliases. A content pack must declare package values under
+`rules.context_values`, inventory groups under `rules.item_groups`, and
+resolvers under `rules.context_resolvers`. A food-like resource is only one
+possible group; the runtime has no `food_items` or `first_food` vocabulary.
+Actions refer to a resolver name such as `context.item_id`, so another world
+can use cells, medicine, fuel, or any other configured group without Python
+changes.
+
+Action and BT definitions are immutable snapshots once a process starts. The
+active `action_instance` stores its definition version, while new processes see
+the newer registry version. `capability.evidence` is evidence only; an Agent
+must submit a bounded capability update backed by that evidence. Ordinary
+behavior completion never grants arbitrary capability XP.
+
+World progress and evolution consumers use the same validated source-event
+window. A progress update carries `source_event_id`; an event-group wake
+counts matching persisted events before creating a God/Story task. The final
+review does not rewrite failed Agent quality checks. Historical provider
+errors, budget exhaustion, weak choices, and unsupported proposals remain
+visible in the audit, even when a later code revision can explain them.
+
+Provider cooldown is scoped to the affected Agent role/session. A paused
+session can retry at the same world boundary; unrelated active behaviors and
+world-minute execution remain resumable. A process restart also requeues any
+due evolution task left in transient `claimed` status and records an
+`evolution.tasks_recovered` event.
+
+Provider adapters normalize model transport envelopes before the Agent Engine
+receives a response. For example, the LongCat adapter converts a bare
+`{"request_behavior": {...}}` content object into the shared intent shape.
+Agent logic only handles the shared schema; it does not contain provider or
+model names. Adapter normalization is covered by provider compatibility tests.

@@ -1240,6 +1240,21 @@ class Platform(
         with self.store.transaction():
             return self.store.claim_evolution_task(task_id, minute)
 
+    def recover_claimed_evolution_tasks(self) -> list[str]:
+        """Requeue due evolution work left behind by an interrupted process."""
+
+        minute = int(self.store.get_meta("world_minute", 0))
+        with self.store.transaction():
+            task_ids = self.store.recover_claimed_evolution_tasks(minute)
+            if task_ids:
+                self.store.append_event(
+                    "evolution.tasks_recovered",
+                    None,
+                    minute,
+                    {"task_ids": task_ids, "reason": "previous process stopped after claim"},
+                )
+            return task_ids
+
     def complete_evolution_task(self, task_id: str) -> None:
         minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():

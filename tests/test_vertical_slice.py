@@ -109,20 +109,35 @@ def test_agent_prompt_humanizes_resource_and_location_keys(tmp_path: Path):
         platform.close()
 
 
-def test_legacy_rule_context_keeps_recovery_resolvers_available():
-    rules = {"satiety_alert_threshold": 40, "food_items": ["rations", "cooked_meal"]}
+def test_agent_visible_text_does_not_replace_identifier_prefixes(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "agent-visible-boundary-world", tmp_path / "runtime"))
+    try:
+        rendered = platform.view._visible_text("village_food_store contains village_food")
+        assert "village_food_store" in rendered
+        assert "village food" in rendered
+    finally:
+        platform.close()
+
+
+def test_configured_item_resolver_keeps_recovery_values_generic():
+    rules = {
+        "context_values": {"satiety_alert_threshold": 40},
+        "item_groups": {"meals": ["rations", "cooked_meal"]},
+        "context_resolvers": {"item_id": {"type": "first_inventory_item", "group": "meals"}},
+    }
     values = configured_context_values(rules, {"inventory": {"rations": 2}})
     assert values["satiety_alert_threshold"] == 40
     assert values["item_id"] == "rations"
 
 
-def test_legacy_food_action_default_resolves_to_carried_item(tmp_path: Path):
+def test_configured_food_action_default_resolves_to_carried_item(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "legacy-food-default-world", tmp_path / "runtime"))
     try:
         agent = platform.store.get_agent("lin_bo")
         action = next(item for item in platform.store.get_definitions("action_def") if item.get("id") == "consume_food")
-        action["parameter_defaults"] = {"item_id": "first_food"}
+        action["parameter_defaults"] = {"item_id": {"resolver": "context_value", "key": "item_id"}}
         assert platform._apply_action_parameter_defaults(agent, action, {"item_id": None})["item_id"] == "rations"
     finally:
         platform.close()
@@ -3431,6 +3446,36 @@ def test_evolution_windows_are_scheduled_without_llm_calls(tmp_path: Path):
         assert all(item["task_id"] != task["task_id"] for item in platform.ready_evolution_tasks())
     finally:
         platform.close()
+
+
+def test_claimed_evolution_task_is_recovered_after_process_restart(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "evolution-restart-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        platform.store.connection.execute(
+            "UPDATE evolution_task SET due_minute=1 WHERE task_id='reflection:lu_xingzhou'"
+        )
+        platform.store.connection.commit()
+        step_n(platform, 1)
+        task = next(item for item in platform.ready_evolution_tasks() if item["task_id"] == "reflection:lu_xingzhou")
+        assert platform.claim_evolution_task(task["task_id"]) is not None
+        assert platform.store.connection.execute(
+            "SELECT status FROM evolution_task WHERE task_id=?", (task["task_id"],)
+        ).fetchone()["status"] == "claimed"
+    finally:
+        platform.close()
+
+    restarted = Platform(db_path)
+    try:
+        # Constructing a runner is the process-start recovery boundary.  The
+        # stale claim becomes executable again without advancing world time.
+        SimulationRunner(restarted, {})
+        recovered = next(item for item in restarted.ready_evolution_tasks() if item["task_id"] == "reflection:lu_xingzhou")
+        assert recovered["status"] == "ready"
+        assert any(event["event_type"] == "evolution.tasks_recovered" for event in restarted.store.recent_events(limit=10))
+    finally:
+        restarted.close()
 
 
 def test_god_proposal_creates_entity_only_through_platform(tmp_path: Path):

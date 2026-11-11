@@ -193,7 +193,7 @@ class OpenAICompatibleProvider:
                             f"model returned no content or tool call (finish_reason={finish_reason})",
                             usage=usage,
                         )
-                    result = _json_from_text(content)
+                    result = self.adapter.normalize_response(_json_from_text(content))
                 if usage:
                     result["_usage"] = usage
                 return with_latency(result)

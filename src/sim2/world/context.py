@@ -20,25 +20,11 @@ def configured_context_values(
     rules = rules or {}
     agent = agent or {}
     configured = rules.get("context_values", {}) or {}
-    # Older imported instances stored package context at the rules root
-    # (for example ``satiety_alert_threshold`` and ``food_items``).  Treat
-    # those scalar threshold values and the legacy food group as a declarative
-    # migration, rather than making an existing world lose its recovery BTs
-    # after a runtime upgrade.  New packages continue to use the explicit
-    # context_values/item_groups/context_resolvers sections.
-    if not configured:
-        configured = {
-            str(key): value
-            for key, value in rules.items()
-            if str(key).endswith("_threshold") and isinstance(value, (int, float)) and not isinstance(value, bool)
-        }
     # Values are read-only within a condition context. A shallow copy keeps
     # callers from mutating the stored mapping without paying a deep-copy cost
     # once per person and minute.
     result = dict(configured) if isinstance(configured, dict) else {}
     groups = rules.get("item_groups", {}) or {}
-    if not groups and isinstance(rules.get("food_items"), list):
-        groups = {"food": list(rules.get("food_items") or [])}
     inventory = agent.get("inventory", {}) or {}
 
     if not include_resolvers:
@@ -62,10 +48,4 @@ def configured_context_values(
                 ),
                 None,
             )
-    # The first imported starter package used ``first_food`` as the action
-    # default name before context resolvers were named explicitly. Preserve
-    # that harmless alias whenever a package exposes an item resolver; the
-    # Platform still resolves the value from the configured inventory group.
-    if "item_id" in result and "first_food" not in result:
-        result["first_food"] = result.get("item_id")
     return result

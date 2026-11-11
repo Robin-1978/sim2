@@ -125,6 +125,27 @@ class AgentEngine:
             for item in (context.get("recent_actions") or [])
         )
 
+    @staticmethod
+    def _reflection_reason_is_decline(reason: Any) -> bool:
+        """Recognize an explicit low-value reflection decline.
+
+        A bare explanation is not automatically a successful reflection: it
+        may be an unfinished model response.  Only clear statements that no
+        durable lesson is new are normalized to the intentional ``wait``
+        outcome; all other reason-only responses remain protocol errors and
+        receive the normal ReAct feedback.
+        """
+
+        text = str(reason or "").casefold()
+        if not text.strip():
+            return False
+        markers = (
+            "no new lesson", "no new durable", "no durable lesson", "nothing new", "no useful lesson",
+            "already recorded", "already known", "no change to record",
+            "没有新的经验", "没有新的教训", "无需记录", "没有值得保留",
+        )
+        return any(marker in text for marker in markers)
+
     def run(
         self,
         *,
@@ -743,6 +764,7 @@ class AgentEngine:
             and role == "agent_reflection"
             and str(data.get("reason") or "").strip()
             and not any(data.get(key) for key in ("summary", "statement", "belief", "goal", "capability", "definition"))
+            and self._reflection_reason_is_decline(data.get("reason"))
         ):
             # A reflection model may answer with only a short explanation
             # that no durable lesson is new. Treat that as the explicit

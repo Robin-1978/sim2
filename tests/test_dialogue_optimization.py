@@ -12,7 +12,7 @@ from sim2.intents.models import BehaviorIntent
 from sim2.actions.capacity import check_action_capacity
 from sim2.actions.conditions import ConditionEngine
 from sim2.actions.effects import EffectPipeline
-from sim2.llm.adapters import IcemanAdapter, resolve_adapter
+from sim2.llm.adapters import IcemanAdapter, LongCatAdapter, resolve_adapter
 from sim2.llm.gateway import _json_from_text
 
 
@@ -131,6 +131,17 @@ def test_provider_intent_wrapper_uses_visible_behavior_choice():
     assert nested["reason"] == "Review winter allocation."
     assert nested["confidence"] == 0.9
     assert nested["parameters"] == {}
+
+
+def test_longcat_bare_function_object_is_unwrapped_at_adapter_boundary():
+    adapter = resolve_adapter("openai_compatible", "https://example.test", "longcat-2.5-free")
+    assert isinstance(adapter, LongCatAdapter)
+    normalized = adapter.normalize_response(
+        {"request_behavior": {"choice": "Patrol Route", "target": "北门", "reason": "The watch route is the current duty."}}
+    )
+    assert normalized["intent_type"] == "select_behavior"
+    assert normalized["choice"] == "Patrol Route"
+    assert normalized["target"] == "北门"
 
 
 def test_provider_target_alias_is_mapped_to_visible_name():
@@ -256,6 +267,24 @@ def test_quality_separates_provider_failure_from_agent_content_failure():
     assert quality["passed"] is False
     assert quality["grade"] == "provider_error"
     assert not any(item["name"] == "behavior_is_offered" for item in quality["checks"])
+
+
+def test_choice_only_quality_requires_visible_goal_or_drive_grounding():
+    turn = AgentTurn(
+        role="agent_decision",
+        task_type="agent_plan_selection",
+        response={"tool_calls": [{"function": {"name": "request_behavior", "arguments": {"choice": "Do the thing"}}}]},
+        result={"status": "accepted", "behavior_ref": "behavior:thing"},
+        iterations=1,
+        transcript=[{"step": "tool", "name": "request_behavior", "arguments": {"choice": "Do the thing"}, "result": {"status": "accepted"}}],
+    )
+    quality = evaluate_turn(turn, {
+        "executable_behaviors": [{"ref": "behavior:thing", "choice": "Do the thing", "goal_tags": ["unrelated"], "drive_tags": ["other"]}],
+        "goal_tags": ["current_goal"],
+        "drives": [{"id": "current_drive"}],
+    })
+    assert quality["passed"] is False
+    assert any(item["name"] == "decision_semantic_signal" and not item["passed"] for item in quality["checks"])
 
 
 def test_unbound_context_reference_does_not_leak_into_world_text():

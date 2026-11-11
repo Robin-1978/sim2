@@ -214,51 +214,10 @@ def _finalize_quality(sessions: list[dict[str, Any]], causality: dict[str, Any])
 
     by_rule = {str(item.get("rule_id")): item for item in causality.get("world_rule_changes", [])}
     for session in sessions:
-        # Older checkpoints were produced before choice-only decision turns
-        # were explicitly allowed.  Reconcile only the narrow case where the
-        # Platform accepted a choice that was present in the executable
-        # catalog; a malformed or rejected choice remains a failure.
-        if session.get("role") == "agent_decision" and (session.get("result") or {}).get("status") == "accepted":
-            quality = session.setdefault("quality", {})
-            checks = quality.get("checks") or []
-            offered = next((item for item in checks if item.get("name") == "behavior_is_offered"), None)
-            if offered and offered.get("passed"):
-                changed = False
-                for item in checks:
-                    if item.get("name") in {"decision_semantic_signal", "decision_reason_grounding"} and not item.get("passed"):
-                        item["passed"] = True
-                        item["detail"] = "choice-only response selected a currently executable Platform candidate; explanation is optional"
-                        changed = True
-                if changed:
-                    quality["passed"] = all(item.get("passed") for item in checks)
-                    if quality["passed"]:
-                        quality["grade"] = "grounded_choice"
-        # A pre-fix reflection may have exhausted ReAct after returning only
-        # a concise explanation that no durable lesson was new.  Reconcile
-        # that exact no-side-effect shape as wait; other budget exhaustion
-        # remains a real failure.
-        if session.get("role") == "agent_reflection" and (session.get("result") or {}).get("failed_check") == "budget_exhausted":
-            response = session.get("response") or {}
-            reason = str(response.get("reason") or response.get("message") or "").casefold()
-            if any(term in reason for term in ("no new durable", "no new lesson", "already match", "nothing new")):
-                session["result"] = {"status": "wait", "reason": str(response.get("reason") or response.get("message"))}
-                quality = session.setdefault("quality", {})
-                for item in quality.get("checks", []):
-                    if item.get("name") in {"session_finished", "reflection_intent_is_known"}:
-                        item["passed"] = True
-                        item["detail"] = "reason-only low-value reflection normalized to wait"
-                quality["passed"] = all(item.get("passed") for item in quality.get("checks", []))
-                if quality["passed"]:
-                    quality["grade"] = "grounded_wait"
-        if session.get("role") == "god" and str(((session.get("result") or {}).get("institution") or {}).get("status", "")) == "active":
-            quality = session.setdefault("quality", {})
-            for item in quality.get("checks", []):
-                if item.get("name") == "god_submission_is_known" and not item.get("passed"):
-                    item["passed"] = True
-                    item["detail"] = "institution activation is a validated God submission"
-            quality["passed"] = all(item.get("passed") for item in quality.get("checks", []))
-            if quality["passed"]:
-                quality["grade"] = "grounded"
+        # Quality is an observation of the completed session.  Do not rewrite
+        # an old failure into a pass here: a historical checkpoint must remain
+        # auditable after the evaluator changes.  Only deferred God rule
+        # follow-up checks below are reconciled from persisted world events.
         if session.get("role") != "god" or session.get("result", {}).get("status") != "accepted":
             continue
         payload = session.get("response") or {}
@@ -299,6 +258,7 @@ def _finalize_quality(sessions: list[dict[str, Any]], causality: dict[str, Any])
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--finalize-only", type=Path, help="reconcile a completed audit JSON against its persisted SQLite run without calling a provider")
     parser.add_argument("--minutes", type=int, default=1440)
     parser.add_argument("--provider", default="remote", help="Configured provider name; remote is the default real-model path.")
     parser.add_argument("--model", default=None, help="Override the configured model for this provider.")
@@ -311,6 +271,46 @@ def main() -> int:
     parser.add_argument("--cooldown-seconds", type=float, default=60.0, help="wall-clock wait between automatic provider retries")
     parser.add_argument("--max-provider-errors", type=int, default=20, help="stop automatic retries after this many provider-error sessions")
     args = parser.parse_args()
+
+    if args.finalize_only:
+        audit_path = args.finalize_only.resolve()
+        if not audit_path.is_file():
+            raise SystemExit(f"audit file does not exist: {audit_path}")
+        data = json.loads(audit_path.read_text(encoding="utf-8"))
+        db_path = Path(str(data.get("db_path") or "")).resolve()
+        if not db_path.is_file():
+            raise SystemExit(f"audit database does not exist: {db_path}")
+        platform = Platform(db_path)
+        try:
+            sessions = list(data.get("sessions") or [])
+            causality = _causality(platform, sessions)
+            _finalize_quality(sessions, causality)
+            quality_counts = _quality_counts(sessions)
+            unresolved_provider_errors = _unresolved_provider_errors(sessions)
+            data["sessions"] = sessions
+            world = data.setdefault("world", {})
+            world["status"] = platform.status()
+            world["health"] = platform.health()
+            world["metrics"] = platform.metrics()
+            world["observer"] = platform.observer_view(event_limit=100)
+            world["agents"] = platform.store.list_agents()
+            world["progress"] = platform.store.list_progress("world", limit=100)
+            world["causality"] = causality
+            world["quality_counts"] = quality_counts
+            world["unresolved_provider_errors"] = len(unresolved_provider_errors)
+            output_path = args.output if args.output != Path("artifacts/real-agent-audit.json") else audit_path
+            _write_json_atomic(output_path, data)
+            print(json.dumps({
+                "audit_file": str(output_path),
+                "db_path": str(db_path),
+                "world_minute": world["status"]["world_minute"],
+                "sessions": len(sessions),
+                "quality_counts": quality_counts,
+                "unresolved_provider_errors": len(unresolved_provider_errors),
+            }, ensure_ascii=False, indent=2))
+            return 0
+        finally:
+            platform.close()
     if args.minutes < 1:
         raise SystemExit("--minutes must be at least 1")
     config = LLMConfig.load()

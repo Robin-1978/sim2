@@ -21,6 +21,11 @@ class ModelAdapter:
     def prepare_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         return payload
 
+    def normalize_response(self, response: dict[str, Any]) -> dict[str, Any]:
+        """Normalize provider-specific response envelopes at the adapter boundary."""
+
+        return response
+
 
 @dataclass(frozen=True)
 class DeepSeekAdapter(ModelAdapter):
@@ -70,10 +75,60 @@ class IcemanAdapter(ModelAdapter):
         return prepared
 
 
+@dataclass(frozen=True)
+class LongCatAdapter(ModelAdapter):
+    """Normalize LongCat's bare ``{function_name: arguments}`` envelope.
+
+    LongCat may return a function-shaped JSON object without the OpenAI
+    ``tool_calls`` wrapper. This is transport normalization, not Agent logic:
+    after this method the Agent sees the same intent JSON as every provider.
+    Read-only tools are deliberately excluded; only final intent names are
+    unwrapped here.
+    """
+
+    name: str = "longcat"
+
+    def normalize_response(self, response: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(response, dict) or response.get("intent_type"):
+            return response
+        aliases = {
+            "request_behavior": "select_behavior",
+            "select_behavior": "select_behavior",
+            "wait": "wait",
+            "send_message": "send_message",
+            "create_trade_offer": "create_trade_offer",
+            "accept_trade_offer": "accept_trade_offer",
+            "counter_trade_offer": "counter_trade_offer",
+            "reject_trade_offer": "reject_trade_offer",
+            "record_experience": "record_experience",
+            "update_capability": "update_capability",
+            "update_belief": "update_belief",
+            "update_goal": "update_goal",
+            "propose_behavior": "propose_behavior",
+            "propose_institution": "propose_institution",
+            "record_world_progress": "record_world_progress",
+            "propose_entity": "propose_entity",
+            "propose_definition": "propose_definition",
+            "propose_world_change": "propose_world_change",
+            "approve_institution": "approve_institution",
+            "propose_story_beat": "propose_story_beat",
+            "submit_world_template": "submit_world_template",
+        }
+        for wrapper, intent_type in aliases.items():
+            inner = response.get(wrapper)
+            if isinstance(inner, dict):
+                normalized = dict(inner)
+                normalized.setdefault("intent_type", intent_type)
+                return normalized
+        return response
+
+
 def resolve_adapter(provider_type: str, base_url: str, model: str, hint: str | None = None) -> ModelAdapter:
     key = str(hint or "").casefold()
     if key in {"deepseek", "deepseek_chat"} or "deepseek" in str(model).casefold():
         return DeepSeekAdapter()
     if key in {"iceman", "iceman_chat"} or "iceman" in str(model).casefold():
         return IcemanAdapter()
+    if key in {"longcat", "longcat_chat"} or "longcat" in str(model).casefold():
+        return LongCatAdapter()
     return ModelAdapter()
