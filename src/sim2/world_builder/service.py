@@ -34,9 +34,10 @@ class WorldBuilderError(RuntimeError):
 class WorldBuilderService:
     """Creation-time bounded tool loop for a new declarative world package."""
 
-    def __init__(self, provider: Any, *, max_iterations: int = 8):
+    def __init__(self, provider: Any, *, max_iterations: int | None = None):
         self.provider = provider
-        self.max_iterations = max(2, int(max_iterations))
+        configured = getattr(provider, "max_agent_iterations", 8)
+        self.max_iterations = max(2, int(configured if max_iterations is None else max_iterations))
 
     @staticmethod
     def _policy() -> tuple[str, list[str]]:

@@ -232,7 +232,10 @@ def test_world_template_validates_recipe_resource_scope():
 
 def test_world_builder_agent_validates_exact_template_before_submission():
     provider = BuilderProvider(orbital_template())
-    draft = WorldBuilderService(provider).build("Create an orbital relay during a radiation storm.")
+    provider.max_agent_iterations = 3
+    service = WorldBuilderService(provider)
+    assert service.max_iterations == 3
+    draft = service.build("Create an orbital relay during a radiation storm.")
     assert draft.template["world"]["id"] == "orbital_lab"
     assert draft.iterations == 2
     assert draft.usage == {"prompt_tokens": 200, "completion_tokens": 400, "cached_tokens": 0}
