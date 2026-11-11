@@ -68,10 +68,11 @@ class AgentEngine:
     subsequently advanced by Platform rather than by another LLM call.
     """
 
-    def __init__(self, platform: Platform, provider: Any, max_iterations: int = 6, max_repeated_tool_calls: int = 2, max_tool_calls: int = 12, max_read_tool_calls: int = 8):
+    def __init__(self, platform: Platform, provider: Any, max_iterations: int | None = None, max_repeated_tool_calls: int = 2, max_tool_calls: int = 12, max_read_tool_calls: int = 8):
         self.platform = platform
         self.provider = provider
-        self.max_iterations = max(1, max_iterations)
+        configured_iterations = getattr(self.provider, "max_agent_iterations", 4)
+        self.max_iterations = max(1, int(configured_iterations if max_iterations is None else max_iterations))
         self.max_repeated_tool_calls = max(1, max_repeated_tool_calls)
         self.max_tool_calls = max(1, max_tool_calls)
         self.max_read_tool_calls = max(1, max_read_tool_calls)

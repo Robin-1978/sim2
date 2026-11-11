@@ -135,6 +135,7 @@ def main() -> None:
             provider = LLMRouter.from_default_config().new_provider_for_name(
                 args.provider,
                 max_completion_tokens=args.max_completion_tokens,
+                role="world_builder",
             )
             try:
                 draft = WorldBuilderService(provider).build(brief)

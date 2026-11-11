@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import httpx
 
-from .config import LLMConfig, ProviderConfig
+from .config import DEFAULT_MAX_AGENT_ITERATIONS, DEFAULT_MAX_COMPLETION_TOKENS, LLMConfig, ProviderConfig
 from .adapters import ModelProtocolError, resolve_adapter
 
 
@@ -56,6 +56,8 @@ def _json_from_text(text: str) -> dict[str, Any]:
 @dataclass
 class OpenAICompatibleProvider:
     config: ProviderConfig
+    max_completion_tokens: int = DEFAULT_MAX_COMPLETION_TOKENS
+    max_agent_iterations: int = DEFAULT_MAX_AGENT_ITERATIONS
     session_id: str = ""
     _cooldown_until: float = 0.0
 
@@ -149,8 +151,7 @@ class OpenAICompatibleProvider:
         # tool call or one concise Intent, not an unbounded reasoning essay.
         # An explicitly configured extra_body value wins for providers that
         # require ``max_completion_tokens`` or another naming convention.
-        if self.config.max_completion_tokens is not None:
-            payload["max_tokens"] = int(self.config.max_completion_tokens)
+        payload["max_tokens"] = int(self.max_completion_tokens)
         if self.config.extra_body:
             payload.update(self.config.extra_body)
         if tools and self.adapter.native_tools:
@@ -222,13 +223,26 @@ class LLMRouter:
             name: OpenAICompatibleProvider(provider_config)
             for name, provider_config in config.providers.items()
         }
+        self._role_providers: dict[str, LLMProvider] = {}
 
     @classmethod
     def from_default_config(cls) -> "LLMRouter":
         return cls(LLMConfig.load())
 
     def provider_for_role(self, role: str) -> LLMProvider:
-        return self.providers[self.config.provider_name_for(role)]
+        role_key = str(role)
+        cached = self._role_providers.get(role_key)
+        if cached is not None:
+            return cached
+        provider_name = self.config.provider_name_for(role)
+        role_config = self.config.role_for(role)
+        provider = OpenAICompatibleProvider(
+            self.config.providers[provider_name],
+            max_completion_tokens=role_config.max_completion_tokens,
+            max_agent_iterations=role_config.max_agent_iterations,
+        )
+        self._role_providers[role_key] = provider
+        return provider
 
     def provider_for_name(self, name: str) -> LLMProvider:
         """Return the configured provider instance for an explicit override."""
@@ -244,19 +258,27 @@ class LLMRouter:
         model: str | None = None,
         *,
         max_completion_tokens: int | None = None,
+        role: str | None = None,
     ) -> LLMProvider:
         """Create an isolated provider session for a shared role override."""
 
         try:
             configured = self.config.providers[name]
-            overrides: dict[str, Any] = {}
+            config_overrides: dict[str, Any] = {}
             if model:
-                overrides["model"] = str(model)
-            if max_completion_tokens is not None:
-                overrides["max_completion_tokens"] = max(128, min(8192, int(max_completion_tokens)))
-            if overrides:
-                configured = ProviderConfig(**{**configured.__dict__, **overrides})
-            return OpenAICompatibleProvider(configured)
+                config_overrides["model"] = str(model)
+            if config_overrides:
+                configured = ProviderConfig(**{**configured.__dict__, **config_overrides})
+            role_config = self.config.role_for(role) if role is not None else self.config.role_for("")
+            completion_limit = (
+                max(128, min(8192, int(max_completion_tokens)))
+                if max_completion_tokens is not None else role_config.max_completion_tokens
+            )
+            return OpenAICompatibleProvider(
+                configured,
+                max_completion_tokens=completion_limit,
+                max_agent_iterations=role_config.max_agent_iterations,
+            )
         except KeyError as exc:
             raise ValueError(f"Unknown LLM provider: {name}") from exc
 

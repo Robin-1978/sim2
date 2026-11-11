@@ -1,7 +1,8 @@
 """Runtime LLM configuration.
 
-The real file lives at ~/.sim2/llm.json. It contains provider metadata only;
-secrets are referenced by environment variable name and never persisted here.
+The real file lives at ~/.sim2/llm.json. It contains provider metadata and
+per-role routing/spend policy; secrets are references to environment variables
+and are never persisted here.
 """
 from __future__ import annotations
 
@@ -9,6 +10,10 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+
+DEFAULT_MAX_COMPLETION_TOKENS = 2048
+DEFAULT_MAX_AGENT_ITERATIONS = 4
 
 
 @dataclass(frozen=True)
@@ -23,19 +28,24 @@ class ProviderConfig:
     timeout_seconds: float = 120.0
     max_retries: int = 2
     retry_backoff_seconds: float = 1.0
-    # Keep tool-call and JSON replies bounded.  Providers otherwise choose a
-    # large completion budget and reasoning/tool planning can dominate cost.
-    # ``extra_body`` may override the provider-specific field when required.
-    max_completion_tokens: int | None = 2048
     adapter: str | None = None
     extra_body: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class RoleConfig:
+    """Route one Agent role and define its model-spend budget."""
+
+    provider: str | None = None
+    max_completion_tokens: int = DEFAULT_MAX_COMPLETION_TOKENS
+    max_agent_iterations: int = DEFAULT_MAX_AGENT_ITERATIONS
 
 
 @dataclass(frozen=True)
 class LLMConfig:
     default_provider: str
     providers: dict[str, ProviderConfig]
-    role_providers: dict[str, str]
+    roles: dict[str, RoleConfig]
 
     @classmethod
     def load(cls, path: Path | None = None) -> "LLMConfig":
@@ -46,8 +56,20 @@ class LLMConfig:
                 "to ~/.sim2/llm.json and edit provider settings."
                 )
         raw: dict[str, Any] = json.loads(config_path.read_text(encoding="utf-8"))
+        for legacy_key in ("role_providers", "agent_limits"):
+            if legacy_key in raw:
+                raise ValueError(
+                    f"LLM config field {legacy_key!r} was replaced by 'roles'; "
+                    "merge the provider and Agent limits into roles.<role>"
+                )
         providers: dict[str, ProviderConfig] = {}
         for name, value in raw.get("providers", {}).items():
+            for limit_key in ("max_completion_tokens", "max_agent_iterations"):
+                if limit_key in value:
+                    raise ValueError(
+                        f"Provider {name!r} must not define {limit_key!r}; "
+                        f"configure it under roles.<role>.{limit_key}"
+                    )
             providers[name] = ProviderConfig(
                 name=name,
                 provider_type=value.get("type", "openai_compatible"),
@@ -59,10 +81,6 @@ class LLMConfig:
                 timeout_seconds=float(value.get("timeout_seconds", 120)),
                 max_retries=max(0, int(value.get("max_retries", 2))),
                 retry_backoff_seconds=max(0.0, float(value.get("retry_backoff_seconds", 1.0))),
-                max_completion_tokens=(
-                    max(128, min(8192, int(value["max_completion_tokens"])))
-                    if value.get("max_completion_tokens") is not None else 2048
-                ),
                 adapter=value.get("adapter"),
                 extra_body=dict(value.get("extra_body") or {}),
             )
@@ -71,14 +89,39 @@ class LLMConfig:
         default = str(raw.get("default_provider", next(iter(providers))))
         if default not in providers:
             raise ValueError(f"Default provider {default!r} is not configured")
-        role_providers = {str(k): str(v) for k, v in raw.get("role_providers", {}).items()}
-        for role, provider in role_providers.items():
-            if provider not in providers:
-                raise ValueError(f"Role {role!r} maps to unknown provider {provider!r}")
-        return cls(default_provider=default, providers=providers, role_providers=role_providers)
+        roles: dict[str, RoleConfig] = {}
+        configured_roles = raw.get("roles", {}) or {}
+        if not isinstance(configured_roles, dict):
+            raise ValueError("LLM config 'roles' must be an object")
+        for role, value in configured_roles.items():
+            if not isinstance(value, dict):
+                raise ValueError(f"Role {role!r} configuration must be an object")
+            provider = value.get("provider")
+            if provider is not None:
+                provider = str(provider)
+                if provider not in providers:
+                    raise ValueError(f"Role {role!r} maps to unknown provider {provider!r}")
+            completion = value.get("max_completion_tokens")
+            iterations = value.get("max_agent_iterations")
+            roles[str(role)] = RoleConfig(
+                provider=provider,
+                max_completion_tokens=(
+                    max(128, min(8192, int(completion)))
+                    if completion is not None else DEFAULT_MAX_COMPLETION_TOKENS
+                ),
+                max_agent_iterations=(
+                    max(1, min(8, int(iterations)))
+                    if iterations is not None else DEFAULT_MAX_AGENT_ITERATIONS
+                ),
+            )
+        return cls(default_provider=default, providers=providers, roles=roles)
 
     def provider_name_for(self, role: str) -> str:
-        return self.role_providers.get(role, self.default_provider)
+        configured = self.roles.get(str(role))
+        return configured.provider if configured and configured.provider else self.default_provider
+
+    def role_for(self, role: str) -> RoleConfig:
+        return self.roles.get(str(role), RoleConfig())
 
     def provider_for(self, role: str) -> ProviderConfig:
         return self.providers[self.provider_name_for(role)]

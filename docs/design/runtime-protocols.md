@@ -119,3 +119,12 @@ receives a response. For example, the LongCat adapter converts a bare
 `{"request_behavior": {...}}` content object into the shared intent shape.
 Agent logic only handles the shared schema; it does not contain provider or
 model names. Adapter normalization is covered by provider compatibility tests.
+
+Model routing and spend belong to `~/.sim2/llm.json`, not to a world package.
+Each entry under `roles` combines the role's `provider` with its
+`max_completion_tokens` and `max_agent_iterations`. Providers contain connection
+and model settings only. The example uses a 512-token completion bound and
+three ReAct turns for decisions, while WorldBuilder can request a larger
+budget. This gives users one place to inspect both model choice and spend for
+each Agent role, and keeps one world's YAML from silently changing another
+world's LLM cost.

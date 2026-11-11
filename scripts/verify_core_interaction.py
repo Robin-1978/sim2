@@ -18,8 +18,8 @@ from sim2.agents.engine import AgentEngine
 from sim2.agents.quality import evaluate_turn
 from sim2.bootstrap.service import create_instance
 from sim2.intents.models import BehaviorIntent
-from sim2.llm.config import LLMConfig, ProviderConfig
-from sim2.llm.gateway import OpenAICompatibleProvider
+from sim2.llm.config import LLMConfig
+from sim2.llm.gateway import LLMRouter
 from sim2.platform.runtime import Platform
 
 
@@ -29,14 +29,14 @@ def main() -> int:
     parser.add_argument("--model", default=None, help="Override the configured model name for this verification run.")
     args = parser.parse_args()
     config = LLMConfig.load()
-    provider_config = config.providers[args.provider]
+    router = LLMRouter(config)
     world_config = Path(__file__).parents[1] / "worlds" / "starter_village"
     with tempfile.TemporaryDirectory(prefix="sim2-core-interaction-") as runtime:
         platform = Platform(create_instance(world_config, "core-interaction", Path(runtime)))
         try:
-            if args.model:
-                provider_config = ProviderConfig(**{**provider_config.__dict__, "model": args.model})
-            decision_provider = OpenAICompatibleProvider(ProviderConfig(**provider_config.__dict__))
+            decision_provider = router.new_provider_for_name(
+                args.provider, model=args.model, role="agent_decision"
+            )
             decision_view = platform.decision_view("liang_he", role="agent_decision")
             decision = AgentEngine(platform, decision_provider).run(role="agent_decision", actor_id="liang_he", task_type="core_decision")
             decision_quality = evaluate_turn(decision, decision_view)
@@ -45,19 +45,25 @@ def main() -> int:
             for _ in range(49):
                 platform.step()
             reflection_view = platform.decision_view("lin_bo", role="agent_reflection")
-            reflection_provider = OpenAICompatibleProvider(ProviderConfig(**provider_config.__dict__))
+            reflection_provider = router.new_provider_for_name(
+                args.provider, model=args.model, role="agent_reflection"
+            )
             reflection = AgentEngine(platform, reflection_provider).run(role="agent_reflection", actor_id="lin_bo", task_type="core_reflection")
             reflection_quality = evaluate_turn(reflection, reflection_view)
             memory_count = len(platform.store.list_memories("lin_bo", limit=20))
 
             next_view = platform.decision_view("lin_bo", role="agent_decision")
-            next_decision_provider = OpenAICompatibleProvider(ProviderConfig(**provider_config.__dict__))
+            next_decision_provider = router.new_provider_for_name(
+                args.provider, model=args.model, role="agent_decision"
+            )
             next_decision = AgentEngine(platform, next_decision_provider).run(role="agent_decision", actor_id="lin_bo", task_type="core_next_decision")
             next_quality = evaluate_turn(next_decision, next_view)
 
             platform.submit_world_change("operator", {"change_type": "world_property", "summary": "Lower fog after a clear reading.", "property": "fog_level", "value": 0.2})
             god_view = platform.decision_view("god", role="god")
-            god_provider = OpenAICompatibleProvider(ProviderConfig(**provider_config.__dict__))
+            god_provider = router.new_provider_for_name(
+                args.provider, model=args.model, role="god"
+            )
             god = AgentEngine(platform, god_provider).run(role="god", actor_id="god", task_type="core_god")
             god_quality = evaluate_turn(god, god_view)
 

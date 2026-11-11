@@ -17,8 +17,7 @@ from sim2.agent_view.validator import validate_agent_view
 from sim2.agents.engine import AgentEngine
 from sim2.agents.quality import evaluate_turn
 from sim2.bootstrap.service import create_instance
-from sim2.llm.config import ProviderConfig
-from sim2.llm.gateway import OpenAICompatibleProvider
+from sim2.llm.gateway import LLMRouter
 from sim2.platform.runtime import Platform
 from sim2.prompting.renderer import render_context
 
@@ -35,9 +34,11 @@ def discover_model() -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--agents", nargs="+", default=["lu_xingzhou", "liang_he", "lin_bo"])
+    parser.add_argument("--provider", default="local")
     args = parser.parse_args()
     model = discover_model()
-    provider = OpenAICompatibleProvider(ProviderConfig(name="local_review", provider_type="openai_compatible", base_url="http://127.0.0.1:8192/v1", model=model, timeout_seconds=90))
+    router = LLMRouter.from_default_config()
+    provider = router.new_provider_for_name(args.provider, model=model, role="agent_decision")
     report = {"provider": "local", "model": model, "sessions": []}
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     with tempfile.TemporaryDirectory(prefix="sim2-review-") as runtime:
@@ -48,7 +49,7 @@ def main() -> int:
                 view = platform.decision_view(actor_id, role="agent_decision")
                 context_errors = validate_agent_view(view, role="agent_decision")
                 prompt = render_context(view, "Choose one behavior for the current goal.")
-                turn = AgentEngine(platform, provider, max_iterations=6).run(role="agent_decision", actor_id=actor_id, task_type="review")
+                turn = AgentEngine(platform, provider).run(role="agent_decision", actor_id=actor_id, task_type="review")
                 quality = evaluate_turn(turn, view)
                 report["sessions"].append({
                     "actor_id": actor_id,

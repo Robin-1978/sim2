@@ -109,6 +109,7 @@ class Platform(
                         provider_name,
                         provider_model,
                         max_completion_tokens=provider_max_completion_tokens,
+                        role=role,
                     )
                     for role in ("agent_decision", "agent_reflection", "god", "story")
                 }

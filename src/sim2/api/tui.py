@@ -50,7 +50,7 @@ class AutonomousWorldWorker:
             router = LLMRouter.from_default_config()
             if self.provider_name:
                 providers = {
-                    role: router.new_provider_for_name(self.provider_name)
+                    role: router.new_provider_for_name(self.provider_name, role=role)
                     for role in ("agent_decision", "agent_reflection", "god", "story")
                 }
             else:

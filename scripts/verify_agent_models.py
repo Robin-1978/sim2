@@ -19,8 +19,8 @@ import httpx
 from sim2.agents.engine import AgentEngine
 from sim2.agents.quality import evaluate_turn
 from sim2.bootstrap.service import create_instance
-from sim2.llm.config import LLMConfig, ProviderConfig
-from sim2.llm.gateway import OpenAICompatibleProvider
+from sim2.llm.config import LLMConfig
+from sim2.llm.gateway import LLMRouter, OpenAICompatibleProvider
 from sim2.platform.runtime import Platform
 
 
@@ -37,7 +37,7 @@ def discover_local_model(base_url: str) -> str | None:
 
 
 def run_session(platform: Platform, provider: OpenAICompatibleProvider, role: str, actor_id: str) -> dict[str, Any]:
-    engine = AgentEngine(platform, provider, max_iterations=6)
+    engine = AgentEngine(platform, provider)
     view = platform.decision_view(actor_id, role=role)
     turn = engine.run(role=role, actor_id=actor_id, task_type="integration_verification")
     quality = evaluate_turn(turn, view)
@@ -87,6 +87,7 @@ def main() -> int:
     parser.add_argument("--provider", default="remote", help="Configured provider name for the real-model check.")
     args = parser.parse_args()
     config = LLMConfig.load()
+    router = LLMRouter(config)
     world_config = Path(__file__).parents[1] / "worlds" / "starter_village"
     reports: list[dict[str, Any]] = []
     with tempfile.TemporaryDirectory(prefix="sim2-model-check-") as runtime:
@@ -96,18 +97,19 @@ def main() -> int:
             local = config.providers.get("local")
             if local and not args.skip_local:
                 model = discover_local_model(local.base_url) or local.model
-                local_provider = OpenAICompatibleProvider(ProviderConfig(**{**local.__dict__, "model": model, "proxy": None}))
-                reports.append({"provider": "local", "model": model, **run_session(platform, local_provider, "agent_decision", "lu_xingzhou")})
-                reports.append({"provider": "local", "model": model, **run_session(platform, local_provider, "agent_reflection", "lu_xingzhou")})
+                decision_provider = router.new_provider_for_name("local", model=model, role="agent_decision")
+                reflection_provider = router.new_provider_for_name("local", model=model, role="agent_reflection")
+                reports.append({"provider": "local", "model": model, **run_session(platform, decision_provider, "agent_decision", "lu_xingzhou")})
+                reports.append({"provider": "local", "model": model, **run_session(platform, reflection_provider, "agent_reflection", "lu_xingzhou")})
             remote = config.providers.get(args.provider)
             if remote and not args.skip_remote:
                 if remote.api_key_env and not __import__("os").environ.get(remote.api_key_env):
                     reports.append({"provider": "remote", "model": remote.model, "status": "blocked", "reason": "configured API key environment variable is not available to this process", "quality": False})
                 else:
-                    if args.remote_model:
-                        remote = ProviderConfig(**{**remote.__dict__, "model": args.remote_model})
-                    remote_provider = OpenAICompatibleProvider(remote)
-                    reports.append({"provider": args.provider, "model": remote.model, **run_session(platform, remote_provider, "god", "god")})
+                    remote_provider = router.new_provider_for_name(
+                        args.provider, model=args.remote_model, role="god"
+                    )
+                    reports.append({"provider": args.provider, "model": args.remote_model or remote.model, **run_session(platform, remote_provider, "god", "god")})
         finally:
             platform.close()
     print(json.dumps({
