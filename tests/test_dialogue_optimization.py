@@ -376,12 +376,30 @@ def test_social_institution_is_absent_until_proposed_and_activated(tmp_path: Pat
     try:
         assert platform.store.list_institutions() == []
         assert platform.store.connection.execute("SELECT COUNT(*) AS n FROM institution_ledger_entry").fetchone()["n"] == 0
-        proposed = platform.submit_institution_proposal(
+        npc_attempt = platform.submit_institution_proposal(
             "liang_he",
             {
                 "name": "Public Work Ledger",
                 "purpose": "Record verified public work before deciding how to distribute scarce food.",
                 "scope": "village",
+                "evidence_sources": [{"event_types": ["behavior.completed"]}],
+                "minimum_evidence": 1,
+                "ledger": {"period": "week", "selectors": [{"event_types": ["behavior.completed"], "category": "public_work", "points": 1}]},
+                "policy": {"allocation": {"minimum_per_subject": 1, "contribution_share": 0.5}},
+            },
+        )
+        assert npc_attempt["status"] == "rejected"
+        assert npc_attempt["failed_check"] == "institution_authority"
+        with platform.store.transaction():
+            platform.store.append_event("behavior.completed", "liang_he", 1, {"behavior_id": "gather_resource", "result": "resource_collected"})
+        proposed = platform.submit_institution_proposal(
+            "god",
+            {
+                "name": "Public Work Ledger",
+                "purpose": "Record verified public work before deciding how to distribute scarce food.",
+                "scope": "village",
+                "evidence_sources": [{"event_types": ["behavior.completed"]}],
+                "minimum_evidence": 1,
                 "ledger": {"period": "week", "selectors": [{"event_types": ["behavior.completed"], "category": "public_work", "points": 1}]},
                 "policy": {"allocation": {"minimum_per_subject": 1, "contribution_share": 0.5}},
             },
