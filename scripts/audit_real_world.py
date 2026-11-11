@@ -260,6 +260,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--finalize-only", type=Path, help="reconcile a completed audit JSON against its persisted SQLite run without calling a provider")
     parser.add_argument("--minutes", type=int, default=1440)
+    parser.add_argument("--config", type=Path, help="world package to audit; defaults to Starter Village")
+    parser.add_argument("--instance-id", default="real-agent-audit")
     parser.add_argument("--provider", default="remote", help="Configured provider name; remote is the default real-model path.")
     parser.add_argument("--model", default=None, help="Override the configured model for this provider.")
     parser.add_argument("--max-completion-tokens", type=int, default=None, help="Override the provider completion budget for this audit (use a larger value for reasoning-heavy free models).")
@@ -327,9 +329,9 @@ def main() -> int:
         if not db_path.is_file():
             raise SystemExit(f"--resume-db does not exist: {db_path}")
     else:
-        world_config = Path(__file__).parents[1] / "worlds" / "starter_village"
+        world_config = args.config or (Path(__file__).parents[1] / "worlds" / "starter_village")
         runtime_root = Path("artifacts") / f"audit-runtime-{int(time.time())}"
-        instance_id = "real-agent-audit"
+        instance_id = str(args.instance_id)
         db_path = create_instance(world_config, instance_id, runtime_root)
     platform = Platform(db_path)
     checkpoint_path = args.checkpoint or args.output.with_name(args.output.stem + ".checkpoint.json")
