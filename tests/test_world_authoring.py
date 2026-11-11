@@ -215,6 +215,21 @@ def test_world_template_rejects_unexecutable_condition_and_misspelled_effect_fie
     assert any("fusion_core requires a non-empty type" in item for item in errors)
 
 
+def test_world_template_validates_recipe_resource_scope():
+    template = orbital_template()
+    template["recipes"] = [{
+        "id": "seal_patch",
+        "name": "Seal patch",
+        "inputs": [{"item": "polymer", "quantity": 1, "scope": "remote"}],
+        "outputs": [{"item": "seal_patch", "quantity": 1}],
+        "duration_minutes": 5,
+    }]
+    errors = validate_world_template(template)["errors"]
+    assert any("polymer has unsupported scope remote" in item for item in errors)
+    template["recipes"][0]["inputs"][0]["scope"] = "world"
+    assert validate_world_template(template) == {"valid": True, "errors": []}
+
+
 def test_world_builder_agent_validates_exact_template_before_submission():
     provider = BuilderProvider(orbital_template())
     draft = WorldBuilderService(provider).build("Create an orbital relay during a radiation storm.")

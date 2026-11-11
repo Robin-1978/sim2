@@ -165,6 +165,32 @@ def world_template_schema() -> dict[str, Any]:
         "required": ["id", "agent_label", "summary", "nodes"],
         "additionalProperties": True,
     }
+    recipe_item = {
+        "type": "object",
+        "properties": {
+            "item": {"type": "string", "minLength": 1},
+            "quantity": {"type": "number", "exclusiveMinimum": 0},
+            "scope": {"type": "string", "enum": ["agent", "world", "auto"]},
+        },
+        "required": ["item", "quantity"],
+        "additionalProperties": True,
+    }
+    recipe = {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string", "minLength": 1},
+            "name": {"type": "string"},
+            "station_tags": {"type": "array", "items": {"type": "string"}},
+            "inputs": {"type": "array", "items": recipe_item},
+            "outputs": {"type": "array", "minItems": 1, "items": recipe_item},
+            "duration_minutes": {"type": "integer", "minimum": 1},
+            "requires": {"type": "array", "items": {"type": "object"}},
+            "effects": {"type": "array", "items": {"type": "object"}},
+            "limits": {"type": "array", "items": {"type": "object"}},
+        },
+        "required": ["id", "name", "inputs", "outputs", "duration_minutes"],
+        "additionalProperties": True,
+    }
     agent = {
         "type": "object",
         "properties": {
@@ -270,7 +296,7 @@ def world_template_schema() -> dict[str, Any]:
             "agents": {"type": "array", "minItems": 1, "items": agent},
             "capabilities": {"type": "array", "items": identified},
             "actions": {"type": "array", "minItems": 1, "items": action},
-            "recipes": {"type": "array", "items": identified},
+            "recipes": {"type": "array", "items": recipe},
             "behavior_trees": {"type": "array", "minItems": 1, "items": behavior},
             "relationships": {"type": "array", "items": {"type": "object"}},
             "rules": rules_schema,
@@ -560,6 +586,22 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
                 errors.append(f"agent {agent.get('id')} has undeclared state attribute {key}")
     for behavior_id in behavior_ids - assigned_behaviors:
         errors.append(f"behavior {behavior_id} is not assigned to any agent")
+
+    for recipe in collections["recipes"]:
+        if not isinstance(recipe.get("inputs"), list):
+            errors.append(f"recipe {recipe.get('id')} inputs must be a list")
+        if not isinstance(recipe.get("outputs"), list) or not recipe.get("outputs"):
+            errors.append(f"recipe {recipe.get('id')} requires at least one output")
+        if not isinstance(recipe.get("duration_minutes"), int) or int(recipe.get("duration_minutes", 0)) < 1:
+            errors.append(f"recipe {recipe.get('id')} requires positive integer duration_minutes")
+        for item in list(recipe.get("inputs") or []) + list(recipe.get("outputs") or []):
+            if not isinstance(item, dict) or not str(item.get("item") or "").strip():
+                errors.append(f"recipe {recipe.get('id')} contains an item without a name")
+                continue
+            if not isinstance(item.get("quantity"), (int, float)) or float(item.get("quantity", 0)) <= 0:
+                errors.append(f"recipe {recipe.get('id')} item {item.get('item')} requires positive quantity")
+            if item.get("scope") is not None and str(item.get("scope")) not in {"agent", "world", "auto"}:
+                errors.append(f"recipe {recipe.get('id')} item {item.get('item')} has unsupported scope {item.get('scope')}")
 
     context_values = rules.get("context_values", {}) or {}
     item_groups = rules.get("item_groups", {}) or {}

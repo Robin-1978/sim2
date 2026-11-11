@@ -13,7 +13,10 @@ class ResourceLedger:
         self.store = store
 
     def reserve(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], *, commit: bool = True) -> tuple[bool, str, list[dict[str, Any]]]:
-        required: list[tuple[str, float]] = []
+        # ``agent`` means carried inventory only, ``world`` means the selected
+        # world node only, and ``auto`` preserves the explicit shared-resource
+        # convention used by keys such as currency + market stock.
+        required: list[tuple[str, float, str]] = []
         for key, value in (action.get("costs", {}).get("reserve", {}) or {}).items():
             if key == "recipe_inputs":
                 recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
@@ -28,29 +31,34 @@ class ResourceLedger:
                     if float((agent.get("capabilities") or {}).get(capability, 0) or 0) < minimum:
                         return False, f"capability {capability} is below recipe requirement", []
                 for item in (recipe or {}).get("inputs", []):
-                    required.append((str(item.get("item")), float(item.get("quantity", 0))))
+                    scope = str(item.get("scope") or "agent")
+                    if scope not in {"agent", "world", "auto"}:
+                        return False, f"recipe input {item.get('item')} has unsupported scope {scope}", []
+                    required.append((str(item.get("item")), float(item.get("quantity", 0)), scope))
             elif key == "item_parameter":
                 item_id = parameters.get(str(value))
                 if item_id:
-                    required.append((str(item_id), 1.0))
+                    required.append((str(item_id), 1.0, "agent"))
             elif key == "resource_parameter":
                 resource_id = parameters.get(str(value))
                 amount = float((action.get("costs", {}).get("reserve", {}) or {}).get("resource_amount", 1) or 1)
                 if resource_id:
-                    required.append((str(resource_id), amount))
+                    required.append((str(resource_id), amount, "world"))
             elif key == "resource_amount":
                 continue
             elif isinstance(value, (int, float)):
-                required.append((str(key), float(value)))
+                required.append((str(key), float(value), "auto"))
         inventory = dict(agent.get("inventory") or {})
         reservation: list[dict[str, Any]] = []
-        for key, amount in required:
+        for key, amount, scope in required:
             if amount <= 0:
                 continue
-            if float(inventory.get(key, 0)) >= amount:
+            if scope in {"agent", "auto"} and float(inventory.get(key, 0)) >= amount:
                 reservation.append({"scope": "agent", "key": key, "amount": amount})
                 inventory[key] = inventory.get(key, 0) - amount
                 continue
+            if scope == "agent":
+                return False, f"required carried item {key} is unavailable", []
             world = self._world_resource(key)
             if world is None or world["amount"] < amount:
                 return False, f"required resource {key} is unavailable", []

@@ -62,7 +62,16 @@ def _cost_text(action: dict[str, Any], recipe: dict[str, Any] | None = None) -> 
         if isinstance(values, dict):
             for key, value in values.items():
                 if key == "recipe_inputs" and recipe:
-                    inputs = ", ".join(f"{item.get('quantity', 1)} {_display_item(item.get('item', 'input'))}" for item in recipe.get("inputs", []) or [])
+                    scope_labels = {
+                        "agent": "from carried inventory",
+                        "world": "from world stock",
+                        "auto": "from carried or shared stock",
+                    }
+                    inputs = ", ".join(
+                        f"{item.get('quantity', 1)} {_display_item(item.get('item', 'input'))} "
+                        f"{scope_labels.get(str(item.get('scope') or 'agent'), 'from configured stock')}"
+                        for item in recipe.get("inputs", []) or []
+                    )
                     out.append(f"Recipe inputs: {inputs or 'configured inputs'} (reserved before start)")
                     continue
                 if key == "item_parameter":

@@ -2,7 +2,7 @@ recipes:
   - id: cooked_meal
     name: 熟食
     station_tags: [kitchen, fireplace]
-    inputs: [{item: grain, quantity: 1}, {item: clean_water, quantity: 1}]
+    inputs: [{item: grain, quantity: 1}, {item: clean_water, quantity: 1, scope: world}]
     outputs: [{item: cooked_meal, quantity: 2}]
     requires: [{capability: cooking, min_level: 0.30}]
     duration_minutes: 90
@@ -20,7 +20,7 @@ recipes:
   - id: herbal_medicine
     name: 草药药剂
     station_tags: [health]
-    inputs: [{item: herb_bundle, quantity: 2}, {item: clean_water, quantity: 1}]
+    inputs: [{item: herb_bundle, quantity: 2}, {item: clean_water, quantity: 1, scope: world}]
     outputs: [{item: medicine, quantity: 1}]
     limits: [{item: medicine, max_total: 2}]
     requires: [{capability: herbalism, min_level: 0.40}]

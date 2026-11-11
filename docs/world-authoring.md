@@ -164,6 +164,13 @@ An Action is executable mechanics. It declares:
 - success and failure outcomes;
 - interruption and interaction policy.
 
+Recipe inputs default to `scope: agent`, which means the material must be in
+the individual's carried inventory. Use `scope: world` only for an explicitly
+shared world stock and `scope: auto` only when either carried or shared stock is
+intended. A resource-node Action uses its selected world resource directly;
+having an item with the same name in personal inventory never turns later
+gathering into a no-op.
+
 Knowledge-dependent remediation must name its evidence as a machine
 precondition, for example `actor.knowledge.researched:source:finding`. Plain
 description text does not unlock an Action. A source-dependent Action also

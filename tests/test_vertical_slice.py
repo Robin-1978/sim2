@@ -1279,6 +1279,24 @@ def test_core_gather_bt_travels_to_nearest_resource_node(tmp_path: Path):
         assert result["status"] == "accepted"
         step_n(platform, result["remaining_minutes"])
         assert platform.store.get_agent("liang_he")["initial_state"]["location_id"] == "granary"
+        assert platform.store.get_entity("grain")["initial_state"]["quantity"] == 78
+        assert platform.store.get_agent("liang_he")["inventory"]["grain"] == 2
+
+        repeated = platform.submit_behavior(BehaviorIntent(
+            "liang_he", "behavior:gather_at_known_node", {}, {},
+            "Collect another configured batch from the source node.", 0.8,
+            "gather-core-intent-repeat",
+        ))
+        assert repeated["status"] == "accepted"
+        step_n(platform, repeated["remaining_minutes"])
+        assert platform.store.get_entity("grain")["initial_state"]["quantity"] == 76
+        assert platform.store.get_agent("liang_he")["inventory"]["grain"] == 4
+        resource_events = platform.store.connection.execute(
+            "SELECT data_json FROM event_log WHERE actor_id=? AND event_type='resource.changed' ORDER BY event_id",
+            ("liang_he",),
+        ).fetchall()
+        changes = [json.loads(item["data_json"]) for item in resource_events]
+        assert [item["after"] for item in changes if item.get("resource_id") == "grain"] == [78.0, 76.0]
         evidence = [item for item in platform.store.recent_events_for_actor("liang_he", limit=30) if item["event_type"] == "capability.evidence"]
         assert any(item["capability"] == "farming" and item["source"] == "gather_resource" for item in evidence)
         assert not any(item["capability"] == "cooking" for item in evidence)
@@ -1342,6 +1360,9 @@ def test_agent_view_filters_unavailable_recipe_and_noop_travel(tmp_path: Path):
         blacksmith = {item["ref"] for item in platform.decision_view("tian_yan")["executable_behaviors"]}
         assert "behavior:craft_meal" not in blacksmith
         assert "behavior:travel" not in blacksmith
+        granary_keeper = {item["ref"] for item in platform.decision_view("liang_he")["executable_behaviors"]}
+        assert "behavior:craft_meal" not in granary_keeper
+        assert platform.store.get_entity("grain")["initial_state"]["quantity"] == 80
         assert all(platform.decision_view(agent["id"])["executable_behaviors"] for agent in platform.store.list_agents())
     finally:
         platform.close()
@@ -1924,6 +1945,12 @@ def test_successful_recipe_records_capability_evidence_without_auto_upgrade(tmp_
         agent["inventory"].update({"grain": 1})
         with platform.store.transaction():
             platform.store.update_agent("liang_he", agent)
+        craft = next(
+            item for item in platform.decision_view("liang_he")["executable_behaviors"]
+            if item["ref"] == "behavior:craft_meal"
+        )
+        assert any("grain from carried inventory" in item for item in craft["cost"])
+        assert any("clean water from world stock" in item for item in craft["cost"])
         intent = BehaviorIntent("liang_he", "behavior:craft_meal", {}, {}, "Prepare food", 0.8, "capability-intent")
         accepted = platform.submit_behavior(intent)
         assert accepted["status"] == "accepted"
@@ -3022,6 +3049,9 @@ def test_direct_interaction_does_not_interrupt_active_crafting(tmp_path: Path):
         listener["initial_state"]["location_id"] = "granary"
         with platform.store.transaction():
             platform.store.update_agent("qiao_ning", listener)
+            crafter = platform.store.get_agent("liang_he")
+            crafter.setdefault("inventory", {})["grain"] = 1
+            platform.store.update_agent("liang_he", crafter)
         intent = BehaviorIntent(
             actor_id="liang_he", behavior_ref="behavior:craft_meal", target={}, parameters={},
             reason="Prepare food before trading.", confidence=0.8, intent_id="interaction-boundary-intent",
