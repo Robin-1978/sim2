@@ -20,16 +20,33 @@ def configured_context_values(
     rules = rules or {}
     agent = agent or {}
     configured = rules.get("context_values", {}) or {}
+    # Older imported instances stored package context at the rules root
+    # (for example ``satiety_alert_threshold`` and ``food_items``).  Treat
+    # those scalar threshold values and the legacy food group as a declarative
+    # migration, rather than making an existing world lose its recovery BTs
+    # after a runtime upgrade.  New packages continue to use the explicit
+    # context_values/item_groups/context_resolvers sections.
+    if not configured:
+        configured = {
+            str(key): value
+            for key, value in rules.items()
+            if str(key).endswith("_threshold") and isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
     # Values are read-only within a condition context. A shallow copy keeps
     # callers from mutating the stored mapping without paying a deep-copy cost
     # once per person and minute.
     result = dict(configured) if isinstance(configured, dict) else {}
     groups = rules.get("item_groups", {}) or {}
+    if not groups and isinstance(rules.get("food_items"), list):
+        groups = {"food": list(rules.get("food_items") or [])}
     inventory = agent.get("inventory", {}) or {}
 
     if not include_resolvers:
         return result
-    for name, raw in (rules.get("context_resolvers", {}) or {}).items():
+    resolvers = rules.get("context_resolvers", {}) or {}
+    if not resolvers and "food" in groups:
+        resolvers = {"item_id": {"type": "first_inventory_item", "group": "food"}}
+    for name, raw in resolvers.items():
         if not isinstance(raw, dict):
             continue
         resolver = str(raw.get("type") or raw.get("resolver") or "")

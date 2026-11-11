@@ -28,6 +28,7 @@ from sim2.llm.gateway import OpenAICompatibleProvider
 from sim2.llm.adapters import ModelProtocolError
 from sim2.memory.similarity import ExperienceSimilarity
 from sim2.world.navigation import reachable_locations
+from sim2.world.context import configured_context_values
 
 
 class FakeProvider:
@@ -106,6 +107,13 @@ def test_agent_prompt_humanizes_resource_and_location_keys(tmp_path: Path):
         assert "village food" in prompt.lower() or "公共粮食" in prompt
     finally:
         platform.close()
+
+
+def test_legacy_rule_context_keeps_recovery_resolvers_available():
+    rules = {"satiety_alert_threshold": 40, "food_items": ["rations", "cooked_meal"]}
+    values = configured_context_values(rules, {"inventory": {"rations": 2}})
+    assert values["satiety_alert_threshold"] == 40
+    assert values["item_id"] == "rations"
 
 
 def step_n(platform: Platform, minutes: int):
