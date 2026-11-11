@@ -49,7 +49,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "send_message": {
-        "purpose": "Send words to a visible participant; this records testimony only and never transfers items, pays currency, signs a contract, or completes a trade.",
+        "purpose": "Send words to a visible participant; this records testimony only, never transfers state, and must not add physical details absent from visible evidence.",
         "kind": "intent",
         "parameters": {
             "type": "object",

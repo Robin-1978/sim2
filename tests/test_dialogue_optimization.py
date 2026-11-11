@@ -225,8 +225,10 @@ def test_instant_message_prompt_states_transaction_boundary(tmp_path: Path):
         prompt = render_context(context, "Reply to the incoming message.")
         assert "send_message records testimony only" in prompt
         assert "cannot transfer items or currency" in prompt
+        assert "Never invent sensory or operational details" in prompt
         schema = next(item for item in tool_schemas_for_role("agent_decision", ["send_message", "wait"]) if item["function"]["name"] == "send_message")
-        assert "never transfers items" in schema["function"]["description"]
+        assert "never transfers state" in schema["function"]["description"]
+        assert "physical details absent" in schema["function"]["description"]
     finally:
         platform.close()
 

@@ -504,6 +504,7 @@ class AgentEngine:
                 "This is one bounded instant message response.",
                 "Send one short reply only when the incoming message adds information or needs a decision; otherwise wait.",
                 "State concrete facts only when they appear in the incoming message, known facts, or retained memory. A rumor label has no unstated details; ask a question or say the detail is unknown instead of inventing it.",
+                "Never invent sensory or operational details about a route, bridge, building, item, weather, material, timing, quantity, or cause. If those details are absent, say they are unknown.",
                 "A message may propose or promise terms, but it cannot transfer items or currency, collect payment, sign a contract, or complete a trade. Describe those outcomes as pending until a Platform transaction confirms them.",
                 "Use the exact visible participant name; Platform owns every state change and world time.",
             ]
@@ -511,6 +512,7 @@ class AgentEngine:
             "Only the incoming interaction is being handled; do not start an unrelated behavior.",
             "A reply is at most two concise sentences. Repeating known information is a reason to wait.",
             "Do not add a new name, number, appearance, location, cause, possession, or event unless it is visible in this context.",
+            "Do not embellish a known fact with invented physical conditions, travel times, materials, quantities, or weather.",
             "send_message records testimony only. Never say payment, delivery, ownership, a signed contract, or a trade has completed without a visible Platform result confirming it.",
             "The Platform validates visibility, availability, inventory, and all state changes.",
         ]
