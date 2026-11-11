@@ -1,0 +1,358 @@
+template_version: three-lanterns-town-0.1
+world:
+  id: three_lanterns_town
+  title: 三灯镇
+  premise: 三灯镇靠一口旧蓄水池和一条商路维持生计，边界石碑正在失去光泽。
+  genre: frontier_mystery
+  locale: zh-CN
+  properties:
+    town_security: 0.55
+    cistern_reserve: 48
+    trade_confidence: 0.42
+  random_seed: 3117
+  calendar:
+    minutes_per_day: 1440
+    day_phases:
+    - {id: night, start_minute: 1200, end_minute: 300}
+    - {id: dawn, start_minute: 300, end_minute: 420}
+    - {id: day, start_minute: 420, end_minute: 1080}
+    - {id: dusk, start_minute: 1080, end_minute: 1200}
+  world_clock: {start_day: 1, start_minute: 420, season: dry_autumn}
+attributes:
+- id: integrity
+  kind: state
+  label: Integrity
+  unit: '%'
+  min: 0
+  max: 100
+  default: 100
+  vital: true
+  cost_mode: decrease
+  prompt: Higher means the person is physically well; zero means incapacitated.
+- id: vigor
+  kind: state
+  label: Vigor
+  unit: '%'
+  min: 0
+  max: 100
+  default: 90
+  capacity: true
+  cost_mode: decrease
+  prompt: Higher means more short-term capacity for demanding actions.
+- id: belonging
+  kind: need
+  label: Belonging
+  unit: points
+  min: 0
+  max: 100
+  default: 55
+  prompt: Higher means stronger social connection to the town.
+- id: purpose
+  kind: need
+  label: Purpose
+  unit: points
+  min: 0
+  max: 100
+  default: 55
+  prompt: Higher means more progress toward a meaningful personal goal.
+- id: reputation
+  kind: state
+  label: Reputation
+  unit: points
+  min: -100
+  max: 100
+  default: 0
+  cost_mode: increase
+  prompt: Higher means the town has more reason to trust this person.
+locations:
+- id: lantern_square
+  name: 三灯广场
+  public: true
+  safe: true
+  tags: [public, social, market]
+  routes: [cistern_house, north_watch, old_road]
+  map_position: {x: 0, y: 0}
+- id: cistern_house
+  name: 蓄水屋
+  public: true
+  safe: true
+  tags: [public, resource, water]
+  routes: [lantern_square]
+  map_position: {x: -1, y: 0}
+- id: north_watch
+  name: 北岗
+  public: true
+  safe: false
+  tags: [watch, boundary]
+  routes: [lantern_square, old_road]
+  map_position: {x: 0, y: 1}
+- id: old_road
+  name: 旧商路
+  public: true
+  safe: false
+  tags: [route, resource, exploration]
+  routes: [lantern_square, north_watch]
+  map_position: {x: 1, y: 1}
+resources:
+- id: reed_bundle
+  type: resource
+  name: 灯芯芦苇
+  location_id: old_road
+  initial_state: {location_id: old_road, quantity: 30}
+- id: cistern_water
+  type: resource
+  name: 蓄水
+  location_id: cistern_house
+  initial_state: {location_id: cistern_house, quantity: 48}
+objects:
+- id: boundary_stone
+  type: document
+  name: 褪色界碑
+  initial_state: {location_id: north_watch, readable: true, recovered: false}
+- id: cistern_record
+  type: public_record
+  name: 蓄水记录册
+  initial_state: {location_id: cistern_house, readable: true}
+capabilities:
+- id: stewardship
+  name: Public stewardship
+  description: Inspect reserves and keep the town supplied.
+- id: exploration
+  name: Route exploration
+  description: Survey routes and record reliable discoveries.
+- id: research
+  name: Field research
+  description: Read sources and turn repeated study into verified facts.
+- id: gathering
+  name: Resource gathering
+  description: Collect configured materials from reachable nodes.
+- id: conversation
+  name: Conversation
+  description: Exchange bounded testimony with a visible participant.
+- id: watch
+  name: Boundary watch
+  description: Investigate threats around the north watch.
+actions:
+- id: travel_to
+  version: 1
+  description: 沿已知路线移动到目标地点
+  parameters: {location_id: string}
+  preconditions: [route.known, actor.mobile, destination.reachable]
+  requires_destination: true
+  completion: {if_already_at_destination: true}
+  duration: {mode: route_distance}
+  costs: {reserve: {}, per_minute: {vigor: 0.1}, on_success: {}, on_failure: {}, refund: {}}
+  success: {condition: actor.state.location_id == context.destination_id, result: arrived}
+  effects: [{type: location_set, location_id: context.location_id}]
+  failure: {condition: actor.incapacitated, result: failed}
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: inspect_object
+  version: 1
+  description: 检查可访问的记录或设施
+  parameters: {object_id: string}
+  preconditions: [actor.can_inspect, object.available]
+  duration: {minutes: 30}
+  costs: {reserve: {}, per_minute: {vigor: 0.1}, on_success: {}, on_failure: {}, refund: {}}
+  success: {condition: inventory.read_complete, result: record_inspected}
+  failure: {condition: location.locked, result: denied}
+  information:
+    event_type: observation.object_inspected
+    summary: A configured town record was inspected.
+    fact_template: 'Inspected {name}; current amount is {amount}.'
+    source_type: inspection
+    confidence: 0.85
+    result: record_inspected
+    record_object_discovery: false
+  effects: [{type: need_delta, need: purpose, delta: 0.2}]
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: gather_resource
+  version: 1
+  description: 在可见资源节点采集指定材料
+  parameters: {resource_tag: string, location_id: string}
+  preconditions: [actor.can_gather, location.resource_node, route.known]
+  parameter_defaults: {resource_tag: first_available_resource}
+  duration: {minutes: 120}
+  costs: {reserve: {resource_parameter: resource_tag, resource_amount: 2}, per_minute: {vigor: 0.2}, on_success: {}, on_failure: {}, refund: {}}
+  effects: [{type: inventory_add, item: context.resource_tag, quantity: 2}]
+  success: {condition: resource.collected, result: resource_collected}
+  failure: {condition: resource.empty or actor.incapacitated, result: gathering_failed}
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: explore_area
+  version: 1
+  description: 探索一段尚未充分了解的旧商路
+  parameters: {area_id: string}
+  preconditions: [actor.can_explore, route.known, area.not_fully_mapped]
+  duration: {minutes: 180}
+  costs: {reserve: {}, per_minute: {vigor: 0.2}, on_success: {}, on_failure: {}, refund: {}}
+  success: {condition: area.survey_complete, result: exploration_completed}
+  failure: {condition: actor.incapacitated, result: failed}
+  effects: [{type: need_delta, need: purpose, delta: 0.4}]
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: research_source
+  version: 1
+  description: 研究可访问的信息源并记录事实
+  parameters: {source_id: string}
+  preconditions: [actor.can_research, research.new_fact_available]
+  duration: {minutes: 120}
+  costs: {reserve: {}, per_minute: {vigor: 0.15}, on_success: {}, on_failure: {}, refund: {}}
+  success: {condition: research.new_fact_found, result: research_completed}
+  failure: {condition: source.destroyed, result: failed}
+  effects: [{type: need_delta, need: purpose, delta: 0.5}]
+  progress: {key: 'research:{source_id}', scope: world, amount: 1, required: 2, wake: [story, god]}
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: communicate
+  version: 1
+  description: 与目标角色沟通并记录可传播信息
+  parameters: {target_id: string, topic: string, message: string}
+  parameter_defaults: {topic: general}
+  preconditions: [actor.can_speak, target.available, communication.channel_open]
+  duration: {minutes: 15}
+  costs: {reserve: {}, per_minute: {belonging: 0.0}, on_success: {}, on_failure: {}, refund: {}}
+  success: {condition: dialogue.completed, result: dialogue_recorded}
+  failure: {condition: target.refused, result: conversation_refused}
+  effects: [{type: need_delta, need: belonging, delta: 0.1}]
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+behavior_trees:
+- id: inspect_cistern
+  agent_label: Inspect Cistern
+  summary: Inspect Cistern
+  entry_conditions: [actor.can_inspect]
+  estimated_minutes: 31
+  cooldown_minutes: 720
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: cistern_house}}
+  - {type: action, action_id: inspect_object, parameters: {object_id: cistern_water}}
+  success_results: [record_inspected]
+  failure_results: [denied, interrupted]
+- id: gather_reeds
+  agent_label: Gather Lantern Reeds
+  summary: Gather Lantern Reeds
+  entry_conditions: [actor.can_gather]
+  estimated_minutes: 120
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: old_road}}
+  - {type: action, action_id: gather_resource, parameters: {resource_tag: reed_bundle, location_id: old_road}}
+  success_results: [resource_collected]
+  failure_results: [resource_empty, gathering_failed]
+- id: survey_old_road
+  agent_label: Survey Old Road
+  summary: Survey Old Road
+  entry_conditions: [actor.can_explore, actor.alive]
+  estimated_minutes: 181
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: old_road}}
+  - {type: action, action_id: explore_area, parameters: {area_id: old_road}}
+  success_results: [exploration_completed]
+  failure_results: [failed, interrupted]
+- id: research_boundary_stone
+  agent_label: Research Boundary Stone
+  summary: Research Boundary Stone
+  entry_conditions: [actor.can_research, actor.alive]
+  estimated_minutes: 121
+  nodes:
+  - {type: action, action_id: travel_to, parameters: {location_id: north_watch}}
+  - {type: action, action_id: research_source, parameters: {source_id: boundary_stone}}
+  success_results: [research_completed]
+  failure_results: [failed, interrupted]
+- id: communicate
+  agent_label: Exchange Town Information
+  summary: Exchange Town Information
+  entry_conditions: [actor.can_speak, target.available]
+  estimated_minutes: 15
+  agent_parameters:
+    topic: {type: string, required: true, max_length: 120, description: A short subject.}
+    message: {type: string, required: true, max_length: 240, description: Two concise sentences grounded in visible evidence.}
+  nodes:
+  - {type: action, action_id: communicate, parameters: {target_id: context.target_id, topic: context.topic, message: context.message}}
+  success_results: [dialogue_recorded]
+  failure_results: [conversation_refused, participant_left]
+rules:
+  vital_attribute: integrity
+  capacity_attribute: vigor
+  perception:
+    visible_fields: [role, type, summary, description, public]
+    visible_state_fields: [status, quantity, readable, recovered]
+    global: {fields: [role, type, summary, description, public], state_fields: [status, location_id, quantity]}
+  fallback_behavior_ids: [inspect_cistern, survey_old_road]
+  capability_aliases:
+    inspect: [stewardship]
+    speak: [conversation]
+    explore: [exploration]
+    gather: [gathering]
+  needs:
+  - {id: belonging, target: 70, minimum: 0, gamma: 1.5, critical_threshold: 0.7, critical_gain: 1.0}
+  - {id: purpose, target: 70, minimum: 0, gamma: 1.5, critical_threshold: 0.7, critical_gain: 1.0}
+  motivation_model: {family: hybrid_need_utility_appraisal, no_fixed_hierarchy: true, dimensions: [safety_and_uncertainty, relatedness, competence, meaning_and_goal_progress]}
+  minute_effects:
+  - {id: vigor_recovery, scope: agent, every_minutes: 1, effect: {type: attribute_delta, attribute: vigor, delta: 0.4}}
+  memory_quality: {semantic_similarity: {enabled: false}}
+  social_credibility: {base: 0.5, trust_weight: 0.35, reputation_weight: 0.15, trust_relations: [trust], reputation_attribute: reputation, reputation_min: -100, reputation_max: 100}
+agents:
+- id: mei_lan
+  name: 梅岚
+  role: cistern_keeper
+  ultimate_goal: 让三灯镇在旱季结束前保持水源与秩序
+  traits: {cautious: 0.85, responsible: 0.9}
+  beliefs: [{id: records_first, statement: 先核对记录再改变配给, confidence: 0.85}]
+  needs: {belonging: 65, purpose: 70}
+  capabilities: {stewardship: 0.9, conversation: 0.65}
+  initial_bt_ids: [inspect_cistern, communicate]
+  initial_state: {location_id: lantern_square, status: idle, integrity: 100, vigor: 90, reputation: 0}
+  inventory: {rations: 1}
+- id: han_qiu
+  name: 韩秋
+  role: boundary_watcher
+  ultimate_goal: 证明北岗界碑的褪色不是偶然并保护旧商路
+  traits: {vigilant: 0.9, skeptical: 0.8}
+  beliefs: [{id: evidence_before_alarm, statement: 未核实的痕迹不能直接当成袭击, confidence: 0.82}]
+  needs: {belonging: 50, purpose: 75}
+  capabilities: {watch: 0.92, exploration: 0.85, conversation: 0.55}
+  initial_bt_ids: [survey_old_road, communicate]
+  initial_state: {location_id: north_watch, status: idle, integrity: 100, vigor: 90, reputation: 0}
+  inventory: {rations: 1, map_kit: 1}
+- id: luo_shan
+  name: 罗杉
+  role: reed_trader_researcher
+  ultimate_goal: 找到界碑褪色与灯芯芦苇贸易之间的真实关系
+  traits: {curious: 0.9, persuasive: 0.78}
+  beliefs: [{id: trade_carries_truth, statement: 交易记录比传闻更接近事实, confidence: 0.8}]
+  needs: {belonging: 60, purpose: 80}
+  capabilities: {gathering: 0.82, research: 0.88, conversation: 0.8}
+  initial_bt_ids: [gather_reeds, research_boundary_stone, communicate]
+  initial_state: {location_id: lantern_square, status: idle, integrity: 100, vigor: 90, reputation: 0}
+  inventory: {rations: 1}
+relationships:
+- {from: mei_lan, to: han_qiu, type: trust, relation_strength: 0.18}
+- {from: han_qiu, to: mei_lan, type: trust, relation_strength: 0.25}
+- {from: luo_shan, to: mei_lan, type: trust, relation_strength: 0.12}
+evolution:
+  reflection_cadence_minutes: 1440
+  event_wake_policy: {event_groups: {}, direct_event_types: [research.completed, exploration.completed]}
+story:
+  emergent_source_event_types: [research.completed, exploration.completed]
+  beats:
+  - {id: boundary_stone_research, trigger_events: [research.completed], summary: 记录界碑研究结果并决定下一步核验, audience: [罗杉, 韩秋]}
+initial_events:
+- id: dry_season_begins
+  type: season.dry_started
+  world_minute: 0
+  payload: {summary: 旱季开始，三灯镇必须核对蓄水与商路记录。}
+player_template: {entry_location_id: lantern_square, origins: [traveler, resident]}

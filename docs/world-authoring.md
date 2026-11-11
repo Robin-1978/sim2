@@ -12,7 +12,8 @@ source of truth. The original package and its `config_version` remain an audit
 reference; runtime evolution writes validated definitions and state only to the
 instance database.
 
-Wheels include Starter Village as the `worlds.starter_village` package. A fresh
+Wheels include Starter Village as the `worlds.starter_village` package and the
+compact Three Lanterns Town validation world as `worlds.three_lanterns_town`. A fresh
 installation can therefore run `sim2 init --instance-id my-world-001` without a
 source checkout. Additional bundled worlds use sibling packages under `worlds/`;
 `--world <id>` selects one, while `--config <path>` initializes a reviewed local
@@ -42,6 +43,16 @@ sim2 describe-world --config worlds/my_world
 
 # Create a fresh instance only after review.
 sim2 init --config worlds/my_world --instance-id my-world-001
+```
+
+The deterministic long-run verifier accepts any reviewed package. For example,
+the three-character world can be checked without a network model:
+
+```bash
+python scripts/run_long_simulation.py \
+  --config worlds/three_lanterns_town \
+  --instance-id three-lanterns-deterministic \
+  --minutes 10080
 ```
 
 WorldBuilder normally uses the provider and budget from

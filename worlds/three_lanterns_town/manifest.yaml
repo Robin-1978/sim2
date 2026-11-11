@@ -1,0 +1,23 @@
+config_version: three-lanterns-town-0.1
+world_id: three_lanterns_town
+name: 三灯镇
+time_unit: minute
+start_world_minute: 0
+random_seed: 3117
+files:
+- actions.yaml
+- agents.yaml
+- attributes.yaml
+- behavior_trees.yaml
+- capabilities.yaml
+- evolution.yaml
+- factions.yaml
+- locations.yaml
+- objects.yaml
+- opening_events.yaml
+- player_template.yaml
+- recipes.yaml
+- rules.yaml
+- setting.yaml
+- story.yaml
+- world_state.yaml

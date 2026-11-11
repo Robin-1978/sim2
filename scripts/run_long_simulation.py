@@ -62,11 +62,13 @@ class DeterministicProvider:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--minutes", type=int, default=10080)
+    parser.add_argument("--config", type=Path, help="world package to smoke-test; defaults to Starter Village")
+    parser.add_argument("--instance-id", default="long-run")
     args = parser.parse_args()
-    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    config = args.config or (Path(__file__).parents[1] / "worlds" / "starter_village")
     provider = DeterministicProvider()
     with tempfile.TemporaryDirectory(prefix="sim2-long-run-") as runtime:
-        platform = Platform(create_instance(config, "long-run", Path(runtime)))
+        platform = Platform(create_instance(config, args.instance_id, Path(runtime)))
         try:
             report = platform.run(args.minutes, providers={"agent_decision": provider, "agent_reflection": provider, "god": provider, "story": provider})
             agents = []

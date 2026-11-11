@@ -1,0 +1,78 @@
+vital_attribute: integrity
+capacity_attribute: vigor
+perception:
+  visible_fields:
+  - role
+  - type
+  - summary
+  - description
+  - public
+  visible_state_fields:
+  - status
+  - quantity
+  - readable
+  - recovered
+  global:
+    fields:
+    - role
+    - type
+    - summary
+    - description
+    - public
+    state_fields:
+    - status
+    - location_id
+    - quantity
+fallback_behavior_ids:
+- inspect_cistern
+- survey_old_road
+capability_aliases:
+  inspect:
+  - stewardship
+  speak:
+  - conversation
+  explore:
+  - exploration
+  gather:
+  - gathering
+needs:
+- id: belonging
+  target: 70
+  minimum: 0
+  gamma: 1.5
+  critical_threshold: 0.7
+  critical_gain: 1.0
+- id: purpose
+  target: 70
+  minimum: 0
+  gamma: 1.5
+  critical_threshold: 0.7
+  critical_gain: 1.0
+motivation_model:
+  family: hybrid_need_utility_appraisal
+  no_fixed_hierarchy: true
+  dimensions:
+  - safety_and_uncertainty
+  - relatedness
+  - competence
+  - meaning_and_goal_progress
+minute_effects:
+- id: vigor_recovery
+  scope: agent
+  every_minutes: 1
+  effect:
+    type: attribute_delta
+    attribute: vigor
+    delta: 0.4
+memory_quality:
+  semantic_similarity:
+    enabled: false
+social_credibility:
+  base: 0.5
+  trust_weight: 0.35
+  reputation_weight: 0.15
+  trust_relations:
+  - trust
+  reputation_attribute: reputation
+  reputation_min: -100
+  reputation_max: 100

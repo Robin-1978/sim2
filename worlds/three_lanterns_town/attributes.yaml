@@ -1,0 +1,46 @@
+attributes:
+- id: integrity
+  kind: state
+  label: Integrity
+  unit: '%'
+  min: 0
+  max: 100
+  default: 100
+  vital: true
+  cost_mode: decrease
+  prompt: Higher means the person is physically well; zero means incapacitated.
+- id: vigor
+  kind: state
+  label: Vigor
+  unit: '%'
+  min: 0
+  max: 100
+  default: 90
+  capacity: true
+  cost_mode: decrease
+  prompt: Higher means more short-term capacity for demanding actions.
+- id: belonging
+  kind: need
+  label: Belonging
+  unit: points
+  min: 0
+  max: 100
+  default: 55
+  prompt: Higher means stronger social connection to the town.
+- id: purpose
+  kind: need
+  label: Purpose
+  unit: points
+  min: 0
+  max: 100
+  default: 55
+  prompt: Higher means more progress toward a meaningful personal goal.
+- id: reputation
+  kind: state
+  label: Reputation
+  unit: points
+  min: -100
+  max: 100
+  default: 0
+  cost_mode: increase
+  prompt: Higher means the town has more reason to trust this person.

@@ -1,0 +1,115 @@
+behavior_trees:
+- id: inspect_cistern
+  agent_label: Inspect Cistern
+  summary: Inspect Cistern
+  entry_conditions:
+  - actor.can_inspect
+  estimated_minutes: 31
+  cooldown_minutes: 720
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: cistern_house
+  - type: action
+    action_id: inspect_object
+    parameters:
+      object_id: cistern_water
+  success_results:
+  - record_inspected
+  failure_results:
+  - denied
+  - interrupted
+- id: gather_reeds
+  agent_label: Gather Lantern Reeds
+  summary: Gather Lantern Reeds
+  entry_conditions:
+  - actor.can_gather
+  estimated_minutes: 120
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: old_road
+  - type: action
+    action_id: gather_resource
+    parameters:
+      resource_tag: reed_bundle
+      location_id: old_road
+  success_results:
+  - resource_collected
+  failure_results:
+  - resource_empty
+  - gathering_failed
+- id: survey_old_road
+  agent_label: Survey Old Road
+  summary: Survey Old Road
+  entry_conditions:
+  - actor.can_explore
+  - actor.alive
+  estimated_minutes: 181
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: old_road
+  - type: action
+    action_id: explore_area
+    parameters:
+      area_id: old_road
+  success_results:
+  - exploration_completed
+  failure_results:
+  - failed
+  - interrupted
+- id: research_boundary_stone
+  agent_label: Research Boundary Stone
+  summary: Research Boundary Stone
+  entry_conditions:
+  - actor.can_research
+  - actor.alive
+  estimated_minutes: 121
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: north_watch
+  - type: action
+    action_id: research_source
+    parameters:
+      source_id: boundary_stone
+  success_results:
+  - research_completed
+  failure_results:
+  - failed
+  - interrupted
+- id: communicate
+  agent_label: Exchange Town Information
+  summary: Exchange Town Information
+  entry_conditions:
+  - actor.can_speak
+  - target.available
+  estimated_minutes: 15
+  agent_parameters:
+    topic:
+      type: string
+      required: true
+      max_length: 120
+      description: A short subject.
+    message:
+      type: string
+      required: true
+      max_length: 240
+      description: Two concise sentences grounded in visible evidence.
+  nodes:
+  - type: action
+    action_id: communicate
+    parameters:
+      target_id: context.target_id
+      topic: context.topic
+      message: context.message
+  success_results:
+  - dialogue_recorded
+  failure_results:
+  - conversation_refused
+  - participant_left

@@ -1,0 +1,14 @@
+objects:
+- id: boundary_stone
+  type: document
+  name: 褪色界碑
+  initial_state:
+    location_id: north_watch
+    readable: true
+    recovered: false
+- id: cistern_record
+  type: public_record
+  name: 蓄水记录册
+  initial_state:
+    location_id: cistern_house
+    readable: true

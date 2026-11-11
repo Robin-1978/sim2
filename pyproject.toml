@@ -33,6 +33,7 @@ exclude = ["artifacts*", "docs*", "examples*", "scripts*", "tests*"]
 [tool.setuptools.package-data]
 sim2 = ["world_builder/*.yaml"]
 "worlds.starter_village" = ["*.yaml", "prompts/*.yaml"]
+"worlds.three_lanterns_town" = ["*.yaml"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

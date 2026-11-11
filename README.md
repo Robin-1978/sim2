@@ -4,6 +4,8 @@ sim2 is a configuration-driven, text-first adaptive world simulation framework. 
 
 The first world is **Starter Village (雾溪村)**: a settlement at the edge of Greywood, built around a weakening pact and a hidden root gate. Food, water, health, patrols, trade, relationships, exploration, player choices, and world-level interventions can change the story. Its complete setting and extension map are in [the world guide](docs/worlds/starter-village.md); the importable package is [`worlds/starter_village/`](worlds/starter_village/), and the concise configuration catalog is [here](docs/worlds/starter-village-catalog.md).
 
+The repository also includes **Three Lanterns Town (三灯镇)**, a compact three-character validation world. Its water keeper, boundary watcher, and reed trader/researcher exercise the same generic runtime through inspection, exploration, research, gathering, testimony, and evidence-gated Story progression. The package is [`worlds/three_lanterns_town/`](worlds/three_lanterns_town/); the unified authoring source is [`examples/three_lanterns_town.yaml`](examples/three_lanterns_town.yaml).
+
 Each individual Agent has two phases: a short decision phase that selects a Platform-validated behavior or interaction, and a scheduled reflection/evolution phase that turns useful outcomes into memory, beliefs, goals, or new behavior proposals. Each world also has Story and God Agents: Story turns validated discoveries into configured or evidence-grounded narrative beats, while God observes structured world outcomes and proposes validated world changes. Long actions continue in Platform without an LLM call every minute.
 
 ## Quick start

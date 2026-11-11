@@ -1,0 +1,19 @@
+capabilities:
+- id: stewardship
+  name: Public stewardship
+  description: Inspect reserves and keep the town supplied.
+- id: exploration
+  name: Route exploration
+  description: Survey routes and record reliable discoveries.
+- id: research
+  name: Field research
+  description: Read sources and turn repeated study into verified facts.
+- id: gathering
+  name: Resource gathering
+  description: Collect configured materials from reachable nodes.
+- id: conversation
+  name: Conversation
+  description: Exchange bounded testimony with a visible participant.
+- id: watch
+  name: Boundary watch
+  description: Investigate threats around the north watch.

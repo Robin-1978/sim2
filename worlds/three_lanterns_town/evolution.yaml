@@ -1,0 +1,6 @@
+reflection_cadence_minutes: 1440
+event_wake_policy:
+  event_groups: {}
+  direct_event_types:
+  - research.completed
+  - exploration.completed
