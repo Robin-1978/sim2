@@ -209,6 +209,34 @@ def test_active_institution_accounts_for_configured_behavior_result_events(tmp_p
         platform.close()
 
 
+def test_resource_property_projection_follows_configured_alias(tmp_path: Path):
+    platform = _town(tmp_path, "resource-property-projection")
+    try:
+        with platform.store.transaction():
+            result = platform.store.sync_world_property_from_resource("cistern_water", 17)
+        assert result == {"world_property": "cistern_reserve", "before": 48, "after": 17}
+        assert platform.store.get_meta("world_properties")["cistern_reserve"] == 17
+    finally:
+        platform.close()
+
+
+def test_configured_cistern_regeneration_updates_resource_and_world_view(tmp_path: Path):
+    platform = _town(tmp_path, "resource-regeneration-projection")
+    try:
+        resource = platform.store.get_entity("cistern_water")
+        resource["initial_state"]["quantity"] = 20
+        platform.store.put_entity("cistern_water", "resource", resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
+        properties = dict(platform.store.get_meta("world_properties") or {})
+        properties["cistern_reserve"] = 20
+        platform.store.set_meta("world_properties", properties)
+        platform.store.connection.commit()
+        step_n(platform, 1440)
+        assert platform.store.get_entity("cistern_water")["initial_state"]["quantity"] == 32.0
+        assert platform.store.get_meta("world_properties")["cistern_reserve"] == 32.0
+    finally:
+        platform.close()
+
+
 def test_institution_evidence_selectors_support_behavior_only_and_deduplicate(tmp_path: Path):
     platform = _town(tmp_path, "institution-evidence-selectors")
     try:

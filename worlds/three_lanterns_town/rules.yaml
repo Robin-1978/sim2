@@ -32,6 +32,8 @@ resource_regeneration:
   every_minutes: 1440
   amount: 12
   cap: 48
+resource_property_projections:
+  cistern_water: cistern_reserve
 capability_progression:
   research: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
   gathering: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}

@@ -367,18 +367,31 @@ class WorldStore:
         return snapshot
 
     def sync_world_property_from_resource(self, entity_id: str, amount: Any) -> dict[str, Any] | None:
-        """Keep a shared resource and its existing world-property label equal."""
+        """Keep a shared resource and configured world-property projections equal."""
 
         if not isinstance(amount, (int, float)) or isinstance(amount, bool):
             return None
         properties = dict(self.get_meta("world_properties", {}) or {})
-        key = str(entity_id)
-        if key not in properties or properties.get(key) == amount:
+        rules = self.get_meta("rules", {}) or {}
+        mappings = rules.get("resource_property_projections", {}) if isinstance(rules, dict) else {}
+        keys = [str(entity_id)]
+        if isinstance(mappings, dict):
+            configured = mappings.get(str(entity_id))
+            if isinstance(configured, str):
+                keys.append(configured)
+            elif isinstance(configured, list):
+                keys.extend(str(item) for item in configured if str(item))
+        changes = []
+        for key in dict.fromkeys(keys):
+            if key not in properties or properties.get(key) == amount:
+                continue
+            before = properties.get(key)
+            properties[key] = amount
+            changes.append({"world_property": key, "before": before, "after": amount})
+        if not changes:
             return None
-        before = properties.get(key)
-        properties[key] = amount
         self.set_meta("world_properties", properties)
-        return {"world_property": key, "before": before, "after": amount}
+        return changes[0] if len(changes) == 1 else {"projections": changes}
 
     def put_entity(self, entity_id: str, entity_type: str, name: str, data: dict[str, Any]) -> None:
         self.connection.execute(
