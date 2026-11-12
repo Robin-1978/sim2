@@ -48,7 +48,7 @@ PROTOCOLS = {
     "agent_decision": [
         "Choose one exact visible behavior or interaction, or wait.",
         "An active story goal is a current commitment: follow it when any listed behavior can advance it.",
-        "Use visible names and choices; do not output internal IDs, time, cost or effects.",
+        "Use visible names and choices; do not output internal IDs, time, cost or effects. Keep the reason in world language: name the person, place, evidence, or practical goal. Do not write NPC, Agent, Story, BT, behavior tree, or framework terms in a world-facing reason.",
     ],
     "agent_reflection": [
         "Compare expected and observed results; keep only new, durable evidence.",
@@ -58,6 +58,7 @@ PROTOCOLS = {
         "Use the validated source to create the next grounded story step, not a duplicate summary.",
         "A useful continuation gives an audience a concrete next decision and names at least one exact executable follow-up from that audience's catalog when one is available.",
         "Research is one reusable behavior: pass the configured source to that behavior; never create a source-specific research BT.",
+        "Write summaries, facts, goals, and reasons as events in the world. Do not mention NPC, Agent, Story Agent, BT, behavior tree, prompts, or framework roles.",
         "Use recent validated history and query_history when an earlier event is needed to continue the same thread.",
     ],
     "god": [

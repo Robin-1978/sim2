@@ -749,6 +749,8 @@ class WorldEvolutionRuntimeMixin:
                 return {"status": "wait", "reason": "This validated result already has an active emergent story beat; wait for a new discovery or relationship result."}
             beat["source_event_id"] = int(source_event.get("event_id"))
             beat["source_event_type"] = str(source_event.get("event_type") or "validated.result")
+            beat["source_event_source_id"] = str(source_event.get("source_id") or "")
+            beat["source_event_stage_id"] = str(source_event.get("stage_id") or "")
             # A new event does not automatically make a new story beat useful.
             # Repeated water-safety or pact-stability outcomes often arrive as
             # separate validated events but carry the same fact. Keep one
@@ -933,6 +935,30 @@ class WorldEvolutionRuntimeMixin:
             for value in beat.get("unlock_choices", [])
             if "".join(char for char in str(value).casefold() if char.isalnum()) in labels
         ]
+        if emergent and source_event:
+            candidate_followup_values = tuple(sorted(str(item) for item in (beat.get("unlock_behavior_ids") or [])))
+            candidate_followups = candidate_followup_values or ("<no-explicit-followup>",)
+            def narrative_signature(value: Any) -> str:
+                return "".join(char for char in str(value or "") if not char.isdigit() and char.isalnum()).casefold()
+            candidate_content = "" if candidate_followup_values else narrative_signature(
+                " ".join(str(beat.get(key) or "") for key in ("summary", "fact", "goal_hint"))
+            )
+            source_type = str(source_event.get("event_type") or "")
+            source_id = str(source_event.get("source_id") or "")
+            stage_id = str(source_event.get("stage_id") or "")
+            audience_key = tuple(sorted(str(item) for item in audience))
+            for prior in state.get("emergent_beats", []) or []:
+                if not isinstance(prior, dict):
+                    continue
+                if (
+                    str(prior.get("source_event_type") or "") == source_type
+                    and str(prior.get("source_event_source_id") or "") == source_id
+                    and str(prior.get("source_event_stage_id") or "") == stage_id
+                    and tuple(sorted(str(item) for item in (prior.get("audience") or []))) == audience_key
+                    and (tuple(sorted(str(item) for item in (prior.get("unlock_behavior_ids") or []))) or ("<no-explicit-followup>",)) == candidate_followups
+                    and (candidate_followup_values or narrative_signature(" ".join(str(prior.get(key) or "") for key in ("summary", "fact", "goal_hint"))) == candidate_content)
+                ):
+                    return {"status": "wait", "reason": "This validated result already has the same audience and continuation; wait for a different outcome, stage, or executable follow-up."}
         with self.store.transaction():
             self.store.create_intent(intent_id, actor_id, "propose_story_beat", proposal, minute)
             state[beat_id] = {"status": "active", "started_minute": minute, "actor_id": actor_id, "audience": list(audience)}

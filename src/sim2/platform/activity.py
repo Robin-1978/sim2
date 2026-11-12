@@ -744,6 +744,12 @@ class ActivityRuntimeMixin:
 
     def _queue_event_consumer_task(self, consumer: str, event_id: int, event_type: str, actor_id: str | None, minute: int, *, task_type: str | None = None, explicit: bool = False) -> str | None:
         role, resolved_actor = self._resolve_evolution_consumer(consumer, actor_id)
+        evolution = self.store.get_meta("evolution", {}) or {}
+        evolution = evolution.get("evolution", evolution) if isinstance(evolution, dict) else {}
+        consumers = ((evolution.get("event_wake_policy", {}) or {}).get("consumers", {}) or {}) if isinstance(evolution, dict) else {}
+        manual_events = {str(item) for item in ((consumers.get(role, {}) or {}).get("manual_event_types") or [])}
+        if explicit and str(event_type) in manual_events:
+            return None
         if role in {"agent_decision", "agent_reflection"} and resolved_actor:
             task_id = f"{role}:event:{int(event_id)}:{resolved_actor}"
             self.store.put_evolution_task(
@@ -1207,6 +1213,75 @@ class ActivityRuntimeMixin:
         if status == "completed":
             self._record_active_institution_entries(behavior_event_id, "behavior.completed", agent["id"], minute, {"execution_id": execution_id, "behavior_id": behavior_id, "result": result, "outcome": outcome})
             self._complete_story_beats_for_actor(agent["id"], behavior_id, minute)
+        else:
+            self._block_story_beats_for_failed_followup(agent["id"], behavior_id, minute, behavior_event_id, result)
+
+    def _block_story_beats_for_failed_followup(
+        self,
+        actor_id: str,
+        behavior_id: str,
+        minute: int,
+        source_event_id: int,
+        result: str,
+    ) -> None:
+        """Stop a failed story goal from forcing the same action forever.
+
+        A failed institution settlement or other follow-up is evidence that the
+        current continuation is blocked.  Close that branch as blocked, clear
+        its copied goal, and wake Story with the real failure so it can choose
+        a different executable continuation.  This is generic lifecycle logic;
+        the world package still decides what the replacement is.
+        """
+
+        try:
+            state = dict(self.store.get_meta("story_state", {}) or {})
+            agent = self.store.get_agent(actor_id)
+        except (KeyError, TypeError):
+            return
+        story_root = self.store.get_meta("story", {}) or {}
+        story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
+        definitions = {str(item.get("id")): item for item in self.store.get_definitions("bt_def")}
+        beats = {str(item.get("id")): item for item in (story_root.get("beats", []) or []) if isinstance(item, dict)}
+        beats.update({str(item.get("id")): item for item in (state.get("emergent_beats", []) or []) if isinstance(item, dict) and item.get("id")})
+
+        def matches(declaration: Any) -> bool:
+            key = "".join(char for char in str(declaration or "").casefold() if char.isalnum())
+            if not key:
+                return False
+            definition = definitions.get(str(behavior_id), {})
+            candidates = {str(behavior_id)} | {
+                str(definition.get(field) or "")
+                for field in ("agent_label", "summary", "description")
+            }
+            return any(key == "".join(char for char in candidate.casefold() if char.isalnum()) for candidate in candidates if candidate)
+
+        changed = False
+        cleared_goals: set[str] = set()
+        for beat_id, entry in list(state.items()):
+            if beat_id == "emergent_beats" or not isinstance(entry, dict) or entry.get("status") != "active":
+                continue
+            audience = {str(item) for item in (entry.get("audience", []) or [])}
+            if str(actor_id) not in audience:
+                continue
+            beat = beats.get(str(beat_id), {})
+            followups = beat.get("followup_behaviors")
+            if followups is not None and not any(matches(item) for item in (followups if isinstance(followups, list) else [followups])):
+                continue
+            entry = dict(entry)
+            entry.update({"status": "blocked", "blocked_minute": int(minute), "blocked_by_behavior": str(behavior_id), "blocked_result": str(result)})
+            state[beat_id] = entry
+            changed = True
+            goal_hint = str(beat.get("goal_hint") or "").strip()
+            if goal_hint:
+                cleared_goals.add(goal_hint)
+            self.store.append_event("story.beat.blocked", actor_id, minute, {"beat_id": beat_id, "behavior_id": behavior_id, "result": result})
+        if not changed:
+            return
+        if cleared_goals:
+            agent["story_goals"] = [item for item in (agent.get("story_goals", []) or []) if str(item) not in cleared_goals]
+            self.store.update_agent(actor_id, agent)
+        self.store.set_meta("story_state", state)
+        self._queue_story_task(source_event_id, "behavior.failed", actor_id, minute)
 
     def _complete_story_beats_for_actor(self, actor_id: str, behavior_id: str, minute: int) -> None:
         """Close active audience beats after a matching follow-up behavior.

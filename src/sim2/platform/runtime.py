@@ -313,6 +313,25 @@ class Platform(
             words = " ".join(str(text or "").split())
             return words if len(words) <= size else words[: max(0, size - 1)] + "…"
 
+        def public_reason(text: Any) -> str:
+            """Keep framework labels out of the third-person world timeline."""
+
+            value = clip(text, 120)
+            replacements = (
+                ("故事目标", "当前目标"),
+                ("故事节拍", "当前进展"),
+                ("story goal", "current goal"),
+                ("story beat", "current development"),
+                ("Story Agent", "the town's account"),
+                ("NPC", "the character"),
+                ("Agent", "the character"),
+                ("行为树", "行动方案"),
+                ("BT", "行动方案"),
+            )
+            for source, target in replacements:
+                value = value.replace(source, target)
+            return value
+
         def bundle_text(bundle: Any) -> str:
             if not isinstance(bundle, dict) or not bundle:
                 return "nothing"
@@ -340,7 +359,7 @@ class Platform(
             target = next((names.get(str(event.get(key))) for key in ("target_id", "recipient_id", "listener_id") if event.get(key)), None)
             if event_type == "behavior.started":
                 label = behavior_labels.get(str(event.get("behavior_id", "")), str((event.get("expected", {}) or {}).get("summary") or "a behavior"))
-                reason = clip((event.get("decision", {}) or {}).get("reason"), 120)
+                reason = public_reason((event.get("decision", {}) or {}).get("reason"))
                 sentence = f"{actor} began {label}." if not reason else f"{actor} began {label}: {reason}."
             elif event_type == "behavior.completed":
                 label = behavior_labels.get(str(event.get("behavior_id", "")), "a behavior")
@@ -391,10 +410,12 @@ class Platform(
                 sentence = f"{actor} recovered {recovered}: {clip(event.get('fact'), 160)}"
             elif event_type == "story.beat.activated":
                 audience = ", ".join(names.get(str(member), str(member)) for member in (event.get("audience", []) or []))
-                sentence = f"Story beat '{clip(event.get('summary'), 160)}'{f' for {audience}' if audience else ''}."
+                sentence = f"A new development emerged: '{clip(event.get('summary'), 160)}'{f' for {audience}' if audience else ''}."
             elif event_type == "story.beat.completed":
                 label = behavior_labels.get(str(event.get("behavior_id", "")), str(event.get("behavior_id", "a behavior")))
-                sentence = f"{actor} closed story beat '{clip(event.get('beat_id'), 80)}' with {label}."
+                sentence = f"{actor} followed through on a development with {label}."
+            elif event_type == "evolution.task_due":
+                sentence = "A scheduled world review became due."
             elif event_type in {"civilization.milestone", "civilization.progressed"}:
                 sentence = f"{'Civilization milestone' if event_type == 'civilization.milestone' else 'Civilization progress'}: {clip(event.get('progress_key'), 60)} — {clip(event.get('evidence'), 160)}"
             elif event_type == "world.rule.followed":
@@ -416,7 +437,7 @@ class Platform(
             else:
                 summary = str(event.get("summary") or event.get("result") or event_type.replace(".", " ").replace("_", " ")).rstrip(".")
                 sentence = f"{actor}: {summary}."
-            rendered.append({"event_id": event["event_id"], "world_minute": event["world_minute"], "event_type": event_type, "narrative": sentence, "public": {key: value for key, value in event.items() if key not in {"actor_id", "target_id", "recipient_id", "offerer_id", "speaker_id", "listener_id", "location_id"}}})
+            rendered.append({"event_id": event["event_id"], "world_minute": event["world_minute"], "event_type": event_type, "narrative": sentence, "public": {key: value for key, value in event.items() if key not in {"actor_id", "target_id", "recipient_id", "offerer_id", "speaker_id", "listener_id", "location_id", "decision"}}})
         return {"status": "ok", "world_id": self.store.get_meta("world_id"), "world_minute": int(self.store.get_meta("world_minute", 0)), "events": rendered, "next_after_event_id": events[-1]["event_id"] if events else after_event_id}
 
     def _reject_intent(self, intent_id: str, actor_id: str, intent_type: str, data: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:

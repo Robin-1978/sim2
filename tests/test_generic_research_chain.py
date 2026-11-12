@@ -154,3 +154,69 @@ def test_research_source_proposal_requires_real_declarative_stages(tmp_path: Pat
     finally:
         platform.close()
 
+
+def test_failed_story_followup_is_blocked_and_story_is_woken(tmp_path: Path):
+    platform = _town(tmp_path, "failed-story-followup")
+    try:
+        goal = "Gather the assigned source material."
+        agent = platform.store.get_agent("luo_shan")
+        agent["story_goals"] = [goal]
+        with platform.store.transaction():
+            platform.store.update_agent("luo_shan", agent)
+            platform.store.set_meta(
+                "story_state",
+                {
+                    "emergent_beats": [
+                        {
+                            "id": "emergent:blocked-followup",
+                            "audience": ["luo_shan"],
+                            "goal_hint": goal,
+                            "followup_behaviors": ["Gather Lantern Reeds"],
+                            "source_event_type": "research.completed",
+                        }
+                    ],
+                    "emergent:blocked-followup": {"status": "active", "audience": ["luo_shan"]},
+                },
+            )
+        platform._block_story_beats_for_failed_followup("luo_shan", "gather_reeds", 10, 999, "resource_empty")
+        state = platform.store.get_meta("story_state")
+        assert state["emergent:blocked-followup"]["status"] == "blocked"
+        assert goal not in platform.store.get_agent("luo_shan").get("story_goals", [])
+        task = platform.store.connection.execute(
+            "SELECT role,task_type,status FROM evolution_task WHERE task_id=?",
+            ("story:event:999",),
+        ).fetchone()
+        assert task is not None and task["role"] == "story" and task["task_type"] == "story:behavior.failed"
+    finally:
+        platform.close()
+
+
+def test_public_timeline_uses_world_language_for_story_events(tmp_path: Path):
+    platform = _town(tmp_path, "public-timeline-language")
+    try:
+        with platform.store.transaction():
+            platform.store.append_event(
+                "story.beat.activated",
+                "story",
+                10,
+                {"summary": "配给底数需要决断。", "audience": ["梅岚"]},
+            )
+            platform.store.append_event(
+                "behavior.started",
+                "mei_lan",
+                11,
+                {
+                    "behavior_id": "inspect_cistern",
+                    "expected": {"summary": "Inspect Cistern"},
+                    "decision": {"reason": "故事目标要求核对水量，NPC 需要先看清记录。"},
+                },
+            )
+        timeline = platform.timeline(limit=10)
+        text = " ".join(item["narrative"] for item in timeline["events"])
+        assert "Story beat" not in text
+        assert "故事目标" not in text
+        assert "NPC" not in text
+        assert "配给底数需要决断" in text
+    finally:
+        platform.close()
+

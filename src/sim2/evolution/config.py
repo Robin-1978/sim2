@@ -147,7 +147,7 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
         for index, raw_spec in enumerate(wakes):
             if not isinstance(raw_spec, dict):
                 continue
-            known_wake = {"id", "on", "for", "count", "every", "tools", "purpose", "result", "evidence", "external", "definition_type", "assign_to"}
+            known_wake = {"id", "on", "for", "count", "every", "tools", "purpose", "result", "evidence", "external", "definition_type", "assign_to", "manual_only"}
             unknown_wake = sorted(str(key) for key in raw_spec if key not in known_wake)
             if unknown_wake:
                 raise ValueError(
@@ -168,6 +168,7 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
             consumer = dict(consumers.get(role) or {})
             direct = list(consumer.get("direct_event_types") or [])
             groups = list(consumer.get("event_groups") or consumer.get("groups") or [])
+            manual_events = list(consumer.get("manual_event_types") or [])
             count = max(1, int(raw_spec.get("count", 1) or 1))
             cooldown = duration_minutes(raw_spec["every"]) if raw_spec.get("every") is not None else 0
             contract_fields = {"tools", "purpose", "result", "evidence", "definition_type", "assign_to"}
@@ -189,7 +190,10 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
                 groups.append(group)
             else:
                 direct.extend(exact_events)
+            if bool(raw_spec.get("manual_only")):
+                manual_events.extend(exact_events)
             consumer["direct_event_types"] = list(dict.fromkeys(str(item) for item in direct))
+            consumer["manual_event_types"] = list(dict.fromkeys(str(item) for item in manual_events))
             if groups:
                 consumer["event_groups"] = groups
             # Compact wakes name their source event directly.  It may be

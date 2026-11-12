@@ -20,11 +20,11 @@ wakes:
 - id: research_synthesis
   "on": research.completed
   for: god
-  count: 2
+  count: 1
   every: 1w
   tools: [propose_entity, propose_definition, wait]
-  purpose: Two validated research results require a grounded executable continuation of the research, such as a newly assigned source with declarative stages or a genuinely new capability.
-  result: If no assigned source has an open stage, create one new research source with research_discoveries, research_required or stage required values, and research_assignees for the existing generic research behavior; otherwise propose the smallest distinct executable continuation. A descriptive faction alone does not satisfy this research continuation.
+  purpose: A completed multi-step research source requires a grounded executable continuation of the research, such as a newly assigned source with declarative stages or a genuinely new capability.
+  result: The source already reached its configured completion count. If no assigned source has an open stage, create one new research source with research_discoveries, research_required or stage required values, and research_assignees for the existing generic research behavior; otherwise propose the smallest distinct executable continuation. A descriptive faction alone does not satisfy this research continuation.
 - id: institution_ledger_review
   "on": institution.ledger_entry
   for: god
@@ -63,4 +63,4 @@ wakes:
 - {"on": entity.created, for: god}
 - {"on": definition.registered, for: god}
 - {"on": institution.activated, for: story}
-- {"on": institution.allocation_completed, for: story}
+- {"on": institution.allocation_completed, for: story, manual_only: true}

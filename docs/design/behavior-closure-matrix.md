@@ -96,7 +96,10 @@ wake against the consumer policy before a SQLite instance is created.
 
 God is not an autonomous resource operator. It is scheduled for a weekly local
 review and a monthly structural review, and it may be woken by a configured
-evidence group or a derived threshold signal. A threshold signal must include
+evidence group or a derived threshold signal. In the Three Lanterns package,
+one completed multi-step research source is already the evidence group because
+the source itself requires two work units; routine allocation completions do
+not wake Story one by one. A threshold signal must include
 the source events that caused the crossing; it is not an unexplained model
 call.
 God may create any supported world content needed by verified events: agents,

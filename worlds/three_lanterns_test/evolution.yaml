@@ -60,4 +60,4 @@ wakes:
 - {"on": entity.created, for: god}
 - {"on": definition.registered, for: god}
 - {"on": institution.activated, for: story}
-- {"on": institution.allocation_completed, for: story}
+- {"on": institution.allocation_completed, for: story, manual_only: true}
