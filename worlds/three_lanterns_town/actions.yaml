@@ -255,7 +255,9 @@ actions:
   description: 按已激活制度的账本结算一次公共资源分配
   parameters:
     institution: string
-    pool_entity: string
+    pool_entity:
+      type: string
+      entity_type: resource
     item: string
     period: string
   preconditions:

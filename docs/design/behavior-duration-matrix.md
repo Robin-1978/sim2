@@ -51,10 +51,13 @@ result; Story and God may propose follow-ups but cannot invent the result.
 God does **not** receive `request_behavior` or an Action executor. Direct
 execution would bypass actor location, inventory, capacity, capability,
 relationships, and time, making world changes causally ungrounded. God can
-observe verified outcomes and propose a rule, relationship, faction strategy,
-structural entity, narrative beat, or world progress. A proposed Action/BT
-must be declarative, validated and registered by Platform, then selected and
-executed by a real actor through the normal duration and cost pipeline.
+observe verified outcomes and create any supported world content: agents,
+locations, factions, objects, empty resource nodes, institutions, rules,
+relationships, narrative beats, world progress, attributes, capabilities,
+Actions, behavior trees, or recipes. Platform validation, not a narrow content
+type list, bounds the proposal. A proposed Action/BT must be declarative and
+registered by Platform, then selected and executed by a real actor through the
+normal duration and cost pipeline.
 
 ## Runtime guard
 

@@ -446,7 +446,8 @@ class ActivityRuntimeMixin:
                 {"capability": capability, "source": action_id, "xp_rule": definition.get("xp_rule"), "requires_agent_review": True},
             )
 
-    def _apply_success_effects(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int, *, target: dict[str, Any] | None = None) -> None:
+    def _apply_success_effects(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int, *, target: dict[str, Any] | None = None) -> list[str]:
+        errors: list[str] = []
         effects = list(action.get("effects", []) or [])
         for effect in effects:
             resolved_effect = {
@@ -529,9 +530,13 @@ class ActivityRuntimeMixin:
                         "execution_id": str(agent.get("initial_state", {}).get("active_bt_instance") or ""),
                         "action_id": str(action.get("id") or ""),
                     })
-                    self.store.append_event("institution.allocation_completed", agent["id"], minute, allocation_event)
+                    allocation_event_id = self.store.append_event("institution.allocation_completed", agent["id"], minute, allocation_event)
+                    self._wake_configured_evolution_consumers(
+                        allocation_event_id, "institution.allocation_completed", agent["id"], minute,
+                    )
                 else:
                     self.store.append_event("institution.allocation_failed", agent["id"], minute, allocation)
+                    errors.append(str(allocation.get("message") or allocation.get("failed_check") or "institution allocation failed"))
             else:
                 self.effects.apply(receiver, resolved_effect, target=effect_target, formula_agent=agent)
             if receiver is not agent:
@@ -546,10 +551,10 @@ class ActivityRuntimeMixin:
                 self.store.append_event("capability.evidence", agent["id"], minute, {"capability": str(capability), "source": str(action.get("id", "action")), "configured_delta": float(effect.get("value", 0) or 0), "requires_agent_review": True})
         recipe_id = parameters.get("recipe_id")
         if not recipe_id:
-            return
+            return errors
         recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == recipe_id), None)
         if not recipe:
-            return
+            return errors
         for output in recipe.get("outputs", []) or []:
             item = str(output.get("item"))
             agent.setdefault("inventory", {})[item] = agent["inventory"].get(item, 0) + output.get("quantity", 0)
@@ -580,6 +585,7 @@ class ActivityRuntimeMixin:
                 capability = effect.get("capability")
                 if capability:
                     self.store.append_event("capability.evidence", agent["id"], minute, {"capability": str(capability), "source": f"recipe:{recipe_id}", "configured_delta": float(effect.get("value", 0) or 0), "requires_agent_review": True})
+        return errors
 
     def _action_condition_context(self, agent: dict[str, Any], parameters: dict[str, Any], target: dict[str, Any] | None) -> dict[str, Any]:
         state = agent.get("initial_state", {}) or {}
@@ -675,7 +681,13 @@ class ActivityRuntimeMixin:
         savepoint = f"action_effects_{uuid4().hex}"
         self.store.connection.execute(f"SAVEPOINT {savepoint}")
         try:
-            self._apply_success_effects(agent, action, parameters, minute, target=target)
+            effect_errors = self._apply_success_effects(agent, action, parameters, minute, target=target)
+            if effect_errors:
+                self.store.connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                self.store.connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+                agent.clear()
+                agent.update(original_agent)
+                return "; ".join(dict.fromkeys(effect_errors)), None
             failure = self._action_success_reason(agent, action, parameters, target)
             if failure:
                 self.store.connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
@@ -715,7 +727,7 @@ class ActivityRuntimeMixin:
             data={"source_event_id": int(event_id), "source_event_type": event_type, "source_actor_id": actor_id},
         )
 
-    def _queue_event_consumer_task(self, consumer: str, event_id: int, event_type: str, actor_id: str | None, minute: int, *, task_type: str | None = None) -> str | None:
+    def _queue_event_consumer_task(self, consumer: str, event_id: int, event_type: str, actor_id: str | None, minute: int, *, task_type: str | None = None, explicit: bool = False) -> str | None:
         role, resolved_actor = self._resolve_evolution_consumer(consumer, actor_id)
         if role in {"agent_decision", "agent_reflection"} and resolved_actor:
             task_id = f"{role}:event:{int(event_id)}:{resolved_actor}"
@@ -735,7 +747,7 @@ class ActivityRuntimeMixin:
                 },
             )
             return task_id
-        return self.event_wakes.queue(role, event_id, event_type, resolved_actor, minute, task_type=task_type)
+        return self.event_wakes.queue(role, event_id, event_type, resolved_actor, minute, task_type=task_type, explicit=explicit)
 
     def _queue_configured_followups(self, configured: dict[str, Any], event_id: int, event_type: str, actor_id: str, minute: int) -> None:
         """Wake configured result consumers without knowing story-specific IDs."""
@@ -751,6 +763,7 @@ class ActivityRuntimeMixin:
                 actor_id,
                 minute,
                 task_type=f"event:{event_type}",
+                explicit=True,
             )
 
     def _advance_information_progress(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> dict[str, Any] | None:
@@ -998,9 +1011,8 @@ class ActivityRuntimeMixin:
                     # enough to wake God or Story. Event groups apply their
                     # own evidence count and cooldown; this call does not
                     # hard-code any institution or quota semantics.
-                    self._queue_event_consumer_task(
-                        "god", ledger_event_id, "institution.ledger_entry", actor_id, minute,
-                        task_type="event:institution.ledger_entry",
+                    self._wake_configured_evolution_consumers(
+                        ledger_event_id, "institution.ledger_entry", actor_id, minute,
                     )
 
     def _finish_behavior(self, agent: dict[str, Any], execution_id: str, behavior_id: str, status: str, result: str, minute: int) -> None:
@@ -1105,6 +1117,15 @@ class ActivityRuntimeMixin:
                         break
                 event_id = duplicate_event_id or self.store.append_event(event_type, agent["id"], minute, payload)
                 self._queue_configured_followups(configured, event_id, event_type, agent["id"], minute)
+                # An institution may account for the verified outcome event
+                # emitted by a behavior (for example, a research or public
+                # inspection result) instead of the generic behavior.completed
+                # envelope.  Feed every configured result through the same
+                # declarative selector path; no world-specific event name is
+                # required and INSERT OR IGNORE keeps retries idempotent.
+                self._record_active_institution_entries(
+                    event_id, event_type, agent["id"], minute, payload,
+                )
             for configured in behavior_definition.get("outcome_facts", []) or []:
                 if not isinstance(configured, dict) or not configured.get("fact"):
                     continue
@@ -1174,6 +1195,13 @@ class ActivityRuntimeMixin:
                 return None
             raw = beat.get("followup_behaviors")
             if raw is None:
+                # Emergent Story beats are open chapters.  An unrelated
+                # maintenance action must not close the chapter before its
+                # grounded goal is attempted. Configured package beats keep
+                # the historical close-on-any-behavior behavior when they do
+                # not declare a follow-up.
+                if str(beat_id).startswith("emergent:"):
+                    return None
                 return None
             return [str(item) for item in (raw if isinstance(raw, list) else [raw])]
 
@@ -1200,6 +1228,8 @@ class ActivityRuntimeMixin:
             if str(actor_id) not in audience and agent_name not in audience:
                 continue
             followups = declared_followups(beat_id)
+            if str(beat_id).startswith("emergent:") and followups is None:
+                continue
             if followups and not any(behavior_matches(behavior_id, item) for item in followups):
                 continue
             entry = dict(entry)

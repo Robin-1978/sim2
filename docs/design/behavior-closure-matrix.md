@@ -100,10 +100,13 @@ review and a monthly structural review, and it may be woken by a configured
 evidence group or a derived threshold signal. A threshold signal must include
 the source events that caused the crossing; it is not an unexplained model
 call.
-God may propose a rule, entity, faction strategy, or narrative event. Shared
-resource quantities, personal needs, relationships, and production outcomes
-must be changed by configured behavior effects. A God proposal cannot directly
-increase food, trust, safety, or another behavior-owned value.
+God may create any supported world content needed by verified events: agents,
+locations, factions, objects, empty resource nodes, institutions, relationships,
+rules, attributes, world-property definitions, capabilities, Actions, behavior trees,
+recipes, and narrative events. Shared resource quantities, personal needs,
+relationships, and production outcomes still require configured behavior
+effects. A God proposal cannot directly increase food, trust, safety, or
+another behavior-owned value through an unrestricted property write.
 
 Signal rules are bounded as well: Platform rejects a duplicate event/follow-up
 signal and a same-role `world.rule.*` signal chain. A signal wakes its consumer

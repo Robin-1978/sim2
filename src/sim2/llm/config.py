@@ -14,6 +14,7 @@ from typing import Any
 
 DEFAULT_MAX_COMPLETION_TOKENS = 2048
 DEFAULT_MAX_AGENT_ITERATIONS = 4
+DEFAULT_MAX_READ_TOOL_CALLS = 8
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,7 @@ class RoleConfig:
     provider: str | None = None
     max_completion_tokens: int = DEFAULT_MAX_COMPLETION_TOKENS
     max_agent_iterations: int = DEFAULT_MAX_AGENT_ITERATIONS
+    max_read_tool_calls: int = DEFAULT_MAX_READ_TOOL_CALLS
 
 
 @dataclass(frozen=True)
@@ -103,6 +105,7 @@ class LLMConfig:
                     raise ValueError(f"Role {role!r} maps to unknown provider {provider!r}")
             completion = value.get("max_completion_tokens")
             iterations = value.get("max_agent_iterations")
+            read_calls = value.get("max_read_tool_calls")
             roles[str(role)] = RoleConfig(
                 provider=provider,
                 max_completion_tokens=(
@@ -110,8 +113,12 @@ class LLMConfig:
                     if completion is not None else DEFAULT_MAX_COMPLETION_TOKENS
                 ),
                 max_agent_iterations=(
-                    max(1, min(8, int(iterations)))
+                    max(1, min(12, int(iterations)))
                     if iterations is not None else DEFAULT_MAX_AGENT_ITERATIONS
+                ),
+                max_read_tool_calls=(
+                    max(0, min(12, int(read_calls)))
+                    if read_calls is not None else DEFAULT_MAX_READ_TOOL_CALLS
                 ),
             )
         return cls(default_provider=default, providers=providers, roles=roles)

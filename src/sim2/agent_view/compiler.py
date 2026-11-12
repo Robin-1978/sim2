@@ -187,6 +187,39 @@ class AgentViewCompiler:
         aliases.update({str(key): str(value) for key, value in (rules.get("condition_aliases", {}) or {}).items()})
         return RuleCompiler(rules, self.conditions, aliases)
 
+    def _recent_history_view(self, limit: int = 16) -> list[dict[str, Any]]:
+        """Return a compact, visible-name projection of recent world facts."""
+
+        events = self.store.recent_events(limit=max(1, min(int(limit), 32)))
+        bt_labels = {
+            str(item.get("id")): str(item.get("agent_label") or item.get("summary") or item.get("id"))
+            for item in self.store.get_definitions("bt_def")
+        }
+        result: list[dict[str, Any]] = []
+        for event in events:
+            actor_id = str(event.get("actor_id") or "")
+            try:
+                actor_name = str(self.store.get_entity(actor_id).get("name") or actor_id or "world")
+            except KeyError:
+                actor_name = actor_id or "world"
+            details: dict[str, Any] = {}
+            for key in (
+                "summary", "fact", "result", "status", "behavior_id", "definition_type",
+                "name", "institution", "property", "delta", "allocations", "consumed", "remaining",
+            ):
+                value = event.get(key)
+                if value not in (None, "", [], {}):
+                    if key == "behavior_id":
+                        value = bt_labels.get(str(value), value)
+                    details[key] = value
+            result.append({
+                "event_type": str(event.get("event_type") or "event"),
+                "world_minute": int(event.get("world_minute", 0) or 0),
+                "actor": actor_name,
+                "details": details,
+            })
+        return result
+
     def _interaction_context(self, agent: dict[str, Any], participants: list[dict[str, Any]]) -> dict[str, Any]:
         """Expose configured relationship signals without naming story entities."""
 
@@ -985,19 +1018,29 @@ class AgentViewCompiler:
             })
         story_goals = list(agent.get("story_goals", []) or [])[-3:]
         agent_name = str(agent.get("name", agent_id))
+        story_root = self.store.get_meta("story", {}) or {}
+        story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
+        story_defs = {
+            str(item.get("id")): item
+            for item in list(story_root.get("beats", []) or []) + list((self.store.get_meta("story_state", {}) or {}).get("emergent_beats", []) or [])
+            if isinstance(item, dict) and item.get("id")
+        }
         active_story_beats: list[dict[str, Any]] = []
-        for item in self.store.recent_events(limit=40):
-            if str(item.get("event_type", "")) != "story.beat.activated":
+        story_state = self.store.get_meta("story_state", {}) or {}
+        for beat_id, entry in story_state.items():
+            if beat_id == "emergent_beats" or not isinstance(entry, dict) or entry.get("status") != "active":
                 continue
-            audience = [str(value) for value in (item.get("audience", []) or [])]
-            if agent_id in audience or agent_name in audience:
-                active_story_beats.append({
-                    "summary": str(item.get("summary", "")),
-                    "beat_id": str(item.get("beat_id", "")),
-                    "world_minute": int(item.get("world_minute", 0) or 0),
-                })
-            if len(active_story_beats) >= 3:
-                break
+            audience = [str(value) for value in (entry.get("audience", []) or [])]
+            if agent_id not in audience and agent_name not in audience:
+                continue
+            definition = story_defs.get(str(beat_id), {})
+            active_story_beats.append({
+                "summary": str(definition.get("summary", definition.get("goal_hint", beat_id))),
+                "beat_id": str(beat_id),
+                "world_minute": int(entry.get("started_minute", 0) or 0),
+            })
+        active_story_beats.sort(key=lambda item: item["world_minute"], reverse=True)
+        active_story_beats = active_story_beats[:3]
         result = {
             "context_version": "1", "role": role,
             "world_revision": int(self.store.get_meta("world_revision", 0) or 0),
@@ -1237,6 +1280,22 @@ class AgentViewCompiler:
                 "fact": self._humanize_fact(source_event.get("fact") or (outcome.get("expected") or {}).get("summary") or ""),
                 "world_minute": source_event.get("world_minute"),
             }
+            if str(source_event.get("event_type")) == "institution.allocation_completed":
+                consumed = source_event.get("consumed")
+                remaining = source_event.get("remaining")
+                allocations = source_event.get("allocations") or []
+                item = str(source_event.get("item") or "resource")
+                validated_source["result"] = (
+                    f"Allocated {consumed} {item}; {remaining} remains in the shared pool."
+                )
+                validated_source["allocation_summary"] = [
+                    {
+                        "subject": self._visible_text(str(row.get("subject", "a character"))),
+                        "amount": row.get("total"),
+                    }
+                    for row in allocations[:12]
+                    if isinstance(row, dict)
+                ]
             # Information facts are persisted separately from the event
             # envelope.  Include the matching public fact in the source view
             # so Story never has to guess a key or query a private record.
@@ -1322,6 +1381,7 @@ class AgentViewCompiler:
             "nearby_entities": [], "known_facts": [{"fact": fact, "source_type": "world_knowledge", "confidence": 1.0} for fact in known_facts],
             "audience_candidates": audience_candidates,
             "recent_actions": recent_events[:8], "recent_story_events": [item for item in recent_events if str(item.get("event_type", "")).startswith("story.")][:8],
+            "recent_history": self._recent_history_view(16),
             "recent_world_changes": [], "recent_agent_outcomes": [], "direct_relationships": [],
             "active_task": {"bt": None, "action": None, "remaining_minutes": 0},
             "executable_behaviors": [], "story_beats": choices[:12],
@@ -1429,6 +1489,13 @@ class AgentViewCompiler:
             action_catalog.append({
                 "name": action.get("agent_label") or _label(str(action.get("id", "action"))),
                 "purpose": action.get("agent_summary") or action.get("description") or "configured action",
+                "parameters": [str(key) for key in (action.get("parameters") or {}).keys()],
+                "parameter_schema": {
+                    str(key): (value if isinstance(value, dict) else {"type": str(value)})
+                    for key, value in (action.get("parameters") or {}).items()
+                },
+                "parameter_defaults": dict(action.get("parameter_defaults") or {}),
+                "success": [str(item).replace("_", " ") for item in ([action.get("success", {}).get("result")] if isinstance(action.get("success"), dict) else []) if item],
             })
         condition_fields = [
             {"condition": f'world["{str(key)}"]', "meaning": str(key).replace("_", " ")}
@@ -1455,6 +1522,7 @@ class AgentViewCompiler:
             "nearby_entities": [],
             "known_facts": [],
             "recent_actions": recent_world_events,
+            "recent_history": self._recent_history_view(20),
             "recent_world_changes": recent_world_changes,
             "world_proposals": world_proposals,
             "recent_agent_outcomes": recent_agent_outcomes,

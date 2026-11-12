@@ -212,6 +212,20 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             )
         lines.append("</triggering_evidence>")
 
+    if role in {"story", "god"}:
+        lines.append("<world_history>")
+        lines.append("  Recent validated history is causal context. Continue from it; do not restate a completed step or recreate an existing entity.")
+        history = context.get("recent_history") or []
+        for item in history[:20]:
+            lines.append(
+                f"  - minute {item.get('world_minute', 'unknown')}; {item.get('event_type', 'event')}; "
+                f"actor={_line(item.get('actor'))}; {_plain(item.get('details') or {})}"
+            )
+        if not history:
+            lines.append("  - no recent validated history")
+        lines.append("  Use query_history for an older or narrower causal slice before proposing a continuation.")
+        lines.append("</world_history>")
+
     world_rules = context.get("active_world_rules") or []
     if world_rules:
         lines.append("<world_rules>")
@@ -389,6 +403,8 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             lines.append(f"  result: {_line(source.get('result'))}")
             if source.get("fact"):
                 lines.append(f"  fact: {_line(source.get('fact'))}")
+            if source.get("allocation_summary"):
+                lines.append(f"  allocations: {_plain(source.get('allocation_summary'))}")
             lines.append("  Narrative must not add an unrecorded move, delivery, public reading, or gathering.")
         else:
             lines.append("  no validated source event; return wait")
@@ -432,6 +448,10 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 lines.append(f"  purpose: {trigger.get('purpose')}")
             if trigger.get("required_result"):
                 lines.append(f"  required result: {trigger.get('required_result')}")
+            if trigger.get("required_definition_type"):
+                lines.append(f"  required definition type: {trigger.get('required_definition_type')}")
+            if trigger.get("assign_to"):
+                lines.append(f"  assign the new behavior to: {_plain(trigger.get('assign_to'))}")
             if trigger.get("evidence_sources"):
                 lines.append(f"  evidence selectors: {_plain(trigger.get('evidence_sources'))}")
             if trigger.get("minimum_evidence") is not None:
@@ -439,12 +459,16 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             lines.append("  Use only the configured trigger tools. A rule signal or narrative acknowledgement is not a substitute for the required result.")
             lines.append("</evolution_trigger>")
         lines.append("<world_proposal_contract>")
+        lines.append("  - Create any missing world content the validated situation needs: agent, location, faction, object, empty resource node, institution, relationship, rule, attribute, world property, capability, Action, behavior, recipe, or narrative event.")
+        lines.append("  - Use the smallest supported content type that makes the next character decision possible. Platform still validates names, references, conservation, executable behavior, and consequences.")
         lines.append("  - rule.behavior_names must use exact BT names from world_behavior_catalog.")
         lines.append("  - In a behavior_constraint, every listed BT is blocked; list only the blocked BT, never the desired follow-up BT.")
         lines.append("  - rule.action_names must use exact Action names from world_action_catalog; a BT name is not an Action name.")
         lines.append("  - A typed signal records or wakes work; prose descriptions never enforce policy. To block behavior, use effect type behavior_constraint or a denial effect.")
         lines.append("  - Use the exact machine field in rule_condition_fields, including underscores inside world[\"...\"]. A God proposal must not wake God itself; use a character/follow-up behavior or wait.")
         lines.append("  - A behavior proposal must use definition.nodes: [{type: action, action_id: exact registered Action name, parameters: {...}}], plus entry_conditions, success_results and failure_results. Do not invent steps, trigger, outcomes, action_names or free-form action objects.")
+        lines.append("  - Action parameters whose names end in _entity or _id must use exact visible entity names from the world view and parameter names from the Action catalog. A behavior is rejected unless its assigned character can execute the whole sequence now.")
+        lines.append("  - Reusable behavior entry_conditions must use durable actor, capability, inventory, location, relationship or world state. Do not use event.recent.*, which would make the behavior disappear immediately after the current event.")
         lines.append("  - Research is open-ended: when validated results leave a concrete unanswered question, you may propose one new declarative research source or behavior. Do not invent a result; let a character perform the next research.")
         lines.append("  - A newer verified research fact may supersede an older one. Preserve the old fact for audit and use the configured lifecycle status instead of silently deleting it.")
         lines.append("</world_proposal_contract>")
@@ -479,7 +503,20 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("<world_action_catalog>")
         actions = context.get("registered_actions") or []
         for action in actions[:24]:
-            lines.append(f"  - Action: {action.get('name', 'action')}: {action.get('purpose', 'configured action')}")
+            parameters = "; ".join(str(item) for item in (action.get("parameters") or []))
+            schema = action.get("parameter_schema") or {}
+            entity_requirements = "; ".join(
+                f"{key} must be a visible {value.get('entity_type')}"
+                for key, value in schema.items()
+                if isinstance(value, dict) and value.get("entity_type")
+            )
+            defaults = _plain(action.get("parameter_defaults") or {})
+            success = _plain(action.get("success") or [])
+            lines.append(
+                f"  - Action: {action.get('name', 'action')}: {action.get('purpose', 'configured action')}; "
+                f"parameters={parameters or 'none'}; entity requirements={entity_requirements or 'none'}; "
+                f"defaults={defaults or 'none'}; result={success or 'not stated'}"
+            )
         if not actions:
             lines.append("  - none")
         lines.append("</world_action_catalog>")

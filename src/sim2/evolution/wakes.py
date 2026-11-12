@@ -39,6 +39,7 @@ class EventWakeScheduler:
         minute: int,
         *,
         task_type: str | None = None,
+        explicit: bool = False,
     ) -> str | None:
         consumer = str(consumer or "").strip()
         if not consumer:
@@ -114,11 +115,11 @@ class EventWakeScheduler:
         # silently promoted to a direct wake.  That fallback made a one-character
         # configuration typo bypass thresholds and cooldowns.  Worlds can still
         # declare genuinely direct evidence or task channels explicitly.
-        if configured_groups:
-            direct_events = {str(value) for value in (policy.get("direct_event_types") or [])}
+        direct_events = {str(value) for value in (policy.get("direct_event_types") or [])}
+        if configured_groups or direct_events:
             requested_task_type = str(task_type or f"event:{event_type}")
             direct_prefixes = [str(value) for value in (policy.get("direct_task_type_prefixes") or [])]
-            if str(event_type) not in direct_events and not any(
+            if not explicit and str(event_type) not in direct_events and not any(
                 requested_task_type.startswith(prefix) for prefix in direct_prefixes if prefix
             ):
                 return None

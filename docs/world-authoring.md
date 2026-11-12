@@ -89,9 +89,9 @@ The template uses these top-level sections. The machine-readable source is
 | `capabilities` | Named qualifications and proficiency dimensions. |
 | `actions` | Atomic execution contracts: target, conditions, duration, costs, effects and outcomes. |
 | `recipes` | Input-to-output transformations used by configured Actions. |
-| `behavior_trees` | Agent-readable choices composed from registered Actions or subtrees. |
+| `behavior_trees` | Agent-readable choices composed from registered Actions or subtrees. A behavior created during runtime must be assigned to at least one existing character before it can enter the executable catalog. |
 | `rules` | Generic motivation, minute effects, navigation, interaction, memory and world policies. |
-| `evolution` | Reflection cadence and evidence-group wake policies. |
+| `evolution` | Optional cadence and event wake declarations. Use the compact `cadence`/`wakes` form below; the runtime compiles it to its internal policy. |
 | `story` | Optional evidence-triggered beats and registered BT unlocks. |
 | `player_template` | Optional entry location, origins and initial knowledge. |
 | `initial_events` | Opening facts recorded at configured world minutes. |
@@ -104,11 +104,83 @@ event types or BT tags that prove a later movement, meeting, delivery or public
 statement. Runtime Story tasks always bind their exact causal event IDs first;
 these fields are a configurable validation fallback, not a source guess.
 
-`evolution.event_wake_policy` is also an admission contract. If a consumer has
-`event_groups`, an Action or BT that wakes that consumer must emit an event in
-one of those groups. Exceptional channels use `direct_event_types` or
-`direct_task_type_prefixes`. `validate-world` rejects mismatches before a
-SQLite instance is created.
+The recommended authoring form is deliberately small:
+
+```yaml
+cadence: {reflection: 1d, god: 1w}
+wakes:
+  - {"on": research.completed, for: god, count: 2, every: 1w}
+  - "on": cistern.reviewed
+    for: god
+    count: 3
+    tools: [propose_institution, wait]
+    purpose: Repeated reviews justify deciding whether a public institution is needed.
+    result: Propose one evidence-backed institution, or wait when the evidence is insufficient.
+  - {"on": institution.activated, for: story}
+```
+
+`on` is a persisted event type, `for` is `god`, `story`, or an individual
+consumer, `count` is the number of new events needed, and `every` is the
+cooldown (`m`, `h`, `d`, or `w`). `tools`, `purpose`, `result`, and optional
+`definition_type` constrain that one wake when a particular kind of definition
+is required. For example, ledger review may require `definition_type: behavior`,
+which prevents God from substituting a signal rule or unrelated capability.
+An optional `assign_to: [梅岚]` makes the expected executor explicit and ensures
+the new behavior enters that character's next decision catalog.
+These fields are optional
+guidance for that one wake. Bootstrap compiles this into the internal
+`schedule`, `event_wake_policy`, `event_groups`, and evidence selector fields.
+Authors do not need to repeat `external_event_types` or write the same event
+selector in every proposal.
+
+Only events emitted by a runtime subsystem are treated as external by default.
+For an event supplied by an extension rather than an Action, BT, rule, or
+runtime subsystem, add `external: true` to that wake. A misspelled ordinary
+event therefore fails validation before the world is created.
+
+`god` and `story` are configurable consumers, not mandatory background clocks:
+
+- **Story** receives validated events and turns them into a grounded fact,
+  character goal, next chapter, or unlock of a behavior already registered in
+  the world. It does not invent a resource result or activate an institution.
+- **God** receives accumulated world evidence and may create any supported
+  world content that the verified situation needs: an agent, location,
+  faction, object, empty resource node, institution, relationship, rule,
+  attribute, world-property definition, capability, Action, behavior tree, recipe, or
+  narrative event. Platform validates names, references, conservation, and
+  executable consequences. A runtime behavior proposal must name at least one
+  existing character in `assign_to`; a new `agent` entity must reference an
+  existing location and executable behavior and is initialized from the
+  world's configured attribute, need, and capability defaults.
+
+Both roles receive a bounded `<world_history>` section with recent validated
+events. They can use the read-only `query_history` tool for an older causal
+slice (`event_type`, visible `actor`, `contains`, `since_minute`, and
+`until_minute`). The tool returns visible names and compact details without
+internal IDs. Add `query_history` to a wake's `tools` list when that event
+contract needs historical lookup; a submission-only contract can leave it out.
+
+An entry with only `on` and `for` wakes the consumer immediately for that event.
+`count` and `every` are a gate for repeated evidence: the platform waits until
+the count is reached, then applies the optional cooldown to that evidence group.
+They do not delay a direct Story response and there is no hidden daily God call.
+Omit a consumer entirely when a world does not need that evolution role.
+
+Actions and behavior trees may also declare `wake: [story, god]` on the event
+they produce. That producer declaration is the narrow opt-in for a one-off
+event; the `wakes` consumer policy still decides grouping and cooldown. For
+events emitted by runtime infrastructure, define the consumer in `wakes`.
+
+Use `on: 'rule:*'` for a direct task-prefix wake when a world rule should wake
+the same consumer. The runtime expands that wildcard into its task-prefix
+allowlist; ordinary event names remain exact and countable.
+
+The evidence check is structural provenance, not a social-trust score: it asks
+whether the named event was actually persisted and whether the threshold was
+met. A model does not need to calculate credibility or copy selectors into an
+event-triggered institution proposal; the platform supplies the triggering
+contract and performs the count. Explicit internal policies are still checked
+before a SQLite instance is created.
 
 Triggers and evidence groups can add an `agent_contract` without embedding
 world logic in Platform:
@@ -127,6 +199,12 @@ The runtime counts these persisted selectors and shows the count to the Agent.
 The Agent still chooses the institution name, purpose, policy and later
 continuation. A signal-only rule cannot satisfy a contract that requires a
 structural proposal.
+
+The same boundary applies to other content types. God may create a person,
+place, faction, object, mechanic, or narrative situation, but cannot award an
+actor a capability, fill a shared resource, or write a personal/social outcome
+without a behavior result. Those rules keep creation open while preserving a
+causal audit trail in Platform.
 
 An object or resource may expose research content declaratively:
 

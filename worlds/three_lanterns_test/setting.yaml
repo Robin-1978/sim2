@@ -1,0 +1,23 @@
+name: 三灯镇
+premise: 三灯镇靠一口旧蓄水池和一条商路维持生计，边界石碑正在失去光泽。
+genre: frontier_mystery
+locale: zh-CN
+calendar:
+  minutes_per_day: 1440
+  day_phases:
+  - id: night
+    start_minute: 1200
+    end_minute: 300
+  - id: dawn
+    start_minute: 300
+    end_minute: 420
+  - id: day
+    start_minute: 420
+    end_minute: 1080
+  - id: dusk
+    start_minute: 1080
+    end_minute: 1200
+world_clock:
+  start_day: 1
+  start_minute: 420
+  season: dry_autumn

@@ -1,0 +1,290 @@
+actions:
+- id: travel_to
+  version: 1
+  description: 沿已知路线移动到目标地点
+  parameters:
+    location_id: string
+  preconditions:
+  - route.known
+  - actor.mobile
+  - destination.reachable
+  requires_destination: true
+  completion:
+    if_already_at_destination: true
+  duration:
+    mode: route_distance
+  costs:
+    reserve: {}
+    per_minute:
+      vigor: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success:
+    condition: actor.state.location_id == context.destination_id
+    result: arrived
+  effects:
+  - type: location_set
+    location_id: context.location_id
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: inspect_object
+  version: 1
+  description: 检查可访问的记录或设施
+  parameters:
+    object_id: string
+  preconditions:
+  - actor.can_inspect
+  - object.available
+  duration:
+    minutes: 30
+  costs:
+    reserve: {}
+    per_minute:
+      vigor: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success:
+    condition: inventory.read_complete
+    result: record_inspected
+  failure:
+    condition: location.locked
+    result: denied
+  information:
+    event_type: observation.object_inspected
+    summary: A configured town record was inspected.
+    fact_template: Inspected {name}; current amount is {amount}.
+    source_type: inspection
+    confidence: 0.85
+    result: record_inspected
+    record_object_discovery: false
+  effects:
+  - type: need_delta
+    need: purpose
+    delta: 0.2
+  - type: world_property_delta
+    property: cistern_reviews
+    delta: 1
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: gather_resource
+  version: 1
+  description: 在可见资源节点采集指定材料
+  parameters:
+    resource_tag: string
+    location_id: string
+  preconditions:
+  - actor.can_gather
+  - location.resource_node
+  - route.known
+  parameter_defaults:
+    resource_tag: first_available_resource
+  duration:
+    minutes: 120
+  costs:
+    reserve:
+      resource_parameter: resource_tag
+      resource_amount: 2
+    per_minute:
+      vigor: 0.2
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: context.resource_tag
+    quantity: 2
+  success:
+    condition: resource.collected
+    result: resource_collected
+  failure:
+    condition: resource.empty or actor.incapacitated
+    result: gathering_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: explore_area
+  version: 1
+  description: 探索一段尚未充分了解的旧商路
+  parameters:
+    area_id: string
+  preconditions:
+  - actor.can_explore
+  - route.known
+  - area.not_fully_mapped
+  duration:
+    minutes: 180
+  costs:
+    reserve: {}
+    per_minute:
+      vigor: 0.2
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success:
+    condition: area.survey_complete
+    result: exploration_completed
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  effects:
+  - type: need_delta
+    need: purpose
+    delta: 0.4
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: research_source
+  version: 1
+  description: 研究可访问的信息源并记录事实
+  parameters:
+    source_id: string
+  preconditions:
+  - actor.can_research
+  - research.new_fact_available
+  duration:
+    minutes: 120
+  costs:
+    reserve: {}
+    per_minute:
+      vigor: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success:
+    condition: research.new_fact_found
+    result: research_completed
+  failure:
+    condition: source.destroyed
+    result: failed
+  effects:
+  - type: need_delta
+    need: purpose
+    delta: 0.5
+  progress:
+    key: research:{source_id}
+    scope: world
+    amount: 1
+    required: 2
+    wake:
+    - story
+    - god
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: communicate
+  version: 1
+  description: 与目标角色沟通并记录可传播信息
+  parameters:
+    target_id: string
+    topic: string
+    message: string
+  parameter_defaults:
+    topic: general
+  preconditions:
+  - actor.can_speak
+  - target.available
+  - communication.channel_open
+  duration:
+    minutes: 15
+  costs:
+    reserve: {}
+    per_minute:
+      belonging: 0.0
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success:
+    condition: dialogue.completed
+    result: dialogue_recorded
+  failure:
+    condition: target.refused
+    result: conversation_refused
+  effects:
+  - type: need_delta
+    need: belonging
+    delta: 0.1
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: secure_boundary
+  version: 1
+  description: 加固北岗边界并记录守望结果
+  parameters: {}
+  preconditions:
+  - actor.can_watch
+  - location.tag.boundary
+  duration:
+    minutes: 45
+  costs:
+    reserve: {}
+    per_minute:
+      vigor: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: town_security
+    delta: 0.05
+    maximum: 1.0
+  success:
+    condition: actor.alive
+    result: boundary_secured
+  failure:
+    condition: actor.incapacitated
+    result: boundary_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: settle_institution_allocation
+  version: 1
+  description: 按已激活制度的账本结算一次公共资源分配
+  parameters:
+    institution: string
+    pool_entity:
+      type: string
+      entity_type: resource
+    item: string
+    period: string
+  preconditions:
+  - actor.can_inspect
+  duration:
+    minutes: 30
+  costs:
+    reserve: {}
+    per_minute:
+      vigor: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: institution_allocation
+    institution: context.institution
+    pool_entity: context.pool_entity
+    item: context.item
+    period: context.period
+    subjects: [all_agents]
+  success:
+    condition: actor.alive
+    result: allocation_completed
+  failure:
+    condition: actor.incapacitated
+    result: allocation_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline

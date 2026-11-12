@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import httpx
 
-from .config import DEFAULT_MAX_AGENT_ITERATIONS, DEFAULT_MAX_COMPLETION_TOKENS, LLMConfig, ProviderConfig
+from .config import DEFAULT_MAX_AGENT_ITERATIONS, DEFAULT_MAX_COMPLETION_TOKENS, DEFAULT_MAX_READ_TOOL_CALLS, LLMConfig, ProviderConfig
 from .adapters import ModelProtocolError, resolve_adapter
 
 
@@ -58,6 +58,7 @@ class OpenAICompatibleProvider:
     config: ProviderConfig
     max_completion_tokens: int = DEFAULT_MAX_COMPLETION_TOKENS
     max_agent_iterations: int = DEFAULT_MAX_AGENT_ITERATIONS
+    max_read_tool_calls: int = DEFAULT_MAX_READ_TOOL_CALLS
     session_id: str = ""
     _cooldown_until: float = 0.0
 
@@ -278,6 +279,7 @@ class LLMRouter:
                 configured,
                 max_completion_tokens=completion_limit,
                 max_agent_iterations=role_config.max_agent_iterations,
+                max_read_tool_calls=role_config.max_read_tool_calls,
             )
         except KeyError as exc:
             raise ValueError(f"Unknown LLM provider: {name}") from exc

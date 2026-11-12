@@ -63,12 +63,11 @@ class SocialRuntimeMixin:
         consumers = policy.get("consumers", {}) if isinstance(policy, dict) else {}
         if not isinstance(consumers, dict):
             return
-        for role, raw in consumers.items():
-            if not isinstance(raw, dict):
-                continue
-            direct = {str(value) for value in (raw.get("direct_event_types") or [])}
-            if str(event_type) in direct:
-                self._queue_event_consumer_task(str(role), event_id, event_type, actor_id, minute, task_type=f"event:{event_type}")
+        for role in consumers:
+            # The scheduler applies direct-event, task-prefix, event-group,
+            # count and cooldown policy. Producers only publish the event and
+            # do not know which consumer role should receive it.
+            self._queue_event_consumer_task(str(role), event_id, event_type, actor_id, minute, task_type=f"event:{event_type}")
 
     def submit_institution_proposal(self, actor_id: str, proposal: dict[str, Any]) -> dict[str, Any]:
         """Record a proposed social institution without activating it.

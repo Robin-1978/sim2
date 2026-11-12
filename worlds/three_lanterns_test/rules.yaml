@@ -1,0 +1,104 @@
+vital_attribute: integrity
+capacity_attribute: vigor
+perception:
+  visible_fields:
+  - role
+  - type
+  - summary
+  - description
+  - public
+  visible_state_fields:
+  - status
+  - quantity
+  - readable
+  - recovered
+  global:
+    fields:
+    - role
+    - type
+    - summary
+    - description
+    - public
+    state_fields:
+    - status
+    - location_id
+    - quantity
+fallback_behavior_ids:
+- inspect_cistern
+- survey_old_road
+- secure_north_watch
+resource_regeneration:
+- resource_id: cistern_water
+  every_minutes: 1440
+  amount: 12
+  cap: 48
+capability_progression:
+  research: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
+  gathering: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
+  watch: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
+  exploration: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
+  conversation: {minimum_completed_outcomes: 4, max_delta: 0.08, max_value: 1.0}
+  stewardship: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
+capability_aliases:
+  inspect:
+  - stewardship
+  - watch
+  speak:
+  - conversation
+  explore:
+  - exploration
+  gather:
+  - gathering
+civilization_progress:
+  boundary_knowledge:
+    required: 2
+    evidence_value: 2
+    description: 两阶段研究完成后，镇上形成关于界碑的可用公共知识。
+    evidence_event_types:
+    - research.completed
+    evidence_behaviors:
+    - research_boundary_stone
+    wake:
+    - story
+    - god
+needs:
+- id: belonging
+  target: 70
+  minimum: 0
+  gamma: 1.5
+  critical_threshold: 0.7
+  critical_gain: 1.0
+- id: purpose
+  target: 70
+  minimum: 0
+  gamma: 1.5
+  critical_threshold: 0.7
+  critical_gain: 1.0
+motivation_model:
+  family: hybrid_need_utility_appraisal
+  no_fixed_hierarchy: true
+  dimensions:
+  - safety_and_uncertainty
+  - relatedness
+  - competence
+  - meaning_and_goal_progress
+minute_effects:
+- id: vigor_recovery
+  scope: agent
+  every_minutes: 1
+  effect:
+    type: attribute_delta
+    attribute: vigor
+    delta: 0.4
+memory_quality:
+  semantic_similarity:
+    enabled: false
+social_credibility:
+  base: 0.5
+  trust_weight: 0.35
+  reputation_weight: 0.15
+  trust_relations:
+  - trust
+  reputation_attribute: reputation
+  reputation_min: -100
+  reputation_max: 100

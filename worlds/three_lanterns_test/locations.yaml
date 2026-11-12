@@ -1,0 +1,76 @@
+locations:
+- id: lantern_square
+  name: 三灯广场
+  public: true
+  safe: true
+  tags:
+  - public
+  - social
+  - market
+  routes:
+  - cistern_house
+  - north_watch
+  - old_road
+  map_position:
+    x: 0
+    y: 0
+- id: cistern_house
+  name: 蓄水屋
+  public: true
+  safe: true
+  tags:
+  - public
+  - resource
+  - water
+  routes:
+  - lantern_square
+  map_position:
+    x: -1
+    y: 0
+- id: north_watch
+  name: 北岗
+  public: true
+  safe: false
+  tags:
+  - watch
+  - boundary
+  routes:
+  - lantern_square
+  - old_road
+  map_position:
+    x: 0
+    y: 1
+- id: old_road
+  name: 旧商路
+  public: true
+  safe: false
+  tags:
+  - route
+  - resource
+  - exploration
+  routes:
+  - lantern_square
+  - north_watch
+  map_position:
+    x: 1
+    y: 1
+  discoveries:
+  - id: explored:old_road:post
+    fact: 旧商路废弃驿站门柱上留有与界碑同源的三层叠压刻痕，门柱朝北岗方向倾倒。
+  - id: explored:old_road:ruts
+    fact: 驿站外有重载车辙通向北岗，辙印新旧不一，最近的一道约在半月内。
+resources:
+- id: reed_bundle
+  type: resource
+  name: 灯芯芦苇
+  location_id: old_road
+  initial_state:
+    location_id: old_road
+    quantity: 30
+- id: cistern_water
+  type: resource
+  name: 蓄水
+  location_id: cistern_house
+  initial_state:
+    location_id: cistern_house
+    quantity: 48

@@ -44,6 +44,171 @@ def test_only_god_can_create_institution_and_npc_tools_do_not_expose_it(tmp_path
         platform.close()
 
 
+def test_god_behavior_proposal_must_be_assigned_to_an_existing_character(tmp_path: Path):
+    platform = _town(tmp_path, "behavior-assignment")
+    try:
+        result = platform.submit_definition_proposal("god", {
+            "definition_type": "behavior",
+            "name": "Unassigned Future Work",
+            "definition": {
+                "summary": "A behavior that would otherwise have no executor.",
+                "nodes": [{"type": "action", "action_id": "inspect_object", "parameters": {"object_id": "cistern_water"}}],
+            },
+        })
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "definition_schema"
+        assert any("assign_to" in error for error in result["errors"])
+    finally:
+        platform.close()
+
+
+def test_god_behavior_parameters_use_canonical_entity_ids(tmp_path: Path):
+    platform = _town(tmp_path, "behavior-parameter-canonicalization")
+    try:
+        result = platform.submit_definition_proposal("god", {
+            "definition_type": "behavior",
+            "name": "Inspect Visible Cistern",
+            "assign_to": ["梅岚"],
+            "definition": {
+                "summary": "Travel to the cistern using visible names supplied by God.",
+                "nodes": [
+                    {"type": "action", "action_id": "Travel To", "parameters": {"location_id": "蓄水屋"}},
+                    {"type": "action", "action_id": "Inspect Object", "parameters": {"object_id": "蓄水"}},
+                ],
+            },
+        })
+        assert result["status"] == "accepted"
+        definition = next(item for item in platform.store.get_definitions("bt_def") if item["agent_label"] == "Inspect Visible Cistern")
+        assert definition["nodes"][0]["parameters"]["location_id"] == "cistern_house"
+        assert definition["nodes"][1]["parameters"]["object_id"] == "cistern_water"
+        assert any(item["choice"] == "Inspect Visible Cistern" for item in platform.decision_view("mei_lan")["executable_behaviors"])
+    finally:
+        platform.close()
+
+
+def test_god_behavior_rejects_unknown_entity_parameter_before_registration(tmp_path: Path):
+    platform = _town(tmp_path, "behavior-parameter-validation")
+    try:
+        result = platform.submit_definition_proposal("god", {
+                "definition_type": "behavior",
+                "name": "Invalid Pool Settlement",
+                "assign_to": ["梅岚"],
+                "definition": {
+                    "nodes": [{"type": "action", "action_id": "Settle Institution Allocation", "parameters": {
+                        "institution": "Missing Ledger", "pool_entity": "invented pool", "item": "water", "period": "week",
+                    }}],
+                },
+            })
+        assert result["status"] == "rejected"
+        assert any("exact visible entity name" in error for error in result["errors"])
+        assert not any(item.get("agent_label") == "Invalid Pool Settlement" for item in platform.store.get_definitions("bt_def"))
+    finally:
+        platform.close()
+
+
+def test_story_receives_only_configured_direct_events(tmp_path: Path):
+    platform = _town(tmp_path, "story-direct-allowlist")
+    try:
+        ledger_id = platform.store.append_event("institution.ledger_entry", "mei_lan", 1, {"amount": 1})
+        assert platform._queue_event_consumer_task(
+            "story", ledger_id, "institution.ledger_entry", "mei_lan", 1,
+        ) is None
+        allocation_id = platform.store.append_event("institution.allocation_completed", "mei_lan", 2, {"amount": 1})
+        task_id = platform._queue_event_consumer_task(
+            "story", allocation_id, "institution.allocation_completed", "mei_lan", 2,
+        )
+        assert task_id
+        task = next(item for item in platform.ready_evolution_tasks() if item["task_id"] == task_id)
+        assert task["role"] == "story"
+        assert task["source_event_type"] == "institution.allocation_completed"
+    finally:
+        platform.close()
+
+
+def test_failed_allocation_effect_fails_the_behavior_instead_of_reporting_success(tmp_path: Path):
+    platform = _town(tmp_path, "allocation-effect-failure")
+    try:
+        with platform.store.transaction():
+            for minute in (1, 2, 3):
+                event_id = platform.store.append_event(
+                    "cistern.reviewed", "mei_lan", minute,
+                    {"behavior_id": "inspect_cistern"},
+                )
+                platform._record_active_institution_entries(event_id, "cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern"})
+        assert platform.submit_institution_proposal("god", {
+            "name": "Broken Pool Ledger",
+            "purpose": "Verify that failed settlement effects cannot publish success.",
+            "evidence_sources": [{"event_types": ["cistern.reviewed"]}],
+            "minimum_evidence": 3,
+            "policy": {"allocation": {"minimum_per_subject": 1, "contribution_share": 0.0}},
+        })["status"] == "accepted"
+        assert platform.activate_institution("god", "Broken Pool Ledger")["status"] == "accepted"
+        created = platform.submit_definition_proposal("god", {
+            "definition_type": "behavior",
+            "name": "Try Broken Allocation",
+            "assign_to": ["梅岚"],
+            "definition": {
+                "summary": "Attempt a settlement against a missing pool.",
+                "nodes": [{"type": "action", "action_id": "Settle Institution Allocation", "parameters": {
+                    "institution": "Broken Pool Ledger", "pool_entity": "cistern_water", "item": "water", "period": "week",
+                }}],
+            },
+        })
+        assert created["status"] == "accepted"
+        empty_pool = platform.store.get_entity("cistern_water")
+        empty_pool["initial_state"]["quantity"] = 0
+        platform.store.put_entity("cistern_water", "resource", empty_pool["name"], {key: value for key, value in empty_pool.items() if key not in {"id", "entity_type", "name"}})
+        behavior = next(item for item in platform.store.get_definitions("bt_def") if item.get("agent_label") == "Try Broken Allocation")
+        started = platform.submit_behavior(BehaviorIntent(
+            "mei_lan", f"behavior:{behavior['id']}", {}, {}, "Exercise a failing settlement effect.", 0.8, "broken-allocation",
+        ))
+        assert started["status"] == "accepted"
+        step_n(platform, int(started["remaining_minutes"]) + 1)
+        assert any(item["event_type"] == "behavior.failed" for item in platform.store.recent_events(limit=20))
+        assert not any(item["event_type"] == "behavior.completed" for item in platform.store.recent_events(limit=5))
+    finally:
+        platform.close()
+
+
+def test_active_institution_accounts_for_configured_behavior_result_events(tmp_path: Path):
+    """A ledger selector may consume a BT's typed outcome event directly."""
+
+    platform = _town(tmp_path, "allocation-result-ledger")
+    try:
+        with platform.store.transaction():
+            evidence_id = platform.store.append_event(
+                "cistern.reviewed", "mei_lan", 1,
+                {"behavior_id": "inspect_cistern", "summary": "Initial verified review."},
+            )
+        proposal = platform.submit_institution_proposal("god", {
+            "name": "Outcome Review Ledger",
+            "purpose": "Record each verified public cistern result for later allocation review.",
+            "evidence_sources": [{"event_types": ["cistern.reviewed"], "behavior_ids": ["inspect_cistern"]}],
+            "minimum_evidence": 1,
+            "ledger": {
+                "period": "week",
+                "selectors": [{"event_types": ["cistern.reviewed"], "behavior_ids": ["inspect_cistern"], "points": 1}],
+            },
+        })
+        assert proposal["status"] == "accepted", proposal
+        assert platform.activate_institution("god", "Outcome Review Ledger")["status"] == "accepted"
+        started = platform.submit_behavior(BehaviorIntent(
+            "mei_lan", "behavior:inspect_cistern", {}, {}, "Record the next verified cistern review.", 0.8, "result-ledger",
+        ))
+        assert started["status"] == "accepted", started
+        step_n(platform, int(started["remaining_minutes"]) + 1)
+        institution = platform.store.list_institutions(status="active", limit=1)[0]
+        totals = platform.store.institution_ledger_totals(str(institution["institution_id"]))
+        assert totals and sum(float(item["total"]) for item in totals) >= 1
+        assert any(
+            item["event_type"] == "institution.ledger_entry"
+            and int(item.get("source_event_id", 0) or 0) != evidence_id
+            for item in platform.store.recent_events(limit=100)
+        )
+    finally:
+        platform.close()
+
+
 def test_institution_evidence_selectors_support_behavior_only_and_deduplicate(tmp_path: Path):
     platform = _town(tmp_path, "institution-evidence-selectors")
     try:
@@ -148,15 +313,16 @@ def test_story_npc_evidence_and_god_institution_chain_uses_llm_tools(tmp_path: P
         assert "evidence selectors" in god_provider.calls[0]["context"]
         assert "observed: 1" in god_provider.calls[0]["context"]
         assert {item["function"]["name"] for item in god_provider.calls[0]["tools"]} == {"propose_institution", "wait"}
-        pending_god_tasks = [item for item in platform.ready_evolution_tasks() if item["role"] == "god" and item["task_type"] == "event:institution.proposed"]
+        pending_god_tasks = [item for item in platform.ready_evolution_tasks() if item["role"] == "god" and item["task_type"] == "event_group:institution_proposal_review"]
         assert pending_god_tasks
         approve_turn = AgentEngine(platform, god_provider, max_iterations=1).run(
-            role="god", actor_id="god", task_type="event:institution.proposed",
+            role="god", actor_id="god", task_type="event_group:institution_proposal_review",
         )
         assert approve_turn.result["status"] == "accepted"
         active = platform.store.list_institutions(status="active")
         assert [item["name"] for item in active] == ["Public Ration Ledger"]
         assert any(item["role"] == "story" and item["task_type"] == "event:institution.activated" for item in platform.ready_evolution_tasks())
+        assert any(item["role"] == "god" and item["task_type"] == "event_group:institution_activation_followup" for item in platform.ready_evolution_tasks())
         assert any(item["function"]["name"] == "propose_institution" for item in god_provider.calls[0]["tools"])
         assert "<social_institutions>" in god_provider.calls[-1]["context"]
         assert "Public Ration Ledger" in god_provider.calls[-1]["context"]
@@ -403,6 +569,8 @@ def test_ten_round_story_god_chain_keeps_creating_followups(tmp_path: Path):
             # three new persisted ledger events before God is woken.
             state = dict(platform.store.get_meta("god:event_wake_group_state", {}) or {})
             state.setdefault("institution_ledger_review", {})["last_wake_minute"] = -100000
+            if (cycle + 1) % 3 == 0:
+                state.setdefault("institution_outcome_review", {})["last_wake_minute"] = -100000
             platform.store.set_meta("god:event_wake_group_state", state)
             base = 10 + cycle * 3
             for minute in (base, base + 1, base + 2):
@@ -463,7 +631,21 @@ def test_ten_round_story_god_chain_keeps_creating_followups(tmp_path: Path):
             platform.complete_evolution_task(story_task["task_id"])
             completed_turns += 1
 
-        assert completed_turns == 33
+            if (cycle + 1) % 3 == 0:
+                outcome_task = next(item for item in platform.ready_evolution_tasks() if item["task_type"] == "event_group:institution_outcome_review")
+                innovation = AgentEngine(platform, SequenceProvider([{"tool_call": {"name": "propose_definition", "arguments": {
+                    "definition_type": "capability",
+                    "name": f"Water Stewardship {cycle}",
+                    "definition": {"default": 0.1, "name": "Water stewardship", "value_path": "agent.capabilities.water_stewardship"},
+                    "evidence": "Three allocation outcomes were verified; the reserve trend now justifies a new stewardship capability for future conservation work.",
+                }}}]), max_iterations=1).run(
+                    role="god", actor_id="god", task_type=outcome_task["task_type"], source_events=outcome_task.get("source_events") or [],
+                )
+                assert innovation.result["status"] == "accepted"
+                platform.complete_evolution_task(outcome_task["task_id"])
+                completed_turns += 1
+
+        assert completed_turns == 36
         assert len([item for item in platform.store.recent_events(limit=500) if item["event_type"] == "institution.allocation_completed"]) >= rounds
         assert len([item for item in platform.store.list_institutions(status="active")]) == 1
     finally:

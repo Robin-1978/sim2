@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 
 from ..actions.conditions import ConditionEngine
+from ..evolution.config import normalize_evolution_config
 from ..persistence.store import WorldStore, config_hash
 from ..world.schema import AttributeSchema
 
@@ -954,7 +955,11 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
             errors.append(f"relationship references unknown target {relation.get('to')}")
 
     rules = load_yaml(config_dir, "rules.yaml", {}) or {}
-    evolution = load_yaml(config_dir, "evolution.yaml", {}) or {}
+    try:
+        evolution = normalize_evolution_config(load_yaml(config_dir, "evolution.yaml", {}) or {})
+    except (TypeError, ValueError) as exc:
+        errors.append(f"evolution.yaml: {exc}")
+        evolution = {}
     _validate_event_wake_references(data, rules, evolution, errors)
 
     return {"valid": not errors, "errors": errors, "manifest": manifest}
@@ -995,7 +1000,7 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
             for item in (rules.get("needs", []) or []):
                 if isinstance(item, dict) and item.get("id"):
                     default_needs.setdefault(str(item["id"]), float(item.get("target", 100)))
-            evolution = load_yaml(config_dir, "evolution.yaml", {})
+            evolution = normalize_evolution_config(load_yaml(config_dir, "evolution.yaml", {}) or {})
             store.set_meta("evolution", evolution)
             story = load_yaml(config_dir, "story.yaml", {})
             store.set_meta("story", story)
@@ -1009,7 +1014,12 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
             locations = load_yaml(config_dir, "locations.yaml", {})
             resource_baseline: dict[str, float] = {}
             for resource in locations.get("resources", []):
-                store.put_entity(resource["id"], "resource", resource.get("id", "resource"), resource)
+                store.put_entity(
+                    resource["id"],
+                    "resource",
+                    resource.get("name", resource["id"]),
+                    resource,
+                )
                 amount = resource.get("amount")
                 state = resource.get("initial_state") if isinstance(resource.get("initial_state"), dict) else {}
                 if amount is None:

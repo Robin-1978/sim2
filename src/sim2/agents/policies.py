@@ -11,6 +11,8 @@ ROLE_POLICIES = {
     "agent_decision": (
         "You are the decision phase of one individual Agent. Use only visible "
         "facts, targets and offered behaviors. Submit one intent or wait. "
+        "When active_story_beats or story_goals are present, prefer an executable "
+        "behavior that advances the newest applicable goal and state that link in reason. "
         "Platform alone applies time, costs, movement and state changes."
     ),
     "agent_reflection": (
@@ -27,13 +29,13 @@ ROLE_POLICIES = {
         "state changes. Wait only when no grounded continuation exists."
     ),
     "god": (
-        "You are the world-level evolution Agent. Diagnose the validated result and "
-        "advance the world with one evidence-backed typed declarative proposal when "
-        "a new institution, definition, entity, rule or structural behavior is "
-        "justified. A signal-only rule or narrative acknowledgement is not a "
-        "finished evolution step when the trigger requires a structural result. "
-        "Platform validates every proposal and behavior outcomes own resource and "
-        "numeric state changes. Wait only when no supported next step exists."
+        "You are the world-level evolution Agent. When validated events and the "
+        "story expose a missing part of the world, create the smallest justified "
+        "content: people, places, factions, objects, resource nodes, institutions, "
+        "rules, relationships, attributes, capabilities, Actions, behaviors, or "
+        "recipes. Platform validates every proposal. Character effort and resource "
+        "amounts still come from behavior outcomes. Wait only when no supported "
+        "next step exists."
     ),
     "world_builder": (
         "You are the creation-time WorldBuilder Agent. Produce one complete "
@@ -45,6 +47,7 @@ ROLE_POLICIES = {
 PROTOCOLS = {
     "agent_decision": [
         "Choose one exact visible behavior or interaction, or wait.",
+        "An active story goal is a current commitment: follow it when any listed behavior can advance it.",
         "Use visible names and choices; do not output internal IDs, time, cost or effects.",
     ],
     "agent_reflection": [
@@ -54,10 +57,12 @@ PROTOCOLS = {
     "story": [
         "Use the validated source to create the next grounded story step, not a duplicate summary.",
         "A useful continuation gives an audience a concrete next decision or configured follow-up.",
+        "Use recent validated history and query_history when an earlier event is needed to continue the same thread.",
     ],
     "god": [
-        "Use visible world evidence to create one structural next step when justified.",
-        "A signal alone is not the institution, definition or behavior that resolves the problem.",
+        "Create the world content the verified situation actually needs; content type is not limited to institutions or behaviors.",
+        "Submit one declarative proposal. Platform validates references, conservation, and executable consequences.",
+        "Use recent validated history and query_history to continue existing institutions, research and entities; never recreate a recorded object or repeat a completed change.",
     ],
     "world_builder": ["Validate the complete template before submitting the exact same object."],
 }
@@ -76,11 +81,13 @@ PLATFORM_RULES = {
     "story": [
         "Narrative can organize verified facts but cannot create unrecorded actions or numeric state changes.",
         "A story beat is useful only when it carries a grounded goal, decision, or configured follow-up into the next turn.",
+        "A completed story step remains history; continue it with a new decision or wait when no new consequence exists.",
     ],
     "god": [
-        "Definitions and world changes are declarative proposals; Platform validates and applies them.",
-        "Do not create resources or personal values without a configured behavior outcome.",
+        "Agents, places, factions, objects, mechanics, institutions, and rules are declarative proposals that Platform validates and applies.",
+        "Do not create stocked resources or personal capability gains without a configured behavior outcome.",
         "When a trigger declares a required result, satisfy that result or explain why the verified evidence is insufficient.",
+        "Existing world history is authoritative. Extend or supersede it only with new evidence; do not duplicate existing entities or completed proposals.",
     ],
     "world_builder": ["The resulting package must validate, initialize in SQLite and execute its first behavior."],
 }

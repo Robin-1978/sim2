@@ -1,0 +1,15 @@
+emergent_source_event_types:
+- research.completed
+- exploration.completed
+- institution.activated
+- institution.allocation_completed
+beats:
+- id: boundary_stone_research
+  trigger_events:
+  - research.completed
+  summary: 记录界碑研究结果并决定下一步核验
+  audience:
+  - 罗杉
+  - 韩秋
+  followup_behaviors:
+  - Secure North Watch

@@ -1,0 +1,14 @@
+factions: []
+relationships:
+- from: mei_lan
+  to: han_qiu
+  type: trust
+  relation_strength: 0.18
+- from: han_qiu
+  to: mei_lan
+  type: trust
+  relation_strength: 0.25
+- from: luo_shan
+  to: mei_lan
+  type: trust
+  relation_strength: 0.12

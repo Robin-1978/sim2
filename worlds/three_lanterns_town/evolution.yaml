@@ -1,7 +1,6 @@
-reflection_cadence_minutes: 1440
-schedule:
-  agent_reflection_minutes: 1440
-  god_local_minutes: 1440
+cadence:
+  reflection: 1d
+  god: 1d
 triggers:
 - id: town_security_milestone
   when: world.town_security >= 0.8
@@ -17,33 +16,48 @@ triggers:
     - event_types: [cistern.reviewed]
       behavior_ids: [inspect_cistern]
     minimum_evidence: 3
-event_wake_policy:
-  consumers:
-    god:
-      direct_event_types:
-      - civilization.milestone
-      - institution.proposed
-      - entity.created
-      - definition.registered
-      external_event_types:
-      - institution.ledger_entry
-      event_groups:
-      - id: research_synthesis
-        event_types:
-        - research.completed
-        minimum_events: 2
-        cooldown_minutes: 10080
-      - id: institution_ledger_review
-        event_types:
-        - institution.ledger_entry
-        minimum_events: 3
-        cooldown_minutes: 10080
-        agent_contract:
-          allowed_tools: [propose_definition, wait]
-          purpose: Three verified ledger entries require God to create the next executable settlement behavior for the active institution.
-          required_result: Propose one validated behavior using the registered institution allocation Action, or wait only when the ledger evidence is insufficient.
-    story:
-      batch_minutes: 0
-      direct_event_types:
-      - institution.activated
-      - institution.allocation_completed
+wakes:
+- id: research_synthesis
+  "on": research.completed
+  for: god
+  count: 2
+  every: 1w
+- id: institution_ledger_review
+  "on": institution.ledger_entry
+  for: god
+  count: 3
+  every: 1w
+  tools: [propose_definition, wait]
+  definition_type: behavior
+  assign_to: [梅岚]
+  purpose: Three verified ledger entries require God to create the next executable settlement behavior for the active institution.
+  result: Propose one validated behavior using the registered institution allocation Action, or wait only when the ledger evidence is insufficient.
+- id: institution_outcome_review
+  "on": institution.allocation_completed
+  for: god
+  count: 3
+  every: 1w
+  tools: [propose_definition, propose_entity, wait]
+  purpose: Review repeated allocation outcomes and create the next structural improvement when the reserve trend or institution results justify it.
+  result: Propose one new capability, production behavior, research source or structural entity when the verified trend supports progress; wait only when no grounded improvement is justified.
+- {"on": civilization.milestone, for: god}
+- id: institution_proposal_review
+  "on": institution.proposed
+  for: god
+  count: 1
+  tools: [approve_institution, wait]
+  purpose: Review the persisted institution proposal and activate it when its evidence and policy are sufficient for the verified public problem.
+  result: Activate one pending institution or wait when the proposal is not yet justified; do not replace activation with a duplicate rule or narrative event.
+- id: institution_activation_followup
+  "on": institution.activated
+  for: god
+  count: 1
+  tools: [propose_definition, wait]
+  definition_type: behavior
+  assign_to: [梅岚]
+  purpose: Turn the activated institution into one executable settlement behavior for the configured resource pool and assigned character.
+  result: Register one reusable behavior from the existing settlement Action and assign it to the configured character, or wait only when the active institution already has an executable settlement behavior.
+- {"on": entity.created, for: god}
+- {"on": definition.registered, for: god}
+- {"on": institution.activated, for: story}
+- {"on": institution.allocation_completed, for: story}

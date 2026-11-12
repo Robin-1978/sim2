@@ -388,6 +388,8 @@ def test_god_has_no_direct_behavior_or_action_executor():
     assert "execute_action" not in names
     story_names = {schema["function"]["name"] for schema in tool_schemas_for_role("story")}
     assert "propose_definition" not in story_names
+    assert "query_history" in story_names
+    assert "query_history" in names
 
 
 def test_god_definition_proposal_registers_attribute_action_and_behavior(tmp_path: Path):
@@ -2413,6 +2415,32 @@ def test_perception_channels_are_scoped_and_model_readable(tmp_path: Path):
         platform.close()
 
 
+def test_story_and_god_can_query_id_free_validated_history(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "history-query-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            platform.store.append_event(
+                "research.completed", "qiao_ning", 42,
+                {"summary": "The upstream sample was confirmed clean enough for a follow-up test.", "fact": "The upstream sample was recorded."},
+            )
+        god = AgentToolExecutor(platform, role="god", actor_id="god").execute(
+            "query_history", {"event_type": "research.completed", "contains": "upstream", "limit": 4},
+        )
+        assert god["status"] == "ok"
+        assert god["history"][0]["actor"] == "乔宁"
+        encoded = json.dumps(god, ensure_ascii=False)
+        assert "event_id" not in encoded
+        assert "qiao_ning" not in encoded
+        story_view = platform.view.build_decision_view("story", role="story")
+        prompt = render_context(story_view, "Continue the validated research thread.")
+        assert "<world_history>" in prompt
+        assert "research.completed" in prompt
+        assert "query_history" in prompt
+    finally:
+        platform.close()
+
+
 def test_read_tool_projection_hides_internal_execution_fields(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "perception-redaction-world", tmp_path / "runtime"))
@@ -3104,6 +3132,33 @@ def test_emergent_story_beat_deduplicates_same_fact_across_events(tmp_path: Path
         assert "materially identical" in second["reason"]
         saved = platform.store.get_meta("story_state")["emergent_beats"]
         assert saved[-1]["source_event_id"] == first_event
+    finally:
+        platform.close()
+
+
+def test_emergent_story_chapter_survives_unrelated_npc_behavior(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+    platform = Platform(create_instance(config, "story-open-chapter-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            source_event_id = platform.store.append_event(
+                "cistern.reviewed", "mei_lan", 1,
+                {"summary": "The cistern record was verified.", "story_source": True},
+            )
+        result = platform.submit_story_beat("story", {
+            "summary": "The verified cistern record opens a public allocation question.",
+            "fact": "The cistern record was verified.",
+            "goal_hint": "Decide the next public water action from the verified record.",
+            "audience": ["梅岚"],
+        }, source_event_ids=[source_event_id])
+        assert result["status"] == "accepted"
+        started = platform.submit_behavior(BehaviorIntent(
+            "mei_lan", "behavior:inspect_cistern", {}, {}, "Perform the unrelated configured inspection.", 0.8, "unrelated-story-action",
+        ))
+        assert started["status"] == "accepted"
+        step_n(platform, started["remaining_minutes"])
+        emergent = [item for item in (platform.store.get_meta("story_state", {}).get("emergent_beats", []) or []) if str(item.get("id", "")).startswith("emergent:")]
+        assert emergent and platform.store.get_meta("story_state")[emergent[-1]["id"]]["status"] == "active"
     finally:
         platform.close()
 

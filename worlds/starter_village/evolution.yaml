@@ -1,45 +1,54 @@
-evolution:
-  schedule:
-    agent_reflection_minutes: 1440
-    agent_innovation_minutes: 10080
-    god_local_minutes: 10080
-    god_structural_minutes: 43200
-  triggers:
-    - id: food_crisis
-      when: world.village_food < 120
-      invoke: [liang_he, lin_bo, god_local]
-    - id: water_crisis
-      when: world.water_quality < 0.50
-      invoke: [qiao_ning, su_wu, god_local]
-    - id: boundary_threat
-      when: world.north_gate_threat_level > 0.70
-      invoke: [he_yan, lu_xingzhou, god_local]
-    - id: pact_instability
-      when: world.root_gate_stability < 0.35
-      invoke: [su_wu, qiao_ning, god_structural]
-    - id: goal_completed
-      when: agent.goal.completed == true
-      invoke: [agent_reflection, agent_decision]
-  limits:
-    agent_reflection_calls_per_day: 1
-    agent_innovation_calls_per_week: 1
-    god_local_candidates_per_week: 3
-    god_structural_candidates_per_month: 1
-  event_wake_policy:
-    consumers:
-      god:
-        # Routine behavior results do not wake God; world-level events are
-        # handled causally. Research and social progress wake God only after
-        # the configured number of independent results.
-        batch_minutes: 0
-        # Milestones and edge-triggered policy rules are already aggregated by
-        # their producers. Every other God wake must pass an evidence group.
-        direct_event_types: [civilization.milestone]
-        direct_task_type_prefixes: ["rule:"]
-        event_groups:
-          - {id: research_synthesis, event_types: [research.completed], minimum_events: 5, cooldown_minutes: 10080}
-          - {id: governance_capacity, event_types: [governance.reviewed, ration.policy_reviewed], minimum_events: 8, cooldown_minutes: 10080}
-          - {id: trade_network, event_types: [negotiation.terms_recorded], minimum_events: 6, cooldown_minutes: 10080}
-          - {id: public_incident, event_types: [water.mitigation.applied, pact.stability.improved, security.marks_classified, entity.installed, defense.village_response, defense.position_result], minimum_events: 1, cooldown_minutes: 1440}
-      story: {batch_minutes: 0}
-      agent_reflection: {batch_minutes: 0, actor_scoped: true}
+cadence:
+  reflection: 1d
+  innovation: 1w
+  god: 1w
+  god_structural: 30d
+triggers:
+- id: food_crisis
+  when: world.village_food < 120
+  invoke: [liang_he, lin_bo, god_local]
+- id: water_crisis
+  when: world.water_quality < 0.50
+  invoke: [qiao_ning, su_wu, god_local]
+- id: boundary_threat
+  when: world.north_gate_threat_level > 0.70
+  invoke: [he_yan, lu_xingzhou, god_local]
+- id: pact_instability
+  when: world.root_gate_stability < 0.35
+  invoke: [su_wu, qiao_ning, god_structural]
+- id: goal_completed
+  when: agent.goal.completed == true
+  invoke: [agent_reflection, agent_decision]
+limits:
+  agent_reflection_calls_per_day: 1
+  agent_innovation_calls_per_week: 1
+  god_local_candidates_per_week: 3
+  god_structural_candidates_per_month: 1
+wakes:
+- "on": civilization.milestone
+  for: god
+- id: research_synthesis
+  "on": research.completed
+  for: god
+  count: 5
+  every: 1w
+- id: governance_capacity
+  "on": [governance.reviewed, ration.policy_reviewed]
+  for: god
+  count: 8
+  every: 1w
+- id: trade_network
+  "on": negotiation.terms_recorded
+  for: god
+  count: 6
+  every: 1w
+- id: public_incident
+  "on": [water.mitigation.applied, pact.stability.improved, security.marks_classified, entity.installed, defense.village_response, defense.position_result]
+  for: god
+  count: 1
+  every: 1d
+  tools: [propose_world_change, record_world_progress, wait]
+  purpose: Review the grouped validated incident outcomes and submit one typed world change only when the evidence supports it.
+  result: Submit one grounded rule, relationship, faction or progress change, or wait when no durable change is justified.
+- "on": 'rule:*'
+  for: god

@@ -1,0 +1,90 @@
+agents:
+- id: mei_lan
+  name: 梅岚
+  role: cistern_keeper
+  ultimate_goal: 让三灯镇在旱季结束前保持水源与秩序
+  traits:
+    cautious: 0.85
+    responsible: 0.9
+  beliefs:
+  - id: records_first
+    statement: 先核对记录再改变配给
+    confidence: 0.85
+  needs:
+    belonging: 65
+    purpose: 70
+  capabilities:
+    stewardship: 0.9
+    conversation: 0.65
+  initial_bt_ids:
+  - inspect_cistern
+  - communicate
+  initial_state:
+    location_id: lantern_square
+    status: idle
+    integrity: 100
+    vigor: 90
+    reputation: 0
+  inventory:
+    rations: 1
+- id: han_qiu
+  name: 韩秋
+  role: boundary_watcher
+  ultimate_goal: 证明北岗界碑的褪色不是偶然并保护旧商路
+  traits:
+    vigilant: 0.9
+    skeptical: 0.8
+  beliefs:
+  - id: evidence_before_alarm
+    statement: 未核实的痕迹不能直接当成袭击
+    confidence: 0.82
+  needs:
+    belonging: 50
+    purpose: 75
+  capabilities:
+    watch: 0.92
+    exploration: 0.85
+    conversation: 0.55
+  initial_bt_ids:
+  - survey_old_road
+  - secure_north_watch
+  - communicate
+  initial_state:
+    location_id: north_watch
+    status: idle
+    integrity: 100
+    vigor: 90
+    reputation: 0
+  inventory:
+    rations: 1
+    map_kit: 1
+- id: luo_shan
+  name: 罗杉
+  role: reed_trader_researcher
+  ultimate_goal: 找到界碑褪色与灯芯芦苇贸易之间的真实关系
+  traits:
+    curious: 0.9
+    persuasive: 0.78
+  beliefs:
+  - id: trade_carries_truth
+    statement: 交易记录比传闻更接近事实
+    confidence: 0.8
+  needs:
+    belonging: 60
+    purpose: 80
+  capabilities:
+    gathering: 0.82
+    research: 0.88
+    conversation: 0.8
+  initial_bt_ids:
+  - gather_reeds
+  - research_boundary_stone
+  - communicate
+  initial_state:
+    location_id: lantern_square
+    status: idle
+    integrity: 100
+    vigor: 90
+    reputation: 0
+  inventory:
+    rations: 1

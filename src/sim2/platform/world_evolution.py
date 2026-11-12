@@ -135,6 +135,12 @@ class WorldEvolutionRuntimeMixin:
                     errors.append(f"action.{field} must declare an object with result")
             definition.update({"id": definition_id, "version": 1, "definition_version": 1, "description": definition.get("description") or str(name), "definition_source": "god_proposal", "kind": "atomic", "executor": "effect_pipeline", "validation_status": "validated"})
         elif kind == "behavior":
+            for condition in definition.get("entry_conditions", []) or []:
+                if "event.recent." in str(condition):
+                    errors.append(
+                        "a reusable God-proposed behavior must not use event.recent.* entry conditions; "
+                        "use durable actor, capability, location, inventory, relationship, or world state"
+                    )
             nodes = definition.get("nodes")
             if nodes is None and isinstance(definition.get("actions"), list):
                 nodes = [{"type": "action", "action": item} for item in definition["actions"]]
@@ -165,6 +171,65 @@ class WorldEvolutionRuntimeMixin:
                         errors.append(f"unknown or ambiguous action in node {path}: {ref}; matches={matches}")
                     else:
                         node_copy["action_id"] = resolved
+                        action = next((item for item in self.store.get_definitions("action_def") if str(item.get("id")) == resolved), {})
+                        parameters = node_copy.get("parameters") if isinstance(node_copy.get("parameters"), dict) else {}
+                        # God sees visible entity names. Persist canonical IDs
+                        # inside reusable behaviors just as normal Intent
+                        # submission does; otherwise a valid-looking behavior
+                        # can be registered and then fail every NPC view-time
+                        # simulation because the later Action expects an ID.
+                        normalized_parameters: dict[str, Any] = {}
+                        entity_parameter_keys = {
+                            "target_id", "object_id", "location_id", "source_id", "area_id", "patient_id",
+                            "protected_target_id", "counterparty_id", "listener_id",
+                        }
+                        for key, value in parameters.items():
+                            key = str(key)
+                            if (
+                                isinstance(value, str)
+                                and value
+                                and not value.startswith("context.")
+                                and (key.endswith("_entity") or key in entity_parameter_keys)
+                            ):
+                                canonical = self.targets.canonical_id(value)
+                                if canonical:
+                                    parameter_spec = (action.get("parameters") or {}).get(key)
+                                    expected_type = str(parameter_spec.get("entity_type") or "") if isinstance(parameter_spec, dict) else ""
+                                    actual_type = str(self.store.get_entity(canonical).get("entity_type") or "")
+                                    if expected_type and actual_type != expected_type:
+                                        errors.append(
+                                            f"action {resolved} parameter {key} requires a visible {expected_type}; "
+                                            f"{value} resolves to {actual_type} {canonical}"
+                                        )
+                                        continue
+                                    normalized_parameters[key] = canonical
+                                    continue
+                                visible_entities = [
+                                    str(dict(item).get("name") or dict(item).get("id"))
+                                    for item in self.store.connection.execute(
+                                        "SELECT id,name FROM entity WHERE id != 'player' ORDER BY name,id LIMIT 40"
+                                    ).fetchall()
+                                ]
+                                errors.append(
+                                    f"action {resolved} parameter {key} must use an exact visible entity name; "
+                                    f"visible examples: {', '.join(visible_entities)}"
+                                )
+                            normalized_parameters[key] = value
+                        parameters = normalized_parameters
+                        node_copy["parameters"] = parameters
+                        allowed_parameters = set((action.get("parameters") or {}).keys())
+                        unknown_parameters = sorted(set(parameters) - allowed_parameters)
+                        if unknown_parameters:
+                            errors.append(
+                                f"action {resolved} in node {path} has unknown parameter(s): {', '.join(unknown_parameters)}; "
+                                f"allowed parameters: {', '.join(sorted(allowed_parameters)) or 'none'}"
+                            )
+                        parameter_defaults = set((action.get("parameter_defaults") or {}).keys())
+                        missing_parameters = sorted(allowed_parameters - set(parameters) - parameter_defaults)
+                        if missing_parameters:
+                            errors.append(
+                                f"action {resolved} in node {path} is missing parameter(s): {', '.join(missing_parameters)}"
+                            )
                     node_copy.pop("action", None)
                     node_copy.pop("name", None)
                 elif node_type in {"behavior", "subtree"}:
@@ -242,6 +307,11 @@ class WorldEvolutionRuntimeMixin:
                 errors.append(f"unknown character in assign_to: {name_or_id}")
                 continue
             resolved_agents.append((str(agent["id"]), str(agent.get("name") or agent["id"])))
+        if definition_type == "behavior" and not resolved_agents:
+            errors.append(
+                "behavior definitions must assign_to at least one existing character; "
+                "a registered but unassigned behavior cannot participate in world evolution"
+            )
         data = {**proposal, "actor_id": actor_id, "definition": definition}
         if errors:
             return self._reject_intent(intent_id, actor_id, "propose_definition", data, {"status": "rejected", "message": "Definition proposal failed validation.", "failed_check": "definition_schema", "errors": errors, "retryable": True})
@@ -301,6 +371,25 @@ class WorldEvolutionRuntimeMixin:
                             unlocked.append(definition["id"])
                             agent["unlocked_bt_ids"] = unlocked
                             self.store.update_agent(agent_id, agent)
+                    unavailable = []
+                    for agent_id, visible_name in resolved_agents:
+                        candidate = self.view.build_decision_view(agent_id, role="agent_decision", include_diagnostics=True)
+                        if not any(str(item.get("ref")) == f"behavior:{definition['id']}" for item in candidate.get("executable_behaviors", [])):
+                            reason = next(
+                                (
+                                    item.get("failed")
+                                    for item in (candidate.get("unavailable_behavior_diagnostics") or [])
+                                    if str(item.get("behavior_id")) == str(definition["id"])
+                                ),
+                                ["the behavior is not in the executable catalog"],
+                            )
+                            unavailable.append({"character": visible_name, "reasons": reason})
+                    if unavailable:
+                        raise ValueError(
+                            "registered behavior is not executable for its assigned character(s): "
+                            + repr(unavailable)
+                            + "; correct the Action preconditions, parameters, or character conditions"
+                        )
             event_id = self.store.append_event("definition.registered", actor_id, world_minute, {"definition_type": definition_type, "name": name, "definition_id": definition.get("id"), "assigned_to": [visible for _, visible in resolved_agents], "evidence": str(proposal.get("evidence") or "")})
             self._wake_configured_evolution_consumers(event_id, "definition.registered", actor_id, world_minute)
             result = {"status": "accepted", "intent_id": intent_id, "definition_type": definition_type, "name": name, "registered": True, "assigned_to": [visible for _, visible in resolved_agents], "event_id": event_id}
@@ -313,6 +402,125 @@ class WorldEvolutionRuntimeMixin:
             self.rule_compiler = self._new_rule_compiler()
         return result
 
+    def _normalize_god_agent_state(self, entity_id: str, proposal: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+        """Initialize a new runtime character from configured world defaults."""
+
+        errors: list[str] = []
+        state = copy.deepcopy(proposal.get("state") if isinstance(proposal.get("state"), dict) else {})
+        name = str(proposal.get("name") or "").strip()
+        role = str(state.get("role") or "").strip()
+        goal = str(state.get("ultimate_goal") or "").strip()
+        if not role:
+            errors.append("agent.state.role is required")
+        if not goal:
+            errors.append("agent.state.ultimate_goal is required")
+
+        initial_state = dict(state.get("initial_state") or {})
+        raw_location = proposal.get("location_id") or initial_state.get("location_id")
+        location_id = self.targets.canonical_id(str(raw_location or ""))
+        if not location_id:
+            errors.append("agent.state.initial_state.location_id must name an existing location")
+        else:
+            try:
+                location = self.store.get_entity(location_id)
+                if str(location.get("entity_type")) != "location":
+                    errors.append(f"{raw_location} is not a location")
+            except KeyError:
+                errors.append(f"agent location does not exist: {raw_location}")
+        if location_id:
+            initial_state["location_id"] = location_id
+
+        rules = self.store.get_meta("rules", {}) or {}
+        schema = AttributeSchema(self.store.get_meta("attributes", []) or [], rules)
+        for attribute_id, value in schema.state_defaults().items():
+            initial_state.setdefault(attribute_id, value)
+        initial_state.setdefault("status", "idle")
+        initial_state.setdefault("current_goal_id", "ultimate_goal")
+        initial_state.setdefault("injuries", [])
+        initial_state.setdefault("conditions", [])
+        initial_state.setdefault("active_bt_instance", None)
+        initial_state.setdefault("active_action", None)
+        initial_state.setdefault("action_progress", 0.0)
+        initial_state.setdefault("remaining_minutes", 0)
+        initial_state.setdefault("last_platform_result", None)
+        for attribute_id in schema.state_defaults():
+            if attribute_id in initial_state:
+                initial_state[attribute_id] = schema.clamp(attribute_id, initial_state[attribute_id])
+
+        needs = dict(state.get("needs") or {})
+        for need_id, value in schema.need_defaults().items():
+            needs.setdefault(need_id, value)
+        for item in rules.get("needs", []) or []:
+            if isinstance(item, dict) and item.get("id"):
+                needs.setdefault(str(item["id"]), float(item.get("target", 100)))
+        for need_id, value in list(needs.items()):
+            needs[need_id] = schema.clamp(str(need_id), value)
+
+        capability_defs = {str(item["id"]): item for item in self.store.get_definitions("capability_def")}
+        capabilities = {
+            capability_id: float(definition.get("default", 0) or 0)
+            if isinstance(definition.get("default", 0), (int, float)) and not isinstance(definition.get("default", 0), bool)
+            else 0.0
+            for capability_id, definition in capability_defs.items()
+        }
+        provided_capabilities = state.get("capabilities") if isinstance(state.get("capabilities"), dict) else {}
+        unknown_capabilities = sorted(set(provided_capabilities) - set(capability_defs)) if capability_defs else []
+        if unknown_capabilities:
+            errors.append("agent.state.capabilities references unknown capabilities: " + ", ".join(unknown_capabilities))
+        for capability_id in set(provided_capabilities) & set(capability_defs):
+            value = provided_capabilities[capability_id]
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or not 0 <= float(value) <= 1:
+                errors.append(f"agent capability {capability_id} must be between 0 and 1")
+            else:
+                capabilities[capability_id] = float(value)
+
+        initial_bt_ids: list[str] = []
+        for value in state.get("initial_bt_ids") or []:
+            behavior_id, matches = self._resolve_registered_definition("bt_def", value)
+            if not behavior_id:
+                errors.append(f"unknown or ambiguous initial behavior: {value}; matches={matches}")
+            elif behavior_id not in initial_bt_ids:
+                initial_bt_ids.append(behavior_id)
+        if not initial_bt_ids:
+            errors.append("agent.state.initial_bt_ids must include at least one existing behavior")
+
+        faction_ids: list[str] = []
+        for value in state.get("faction_ids") or []:
+            faction_id = self.targets.canonical_id(str(value))
+            if not faction_id:
+                errors.append(f"unknown faction: {value}")
+                continue
+            try:
+                faction = self.store.get_entity(faction_id)
+                if str(faction.get("entity_type")) != "faction":
+                    errors.append(f"{value} is not a faction")
+                else:
+                    faction_ids.append(faction_id)
+            except KeyError:
+                errors.append(f"unknown faction: {value}")
+
+        normalized = {
+            **state,
+            "id": entity_id,
+            "name": name,
+            "role": role,
+            "ultimate_goal": goal,
+            "traits": dict(state.get("traits") or {}),
+            "beliefs": list(state.get("beliefs") or []),
+            "needs": needs,
+            "capabilities": capabilities,
+            "initial_bt_ids": initial_bt_ids,
+            "unlocked_bt_ids": [],
+            "inventory": dict(state.get("inventory") or {}),
+            "permissions": dict(state.get("permissions") or {}),
+            "faction_ids": faction_ids,
+            "combat_stats": dict(state.get("combat_stats") or {}),
+            "initial_state": initial_state,
+            "story_goals": list(state.get("story_goals") or []),
+            "knowledge_seed": list(state.get("knowledge_seed") or []),
+        }
+        return normalized, errors
+
     def submit_entity_proposal(self, actor_id: str, proposal: dict[str, Any]) -> dict[str, Any]:
         intent_id = str(uuid4())
         entity_id = str(proposal.get("entity_id") or f"entity_{uuid4().hex[:10]}")
@@ -322,6 +530,21 @@ class WorldEvolutionRuntimeMixin:
             errors.append("entity_type is required")
         if not proposal.get("name"):
             errors.append("name is required")
+        proposed_name = str(proposal.get("name") or "").strip()
+        if proposed_name:
+            name_key = "".join(proposed_name.casefold().split())
+            duplicate = self.store.connection.execute(
+                "SELECT id,entity_type,name FROM entity WHERE name IS NOT NULL"
+            ).fetchall()
+            existing = next(
+                (row for row in duplicate if "".join(str(row["name"]).casefold().split()) == name_key),
+                None,
+            )
+            if existing is not None:
+                errors.append(
+                    f"an entity with visible name {existing['name']} already exists "
+                    f"({existing['entity_type']}:{existing['id']}); use it instead of creating a duplicate"
+                )
         if actor_id == "god":
             rules = self.store.get_meta("rules", {}) or {}
             resource_types = {str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])}
@@ -341,7 +564,10 @@ class WorldEvolutionRuntimeMixin:
         except KeyError:
             pass
         if errors:
-            failed_check = "god_resource_creation" if any("stocked resource" in error for error in errors) else "entity_schema"
+            if any("visible name" in error and "duplicate" in error for error in errors):
+                failed_check = "entity_name_duplicate"
+            else:
+                failed_check = "god_resource_creation" if any("stocked resource" in error for error in errors) else "entity_schema"
             return self._reject_intent(intent_id, actor_id, "propose_entity", data, {"status": "rejected", "message": "Entity proposal failed validation.", "failed_check": failed_check, "errors": errors, "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         # Entity proposals use one compact ``state`` object at the Agent
@@ -352,8 +578,14 @@ class WorldEvolutionRuntimeMixin:
         # structural fields so a God-created settlement is immediately
         # navigable without adding a world-specific branch.
         proposed_state = dict(proposal.get("state") or {})
+        entity_type = str(proposal.get("entity_type") or "")
         entity_data = {"description": proposal.get("description", ""), "initial_state": proposed_state}
-        if str(proposal.get("entity_type") or "") == "location":
+        agent_state: dict[str, Any] | None = None
+        if entity_type == "agent":
+            agent_state, agent_errors = self._normalize_god_agent_state(entity_id, proposal)
+            if agent_errors:
+                return self._reject_intent(intent_id, actor_id, "propose_entity", data, {"status": "rejected", "message": "Agent proposal failed validation.", "failed_check": "agent_schema", "errors": agent_errors, "retryable": True})
+        elif entity_type == "location":
             for field in ("routes", "tags", "public", "safe", "discoveries", "map_position", "region_id"):
                 if field in proposed_state:
                     entity_data[field] = proposed_state.pop(field)
@@ -362,8 +594,22 @@ class WorldEvolutionRuntimeMixin:
             entity_data["initial_state"]["location_id"] = proposal["location_id"]
         with self.store.transaction():
             self.store.create_intent(intent_id, actor_id, "propose_entity", data, world_minute)
-            self.store.put_entity(entity_id, str(proposal["entity_type"]), str(proposal["name"]), entity_data)
-            event_id = self.store.append_event("entity.created", actor_id, world_minute, {"intent_id": intent_id, "entity_id": entity_id, "entity_type": proposal["entity_type"], "summary": proposal.get("description", "")})
+            if agent_state is not None:
+                self.store.put_agent(entity_id, agent_state, str(proposal["name"]))
+                for knowledge in agent_state.get("knowledge_seed", []):
+                    if not isinstance(knowledge, dict):
+                        continue
+                    fact_key = str(knowledge.get("id") or knowledge.get("fact_key") or "").strip()
+                    if fact_key:
+                        self.store.put_knowledge_fact(entity_id, fact_key, {
+                            "fact": str(knowledge.get("fact") or knowledge.get("summary") or fact_key),
+                            "source_type": str(knowledge.get("source_type") or "god_created"),
+                            "confidence": float(knowledge.get("confidence", 1.0)),
+                            "claim_status": str(knowledge.get("claim_status") or "observed"),
+                        })
+            else:
+                self.store.put_entity(entity_id, entity_type, str(proposal["name"]), entity_data)
+            event_id = self.store.append_event("entity.created", actor_id, world_minute, {"intent_id": intent_id, "entity_id": entity_id, "entity_type": entity_type, "summary": proposal.get("description", "")})
             self._wake_configured_evolution_consumers(event_id, "entity.created", actor_id, world_minute)
             result = {"status": "accepted", "intent_id": intent_id, "entity_id": entity_id, "event_id": event_id, "applied": True}
             self.store.finish_intent(intent_id, "accepted", result)
@@ -452,6 +698,13 @@ class WorldEvolutionRuntimeMixin:
                 "unlock_choices": list(proposal.get("unlock_choices", []) or []),
                 "public_event": "story.emergent_beat",
             }
+            # An emergent chapter must not disappear because its audience did
+            # an unrelated maintenance action. If Story names follow-up
+            # choices, use those visible choices as the completion boundary;
+            # otherwise leave the chapter active until a later Story result
+            # explicitly supersedes or closes it.
+            if beat["unlock_choices"]:
+                beat["followup_behaviors"] = list(beat["unlock_choices"])
             matches = [beat]
             emergent = True
         if len(matches) != 1:

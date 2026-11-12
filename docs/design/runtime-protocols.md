@@ -69,12 +69,25 @@ God and Story proposals are stored with a typed expectation and an observation
 window.  Evaluation matches the expected property value, relationship/faction
 state, or configured rule follow-up event.  An unrelated event cannot make a
 proposal successful.  Narrative-only proposals finish as `no_observed_effect`
-unless a configured consumer creates a real state result.  Event wake policy
-is content data: routine results may accumulate into a group requiring N
-evidence records before God is called, while a configured public incident may
-use N=1.  There is no implicit daily God call.  The next God or Story view
+unless a configured consumer creates a real state result. Event wake policy is
+content data: authors declare it as compact `wakes` entries (`on`, `for`,
+`count`, and optional `every`); bootstrap compiles those entries to runtime
+event groups. Routine results may accumulate into a group requiring N evidence
+records before God is called, while a configured public incident may use N=1.
+There is no implicit daily God call. The next God or Story view
 receives the expected/observed comparison and may wait, revise, or propose a
 bounded successor.
+
+God can create any supported content type that the validated situation needs:
+agents, locations, factions, objects, empty resource nodes, institutions,
+relationships, rules, attributes, world-property definitions, capabilities, Actions,
+behavior trees, recipes, and narrative events. The proposal vocabulary is
+intentionally broader than institutions and behaviors. Platform remains the
+authority: it validates references and executability, rejects code, preserves
+resource conservation, and requires behavior outcomes for personal gains and
+stocked resources. Story continues to consume validated facts and organize
+them into goals and chapters; it does not silently create the structural
+content that God owns.
 
 An evolution trigger or evidence group may also declare an `agent_contract`.
 It can restrict the allowed tools and state the required structural result,
@@ -90,6 +103,16 @@ with whichever event happened most recently. Optional emergent-source types,
 narrative claim terms, valid follow-up event types, and follow-up BT tags live
 in `story.yaml`; a different content pack can replace them without Python
 changes.
+
+History is part of both world-level Agent views. Story and God receive a bounded
+`world_history` projection containing recent validated events, visible actor
+names, outcomes, institutions, definitions, and resource deltas. It is causal
+context, not a transcript: completed work remains visible so the next session
+can continue it instead of recreating it. When an older slice is needed, the
+read-only `query_history` tool filters persisted events by exact event type,
+visible actor, keyword, and world-minute range. Its result removes internal IDs
+and never grants mutation authority. A wake contract may omit the read tool to
+keep an event review submission-only; ordinary Story/God sessions expose it.
 
 Social institutions follow the same path: no contribution metric exists until
 NPC behavior produces the configured evidence threshold. Story may connect that

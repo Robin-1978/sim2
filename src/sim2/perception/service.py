@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -189,4 +190,111 @@ class PerceptionService:
             "query": query,
             "facts": visible_facts,
             **self._observation_meta(visibility="agent_knowledge"),
+        }
+
+    def query_history(
+        self,
+        agent_id: str,
+        *,
+        event_type: str = "",
+        actor: str = "",
+        contains: str = "",
+        since_minute: int | None = None,
+        until_minute: int | None = None,
+        limit: int = 8,
+        global_scope: bool = False,
+    ) -> dict[str, Any]:
+        """Search validated event history without exposing implementation IDs.
+
+        Story and God receive a bounded recent history in their normal view,
+        then use this read tool for an older causal slice.  The query is
+        deliberately declarative: it cannot mutate state and returns only
+        visible event fields plus a compact, ID-free detail projection.
+        """
+
+        if not global_scope:
+            return {
+                "status": "rejected",
+                "failed_check": "history_scope",
+                "retryable": False,
+                "message": "Only world-level Story and God sessions may query global history.",
+            }
+        event_filter = str(event_type or "").strip()
+        actor_filter = str(actor or "").strip()
+        contains_filter = str(contains or "").strip().casefold()
+        low = max(0, int(since_minute)) if since_minute is not None else None
+        high = max(0, int(until_minute)) if until_minute is not None else None
+        if low is not None and high is not None and high < low:
+            return {"status": "rejected", "failed_check": "history_range", "retryable": True, "message": "until_minute must be greater than or equal to since_minute."}
+        max_rows = max(1, min(int(limit), 12))
+        clauses = []
+        params: list[Any] = []
+        if event_filter:
+            clauses.append("event_type=?")
+            params.append(event_filter)
+        if low is not None:
+            clauses.append("world_minute>=?")
+            params.append(low)
+        if high is not None:
+            clauses.append("world_minute<=?")
+            params.append(high)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        rows = self.store.connection.execute(
+            "SELECT event_id,event_type,actor_id,world_minute,data_json FROM event_log"
+            + where + " ORDER BY event_id DESC LIMIT 5000",
+            tuple(params),
+        ).fetchall()
+        actor_names: dict[str, str] = {}
+        for entity_type in ("agent", "location", "object", "faction", "resource", "material"):
+            for entity in self.store.entities_of_type(entity_type):
+                actor_names[str(entity.get("id"))] = str(entity.get("name") or entity.get("id"))
+        actor_key = "".join(actor_filter.casefold().split())
+
+        def compact(value: Any, depth: int = 0) -> Any:
+            if depth > 2:
+                return "…"
+            if isinstance(value, dict):
+                hidden = {"id", "event_id", "actor_id", "entity_id", "intent_id", "execution_id", "correlation_id", "causation_id"}
+                return {
+                    str(key): compact(item, depth + 1)
+                    for key, item in value.items()
+                    if str(key) not in hidden and not str(key).endswith("_id")
+                }
+            if isinstance(value, list):
+                return [compact(item, depth + 1) for item in value[:8]]
+            return value
+
+        history: list[dict[str, Any]] = []
+        for row in rows:
+            actor_id = str(row["actor_id"] or "")
+            actor_name = actor_names.get(actor_id, actor_id or "world")
+            if actor_key and actor_key not in {"".join(actor_name.casefold().split()), "".join(actor_id.casefold().split())}:
+                continue
+            try:
+                data = json.loads(row["data_json"] or "{}")
+            except (TypeError, ValueError):
+                data = {}
+            searchable = " ".join([str(row["event_type"]), actor_name, json.dumps(data, ensure_ascii=False)]).casefold()
+            if contains_filter and contains_filter not in searchable:
+                continue
+            history.append({
+                "event_type": str(row["event_type"]),
+                "world_minute": int(row["world_minute"]),
+                "actor": actor_name,
+                "details": compact(data),
+            })
+            if len(history) >= max_rows:
+                break
+        return {
+            "status": "ok",
+            "query": {
+                "event_type": event_filter or "any",
+                "actor": actor_filter or "any",
+                "contains": contains or "any",
+                "since_minute": low,
+                "until_minute": high,
+            },
+            "history": history,
+            "matched": len(history),
+            **self._observation_meta(visibility="global_history"),
         }

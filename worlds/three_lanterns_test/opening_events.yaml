@@ -1,0 +1,6 @@
+opening_events:
+- id: dry_season_begins
+  type: season.dry_started
+  world_minute: 0
+  payload:
+    summary: 旱季开始，三灯镇必须核对蓄水与商路记录。

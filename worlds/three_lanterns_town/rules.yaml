@@ -27,6 +27,11 @@ fallback_behavior_ids:
 - inspect_cistern
 - survey_old_road
 - secure_north_watch
+resource_regeneration:
+- resource_id: cistern_water
+  every_minutes: 1440
+  amount: 12
+  cap: 48
 capability_progression:
   research: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
   gathering: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}

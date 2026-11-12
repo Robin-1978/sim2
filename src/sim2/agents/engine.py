@@ -103,14 +103,15 @@ class AgentEngine:
     subsequently advanced by Platform rather than by another LLM call.
     """
 
-    def __init__(self, platform: Platform, provider: Any, max_iterations: int | None = None, max_repeated_tool_calls: int = 2, max_tool_calls: int = 12, max_read_tool_calls: int = 8):
+    def __init__(self, platform: Platform, provider: Any, max_iterations: int | None = None, max_repeated_tool_calls: int = 2, max_tool_calls: int = 12, max_read_tool_calls: int | None = None):
         self.platform = platform
         self.provider = provider
         configured_iterations = getattr(self.provider, "max_agent_iterations", 4)
         self.max_iterations = max(1, int(configured_iterations if max_iterations is None else max_iterations))
         self.max_repeated_tool_calls = max(1, max_repeated_tool_calls)
         self.max_tool_calls = max(1, max_tool_calls)
-        self.max_read_tool_calls = max(1, max_read_tool_calls)
+        configured_reads = getattr(self.provider, "max_read_tool_calls", 8)
+        self.max_read_tool_calls = max(0, int(configured_reads if max_read_tool_calls is None else max_read_tool_calls))
         # Reuse the Platform-owned compiler and MemoryService. Creating a new
         # compiler for every session discards the in-process query embedding
         # cache and repeats BGE inference for identical goal/location views.
@@ -251,19 +252,10 @@ class AgentEngine:
         session_tools = interaction_tools if interaction_tools is not None else trigger_tools if trigger_tools is not None else role_tools
         if session_tools is not None:
             context["tools"] = [item for item in (context.get("tools") or []) if item.get("name") in set(session_tools)]
-        if event_ids and role in {"god", "story"} and session_tools is not None:
-            # Event tasks already carry their exact validated source and a
-            # bounded role projection. Re-reading the same fact adds latency,
-            # tool output and failure opportunities without adding evidence.
-            # Scheduled weekly/monthly reviews retain their configured reads.
-            session_tools = [
-                name for name in session_tools
-                if TOOL_DEFINITIONS.get(name, {}).get("kind") != "read"
-            ]
-            context["tools"] = [
-                item for item in (context.get("tools") or [])
-                if item.get("name") in set(session_tools)
-            ]
+        # Event tasks carry the exact validated source. They still may read a
+        # small, budgeted amount of related world state: a God reviewer often
+        # needs one read to see what the world lacks before choosing a
+        # declarative proposal. The read budget below is the only cap.
         view_errors = validate_agent_view(context, role=role)
         if view_errors:
             raise ValueError("invalid AgentView: " + "; ".join(view_errors))
@@ -278,6 +270,7 @@ class AgentEngine:
             source_event_ids=event_ids,
             observed_world_revision=context.get("world_revision"),
             observed_agent_revision=context.get("agent_revision"),
+            evolution_contract=trigger_contract if isinstance(trigger_contract, dict) else None,
         )
         last_response: dict[str, Any] = {}
         last_result: dict[str, Any] = {"status": "no_result"}
@@ -291,10 +284,9 @@ class AgentEngine:
         # evidence sample.  Without a role-specific cap, remote models can
         # spend all six ReAct turns reading the same event from different
         # projections and leave the evolution task unresolved.
-        read_budget = (
-            min(self.max_read_tool_calls, 2) if role in {"god", "story", "agent_decision"}
-            else self.max_read_tool_calls
-        )
+        # The read budget is role configuration. A bounded world reviewer may
+        # need several focused reads before its final typed proposal.
+        read_budget = self.max_read_tool_calls
         system_policy = role_policy(self.platform, role)
         conversation_messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_policy},

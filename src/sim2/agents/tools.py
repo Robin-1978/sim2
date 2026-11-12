@@ -127,6 +127,23 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "additionalProperties": False,
         },
     },
+    "query_history": {
+        "purpose": "Search validated world history by event type, participant, keyword or simulation time.",
+        "kind": "read",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "event_type": {"type": "string", "description": "Optional exact event type such as research.completed or institution.allocation_completed."},
+                "actor": {"type": "string", "description": "Optional visible character name; omit for every participant."},
+                "contains": {"type": "string", "description": "Optional word or phrase in the validated event details."},
+                "since_minute": {"type": "integer", "minimum": 0, "description": "Optional inclusive start of world time."},
+                "until_minute": {"type": "integer", "minimum": 0, "description": "Optional inclusive end of world time."},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 12},
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
     "recall_memory": {
         "purpose": "Recall the agent's own retained experiences and knowledge.",
         "kind": "read",
@@ -222,8 +239,8 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "purpose": {"type": "string", "description": "What public problem the institution is meant to solve."},
                 "scope": {"type": "string", "description": "Who or what the institution covers."},
                 "evidence": {"type": "string", "description": "The observed problem or event motivating the proposal."},
-                "evidence_sources": {"type": "array", "items": {"type": "object"}, "description": "Use exact persisted selectors such as {event_types:[cistern.reviewed], behavior_ids:[inspect_cistern]} or {event_types:[behavior.completed], behavior_ids:[named_behavior]}. Do not use condition strings, world fields, or event.recent paths."},
-                "minimum_evidence": {"type": "integer", "minimum": 1, "description": "Minimum number of matching verified events required before creation; Platform counts the persisted events."},
+                "evidence_sources": {"type": "array", "items": {"type": "object"}, "description": "Optional when this is an event-triggered task; Platform supplies the task's verified evidence contract. If supplied, use persisted event selectors only."},
+                "minimum_evidence": {"type": "integer", "minimum": 1, "description": "Optional evidence threshold; the triggering task threshold is used when omitted."},
                 "ledger": {"type": "object", "description": "Optional future ledger. Use {period:'week', selectors:[{event_types:[...], behavior_ids:[...], action_ids:[...], category:'civic_work', points:1}]}; it is inert until activation."},
                 "policy": {"type": "object", "description": "Optional allocation policy. If allocating a shared pool, use {allocation:{minimum_per_subject:1, contribution_share:0.5, category:'civic_work'}}; it changes nothing until a validated settlement behavior runs."},
             },
@@ -293,15 +310,15 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "propose_entity": {
-        "purpose": "Propose a new, evidence-backed world entity for Platform validation. Do not create stocked resources as a reward.",
+        "purpose": "Propose a new evidence-backed world entity for Platform validation. God may create people, places, factions, objects, or empty resource nodes needed by the evolving story.",
         "kind": "intent",
         "parameters": {
             "type": "object",
             "properties": {
-                "entity_type": {"type": "string"},
+                "entity_type": {"type": "string", "description": "Use agent for a new playable character; otherwise use a configured type such as location, faction, object, material, or resource."},
                 "name": {"type": "string"},
                 "location": {"type": "string", "description": "A visible location name."},
-                "state": {"type": "object"},
+                "state": {"type": "object", "description": "Initial state. For an agent, include role, ultimate_goal, initial_bt_ids, capabilities, needs, inventory, and initial_state with a visible location and status. Platform initializes configured defaults and validates every reference."},
                 "description": {"type": "string"},
             },
             "required": ["entity_type", "name"],
@@ -309,7 +326,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "propose_definition": {
-        "purpose": "Submit a declarative attribute, Action, behavior tree, recipe, or capability definition. Platform validates it and registers it in this SQLite world; it never executes the definition during the proposal.",
+        "purpose": "Submit declarative world mechanics: an attribute, world property, capability, Action, behavior tree, or recipe. Platform validates and registers it; it never executes during the proposal.",
         "kind": "intent",
         "parameters": {
             "type": "object",
@@ -317,7 +334,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "definition_type": {"type": "string", "enum": ["attribute", "world_property", "action", "behavior", "recipe", "capability"]},
                 "name": {"type": "string", "description": "A short visible name. Platform derives the internal registry key."},
                 "definition": {"type": "object", "description": "Declarative fields for the selected type. For behavior use nodes:[{type:'action', action_id:'exact registered Action name', parameters:{...}}], entry_conditions, success_results and failure_results. Use visible names; no free-form steps, code, handlers, SQL, or internal IDs."},
-                "assign_to": {"type": "array", "items": {"type": "string"}, "description": "Optional visible character names to receive a new behavior. An unassigned behavior is registered but not executable by anyone."},
+                "assign_to": {"type": "array", "items": {"type": "string"}, "description": "For a behavior, required visible character names that can execute it; other definition types must leave this empty."},
                 "evidence": {"type": "string", "description": "The observed result that justifies this new definition."},
             },
             "required": ["definition_type", "name", "definition"],
@@ -325,7 +342,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "propose_world_change": {
-        "purpose": "Propose an evidence-backed rule or narrative change. World behavior, not God, must produce resource and social values.",
+        "purpose": "Propose an evidence-backed rule, relationship, existing-faction change, or narrative event. Behavior outcomes own resources and personal/social value changes.",
         "kind": "intent",
         "parameters": {
             "type": "object",
@@ -428,12 +445,10 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
 ROLE_TOOLS: dict[str, list[str]] = {
     "agent_decision": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "request_behavior", "wait"],
     "agent_reflection": ["recall_memory", "query_known_fact", "record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "wait"],
-    # Story receives the validated source, required facts, and unlocked beats
-    # in its world view.  Keeping generic lookup tools out of this role avoids
-    # a read-only loop over names that are not public records; it must turn the
-    # supplied evidence into one beat/progress proposal or wait.
-    "story": ["record_world_progress", "propose_story_beat", "wait"],
-    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "propose_institution", "approve_institution", "wait"],
+    # Story receives the validated source and recent history in its world view;
+    # query_history is the bounded read path for an older causal thread.
+    "story": ["query_history", "record_world_progress", "propose_story_beat", "wait"],
+    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "query_history", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "propose_institution", "approve_institution", "wait"],
     "world_builder": ["validate_world_template", "submit_world_template", "wait"],
 }
 
@@ -458,13 +473,13 @@ def _tool_for_role(role: str, name: str) -> dict[str, Any]:
 
     definition = copy.deepcopy(TOOL_DEFINITIONS[name])
     if name == "propose_entity" and role == "god":
-        definition["purpose"] = "Propose an evidence-backed structural entity. Do not create a stocked resource as a reward."
-        definition["parameters"]["properties"]["state"]["description"] = "Initial structural state only; a positive resource quantity must come from a validated behavior result."
+        definition["purpose"] = "Propose a person, place, faction, object, or empty resource node needed by the verified storyline. Do not create stocked resources as a reward."
+        definition["parameters"]["properties"]["state"]["description"] = "Initial structural state. For an agent, include role, ultimate_goal, initial_bt_ids, capabilities, needs, inventory, and initial_state with a visible location and status. A positive resource quantity must come from a validated behavior result."
     if name == "propose_world_change" and role == "god":
-        definition["purpose"] = "Propose an evidence-backed rule, faction strategy, relationship, or narrative event. Behavior must produce resource and social values."
+        definition["purpose"] = "Propose an evidence-backed rule, relationship, faction update, or narrative event. Existing world properties must be created through propose_definition, and behavior produces resource and personal/social values."
         change_type = definition["parameters"]["properties"]["change_type"]
         change_type["enum"] = ["rule", "relationship", "faction", "event"]
-        change_type["description"] = "Choose exactly one: rule, relationship, faction, or event. Do not set a world property."
+        change_type["description"] = "Choose exactly one: rule, relationship, faction, or event. Do not directly set a world property."
         definition["parameters"]["properties"].pop("property", None)
         definition["parameters"]["properties"].pop("value", None)
     return {"name": name, **definition, "input": definition["parameters"]}
@@ -546,6 +561,7 @@ class AgentToolExecutor:
         source_event_ids: list[int] | None = None,
         observed_world_revision: int | None = None,
         observed_agent_revision: int | None = None,
+        evolution_contract: dict[str, Any] | None = None,
     ):
         self.platform = platform
         self.role = role
@@ -553,6 +569,7 @@ class AgentToolExecutor:
         self.source_event_ids = [int(value) for value in (source_event_ids or []) if int(value) > 0]
         self.observed_world_revision = observed_world_revision
         self.observed_agent_revision = observed_agent_revision
+        self.evolution_contract = dict(evolution_contract or {})
         self.allowed = set(ROLE_TOOLS.get(role, []))
 
     def execute(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -632,6 +649,15 @@ class AgentToolExecutor:
     def _agent(self) -> dict[str, Any]:
         return self.platform.store.get_agent(self.actor_id)
 
+    def _contract_visible_name(self, value: Any) -> str:
+        canonical = self.platform.targets.canonical_id(str(value))
+        if canonical:
+            try:
+                return str(self.platform.store.get_agent(str(canonical)).get("name") or canonical)
+            except KeyError:
+                pass
+        return str(value)
+
     def _observe_nearby(self, question: str = "") -> dict[str, Any]:
         return self.platform.perception.observe_nearby(self.actor_id, question)
 
@@ -710,6 +736,26 @@ class AgentToolExecutor:
 
     def _query_known_fact(self, query: str = "", limit: int = 8) -> dict[str, Any]:
         return self.platform.perception.query_known_fact(self.actor_id, query, limit)
+
+    def _query_history(
+        self,
+        event_type: str = "",
+        actor: str = "",
+        contains: str = "",
+        since_minute: int | None = None,
+        until_minute: int | None = None,
+        limit: int = 8,
+    ) -> dict[str, Any]:
+        return self.platform.perception.query_history(
+            self.actor_id,
+            event_type=event_type,
+            actor=actor,
+            contains=contains,
+            since_minute=since_minute,
+            until_minute=until_minute,
+            limit=limit,
+            global_scope=self.role in {"god", "story"},
+        )
 
     def _recall_memory(self, question: str = "", limit: int = 8, scope: str = "all") -> dict[str, Any]:
         return self.platform.memory.recall(self.actor_id, question, limit, scope=scope)
@@ -795,13 +841,21 @@ class AgentToolExecutor:
         scope: str = "world",
         evidence: str = "",
         evidence_sources: list[dict[str, Any]] | None = None,
-        minimum_evidence: int = 1,
+        minimum_evidence: int | None = None,
         ledger: dict[str, Any] | None = None,
         policy: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        # Event-triggered institution tasks already carry the exact persisted
+        # evidence contract.  Authors and models should describe the public
+        # institution, not copy internal selectors into every proposal.
+        contract = self.evolution_contract
+        if not evidence_sources and isinstance(contract.get("evidence_sources"), list):
+            evidence_sources = list(contract.get("evidence_sources") or [])
+        if minimum_evidence is None and contract.get("minimum_evidence") is not None:
+            minimum_evidence = max(1, int(contract.get("minimum_evidence") or 1))
         return self.platform.submit_institution_proposal(
             self.actor_id,
-            {"name": name, "purpose": purpose, "scope": scope, "evidence": evidence, "evidence_sources": list(evidence_sources or []), "minimum_evidence": int(minimum_evidence), "ledger": dict(ledger or {}), "policy": dict(policy or {})},
+            {"name": name, "purpose": purpose, "scope": scope, "evidence": evidence, "evidence_sources": list(evidence_sources or []), "minimum_evidence": int(minimum_evidence or 1), "ledger": dict(ledger or {}), "policy": dict(policy or {})},
         )
 
     def _approve_institution(self, institution: str, reason: str = "") -> dict[str, Any]:
@@ -862,6 +916,35 @@ class AgentToolExecutor:
         assign_to: list[str] | None = None,
         evidence: str = "",
     ) -> dict[str, Any]:
+        required_type = str(self.evolution_contract.get("required_definition_type") or "").strip()
+        if required_type and str(definition_type).strip().casefold() != required_type.casefold():
+            return {
+                "status": "rejected",
+                "failed_check": "evolution_contract",
+                "retryable": True,
+                "message": f"This evolution task requires a {required_type} definition; choose that definition_type or wait.",
+            }
+        required_assignees = self.evolution_contract.get("assign_to")
+        if isinstance(required_assignees, str):
+            required_assignees = [required_assignees]
+        if required_assignees:
+            supplied = {
+                str(self.platform.targets.canonical_id(str(item)) or item)
+                for item in (assign_to or [])
+            }
+            missing = [
+                self._contract_visible_name(item)
+                for item in required_assignees
+                if str(self.platform.targets.canonical_id(str(item)) or item) not in supplied
+            ]
+            if missing:
+                return {
+                    "status": "rejected",
+                    "failed_check": "evolution_contract",
+                    "retryable": True,
+                    "message": "Assign the behavior to the configured audience so it enters the next NPC catalog.",
+                    "required_assign_to": [self._contract_visible_name(item) for item in required_assignees],
+                }
         return self.platform.submit_definition_proposal(
             self.actor_id,
             {
