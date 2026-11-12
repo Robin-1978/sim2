@@ -538,6 +538,19 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
 
         current_resources = trends.get("current_resources") or []
         lines.append("  Current resources: " + ("; ".join(f"{item.get('name', 'resource')}={_plain(item.get('current', 'unknown'))}" for item in current_resources[:8]) if current_resources else "none") + ".")
+        configured_regeneration = context.get("configured_resource_regeneration") or []
+        if configured_regeneration:
+            lines.append(
+                "  Configured regeneration (future world rule, do not confuse with the current observation window): "
+                + "; ".join(
+                    f"{item.get('resource')} +{_plain(item.get('amount'))} every {item.get('every_minutes')} minutes"
+                    + (f" up to {_plain(item.get('cap'))}" if item.get('cap') is not None else "")
+                    for item in configured_regeneration[:8]
+                )
+                + "."
+            )
+        else:
+            lines.append("  Configured regeneration: none declared.")
         for period in ("weekly", "monthly"):
             item = trends.get(period) or {}
             goal = item.get("goal_trends") or {}

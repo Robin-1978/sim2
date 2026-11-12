@@ -1476,6 +1476,21 @@ class AgentViewCompiler:
             for key, value in world_properties.items()
         ) or "none"
         world_id = str(self.store.get_meta("world_id", "world"))
+        configured_regeneration = []
+        for raw in (self.store.get_meta("rules", {}) or {}).get("resource_regeneration", []) or []:
+            if not isinstance(raw, dict) or not raw.get("resource_id"):
+                continue
+            resource_id = str(raw.get("resource_id"))
+            try:
+                resource_name = str(self.store.get_entity(resource_id).get("name") or resource_id)
+            except KeyError:
+                resource_name = resource_id.replace("_", " ")
+            configured_regeneration.append({
+                "resource": resource_name,
+                "every_minutes": int(raw.get("every_minutes", 0) or 0),
+                "amount": raw.get("amount", 0),
+                "cap": raw.get("cap"),
+            })
         prompt_protocol, platform_rules = self._prompt_sections(role)
         behavior_catalog = []
         for behavior in bt_defs.values():
@@ -1533,6 +1548,7 @@ class AgentViewCompiler:
             "world_proposals": world_proposals,
             "recent_agent_outcomes": recent_agent_outcomes,
             "world_trends": world_trends,
+            "configured_resource_regeneration": configured_regeneration,
             "civilization_progress": self.store.list_progress(world_id, limit=20),
             "world_progress_candidates": [
                 {

@@ -418,7 +418,18 @@ class SimulationRunner:
             audience = data.get("audience")
             if isinstance(audience, list):
                 candidates.extend(audience)
-            for actor_id in {str(value) for value in candidates if value is not None and str(value) in known_agents}:
+            assigned_to = data.get("assigned_to")
+            if isinstance(assigned_to, list):
+                candidates.extend(assigned_to)
+            resolved_agents: set[str] = set()
+            for value in candidates:
+                if value is None:
+                    continue
+                visible_or_id = str(value)
+                canonical = self.platform.targets.canonical_id(visible_or_id) or visible_or_id
+                if canonical in known_agents:
+                    resolved_agents.add(canonical)
+            for actor_id in resolved_agents:
                 self._decision_not_before[actor_id] = min(minute, self._decision_not_before.get(actor_id, minute))
                 self._wait_streak.pop(actor_id, None)
 

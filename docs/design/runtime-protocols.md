@@ -164,6 +164,13 @@ world-minute execution remain resumable. A process restart also requeues any
 due evolution task left in transient `claimed` status and records an
 `evolution.tasks_recovered` event.
 
+Evolution task failures retain their source evidence and a retry count. A
+semantic or tool rejection uses increasing simulated-minute backoff; a
+`budget_exhausted` world review starts with a one-day delay and backs off up to
+one simulated week. Completing the task clears the retry metadata. This keeps
+one stale research or entity event from waking God every hour while preserving
+recovery when a later model response can use the platform feedback.
+
 Provider adapters normalize model transport envelopes before the Agent Engine
 receives a response. For example, the LongCat adapter converts a bare
 `{"request_behavior": {...}}` content object into the shared intent shape.

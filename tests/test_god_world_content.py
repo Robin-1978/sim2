@@ -82,6 +82,8 @@ def test_god_prompt_reports_exact_contexts_for_dynamic_behavior_proposals(tmp_pa
         assert "actor.can_<capability>" in prompt
         assert "actor.state.location_id == <visible location name>" in prompt
         assert "read-budget warning" in prompt
+        assert "Configured regeneration" in prompt
+        assert "蓄水" in prompt
     finally:
         platform.close()
 

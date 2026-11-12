@@ -156,6 +156,8 @@ AgentView + task
 
 工具错误和 Platform 拒绝都必须返回 `status`、`failed_check`、简短 `message` 和 `retryable`（适用时）。相同工具参数超过会话预算后停止重复调用。Intent 只有在 Platform 返回 `accepted` 或 `wait` 时结束会话；会话达到调用上限后返回 `budget_exhausted`，不产生副作用。原生 OpenAI-compatible `tool_calls` 与本地模型输出的 JSON `tool_call` 使用同一内部信封。决策 Agent 若已经有活动 BT，Engine 直接跳过 LLM，会话只在完成、失败或中断边界重新开启。
 
+God 的 `propose_definition` 使用嵌套 JSON Schema：行为节点必须引用注册的可见 Action 名称，实体参数必须使用可见实体名；`entry_conditions` 只能写机器可求值的持久条件（例如 `actor.alive`、`actor.can_research` 或带比较符的 `world["property"]`），不能写自然语言目标或裸世界属性。角色不在目标地点时，行为应先包含 `Travel` 节点；若 Action 前置条件已经足够，入口条件使用空数组。Platform 拒绝时会返回这一修正方向，ReAct 可在同一会话中重提。
+
 上下文生命周期是一次唤醒一次快照：每次 Decision、Reflection 或 God Agent 被唤醒时，Platform 从 SQLite 当前投影、记忆和相关事件重新编译 AgentView。只有当前 ReAct 会话保留 assistant/tool/result 消息并追加交互结果；会话结束后丢弃消息历史，下一次唤醒不会继承上一会话的完整 Prompt，只会重新获得当前世界状态和持久化摘要。
 
 运行时渲染把稳定的协议、规则和工具名称放在动态世界快照之前，以保持 Provider 前缀缓存；世界时间显示为日、时刻和季节，同时保留内部分钟供审计。若上下文超出预算，Compiler 先移除可通过只读工具重新获取的背景段落，始终保留当前可选 BT、活动执行和最终任务。原生工具 ReAct 在下一轮只追加工具结果，不重复发送完整快照；一个模型响应最多提交一个被接受的有副作用 Intent。工具返回和感知投影会过滤执行实例、数据库引用和行为内部键，Prompt 只显示可读角色名、行为名和来源/置信度。

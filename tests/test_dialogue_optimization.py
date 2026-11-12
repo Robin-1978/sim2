@@ -944,3 +944,27 @@ def test_wait_decisions_back_off_and_configured_event_wakes_one_agent(tmp_path: 
         assert runner._wait_streak.get("fei_lan") == 1
     finally:
         platform.close()
+
+
+def test_assigned_definition_event_wakes_character_by_visible_name(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+    platform = Platform(create_instance(config, "definition-assignee-wake", tmp_path / "runtime"))
+    try:
+        rules = dict(platform.store.get_meta("rules") or {})
+        rules["decision_policy"] = {"wake_events": ["definition.registered"]}
+        with platform.store.transaction():
+            platform.store.set_meta("rules", rules)
+        runner = SimulationRunner(platform, {"agent_decision": WaitProvider()})
+        minute = int(platform.store.get_meta("world_minute", 0))
+        runner._decision_not_before["mei_lan"] = minute + 360
+        runner._wait_streak["mei_lan"] = 3
+        with platform.store.transaction():
+            platform.store.append_event(
+                "definition.registered", "god", minute,
+                {"definition_type": "behavior", "name": "Assigned Review", "assigned_to": ["梅岚"]},
+            )
+        runner._refresh_decision_wakes(minute)
+        assert runner._decision_not_before["mei_lan"] <= minute
+        assert "mei_lan" not in runner._wait_streak
+    finally:
+        platform.close()

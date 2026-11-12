@@ -55,6 +55,14 @@ capability_aliases:
 context_values:
   water_item: 蓄水
   hydration_alert_threshold: 40
+decision_policy:
+  wait_backoff_minutes: [60, 120, 240, 480, 720]
+  empty_catalog_retry_minutes: 360
+  wake_events:
+  - definition.registered
+  - story.beat.activated
+  - institution.activated
+  - need.hydration_low
 civilization_progress:
   boundary_knowledge:
     required: 2
