@@ -210,7 +210,6 @@ actions:
     key: research:{source_id}
     scope: world
     amount: 1
-    required: 2
     wake:
     - story
     - god

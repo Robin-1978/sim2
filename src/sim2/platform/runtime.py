@@ -448,7 +448,8 @@ class Platform(
         for name, raw_spec in (bt.get("agent_parameters", {}) or {}).items():
             spec = raw_spec if isinstance(raw_spec, dict) else {"type": str(raw_spec)}
             value = parameters.get(str(name))
-            if spec.get("required") and value in (None, "", [], {}):
+            has_default = str(name) in (bt.get("parameter_defaults", {}) or {})
+            if spec.get("required") and value in (None, "", [], {}) and not has_default:
                 errors.append(f"missing required behavior parameter: {name}")
                 continue
             if value is None:
@@ -489,7 +490,7 @@ class Platform(
         # from ``target.location`` as display text (for example ``粮仓``), while
         # navigation compares stable entity IDs (``granary``).  The behavior
         # was accepted from a valid view and then failed one tick later.
-        for key in ("target_id", "patient_id", "protected_target_id", "counterparty_id", "listener_id", "location_id"):
+        for key in ("target_id", "patient_id", "protected_target_id", "counterparty_id", "listener_id", "location_id", "source_id", "object_id", "area_id"):
             if normalized_parameters.get(key):
                 canonical = self.targets.canonical_id(normalized_parameters[key])
                 if canonical:
@@ -509,6 +510,14 @@ class Platform(
             return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                 "status": "rejected", "message": "The selected behavior is not registered.", "failed_check": "behavior_ref", "retryable": True,
             })
+        # A package may provide an opening source as a default while the same
+        # BT remains reusable for every later source created by Story/God.
+        # Defaults are declarative BT metadata; the generic runtime does not
+        # know any source name.
+        bt = available_defs[behavior_id]
+        for key, value in (bt.get("parameter_defaults", {}) or {}).items():
+            if normalized_parameters.get(str(key)) in (None, "", [], {}):
+                normalized_parameters[str(key)] = value
         allowed = (
             set(agent.get("initial_bt_ids", []))
             | set(agent.get("unlocked_bt_ids", []))
@@ -576,6 +585,21 @@ class Platform(
                 value = None
             if value:
                 runtime_parameters.setdefault(str(parameter), value)
+        # Resolve derived research travel once for the whole BT.  The
+        # estimator and the Action runtime must see the same source location;
+        # otherwise an already co-located researcher is charged a phantom
+        # route minute and a fixed-duration test can submit while the BT is
+        # still moving.
+        source_id = runtime_parameters.get("source_id")
+        if source_id:
+            try:
+                source = self.store.get_entity(str(source_id))
+            except KeyError:
+                source = {}
+            source_state = source.get("initial_state") if isinstance(source.get("initial_state"), dict) else {}
+            source_location = source_state.get("location_id") or source.get("location_id")
+            if source_location:
+                runtime_parameters.setdefault("source_location_id", source_location)
         intent_data["parameters"] = {**normalized_parameters, **runtime_parameters}
         entry_context = self._behavior_condition_context(agent, runtime_parameters, intent.target)
         entry_target = {**runtime_parameters, **intent.target, **(entry_context.get("target") or {})}
@@ -868,13 +892,11 @@ class Platform(
         # Intent parameters are the caller's selected targets and override the
         # actor's current state when a definition uses context.* references.
         context.update(state.get("active_parameters") or {})
-
+        # Derived context is still declarative: the BT names a source, and
+        # Platform obtains its configured location.  The Agent never needs to
+        # invent a second hidden location parameter.
         def resolve(value: Any) -> Any:
             if isinstance(value, str) and value.startswith("context."):
-                # An unbound declarative reference is absent data, never a
-                # literal value such as ``context.topic`` in world history.
-                # Action defaults are applied immediately after this pass;
-                # required targets then fail their configured condition.
                 return context.get(value.removeprefix("context."))
             if isinstance(value, dict):
                 return {key: resolve(item) for key, item in value.items()}
@@ -883,6 +905,20 @@ class Platform(
             return value
 
         return {key: resolve(value) for key, value in parameters.items()}
+
+    def _resolve_activity_parameters(self, parameters: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
+        context = dict(state)
+        context.update(state.get("active_parameters") or {})
+        source_id = context.get("source_id")
+        if source_id:
+            try:
+                source = self.store.get_entity(str(source_id))
+            except KeyError:
+                source = {}
+            source_state = source.get("initial_state") if isinstance(source.get("initial_state"), dict) else {}
+            context.setdefault("source_location_id", source_state.get("location_id") or source.get("location_id"))
+
+        return self._resolve_parameters(parameters, context)
 
     def _route_distance(self, origin: str | None, destination: str | None) -> int:
         """Return weighted route distance in configured route hops."""

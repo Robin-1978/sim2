@@ -85,6 +85,7 @@ resources:
     type: shared_stock
     location_id: river_bank
     amount: 100
+    research_required: 2
     research_discovery: {id: researched:clean_water:contamination, fact: "River water samples show contamination linked to the grey fever outbreak."}
   - id: iron_ore
     type: local_ore

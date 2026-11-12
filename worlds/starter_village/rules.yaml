@@ -1,5 +1,6 @@
 vital_attribute: health
 capacity_attribute: energy
+research_default_required: 2
 perception:
   visible_fields: [role, type, summary, description, public]
   visible_state_fields: [status, quantity, durability, created, readable, recovered, installed]

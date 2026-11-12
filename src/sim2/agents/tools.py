@@ -433,7 +433,8 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "summary": {"type": "string", "description": "Optional short summary for an emergent beat; when omitted, fact is used as the summary."},
                 "fact": {"type": "string", "description": "A short evidence-grounded fact to deliver to the audience and use as the emergent summary when summary is omitted."},
                 "goal_hint": {"type": "string", "description": "A short next objective for the audience."},
-                "unlock_choices": {"type": "array", "items": {"type": "string"}, "description": "Optional visible BT choices already registered in the world."},
+                "research_source": {"type": "string", "description": "Optional exact visible research source to assign to the audience. The existing generic research behavior is used."},
+                "unlock_choices": {"type": "array", "items": {"type": "string"}, "description": "Visible registered behavior choices that carry this beat forward. Use at least one exact executable follow-up when the audience has a next action; do not invent a new BT for a new research object."},
                 "reason": {"type": "string"},
             },
             "required": [],
@@ -1039,10 +1040,10 @@ class AgentToolExecutor:
         }
         return self.platform.submit_world_change(self.actor_id, proposal, origin_role=self.role)
 
-    def _propose_story_beat(self, beat: str = "", audience: list[str] | None = None, summary: str = "", fact: str = "", goal_hint: str = "", unlock_choices: list[str] | None = None, reason: str = "") -> dict[str, Any]:
+    def _propose_story_beat(self, beat: str = "", audience: list[str] | None = None, summary: str = "", fact: str = "", goal_hint: str = "", research_source: str = "", unlock_choices: list[str] | None = None, reason: str = "") -> dict[str, Any]:
         return self.platform.submit_story_beat(
             self.actor_id,
-            {"beat": beat, "audience": list(audience or []), "summary": summary, "fact": fact, "goal_hint": goal_hint, "unlock_choices": list(unlock_choices or []), "reason": reason},
+            {"beat": beat, "audience": list(audience or []), "summary": summary, "fact": fact, "goal_hint": goal_hint, "research_source": research_source, "unlock_choices": list(unlock_choices or []), "reason": reason},
             source_event_ids=self.source_event_ids,
         )
 

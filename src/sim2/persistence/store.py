@@ -570,6 +570,40 @@ class WorldStore:
             discoveries.append(value)
         return discoveries
 
+    def research_source_catalog(self) -> list[dict[str, Any]]:
+        """Return every configured entity that exposes research stages.
+
+        The catalog is derived from entity data rather than a world-specific
+        registry.  A later Story/God entity proposal therefore becomes
+        researchable through the existing generic research behavior without
+        registering another BT.
+        """
+
+        rows = self.connection.execute("SELECT id,entity_type,name,data_json FROM entity ORDER BY id").fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                data = json.loads(row["data_json"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                continue
+            state = data.get("initial_state") if isinstance(data.get("initial_state"), dict) else {}
+            raw = data.get("research_discoveries")
+            if raw is None:
+                raw = state.get("research_discoveries")
+            if raw is None:
+                raw = data.get("research_discovery")
+            if raw is None:
+                continue
+            result.append({
+                "id": str(row["id"]),
+                "entity_type": str(row["entity_type"]),
+                "name": str(row["name"]),
+                "location_id": state.get("location_id") or data.get("location_id"),
+                "research_required": data.get("research_required", state.get("research_required", state.get("required_research"))),
+                "discoveries": self.research_discoveries(str(row["id"])),
+            })
+        return result
+
     def list_knowledge_facts(self, agent_id: str, *, limit: int = 8) -> list[dict[str, Any]]:
         rows = self.connection.execute(
             "SELECT id,fact_key,data_json FROM knowledge_fact WHERE agent_id=? ORDER BY id DESC LIMIT ?",

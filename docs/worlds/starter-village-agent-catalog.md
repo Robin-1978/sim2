@@ -24,7 +24,7 @@ subset; Platform recomputes every condition, cost and effect from SQLite.
 | Heal Target | You can heal and the target and treatment are available. | 90 minutes; one medicine reserved | The target's health changes and treatment is recorded. |
 | Explore Area | You can explore and the area is not fully mapped. | 300 minutes; one ration reserved; energy 0.2/min; exposure 0.3/min | Discoveries, routes and facts are recorded. |
 | Communicate | You can communicate and the target is visible. | 15 minutes; topic defaults to `general` | The exchange becomes testimony and can change trust. |
-| Research Source | You can research and the source has a new fact. | 240 minutes; energy 0.2/min; attention 0.4/min | Research progress and, at 2/2, a verified fact are recorded. |
+| Research Source | You can research an assigned source with an open stage. | 240 minutes per work sample plus configured travel; energy 0.2/min; attention 0.4/min | The source's configured work requirement is accumulated and the verified stage fact is recorded. |
 | Inspect Object | You can inspect and the object is reachable. | 30 minutes | An inspection report is recorded. |
 | Recover Object | You can investigate a discovered object that is not recovered. | 240 minutes; one ration reserved; energy 0.1/min | The object and its configured fact are updated. |
 | Discuss Terms | You can negotiate and the counterparty is available; provide the actual topic and proposed terms. | 60 minutes; attention 0.6/min | The terms are delivered as testimony; no contract, payment or trade is completed. |
@@ -49,7 +49,7 @@ subset; Platform recomputes every condition, cost and effect from SQLite.
 | Manage Ration | Review stock and coordinate rationing. | The granary keeper has a pending ration decision. | Inspect; Travel; Communicate | 45 + route |
 | Heal Target | Restore a target with available treatment. | A nearby target needs treatment and medicine exists. | Heal Target | 90 |
 | Explore Greywood | Map Greywood and record findings. | The area is not fully mapped and you can explore. | Travel To; Explore Area | Route + 300 |
-| Research Source | Study an accessible source and record cumulative progress. | A relevant source is at the current location and has a new fact. | Research Source | 240 per sample |
+| Research Source | Study one assigned configured source and record cumulative progress. | The source is reachable and has an open stage. | Research Source | 240 per sample plus route |
 | Inspect Object | Inspect an accessible object or facility. | Inspection is due and the object is reachable. | Inspect Object | 30 |
 | Defend Village | Respond to a verified boundary alarm. | The alarm was raised, the threat remains high, and you can defend. | Travel To North Gate; Secure Boundary | Route + 120 |
 | Defend Position | Hold position and attack if needed. | A reachable threat is active. | Defend; Attack | 36 |

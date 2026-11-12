@@ -635,6 +635,22 @@ class AgentViewCompiler:
         mapped_areas = self.store.explored_areas(agent_id)
         researched_sources = self.store.researched_sources(agent_id)
         known_fact_keys = [item.get("fact_key") for item in self.store.list_knowledge_facts(agent_id, limit=1000) if item.get("fact_key")]
+        configured_research_sources: set[str] = {
+            str(value)
+            for bt_id in catalog_ids
+            for value in [((bt_defs.get(str(bt_id), {}).get("parameter_defaults", {}) or {}).get("source_id"))]
+            if value
+        }
+        configured_research_sources = {
+            str(self.targets.canonical_id(value) or value)
+            for value in configured_research_sources
+        }
+        configured_research_sources.update(
+            str(self.targets.canonical_id(value) or value)
+            for value in (agent.get("research_targets", []) or [])
+            if value
+        )
+        research_sources = self._pending_research_sources(agent, known_fact_keys, location_id, configured_research_sources)
         current_location = {}
         if location_id:
             try:
@@ -653,6 +669,18 @@ class AgentViewCompiler:
                 diagnostics.append({"behavior_id": bt_id, "failed": ["behavior definition is not registered"]})
                 continue
             rules = self.store.get_meta("rules", {}) or {}
+            behavior_context = dict(configured_context)
+            uses_source_parameter = any(
+                value == "context.source_id"
+                for node in self._iter_behavior_actions(bt_id)
+                for value in (node.get("parameters") or {}).values()
+            )
+            if uses_source_parameter and research_sources:
+                selected_source = research_sources[0]
+                behavior_context.update({
+                    "source_id": selected_source["id"],
+                    "source_location_id": selected_source.get("location_id"),
+                })
             condition_context = {
                 "current_location": current_location,
                 "location_id": location_id,
@@ -669,7 +697,7 @@ class AgentViewCompiler:
                 "day_phase": self._world_time().get("day_phase"),
                 "target": {"id": validation_target.get("id"), "available": True} if validation_target else {"available": False},
             }
-            condition_context.update(configured_context)
+            condition_context.update(behavior_context)
             condition_context.update(self._interaction_context(agent, participants))
             failed_conditions = [
                 str(predicate)
@@ -714,7 +742,7 @@ class AgentViewCompiler:
                 if not action:
                     continue
                 simulated_state = simulated_agent.setdefault("initial_state", {})
-                parameters = self._view_action_parameters(node.get("parameters") or {}, simulated_state, configured_context, safe_location_id=safe_location_id, resource_node=resource_node, health_location_id=health_location_id, default_target_id=(validation_target or {}).get("id"))
+                parameters = self._view_action_parameters(node.get("parameters") or {}, simulated_state, behavior_context, safe_location_id=safe_location_id, resource_node=resource_node, health_location_id=health_location_id, default_target_id=(validation_target or {}).get("id"))
                 # A configured destination Action is complete when the actor
                 # is already there. It contributes no visible step to the
                 # surrounding BT, while the remaining steps stay executable.
@@ -734,7 +762,26 @@ class AgentViewCompiler:
                     or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
                 )
                 recipe = recipe_defs.get(str(parameters.get("recipe_id"))) if recipe_action else None
-                view = _action_view(action, recipe, parameters)
+                action_for_view = action
+                progress_definition = action.get("progress") if isinstance(action.get("progress"), dict) else {}
+                if progress_definition.get("key") and "{source_id}" in str(progress_definition.get("key")) and parameters.get("source_id"):
+                    try:
+                        research_source = self.store.get_entity(str(parameters["source_id"]))
+                    except KeyError:
+                        research_source = {}
+                    source_state = research_source.get("initial_state") if isinstance(research_source.get("initial_state"), dict) else {}
+                    discoveries = self.store.research_discoveries(str(parameters["source_id"]))
+                    known = set(known_fact_keys)
+                    current_stage = next((item for item in discoveries if str(item.get("id")) not in known and str(item.get("status") or "active").casefold() not in {"obsolete", "disabled"}), None)
+                    required = (current_stage or {}).get("required")
+                    if required is None:
+                        required = research_source.get("research_required", source_state.get("research_required", source_state.get("required_research")))
+                    if required is None:
+                        required = (self.store.get_meta("rules", {}) or {}).get("research_default_required")
+                    if required is not None:
+                        action_for_view = copy.deepcopy(action)
+                        action_for_view.setdefault("progress", {})["required"] = required
+                view = _action_view(action_for_view, recipe, parameters)
                 steps.append(view["name"])
                 costs.extend(view["cost"])
                 impacts.extend(view["impact"][:3])
@@ -774,6 +821,21 @@ class AgentViewCompiler:
             target_keys = self._target_parameter_keys(bt, bt_defs)
             target_required = bool(target_keys) and len(participants) > 1
             target_options = [{"name": str(item.get("name", item.get("id", "participant")))} for item in participants[:8]]
+            parameter_options: dict[str, list[dict[str, Any]]] = {}
+            source_parameter = (bt.get("agent_parameters", {}) or {}).get("source_id")
+            if source_parameter is not None and research_sources:
+                parameter_options["source_id"] = [
+                    {
+                        "name": str(item.get("name") or item.get("id")),
+                        "location": str(item.get("location_name") or item.get("location_id") or "configured source"),
+                        "remaining_stages": int(item.get("remaining_stages", 0) or 0),
+                    }
+                    for item in research_sources[:12]
+                ]
+                target_text = "Choose one configured research source: " + "; ".join(
+                    f"{item['name']} ({item['remaining_stages']} stage(s) remaining at {item['location']})"
+                    for item in parameter_options["source_id"]
+                )
             bindings = bt.get("parameter_bindings", {}) or {}
             binding_values = {
                 "nearest_safe_location": safe_location_id,
@@ -839,7 +901,8 @@ class AgentViewCompiler:
                     for spec in [raw_spec if isinstance(raw_spec, dict) else {"type": str(raw_spec)}]
                 ],
                 "steps": steps[:5],
-                "time": f"{estimator.behavior_minutes(bt_id, {'safe_location_id': safe_location_id} if safe_location_id else {}, location_id)} minutes",
+                "time": f"{estimator.behavior_minutes(bt_id, ({'safe_location_id': safe_location_id} if safe_location_id else {}) | ({'source_id': research_sources[0]['id'], 'source_location_id': research_sources[0].get('location_id')} if source_parameter is not None and research_sources else {}), location_id)} minutes",
+                "parameter_options": parameter_options,
                 "cost": list(dict.fromkeys(costs))[:6] or ["Costs are defined by the selected steps."],
                 "impact": list(dict.fromkeys(impacts))[:3] or ["Platform applies configured effects and records events."],
                 "success": [str(item).replace("_", " ") for item in bt.get("success_results", [])] or list(dict.fromkeys(action_successes))[:4] or ["Platform reports the configured success result."],
@@ -902,6 +965,22 @@ class AgentViewCompiler:
         research_tracks: list[dict[str, Any]] = []
         known_fact_set = set(known_fact_keys)
         seen_sources: set[str] = set()
+        for source in research_sources:
+            source_id = str(source.get("id"))
+            seen_sources.add(source_id)
+            research_tracks.append({
+                "source": str(source.get("name") or source_id),
+                "location": str(source.get("location_name") or source.get("location_id") or "configured source"),
+                "stages": [
+                    {
+                        "fact_key": str(item.get("id")),
+                        "status": str(item.get("status") or "active"),
+                        "available": str(item.get("id")) not in known_fact_set and str(item.get("status") or "active").casefold() not in {"obsolete", "disabled"},
+                        "required": item.get("required") or source.get("research_required") or (self.store.get_meta("rules", {}) or {}).get("research_default_required", 1),
+                    }
+                    for item in (source.get("discoveries") or [])
+                ],
+            })
         for behavior_id in catalog_ids:
             for node in self._iter_behavior_actions(str(behavior_id)):
                 params = node.get("parameters") or {}
@@ -913,16 +992,23 @@ class AgentViewCompiler:
                     continue
                 seen_sources.add(str(source_id))
                 try:
-                    source_name = self.store.get_entity(str(source_id)).get("name", source_id)
+                    source_entity = self.store.get_entity(str(source_id))
+                    source_name = source_entity.get("name", source_id)
+                    source_location_id = (source_entity.get("initial_state") or {}).get("location_id") or source_entity.get("location_id")
+                    source_location = self.store.get_entity(str(source_location_id)).get("name", source_location_id) if source_location_id else "configured source"
                 except KeyError:
+                    source_entity = {}
                     source_name = source_id
+                    source_location = "configured source"
                 research_tracks.append({
                     "source": str(source_name),
+                    "location": str(source_location),
                     "stages": [
                         {
                             "fact_key": str(item.get("id")),
                             "status": str(item.get("status") or "active"),
                             "available": str(item.get("id")) not in known_fact_set and str(item.get("status") or "active").casefold() not in {"obsolete", "disabled"},
+                            "required": item.get("required") or source_entity.get("research_required") or ((source_entity.get("initial_state") or {}).get("research_required") if isinstance(source_entity.get("initial_state"), dict) else None) or (self.store.get_meta("rules", {}) or {}).get("research_default_required", 1),
                         }
                         for item in discoveries
                     ],
@@ -1224,6 +1310,72 @@ class AgentViewCompiler:
             value = state.get("quantity", state.get("amount", 0))
         return float(value or 0)
 
+    def _pending_research_sources(
+        self,
+        agent: dict[str, Any],
+        known_fact_keys: list[Any] | set[Any],
+        location_id: str | None,
+        configured_source_ids: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return reachable source entities with at least one open stage.
+
+        Research is a generic capability.  The catalog is assembled from
+        persisted entity data, so a source registered later by God is visible
+        to the same BT as an opening source.  Only the source's configured
+        stages are exposed; object-specific BT definitions are never needed.
+        """
+
+        known = {str(item) for item in (known_fact_keys or []) if item}
+        reachable = reachable_locations(self.store, location_id)
+        if location_id:
+            reachable.add(str(location_id))
+        result: list[dict[str, Any]] = []
+        configured_source_ids = {str(item) for item in (configured_source_ids or set())}
+        agent_name = str(agent.get("name") or agent.get("id") or "")
+        for source in self.store.research_source_catalog():
+            source_id = str(source.get("id") or "")
+            if not source_id:
+                continue
+            source_state = {}
+            try:
+                source_entity = self.store.get_entity(source_id)
+                source_state = source_entity.get("initial_state") if isinstance(source_entity.get("initial_state"), dict) else {}
+            except KeyError:
+                source_entity = {}
+            assignees = source_entity.get("research_assignees", source_state.get("research_assignees", []))
+            if isinstance(assignees, str):
+                assignees = [assignees]
+            assigned = {str(item) for item in (assignees or [])}
+            assigned_ids = {
+                str(self.targets.canonical_id(item) or item)
+                for item in assigned
+            }
+            if source_id not in configured_source_ids and str(agent.get("id")) not in assigned_ids and agent_name not in assigned:
+                continue
+            source_location = source.get("location_id")
+            if source_location and reachable and str(source_location) not in reachable:
+                continue
+            discoveries = list(source.get("discoveries") or [])
+            pending = [
+                item for item in discoveries
+                if isinstance(item, dict)
+                and str(item.get("id") or "") not in known
+                and str(item.get("status") or "active").casefold() not in {"obsolete", "disabled"}
+            ]
+            if not pending and discoveries:
+                continue
+            try:
+                location_name = self.store.get_entity(str(source_location)).get("name", source_location) if source_location else "configured source"
+            except KeyError:
+                location_name = source_location or "configured source"
+            result.append({
+                **source,
+                "location_name": str(location_name),
+                "remaining_stages": len(pending) if discoveries else 1,
+            })
+        result.sort(key=lambda item: (str(item.get("name") or ""), str(item.get("id") or "")))
+        return result
+
     def _build_story_view(self, actor_id: str, role: str, *, source_event_id: int | None = None) -> dict[str, Any]:
         minute = int(self.store.get_meta("world_minute", 0))
         story_root = self.store.get_meta("story", {}) or {}
@@ -1280,6 +1432,12 @@ class AgentViewCompiler:
                 "fact": self._humanize_fact(source_event.get("fact") or (outcome.get("expected") or {}).get("summary") or ""),
                 "world_minute": source_event.get("world_minute"),
             }
+            source_id = source_event.get("source_id")
+            if source_id:
+                try:
+                    validated_source["research_source"] = self.store.get_entity(str(source_id)).get("name", source_id)
+                except KeyError:
+                    validated_source["research_source"] = str(source_id)
             if str(source_event.get("event_type")) == "institution.allocation_completed":
                 consumed = source_event.get("consumed")
                 remaining = source_event.get("remaining")
@@ -1346,6 +1504,7 @@ class AgentViewCompiler:
                 "when": self._visible_text("; ".join(sorted(trigger_events))) or "The latest evidence supports a new story direction.",
                 "requires": "; ".join(self._humanize_fact(item) for item in sorted(trigger_facts)) or "A recent validated discovery is required.",
                 "audience": [self._visible_text(str(item)) for item in (beat.get("audience", []) or [])],
+                "followup_behaviors": [self._visible_text(str(item)) for item in (beat.get("followup_behaviors", []) or [])],
                 "impact": ["Platform records the beat, informs its configured audience, and unlocks only configured behaviors."],
             })
         prompt_protocol, platform_rules = self._prompt_sections(role)
@@ -1443,7 +1602,22 @@ class AgentViewCompiler:
             if not name or name in seen:
                 continue
             seen.add(name)
-            result.append({"name": name, "reason": "participant in a recent validated event"})
+            candidate_view = self.build_decision_view(str(candidate_id), role="agent_decision")
+            executable = [
+                {
+                    "choice": str(item.get("choice") or item.get("name") or ""),
+                    "purpose": str(item.get("purpose") or item.get("summary") or ""),
+                    "parameters": list(item.get("parameters") or []),
+                    "parameter_options": dict(item.get("parameter_options") or {}),
+                }
+                for item in (candidate_view.get("executable_behaviors") or [])[:8]
+            ]
+            result.append({
+                "name": name,
+                "reason": "participant in a recent validated event",
+                "executable_behaviors": executable,
+                "research_tracks": list(candidate_view.get("research_tracks") or [])[:6],
+            })
             if len(result) >= 12:
                 break
         return result

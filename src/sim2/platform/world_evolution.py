@@ -532,6 +532,8 @@ class WorldEvolutionRuntimeMixin:
             errors.append("name is required")
         proposed_name = str(proposal.get("name") or "").strip()
         if proposed_name:
+            if len(proposed_name) > 120 or "\n" in proposed_name or "\r" in proposed_name or "<" in proposed_name or ">" in proposed_name:
+                errors.append("name must be a short visible label without markup or embedded parameter text")
             name_key = "".join(proposed_name.casefold().split())
             duplicate = self.store.connection.execute(
                 "SELECT id,entity_type,name FROM entity WHERE name IS NOT NULL"
@@ -558,6 +560,27 @@ class WorldEvolutionRuntimeMixin:
                 self.store.get_entity(str(proposal["location_id"]))
             except KeyError:
                 errors.append("location_id does not exist")
+        proposed_state = proposal.get("state") if isinstance(proposal.get("state"), dict) else {}
+        research_values = proposed_state.get("research_discoveries")
+        if research_values is None:
+            research_values = proposed_state.get("research_discovery")
+        if str(proposal.get("entity_type") or "") == "research_source" and research_values in (None, [], {}):
+            errors.append("a research_source must declare at least one research_discovery")
+        if research_values is not None:
+            stages = [research_values] if isinstance(research_values, dict) else research_values if isinstance(research_values, list) else []
+            if not stages:
+                errors.append("research_discoveries must be a non-empty list or object")
+            for index, stage in enumerate(stages):
+                if isinstance(stage, str):
+                    continue
+                if not isinstance(stage, dict) or not str(stage.get("id") or stage.get("fact_key") or stage.get("fact") or "").strip():
+                    errors.append(f"research_discoveries[{index}] must declare an id or fact")
+        if "research_required" in proposed_state and (
+            not isinstance(proposed_state.get("research_required"), (int, float))
+            or isinstance(proposed_state.get("research_required"), bool)
+            or float(proposed_state.get("research_required", 0) or 0) < 1
+        ):
+            errors.append("research_required must be a positive number")
         try:
             self.store.get_entity(entity_id)
             errors.append("entity_id already exists")
@@ -639,7 +662,7 @@ class WorldEvolutionRuntimeMixin:
                     break
             return text
 
-        for key in ("beat", "summary", "fact", "goal_hint", "reason"):
+        for key in ("beat", "summary", "fact", "goal_hint", "research_source", "reason"):
             if key in proposal and isinstance(proposal[key], str):
                 proposal[key] = visible_label(proposal[key])
         if isinstance(proposal.get("audience"), list):
@@ -695,6 +718,7 @@ class WorldEvolutionRuntimeMixin:
                 "audience": list(proposal.get("audience", []) or []),
                 "fact": str(proposal.get("fact", "")).strip(),
                 "goal_hint": str(proposal.get("goal_hint", "")).strip(),
+                "research_source": str(proposal.get("research_source", "")).strip(),
                 "unlock_choices": list(proposal.get("unlock_choices", []) or []),
                 "public_event": "story.emergent_beat",
             }
@@ -808,6 +832,41 @@ class WorldEvolutionRuntimeMixin:
                             "retryable": True,
                         },
                     )
+        requested_research_source = str(proposal.get("research_source") or "").strip()
+        if requested_research_source and source_event:
+            requested_source_id = str(self.targets.canonical_id(requested_research_source) or "")
+            if not requested_source_id or not self.store.research_discoveries(requested_source_id):
+                return self._reject_intent(
+                    intent_id,
+                    actor_id,
+                    "propose_story_beat",
+                    proposal,
+                    {
+                        "status": "rejected",
+                        "message": "research_source must be an exact visible configured source with research stages.",
+                        "failed_check": "story_research_source",
+                        "retryable": True,
+                    },
+                )
+            source_event_id = str(source_event.get("source_id") or "")
+            source_event_type = str(source_event.get("event_type") or "")
+            # A research result already names the source that produced it.
+            # Story may assign a source for a non-research event, but it may
+            # not retell one research result as if it came from another
+            # object. This is a causal check, not a vocabulary check.
+            if source_event_type == "research.completed" and (not source_event_id or requested_source_id != source_event_id):
+                return self._reject_intent(
+                    intent_id,
+                    actor_id,
+                    "propose_story_beat",
+                    proposal,
+                    {
+                        "status": "rejected",
+                        "message": "The assigned research source must match the source named by the validated research result.",
+                        "failed_check": "story_research_source_evidence",
+                        "retryable": True,
+                    },
+                )
         trigger_events = {str(item) for item in (beat.get("trigger_events", []) or [])}
         if trigger_events and not trigger_events & observed_events:
             return self._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "The configured story beat has no observed trigger event yet.", "failed_check": "story_trigger", "retryable": True})
@@ -827,11 +886,48 @@ class WorldEvolutionRuntimeMixin:
         audience = resolved_audience
         if emergent:
             beat["audience"] = list(audience)
+        research_source_id = ""
+        requested_source = str(proposal.get("research_source") or beat.get("research_source") or "").strip()
+        if requested_source:
+            research_source_id = str(self.targets.canonical_id(requested_source) or "")
+            if not research_source_id or not self.store.research_discoveries(research_source_id):
+                return self._reject_intent(
+                    intent_id,
+                    actor_id,
+                    "propose_story_beat",
+                    proposal,
+                    {
+                        "status": "rejected",
+                        "message": "research_source must be an exact visible configured source with research stages.",
+                        "failed_check": "story_research_source",
+                        "retryable": True,
+                    },
+                )
+            beat["research_source_id"] = research_source_id
         registered = {item["id"] for item in self.store.get_definitions("bt_def")}
         labels = {
             "".join(char for char in str(item.get("agent_label") or item.get("summary") or item.get("id", "")).casefold() if char.isalnum()): str(item.get("id"))
             for item in self.store.get_definitions("bt_def")
         }
+        requested_unlocks = [str(value) for value in (beat.get("unlock_choices", []) or [])]
+        unresolved_unlocks = [
+            value for value in requested_unlocks
+            if "".join(char for char in value.casefold() if char.isalnum()) not in labels
+        ]
+        if unresolved_unlocks:
+            return self._reject_intent(
+                intent_id,
+                actor_id,
+                "propose_story_beat",
+                proposal,
+                {
+                    "status": "rejected",
+                    "message": "Every follow-up must be an exact visible behavior already registered in the audience catalog.",
+                    "failed_check": "story_followup_choice",
+                    "retryable": True,
+                    "invalid_choices": unresolved_unlocks,
+                },
+            )
         beat["unlock_behavior_ids"] = [
             labels["".join(char for char in str(value).casefold() if char.isalnum())]
             for value in beat.get("unlock_choices", [])
@@ -840,6 +936,8 @@ class WorldEvolutionRuntimeMixin:
         with self.store.transaction():
             self.store.create_intent(intent_id, actor_id, "propose_story_beat", proposal, minute)
             state[beat_id] = {"status": "active", "started_minute": minute, "actor_id": actor_id, "audience": list(audience)}
+            if research_source_id:
+                state[beat_id]["research_source_id"] = research_source_id
             if emergent:
                 emergent_beats = list(state.get("emergent_beats", []) or [])
                 emergent_beats.append({key: value for key, value in beat.items() if key != "unlock_choices"})
@@ -863,11 +961,16 @@ class WorldEvolutionRuntimeMixin:
                         if behavior_id not in unlocked and behavior_id not in (target.get("initial_bt_ids", []) or []):
                             unlocked.append(behavior_id)
                         target["unlocked_bt_ids"] = unlocked
+                if research_source_id:
+                    targets = list(target.get("research_targets", []) or [])
+                    if research_source_id not in targets:
+                        targets.append(research_source_id)
+                    target["research_targets"] = targets[-16:]
                 fact = str(beat.get("fact") or proposal.get("fact") or "").strip()
                 if fact:
                     self.store.merge_knowledge_fact(target["id"], f"story:{beat_id}", {"fact": fact, "source_type": "story", "source_id": beat_id, "confidence": 0.9, "observed_at": minute})
                 self.store.update_agent(target["id"], target)
-            event_id = self.store.append_event("story.beat.activated", actor_id, minute, {"beat_id": beat_id, "summary": beat.get("summary", ""), "audience": audience, "public_event": beat.get("public_event"), "reason": proposal.get("reason", "")})
+            event_id = self.store.append_event("story.beat.activated", actor_id, minute, {"beat_id": beat_id, "summary": beat.get("summary", ""), "audience": audience, "research_source_id": research_source_id, "public_event": beat.get("public_event"), "reason": proposal.get("reason", "")})
             self.store.finish_intent(intent_id, "accepted", {"status": "accepted", "intent_id": intent_id, "beat": beat.get("agent_label") or beat_id, "event_id": event_id, "activated": True})
         return {"status": "accepted", "intent_id": intent_id, "beat": beat.get("agent_label") or beat_id, "event_id": event_id, "activated": True}
 

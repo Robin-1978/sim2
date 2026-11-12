@@ -35,8 +35,7 @@ behavior tree.
 | `flee_to_safety` | Location changes and escape event are persisted | Next decision / Reflection | Closed |
 | `sound_alarm` | The alarm is persisted, is audible through the perception policy, clears the actor's decision backoff, and unlocks the configured defense response while threat remains high | Story / next individual decision | Closed; the alarm itself does not lower threat |
 | `explore_greywood` | Map result, discoveries, knowledge, and unlocks are persisted | Story; God only for a configured world-level discovery | Closed |
-| `research_water` | Cumulative research progress and final fact are persisted; water mitigation remains unavailable until that exact fact exists | Story per discovery; God after the configured research synthesis count | Closed when the configured source is co-located after travel |
-| `research_source` | Cumulative progress and final knowledge fact are persisted; pact stabilization remains unavailable until that exact fact exists | Story; God only when the configured fact has a world-level consequence | Closed; a source at another location cannot be researched remotely |
+| Generic research BT (`research_source` Action) | Source-selected cumulative progress and the final fact are persisted; each source controls its required work units and later stages | Story per validated stage; God after the configured accumulated evidence count | Closed when an assigned source is reachable, the BT travels there, and the source stage is completed |
 | `recover_caravan_ledger` | Object state, trade evidence, knowledge, and public effect change | Story / God | Closed |
 
 The matrix deliberately distinguishes a direct result from a later policy.

@@ -90,8 +90,18 @@ behavior_trees:
   - failed
   - interrupted
 - id: research_boundary_stone
-  agent_label: Research Boundary Stone
-  summary: Research Boundary Stone
+  agent_label: Research Configured Source
+  summary: Research Configured Source
+  description: Research one configured source and advance its next open research stage.
+  no_op_travel_minutes: 0
+  parameter_defaults:
+    source_id: boundary_stone
+  agent_parameters:
+    source_id:
+      type: string
+      required: true
+      max_length: 120
+      description: Exact visible name of a configured research source.
   entry_conditions:
   - actor.can_research
   - actor.alive
@@ -100,11 +110,11 @@ behavior_trees:
   - type: action
     action_id: travel_to
     parameters:
-      location_id: north_watch
+      location_id: context.source_location_id
   - type: action
     action_id: research_source
     parameters:
-      source_id: boundary_stone
+      source_id: context.source_id
   success_results:
   - research_completed
   failure_results:

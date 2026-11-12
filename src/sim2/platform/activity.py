@@ -25,7 +25,7 @@ class ActivityRuntimeMixin:
         if not action:
             return False, f"action is not registered: {action_id}"
         state = dict(agent.get("initial_state") or {})
-        parameters = self._resolve_parameters(dict(action_info.get("parameters") or {}), state)
+        parameters = self._resolve_activity_parameters(dict(action_info.get("parameters") or {}), state)
         parameters = self._apply_action_parameter_defaults(agent, action, parameters)
         already_at_destination = bool(
             action.get("requires_destination")
@@ -95,6 +95,13 @@ class ActivityRuntimeMixin:
                 return False, f"precondition failed: {predicate}"
         duration = self._action_duration(agent, action, parameters, state.get("location_id"))
         if already_at_destination:
+            behavior = next(
+                (item for item in self.store.get_definitions("bt_def") if str(item.get("id")) == str(state.get("active_behavior_id"))),
+                {},
+            )
+            if "no_op_travel_minutes" in behavior:
+                duration = max(0, int(behavior.get("no_op_travel_minutes", 1) or 0))
+        if already_at_destination:
             # Completing an already reached destination consumes this tick,
             # but it does not charge movement costs or reserve resources.
             reservation = []
@@ -131,7 +138,7 @@ class ActivityRuntimeMixin:
         if not action:
             return None, f"action is not registered: {action_info.get('action_id')}"
         state = dict(agent.get("initial_state") or {})
-        parameters = self._resolve_parameters(dict(action_info.get("parameters") or {}), state)
+        parameters = self._resolve_activity_parameters(dict(action_info.get("parameters") or {}), state)
         parameters = self._apply_action_parameter_defaults(agent, action, parameters)
         already_at_destination = bool(
             action.get("requires_destination")
@@ -366,6 +373,7 @@ class ActivityRuntimeMixin:
             self.store.update_agent(agent["id"], agent)
             return
         action_parameters = state.get("active_action_parameters", {})
+        completed_noop = bool(state.get("active_action_noop"))
         failure = self._action_failure_reason(agent, action, action_parameters, self.targets.resolve(agent, action_parameters)[0])
         if failure:
             self._finish_behavior(agent, execution_id, behavior_id, "failed", failure, minute)
@@ -401,6 +409,13 @@ class ActivityRuntimeMixin:
         self.store.update_bt_instance(execution_id, status="executing", current_node=index + 1, data=bt_data, updated_minute=minute)
         if index + 1 >= len(actions):
             self._finish_behavior(agent, execution_id, behavior_id, "completed", "behavior_completed", minute)
+        elif completed_noop:
+            # A travel/action node that is already satisfied completes in the
+            # current tick. Continue the sequence immediately so a
+            # co-located generic research source does not add a phantom idle
+            # minute before the actual work begins.
+            self.store.update_agent(agent["id"], agent)
+            self._progress_agent(agent, minute)
         else:
             self.store.update_agent(agent["id"], agent)
 
@@ -772,6 +787,25 @@ class ActivityRuntimeMixin:
             return None
         source_id = str(parameters.get("source_id") or "")
         discoveries = self.store.research_discoveries(source_id) if source_id else []
+        source = {}
+        if source_id:
+            try:
+                source = self.store.get_entity(source_id)
+            except KeyError:
+                source = {}
+        source_state = source.get("initial_state") if isinstance(source.get("initial_state"), dict) else {}
+        # Research effort belongs to the source definition, not to the
+        # generic Action.  A source can require a different number of
+        # completed work units without creating another Action or BT.
+        source_required = source.get("research_required")
+        if source_required is None:
+            source_required = source_state.get("research_required", source_state.get("required_research"))
+        if source_required is None:
+            source_required = (self.store.get_meta("rules", {}) or {}).get("research_default_required")
+        try:
+            source_required = max(1.0, float(source_required)) if source_required is not None else None
+        except (TypeError, ValueError):
+            source_required = None
         known_fact_keys = {
             str(item.get("fact_key"))
             for item in self.store.list_knowledge_facts(agent["id"], limit=1000)
@@ -793,7 +827,15 @@ class ActivityRuntimeMixin:
             key = f"{key}:{discovery['id']}"
         scope = str(definition.get("scope", "agent"))
         owner = str(self.store.get_meta("world_id", "world")) if scope == "world" else str(agent["id"])
-        required = float((discovery or {}).get("required", definition.get("required", 1)) or 1)
+        required_value = (discovery or {}).get("required")
+        if required_value is None:
+            required_value = source_required
+        if required_value is None:
+            required_value = 1
+        try:
+            required = max(1.0, float(required_value))
+        except (TypeError, ValueError):
+            required = 1.0
         progress = self.store.advance_progress(owner, key, float(definition.get("amount", 1) or 1), required, minute, {"source_action": action.get("id"), "source_agent": agent["id"], "stage_id": (discovery or {}).get("id")})
         event_type = "research.completed" if progress["completed"] else "research.progressed"
         event_id = self.store.append_event(event_type, agent["id"], minute, {"progress_key": key, "progress": progress, "source_action": action.get("id"), "parameters": parameters, "source_id": source_id, "stage_id": (discovery or {}).get("id"), "discovery_status": (discovery or {}).get("status", "active")})

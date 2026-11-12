@@ -218,13 +218,32 @@ research_discoveries:
     supersedes: researched:source:first_reading
 ```
 
-The generic `research_source` Action selects the first active stage whose fact
-has not been recorded for the researcher. A completed stage wakes only the
-configured event consumers; it does not create a permanent source-specific
-branch in Platform. God can add another source or a new behavior later using
-the regular validated proposal tools. `active`, `superseded`, `obsolete`, and
-`disabled` are data lifecycle values, so a world can revise or retire a result
-without deleting its audit trail.
+The generic research BT/Action selects the first active stage whose fact has
+not been recorded for the researcher. A source may set `research_required` in
+its entity data (or `initial_state`) to require the same number of work units
+for each stage; an individual stage may override it with `required`. If a
+source omits both values, the package-level `rules.research_default_required`
+is used. The number is data owned by the source, never a hard-coded Action
+constant.
+
+The generic BT accepts one visible `source_id` parameter and derives the
+source location from SQLite. A package may give an opening source a
+`parameter_defaults.source_id`; later sources must be assigned by persisted
+data, for example `initial_state.research_assignees: [agent_id]`, or by a
+Story/God continuation that records the target for the audience. This keeps a
+research object from creating a source-specific BT. The same registered BT
+can travel to and research any assigned source, including a source created
+after world initialization.
+
+A completed stage wakes only the configured event consumers; it does not create
+a permanent source-specific branch in Platform. Story turns the validated
+result into a concrete audience goal and an exact registered follow-up when
+one is available. God receives only its configured accumulated evidence and
+may create a new source, stage, entity, rule, or genuinely new capability
+through the normal validated proposal tools. Neither Agent may claim the
+future fact before a character performs the generic research BT.
+`active`, `superseded`, `obsolete`, and `disabled` are data lifecycle values,
+so a world can revise or retire a result without deleting its audit trail.
 
 IDs are internal references and use stable `snake_case`. Labels, summaries and
 prompts are short natural language written for people and Agents. References

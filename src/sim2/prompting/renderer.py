@@ -328,10 +328,11 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("    Research is staged. A completed stage does not end a source; choose another available stage or a newly proposed source.")
         for track in tracks[:8]:
             stages = "; ".join(
-                f"{item.get('fact_key')}: {'available' if item.get('available') else item.get('status', 'completed')}"
+                f"stage {'available' if item.get('available') else item.get('status', 'completed')} (work units {item.get('required', 1)})"
                 for item in (track.get("stages") or [])[:8]
             )
-            lines.append(f"    - {track.get('source')}: {stages or 'no stage metadata'}")
+            location = f" at {track.get('location')}" if track.get('location') else ""
+            lines.append(f"    - {track.get('source')}{location}: {stages or 'no stage metadata'}")
         lines.append("  </research_tracks>")
     story_goals = context.get("story_goals") or []
     active_beats = context.get("active_story_beats") or []
@@ -403,6 +404,8 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             lines.append(f"  result: {_line(source.get('result'))}")
             if source.get("fact"):
                 lines.append(f"  fact: {_line(source.get('fact'))}")
+            if source.get("research_source"):
+                lines.append(f"  research source: {_line(source.get('research_source'))}")
             if source.get("allocation_summary"):
                 lines.append(f"  allocations: {_plain(source.get('allocation_summary'))}")
             lines.append("  Narrative must not add an unrecorded move, delivery, public reading, or gathering.")
@@ -410,13 +413,22 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             lines.append("  no validated source event; return wait")
         lines.append("</validated_source>")
         lines.append("<story_state>")
-        lines.append("  Choose one configured beat whose evidence is present. If none is listed, propose an emergent beat using only the latest validated event's fact, actor, location, and result; do not add numbers, measurements, causes, or details from an unrelated memory. The beat must carry a concrete next goal or decision; do not merely repeat the event summary.")
+        lines.append("  Choose one configured beat whose evidence is present. If none is listed, propose an emergent beat using only the latest validated event's fact, actor, location, and result; do not add numbers, measurements, causes, or details from an unrelated memory. The beat must carry a concrete next goal or decision and name an exact executable follow-up from the audience when one is shown; do not merely repeat the event summary. Research always uses the existing generic research behavior with a selected source parameter.")
         candidates = context.get("audience_candidates") or []
         lines.append("  <audience_candidates>")
-        lines.extend([
-            f"    - exact character name: {item.get('name')}; {item.get('reason', 'recent validated participant')}"
-            for item in candidates[:12]
-        ] or ["    - none available; return wait instead of inventing a character name"])
+        if candidates:
+            for item in candidates[:12]:
+                lines.append(f"    - exact character name: {item.get('name')}; {item.get('reason', 'recent validated participant')}")
+                choices = item.get("executable_behaviors") or []
+                if choices:
+                    lines.append("      executable follow-ups:")
+                    for choice in choices[:6]:
+                        lines.append(f"        - {choice.get('choice')}: {choice.get('purpose') or 'configured behavior'}")
+                        options = choice.get("parameter_options") or {}
+                        if options.get("source_id"):
+                            lines.append("          research sources: " + "; ".join(str(option.get("name")) for option in options["source_id"][:8]))
+        else:
+            lines.append("    - none available; return wait instead of inventing a character name")
         lines.append("  </audience_candidates>")
         progress_candidates = context.get("world_progress_candidates") or []
         if progress_candidates:
@@ -427,7 +439,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         beats = context.get("story_beats") or []
         for beat in beats[:12]:
             lines.append("  <story_beat>")
-            for label in ("choice", "summary", "when", "requires", "audience", "impact"):
+            for label in ("choice", "summary", "when", "requires", "audience", "followup_behaviors", "impact"):
                 value = beat.get(label)
                 if value:
                     if isinstance(value, list):
@@ -456,10 +468,14 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 lines.append(f"  evidence selectors: {_plain(trigger.get('evidence_sources'))}")
             if trigger.get("minimum_evidence") is not None:
                 lines.append(f"  minimum matching events: {trigger.get('minimum_evidence')}; observed: {trigger.get('observed_evidence', 'unknown')}")
+            required_result = str(trigger.get("required_result") or "")
+            if "research" in required_result.casefold() and "source" in required_result.casefold():
+                lines.append("  For this research continuation, use propose_entity with entity_type=document (not agent), a short name, a visible location, and state containing research_discoveries: [{fact: 'one new question or finding'}], research_required: a positive number, and research_assignees: [an exact visible researcher name]. Omit internal ids; Platform assigns stage keys. Do not submit a faction or descriptive agent without a research source.")
             lines.append("  Use only the configured trigger tools. A rule signal or narrative acknowledgement is not a substitute for the required result.")
             lines.append("</evolution_trigger>")
         lines.append("<world_proposal_contract>")
         lines.append("  - Create any missing world content the validated situation needs: agent, location, faction, object, empty resource node, institution, relationship, rule, attribute, world property, capability, Action, behavior, recipe, or narrative event.")
+        lines.append("  - For a research source, put research_discoveries, research_required/required, and any research_assignees in the proposed entity data. Reuse the registered generic research behavior; do not create one BT per source.")
         lines.append("  - Use the smallest supported content type that makes the next character decision possible. Platform still validates names, references, conservation, executable behavior, and consequences.")
         lines.append("  - rule.behavior_names must use exact BT names from world_behavior_catalog.")
         lines.append("  - In a behavior_constraint, every listed BT is blocked; list only the blocked BT, never the desired follow-up BT.")
@@ -634,7 +650,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         for behavior in behaviors:
             lines.append("    <behavior>")
             previous_values: dict[str, str] = {}
-            for label in ("name", "summary", "purpose", "when", "requires", "target", "parameters", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "cooldown_minutes", "tags"):
+            for label in ("name", "summary", "purpose", "when", "requires", "target", "parameters", "parameter_options", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "cooldown_minutes", "tags"):
                 value = behavior.get(label)
                 if value:
                     if isinstance(value, list):

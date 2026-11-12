@@ -24,9 +24,11 @@ story-specific duration branch belongs in runtime code.
 
 Composite examples use the same calculation: `explore_greywood` is 305
 minutes from the north gate (5-minute route plus 300-minute survey),
-`install_dawn_bell` is 35 minutes from the smithy, and `research_water` is
-245 minutes from the clinic. If the origin changes, the estimate changes with
-the configured topology.
+`install_dawn_bell` is 35 minutes from the smithy, and the generic research BT
+is 240 minutes per work sample plus the configured route to the selected
+source (a source already at the current location contributes zero route
+minutes when the BT declares that no-op policy). If the origin changes, the
+estimate changes with the configured topology.
 
 ## Necessity and closure review
 

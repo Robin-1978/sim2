@@ -56,7 +56,8 @@ PROTOCOLS = {
     ],
     "story": [
         "Use the validated source to create the next grounded story step, not a duplicate summary.",
-        "A useful continuation gives an audience a concrete next decision or configured follow-up.",
+        "A useful continuation gives an audience a concrete next decision and names at least one exact executable follow-up from that audience's catalog when one is available.",
+        "Research is one reusable behavior: pass the configured source to that behavior; never create a source-specific research BT.",
         "Use recent validated history and query_history when an earlier event is needed to continue the same thread.",
     ],
     "god": [
@@ -84,7 +85,8 @@ PLATFORM_RULES = {
     ],
     "story": [
         "Narrative can organize verified facts but cannot create unrecorded actions or numeric state changes.",
-        "A story beat is useful only when it carries a grounded goal, decision, or configured follow-up into the next turn.",
+        "A story beat is useful only when it carries a grounded goal, decision, or configured follow-up into the next turn. Prefer an exact executable follow-up shown for the audience.",
+        "A new research object is data, not a new behavior tree; use the existing generic research behavior and its source parameter.",
         "A completed story step remains history; continue it with a new decision or wait when no new consequence exists.",
     ],
     "god": [

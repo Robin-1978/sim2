@@ -229,15 +229,19 @@ class AgentEngine:
         ]
         if event_ids:
             verified_events = self.platform.store.events_by_ids(event_ids)
-            context["triggering_evidence"] = [
-                {
+            context["triggering_evidence"] = []
+            for item in verified_events[-16:]:
+                evidence = {
                     "event_type": item.get("event_type"),
                     "world_minute": item.get("world_minute"),
                     "actor": self._visible_actor_name(item.get("actor_id")),
                     "summary": item.get("summary") or item.get("result") or item.get("fact") or "validated event recorded",
                 }
-                for item in verified_events[-16:]
-            ]
+                if item.get("source_id"):
+                    evidence["research_source"] = self._visible_entity_name(item.get("source_id"))
+                if item.get("stage_id"):
+                    evidence["research_stage"] = item.get("stage_id")
+                context["triggering_evidence"].append(evidence)
             if verified_events:
                 context["last_platform_result"] = verified_events[-1]
         if interaction:
@@ -472,6 +476,14 @@ class AgentEngine:
         except KeyError:
             return str(actor_id)
 
+    def _visible_entity_name(self, entity_id: Any) -> str | None:
+        if not entity_id:
+            return None
+        try:
+            return str(self.platform.store.get_entity(str(entity_id)).get("name") or entity_id)
+        except KeyError:
+            return str(entity_id)
+
     @staticmethod
     def _trim_conversation_messages(messages: list[dict[str, Any]], *, max_tail: int = 6) -> list[dict[str, Any]]:
         """Keep a bounded tail without orphaning native tool results.
@@ -689,7 +701,7 @@ class AgentEngine:
         if len(encoded) > 6000:
             compacted = {
                 key: compacted[key]
-                for key in ("status", "message", "failed_check", "choice", "summary", "remaining_minutes", "tool")
+                for key in ("status", "message", "failed_check", "errors", "invalid_choices", "available_choices", "choice", "summary", "remaining_minutes", "tool")
                 if key in compacted
             }
             compacted["message"] = str(compacted.get("message") or "Detailed tool output omitted; use the visible facts already collected.")

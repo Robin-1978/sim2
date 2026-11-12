@@ -15,37 +15,41 @@ class BehaviorDurationEstimator:
         self.capability_modifiers = capability_modifiers or {}
 
     def behavior_minutes(self, behavior_id: str, parameters: dict[str, Any] | None = None, origin: str | None = None) -> int:
-        return max(1, self._nodes_minutes((self.behaviors.get(behavior_id) or {}).get("nodes", []), dict(parameters or {}), origin, set()))
+        behavior = self.behaviors.get(behavior_id) or {}
+        no_op_minutes = max(0, int(behavior.get("no_op_travel_minutes", 1) or 0))
+        return max(1, self._nodes_minutes(behavior.get("nodes", []), dict(parameters or {}), origin, set(), no_op_minutes))
 
-    def _nodes_minutes(self, nodes: list[dict[str, Any]], parameters: dict[str, Any], origin: str | None, stack: set[str]) -> int:
+    def _nodes_minutes(self, nodes: list[dict[str, Any]], parameters: dict[str, Any], origin: str | None, stack: set[str], no_op_minutes: int = 1) -> int:
         total = 0
         for node in nodes or []:
             node_type = node.get("type")
             if node_type == "action":
                 action = self.actions.get(str(node.get("action_id")), {})
                 values = self._resolve(dict(node.get("parameters") or {}), parameters)
-                total += self._action_minutes(action, values, origin)
+                total += self._action_minutes(action, values, origin, no_op_minutes)
             elif node_type in {"selector", "parallel"}:
                 children = node.get("children", []) or []
                 durations = []
                 for child in children:
                     if isinstance(child, str) and child not in stack:
-                        durations.append(self._nodes_minutes((self.behaviors.get(child) or {}).get("nodes", []), parameters, origin, stack | {child}))
+                        durations.append(self._nodes_minutes((self.behaviors.get(child) or {}).get("nodes", []), parameters, origin, stack | {child}, no_op_minutes))
                     elif isinstance(child, dict):
-                        durations.append(self._nodes_minutes([child], parameters, origin, stack))
+                        durations.append(self._nodes_minutes([child], parameters, origin, stack, no_op_minutes))
                 total += max(durations, default=0)
             elif node_type in {"sequence", "root"}:
-                total += self._nodes_minutes(node.get("children", []) or [], parameters, origin, stack)
+                total += self._nodes_minutes(node.get("children", []) or [], parameters, origin, stack, no_op_minutes)
         return total
 
-    def _action_minutes(self, action: dict[str, Any], parameters: dict[str, Any], origin: str | None) -> int:
+    def _action_minutes(self, action: dict[str, Any], parameters: dict[str, Any], origin: str | None, no_op_minutes: int = 1) -> int:
         duration = action.get("duration") or {}
         if isinstance(duration.get("minutes"), (int, float)):
             base = float(duration["minutes"])
         else:
             mode = duration.get("mode")
             if mode == "route_distance":
-                base = float(max(1, self.route_distance(origin, parameters.get("location_id") or parameters.get("destination_id"))))
+                base = float(max(0, self.route_distance(origin, parameters.get("location_id") or parameters.get("destination_id"))))
+                if base == 0:
+                    return max(0, int(no_op_minutes))
             elif mode == "recipe_duration":
                 recipe = self.recipes.get(str(parameters.get("recipe_id")), {})
                 base = float(max(1, int(recipe.get("duration_minutes", duration.get("default_minutes", 1)))))

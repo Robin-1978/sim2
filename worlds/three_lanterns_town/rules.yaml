@@ -1,5 +1,6 @@
 vital_attribute: integrity
 capacity_attribute: vigor
+research_default_required: 2
 perception:
   visible_fields:
   - role
