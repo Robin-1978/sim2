@@ -48,8 +48,7 @@ actions:
   duration:
     minutes: 1
   costs:
-    reserve:
-      item_parameter: item_id
+    reserve: {}
     per_minute: {}
     on_success: {}
     on_failure: {}
