@@ -84,6 +84,7 @@ def test_god_prompt_reports_exact_contexts_for_dynamic_behavior_proposals(tmp_pa
         assert "read-budget warning" in prompt
         assert "Configured regeneration" in prompt
         assert "蓄水" in prompt
+        assert "civilization.milestone" in prompt
     finally:
         platform.close()
 
