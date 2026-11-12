@@ -85,6 +85,8 @@ def test_god_prompt_reports_exact_contexts_for_dynamic_behavior_proposals(tmp_pa
         assert "Configured regeneration" in prompt
         assert "蓄水" in prompt
         assert "civilization.milestone" in prompt
+        assert "entity.created" in prompt
+        assert "definition.registered" in prompt
     finally:
         platform.close()
 

@@ -66,6 +66,7 @@ PROTOCOLS = {
         "Use exact visible entity names. For a behavior that needs travel, include a Travel node before the destination action.",
         "Use only machine predicates shown in condition_examples for entry_conditions; after a read budget warning, submit with the facts already collected instead of re-reading the same source.",
         "For a civilization.milestone task, do not record progress again unless the milestone's source event itself matches the configured evidence; wait when progress is already complete or evidence does not match.",
+        "For entity.created or definition.registered, the content already exists; wait unless new verified evidence requires a distinct executable addition, and never duplicate a definition by default.",
     ],
     "world_builder": ["Validate the complete template before submitting the exact same object."],
 }
