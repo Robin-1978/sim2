@@ -35,6 +35,14 @@ attributes:
   max: 100
   default: 55
   prompt: Higher means more progress toward a meaningful personal goal.
+- id: hydration
+  kind: need
+  label: Hydration
+  unit: points
+  min: 0
+  max: 100
+  default: 80
+  prompt: Higher means more hydrated; 100 means fully hydrated and 0 means dangerously dehydrated.
 - id: reputation
   kind: state
   label: Reputation

@@ -25,6 +25,7 @@ perception:
     - quantity
 fallback_behavior_ids:
 - inspect_cistern
+- drink_water
 - survey_old_road
 - secure_north_watch
 resource_regeneration:
@@ -51,6 +52,9 @@ capability_aliases:
   - exploration
   gather:
   - gathering
+context_values:
+  water_item: 蓄水
+  hydration_alert_threshold: 40
 civilization_progress:
   boundary_knowledge:
     required: 2
@@ -76,6 +80,12 @@ needs:
   gamma: 1.5
   critical_threshold: 0.7
   critical_gain: 1.0
+- id: hydration
+  target: 70
+  minimum: 0
+  gamma: 1.5
+  critical_threshold: 0.4
+  critical_gain: 1.0
 motivation_model:
   family: hybrid_need_utility_appraisal
   no_fixed_hierarchy: true
@@ -92,6 +102,36 @@ minute_effects:
     type: attribute_delta
     attribute: vigor
     delta: 0.4
+- id: hydration_decay
+  scope: agent
+  every_minutes: 1
+  effect:
+    type: need_delta
+    need: hydration
+    delta: -0.03
+  events:
+  - id: hydration_low
+    event_type: need.hydration_low
+    condition: actor.need.hydration <= context.hydration_alert_threshold
+    edge: enter
+    trend: true
+    summary: Hydration reached the configured drinking threshold.
+    data: {need: hydration, threshold: 40, signal_only: true}
+- id: dehydration_damage
+  scope: agent
+  every_minutes: 60
+  condition: actor.need.hydration <= 5
+  effect:
+    type: attribute_delta
+    attribute: integrity
+    delta: -1
+  events:
+  - id: dehydration_damage
+    event_type: need.dehydration_damage
+    edge: each
+    trend: true
+    summary: Critical dehydration caused integrity damage.
+    data: {need: hydration, threshold: 5, attribute: integrity, delta: -1}
 memory_quality:
   semantic_similarity:
     enabled: false

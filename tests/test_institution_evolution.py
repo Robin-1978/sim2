@@ -237,6 +237,34 @@ def test_configured_cistern_regeneration_updates_resource_and_world_view(tmp_pat
         platform.close()
 
 
+def test_allocated_water_is_personal_inventory_and_drink_behavior_consumes_it(tmp_path: Path):
+    platform = _town(tmp_path, "drink-water-loop")
+    try:
+        agent = platform.store.get_agent("mei_lan")
+        agent["inventory"]["蓄水"] = 1
+        agent["needs"]["hydration"] = 30
+        platform.store.update_agent("mei_lan", agent)
+        platform.store.connection.commit()
+        view = platform.decision_view("mei_lan")
+        assert any(item["choice"] == "Drink Water" for item in view["executable_behaviors"])
+        started = platform.submit_behavior(BehaviorIntent(
+            "mei_lan", "behavior:drink_water", {}, {}, "Drink the allocated personal water.", 0.9, "drink-water",
+        ))
+        assert started["status"] == "accepted", started
+        step_n(platform, int(started["remaining_minutes"]) + 1)
+        after = platform.store.get_agent("mei_lan")
+        assert after["inventory"].get("蓄水", 0) == 0
+        assert after["needs"]["hydration"] > 30
+        assert any(
+            item["event_type"] == "behavior.completed"
+            and item.get("behavior_id") == "drink_water"
+            and item.get("result") == "drank_water"
+            for item in platform.store.recent_events(limit=30)
+        )
+    finally:
+        platform.close()
+
+
 def test_institution_evidence_selectors_support_behavior_only_and_deduplicate(tmp_path: Path):
     platform = _town(tmp_path, "institution-evidence-selectors")
     try:

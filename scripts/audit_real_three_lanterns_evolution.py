@@ -26,7 +26,7 @@ from sim2.platform.runtime import Platform
 from sim2.simulation.runner import SimulationRunner
 
 
-def _session(turn: AgentTurn, actor_id: str) -> dict[str, Any]:
+def _session(turn: AgentTurn, actor_id: str, *, full: bool = False) -> dict[str, Any]:
     calls: list[dict[str, Any]] = []
     for item in list((turn.response or {}).get("tool_calls") or []):
         function = item.get("function") if isinstance(item, dict) else {}
@@ -36,7 +36,7 @@ def _session(turn: AgentTurn, actor_id: str) -> dict[str, Any]:
             except (TypeError, json.JSONDecodeError):
                 arguments = function.get("arguments")
             calls.append({"name": function.get("name"), "arguments": arguments})
-    return {
+    session = {
         "role": turn.role,
         "actor": actor_id,
         "task_type": turn.task_type,
@@ -54,6 +54,18 @@ def _session(turn: AgentTurn, actor_id: str) -> dict[str, Any]:
         "prompt_chars": len(turn.prompt_history[0]) if turn.prompt_history else 0,
         "prompt_head": (turn.prompt_history[0][:1200] if turn.prompt_history else ""),
     }
+    if full:
+        # Keep the complete causal exchange for audit/review. This is opt-in
+        # because a ten-round run can contain hundreds of prompts and tool
+        # results; no secrets are present in Platform prompts or normalized
+        # provider responses.
+        session.update({
+            "prompt_history": list(turn.prompt_history),
+            "model_response": turn.response,
+            "initial_context": turn.initial_context,
+            "transcript": turn.transcript,
+        })
+    return session
 
 
 def main() -> int:
@@ -62,6 +74,11 @@ def main() -> int:
     parser.add_argument("--world", default="three_lanterns_town", help="Content package under worlds/")
     parser.add_argument("--rounds", type=int, default=10)
     parser.add_argument("--minutes-per-round", type=int, default=120)
+    parser.add_argument(
+        "--full-audit",
+        action="store_true",
+        help="Persist complete prompts, model responses, tool results and transcripts for every session.",
+    )
     parser.add_argument(
         "--runtime-dir",
         default=None,
@@ -79,7 +96,7 @@ def main() -> int:
     sessions: list[dict[str, Any]] = []
 
     def observe(turn: AgentTurn, actor_id: str) -> None:
-        sessions.append(_session(turn, actor_id))
+        sessions.append(_session(turn, actor_id, full=args.full_audit))
 
     temporary_runtime = tempfile.TemporaryDirectory(prefix="sim2-real-audit-") if args.runtime_dir is None else None
     runtime_root = Path(args.runtime_dir) if args.runtime_dir is not None else Path(temporary_runtime.name)

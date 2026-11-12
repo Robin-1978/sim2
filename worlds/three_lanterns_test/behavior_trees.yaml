@@ -24,6 +24,29 @@ behavior_trees:
   - event_type: cistern.reviewed
     wake: [story]
     summary: 蓄水记录已核对，配给底数需要决断。
+- id: drink_water
+  agent_label: Drink Water
+  summary: Drink Water
+  scope: universal
+  entry_conditions:
+  - actor.alive
+  - actor.inventory.蓄水 > 0
+  estimated_minutes: 1
+  requirements: [Carry one unit of the configured water item.]
+  goal_tags: [hydration, recovery, readiness]
+  drive_tags: [physiological_homeostasis, safety]
+  interrupt_policy: cancel
+  success_results:
+  - drank_water
+  failure_results:
+  - drinking_failed
+  nodes:
+  - type: action
+    action_id: drink_water
+    parameters:
+      item_id: context.water_item
+  definition_source: config
+  kind: fallback
 - id: gather_reeds
   agent_label: Gather Lantern Reeds
   summary: Gather Lantern Reeds

@@ -72,7 +72,7 @@ class EffectPipeline:
             amount = float(effect.get("quantity", effect.get("amount", 1)))
             inventory[item] = inventory.get(item, 0) + amount
             result.update({"applied": True, "item": item, "quantity": amount})
-        elif effect_type == "inventory_remove":
+        elif effect_type in {"inventory_remove", "inventory.consume_item"}:
             item = str(effect.get("item"))
             amount = float(effect.get("quantity", effect.get("amount", 1)))
             if float(inventory.get(item, 0)) < amount:

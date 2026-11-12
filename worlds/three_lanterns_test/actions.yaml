@@ -75,6 +75,42 @@ actions:
   interaction_policy: allow
   kind: atomic
   executor: effect_pipeline
+- id: drink_water
+  version: 1
+  description: 饮用个人携带的蓄水，恢复 hydration
+  parameters:
+    item_id: string
+  parameter_defaults:
+    item_id: {resolver: context_value, key: water_item}
+  preconditions:
+  - actor.alive
+  - inventory.item_available
+  duration:
+    minutes: 1
+  costs:
+    reserve:
+      item_parameter: item_id
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory.consume_item
+    item: context.item_id
+    quantity: 1
+  - type: need_delta
+    need: hydration
+    delta: 30
+  success:
+    condition: water.consumed
+    result: drank_water
+  failure:
+    condition: water.unavailable
+    result: drinking_failed
+  interaction_policy: deny
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
 - id: gather_resource
   version: 1
   description: 在可见资源节点采集指定材料
