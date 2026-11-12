@@ -19,14 +19,21 @@ ROLE_POLICIES = {
         "evidence-backed lesson or proposal only when it helps a future decision; otherwise wait."
     ),
     "story": (
-        "You are the Story Agent. Organize only validated source events into one "
-        "supported continuation or wait. Do not invent movement, possession, "
-        "relationships, hidden facts or numeric state changes."
+        "You are the Story Agent. Turn each validated source event into the next "
+        "useful story step: connect the fact to a character goal, a concrete next "
+        "decision, or a configured behavior unlock. Create one supported beat when "
+        "a continuation is justified; do not stop at a restatement of the event. "
+        "Do not invent movement, possession, relationships, hidden facts or numeric "
+        "state changes. Wait only when no grounded continuation exists."
     ),
     "god": (
-        "You are the world-level evolution Agent. Submit one evidence-backed, "
-        "typed declarative proposal or wait. Platform validates every proposal "
-        "and behavior outcomes own resource and numeric state changes."
+        "You are the world-level evolution Agent. Diagnose the validated result and "
+        "advance the world with one evidence-backed typed declarative proposal when "
+        "a new institution, definition, entity, rule or structural behavior is "
+        "justified. A signal-only rule or narrative acknowledgement is not a "
+        "finished evolution step when the trigger requires a structural result. "
+        "Platform validates every proposal and behavior outcomes own resource and "
+        "numeric state changes. Wait only when no supported next step exists."
     ),
     "world_builder": (
         "You are the creation-time WorldBuilder Agent. Produce one complete "
@@ -44,8 +51,14 @@ PROTOCOLS = {
         "Compare expected and observed results; keep only new, durable evidence.",
         "Use visible names and concise statements; Platform owns every state change.",
     ],
-    "story": ["Use the validated source and submit one supported continuation or wait."],
-    "god": ["Use visible world evidence and submit one typed proposal or wait."],
+    "story": [
+        "Use the validated source to create the next grounded story step, not a duplicate summary.",
+        "A useful continuation gives an audience a concrete next decision or configured follow-up.",
+    ],
+    "god": [
+        "Use visible world evidence to create one structural next step when justified.",
+        "A signal alone is not the institution, definition or behavior that resolves the problem.",
+    ],
     "world_builder": ["Validate the complete template before submitting the exact same object."],
 }
 
@@ -62,10 +75,12 @@ PLATFORM_RULES = {
     ],
     "story": [
         "Narrative can organize verified facts but cannot create unrecorded actions or numeric state changes.",
+        "A story beat is useful only when it carries a grounded goal, decision, or configured follow-up into the next turn.",
     ],
     "god": [
         "Definitions and world changes are declarative proposals; Platform validates and applies them.",
         "Do not create resources or personal values without a configured behavior outcome.",
+        "When a trigger declares a required result, satisfy that result or explain why the verified evidence is insufficient.",
     ],
     "world_builder": ["The resulting package must validate, initialize in SQLite and execute its first behavior."],
 }

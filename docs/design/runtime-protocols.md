@@ -76,6 +76,14 @@ use N=1.  There is no implicit daily God call.  The next God or Story view
 receives the expected/observed comparison and may wait, revise, or propose a
 bounded successor.
 
+An evolution trigger or evidence group may also declare an `agent_contract`.
+It can restrict the allowed tools and state the required structural result,
+for example allowing only `propose_institution` and `wait` when repeated public
+work must become a new institution. The view includes the exact persisted
+evidence selectors and the observed match count. This keeps God's creative
+choice open while preventing a signal-only rule from silently replacing the
+required institution or settlement behavior.
+
 An event-driven Story session also carries the exact source event IDs through
 the tool executor and intent submission. Platform never replaces that source
 with whichever event happened most recently. Optional emergent-source types,

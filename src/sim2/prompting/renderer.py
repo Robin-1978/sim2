@@ -394,7 +394,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             lines.append("  no validated source event; return wait")
         lines.append("</validated_source>")
         lines.append("<story_state>")
-        lines.append("  Choose one configured beat whose evidence is present. If none is listed, propose an emergent beat using only the latest validated event's fact, actor, location, and result; do not add numbers, measurements, causes, or details from an unrelated memory.")
+        lines.append("  Choose one configured beat whose evidence is present. If none is listed, propose an emergent beat using only the latest validated event's fact, actor, location, and result; do not add numbers, measurements, causes, or details from an unrelated memory. The beat must carry a concrete next goal or decision; do not merely repeat the event summary.")
         candidates = context.get("audience_candidates") or []
         lines.append("  <audience_candidates>")
         lines.extend([
@@ -423,12 +423,28 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("</story_state>")
 
     if role == "god":
+        trigger = context.get("evolution_trigger") or {}
+        if trigger:
+            lines.append("<evolution_trigger>")
+            lines.append(f"  id: {trigger.get('id', 'configured trigger')}")
+            lines.append(f"  condition: {trigger.get('condition', 'configured condition')}")
+            if trigger.get("purpose"):
+                lines.append(f"  purpose: {trigger.get('purpose')}")
+            if trigger.get("required_result"):
+                lines.append(f"  required result: {trigger.get('required_result')}")
+            if trigger.get("evidence_sources"):
+                lines.append(f"  evidence selectors: {_plain(trigger.get('evidence_sources'))}")
+            if trigger.get("minimum_evidence") is not None:
+                lines.append(f"  minimum matching events: {trigger.get('minimum_evidence')}; observed: {trigger.get('observed_evidence', 'unknown')}")
+            lines.append("  Use only the configured trigger tools. A rule signal or narrative acknowledgement is not a substitute for the required result.")
+            lines.append("</evolution_trigger>")
         lines.append("<world_proposal_contract>")
         lines.append("  - rule.behavior_names must use exact BT names from world_behavior_catalog.")
         lines.append("  - In a behavior_constraint, every listed BT is blocked; list only the blocked BT, never the desired follow-up BT.")
         lines.append("  - rule.action_names must use exact Action names from world_action_catalog; a BT name is not an Action name.")
         lines.append("  - A typed signal records or wakes work; prose descriptions never enforce policy. To block behavior, use effect type behavior_constraint or a denial effect.")
         lines.append("  - Use the exact machine field in rule_condition_fields, including underscores inside world[\"...\"]. A God proposal must not wake God itself; use a character/follow-up behavior or wait.")
+        lines.append("  - A behavior proposal must use definition.nodes: [{type: action, action_id: exact registered Action name, parameters: {...}}], plus entry_conditions, success_results and failure_results. Do not invent steps, trigger, outcomes, action_names or free-form action objects.")
         lines.append("  - Research is open-ended: when validated results leave a concrete unanswered question, you may propose one new declarative research source or behavior. Do not invent a result; let a character perform the next research.")
         lines.append("  - A newer verified research fact may supersede an older one. Preserve the old fact for audit and use the configured lifecycle status instead of silently deleting it.")
         lines.append("</world_proposal_contract>")

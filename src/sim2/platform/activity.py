@@ -523,7 +523,13 @@ class ActivityRuntimeMixin:
                             key = str(resolved_effect.get("item") or "")
                             inventory[key] = float(inventory.get(key, 0) or 0) + float(row.get("total", 0) or 0)
                             agent["inventory"] = inventory
-                    self.store.append_event("institution.allocation_completed", agent["id"], minute, allocation)
+                    allocation_event = dict(allocation)
+                    allocation_event.update({
+                        "behavior_id": str(agent.get("initial_state", {}).get("active_behavior_id") or ""),
+                        "execution_id": str(agent.get("initial_state", {}).get("active_bt_instance") or ""),
+                        "action_id": str(action.get("id") or ""),
+                    })
+                    self.store.append_event("institution.allocation_completed", agent["id"], minute, allocation_event)
                 else:
                     self.store.append_event("institution.allocation_failed", agent["id"], minute, allocation)
             else:
@@ -1085,7 +1091,19 @@ class ActivityRuntimeMixin:
                     payload["trend"] = True
                 if "story" in {str(item) for item in (configured.get("wake") or [])}:
                     payload["story_source"] = True
-                event_id = self.store.append_event(event_type, agent["id"], minute, payload)
+                payload.setdefault("execution_id", execution_id)
+                duplicate_event_id = None
+                for existing in self.store.recent_events(limit=32):
+                    if (
+                        str(existing.get("event_type") or "") == event_type
+                        and str(existing.get("actor_id") or "") == str(agent["id"])
+                        and int(existing.get("world_minute", -1) or -1) == int(minute)
+                        and str(existing.get("behavior_id") or "") == behavior_id
+                        and str(existing.get("execution_id") or "") == execution_id
+                    ):
+                        duplicate_event_id = int(existing["event_id"])
+                        break
+                event_id = duplicate_event_id or self.store.append_event(event_type, agent["id"], minute, payload)
                 self._queue_configured_followups(configured, event_id, event_type, agent["id"], minute)
             for configured in behavior_definition.get("outcome_facts", []) or []:
                 if not isinstance(configured, dict) or not configured.get("fact"):

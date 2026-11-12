@@ -145,6 +145,9 @@ def test_story_npc_evidence_and_god_institution_chain_uses_llm_tools(tmp_path: P
             role="god", actor_id="god", task_type="trigger:cistern_review_threshold",
         )
         assert god_turn.result["status"] == "accepted"
+        assert "evidence selectors" in god_provider.calls[0]["context"]
+        assert "observed: 1" in god_provider.calls[0]["context"]
+        assert {item["function"]["name"] for item in god_provider.calls[0]["tools"]} == {"propose_institution", "wait"}
         pending_god_tasks = [item for item in platform.ready_evolution_tasks() if item["role"] == "god" and item["task_type"] == "event:institution.proposed"]
         assert pending_god_tasks
         approve_turn = AgentEngine(platform, god_provider, max_iterations=1).run(
@@ -353,6 +356,116 @@ def test_research_source_can_gain_new_stages_and_supersede_old_facts(tmp_path: P
         assert {item.get("stage_id") for item in completed} == {"researched:later_source:initial", "researched:later_source:revision"}
         assert any(item["role"] == "story" and item["task_type"] == "event:research.completed" for item in platform.ready_evolution_tasks())
         assert not any(item.get("ref") == f"behavior:{behavior_def['id']}" for item in platform.decision_view("luo_shan")["executable_behaviors"])
+    finally:
+        platform.close()
+
+
+def test_ten_round_story_god_chain_keeps_creating_followups(tmp_path: Path):
+    """A bounded ten-turn contract test catches silent evolution dead ends."""
+
+    platform = _town(tmp_path, "ten-round-evolution")
+    try:
+        with platform.store.transaction():
+            for minute in (1, 2, 3):
+                platform.store.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
+        proposal = platform.submit_institution_proposal("god", {
+            "name": "Test Public Ledger",
+            "purpose": "Record verified public work before a shared reserve is allocated.",
+            "evidence_sources": [{"event_types": ["cistern.reviewed"], "behavior_ids": ["inspect_cistern"]}],
+            "minimum_evidence": 3,
+            "ledger": {"period": "week", "selectors": [{"event_types": ["cistern.reviewed"], "behavior_ids": ["inspect_cistern"], "category": "civic_work", "points": 1}]},
+            "policy": {"allocation": {"minimum_per_subject": 1, "contribution_share": 0.5}},
+        })
+        assert proposal["status"] == "accepted"
+        assert platform.activate_institution("god", "Test Public Ledger", "Three verified reviews.")["status"] == "accepted"
+
+        # The first three turns are the initial God/God/Story handoff.
+        story_event = next(item for item in platform.ready_evolution_tasks() if item["task_type"] == "event:institution.activated")
+        story_provider = SequenceProvider([{"tool_call": {"name": "propose_story_beat", "arguments": {
+            "beat": "公开配给议事",
+            "audience": ["梅岚"],
+            "summary": "制度激活后，梅岚需要组织首次公开配给议事。",
+            "fact": " Test Public Ledger 已经激活。",
+            "goal_hint": "组织首次结算，决定本期公共资源分配。",
+            "reason": "The activated institution needs a concrete first settlement step.",
+        }}}])
+        initial_story_turn = AgentEngine(platform, story_provider, max_iterations=1).run(
+            role="story", actor_id="story", task_type=story_event["task_type"], source_events=story_event.get("source_events") or [],
+        )
+        assert initial_story_turn.result["status"] == "accepted"
+        platform.complete_evolution_task(story_event["task_id"])
+
+        rounds = 10
+        completed_turns = 3
+        for cycle in range(rounds):
+            # Each cycle represents a later evidence window. Reset only the
+            # configured cooldown in this test; the runtime still requires
+            # three new persisted ledger events before God is woken.
+            state = dict(platform.store.get_meta("god:event_wake_group_state", {}) or {})
+            state.setdefault("institution_ledger_review", {})["last_wake_minute"] = -100000
+            platform.store.set_meta("god:event_wake_group_state", state)
+            base = 10 + cycle * 3
+            for minute in (base, base + 1, base + 2):
+                event_id = platform.store.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
+                platform._record_active_institution_entries(event_id, "cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
+            review = next(item for item in platform.ready_evolution_tasks() if item["task_type"] == "event_group:institution_ledger_review")
+            behavior_id = f"settle_public_ledger_{cycle}"
+            god_provider = SequenceProvider([{"tool_call": {"name": "propose_definition", "arguments": {
+                "definition_type": "behavior",
+                "name": f"Settle Public Ledger {cycle}",
+                "definition": {
+                    "summary": "Settle one active institution allocation from the verified ledger.",
+                    "entry_conditions": ["actor.can_inspect", "actor.alive"],
+                    "nodes": [{"type": "action", "action_id": "Settle Institution Allocation", "parameters": {"institution": "Test Public Ledger", "pool_entity": "cistern_water", "item": "water", "period": "week"}}],
+                    "success_results": ["allocation_completed"],
+                    "failure_results": ["allocation_failed"],
+                    "outcome_events": [{"event_type": "institution.allocation_completed", "wake": ["story"]}],
+                },
+                "assign_to": ["梅岚"],
+                "evidence": "Three new verified ledger entries require an executable settlement follow-up.",
+            }}}])
+            god_turn = AgentEngine(platform, god_provider, max_iterations=1).run(
+                role="god", actor_id="god", task_type=review["task_type"], source_events=review.get("source_events") or [],
+            )
+            assert god_turn.result["status"] == "accepted"
+            platform.complete_evolution_task(review["task_id"])
+            completed_turns += 1
+
+            definition_task = next(item for item in platform.ready_evolution_tasks() if item["task_type"] == "event:definition.registered")
+            wait_provider = SequenceProvider([{"tool_call": {"name": "wait", "arguments": {"reason": "The new settlement behavior is registered and can now be executed by a character."}}}])
+            wait_turn = AgentEngine(platform, wait_provider, max_iterations=1).run(
+                role="god", actor_id="god", task_type=definition_task["task_type"], source_events=definition_task.get("source_events") or [],
+            )
+            assert wait_turn.result["status"] == "wait"
+            platform.complete_evolution_task(definition_task["task_id"])
+            completed_turns += 1
+
+            behavior = next(item for item in platform.store.get_definitions("bt_def") if item.get("agent_label") == f"Settle Public Ledger {cycle}")
+            started = platform.submit_behavior(BehaviorIntent(
+                "mei_lan", f"behavior:{behavior['id']}", {}, {}, "Execute the newly registered settlement behavior.", 0.9, f"settle-round-{cycle}",
+            ))
+            assert started["status"] == "accepted"
+            step_n(platform, int(started["remaining_minutes"]))
+            story_task = next(item for item in platform.ready_evolution_tasks() if item["task_type"] == "event:institution.allocation_completed")
+            period_label = ("首期", "二期", "三期", "四期", "五期", "六期", "七期", "八期", "九期", "十期")[cycle]
+            story_provider = SequenceProvider([{"tool_call": {"name": "propose_story_beat", "arguments": {
+                "beat": f"结算进展{period_label}",
+                "audience": ["梅岚"],
+                "summary": f"账本{period_label}结算已经完成，下一期需要继续依据新记录复核公共分配。",
+                "fact": f"Test Public Ledger {period_label}结算已完成。",
+                "goal_hint": "继续记录下一期公共分配结果并复核制度效果。",
+                "reason": "The validated allocation result supports the next ledger review.",
+            }}}])
+            story_turn = AgentEngine(platform, story_provider, max_iterations=1).run(
+                role="story", actor_id="story", task_type=story_task["task_type"], source_events=story_task.get("source_events") or [],
+            )
+            assert story_turn.result["status"] == "accepted"
+            platform.complete_evolution_task(story_task["task_id"])
+            completed_turns += 1
+
+        assert completed_turns == 33
+        assert len([item for item in platform.store.recent_events(limit=500) if item["event_type"] == "institution.allocation_completed"]) >= rounds
+        assert len([item for item in platform.store.list_institutions(status="active")]) == 1
     finally:
         platform.close()
 

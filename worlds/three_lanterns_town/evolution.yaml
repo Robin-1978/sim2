@@ -9,6 +9,14 @@ triggers:
 - id: cistern_review_threshold
   when: world.cistern_reviews >= 3
   invoke: [god_local]
+  agent_contract:
+    allowed_tools: [propose_institution, wait]
+    purpose: Repeated verified cistern reviews justify deciding whether a public allocation institution is needed.
+    required_result: Create one evidence-backed institution proposal, or wait only when the persisted evidence is insufficient.
+    evidence_sources:
+    - event_types: [cistern.reviewed]
+      behavior_ids: [inspect_cistern]
+    minimum_evidence: 3
 event_wake_policy:
   consumers:
     god:
@@ -30,7 +38,12 @@ event_wake_policy:
         - institution.ledger_entry
         minimum_events: 3
         cooldown_minutes: 10080
+        agent_contract:
+          allowed_tools: [propose_definition, wait]
+          purpose: Three verified ledger entries require God to create the next executable settlement behavior for the active institution.
+          required_result: Propose one validated behavior using the registered institution allocation Action, or wait only when the ledger evidence is insufficient.
     story:
       batch_minutes: 0
       direct_event_types:
       - institution.activated
+      - institution.allocation_completed

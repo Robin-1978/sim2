@@ -37,6 +37,41 @@ def configured_role_tools(platform: Platform, role: str) -> list[str] | None:
     names = policy.get(role) if isinstance(policy, dict) else None
     return [str(item) for item in names if str(item)] if isinstance(names, list) else None
 
+
+def configured_evolution_trigger(platform: Platform, task_type: str) -> dict[str, Any] | None:
+    """Return the declarative contract for one world trigger task."""
+
+    prefix = "trigger:"
+    if not str(task_type).startswith(prefix):
+        return None
+    trigger_id = str(task_type)[len(prefix):]
+    root = platform.store.get_meta("evolution", {}) or {}
+    root = root.get("evolution", root) if isinstance(root, dict) else {}
+    for trigger in (root.get("triggers", []) or []) if isinstance(root, dict) else []:
+        if isinstance(trigger, dict) and str(trigger.get("id") or "") == trigger_id:
+            return dict(trigger)
+    return None
+
+
+def configured_evolution_group(platform: Platform, task_type: str) -> dict[str, Any] | None:
+    """Return the declarative contract for one configured evidence group."""
+
+    prefix = "event_group:"
+    if not str(task_type).startswith(prefix):
+        return None
+    group_id = str(task_type)[len(prefix):]
+    root = platform.store.get_meta("evolution", {}) or {}
+    root = root.get("evolution", root) if isinstance(root, dict) else {}
+    consumers = ((root.get("event_wake_policy", {}) or {}).get("consumers", {}) or {}) if isinstance(root, dict) else {}
+    for policy in consumers.values() if isinstance(consumers, dict) else []:
+        if not isinstance(policy, dict):
+            continue
+        for group in policy.get("event_groups", policy.get("groups", [])) or []:
+            if isinstance(group, dict) and str(group.get("id") or "") == group_id:
+                contract = group.get("agent_contract")
+                return dict(contract) if isinstance(contract, dict) else None
+    return None
+
 ROLE_INTENTS = {
     "agent_decision": {"select_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "wait"},
     "agent_reflection": {"record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "wait"},
@@ -169,6 +204,17 @@ class AgentEngine:
                 return AgentTurn(role, task_type, {}, result, 0, [{"step": "skipped", "result": result}], {}, [])
         context = self.view.build_decision_view(actor_id, role=role, source_event_id=source_event_id)
         context["role"] = role
+        trigger_config = configured_evolution_trigger(self.platform, task_type)
+        group_contract = configured_evolution_group(self.platform, task_type)
+        trigger_contract = ((trigger_config or {}).get("agent_contract") if isinstance(trigger_config, dict) else None) or group_contract
+        if isinstance(trigger_contract, dict):
+            context["evolution_trigger"] = {
+                "id": str((trigger_config or {}).get("id") or (task_type if group_contract else "")),
+                "condition": str((trigger_config or {}).get("when") or "configured evidence group"),
+                **dict(trigger_contract),
+            }
+            if trigger_contract.get("evidence_sources"):
+                context["evolution_trigger"]["observed_evidence"] = self.platform.count_verified_evidence(trigger_contract.get("evidence_sources"))
         event_refs = list(source_events or [])
         if source_event_id is not None and not any(
             int(item.get("event_id", -1) or -1) == int(source_event_id)
@@ -197,9 +243,14 @@ class AgentEngine:
             context["interaction"] = dict(interaction)
         interaction_tools = self._interaction_tools(task_type)
         role_tools = configured_role_tools(self.platform, role)
+        trigger_tools = None
+        if isinstance(trigger_contract, dict) and isinstance(trigger_contract.get("allowed_tools"), list):
+            trigger_tools = [str(item) for item in trigger_contract.get("allowed_tools", []) if str(item)]
         if interaction_tools is not None:
             self._compact_interaction_context(context, task_type, interaction_tools)
-        session_tools = interaction_tools if interaction_tools is not None else role_tools
+        session_tools = interaction_tools if interaction_tools is not None else trigger_tools if trigger_tools is not None else role_tools
+        if session_tools is not None:
+            context["tools"] = [item for item in (context.get("tools") or []) if item.get("name") in set(session_tools)]
         if event_ids and role in {"god", "story"} and session_tools is not None:
             # Event tasks already carry their exact validated source and a
             # bounded role projection. Re-reading the same fact adds latency,

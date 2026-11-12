@@ -104,6 +104,7 @@ class EventWakeScheduler:
                             for row in rows[-64:]
                         ],
                         "minimum_events": minimum,
+                        "agent_contract": dict(group.get("agent_contract") or {}) if isinstance(group.get("agent_contract"), dict) else {},
                     },
                 )
                 return task_id

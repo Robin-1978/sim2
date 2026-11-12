@@ -110,6 +110,24 @@ one of those groups. Exceptional channels use `direct_event_types` or
 `direct_task_type_prefixes`. `validate-world` rejects mismatches before a
 SQLite instance is created.
 
+Triggers and evidence groups can add an `agent_contract` without embedding
+world logic in Platform:
+
+```yaml
+agent_contract:
+  allowed_tools: [propose_institution, wait]
+  purpose: Repeated verified work needs a public institution decision.
+  required_result: Create one evidence-backed institution proposal or wait only when evidence is insufficient.
+  evidence_sources:
+    - {event_types: [work.completed], behavior_ids: [public_work]}
+  minimum_evidence: 3
+```
+
+The runtime counts these persisted selectors and shows the count to the Agent.
+The Agent still chooses the institution name, purpose, policy and later
+continuation. A signal-only rule cannot satisfy a contract that requires a
+structural proposal.
+
 An object or resource may expose research content declaratively:
 
 ```yaml

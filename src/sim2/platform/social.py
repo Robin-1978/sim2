@@ -8,6 +8,47 @@ from uuid import uuid4
 class SocialRuntimeMixin:
     """Institution, dialogue and atomic trade transactions."""
 
+    def count_verified_evidence(self, selectors: list[dict[str, Any]] | None) -> int:
+        """Count unique persisted events matching declarative evidence selectors."""
+
+        matched: set[int] = set()
+        for clause in selectors or []:
+            if not isinstance(clause, dict):
+                continue
+            event_types = clause.get("event_types", clause.get("events", []))
+            if isinstance(event_types, str):
+                event_types = [event_types]
+            behavior_ids = clause.get("behavior_ids", clause.get("behaviors", []))
+            if isinstance(behavior_ids, str):
+                behavior_ids = [behavior_ids]
+            action_ids = clause.get("action_ids", clause.get("actions", []))
+            if isinstance(action_ids, str):
+                action_ids = [action_ids]
+            event_types = [str(item) for item in (event_types or [])]
+            behavior_ids = {str(item) for item in (behavior_ids or [])}
+            action_ids = {str(item) for item in (action_ids or [])}
+            if not event_types and not behavior_ids and not action_ids:
+                continue
+            if event_types:
+                placeholders = ",".join("?" for _ in event_types)
+                rows = self.store.connection.execute(
+                    f"SELECT event_id,data_json FROM event_log WHERE event_type IN ({placeholders})",
+                    tuple(event_types),
+                ).fetchall()
+            else:
+                rows = self.store.connection.execute("SELECT event_id,data_json FROM event_log").fetchall()
+            for row in rows:
+                try:
+                    payload = json.loads(row["data_json"] or "{}")
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if behavior_ids and str(payload.get("behavior_id") or "") not in behavior_ids:
+                    continue
+                if action_ids and str(payload.get("action_id") or "") not in action_ids:
+                    continue
+                matched.add(int(row["event_id"]))
+        return len(matched)
+
     def _wake_configured_evolution_consumers(self, event_id: int, event_type: str, actor_id: str, minute: int) -> None:
         """Deliver a social event only to roles explicitly subscribed by the world.
 
