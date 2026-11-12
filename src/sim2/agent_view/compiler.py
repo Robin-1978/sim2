@@ -1506,6 +1506,12 @@ class AgentViewCompiler:
             for event_type in self._recent_event_types()[:16]
             if event_type not in {"world_minute.advanced", "world.created"}
         )
+        visible_entities = []
+        for entity_type in ("location", "agent", "faction", "object", "resource", "material"):
+            for item in self.store.entities_of_type(entity_type):
+                name = str(item.get("name") or "").strip()
+                if name:
+                    visible_entities.append({"name": name, "type": entity_type})
         return {
             "context_version": "1",
             "role": role,
@@ -1559,6 +1565,13 @@ class AgentViewCompiler:
             ),
             "registered_behaviors": behavior_catalog[:32],
             "registered_actions": action_catalog[:32],
+            "visible_entities": visible_entities[:64],
+            "condition_examples": {
+                "capability": "actor.can_<capability>",
+                "location": "actor.state.location_id == <visible location name>",
+                "world_property": 'world["<configured property>"]',
+                "recent_event": "event.recent.<event type>",
+            },
             "rule_condition_fields": condition_fields[:24],
             "direct_relationships": [],
             "active_task": {"bt": None, "action": None, "remaining_minutes": 0},

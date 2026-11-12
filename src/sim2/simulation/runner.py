@@ -472,7 +472,20 @@ class SimulationRunner:
                 self.platform.complete_evolution_task(task["task_id"])
             else:
                 provider_cooldown = self._provider_cooling_down(provider)
-                retry_delay = 0 if provider_cooldown else self.llm_error_cooldown_minutes if turn.result.get("failed_check") == "llm_response" else 60
+                failed_check = str(turn.result.get("failed_check") or "")
+                retry_count = int(task.get("retry_count", 0) or 0)
+                if provider_cooldown:
+                    retry_delay = 0
+                elif failed_check == "llm_response":
+                    retry_delay = self.llm_error_cooldown_minutes
+                else:
+                    # A semantic/tool rejection can benefit from a bounded
+                    # retry, but replaying the same stale evidence every
+                    # simulated hour makes God appear to wake on every tick.
+                    # Budget exhaustion starts with a full day and backs off
+                    # exponentially up to one simulated week.
+                    base_delay = 1440 if failed_check == "budget_exhausted" else 60
+                    retry_delay = min(10080, base_delay * (2 ** min(retry_count, 6)))
                 self.platform.retry_evolution_task(
                     task["task_id"],
                     int(self.platform.store.get_meta("world_minute", 0)) + retry_delay,

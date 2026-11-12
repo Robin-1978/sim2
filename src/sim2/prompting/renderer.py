@@ -468,9 +468,16 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("  - Use the exact machine field in rule_condition_fields, including underscores inside world[\"...\"]. A God proposal must not wake God itself; use a character/follow-up behavior or wait.")
         lines.append("  - A behavior proposal must use definition.nodes: [{type: action, action_id: exact registered Action name, parameters: {...}}], plus entry_conditions, success_results and failure_results. Do not invent steps, trigger, outcomes, action_names or free-form action objects.")
         lines.append("  - Action parameters whose names end in _entity or _id must use exact visible entity names from the world view and parameter names from the Action catalog. A behavior is rejected unless its assigned character can execute the whole sequence now.")
+        visible_names = ", ".join(str(item.get("name")) for item in (context.get("visible_entities") or [])[:48] if item.get("name"))
+        lines.append(f"  - Exact visible entities (use these names): {visible_names or 'none'}.")
+        examples = context.get("condition_examples") or {}
+        if examples:
+            lines.append("  - Machine condition examples: " + "; ".join(f"{label}={example}" for label, example in examples.items()) + ".")
         lines.append("  - Reusable behavior entry_conditions must use durable actor, capability, inventory, location, relationship or world state. Do not use event.recent.*, which would make the behavior disappear immediately after the current event.")
         lines.append("  - Research is open-ended: when validated results leave a concrete unanswered question, you may propose one new declarative research source or behavior. Do not invent a result; let a character perform the next research.")
         lines.append("  - A newer verified research fact may supersede an older one. Preserve the old fact for audit and use the configured lifecycle status instead of silently deleting it.")
+        lines.append("  - If the assigned actor is not already at the required place, include a Travel node before the destination Action; Platform must be able to execute the complete sequence from current state.")
+        lines.append("  - After a read-budget warning, use the facts already collected. Do not re-read the same source and exhaust the session.")
         lines.append("</world_proposal_contract>")
         progress_candidates = context.get("world_progress_candidates") or []
         lines.append("<configured_public_progress>")

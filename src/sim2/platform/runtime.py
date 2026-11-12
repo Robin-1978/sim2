@@ -1369,7 +1369,20 @@ class Platform(
         # rejections pass a future retry minute and retain their backoff.
         scheduled_minute = max(minute, int(retry_minute))
         with self.store.transaction():
-            self.store.reschedule_evolution_task(task_id, scheduled_minute)
+            row = self.store.connection.execute(
+                "SELECT data_json FROM evolution_task WHERE task_id=?", (task_id,)
+            ).fetchone()
+            data: dict[str, Any] = {}
+            if row is not None:
+                try:
+                    parsed = json.loads(row["data_json"] or "{}")
+                    if isinstance(parsed, dict):
+                        data = parsed
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    data = {}
+            data["retry_count"] = int(data.get("retry_count", 0) or 0) + 1
+            data["last_retry_reason"] = str(reason)
+            self.store.reschedule_evolution_task(task_id, scheduled_minute, data)
             if scheduled_minute == minute:
                 # ``step()`` normally promotes due tasks to ready. A provider
                 # retry intentionally does not step, so promote this one now
@@ -1379,7 +1392,12 @@ class Platform(
                 "evolution.task_retry",
                 None,
                 minute,
-                {"task_id": task_id, "retry_minute": scheduled_minute, "reason": str(reason)},
+                {
+                    "task_id": task_id,
+                    "retry_minute": scheduled_minute,
+                    "reason": str(reason),
+                    "retry_count": data["retry_count"],
+                },
             )
 
     def step(self) -> dict[str, Any]:

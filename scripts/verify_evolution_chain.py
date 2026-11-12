@@ -56,13 +56,21 @@ def main() -> int:
 
             trigger = next(item for item in platform.ready_evolution_tasks() if str(item["task_id"]).startswith("trigger:cistern_review_threshold"))
             god_proposal = AgentEngine(platform, god_provider).run(
-                role="god", actor_id="god", task_type=f"trigger:{trigger['trigger_id']}",
+                role="god", actor_id="god", task_type=(
+                    f"trigger:{trigger['trigger_id']}"
+                    if trigger.get("trigger_id")
+                    else str(trigger.get("task_type") or "god_local")
+                ),
             )
             if god_proposal.result.get("status") != "accepted":
                 raise RuntimeError(f"God did not create the institution: {god_proposal.result}")
             platform.complete_evolution_task(trigger["task_id"])
 
-            proposed = next(item for item in platform.ready_evolution_tasks() if item["task_type"] == "event:institution.proposed")
+            proposed = next(
+                item for item in platform.ready_evolution_tasks()
+                if item.get("role") == "god"
+                and item.get("task_type") in {"event:institution.proposed", "event_group:institution_proposal_review"}
+            )
             god_activation = AgentEngine(platform, god_provider).run(
                 role="god", actor_id="god", task_type=proposed["task_type"], source_events=proposed.get("source_events") or [],
             )

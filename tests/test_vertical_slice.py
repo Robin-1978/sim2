@@ -3620,6 +3620,46 @@ def test_claimed_evolution_task_is_recovered_after_process_restart(tmp_path: Pat
         restarted.close()
 
 
+def test_evolution_retry_tracks_backoff_and_clears_after_success(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "evolution-retry-backoff", tmp_path / "runtime"))
+    try:
+        task_id = "god:event_group:research_synthesis:42"
+        platform.store.put_evolution_task(
+            task_id, "god", "god", "event_group:research_synthesis", 0, 0,
+            status="ready",
+            data={"minimum_events": 2, "source_events": [{"event_id": 42, "event_type": "research.completed"}]},
+        )
+        platform.store.connection.commit()
+        platform.claim_evolution_task(task_id)
+        platform.retry_evolution_task(task_id, 60, "budget_exhausted")
+        row = platform.store.connection.execute(
+            "SELECT status,due_minute,data_json FROM evolution_task WHERE task_id=?", (task_id,)
+        ).fetchone()
+        data = json.loads(row["data_json"])
+        assert row["status"] == "scheduled"
+        assert row["due_minute"] == 60
+        assert data["retry_count"] == 1
+        assert data["source_events"][0]["event_id"] == 42
+        assert platform.store.connection.execute(
+            "SELECT COUNT(*) AS n FROM event_log WHERE event_type='evolution.task_retry'",
+        ).fetchone()["n"] == 1
+
+        platform.store.connection.execute("UPDATE evolution_task SET due_minute=0 WHERE task_id=?", (task_id,))
+        platform.store.connection.commit()
+        assert platform.claim_evolution_task(task_id) is not None
+        platform.complete_evolution_task(task_id)
+        completed = platform.store.connection.execute(
+            "SELECT status,data_json FROM evolution_task WHERE task_id=?", (task_id,)
+        ).fetchone()
+        completed_data = json.loads(completed["data_json"])
+        assert completed["status"] == "completed"
+        assert "retry_count" not in completed_data
+        assert completed_data["source_events"][0]["event_id"] == 42
+    finally:
+        platform.close()
+
+
 def test_god_proposal_creates_entity_only_through_platform(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "god-world", tmp_path / "runtime")

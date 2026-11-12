@@ -838,19 +838,39 @@ class WorldStore:
             )
         return task_ids
 
-    def reschedule_evolution_task(self, task_id: str, due_minute: int) -> None:
-        self.connection.execute("UPDATE evolution_task SET due_minute=?,status='scheduled' WHERE task_id=?", (int(due_minute), task_id))
-
-    def complete_evolution_task(self, task_id: str, completed_minute: int) -> None:
-        row = self.connection.execute("SELECT cadence_minutes FROM evolution_task WHERE task_id=?", (task_id,)).fetchone()
-        if row is None:
-            return
-        if int(row["cadence_minutes"]) <= 0:
-            self.connection.execute("UPDATE evolution_task SET status='completed' WHERE task_id=?", (task_id,))
+    def reschedule_evolution_task(self, task_id: str, due_minute: int, data: dict[str, Any] | None = None) -> None:
+        if data is None:
+            self.connection.execute(
+                "UPDATE evolution_task SET due_minute=?,status='scheduled' WHERE task_id=?",
+                (int(due_minute), task_id),
+            )
             return
         self.connection.execute(
-            "UPDATE evolution_task SET due_minute=?,status='scheduled' WHERE task_id=?",
-            (int(completed_minute) + int(row["cadence_minutes"]), task_id),
+            "UPDATE evolution_task SET due_minute=?,status='scheduled',data_json=? WHERE task_id=?",
+            (int(due_minute), json_dumps(data), task_id),
+        )
+
+    def complete_evolution_task(self, task_id: str, completed_minute: int) -> None:
+        row = self.connection.execute("SELECT cadence_minutes,data_json FROM evolution_task WHERE task_id=?", (task_id,)).fetchone()
+        if row is None:
+            return
+        try:
+            data = json.loads(row["data_json"] or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        data.pop("retry_count", None)
+        data.pop("last_retry_reason", None)
+        if int(row["cadence_minutes"]) <= 0:
+            self.connection.execute(
+                "UPDATE evolution_task SET status='completed',data_json=? WHERE task_id=?",
+                (json_dumps(data), task_id),
+            )
+            return
+        self.connection.execute(
+            "UPDATE evolution_task SET due_minute=?,status='scheduled',data_json=? WHERE task_id=?",
+            (int(completed_minute) + int(row["cadence_minutes"]), json_dumps(data), task_id),
         )
 
     def put_capability_progress(self, agent_id: str, capability: str, delta: float, source: str, world_minute: int, data: dict[str, Any] | None = None) -> int:

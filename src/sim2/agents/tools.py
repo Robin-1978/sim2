@@ -333,7 +333,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "properties": {
                 "definition_type": {"type": "string", "enum": ["attribute", "world_property", "action", "behavior", "recipe", "capability"]},
                 "name": {"type": "string", "description": "A short visible name. Platform derives the internal registry key."},
-                "definition": {"type": "object", "description": "Declarative fields for the selected type. For behavior use nodes:[{type:'action', action_id:'exact registered Action name', parameters:{...}}], entry_conditions, success_results and failure_results. Use visible names; no free-form steps, code, handlers, SQL, or internal IDs."},
+                "definition": {"type": "object", "description": "Declarative fields for the selected type. For behavior use nodes:[{type:'action', action_id:'exact registered Action name', parameters:{...}}], entry_conditions, success_results and failure_results. Include a Travel node when the actor must first reach a location. entry_conditions must be machine predicates from condition_examples, not prose. Use exact visible entity names; no free-form steps, code, handlers, SQL, or internal IDs."},
                 "assign_to": {"type": "array", "items": {"type": "string"}, "description": "For a behavior, required visible character names that can execute it; other definition types must leave this empty."},
                 "evidence": {"type": "string", "description": "The observed result that justifies this new definition."},
             },

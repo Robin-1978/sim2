@@ -68,6 +68,19 @@ def test_god_prompt_describes_world_content_creation_beyond_institutions(tmp_pat
         platform.close()
 
 
+def test_god_prompt_reports_exact_contexts_for_dynamic_behavior_proposals(tmp_path: Path):
+    platform = _town(tmp_path, "god-definition-guidance")
+    try:
+        prompt = render_context(platform.decision_view("god", role="god"), "Review verified research.")
+        assert "Exact visible entities" in prompt
+        assert "Machine condition examples" in prompt
+        assert "actor.can_<capability>" in prompt
+        assert "actor.state.location_id == <visible location name>" in prompt
+        assert "read-budget warning" in prompt
+    finally:
+        platform.close()
+
+
 def test_god_agent_creation_rejects_an_unexecutable_character(tmp_path: Path):
     platform = _town(tmp_path, "god-unexecutable-character")
     try:
