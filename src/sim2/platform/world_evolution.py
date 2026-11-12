@@ -388,7 +388,7 @@ class WorldEvolutionRuntimeMixin:
                         raise ValueError(
                             "registered behavior is not executable for its assigned character(s): "
                             + repr(unavailable)
-                            + "; correct the Action preconditions, parameters, or character conditions"
+                            + "; use machine predicates only in entry_conditions (for example actor.alive or actor.can_research), include a Travel node before a destination Action, and correct the Action parameters"
                         )
             event_id = self.store.append_event("definition.registered", actor_id, world_minute, {"definition_type": definition_type, "name": name, "definition_id": definition.get("id"), "assigned_to": [visible for _, visible in resolved_agents], "evidence": str(proposal.get("evidence") or "")})
             self._wake_configured_evolution_consumers(event_id, "definition.registered", actor_id, world_minute)

@@ -21,6 +21,11 @@ def test_god_contract_exposes_all_world_content_paths():
     ]
     assert "world_property" not in tools["propose_world_change"]["parameters"]["properties"]["change_type"]["enum"]
     assert "agent" in tools["propose_entity"]["parameters"]["properties"]["entity_type"]["description"]
+    definition = tools["propose_definition"]["parameters"]["properties"]["definition"]
+    definition_schema = tools["propose_definition"]["parameters"]["properties"]["definition"]
+    assert "Travel" in definition_schema["properties"]["nodes"]["description"]
+    conditions = definition_schema["properties"]["entry_conditions"]["description"]
+    assert "bare world property" in conditions
 
 
 def test_god_can_create_an_executable_character_from_configured_defaults(tmp_path: Path):
