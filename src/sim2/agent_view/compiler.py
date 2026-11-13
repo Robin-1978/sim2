@@ -229,6 +229,28 @@ class AgentViewCompiler:
             })
         return result
 
+    def _knowledge_gap_view(self, *, status: str = "active", limit: int = 8) -> list[dict[str, Any]]:
+        """Expose current research questions without internal identifiers."""
+
+        result: list[dict[str, Any]] = []
+        for row in self.store.list_knowledge_gaps(status=status, limit=limit):
+            item: dict[str, Any] = {
+                "question": str(row.get("question") or ""),
+                "status": str(row.get("status") or status),
+                "updated_minute": int(row.get("updated_minute") or 0),
+            }
+            if row.get("last_fact"):
+                item["last_finding"] = str(row["last_fact"])[:240]
+            total = int(row.get("total_stages") or 0)
+            if total:
+                item["stages"] = f"{len(row.get('completed_stages') or [])}/{total} completed"
+            try:
+                item["source"] = str(self.store.get_entity(str(row.get("current_source_id"))).get("name") or "")
+            except (KeyError, TypeError):
+                pass
+            result.append(item)
+        return result
+
     def _interaction_context(self, agent: dict[str, Any], participants: list[dict[str, Any]]) -> dict[str, Any]:
         """Expose configured relationship signals without naming story entities."""
 
@@ -1651,6 +1673,7 @@ class AgentViewCompiler:
             "audience_candidates": audience_candidates,
             "recent_actions": recent_events[:8], "recent_story_events": [item for item in recent_events if str(item.get("event_type", "")).startswith("story.")][:8],
             "recent_history": self._recent_history_view(16),
+            "knowledge_gaps": self._knowledge_gap_view(status="active", limit=8),
             "memories": story_memories,
             "long_term_memories": story_memories,
             "short_term_memories": [],
@@ -1836,6 +1859,7 @@ class AgentViewCompiler:
             "known_facts": [],
             "recent_actions": recent_world_events,
             "recent_history": self._recent_history_view(20),
+            "knowledge_gaps": self._knowledge_gap_view(status="active", limit=12),
             "memories": god_memories,
             "long_term_memories": god_memories,
             "short_term_memories": [],

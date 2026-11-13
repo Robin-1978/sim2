@@ -126,6 +126,14 @@ visible actor, keyword, and world-minute range. Its result removes internal IDs
 and never grants mutation authority. A wake contract may omit the read tool to
 keep an event review submission-only; ordinary Story/God sessions expose it.
 
+The current research queue is a different read model. Story and God may call
+`query_knowledge_gaps` to list active or resolved questions without replaying
+the event log. Platform updates that projection when a generic research Action
+completes a stage; it remains active while any configured stage is open and is
+resolved only after all active stages have completed. This prevents a new title
+from hiding a repeated question while keeping historical evidence immutable in
+`event_log`.
+
 The history window lists only meaningful events: the per-minute `world_minute.advanced`
 tick is skipped, and the validated source events of a wake appear once as
 `<triggering_evidence>` instead of again in the history. A world-level prompt has a

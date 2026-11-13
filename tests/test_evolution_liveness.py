@@ -180,6 +180,11 @@ def test_stagnation_config_compiles_and_rejects_bad_fields() -> None:
             normalize_evolution_config(bad)
 
 
+def test_stagnation_progress_event_types_are_configurable() -> None:
+    compiled = normalize_evolution_config({"stagnation": {"window": "1d", "progress_event_types": ["finding.confirmed"]}})
+    assert compiled["stagnation"]["progress_event_types"] == ["finding.confirmed"]
+
+
 def _stagnation_world(platform: Platform, window: str = "1h", max_interval: str | None = None, max_characters: int | None = None) -> None:
     spec = {
         "window": window,
@@ -217,6 +222,20 @@ def test_stagnation_signal_has_a_baseline_then_repeats_at_doubling_spacing(tmp_p
         assert _stagnation_minutes(platform) == [120, 180, 300]
         state = platform.store.get_meta("stagnation_state")
         assert state["stagnant_windows"] == 4 and state["last_novel_minute"] == 60
+    finally:
+        platform.close()
+
+
+def test_meaningful_progress_resets_option_stagnation(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "stagnation-progress")
+    try:
+        _stagnation_world(platform)
+        _step(platform, 60)
+        with platform.store.transaction():
+            platform.store.append_event("research.progressed", "luo_shan", 90, {"source_id": "boundary_stone", "stage_id": "stage_1"})
+        _step(platform, 60)
+        assert _stagnation_minutes(platform) == []
+        assert platform.store.get_meta("stagnation_state")["progressed_last_window"] is True
     finally:
         platform.close()
 
@@ -378,6 +397,21 @@ def test_stagnation_is_silent_without_configuration(tmp_path: Path) -> None:
         _step(platform, 240)
         assert _stagnation_minutes(platform) == []
         assert platform.store.get_meta("stagnation_state") is None
+    finally:
+        platform.close()
+
+
+def test_configured_resource_safety_publishes_one_crossing_event(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "resource-safety")
+    try:
+        rules = dict(platform.store.get_meta("rules", {}) or {})
+        rules["resource_safety"] = [{"resource_id": "cistern_water", "minimum_reserve": 12, "event_type": "resource.safety_low"}]
+        platform.store.set_meta("rules", rules)
+        _set_quantity(platform, "cistern_water", 11)
+        platform.step()
+        platform.step()
+        events = [item for item in platform.store.recent_events(limit=80) if item["event_type"] == "resource.safety_low"]
+        assert len(events) == 1 and events[0]["resource_id"] == "cistern_water"
     finally:
         platform.close()
 
@@ -562,6 +596,47 @@ def test_research_source_for_a_capable_researcher_is_accepted_by_visible_name(tm
         assert result["status"] == "accepted", result
         snapshot = platform.view.option_snapshot("luo_shan")
         assert "behavior:research_boundary_stone|source_id=可读的残页" in snapshot["options"]
+    finally:
+        platform.close()
+
+
+def test_near_duplicate_research_source_is_rejected_even_with_a_new_name(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "research-novelty-guard")
+    try:
+        first = _source_proposal("第一份界标记录", ["罗杉"])
+        first["description"] = "The boundary marks and old road record still need comparison."
+        first["state"]["research_discoveries"] = [{"fact": "界碑刻文与旧商路记录是否同源，尚待核对。", "required": 1}]
+        assert platform.submit_entity_proposal("god", first)["status"] == "accepted"
+        second = _source_proposal("第二份界标续页", ["罗杉"])
+        second["description"] = "A continuation page comparing the boundary marks and old road record."
+        second["state"]["research_discoveries"] = [{"fact": "界碑刻文与旧商路记录是否同源，尚待核对。", "required": 1}]
+        result = platform.submit_entity_proposal("god", second)
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "research_novelty_duplicate"
+    finally:
+        platform.close()
+
+
+def test_overlapping_research_novelty_keys_are_rejected(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "research-key-overlap")
+    try:
+        def proposal(name: str, key: str) -> dict:
+            return {
+                "entity_type": "document",
+                "name": name,
+                "description": "A trade clue from the old road.",
+                "location_id": "old_road",
+                "state": {
+                    "location_id": "old_road",
+                    "research_assignees": ["罗杉"],
+                    "research_novelty_key": key,
+                    "research_question": "trade confidence cause",
+                    "research_discoveries": [{"fact": "trade confidence cause unknown"}],
+                },
+            }
+        assert platform.submit_entity_proposal("god", proposal("贸易线索甲", "old_road_trade_confidence_cause"))["status"] == "accepted"
+        result = platform.submit_entity_proposal("god", proposal("贸易线索乙", "trade_confidence_low_cause_unknown"))
+        assert result["status"] == "rejected" and result["failed_check"] == "research_novelty_duplicate"
     finally:
         platform.close()
 

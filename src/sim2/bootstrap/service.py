@@ -1058,6 +1058,18 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                     resource_baseline[str(resource["id"])] = float(amount)
                     store.sync_world_property_from_resource(str(resource["id"]), amount)
             store.set_meta("resource_baseline", resource_baseline)
+            # Seed one canonical knowledge gap per configured research source.
+            # God reviews and advances these gaps instead of inventing a new
+            # document for every completion event.
+            for source in store.research_source_catalog():
+                source_entity = store.get_entity(str(source["id"]))
+                source_state = source_entity.get("initial_state") if isinstance(source_entity.get("initial_state"), dict) else {}
+                discoveries = source.get("discoveries") or []
+                question = str(source_state.get("research_question") or source_state.get("open_question") or "")
+                if not question:
+                    question = str(next((item.get("fact") for item in discoveries if isinstance(item, dict) and item.get("fact")), source.get("name", "research source")))
+                gap_key = str(source_state.get("research_novelty_key") or source_state.get("research_gap_key") or f"source:{source['id']}")
+                store.upsert_knowledge_gap(gap_key, "active", gap_key, question, source_id=str(source["id"]), data={"seeded": True})
             for faction in load_yaml(config_dir, "factions.yaml", {}).get("factions", []):
                 store.put_entity(faction["id"], "faction", faction.get("name", faction["id"]), faction)
             for agent in load_yaml(config_dir, "agents.yaml", {}).get("agents", []):

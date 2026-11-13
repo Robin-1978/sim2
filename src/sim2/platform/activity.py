@@ -876,6 +876,16 @@ class ActivityRuntimeMixin:
         progress = self.store.advance_progress(owner, key, float(definition.get("amount", 1) or 1), required, minute, {"source_action": action.get("id"), "source_agent": agent["id"], "stage_id": (discovery or {}).get("id")})
         event_type = "research.completed" if progress["completed"] else "research.progressed"
         event_id = self.store.append_event(event_type, agent["id"], minute, {"progress_key": key, "progress": progress, "source_action": action.get("id"), "parameters": parameters, "source_id": source_id, "stage_id": (discovery or {}).get("id"), "discovery_status": (discovery or {}).get("status", "active")})
+        if progress["completed"]:
+            self.store.update_research_gap(
+                source_id,
+                stage_id=(discovery or {}).get("id"),
+                completed=True,
+                progress=progress,
+                fact=str((discovery or {}).get("fact") or ""),
+                event_id=event_id,
+                world_minute=minute,
+            )
         # Partial work is retained in SQLite for the next attempt. Story
         # feedback is a completion boundary, so an incomplete sample does not
         # pause the world or wake the Story Agent without a new fact.
@@ -943,6 +953,13 @@ class ActivityRuntimeMixin:
                     # single-attempt event contract.
                     if progress is None:
                         event_id = self.store.append_event("research.completed", agent["id"], minute, {"source_id": source_id, "fact": fact})
+                        self.store.update_research_gap(
+                            source_id,
+                            completed=True,
+                            fact=fact,
+                            event_id=event_id,
+                            world_minute=minute,
+                        )
                         self._queue_story_task(event_id, "research.completed", agent["id"], minute)
                         result = {"result": "research_completed", "event_id": event_id, "progress": progress}
                     elif progress is not None:

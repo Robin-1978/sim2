@@ -144,6 +144,20 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "additionalProperties": False,
         },
     },
+    "query_knowledge_gaps": {
+        "purpose": "List open or already answered research questions before proposing new research.",
+        "kind": "read",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "enum": ["active", "resolved", "all"], "description": "active means still unanswered; resolved means already answered."},
+                "contains": {"type": "string", "description": "Optional word or phrase from the question or source name."},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 12},
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
     "recall_memory": {
         "purpose": "Recall the agent's own retained experiences and knowledge.",
         "kind": "read",
@@ -494,8 +508,8 @@ ROLE_TOOLS: dict[str, list[str]] = {
     "agent_reflection": ["recall_memory", "query_known_fact", "record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "wait"],
     # Story receives the validated source and recent history in its world view;
     # query_history is the bounded read path for an older causal thread.
-    "story": ["query_history", "record_world_progress", "propose_story_beat", "wait"],
-    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "query_history", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "propose_institution", "approve_institution", "revise_institution", "wait"],
+    "story": ["query_history", "query_knowledge_gaps", "record_world_progress", "propose_story_beat", "wait"],
+    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "query_history", "query_knowledge_gaps", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "propose_institution", "approve_institution", "revise_institution", "wait"],
     "world_builder": ["validate_world_template", "submit_world_template", "wait"],
 }
 
@@ -800,6 +814,15 @@ class AgentToolExecutor:
             contains=contains,
             since_minute=since_minute,
             until_minute=until_minute,
+            limit=limit,
+            global_scope=self.role in {"god", "story"},
+        )
+
+    def _query_knowledge_gaps(self, status: str = "active", contains: str = "", limit: int = 8) -> dict[str, Any]:
+        return self.platform.perception.query_knowledge_gaps(
+            self.actor_id,
+            status=status,
+            contains=contains,
             limit=limit,
             global_scope=self.role in {"god", "story"},
         )

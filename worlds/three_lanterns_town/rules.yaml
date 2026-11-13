@@ -38,6 +38,10 @@ resource_regeneration:
   every_minutes: 1440
   amount: 6
   cap: 30
+resource_safety:
+- resource_id: cistern_water
+  minimum_reserve: 12
+  event_type: resource.safety_low
 resource_property_projections:
   cistern_water: cistern_reserve
 capability_progression:

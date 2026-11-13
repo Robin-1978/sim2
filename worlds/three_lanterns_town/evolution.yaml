@@ -4,6 +4,12 @@ cadence:
 stagnation:
   window: 1d
   max_interval: 1w
+  progress_event_types:
+  - research.progressed
+  - research.completed
+  - exploration.completed
+  - institution.revised
+  - resource.safety_low
 triggers:
 - id: town_security_milestone
   when: world.town_security >= 0.8
@@ -23,10 +29,12 @@ wakes:
 - id: research_synthesis
   "on": research.completed
   for: god
+  count: 2
+  every: 1d
   distinct_by: [source_id, stage_id]
   tools: [propose_entity, propose_definition, wait]
   purpose: A research stage was completed. Researchers need a grounded executable continuation once their open stages run out, such as a newly assigned source with declarative stages or a genuinely new capability.
-  result: If no assigned source has an open stage, create one new research source with research_discoveries, research_required or stage required values, and research_assignees naming a character who can already perform research with the existing generic research behavior; otherwise propose the smallest distinct executable continuation or wait, because an open stage already is the researchers' next step. A descriptive faction alone does not satisfy this research continuation.
+  result: If no assigned source has an open stage, create at most one genuinely new research source for a new unanswered question with research_novelty_key, research_question, research_discoveries, research_required or stage required values, and research_assignees naming a character who can already perform research with the existing generic research behavior. Do not create a new page, ledger, draft, continuation or copy of an existing question; Platform rejects near-duplicate research focus. Otherwise wait because an open stage already is the researchers' next step.
 - id: gathering_synthesis
   "on": resource.gathered
   for: god
@@ -78,5 +86,14 @@ wakes:
   result: Register one reusable behavior from the existing settlement Action and assign it to the configured character, or wait only when the active institution already has an executable settlement behavior.
 - {"on": entity.created, for: god}
 - {"on": definition.registered, for: god}
+- id: resource_safety
+  "on": resource.safety_low
+  for: god
+  count: 1
+  every: 1d
+  external: true
+  tools: [revise_institution, propose_entity, propose_definition, wait]
+  purpose: A configured reserve crossed its safety floor; review the institution and supply path against the observed runway before another allocation.
+  result: Revise the active institution when its minimum or cadence cannot preserve the configured reserve floor; otherwise propose one executable supply or recovery path. Do not create a new research document for a stock shortage.
 - {"on": institution.activated, for: story}
 - {"on": institution.allocation_completed, for: story, manual_only: true}

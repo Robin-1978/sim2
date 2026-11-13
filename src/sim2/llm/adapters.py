@@ -124,6 +124,24 @@ class LongCatAdapter(ModelAdapter):
         return response
 
 
+@dataclass(frozen=True)
+class BeamAdapter(ModelAdapter):
+    """Normalize Beam's occasional whitespace-padded JSON object keys."""
+
+    name: str = "beam"
+
+    @classmethod
+    def _clean(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {str(key).strip(): cls._clean(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [cls._clean(item) for item in value]
+        return value
+
+    def normalize_response(self, response: dict[str, Any]) -> dict[str, Any]:
+        return self._clean(response)
+
+
 def resolve_adapter(provider_type: str, base_url: str, model: str, hint: str | None = None) -> ModelAdapter:
     key = str(hint or "").casefold()
     if key in {"deepseek", "deepseek_chat"} or "deepseek" in str(model).casefold():
@@ -132,4 +150,6 @@ def resolve_adapter(provider_type: str, base_url: str, model: str, hint: str | N
         return IcemanAdapter()
     if key in {"longcat", "longcat_chat"} or "longcat" in str(model).casefold():
         return LongCatAdapter()
+    if key in {"beam", "beam_chat"} or "beam" in str(model).casefold():
+        return BeamAdapter()
     return ModelAdapter()

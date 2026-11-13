@@ -162,7 +162,7 @@ def _remove_block(text: str, tag: str) -> tuple[str, bool]:
 # dropped.
 _BACKGROUND_SECTIONS = (
     "registered_actions", "knowledge_and_memory", "nearby_entities", "relationships", "recent_actions",
-    "world_trends", "rule_condition_fields", "world_outcomes",
+    "world_trends", "knowledge_gaps", "rule_condition_fields", "world_outcomes",
 )
 
 
@@ -178,7 +178,12 @@ def _compact_world_prompt(rendered: str, max_chars: int) -> str | None:
     if decision_start < 0:
         return None
     marker = "\n<context_limit>Earlier context was compacted; use a read tool if needed.</context_limit>\n"
-    tail = rendered[decision_start:]
+    # The latest tool/platform feedback is part of the decision protocol. Keep
+    # it with the task when compacting a world prompt; otherwise a rejection
+    # can disappear and the next model turn cannot correct its proposal.
+    interaction_start = rendered.find("  <interaction_history>")
+    tail_start = interaction_start if 0 <= interaction_start < decision_start else decision_start
+    tail = rendered[tail_start:]
     institutions_start = rendered.find("<social_institutions>")
     institutions_end = rendered.find("</social_institutions>", institutions_start) if institutions_start >= 0 else -1
     if institutions_start >= 0 and 0 <= institutions_end < decision_start:
@@ -264,6 +269,19 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             lines.append("  - no other recent validated history" if triggering_evidence else "  - no recent validated history")
         lines.append("  Use query_history for an older or narrower causal slice before proposing a continuation.")
         lines.append("</world_history>")
+
+        gaps = context.get("knowledge_gaps") or []
+        lines.append("<knowledge_gaps>")
+        lines.append("  These are current research questions, not historical events. Continue an active question; do not create a duplicate of a resolved or already open question.")
+        for gap in gaps[:12]:
+            detail = f"; source={_line(gap.get('source'))}" if gap.get("source") else ""
+            stages = f"; stages={_line(gap.get('stages'))}" if gap.get("stages") else ""
+            finding = f"; last_finding={_line(gap.get('last_finding'))}" if gap.get("last_finding") else ""
+            lines.append(f"  - {_line(gap.get('question'))}; status={_line(gap.get('status'))}{detail}{stages}{finding}")
+        if not gaps:
+            lines.append("  - no active knowledge gap is recorded")
+        lines.append("  Use query_knowledge_gaps for the bounded current projection; use query_history for the event evidence behind it.")
+        lines.append("</knowledge_gaps>")
 
     world_rules = context.get("active_world_rules") or []
     if world_rules:
@@ -517,7 +535,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 for event_type in (source.get("event_types") or [])
             }
             if evidence_types & {"research.completed", "research.progressed"}:
-                lines.append("  For this research continuation, use propose_entity with entity_type=document (not agent), a short name, a visible location, and state containing research_discoveries: [{fact: 'one new question or finding'}], research_required: a positive number, and research_assignees: [the exact visible name of a character whose own choices already include researching a configured source; Platform rejects any other assignee]. Omit internal ids; Platform assigns stage keys. Do not submit a faction or descriptive agent without a research source.")
+                lines.append("  For this research continuation, use propose_entity only for one genuinely new unanswered question. Include entity_type=document, a short name, a visible location, state.research_novelty_key, state.research_question, state.research_discoveries: [{fact: 'one new question or finding'}], research_required: a positive number, and research_assignees: [the exact visible name of a character whose own choices already include researching a configured source; Platform rejects unreachable or near-duplicate sources]. Do not create a page, draft, ledger, continuation or copy of an existing question; use revise_institution or a supply behavior for a resource problem.")
             lines.append("  Use only the configured trigger tools. A rule signal or narrative acknowledgement is not a substitute for the required result.")
             lines.append("</evolution_trigger>")
         lines.append("<world_proposal_contract>")
@@ -572,7 +590,12 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("</world_behavior_catalog>")
         lines.append("<world_action_catalog>")
         actions = context.get("registered_actions") or []
-        for action in actions[:24]:
+        # God needs the registered action vocabulary and outcome, but not the
+        # full parameter schema for every action during a world review. The
+        # detailed schema remains in character/BT views where it is used to
+        # execute a behavior.
+        action_limit = 16 if role == "god" else 24
+        for action in actions[:action_limit]:
             parameters = "; ".join(str(item) for item in (action.get("parameters") or []))
             schema = action.get("parameter_schema") or {}
             entity_requirements = "; ".join(
@@ -582,11 +605,14 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             )
             defaults = _plain(action.get("parameter_defaults") or {})
             success = _plain(action.get("success") or [])
-            lines.append(
-                f"  - Action: {action.get('name', 'action')}: {action.get('purpose', 'configured action')}; "
-                f"parameters={parameters or 'none'}; entity requirements={entity_requirements or 'none'}; "
-                f"defaults={defaults or 'none'}; result={success or 'not stated'}"
-            )
+            if role == "god":
+                lines.append(f"  - Action: {action.get('name', 'action')}: {action.get('purpose', 'configured action')}; result={success or 'not stated'}")
+            else:
+                lines.append(
+                    f"  - Action: {action.get('name', 'action')}: {action.get('purpose', 'configured action')}; "
+                    f"parameters={parameters or 'none'}; entity requirements={entity_requirements or 'none'}; "
+                    f"defaults={defaults or 'none'}; result={success or 'not stated'}"
+                )
         if not actions:
             lines.append("  - none")
         lines.append("</world_action_catalog>")

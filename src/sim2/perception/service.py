@@ -298,3 +298,71 @@ class PerceptionService:
             "matched": len(history),
             **self._observation_meta(visibility="global_history"),
         }
+
+    def query_knowledge_gaps(
+        self,
+        agent_id: str,
+        *,
+        status: str = "active",
+        contains: str = "",
+        limit: int = 8,
+        global_scope: bool = False,
+    ) -> dict[str, Any]:
+        """List the world's current open or resolved knowledge questions.
+
+        The event log records what happened.  This projection answers the
+        smaller question world agents ask before proposing research: which
+        questions remain open, and which one already has an answer.
+        """
+
+        if not global_scope:
+            return {
+                "status": "rejected",
+                "failed_check": "knowledge_gap_scope",
+                "retryable": False,
+                "message": "Only world-level Story and God sessions may query knowledge gaps.",
+            }
+        requested = str(status or "active").strip().casefold()
+        if requested not in {"active", "resolved", "all"}:
+            return {
+                "status": "rejected",
+                "failed_check": "knowledge_gap_status",
+                "retryable": True,
+                "message": "status must be active, resolved or all.",
+            }
+        rows = self.store.list_knowledge_gaps(limit=200)
+        needle = str(contains or "").strip().casefold()
+        source_names: dict[str, str] = {}
+        for source in self.store.research_source_catalog():
+            source_names[str(source["id"])] = str(source.get("name") or source["id"])
+        gaps: list[dict[str, Any]] = []
+        for row in rows:
+            if requested != "all" and str(row.get("status") or "").casefold() != requested:
+                continue
+            source_id = str(row.get("current_source_id") or "")
+            source_name = source_names.get(source_id, "")
+            searchable = " ".join([str(row.get("question") or ""), str(row.get("topic_key") or ""), source_name]).casefold()
+            if needle and needle not in searchable:
+                continue
+            item: dict[str, Any] = {
+                "question": str(row.get("question") or ""),
+                "status": str(row.get("status") or "active"),
+                "updated_minute": int(row.get("updated_minute") or 0),
+            }
+            if source_name:
+                item["research_source"] = source_name
+            total = int(row.get("total_stages") or 0)
+            if total:
+                item["stages"] = f"{len(row.get('completed_stages') or [])}/{total} completed"
+            if row.get("last_fact"):
+                item["last_finding"] = str(row.get("last_fact"))[:240]
+            gaps.append(item)
+            if len(gaps) >= max(1, min(int(limit), 12)):
+                break
+        return {
+            "status": "ok",
+            "filter": {"status": requested, "contains": contains or "any"},
+            "gaps": gaps,
+            "matched": len(gaps),
+            **self._observation_meta(visibility="world_knowledge_gaps"),
+        }

@@ -71,6 +71,7 @@ def _session(turn: AgentTurn, actor_id: str, *, full: bool = False) -> dict[str,
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--provider", default=None, help="Override every role with one configured provider (e.g. remote)")
+    parser.add_argument("--provider-max-completion-tokens", type=int, default=None, help="Override the per-role completion cap for an explicit provider override")
     parser.add_argument("--world", default="three_lanterns_town", help="Content package under worlds/")
     parser.add_argument("--rounds", type=int, default=10)
     parser.add_argument("--minutes-per-round", type=int, default=120)
@@ -90,7 +91,7 @@ def main() -> int:
     router = LLMRouter(LLMConfig.load())
 
     def provider(role: str) -> Any:
-        return router.new_provider_for_name(args.provider, role=role) if args.provider else router.provider_for_role(role)
+        return router.new_provider_for_name(args.provider, max_completion_tokens=args.provider_max_completion_tokens, role=role) if args.provider else router.provider_for_role(role)
 
     providers = {role: provider(role) for role in ("agent_decision", "agent_reflection", "god", "story")}
     sessions: list[dict[str, Any]] = []

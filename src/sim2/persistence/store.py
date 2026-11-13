@@ -169,6 +169,16 @@ CREATE TABLE IF NOT EXISTS progress_state (
   updated_minute INTEGER NOT NULL,
   PRIMARY KEY (owner_id, progress_key)
 );
+CREATE TABLE IF NOT EXISTS knowledge_gap (
+  gap_id TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  topic_key TEXT NOT NULL,
+  question TEXT NOT NULL,
+  current_source_id TEXT,
+  created_minute INTEGER NOT NULL,
+  updated_minute INTEGER NOT NULL,
+  data_json TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS dialogue_exchange (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   speaker_id TEXT NOT NULL,
@@ -604,6 +614,38 @@ class WorldStore:
             })
         return result
 
+    def research_source_facts(self) -> list[dict[str, Any]]:
+        """Return one compact manifest row for each persisted research source.
+
+        The manifest lets Platform reject a new source that merely rephrases a
+        completed one. It contains only stored source metadata and the latest
+        verified discovery, not model reasoning or hidden prompts.
+        """
+
+        result: list[dict[str, Any]] = []
+        for source in self.research_source_catalog():
+            progress_prefix = f"research:{source['id']}"
+            progress = self.connection.execute(
+                "SELECT progress_key,current_value,required_value,data_json,updated_minute FROM progress_state "
+                "WHERE owner_id=? AND (progress_key=? OR progress_key LIKE ?) ORDER BY progress_key",
+                (str(self.get_meta("world_id", "world")), progress_prefix, progress_prefix + ":%"),
+            ).fetchone()
+            completed = bool(progress and float(progress["current_value"] or 0) >= float(progress["required_value"] or 1))
+            try:
+                entity = self.get_entity(str(source["id"]))
+            except KeyError:
+                entity = {}
+            state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
+            discovery = next((item.get("fact") or item.get("question") for item in source.get("discoveries", []) if isinstance(item, dict) and (item.get("fact") or item.get("question"))), "")
+            result.append({
+                "id": source["id"],
+                "name": source["name"],
+                "focus": state.get("research_focus") or discovery,
+                "open_question": discovery,
+                "completed": completed,
+            })
+        return result
+
     def list_knowledge_facts(self, agent_id: str, *, limit: int = 8) -> list[dict[str, Any]]:
         rows = self.connection.execute(
             "SELECT id,fact_key,data_json FROM knowledge_fact WHERE agent_id=? ORDER BY id DESC LIMIT ?",
@@ -744,6 +786,121 @@ class WorldStore:
             (owner_id, max(1, min(int(limit), 200))),
         ).fetchall()
         return [{"owner_id": owner_id, "progress_key": row["progress_key"], "current": row["current_value"], "required": row["required_value"], "updated_minute": row["updated_minute"], **json.loads(row["data_json"])} for row in rows]
+
+    def upsert_knowledge_gap(self, gap_id: str, status: str, topic_key: str, question: str, *, source_id: str | None = None, data: dict[str, Any] | None = None, world_minute: int | None = None) -> dict[str, Any]:
+        minute = int(self.get_meta("world_minute", 0) if world_minute is None else world_minute)
+        current = self.connection.execute("SELECT created_minute FROM knowledge_gap WHERE gap_id=?", (str(gap_id),)).fetchone()
+        created = int(current["created_minute"]) if current else minute
+        payload = dict(data or {})
+        self.connection.execute(
+            "INSERT INTO knowledge_gap(gap_id,status,topic_key,question,current_source_id,created_minute,updated_minute,data_json) VALUES (?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(gap_id) DO UPDATE SET status=excluded.status,topic_key=excluded.topic_key,question=excluded.question,current_source_id=excluded.current_source_id,updated_minute=excluded.updated_minute,data_json=excluded.data_json",
+            (str(gap_id), str(status), str(topic_key), str(question), str(source_id or "") or None, created, minute, json_dumps(payload)),
+        )
+        return {"gap_id": str(gap_id), "status": str(status), "topic_key": str(topic_key), "question": str(question), "current_source_id": source_id, "created_minute": created, "updated_minute": minute, **payload}
+
+    def list_knowledge_gaps(self, *, status: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        query = "SELECT gap_id,status,topic_key,question,current_source_id,created_minute,updated_minute,data_json FROM knowledge_gap"
+        args: list[Any] = []
+        if status:
+            query += " WHERE status=?"
+            args.append(str(status))
+        query += " ORDER BY updated_minute DESC,gap_id LIMIT ?"
+        args.append(max(1, min(int(limit), 200)))
+        return [
+            {"gap_id": row["gap_id"], "status": row["status"], "topic_key": row["topic_key"], "question": row["question"], "current_source_id": row["current_source_id"], "created_minute": row["created_minute"], "updated_minute": row["updated_minute"], **json.loads(row["data_json"] or "{}")}
+            for row in self.connection.execute(query, tuple(args)).fetchall()
+        ]
+
+    def update_research_gap(
+        self,
+        source_id: str,
+        *,
+        stage_id: str | None = None,
+        completed: bool = False,
+        progress: dict[str, Any] | None = None,
+        fact: str = "",
+        event_id: int | None = None,
+        world_minute: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Project a research result onto the source's persisted knowledge gap.
+
+        ``event_log`` remains the historical source of truth.  This table is a
+        small current-state projection so world agents can see which questions
+        are still open without replaying every event.  A multi-stage source is
+        resolved only after every active configured stage has a completed
+        ``research.completed`` event; a one-stage/legacy source resolves on its
+        first completed result.
+        """
+
+        source_key = str(source_id or "").strip()
+        if not source_key:
+            return []
+        minute = int(self.get_meta("world_minute", 0) if world_minute is None else world_minute)
+        discoveries = [
+            item for item in self.research_discoveries(source_key)
+            if str(item.get("status", "active")).casefold() not in {"obsolete", "disabled"}
+        ]
+        expected = {str(item.get("id")) for item in discoveries if item.get("id")}
+        completed_stages: set[str] = set()
+        rows = self.connection.execute(
+            "SELECT event_id,data_json FROM event_log WHERE event_type='research.completed' ORDER BY event_id"
+        ).fetchall()
+        for row in rows:
+            try:
+                payload = json.loads(row["data_json"] or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if str(payload.get("source_id") or "") != source_key:
+                continue
+            value = str(payload.get("stage_id") or "")
+            if value:
+                completed_stages.add(value)
+            elif len(expected) <= 1:
+                completed_stages.update(expected)
+        if completed and stage_id:
+            completed_stages.add(str(stage_id))
+        resolved = bool(completed and (not expected or expected <= completed_stages))
+        payload_progress = dict(progress or {})
+        updated: list[dict[str, Any]] = []
+        gap_rows = self.connection.execute(
+            "SELECT gap_id,status,topic_key,question,current_source_id,created_minute,updated_minute,data_json "
+            "FROM knowledge_gap WHERE current_source_id=? ORDER BY gap_id",
+            (source_key,),
+        ).fetchall()
+        for row in gap_rows:
+            try:
+                prior = json.loads(row["data_json"] or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                prior = {}
+            merged = {
+                **prior,
+                "completed_stages": sorted(completed_stages),
+                "total_stages": len(expected),
+                "last_stage_id": str(stage_id or prior.get("last_stage_id") or "") or None,
+            }
+            if payload_progress:
+                merged["last_progress"] = payload_progress
+            if fact:
+                merged["last_fact"] = str(fact)
+            if event_id is not None:
+                merged["last_event_id"] = int(event_id)
+            status = "resolved" if resolved else "active"
+            self.connection.execute(
+                "UPDATE knowledge_gap SET status=?,updated_minute=?,data_json=? WHERE gap_id=?",
+                (status, minute, json_dumps(merged), str(row["gap_id"])),
+            )
+            updated.append({
+                "gap_id": str(row["gap_id"]),
+                "status": status,
+                "topic_key": str(row["topic_key"]),
+                "question": str(row["question"]),
+                "current_source_id": source_key,
+                "created_minute": int(row["created_minute"]),
+                "updated_minute": minute,
+                **merged,
+            })
+        return updated
 
     def put_dialogue_exchange(self, speaker_id: str, listener_id: str | None, topic: str, world_minute: int, data: dict[str, Any]) -> int:
         cur = self.connection.execute(

@@ -12,7 +12,7 @@ from sim2.intents.models import BehaviorIntent
 from sim2.actions.capacity import check_action_capacity
 from sim2.actions.conditions import ConditionEngine
 from sim2.actions.effects import EffectPipeline
-from sim2.llm.adapters import IcemanAdapter, LongCatAdapter, resolve_adapter
+from sim2.llm.adapters import BeamAdapter, IcemanAdapter, LongCatAdapter, resolve_adapter
 from sim2.llm.gateway import _json_from_text
 
 
@@ -159,6 +159,13 @@ def test_iceman_adapter_keeps_tools_but_removes_unsupported_json_mode():
     assert "tools" in payload
     assert "response_format" not in payload
     assert payload["tool_choice"] == "required"
+
+
+def test_beam_adapter_strips_whitespace_padded_json_keys():
+    adapter = resolve_adapter("openai_compatible", "https://example.test", "beam-free")
+    assert isinstance(adapter, BeamAdapter)
+    normalized = adapter.normalize_response({"intent_type ": "propose_definition", "definition": {"nodes ": []}})
+    assert normalized == {"intent_type": "propose_definition", "definition": {"nodes": []}}
 
 
 def test_bare_wait_is_the_only_plain_text_intent_normalized():

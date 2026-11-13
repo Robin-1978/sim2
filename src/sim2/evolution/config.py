@@ -27,6 +27,7 @@ _RUNTIME_EVENTS = {
     "institution.revised",
     "institution.ledger_entry",
     "institution.allocation_completed",
+    "resource.safety_low",
     "world.stagnation",
 }
 
@@ -56,7 +57,7 @@ def _group_id(event_types: list[str], role: str, index: int) -> str:
     return f"{safe}_{role}"
 
 
-def _stagnation(value: Any) -> dict[str, int]:
+def _stagnation(value: Any) -> dict[str, Any]:
     """Compile the author-facing ``stagnation`` section.
 
     ``window`` is how long the whole world may go without any character
@@ -71,9 +72,9 @@ def _stagnation(value: Any) -> dict[str, int]:
 
     if not isinstance(value, dict):
         raise ValueError("stagnation must be an object with a window")
-    unknown = sorted(str(key) for key in value if key not in {"window", "max_interval", "max_characters"})
+    unknown = sorted(str(key) for key in value if key not in {"window", "max_interval", "max_characters", "progress_event_types"})
     if unknown:
-        raise ValueError("unknown stagnation field(s): " + ", ".join(unknown) + "; use window, max_interval, max_characters")
+        raise ValueError("unknown stagnation field(s): " + ", ".join(unknown) + "; use window, max_interval, max_characters, progress_event_types")
     if value.get("window") in (None, ""):
         raise ValueError("stagnation.window is required, for example 1d")
     window = duration_minutes(value["window"])
@@ -82,12 +83,22 @@ def _stagnation(value: Any) -> dict[str, int]:
     max_interval = duration_minutes(value["max_interval"]) if value.get("max_interval") not in (None, "") else max(window, _UNIT_MINUTES["w"])
     if max_interval < window:
         raise ValueError("stagnation.max_interval must not be shorter than stagnation.window")
-    compiled = {"window_minutes": window, "max_interval_minutes": max_interval}
+    compiled: dict[str, Any] = {"window_minutes": window, "max_interval_minutes": max_interval}
     if value.get("max_characters") not in (None, ""):
         count = value["max_characters"]
         if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= STAGNATION_CHARACTER_CAP:
             raise ValueError(f"stagnation.max_characters must be an integer from 1 to {STAGNATION_CHARACTER_CAP}")
         compiled["max_characters"] = count
+    progress_event_types = value.get("progress_event_types")
+    if progress_event_types is not None:
+        if isinstance(progress_event_types, str):
+            progress_event_types = [progress_event_types]
+        if not isinstance(progress_event_types, (list, tuple)) or not progress_event_types:
+            raise ValueError("stagnation.progress_event_types must be one event name or a non-empty list")
+        names = [str(item).strip() for item in progress_event_types]
+        if any(not name or name.endswith("*") for name in names):
+            raise ValueError("stagnation.progress_event_types entries must be exact non-empty event names")
+        compiled["progress_event_types"] = list(dict.fromkeys(names))
     return compiled
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -95,6 +96,90 @@ class WorldEvolutionRuntimeMixin:
             if able:
                 problems.append("characters who can research configured sources now: " + ", ".join(sorted(able)[:6]))
         return problems
+
+    @staticmethod
+    def _research_focus_tokens(value: Any) -> set[str]:
+        """Build a small language-independent focus signature for a source.
+
+        The signature is a guardrail against a model creating a new document
+        for the same unanswered question under a new title. It is deliberately
+        structural and cheap; semantic retrieval remains a read-time feature.
+        """
+
+        text = str(value or "").casefold()
+        tokens = set(re.findall(r"[a-z0-9]+", text))
+        cjk = "".join(re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff]", text))
+        tokens.update(cjk[index:index + 2] for index in range(max(0, len(cjk) - 1)))
+        return {token for token in tokens if token}
+
+    @classmethod
+    def _research_focus(cls, state: dict[str, Any], description: Any = "") -> tuple[str, set[str]]:
+        values: list[str] = []
+        for key in ("research_novelty_key", "research_gap_key", "research_question", "open_question"):
+            if state.get(key):
+                values.append(str(state[key]))
+        discoveries = state.get("research_discoveries") or state.get("research_discovery") or []
+        if isinstance(discoveries, dict):
+            discoveries = [discoveries]
+        for item in discoveries if isinstance(discoveries, list) else []:
+            if isinstance(item, dict):
+                values.extend(str(item.get(key)) for key in ("fact", "question", "open_question") if item.get(key))
+            elif item:
+                values.append(str(item))
+        if description:
+            values.append(str(description))
+        focus = " ".join(values).strip()
+        return focus, cls._research_focus_tokens(focus)
+
+    def _research_duplicate(self, state: dict[str, Any], description: Any, location_id: Any) -> dict[str, Any] | None:
+        focus, tokens = self._research_focus(state, description)
+        if not tokens:
+            return None
+        explicit_key = str(state.get("research_novelty_key") or state.get("research_gap_key") or "").strip().casefold()
+        for source in self.store.research_source_catalog():
+            try:
+                entity = self.store.get_entity(str(source["id"]))
+            except KeyError:
+                continue
+            existing_state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
+            existing_focus, existing_tokens = self._research_focus(existing_state, entity.get("description"))
+            existing_key = str(existing_state.get("research_novelty_key") or existing_state.get("research_gap_key") or "").strip().casefold()
+            if explicit_key and existing_key and explicit_key == existing_key:
+                return {"name": source.get("name"), "reason": f"research novelty key already exists: {explicit_key}"}
+            if explicit_key and existing_key:
+                key_tokens = self._research_focus_tokens(explicit_key)
+                existing_key_tokens = self._research_focus_tokens(existing_key)
+                key_overlap = len(key_tokens & existing_key_tokens) / max(1, len(key_tokens | existing_key_tokens))
+                if key_overlap >= 0.4:
+                    return {"name": source.get("name"), "reason": f"research novelty key overlaps {key_overlap:.0%} with existing key {existing_key}"}
+            if not existing_tokens:
+                continue
+            overlap = len(tokens & existing_tokens) / max(1, len(tokens | existing_tokens))
+            existing_location = existing_state.get("location_id") or entity.get("location_id")
+            same_location = not location_id or not existing_location or str(location_id) == str(existing_location)
+            if same_location and overlap >= 0.58:
+                return {
+                    "name": source.get("name"),
+                    "reason": f"research focus overlaps {overlap:.0%} with existing source {source.get('name')}: {existing_focus[:180]}",
+                }
+        for row in self.store.connection.execute(
+            "SELECT event_id,data_json FROM event_log WHERE event_type='research.completed' ORDER BY event_id DESC LIMIT 24"
+        ).fetchall():
+            try:
+                payload = json.loads(row["data_json"] or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            fact = str(payload.get("fact") or payload.get("summary") or "")
+            if not fact:
+                continue
+            fact_tokens = self._research_focus_tokens(fact)
+            overlap = len(tokens & fact_tokens) / max(1, len(tokens | fact_tokens))
+            if overlap >= 0.58:
+                return {
+                    "name": f"completed research event {row['event_id']}",
+                    "reason": f"research question overlaps {overlap:.0%} with an already completed finding: {fact[:180]}",
+                }
+        return None
 
     @staticmethod
     def _definition_slug(value: Any) -> str:
@@ -676,6 +761,14 @@ class WorldEvolutionRuntimeMixin:
             or float(proposed_state.get("research_required", 0) or 0) < 1
         ):
             errors.append("research_required must be a positive number")
+        research_values_present = proposed_state.get("research_discoveries") is not None or proposed_state.get("research_discovery") is not None
+        if research_values_present:
+            duplicate_research = self._research_duplicate(proposed_state, proposal.get("description"), proposal.get("location_id") or proposed_state.get("location_id"))
+            if duplicate_research:
+                errors.append(
+                    f"research source repeats existing evidence ({duplicate_research['name']}): {duplicate_research['reason']}; "
+                    "submit a genuinely different research question or wait"
+                )
         research_assignees, assignee_errors = self._resolve_research_assignees(proposed_state)
         errors.extend(assignee_errors)
         try:
@@ -686,6 +779,8 @@ class WorldEvolutionRuntimeMixin:
         if errors:
             if any("visible name" in error and "duplicate" in error for error in errors):
                 failed_check = "entity_name_duplicate"
+            elif any("research source repeats existing evidence" in error for error in errors):
+                failed_check = "research_novelty_duplicate"
             else:
                 failed_check = "god_resource_creation" if any("stocked resource" in error for error in errors) else "entity_schema"
             return self._reject_intent(intent_id, actor_id, "propose_entity", data, {"status": "rejected", "message": "Entity proposal failed validation.", "failed_check": failed_check, "errors": errors, "retryable": True})
@@ -699,6 +794,10 @@ class WorldEvolutionRuntimeMixin:
         # navigable without adding a world-specific branch.
         proposed_state = dict(proposal.get("state") or {})
         entity_type = str(proposal.get("entity_type") or "")
+        if proposed_state.get("research_discoveries") is not None or proposed_state.get("research_discovery") is not None:
+            focus, _ = self._research_focus(proposed_state, proposal.get("description"))
+            if focus:
+                proposed_state.setdefault("research_focus", focus)
         entity_data = {"description": proposal.get("description", ""), "initial_state": proposed_state}
         agent_state: dict[str, Any] | None = None
         if entity_type == "agent":
@@ -730,6 +829,19 @@ class WorldEvolutionRuntimeMixin:
                             })
                 else:
                     self.store.put_entity(entity_id, entity_type, str(proposal["name"]), entity_data)
+                    if research_values_present:
+                        focus, _ = self._research_focus(proposed_state, proposal.get("description"))
+                        gap_key = str(proposed_state.get("research_novelty_key") or proposed_state.get("research_gap_key") or f"source:{entity_id}")
+                        question = str(proposed_state.get("research_question") or proposed_state.get("open_question") or focus or proposal.get("description") or proposal.get("name"))
+                        self.store.upsert_knowledge_gap(
+                            gap_key,
+                            "active",
+                            gap_key,
+                            question,
+                            source_id=entity_id,
+                            data={"source_name": str(proposal.get("name") or entity_id), "actor_id": str(actor_id)},
+                            world_minute=world_minute,
+                        )
                     if research_assignees:
                         # Judge reachability with the assignees' own views of
                         # the world that already contains the new source.

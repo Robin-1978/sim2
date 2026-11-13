@@ -166,6 +166,17 @@ slice (`event_type`, visible `actor`, `contains`, `since_minute`, and
 internal IDs. Add `query_history` to a wake's `tools` list when that event
 contract needs historical lookup; a submission-only contract can leave it out.
 
+`world_history` and current research gaps are separate projections. History is
+the validated `event_log`: it answers what happened and supports causal
+continuation. `query_knowledge_gaps` answers which configured or God-created
+research questions are still active (or already resolved). It is read-only and
+available to Story and God; an NPC's private knowledge is not a substitute for
+the world gap projection. A completed research stage updates its source gap in
+SQLite, and a multi-stage gap becomes `resolved` only after every active stage
+has a completed research event. Before proposing a new source, God should read
+the active gaps and continue one of them when appropriate; a resolved question
+must not be reopened under a new title.
+
 An entry with only `on` and `for` wakes the consumer immediately for that event.
 `count` and `every` are a gate for repeated evidence: the platform waits until
 the count is reached, then applies the optional cooldown to that evidence group.

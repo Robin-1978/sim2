@@ -28,6 +28,17 @@ EVENT_OPTION_LIMIT = 8
 EVENT_BLOCKED_LIMIT = 4
 SUMMARY_LIMIT = 1100
 INACTIVE_STATUSES = {"dead", "unconscious"}
+DEFAULT_PROGRESS_EVENTS = (
+    "research.progressed",
+    "research.completed",
+    "exploration.completed",
+    "capability.updated",
+    "institution.revised",
+    "world.change.world_property",
+    "world.change.rule",
+    "world.change.relationship",
+    "world.change.faction",
+)
 
 
 def _duration_label(minutes: int) -> str:
@@ -41,7 +52,7 @@ def _duration_label(minutes: int) -> str:
 class StagnationRuntimeMixin:
     """Publish ``world.stagnation`` when the world stops creating options."""
 
-    def _stagnation_config(self) -> dict[str, int] | None:
+    def _stagnation_config(self) -> dict[str, Any] | None:
         root = self.store.get_meta("evolution", {}) or {}
         config = root.get("evolution", root) if isinstance(root, dict) else {}
         raw = config.get("stagnation") if isinstance(config, dict) else None
@@ -50,10 +61,14 @@ class StagnationRuntimeMixin:
         window = int(raw.get("window_minutes", 0) or 0)
         if window <= 0:
             return None
+        progress_events = raw.get("progress_event_types") or list(DEFAULT_PROGRESS_EVENTS)
+        if isinstance(progress_events, str):
+            progress_events = [progress_events]
         return {
             "window": window,
             "max_interval": max(window, int(raw.get("max_interval_minutes", window) or window)),
             "max_characters": max(1, int(raw.get("max_characters", DEFAULT_COHORT_SIZE) or DEFAULT_COHORT_SIZE)),
+            "progress_event_types": [str(item) for item in progress_events if str(item)],
         }
 
     @staticmethod
@@ -101,6 +116,16 @@ class StagnationRuntimeMixin:
         cohort = self._stagnation_cohort(active, minute // window, config["max_characters"])
         state = dict(self.store.get_meta(STAGNATION_STATE_KEY, {}) or {})
         baseline = "frontier" not in state
+        progress_cursor = int(state.get("progress_event_id", 0) or 0)
+        progress_types = list(config.get("progress_event_types") or DEFAULT_PROGRESS_EVENTS)
+        placeholders = ",".join("?" for _ in progress_types)
+        progress_rows = self.store.connection.execute(
+            f"SELECT event_id FROM event_log WHERE event_id>? AND event_type IN ({placeholders}) ORDER BY event_id",
+            (progress_cursor, *progress_types),
+        ).fetchall()
+        progressed = bool(progress_rows)
+        if progress_rows:
+            progress_cursor = int(progress_rows[-1]["event_id"])
         frontier = {str(key): set(value) for key, value in (state.get("frontier") or {}).items()}
         bt_defs = {str(item["id"]): item for item in self.store.get_definitions("bt_def")}
         snapshots = {str(agent["id"]): self.view.option_snapshot(str(agent["id"]), bt_defs=bt_defs) for agent in cohort}
@@ -122,7 +147,7 @@ class StagnationRuntimeMixin:
         gap = int(state.get("gap", 1) or 1)
         last_novel = int(state.get("last_novel_minute", minute) or minute)
         event_id: int | None = None
-        if baseline or grew:
+        if baseline or grew or progressed:
             windows, next_emit_at, gap, last_novel = 0, 1, 1, minute
         else:
             windows += 1
@@ -137,6 +162,8 @@ class StagnationRuntimeMixin:
             "gap": gap,
             "last_novel_minute": last_novel,
             "last_evaluated_minute": int(minute),
+            "progress_event_id": progress_cursor,
+            "progressed_last_window": progressed,
         })
         return event_id
 
@@ -178,6 +205,7 @@ class StagnationRuntimeMixin:
             "stagnant_windows": int(windows),
             "stagnant_minutes": int(windows * window),
             "last_novel_minute": int(last_novel),
+            "progress_event_types": list(self._stagnation_config().get("progress_event_types") or DEFAULT_PROGRESS_EVENTS) if self._stagnation_config() else [],
             "characters": characters,
             "omitted_characters": omitted,
         }

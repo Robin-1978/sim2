@@ -1180,6 +1180,43 @@ class Platform(
             # encode and decode the same JSON thousands of times.
             self.store.set_meta("minute_effect_event_state", minute_event_state)
 
+    def _emit_resource_safety_signals(self, minute: int) -> None:
+        """Publish configured stock-safety signals when a reserve crosses its floor."""
+
+        rules = self.store.get_meta("rules", {}) or {}
+        configured = rules.get("resource_safety", []) or []
+        if not isinstance(configured, list):
+            return
+        state = dict(self.store.get_meta("resource_safety_signal_state", {}) or {})
+        changed = False
+        for raw in configured:
+            if not isinstance(raw, dict) or not raw.get("resource_id"):
+                continue
+            resource_id = str(raw["resource_id"])
+            try:
+                entity = self.store.get_entity(resource_id)
+            except KeyError:
+                continue
+            quantity = self._entity_quantity(entity)
+            floor = float(raw.get("minimum_reserve", raw.get("reserve_floor", 0)) or 0)
+            active = quantity <= floor
+            previous = bool(state.get(resource_id, False))
+            if active and not previous:
+                event_type = str(raw.get("event_type") or "resource.safety_low")
+                event_id = self.store.append_event(event_type, None, minute, {
+                    "resource_id": resource_id,
+                    "resource_name": entity.get("name", resource_id),
+                    "quantity": quantity,
+                    "minimum_reserve": floor,
+                    "summary": f"{entity.get('name', resource_id)} is at or below its configured reserve floor.",
+                })
+                self._wake_configured_evolution_consumers(event_id, event_type, None, minute)
+            if active != previous:
+                state[resource_id] = active
+                changed = True
+        if changed:
+            self.store.set_meta("resource_safety_signal_state", state)
+
     def _apply_simple_effect(self, agent: dict[str, Any], effect: dict[str, Any]) -> None:
         self.effects.apply(agent, effect)
 
@@ -1505,6 +1542,7 @@ class Platform(
             self.store.set_meta("world_minute", minute)
             self.store.append_event("world_minute.advanced", None, minute, {"minute": minute})
             self._emit_world_rule_signals(minute, agent_ids=agent_ids)
+            self._emit_resource_safety_signals(minute)
             self.proposal_evaluator.evaluate_due(minute)
             self._emit_evolution_triggers(minute, agent_ids=agent_ids)
             self._emit_stagnation_signal(minute, agents=agents)
