@@ -9,6 +9,7 @@ from uuid import uuid4
 from ..actions.conditions import ConditionEngine
 from ..actions.effects import EffectPipeline
 from ..evolution.story import eligible_story_beats
+from ..evolution.memory import remember_role
 from ..world.schema import AttributeSchema
 
 
@@ -392,6 +393,13 @@ class WorldEvolutionRuntimeMixin:
                         )
             event_id = self.store.append_event("definition.registered", actor_id, world_minute, {"definition_type": definition_type, "name": name, "definition_id": definition.get("id"), "assigned_to": [visible for _, visible in resolved_agents], "evidence": str(proposal.get("evidence") or "")})
             self._wake_configured_evolution_consumers(event_id, "definition.registered", actor_id, world_minute)
+            if actor_id == "god":
+                remember_role(self.store, "god", "world_definition", {
+                    "summary": f"Registered {definition_type}: {name}.",
+                    "definition_type": definition_type,
+                    "definition_id": definition.get("id"),
+                    "status": "accepted",
+                }, memory_key=f"god:definition:{intent_id}", source_event_id=event_id)
             result = {"status": "accepted", "intent_id": intent_id, "definition_type": definition_type, "name": name, "registered": True, "assigned_to": [visible for _, visible in resolved_agents], "event_id": event_id}
             self.store.finish_intent(intent_id, "accepted", result)
         if definition_type == "attribute":
@@ -634,6 +642,13 @@ class WorldEvolutionRuntimeMixin:
                 self.store.put_entity(entity_id, entity_type, str(proposal["name"]), entity_data)
             event_id = self.store.append_event("entity.created", actor_id, world_minute, {"intent_id": intent_id, "entity_id": entity_id, "entity_type": entity_type, "summary": proposal.get("description", "")})
             self._wake_configured_evolution_consumers(event_id, "entity.created", actor_id, world_minute)
+            if actor_id == "god":
+                remember_role(self.store, "god", "world_entity", {
+                    "summary": f"Created {entity_type}: {proposal.get('name', entity_id)}.",
+                    "entity_type": entity_type,
+                    "entity_id": entity_id,
+                    "status": "accepted",
+                }, memory_key=f"god:entity:{intent_id}", source_event_id=event_id)
             result = {"status": "accepted", "intent_id": intent_id, "entity_id": entity_id, "event_id": event_id, "applied": True}
             self.store.finish_intent(intent_id, "accepted", result)
         return result
@@ -997,6 +1012,14 @@ class WorldEvolutionRuntimeMixin:
                     self.store.merge_knowledge_fact(target["id"], f"story:{beat_id}", {"fact": fact, "source_type": "story", "source_id": beat_id, "confidence": 0.9, "observed_at": minute})
                 self.store.update_agent(target["id"], target)
             event_id = self.store.append_event("story.beat.activated", actor_id, minute, {"beat_id": beat_id, "summary": beat.get("summary", ""), "audience": audience, "research_source_id": research_source_id, "public_event": beat.get("public_event"), "reason": proposal.get("reason", "")})
+            remember_role(self.store, "story", "story_thread", {
+                "summary": str(beat.get("summary") or beat.get("fact") or ""),
+                "beat_id": beat_id,
+                "goal_hint": str(beat.get("goal_hint") or proposal.get("goal_hint") or ""),
+                "audience": list(audience),
+                "source_event_type": str((source_event or {}).get("event_type") or ""),
+                "status": "active",
+            }, memory_key=f"story:beat:{beat_id}:{source_event.get('event_id') if isinstance(source_event, dict) else event_id}", source_event_id=int((source_event or {}).get("event_id") or event_id))
             self.store.finish_intent(intent_id, "accepted", {"status": "accepted", "intent_id": intent_id, "beat": beat.get("agent_label") or beat_id, "event_id": event_id, "activated": True})
         return {"status": "accepted", "intent_id": intent_id, "beat": beat.get("agent_label") or beat_id, "event_id": event_id, "activated": True}
 
@@ -1205,6 +1228,14 @@ class WorldEvolutionRuntimeMixin:
             event_data["expected_state"] = expected
             event_id = self.store.append_event(f"world.change.{change_type}", actor_id, world_minute, event_data)
             self.store.put_world_proposal(intent_id, intent_id, actor_id, change_type, "pending_evaluation", world_minute, evaluation_due_minute, {"effects": event_data["expected_effects"], "summary": event_data["summary"], "state": expected}, {"event_id": event_id, "effect": effect})
+            if actor_id == "god":
+                remember_role(self.store, "god", "world_proposal", {
+                    "summary": str(proposal.get("summary", "")),
+                    "change_type": change_type,
+                    "expected_effects": list(event_data["expected_effects"]),
+                    "status": "pending_evaluation",
+                    "evaluation_due_minute": evaluation_due_minute,
+                }, memory_key=f"god:proposal:{intent_id}", source_event_id=event_id)
             result = {"status": "accepted", "intent_id": intent_id, "proposal_id": intent_id, "event_id": event_id, "evaluation_status": "pending_evaluation", "evaluation_due_minute": evaluation_due_minute, "applied": True, "applied_effects": bool(effect.get("state_changed", True)), "change_type": change_type, "effect": effect, "expected_effects": event_data["expected_effects"]}
             self.store.finish_intent(intent_id, "accepted", result)
         return result

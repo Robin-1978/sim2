@@ -97,3 +97,33 @@ in a later context → improved choice or a justified wait. The audit must show
 the fact text, source, confidence, tier, and retrieved query, rather than only
 showing that a database row exists.
 
+## Story and God memory
+
+Story and God use the same `memory_item` store with separate role namespaces:
+`agent_id=story` and `agent_id=god`. These are long-term summaries, not a
+second event log. Story memory records active threads, validated source events,
+audiences, unresolved questions, and completed or blocked continuations. God
+memory records world diagnoses, institutions and definitions created, proposal
+expectations, and later expected-versus-observed evaluations.
+
+Each role memory has a stable `memory_key`, source event, claim status, and
+world minute. Platform deduplicates writes by that key. A later contradictory
+review should supersede the old summary while preserving the source event for
+replay. The Story/God view injects at most a small long-term slice; older or
+less relevant material remains available through `recall_memory` and
+`query_history`.
+
+Role self-review happens at the next Story/God wake boundary. The prompt asks
+Story to compare the active thread with its prior summary and wait when no new
+event or stage exists. God compares the last proposal's expected and observed
+result before creating a successor. This adds reflection without scheduling a
+new LLM call every world minute.
+
+The God view also exposes derived `world_signals`: `uncertainty`, `disorder`,
+`coherence`, and `novelty`. They are bounded observations derived from recent
+failures, pending proposals, active threads, confirmed outcomes, resource
+movement, and signal diversity. They never mutate state and are not a single
+NPC drive. The runtime deliberately does not expose a generic positive/negative
+entropy attribute; content can later define narrower metrics when a world
+needs them.
+

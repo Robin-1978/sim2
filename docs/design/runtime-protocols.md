@@ -114,6 +114,15 @@ visible actor, keyword, and world-minute range. Its result removes internal IDs
 and never grants mutation authority. A wake contract may omit the read tool to
 keep an event review submission-only; ordinary Story/God sessions expose it.
 
+Story and God also have separate long-term memory namespaces. A Story wake
+retrieves a small slice of active narrative-thread summaries; a God wake
+retrieves world-diagnosis and proposal-review summaries. These memories carry
+provenance and are deduplicated by a stable key. They are working summaries
+and never override the event log or SQLite state projection. Each role reviews
+its prior summary when it is already awake: Story checks whether a thread has
+new evidence, while God compares expected and observed proposal effects before
+deciding whether to revise, extend, or wait.
+
 Social institutions follow the same path: no contribution metric exists until
 NPC behavior produces the configured evidence threshold. Story may connect that
 evidence to a continuing chapter, but only God may propose and activate the

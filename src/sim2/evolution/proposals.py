@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .memory import remember_role
+
 
 class WorldProposalEvaluator:
     """Evaluate typed world proposals against observable SQLite projections."""
@@ -82,4 +84,13 @@ class WorldProposalEvaluator:
             status = "observed" if matched else "no_observed_effect"
             result = {"status": status, "proposal_id": proposal["proposal_id"], "expected": proposal.get("expected", {}), "observed": observed}
             self.store.update_world_proposal(proposal["proposal_id"], status, observed, result, int(minute))
-            self.store.append_event("world.proposal.evaluated", proposal.get("actor_id"), int(minute), result)
+            event_id = self.store.append_event("world.proposal.evaluated", proposal.get("actor_id"), int(minute), result)
+            if str(proposal.get("actor_id") or "") == "god":
+                remember_role(self.store, "god", "proposal_review", {
+                    "summary": f"Proposal {proposal['proposal_id']} evaluated as {status}: {match_reason}.",
+                    "proposal_id": proposal["proposal_id"],
+                    "proposal_status": status,
+                    "match_reason": match_reason,
+                    "observed": observed,
+                    "status": "confirmed",
+                }, memory_key=f"god:proposal-evaluation:{proposal['proposal_id']}:{status}", source_event_id=event_id)

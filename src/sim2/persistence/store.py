@@ -1272,13 +1272,37 @@ class WorldStore:
         month_minutes = max(week_minutes, int(calendar.get("minutes_per_month", calendar.get("minutes_per_day", 1440) * 30) or 43200))
         agents = self.list_agents()
         active_goals = [str(agent.get("ultimate_goal", "")).strip() for agent in agents if str(agent.get("ultimate_goal", "")).strip()]
+        weekly = aggregate(week_minutes)
+        monthly = aggregate(month_minutes)
+        pending_proposals = len(self.list_world_proposals(status="pending_evaluation", limit=100))
+        active_story_threads = sum(
+            1 for key, value in (self.get_meta("story_state", {}) or {}).items()
+            if key != "emergent_beats" and isinstance(value, dict) and value.get("status") == "active"
+        )
+        completed = float(weekly["goal_trends"]["completed_behaviors"] or 0)
+        failed = float(weekly["goal_trends"]["failed_or_interrupted_behaviors"] or 0)
+        total = completed + failed
+        failure_rate = failed / max(1.0, total)
+        resource_volatility = sum(abs(float(value)) for value in weekly.get("resource_deltas", {}).values())
+        baseline_total = sum(abs(float(value)) for value in (baseline or {}).values()) or 1.0
+        uncertainty = min(1.0, 0.45 * min(1.0, pending_proposals / 6.0) + 0.35 * min(1.0, active_story_threads / 6.0) + 0.20 * failure_rate)
+        disorder = min(1.0, 0.55 * failure_rate + 0.25 * min(1.0, resource_volatility / baseline_total) + 0.20 * min(1.0, pending_proposals / 6.0))
+        coherence = max(0.0, min(1.0, (completed / max(1.0, total)) * 0.7 + (1.0 - failure_rate) * 0.3))
+        novelty = min(1.0, (len(weekly.get("signal_events", {})) + len(weekly.get("resource_deltas", {})) + len(weekly.get("world_property_deltas", {}))) / 12.0)
         return {
             "as_of_minute": end,
             "current_resources": sorted(resources, key=lambda item: str(item.get("name", ""))),
             "resource_labels": resource_labels,
             "active_goal_count": len(active_goals),
-            "weekly": aggregate(week_minutes),
-            "monthly": aggregate(month_minutes),
+            "weekly": weekly,
+            "monthly": monthly,
+            "world_signals": {
+                "uncertainty": round(uncertainty, 4),
+                "disorder": round(disorder, 4),
+                "coherence": round(coherence, 4),
+                "novelty": round(novelty, 4),
+                "basis": "derived observation only; signals do not mutate world state",
+            },
         }
 
     def create_intent(self, intent_id: str, actor_id: str, intent_type: str, data: dict[str, Any], world_minute: int) -> None:

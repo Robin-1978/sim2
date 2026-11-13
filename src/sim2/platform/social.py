@@ -5,6 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from ..actions.institutions import entity_quantity
+from ..evolution.memory import remember_role
 
 
 class SocialRuntimeMixin:
@@ -159,6 +160,12 @@ class SocialRuntimeMixin:
             self.store.put_institution(institution_id, "proposed", data, minute)
             event_id = self.store.append_event("institution.proposed", actor_id, minute, {"institution": {"name": name, "purpose": purpose, "scope": data["scope"]}, "status": "proposed"})
             self._wake_configured_evolution_consumers(event_id, "institution.proposed", actor_id, minute)
+            if actor_id == "god":
+                remember_role(self.store, "god", "institution_decision", {
+                    "summary": f"Proposed institution {name}: {purpose}.",
+                    "institution": name,
+                    "status": "proposed",
+                }, memory_key=f"god:institution-proposed:{institution_id}", source_event_id=event_id)
             self.store.create_intent(intent_id, actor_id, "propose_institution", {**data, "institution_name": name}, minute)
             result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "institution": {"name": name, "status": "proposed"}}
             self.store.finish_intent(intent_id, "accepted", result)
@@ -192,6 +199,13 @@ class SocialRuntimeMixin:
             self.store.put_institution(str(selected["institution_id"]), "active", institution_data, int(selected.get("created_minute", minute)), minute)
             event_id = self.store.append_event("institution.activated", actor_id, minute, {"institution": {"name": selected.get("name"), "purpose": selected.get("purpose")}, "reason": reason, "status": "active"})
             self._wake_configured_evolution_consumers(event_id, "institution.activated", actor_id, minute)
+            if actor_id == "god":
+                remember_role(self.store, "god", "institution_decision", {
+                    "summary": f"Activated institution {selected.get('name')}: {selected.get('purpose') or ''}.",
+                    "institution": selected.get("name"),
+                    "status": "active",
+                    "reason": reason,
+                }, memory_key=f"god:institution-activated:{selected.get('institution_id')}", source_event_id=event_id)
             self.store.create_intent(intent_id, actor_id, "activate_institution", {"institution": choice, "reason": reason}, minute)
             result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "institution": {"name": selected.get("name"), "status": "active"}}
             self.store.finish_intent(intent_id, "accepted", result)

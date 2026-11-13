@@ -15,6 +15,7 @@ from ..agents.policies import default_platform_rules, default_protocol
 from ..behavior.estimator import BehaviorDurationEstimator
 from ..behavior.recovery import failure_block_recovered
 from ..evolution.story import eligible_story_beats
+from ..evolution.memory import role_memory_query
 from ..memory.service import MemoryService
 from ..persistence.store import WorldStore
 from ..world.drives import DriveCalculator
@@ -1447,6 +1448,15 @@ class AgentViewCompiler:
                 ),
                 None,
             )
+        story_memory_query = " ".join(
+            str(item) for item in (
+                "story narrative thread",
+                (source_event or {}).get("event_type") if isinstance(source_event, dict) else "",
+                (source_event or {}).get("result") if isinstance(source_event, dict) else "",
+                " ".join(str(item.get("summary") or "") for item in (story_state.get("emergent_beats", []) or [])[-3:] if isinstance(item, dict)),
+            ) if item
+        )
+        story_memories = [self._humanize_record(item) for item in role_memory_query(self.store, "story", story_memory_query, limit=6)]
         validated_source: dict[str, Any] = {}
         if source_event:
             outcome = source_event.get("outcome") if isinstance(source_event.get("outcome"), dict) else {}
@@ -1578,6 +1588,10 @@ class AgentViewCompiler:
             "audience_candidates": audience_candidates,
             "recent_actions": recent_events[:8], "recent_story_events": [item for item in recent_events if str(item.get("event_type", "")).startswith("story.")][:8],
             "recent_history": self._recent_history_view(16),
+            "memories": story_memories,
+            "long_term_memories": story_memories,
+            "short_term_memories": [],
+            "memory_query": story_memory_query,
             "recent_world_changes": [], "recent_agent_outcomes": [], "direct_relationships": [],
             "active_task": {"bt": None, "action": None, "remaining_minutes": 0},
             "executable_behaviors": [], "story_beats": choices[:12],
@@ -1666,6 +1680,10 @@ class AgentViewCompiler:
         world_proposals = self.store.list_world_proposals(limit=8)
         recent_agent_outcomes = self.store.recent_behavior_outcomes(limit=6)
         world_trends = self.store.world_trends(current_minute=int(minute))
+        god_memory_query = "world diagnosis proposal outcome trend " + " ".join(
+            str(item.get("event_type") or "") for item in recent_world_changes[:4]
+        )
+        god_memories = [self._humanize_record(item) for item in role_memory_query(self.store, "god", god_memory_query, limit=6)]
         bt_defs = {item["id"]: item for item in self.store.get_definitions("bt_def")}
         for outcome in recent_agent_outcomes:
             behavior = bt_defs.get(str(outcome.get("behavior_id", "")), {})
@@ -1755,6 +1773,10 @@ class AgentViewCompiler:
             "known_facts": [],
             "recent_actions": recent_world_events,
             "recent_history": self._recent_history_view(20),
+            "memories": god_memories,
+            "long_term_memories": god_memories,
+            "short_term_memories": [],
+            "memory_query": god_memory_query,
             "recent_world_changes": recent_world_changes,
             "world_proposals": world_proposals,
             "recent_agent_outcomes": recent_agent_outcomes,
