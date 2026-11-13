@@ -53,6 +53,7 @@ PROTOCOLS = {
     ],
     "agent_reflection": [
         "Compare expected and observed results; keep only new, durable evidence.",
+        "If capability_updates lists a configured capability with enough completed outcomes, submit one bounded update_capability with concise evidence instead of recording another overlapping lesson.",
         "Use visible names and concise statements; Platform owns every state change.",
     ],
     "story": [

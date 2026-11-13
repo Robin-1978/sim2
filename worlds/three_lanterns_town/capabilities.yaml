@@ -2,18 +2,30 @@ capabilities:
 - id: stewardship
   name: Public stewardship
   description: Inspect reserves and keep the town supplied.
+  uses: [inspect_object]
+  xp_rule: one_successful_inspection
 - id: exploration
   name: Route exploration
   description: Survey routes and record reliable discoveries.
+  uses: [explore_area]
+  xp_rule: one_new_discovery
 - id: research
   name: Field research
   description: Read sources and turn repeated study into verified facts.
+  uses: [research_source]
+  xp_rule: one_verified_fact
 - id: gathering
   name: Resource gathering
   description: Collect configured materials from reachable nodes.
+  uses: [gather_resource]
+  xp_rule: one_successful_resource_effect
 - id: conversation
   name: Conversation
   description: Exchange bounded testimony with a visible participant.
+  uses: [communicate]
+  xp_rule: one_completed_dialogue
 - id: watch
   name: Boundary watch
   description: Investigate threats around the north watch.
+  uses: [secure_boundary]
+  xp_rule: one_resolved_watch

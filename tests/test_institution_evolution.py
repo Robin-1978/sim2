@@ -526,6 +526,7 @@ def test_research_source_can_gain_new_stages_and_supersede_old_facts(tmp_path: P
             "state": {
                 "location_id": "north_watch",
                 "readable": True,
+                "research_assignees": ["罗杉"],
                 "research_discoveries": [
                     {"id": "researched:later_source:initial", "fact": "The first reading suggests the old route remains usable."},
                     {"id": "researched:later_source:revision", "fact": "A second reading finds the route is safe only during the dry phase.", "supersedes": "researched:later_source:initial"},

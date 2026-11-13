@@ -98,3 +98,24 @@ def test_multi_stage_research_gap_stays_active_until_all_stages_finish(tmp_path:
         assert resolved[0]["completed_stages"] == ["water:sample", "water:source"]
     finally:
         platform.close()
+
+
+def test_dynamic_research_source_requires_an_executable_assignee(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "knowledge-gap-assignee")
+    try:
+        result = platform.submit_entity_proposal(
+            "god",
+            {
+                "entity_type": "document",
+                "name": "无人负责的研究页",
+                "state": {
+                    "location_id": "north_watch",
+                    "research_discoveries": [{"id": "unassigned:fact", "fact": "A fact with no executor."}],
+                },
+            },
+        )
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "entity_schema"
+        assert any("research_assignee" in error for error in result["errors"])
+    finally:
+        platform.close()

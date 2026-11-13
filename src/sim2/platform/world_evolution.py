@@ -762,6 +762,8 @@ class WorldEvolutionRuntimeMixin:
         ):
             errors.append("research_required must be a positive number")
         research_values_present = proposed_state.get("research_discoveries") is not None or proposed_state.get("research_discovery") is not None
+        if research_values_present and not proposed_state.get("research_assignees"):
+            errors.append("a dynamic research source must declare at least one research_assignee")
         if research_values_present:
             duplicate_research = self._research_duplicate(proposed_state, proposal.get("description"), proposal.get("location_id") or proposed_state.get("location_id"))
             if duplicate_research:
