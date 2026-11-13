@@ -8,6 +8,7 @@ from uuid import uuid4
 from ..world.navigation import reachable_locations
 from ..world.time import world_time_view
 from ..world.context import configured_context_values
+from ..actions.institutions import allocation_preflight
 
 
 class ActivityRuntimeMixin:
@@ -74,6 +75,7 @@ class ActivityRuntimeMixin:
             "day_phase": world_time_view(self.store).get("day_phase"),
         }
         condition_context.update(configured_context_values(self.store.get_meta("rules", {}) or {}, agent))
+        condition_context.update(self._institution_action_context(action, parameters))
         if (
             action.get("duration", {}).get("mode") == "recipe_duration"
             or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
@@ -185,6 +187,7 @@ class ActivityRuntimeMixin:
             "day_phase": world_time_view(self.store).get("day_phase"),
         }
         context.update(configured_context_values(self.store.get_meta("rules", {}) or {}, agent))
+        context.update(self._institution_action_context(action, parameters))
         if (
             action.get("duration", {}).get("mode") == "recipe_duration"
             or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
@@ -216,6 +219,29 @@ class ActivityRuntimeMixin:
             if not allowed:
                 return None, reason
         return {"action": action, "parameters": parameters, "target": target, "duration": duration, "reservation": reservation, "no_op": already_at_destination}, ""
+
+    def _institution_action_context(self, action: dict[str, Any], parameters: dict[str, Any]) -> dict[str, Any]:
+        """Expose declarative institution capacity to the condition engine."""
+
+        for effect in action.get("effects", []) or []:
+            if not isinstance(effect, dict) or str(effect.get("type") or effect.get("op") or "") != "institution_allocation":
+                continue
+            def resolve(value: Any) -> Any:
+                if isinstance(value, str) and value.startswith("context."):
+                    return parameters.get(value.removeprefix("context."), value)
+                return value
+            institution = resolve(effect.get("institution"))
+            pool_entity = resolve(effect.get("pool_entity"))
+            subjects = resolve(effect.get("subjects"))
+            if isinstance(subjects, str):
+                subjects = [subjects]
+            check = allocation_preflight(self.store, institution, pool_entity, subjects if isinstance(subjects, list) else None)
+            return {
+                "institution.allocation_possible": bool(check.get("possible")),
+                "institution.allocation_available": check.get("available", 0.0),
+                "institution.allocation_required": check.get("required", 0.0),
+            }
+        return {}
 
     def _progress_parallel_group(self, agent: dict[str, Any], execution_id: str, behavior_id: str, actions: list[dict[str, Any]], index: int, minute: int) -> None:
         state = dict(agent.get("initial_state") or {})
@@ -1038,6 +1064,11 @@ class ActivityRuntimeMixin:
             selectors = ledger.get("selectors", ledger.get("evidence", []))
             if not isinstance(selectors, list):
                 continue
+            # Multiple selectors often describe the same evidence in two
+            # equivalent ways (for example an outcome event and its behavior
+            # envelope). One verified event/category must contribute once;
+            # distinct configured categories remain independent.
+            matched_categories: set[str] = set()
             for raw_selector in selectors:
                 if not isinstance(raw_selector, dict) or not self._institution_selector_matches(raw_selector, event_type, payload):
                     continue
@@ -1045,6 +1076,9 @@ class ActivityRuntimeMixin:
                 amount = float(raw_selector.get("points", raw_selector.get("amount", 1)) or 0)
                 if not category or amount <= 0:
                     continue
+                if category in matched_categories:
+                    continue
+                matched_categories.add(category)
                 period = self._institution_period_key(ledger.get("period", "world"), minute)
                 entry_id = self.store.append_institution_ledger_entry(
                     str(institution["institution_id"]), actor_id, period, category, amount,
@@ -1164,6 +1198,13 @@ class ActivityRuntimeMixin:
                         duplicate_event_id = int(existing["event_id"])
                         break
                 event_id = duplicate_event_id or self.store.append_event(event_type, agent["id"], minute, payload)
+                # Publish every validated outcome to configured consumer
+                # policies. The event itself remains the source of truth;
+                # event groups decide whether Story/God receive it directly,
+                # after a threshold, or not at all.
+                self._wake_configured_evolution_consumers(
+                    event_id, event_type, agent["id"], minute,
+                )
                 self._queue_configured_followups(configured, event_id, event_type, agent["id"], minute)
                 # An institution may account for the verified outcome event
                 # emitted by a behavior (for example, a research or public
@@ -1180,6 +1221,16 @@ class ActivityRuntimeMixin:
                 fact_key = str(configured.get("fact_key") or f"behavior:{behavior_id}:{configured.get('id', 'outcome')}")
                 self.store.merge_knowledge_fact(agent["id"], fact_key, {"fact": str(configured["fact"]), "source_type": str(configured.get("source_type") or "behavior"), "source_id": behavior_id, "behavior": behavior_id, "confidence": float(configured.get("confidence", 0.8)), "observed_at": minute})
         state["status"] = "idle" if status == "completed" else "failed"
+        blocked_behaviors = dict(state.get("blocked_behaviors") or {})
+        if status == "completed":
+            blocked_behaviors.pop(str(behavior_id), None)
+        else:
+            blocked_behaviors[str(behavior_id)] = {
+                "result": str(result),
+                "failed_at": int(minute),
+                "failed_world_revision": int(self.store.get_meta("world_revision", 0) or 0),
+            }
+        state["blocked_behaviors"] = blocked_behaviors
         state["active_bt_instance"] = None
         state["active_behavior_id"] = None
         state["active_action"] = None

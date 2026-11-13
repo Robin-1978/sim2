@@ -812,6 +812,11 @@ def _validate_event_wake_references(
     for _, event_type, roles, _ in producers:
         for role in roles:
             produced_by_role.setdefault(role, set()).add(event_type)
+    # Events are published by Platform once and then routed through each
+    # consumer's own policy. A behavior does not need to name every consumer
+    # in its local ``wake`` list merely to make the event a valid producer for
+    # another role's threshold group.
+    produced_events_all = {event_type for _, event_type, _, _ in producers}
 
     for source, event_type, roles, task_type in producers:
         for role in roles:
@@ -844,7 +849,7 @@ def _validate_event_wake_references(
         if not isinstance(policy, dict):
             continue
         external_events = {str(value) for value in (policy.get("external_event_types") or [])}
-        produced_events = produced_by_role.get(str(role), set()) | external_events
+        produced_events = produced_events_all | external_events
         for group in (policy.get("event_groups") or policy.get("groups") or []):
             if not isinstance(group, dict):
                 continue

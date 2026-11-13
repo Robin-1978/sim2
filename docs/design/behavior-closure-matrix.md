@@ -15,7 +15,7 @@ behavior tree.
 | `eat_food` | Inventory decreases and the configured need increases | Next decision | Closed; the model chooses when |
 | `get_food` | Shared stock decreases and carried stock increases | Next decision / God trend | Closed; the model chooses when |
 | `buy_food` | Currency and market stock decrease; carried stock increases | Next decision / God trend | Closed; the model chooses when |
-| `gather_resource` | Source quantity decreases and inventory increases | Next decision / Reflection | Closed |
+| `gather_resource` | Source quantity decreases and inventory increases | Next decision / Reflection; Story for the configured gathering result; God after the configured evidence count | Closed; successful gathering is a causal evolution source |
 | `gather_at_known_node` | Same resource result after travel | Next decision / Reflection | Closed |
 | `craft_meal` | Inputs are consumed and food is produced | Next decision / Reflection | Closed |
 | `craft_medicine` | Inputs are consumed and medicine is produced | Next decision / Reflection | Closed |
@@ -93,6 +93,27 @@ An event-group policy is also an admission rule. An unmatched event is not
 silently promoted to a direct call. Worlds list exceptional direct events or
 task prefixes explicitly, and package validation checks every Action and BT
 wake against the consumer policy before a SQLite instance is created.
+
+When a long Action fails because a configured prerequisite is unavailable,
+Platform records a typed failure block on that BT. The behavior is removed
+from the actor's executable catalog until a configured recovery event (for
+example resource regeneration, a new entity, or a completed allocation) is
+persisted. This prevents an NPC from spending every decision cycle repeating
+the same impossible settlement while leaving recovery entirely declarative.
+Institution allocation Actions also expose a generic stock-capacity preflight
+to the catalog. The check reads the active institution policy and current
+pool; it does not know whether the pool represents water, food, fuel, or
+another world resource. A direct API attempt may still reach the Action and
+receive its typed failure for audit, while an Agent decision cannot select an
+allocation that cannot meet its configured minimum.
+
+Resource collection is a two-part closure. The Action changes source stock
+and actor inventory, then the configured behavior emits a typed
+`resource.gathered` event containing the verified outcome. Story may organize
+that result into a grounded continuation, and God may review an accumulated
+count to create a distinct research source, recipe, storage, or trade
+structure. Neither consumer is allowed to claim that the gathered material
+was transformed before a later behavior performs that transformation.
 
 God is not an autonomous resource operator. It is scheduled for a weekly local
 review and a monthly structural review, and it may be woken by a configured

@@ -8,10 +8,12 @@ from typing import Any
 from ..actions.conditions import ConditionEngine
 from ..actions.capacity import check_action_capacity
 from ..actions.resources import ResourceLedger
+from ..actions.institutions import allocation_preflight
 from ..actions.targets import TargetResolver
 from ..agents.tools import tools_for_role
 from ..agents.policies import default_platform_rules, default_protocol
 from ..behavior.estimator import BehaviorDurationEstimator
+from ..behavior.recovery import failure_block_recovered
 from ..evolution.story import eligible_story_beats
 from ..memory.service import MemoryService
 from ..persistence.store import WorldStore
@@ -668,6 +670,13 @@ class AgentViewCompiler:
             if not bt:
                 diagnostics.append({"behavior_id": bt_id, "failed": ["behavior definition is not registered"]})
                 continue
+            blocked = (state.get("blocked_behaviors") or {}).get(str(bt_id)) if isinstance(state, dict) else None
+            if isinstance(blocked, dict) and not failure_block_recovered(self.store, blocked):
+                diagnostics.append({
+                    "behavior_id": bt_id,
+                    "failed": [f"blocked after the last failed result ({blocked.get('result', 'failed')}); wait for a configured recovery event"],
+                })
+                continue
             rules = self.store.get_meta("rules", {}) or {}
             behavior_context = dict(configured_context)
             uses_source_parameter = any(
@@ -1254,6 +1263,34 @@ class AgentViewCompiler:
             "recent_event_types": self._recent_event_types(),
         }
         context.update(configured_context_values(self.store.get_meta("rules", {}) or {}, agent))
+        for effect in action.get("effects", []) or []:
+            if not isinstance(effect, dict) or str(effect.get("type") or effect.get("op") or "") != "institution_allocation":
+                continue
+            def resolve(value: Any) -> Any:
+                if isinstance(value, str) and value.startswith("context."):
+                    return parameters.get(value.removeprefix("context."), value)
+                return value
+            subjects = resolve(effect.get("subjects"))
+            if isinstance(subjects, str):
+                subjects = [subjects]
+            # A reusable definition may intentionally bind these values from
+            # the caller at execution time.  Without a concrete institution
+            # and pool there is no safe preflight to perform here.
+            if not resolve(effect.get("institution")) or not resolve(effect.get("pool_entity")) or str(resolve(effect.get("institution")) or "").startswith("context.") or str(resolve(effect.get("pool_entity")) or "").startswith("context."):
+                continue
+            check = allocation_preflight(
+                self.store,
+                resolve(effect.get("institution")),
+                resolve(effect.get("pool_entity")),
+                subjects if isinstance(subjects, list) else None,
+            )
+            context.update({
+                "institution.allocation_possible": bool(check.get("possible")),
+                "institution.allocation_available": check.get("available", 0.0),
+                "institution.allocation_required": check.get("required", 0.0),
+            })
+            if not check.get("possible"):
+                return False
         if parameters.get("object_id"):
             try:
                 context["current_object"] = self.store.get_entity(str(parameters["object_id"]))

@@ -22,6 +22,14 @@ wakes:
   for: god
   count: 1
   every: 1w
+- id: gathering_synthesis
+  "on": resource.gathered
+  for: god
+  count: 3
+  every: 1w
+  tools: [propose_entity, propose_definition, wait]
+  purpose: Three verified resource-gathering outcomes are evidence that the town has a usable material flow; choose a grounded next use such as a research source, recipe, storage or trade structure.
+  result: Reuse the generic research, recipe, trade or production mechanism when it already fits. Create one distinct configured entity or definition only when the gathered material and recorded outcomes justify it; do not create another behavior that merely repeats the same action.
 - id: institution_ledger_review
   "on": institution.ledger_entry
   for: god

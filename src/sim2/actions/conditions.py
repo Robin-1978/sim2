@@ -183,6 +183,7 @@ class ConditionEngine:
             "location.health_service", "location.safe", "location.reachable", "station.available",
             "patient.available", "patient.in_clinic", "counterparty.available", "resource.available",
             "inputs.available", "recipe.available", "medicine.available", "communication.channel_open",
+            "institution.allocation_possible",
         } or path.startswith("location.tag.")
 
     def _value(self, path: str, agent: dict[str, Any], target: dict[str, Any] | None, world: dict[str, Any] | None, context: dict[str, Any] | None) -> Any:
@@ -336,6 +337,8 @@ class ConditionEngine:
             return not required or bool(required & current)
         if path in {"patient.available", "counterparty.available"}:
             return bool(context.get(path, target.get("available", False)))
+        if path == "institution.allocation_possible":
+            return bool(context.get("institution.allocation_possible", False))
         if path in {"location.safe", "destination.safe_or_defensible", "target.available", "patient.in_clinic", "resource.available", "inputs.available", "recipe.available", "medicine.available", "communication.channel_open", "location.reachable"}:
             if path == "location.safe":
                 location = context.get("current_location", {})

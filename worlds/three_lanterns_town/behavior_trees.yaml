@@ -68,6 +68,13 @@ behavior_trees:
   failure_results:
   - resource_empty
   - gathering_failed
+  outcome_events:
+  - event_type: resource.gathered
+    wake: [story]
+    summary: 灯芯芦苇采集完成，样本已进入采集者库存，后续应决定如何用于研究、制作或贸易。
+    data:
+      resource_id: reed_bundle
+      result_kind: gathered_resource
 - id: survey_old_road
   agent_label: Survey Old Road
   summary: Survey Old Road

@@ -12,6 +12,7 @@ from ..actions.targets import TargetResolver
 from ..actions.resources import ResourceLedger
 from ..agent_view.compiler import AgentViewCompiler
 from ..behavior.estimator import BehaviorDurationEstimator
+from ..behavior.recovery import failure_block_recovered
 from ..intents.models import BehaviorIntent
 from ..memory.service import MemoryService
 from ..perception.service import PerceptionService
@@ -558,6 +559,15 @@ class Platform(
             return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                 "status": "rejected", "message": "The actor already has an active behavior; wait for its result or an interrupt.", "failed_check": "active_behavior", "retryable": False,
             })
+        blocked = (state.get("blocked_behaviors") or {}).get(str(behavior_id)) if isinstance(state, dict) else None
+        if isinstance(blocked, dict) and not failure_block_recovered(self.store, blocked):
+            return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+                "status": "rejected",
+                "message": "This behavior is blocked after its last failed result; wait for a configured recovery event.",
+                "failed_check": "failed_behavior_blocked",
+                "retryable": True,
+                "failure_result": blocked.get("result"),
+            })
         bt = available_defs[behavior_id]
         runtime_parameters = dict(normalized_parameters)
         target_keys = self.view._target_parameter_keys(bt, available_defs)
@@ -652,7 +662,17 @@ class Platform(
         # executable catalog before it can reserve anything. Explicit target
         # parameters are retained for player/API commands whose destination is
         # supplied outside the catalog; ordinary Agent choices have neither.
-        if intent.observed_agent_revision is not None or (not intent.target and not intent.parameters):
+        # A model decision carries the revision of the view it used and must
+        # be rechecked against the current executable catalog. A direct API
+        # request may intentionally attempt a stale institution allocation so
+        # the Action can return its typed failure for audit; all other direct
+        # requests still receive the normal catalog check.
+        allocation_effect = any(
+            any(str(effect.get("type") or effect.get("op") or "") == "institution_allocation" for effect in (next((item for item in self.store.get_definitions("action_def") if item.get("id") == node.get("action_id")), {}).get("effects", []) or []))
+            for node in self.view._iter_behavior_actions(behavior_id)
+        )
+        catalog_check_required = intent.observed_agent_revision is not None or (not intent.target and not intent.parameters)
+        if catalog_check_required and not (intent.observed_agent_revision is None and allocation_effect):
             current_view = self.view.build_decision_view(intent.actor_id, role="agent_decision")
             if behavior_id not in {str(item.get("ref", "")).removeprefix("behavior:") for item in current_view.get("executable_behaviors", [])}:
                 return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {

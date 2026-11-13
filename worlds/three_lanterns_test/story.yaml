@@ -2,6 +2,7 @@ emergent_source_event_types:
 - research.completed
 - exploration.completed
 - institution.activated
+- resource.gathered
 beats:
 - id: boundary_stone_research
   trigger_events:

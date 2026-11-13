@@ -4,6 +4,8 @@ import json
 from typing import Any
 from uuid import uuid4
 
+from ..actions.institutions import entity_quantity
+
 
 class SocialRuntimeMixin:
     """Institution, dialogue and atomic trade transactions."""
@@ -277,8 +279,7 @@ class SocialRuntimeMixin:
         except KeyError:
             return {"status": "rejected", "failed_check": "pool_entity", "message": "The configured allocation pool does not exist."}
         state = dict(pool.get("initial_state") or {})
-        before = pool.get("amount", state.get("quantity", state.get("amount", 0)))
-        available = float(before or 0)
+        available = entity_quantity(pool)
         subject_ids = [str(value) for value in (subjects or []) if str(value)]
         if not subject_ids or subject_ids == ["all_agents"]:
             subject_ids = [str(agent["id"]) for agent in self.store.list_agents()]
