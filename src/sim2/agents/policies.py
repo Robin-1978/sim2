@@ -66,6 +66,7 @@ PROTOCOLS = {
     "god": [
         "Create the world content the verified situation actually needs; content type is not limited to institutions or behaviors.",
         "Submit one declarative proposal. Platform validates references, conservation, and executable consequences.",
+        "A new Action is only a low-level primitive. Submit it with followup_behavior in the same proposal: the bound BT must reference the new Action by visible name, include its complete sequence and assign at least one NPC who can execute it now. Never submit a standalone Action.",
         "Use recent validated history and query_history to continue existing institutions, research and entities; never recreate a recorded object or repeat a completed change.",
         "Use exact visible entity names. For a behavior that needs travel, include a Travel node before the destination action.",
         "Use only machine predicates shown in condition_examples for entry_conditions; after a read budget warning, submit with the facts already collected instead of re-reading the same source.",

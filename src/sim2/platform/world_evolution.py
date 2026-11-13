@@ -190,13 +190,17 @@ class WorldEvolutionRuntimeMixin:
     def _definition_name_key(value: Any) -> str:
         return "".join(char for char in str(value or "").casefold() if char.isalnum())
 
-    def _resolve_registered_definition(self, table: str, value: Any) -> tuple[str | None, list[str]]:
+    def _resolve_registered_definition(self, table: str, value: Any, *, extra: dict[str, Any] | None = None) -> tuple[str | None, list[str]]:
         """Resolve a visible definition name without exposing registry IDs."""
 
         key = self._definition_name_key(value)
         if not key:
             return None, []
         matches: list[str] = []
+        if extra and table == "action_def":
+            candidates = [extra.get("id"), extra.get("name"), extra.get("label"), extra.get("description")]
+            if any(key == self._definition_name_key(candidate) for candidate in candidates if candidate):
+                matches.append(str(extra.get("id")))
         for item in self.store.get_definitions(table):
             candidates = [item.get("id"), item.get("name"), item.get("label"), item.get("agent_label"), item.get("summary"), item.get("description")]
             if any(key == self._definition_name_key(candidate) for candidate in candidates if candidate):
@@ -226,7 +230,14 @@ class WorldEvolutionRuntimeMixin:
                     errors.append(f"unsupported effect type: {effect_type or '<missing>'}")
         return errors
 
-    def _validate_definition_proposal(self, definition_type: str, name: str, raw: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    def _validate_definition_proposal(
+        self,
+        definition_type: str,
+        name: str,
+        raw: dict[str, Any],
+        *,
+        extra_action: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], list[str]]:
         """Validate and normalize a God definition before SQLite registration."""
 
         kind = str(definition_type or "").strip().casefold()
@@ -332,12 +343,16 @@ class WorldEvolutionRuntimeMixin:
                 node_type = str(node_copy.get("type") or "action")
                 if node_type == "action":
                     ref = node_copy.get("action_id") or node_copy.get("action") or node_copy.get("name")
-                    resolved, matches = self._resolve_registered_definition("action_def", ref)
+                    resolved, matches = self._resolve_registered_definition("action_def", ref, extra=extra_action)
                     if not resolved:
                         errors.append(f"unknown or ambiguous action in node {path}: {ref}; matches={matches}")
                     else:
                         node_copy["action_id"] = resolved
-                        action = next((item for item in self.store.get_definitions("action_def") if str(item.get("id")) == resolved), {})
+                        action = (
+                            extra_action
+                            if extra_action and str(extra_action.get("id")) == str(resolved)
+                            else next((item for item in self.store.get_definitions("action_def") if str(item.get("id")) == resolved), {})
+                        )
                         parameters = node_copy.get("parameters") if isinstance(node_copy.get("parameters"), dict) else {}
                         # God sees visible entity names. Persist canonical IDs
                         # inside reusable behaviors just as normal Intent
@@ -485,6 +500,47 @@ class WorldEvolutionRuntimeMixin:
                 "behavior definitions must assign_to at least one existing character; "
                 "a registered but unassigned behavior cannot participate in world evolution"
             )
+        followup = proposal.get("followup_behavior")
+        followup_definition: dict[str, Any] | None = None
+        followup_agents: list[tuple[str, str]] = []
+        if definition_type == "action":
+            if not isinstance(followup, dict):
+                errors.append("Action definitions must include followup_behavior with an executable assigned BT")
+            else:
+                followup_name = str(followup.get("name") or "").strip()
+                followup_raw = followup.get("definition") if isinstance(followup.get("definition"), dict) else {}
+                followup_definition, followup_errors = self._validate_definition_proposal(
+                    "behavior",
+                    followup_name,
+                    followup_raw,
+                    extra_action=definition,
+                )
+                errors.extend(f"followup_behavior: {error}" for error in followup_errors)
+                followup_assign_to = list(followup.get("assign_to") or [])
+                if not followup_assign_to:
+                    errors.append("followup_behavior.assign_to must name at least one existing character")
+                for name_or_id in followup_assign_to:
+                    resolved = self.targets.canonical_id(name_or_id)
+                    try:
+                        agent = self.store.get_agent(str(resolved or name_or_id))
+                    except KeyError:
+                        errors.append(f"unknown character in followup_behavior.assign_to: {name_or_id}")
+                        continue
+                    followup_agents.append((str(agent["id"]), str(agent.get("name") or agent["id"])))
+
+                def uses_action(node: Any) -> bool:
+                    if isinstance(node, dict):
+                        if str(node.get("type") or "action") == "action" and str(node.get("action_id") or "") == str(definition.get("id")):
+                            return True
+                        return any(uses_action(child) for child in (node.get("children") or []))
+                    if isinstance(node, list):
+                        return any(uses_action(child) for child in node)
+                    return False
+
+                if followup_definition and not uses_action(followup_definition.get("nodes") or []):
+                    errors.append("followup_behavior must contain an action node that references the new Action")
+        elif followup is not None:
+            errors.append("followup_behavior is only valid when definition_type is action")
         data = {**proposal, "actor_id": actor_id, "definition": definition}
         if errors:
             return self._reject_intent(intent_id, actor_id, "propose_definition", data, {"status": "rejected", "message": "Definition proposal failed validation.", "failed_check": "definition_schema", "errors": errors, "retryable": True})
@@ -530,6 +586,37 @@ class WorldEvolutionRuntimeMixin:
                 self.store.set_meta("world_property_labels", labels)
             elif table:
                 self.store.put_definition(table, str(definition["id"]), definition)
+                if definition_type == "action" and followup_definition:
+                    # Action and its first executable BT are committed in the
+                    # same transaction. A failed reachability check raises
+                    # before either definition can become visible.
+                    self.store.put_definition("bt_def", str(followup_definition["id"]), followup_definition)
+                    for agent_id, _ in followup_agents:
+                        agent = self.store.get_agent(agent_id)
+                        unlocked = list(agent.get("unlocked_bt_ids", []) or [])
+                        if followup_definition["id"] not in unlocked:
+                            unlocked.append(followup_definition["id"])
+                            agent["unlocked_bt_ids"] = unlocked
+                            self.store.update_agent(agent_id, agent)
+                    unavailable = []
+                    for agent_id, visible_name in followup_agents:
+                        candidate = self.view.build_decision_view(agent_id, role="agent_decision", include_diagnostics=True)
+                        if not any(str(item.get("ref")) == f"behavior:{followup_definition['id']}" for item in candidate.get("executable_behaviors", [])):
+                            reason = next(
+                                (
+                                    item.get("failed")
+                                    for item in (candidate.get("unavailable_behavior_diagnostics") or [])
+                                    if str(item.get("behavior_id")) == str(followup_definition["id"])
+                                ),
+                                ["the followup behavior is not in the executable catalog"],
+                            )
+                            unavailable.append({"character": visible_name, "reasons": reason})
+                    if unavailable:
+                        raise ValueError(
+                            "Action followup behavior is not executable for its assigned character(s): "
+                            + repr(unavailable)
+                            + "; correct its machine predicates, parameters, travel node or assignee"
+                        )
                 if definition_type == "capability":
                     for agent in self.store.list_agents():
                         capabilities = dict(agent.get("capabilities") or {})
@@ -565,6 +652,22 @@ class WorldEvolutionRuntimeMixin:
                         )
             event_id = self.store.append_event("definition.registered", actor_id, world_minute, {"definition_type": definition_type, "name": name, "definition_id": definition.get("id"), "assigned_to": [visible for _, visible in resolved_agents], "evidence": str(proposal.get("evidence") or "")})
             self._wake_configured_evolution_consumers(event_id, "definition.registered", actor_id, world_minute)
+            followup_event_id = None
+            if definition_type == "action" and followup_definition:
+                followup_event_id = self.store.append_event(
+                    "definition.registered",
+                    actor_id,
+                    world_minute,
+                    {
+                        "definition_type": "behavior",
+                        "name": str(followup.get("name") or followup_definition.get("agent_label") or followup_definition.get("id")),
+                        "definition_id": followup_definition.get("id"),
+                        "assigned_to": [visible for _, visible in followup_agents],
+                        "bound_action_id": definition.get("id"),
+                        "evidence": str(proposal.get("evidence") or ""),
+                    },
+                )
+                self._wake_configured_evolution_consumers(followup_event_id, "definition.registered", actor_id, world_minute)
             if actor_id == "god":
                 remember_role(self.store, "god", "world_definition", {
                     "summary": f"Registered {definition_type}: {name}.",
@@ -573,6 +676,11 @@ class WorldEvolutionRuntimeMixin:
                     "status": "accepted",
                 }, memory_key=f"god:definition:{intent_id}", source_event_id=event_id)
             result = {"status": "accepted", "intent_id": intent_id, "definition_type": definition_type, "name": name, "registered": True, "assigned_to": [visible for _, visible in resolved_agents], "event_id": event_id}
+            if definition_type == "action" and followup_definition:
+                result["bound_behavior"] = str(followup.get("name") or followup_definition.get("agent_label") or followup_definition.get("id"))
+                result["bound_behavior_id"] = followup_definition.get("id")
+                result["bound_assigned_to"] = [visible for _, visible in followup_agents]
+                result["bound_event_id"] = followup_event_id
             self.store.finish_intent(intent_id, "accepted", result)
         if definition_type == "attribute":
             attributes = self.store.get_meta("attributes", []) or []

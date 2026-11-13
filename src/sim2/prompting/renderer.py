@@ -548,6 +548,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("  - A typed signal records or wakes work; prose descriptions never enforce policy. To block behavior, use effect type behavior_constraint or a denial effect.")
         lines.append("  - Use the exact machine field in rule_condition_fields, including underscores inside world[\"...\"]. A God proposal must not wake God itself; use a character/follow-up behavior or wait.")
         lines.append("  - A behavior proposal must use definition.nodes: [{type: action, action_id: exact registered Action name, parameters: {...}}], plus entry_conditions, success_results and failure_results. Do not invent steps, trigger, outcomes, action_names or free-form action objects.")
+        lines.append("  - A new Action cannot be submitted alone: include followup_behavior {name, assign_to, definition} in the same propose_definition call. Its BT must reference the new Action by visible name and be executable for the assigned NPC immediately.")
         lines.append("  - Action parameters whose names end in _entity or _id must use exact visible entity names from the world view and parameter names from the Action catalog. A behavior is rejected unless its assigned character can execute the whole sequence now.")
         visible_names = ", ".join(str(item.get("name")) for item in (context.get("visible_entities") or [])[:48] if item.get("name"))
         lines.append(f"  - Exact visible entities (use these names): {visible_names or 'none'}.")

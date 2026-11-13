@@ -444,25 +444,22 @@ def test_god_definition_proposal_registers_attribute_action_and_behavior(tmp_pat
                 "success": {"condition": "mark.recorded", "result": "mark_recorded"},
                 "failure": {"condition": "actor.incapacitated", "result": "mark_failed"},
             },
+            "followup_behavior": {
+                "name": "Mark Boundary Route",
+                "assign_to": ["陆行舟"],
+                "definition": {
+                    "summary": "Record a verified boundary mark.",
+                    "entry_conditions": ["actor.alive"],
+                    "success_results": ["mark_recorded"],
+                    "failure_results": ["mark_failed"],
+                    "actions": ["Mark Boundary"],
+                },
+            },
             "evidence": "The patrol reports require a repeatable marking action.",
         })
         assert action["status"] == "accepted"
-
-        behavior = executor.execute("propose_definition", {
-            "definition_type": "behavior",
-            "name": "Mark Boundary Route",
-            "definition": {
-                "summary": "Record a verified boundary mark.",
-                "entry_conditions": ["actor.alive"],
-                "success_results": ["mark_recorded"],
-                "failure_results": ["mark_failed"],
-                "actions": ["Mark Boundary"],
-            },
-            "assign_to": ["陆行舟"],
-            "evidence": "A patrol report identifies a repeatable boundary task.",
-        })
-        assert behavior["status"] == "accepted"
-        assert behavior["assigned_to"] == ["陆行舟"]
+        assert action["bound_behavior"] == "Mark Boundary Route"
+        assert action["bound_assigned_to"] == ["陆行舟"]
         assert any(item.get("id") == "mark_boundary_route" for item in platform.store.get_definitions("bt_def"))
         assert "mark_boundary_route" in platform.store.get_agent("lu_xingzhou")["unlocked_bt_ids"]
 

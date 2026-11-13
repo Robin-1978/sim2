@@ -355,7 +355,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "propose_definition": {
-        "purpose": "Submit declarative world mechanics: an attribute, world property, capability, Action, behavior tree, or recipe. Platform validates and registers it; it never executes during the proposal.",
+        "purpose": "Submit declarative world mechanics: an attribute, world property, capability, Action, behavior tree, or recipe. A new Action must include followup_behavior so one assigned NPC can execute it immediately; Platform validates and registers the bound pair atomically.",
         "kind": "intent",
         "parameters": {
             "type": "object",
@@ -395,6 +395,17 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                     "additionalProperties": True,
                 },
                 "assign_to": {"type": "array", "items": {"type": "string"}, "description": "For a behavior, required visible character names that can execute it; other definition types must leave this empty."},
+                "followup_behavior": {
+                    "type": "object",
+                    "description": "Required for a new Action. Bind the Action to one immediately executable behavior in the same transaction.",
+                    "properties": {
+                        "name": {"type": "string", "description": "Visible BT name."},
+                        "assign_to": {"type": "array", "items": {"type": "string"}, "description": "Visible character names that can execute the BT now."},
+                        "definition": {"type": "object", "description": "Behavior definition whose nodes include the new Action by its exact visible name."},
+                    },
+                    "required": ["name", "assign_to", "definition"],
+                    "additionalProperties": False,
+                },
                 "evidence": {"type": "string", "description": "The observed result that justifies this new definition."},
             },
             "required": ["definition_type", "name", "definition"],
@@ -993,6 +1004,7 @@ class AgentToolExecutor:
         name: str,
         definition: dict[str, Any],
         assign_to: list[str] | None = None,
+        followup_behavior: dict[str, Any] | None = None,
         evidence: str = "",
     ) -> dict[str, Any]:
         required_type = str(self.evolution_contract.get("required_definition_type") or "").strip()
@@ -1031,6 +1043,7 @@ class AgentToolExecutor:
                 "name": name,
                 "definition": dict(definition or {}),
                 "assign_to": list(assign_to or []),
+                "followup_behavior": dict(followup_behavior or {}) if followup_behavior else None,
                 "evidence": evidence,
             },
         )
