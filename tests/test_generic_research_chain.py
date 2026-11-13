@@ -137,6 +137,34 @@ def test_story_cannot_relabel_a_research_result_as_another_source(tmp_path: Path
         platform.close()
 
 
+def test_story_followup_must_be_executable_for_its_audience(tmp_path: Path):
+    platform = _town(tmp_path, "story-followup-catalog-guard")
+    try:
+        with platform.store.transaction():
+            event_id = platform.store.append_event(
+                "cistern.reviewed",
+                "mei_lan",
+                10,
+                {"summary": "The cistern record was reviewed.", "story_source": True},
+            )
+        result = platform.submit_story_beat(
+            "story",
+            {
+                "beat": "不可执行的研究后续",
+                "summary": "梅岚完成蓄水核对后需要继续推进一个新的问题。",
+                "fact": "The cistern record was reviewed.",
+                "goal_hint": "Continue the research.",
+                "audience": ["梅岚"],
+                "unlock_choices": ["Research Configured Source"],
+            },
+            source_event_ids=[event_id],
+        )
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "story_followup_executable"
+    finally:
+        platform.close()
+
+
 def test_research_source_proposal_requires_real_declarative_stages(tmp_path: Path):
     platform = _town(tmp_path, "research-source-schema")
     try:

@@ -406,6 +406,16 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                     "required": ["name", "assign_to", "definition"],
                     "additionalProperties": False,
                 },
+                "followup_recipe": {
+                    "type": "object",
+                    "description": "Required when the new Action consumes a recipe. Register the recipe atomically with the Action and followup BT.",
+                    "properties": {
+                        "name": {"type": "string", "description": "Visible recipe name."},
+                        "definition": {"type": "object", "description": "Recipe definition with duration_minutes, inputs and outputs."},
+                    },
+                    "required": ["name", "definition"],
+                    "additionalProperties": False,
+                },
                 "evidence": {"type": "string", "description": "The observed result that justifies this new definition."},
             },
             "required": ["definition_type", "name", "definition"],
@@ -1005,6 +1015,7 @@ class AgentToolExecutor:
         definition: dict[str, Any],
         assign_to: list[str] | None = None,
         followup_behavior: dict[str, Any] | None = None,
+        followup_recipe: dict[str, Any] | None = None,
         evidence: str = "",
     ) -> dict[str, Any]:
         required_type = str(self.evolution_contract.get("required_definition_type") or "").strip()
@@ -1044,6 +1055,7 @@ class AgentToolExecutor:
                 "definition": dict(definition or {}),
                 "assign_to": list(assign_to or []),
                 "followup_behavior": dict(followup_behavior or {}) if followup_behavior else None,
+                "followup_recipe": dict(followup_recipe or {}) if followup_recipe else None,
                 "evidence": evidence,
             },
         )

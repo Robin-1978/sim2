@@ -83,3 +83,13 @@ may activate evidence-backed beats, progress and registered BT unlocks. God
 may create mechanisms and structural definitions. Story can surface a need for
 new mechanics, but Platform does not let narrative text register an Action or
 attribute directly.
+
+When God creates an Action that has no existing executable path, the proposal
+must include `followup_behavior` with an assignee and a BT that references the
+new Action. A recipe Action may include `followup_recipe` in the same proposal;
+Platform registers Action, Recipe and BT in one SQLite transaction, resolves
+visible names for existing resource inputs, and replaces a visible recipe name
+inside the BT with the transaction's recipe key. A proposal is rejected unless
+the assigned character's current executable catalog can start the complete BT.
+This keeps a dynamic primitive from becoming an unreachable Action or an
+Action/Recipe dependency cycle.

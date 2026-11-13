@@ -38,6 +38,48 @@ class WorldEvolutionRuntimeMixin:
         reserve = costs.get("reserve") if isinstance(costs.get("reserve"), dict) else {}
         return duration.get("mode") == "recipe_duration" or "recipe_inputs" in reserve
 
+    def _normalize_recipe_items(self, definition: dict[str, Any]) -> dict[str, Any]:
+        """Resolve visible names for existing resource items to registry keys.
+
+        God sees visible world names, while inventories and shared resource
+        nodes use stable registry keys.  New output items may intentionally be
+        introduced by a recipe and therefore remain as submitted; only names
+        that already resolve to a resource/material/object are canonicalized.
+        """
+
+        normalized = copy.deepcopy(definition)
+
+        def item_key(value: Any) -> Any:
+            if not isinstance(value, str) or not value.strip():
+                return value
+            canonical = self.targets.canonical_id(value)
+            if not canonical:
+                return value
+            try:
+                entity = self.store.get_entity(str(canonical))
+            except KeyError:
+                return value
+            if str(entity.get("entity_type") or "") in {"resource", "material", "object"}:
+                return str(canonical)
+            return value
+
+        for field in ("inputs", "outputs", "requires"):
+            values = normalized.get(field)
+            if not isinstance(values, list):
+                continue
+            for item in values:
+                if isinstance(item, dict) and "item" in item:
+                    item["item"] = item_key(item.get("item"))
+        limits = normalized.get("limits")
+        if isinstance(limits, dict):
+            limits = [limits]
+            normalized["limits"] = limits
+        if isinstance(limits, list):
+            for item in limits:
+                if isinstance(item, dict) and "item" in item:
+                    item["item"] = item_key(item.get("item"))
+        return normalized
+
     def _resolve_research_assignees(self, state: dict[str, Any]) -> tuple[list[tuple[str, str]], list[str]]:
         """Resolve ``research_assignees`` to ``(agent_id, visible_name)`` pairs."""
 
@@ -298,6 +340,22 @@ class WorldEvolutionRuntimeMixin:
             errors.append(f"definition name already exists: {name}")
 
         if kind == "action":
+            # Models naturally shorten ``costs.reserve`` to ``reserve`` when
+            # proposing a new recipe action.  Accept that generic shorthand
+            # and normalize it before validation; the persisted contract is
+            # still the same one used by configured Actions.
+            shorthand_reserve = definition.pop("reserve", None)
+            if shorthand_reserve is not None:
+                costs = definition.setdefault("costs", {})
+                if not isinstance(costs, dict):
+                    errors.append("action.costs must be an object")
+                else:
+                    reserve = costs.setdefault("reserve", {})
+                    if not isinstance(reserve, dict):
+                        errors.append("action.costs.reserve must be an object")
+                    elif isinstance(shorthand_reserve, dict):
+                        for key, value in shorthand_reserve.items():
+                            reserve.setdefault(str(key), 1 if value is True else value)
             duration = definition.get("duration") if isinstance(definition.get("duration"), dict) else {}
             if not duration or not (isinstance(duration.get("minutes"), (int, float)) or duration.get("mode") in {"route_distance", "recipe_duration"}):
                 errors.append("action.duration must declare minutes or a supported mode")
@@ -310,9 +368,36 @@ class WorldEvolutionRuntimeMixin:
             for field in ("success", "failure"):
                 if not isinstance(definition.get(field), dict) or not str((definition.get(field) or {}).get("result") or "").strip():
                     errors.append(f"action.{field} must declare an object with result")
-            definition.update({"id": definition_id, "version": 1, "definition_version": 1, "description": definition.get("description") or str(name), "definition_source": "god_proposal", "kind": "atomic", "executor": "effect_pipeline", "validation_status": "validated"})
+            # Keep the visible proposal name in the persisted definition.  The
+            # registry id is intentionally machine-oriented, while audits,
+            # AgentView and later definition references must be able to show
+            # the exact human-facing label that God submitted.
+            definition.update({"id": definition_id, "version": 1, "definition_version": 1, "name": definition.get("name") or name, "description": definition.get("description") or str(name), "definition_source": "god_proposal", "kind": "atomic", "executor": "effect_pipeline", "validation_status": "validated"})
         elif kind == "behavior":
+            normalized_conditions: list[str] = []
             for condition in definition.get("entry_conditions", []) or []:
+                condition_text = str(condition)
+                # Conditions are machine predicates, but God often copies a
+                # visible item label from the world view.  Resolve only
+                # existing resource/material/object labels; unknown inventory
+                # keys may be newly produced by a bound recipe and remain as
+                # submitted.
+                def normalize_inventory_key(match: re.Match[str]) -> str:
+                    key = match.group(1)
+                    canonical = self.targets.canonical_id(key)
+                    if canonical:
+                        try:
+                            entity = self.store.get_entity(str(canonical))
+                        except KeyError:
+                            entity = {}
+                        if str(entity.get("entity_type") or "") in {"resource", "material", "object"}:
+                            return f"actor.inventory.{canonical}"
+                    return match.group(0)
+
+                condition_text = re.sub(r"actor\.inventory\.([^\s<>=!&|()]+)", normalize_inventory_key, condition_text)
+                normalized_conditions.append(condition_text)
+            definition["entry_conditions"] = normalized_conditions
+            for condition in normalized_conditions:
                 if "event.recent." in str(condition):
                     errors.append(
                         "a reusable God-proposed behavior must not use event.recent.* entry conditions; "
@@ -449,6 +534,7 @@ class WorldEvolutionRuntimeMixin:
             definition.pop("actions", None)
             definition.update({"id": definition_id, "version": 1, "definition_version": 1, "summary": definition.get("summary") or definition.get("description") or str(name), "agent_label": definition.get("agent_label") or name, "definition_source": "god_proposal", "kind": "proposed", "validation_status": "validated"})
         elif kind == "recipe":
+            definition = self._normalize_recipe_items(definition)
             duration = definition.get("duration_minutes")
             if not isinstance(duration, (int, float)) or isinstance(duration, bool) or float(duration) <= 0:
                 errors.append("recipe.duration_minutes must be positive")
@@ -460,7 +546,7 @@ class WorldEvolutionRuntimeMixin:
                     errors.append(f"recipe.{field} entries need item and positive quantity")
             # A recipe is only ever produced through an Action that consumes
             # recipes.  Without one the recipe can never be crafted by anybody.
-            if not any(self._is_recipe_action(item) for item in self.store.get_definitions("action_def")):
+            if not any(self._is_recipe_action(item) for item in self.store.get_definitions("action_def")) and not self._is_recipe_action(extra_action or {}):
                 errors.append(
                     "no registered Action can craft a recipe (it must reserve recipe_inputs or use duration.mode recipe_duration); "
                     "register such an Action and a behavior that uses it before adding recipes"
@@ -501,14 +587,68 @@ class WorldEvolutionRuntimeMixin:
                 "a registered but unassigned behavior cannot participate in world evolution"
             )
         followup = proposal.get("followup_behavior")
+        followup_recipe = proposal.get("followup_recipe")
         followup_definition: dict[str, Any] | None = None
+        followup_recipe_definition: dict[str, Any] | None = None
         followup_agents: list[tuple[str, str]] = []
         if definition_type == "action":
+            if followup_recipe is not None:
+                if not isinstance(followup_recipe, dict):
+                    errors.append("followup_recipe must be an object with name and definition")
+                else:
+                    recipe_name = str(followup_recipe.get("name") or "").strip()
+                    recipe_raw = followup_recipe.get("definition") if isinstance(followup_recipe.get("definition"), dict) else {}
+                    followup_recipe_definition, recipe_errors = self._validate_definition_proposal(
+                        "recipe",
+                        recipe_name,
+                        recipe_raw,
+                        extra_action=definition,
+                    )
+                    errors.extend(f"followup_recipe: {error}" for error in recipe_errors)
+                    if followup_recipe_definition and self._is_recipe_action(definition):
+                        parameters = definition.setdefault("parameters", {})
+                        if isinstance(parameters, dict):
+                            parameters.setdefault("recipe_id", "string")
+                        costs = definition.setdefault("costs", {})
+                        if isinstance(costs, dict):
+                            reserve = costs.setdefault("reserve", {})
+                            if isinstance(reserve, dict):
+                                reserve.setdefault("recipe_inputs", 1)
+                        defaults = definition.setdefault("parameter_defaults", {})
+                        if isinstance(defaults, dict):
+                            defaults.setdefault("recipe_id", str(followup_recipe_definition.get("id")))
             if not isinstance(followup, dict):
                 errors.append("Action definitions must include followup_behavior with an executable assigned BT")
             else:
                 followup_name = str(followup.get("name") or "").strip()
                 followup_raw = followup.get("definition") if isinstance(followup.get("definition"), dict) else {}
+                followup_raw = copy.deepcopy(followup_raw)
+                if followup_recipe_definition:
+                    recipe_id = str(followup_recipe_definition.get("id"))
+                    action_id = str(definition.get("id"))
+
+                    def inject_recipe_id(node: Any) -> None:
+                        if isinstance(node, dict):
+                            node_type = str(node.get("type") or "action")
+                            reference = node.get("action_id") or node.get("action") or node.get("name")
+                            if node_type == "action" and self._definition_name_key(reference) in {
+                                self._definition_name_key(action_id),
+                                self._definition_name_key(name),
+                            }:
+                                parameters = node.setdefault("parameters", {})
+                                if isinstance(parameters, dict):
+                                    # The model may repeat the visible recipe
+                                    # name here.  Persist the registry id that
+                                    # was created in this same transaction so
+                                    # the BT can resolve the recipe immediately.
+                                    parameters["recipe_id"] = recipe_id
+                            for child in node.get("children") or []:
+                                inject_recipe_id(child)
+                        elif isinstance(node, list):
+                            for child in node:
+                                inject_recipe_id(child)
+
+                    inject_recipe_id(followup_raw.get("nodes") if "nodes" in followup_raw else followup_raw.get("actions"))
                 followup_definition, followup_errors = self._validate_definition_proposal(
                     "behavior",
                     followup_name,
@@ -539,6 +679,8 @@ class WorldEvolutionRuntimeMixin:
 
                 if followup_definition and not uses_action(followup_definition.get("nodes") or []):
                     errors.append("followup_behavior must contain an action node that references the new Action")
+        elif followup_recipe is not None:
+            errors.append("followup_recipe is only valid when definition_type is action")
         elif followup is not None:
             errors.append("followup_behavior is only valid when definition_type is action")
         data = {**proposal, "actor_id": actor_id, "definition": definition}
@@ -586,6 +728,8 @@ class WorldEvolutionRuntimeMixin:
                 self.store.set_meta("world_property_labels", labels)
             elif table:
                 self.store.put_definition(table, str(definition["id"]), definition)
+                if definition_type == "action" and followup_recipe_definition:
+                    self.store.put_definition("recipe_def", str(followup_recipe_definition["id"]), followup_recipe_definition)
                 if definition_type == "action" and followup_definition:
                     # Action and its first executable BT are committed in the
                     # same transaction. A failed reachability check raises
@@ -652,6 +796,21 @@ class WorldEvolutionRuntimeMixin:
                         )
             event_id = self.store.append_event("definition.registered", actor_id, world_minute, {"definition_type": definition_type, "name": name, "definition_id": definition.get("id"), "assigned_to": [visible for _, visible in resolved_agents], "evidence": str(proposal.get("evidence") or "")})
             self._wake_configured_evolution_consumers(event_id, "definition.registered", actor_id, world_minute)
+            followup_recipe_event_id = None
+            if definition_type == "action" and followup_recipe_definition:
+                followup_recipe_event_id = self.store.append_event(
+                    "definition.registered",
+                    actor_id,
+                    world_minute,
+                    {
+                        "definition_type": "recipe",
+                        "name": str(followup_recipe.get("name") or followup_recipe_definition.get("name") or followup_recipe_definition.get("id")),
+                        "definition_id": followup_recipe_definition.get("id"),
+                        "bound_action_id": definition.get("id"),
+                        "evidence": str(proposal.get("evidence") or ""),
+                    },
+                )
+                self._wake_configured_evolution_consumers(followup_recipe_event_id, "definition.registered", actor_id, world_minute)
             followup_event_id = None
             if definition_type == "action" and followup_definition:
                 followup_event_id = self.store.append_event(
@@ -681,6 +840,10 @@ class WorldEvolutionRuntimeMixin:
                 result["bound_behavior_id"] = followup_definition.get("id")
                 result["bound_assigned_to"] = [visible for _, visible in followup_agents]
                 result["bound_event_id"] = followup_event_id
+            if definition_type == "action" and followup_recipe_definition:
+                result["bound_recipe"] = str(followup_recipe.get("name") or followup_recipe_definition.get("name") or followup_recipe_definition.get("id"))
+                result["bound_recipe_id"] = followup_recipe_definition.get("id")
+                result["bound_recipe_event_id"] = followup_recipe_event_id
             self.store.finish_intent(intent_id, "accepted", result)
         if definition_type == "attribute":
             attributes = self.store.get_meta("attributes", []) or []
@@ -1277,6 +1440,39 @@ class WorldEvolutionRuntimeMixin:
             for value in beat.get("unlock_choices", [])
             if "".join(char for char in str(value).casefold() if char.isalnum()) in labels
         ]
+        if audience and beat.get("unlock_behavior_ids"):
+            # A narrative continuation is useful only when at least one named
+            # audience member can actually start that behavior now.  Checking
+            # the same executable catalog exposed to NPC decisions prevents a
+            # Story beat from assigning research, crafting, or institution
+            # work to a character who has no such behavior or lacks its
+            # prerequisites.
+            unavailable_followups: list[dict[str, Any]] = []
+            for behavior_id in beat["unlock_behavior_ids"]:
+                executable_for = []
+                for audience_id in audience:
+                    candidate = self.view.build_decision_view(audience_id, role="agent_decision", include_diagnostics=True)
+                    if any(str(item.get("ref")) == f"behavior:{behavior_id}" for item in candidate.get("executable_behaviors", [])):
+                        executable_for.append(audience_id)
+                if not executable_for:
+                    unavailable_followups.append({
+                        "behavior": next((str(value) for value in requested_unlocks if labels.get("".join(char for char in value.casefold() if char.isalnum())) == behavior_id), behavior_id),
+                        "audience": list(audience),
+                    })
+            if unavailable_followups:
+                return self._reject_intent(
+                    intent_id,
+                    actor_id,
+                    "propose_story_beat",
+                    proposal,
+                    {
+                        "status": "rejected",
+                        "message": "Every story follow-up must be executable by at least one audience member now.",
+                        "failed_check": "story_followup_executable",
+                        "retryable": True,
+                        "unavailable_followups": unavailable_followups,
+                    },
+                )
         if emergent and source_event:
             candidate_followup_values = tuple(sorted(str(item) for item in (beat.get("unlock_behavior_ids") or [])))
             candidate_followups = candidate_followup_values or ("<no-explicit-followup>",)
