@@ -93,3 +93,9 @@ inside the BT with the transaction's recipe key. A proposal is rejected unless
 the assigned character's current executable catalog can start the complete BT.
 This keeps a dynamic primitive from becoming an unreachable Action or an
 Action/Recipe dependency cycle.
+
+An Action proposal also needs an observable result channel: effects,
+information, capability or progress evidence, or Recipe outputs. A success
+label alone cannot claim a resource refill or other state change. If no
+registered primitive can perform a supply operation, God must wait or create a
+declarative mechanism with a real effect path.

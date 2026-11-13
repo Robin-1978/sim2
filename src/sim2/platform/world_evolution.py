@@ -683,6 +683,21 @@ class WorldEvolutionRuntimeMixin:
             errors.append("followup_recipe is only valid when definition_type is action")
         elif followup is not None:
             errors.append("followup_behavior is only valid when definition_type is action")
+        if definition_type == "action" and followup_definition:
+            has_observable_channel = any(
+                isinstance(definition.get(field), list) and bool(definition.get(field))
+                for field in ("effects", "progress_effects", "capability_effects")
+            ) or bool(definition.get("information"))
+            has_recipe_output = bool(
+                followup_recipe_definition
+                and isinstance(followup_recipe_definition.get("outputs"), list)
+                and followup_recipe_definition.get("outputs")
+            )
+            if not has_observable_channel and not has_recipe_output:
+                errors.append(
+                    "Action must declare an observable effects/information channel or a bound Recipe output; "
+                    "success and failure labels alone do not change the world"
+                )
         data = {**proposal, "actor_id": actor_id, "definition": definition}
         if errors:
             return self._reject_intent(intent_id, actor_id, "propose_definition", data, {"status": "rejected", "message": "Definition proposal failed validation.", "failed_check": "definition_schema", "errors": errors, "retryable": True})

@@ -1181,7 +1181,13 @@ class Platform(
             self.store.set_meta("minute_effect_event_state", minute_event_state)
 
     def _emit_resource_safety_signals(self, minute: int) -> None:
-        """Publish configured stock-safety signals when a reserve crosses its floor."""
+        """Publish configured stock-safety signals at a crossing or repeat interval.
+
+        A one-time crossing is the default.  Worlds with a persistent shortage
+        may declare ``repeat_every_minutes`` so the same unresolved shortage
+        is reviewed again after the configured interval; the signal remains
+        declarative and the consumer's own cooldown still applies.
+        """
 
         rules = self.store.get_meta("rules", {}) or {}
         configured = rules.get("resource_safety", []) or []
@@ -1200,8 +1206,19 @@ class Platform(
             quantity = self._entity_quantity(entity)
             floor = float(raw.get("minimum_reserve", raw.get("reserve_floor", 0)) or 0)
             active = quantity <= floor
-            previous = bool(state.get(resource_id, False))
-            if active and not previous:
+            previous_state = state.get(resource_id, False)
+            if isinstance(previous_state, dict):
+                previous = bool(previous_state.get("active", False))
+                last_emitted = int(previous_state.get("last_emitted_minute", -10**9) or -10**9)
+            else:
+                previous = bool(previous_state)
+                last_emitted = -10**9
+            repeat_every = max(0, int(raw.get("repeat_every_minutes", 0) or 0))
+            should_emit = active and (
+                not previous
+                or (repeat_every > 0 and int(minute) - last_emitted >= repeat_every)
+            )
+            if should_emit:
                 event_type = str(raw.get("event_type") or "resource.safety_low")
                 event_id = self.store.append_event(event_type, None, minute, {
                     "resource_id": resource_id,
@@ -1209,10 +1226,13 @@ class Platform(
                     "quantity": quantity,
                     "minimum_reserve": floor,
                     "summary": f"{entity.get('name', resource_id)} is at or below its configured reserve floor.",
+                    "signal_kind": "crossing" if not previous else "repeat",
                 })
                 self._wake_configured_evolution_consumers(event_id, event_type, None, minute)
-            if active != previous:
-                state[resource_id] = active
+                state[resource_id] = {"active": active, "last_emitted_minute": int(minute)}
+                changed = True
+            elif active != previous:
+                state[resource_id] = {"active": active, "last_emitted_minute": last_emitted}
                 changed = True
         if changed:
             self.store.set_meta("resource_safety_signal_state", state)

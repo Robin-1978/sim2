@@ -39,7 +39,7 @@ wakes:
   "on": resource.gathered
   for: god
   count: 3
-  every: 1w
+  every: 1d
   tools: [propose_entity, propose_definition, wait]
   purpose: Three verified resource-gathering outcomes are evidence that the town has a usable material flow; choose a grounded next use such as a research source, storage or trade structure, or a recipe once a registered Action can craft it.
   result: Reuse the generic research, recipe, trade or production mechanism when it already fits. Create one distinct configured entity or definition only when the gathered material and recorded outcomes justify it; do not create another behavior that merely repeats the same action.
@@ -57,7 +57,7 @@ wakes:
   "on": institution.allocation_completed
   for: god
   count: 3
-  every: 1w
+  every: 1d
   tools: [propose_definition, propose_entity, revise_institution, wait]
   purpose: Review repeated allocation outcomes and create the next structural improvement when the reserve trend or institution results justify it.
   result: Compare the institution's current terms with the recorded allocations and ledger totals. Revise the terms of the active institution when the results show they no longer fit (for example a minimum the pool can never cover, or a ledger that credits too little or too much work); otherwise propose one new capability, production behavior, research source or structural entity when the verified trend supports progress; wait only when no grounded improvement is justified.

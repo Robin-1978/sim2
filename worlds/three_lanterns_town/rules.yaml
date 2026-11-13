@@ -41,6 +41,7 @@ resource_regeneration:
 resource_safety:
 - resource_id: cistern_water
   minimum_reserve: 12
+  repeat_every_minutes: 1440
   event_type: resource.safety_low
 resource_property_projections:
   cistern_water: cistern_reserve

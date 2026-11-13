@@ -416,6 +416,29 @@ def test_configured_resource_safety_publishes_one_crossing_event(tmp_path: Path)
         platform.close()
 
 
+def test_resource_safety_repeat_signal_reopens_a_persistent_shortage(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "resource-safety-repeat")
+    try:
+        rules = dict(platform.store.get_meta("rules", {}) or {})
+        rules["resource_safety"] = [{
+            "resource_id": "cistern_water",
+            "minimum_reserve": 12,
+            "repeat_every_minutes": 2,
+            "event_type": "resource.safety_low",
+        }]
+        platform.store.set_meta("rules", rules)
+        _set_quantity(platform, "cistern_water", 11)
+        platform.step()  # crossing at minute 1
+        platform.step()  # repeat interval not reached
+        platform.step()  # repeat at minute 3
+        events = [item for item in platform.store.recent_events(limit=100) if item["event_type"] == "resource.safety_low"]
+        events.sort(key=lambda item: item["world_minute"])
+        assert [item["world_minute"] for item in events] == [1, 3]
+        assert [item["signal_kind"] for item in events] == ["crossing", "repeat"]
+    finally:
+        platform.close()
+
+
 # --- Story beat visibility in the milestone session ----------------------------
 
 

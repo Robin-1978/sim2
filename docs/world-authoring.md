@@ -270,6 +270,12 @@ keep consuming, and gate consumption behaviors with the world's own threshold
 (for example `actor.need.hydration <= context.hydration_alert_threshold`) so
 an item is not spent when its effect would be clamped to nothing.
 
+For a persistent shortage, `rules.resource_safety` may also declare
+`repeat_every_minutes`. The first crossing emits the configured safety event;
+while the reserve remains below its floor, the same event is emitted again only
+at that interval. Omit the field for one crossing per recovery cycle. This lets
+God revisit an unresolved shortage without waking it on every simulation tick.
+
 The evidence check is structural provenance, not a social-trust score: it asks
 whether the named event was actually persisted and whether the threshold was
 met. A model does not need to calculate credibility or copy selectors into an

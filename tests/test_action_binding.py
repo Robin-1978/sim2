@@ -34,6 +34,37 @@ def test_action_without_followup_behavior_is_rejected(tmp_path: Path) -> None:
         platform.close()
 
 
+def test_unobservable_dynamic_action_is_rejected(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "action-needs-observable-result", tmp_path / "runtime"))
+    try:
+        result = platform.submit_definition_proposal(
+            "god",
+            {
+                "definition_type": "action",
+                "name": "Refill Test Cistern",
+                "definition": {
+                    "duration": {"minutes": 1},
+                    "parameters": {"location_id": "string"},
+                    "success": {"result": "cistern refilled"},
+                    "failure": {"result": "refill failed"},
+                },
+                "followup_behavior": {
+                    "name": "Refill Test Cistern Behavior",
+                    "assign_to": ["梅岚"],
+                    "definition": {
+                        "nodes": [{"type": "action", "action_id": "Refill Test Cistern", "parameters": {"location_id": "蓄水屋"}}],
+                        "success_results": ["cistern refilled"],
+                        "failure_results": ["refill failed"],
+                    },
+                },
+            },
+        )
+        assert result["status"] == "rejected"
+        assert any("observable" in error for error in result["errors"])
+    finally:
+        platform.close()
+
+
 def test_recipe_action_recipe_and_behavior_bind_atomically(tmp_path: Path) -> None:
     platform = Platform(create_instance(WORLD, "action-recipe-binding", tmp_path / "runtime"))
     try:
