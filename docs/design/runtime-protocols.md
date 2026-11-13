@@ -89,6 +89,18 @@ stocked resources. Story continues to consume validated facts and organize
 them into goals and chapters; it does not silently create the structural
 content that God owns.
 
+Liveness is a platform property, not a content promise. A world may enable a
+derived `world.stagnation` event (`stagnation.window` in `evolution.yaml`);
+Platform compares each character's cumulative executable-option frontier from
+their own decision view once per window and publishes the event at doubling
+spacing while nothing new appears. Event groups can count only novel evidence
+(`distinct_by`), and `manual_only` events reach a consumer only through
+explicit producer declarations. God content is validated for reachability
+inside the proposal transaction: a research source must be reachable by its
+assignees, a recipe needs a registered craft Action, and an active institution
+may be revised (`revise_institution`) only after it has operated under its
+latest terms. See `docs/world-authoring.md` for the authoring contract.
+
 An evolution trigger or evidence group may also declare an `agent_contract`.
 It can restrict the allowed tools and state the required structural result,
 for example allowing only `propose_institution` and `wait` when repeated public
@@ -113,6 +125,17 @@ read-only `query_history` tool filters persisted events by exact event type,
 visible actor, keyword, and world-minute range. Its result removes internal IDs
 and never grants mutation authority. A wake contract may omit the read tool to
 keep an event review submission-only; ordinary Story/God sessions expose it.
+
+The history window lists only meaningful events: the per-minute `world_minute.advanced`
+tick is skipped, and the validated source events of a wake appear once as
+`<triggering_evidence>` instead of again in the history. A world-level prompt has a
+fixed character budget (`render_context(max_chars=16000)`). When the God prompt
+exceeds it, whole reference sections are dropped in a fixed order (`world_trends`,
+`rule_condition_fields`, `world_outcomes`) and a `<context_limit>` note names them.
+If that is still not enough, the end of the reference sections is cut while the
+active institutions (with the terms only the God sees) and the final `<decision>`
+task are kept: the God cannot revise a term it cannot read. They are cut only when
+they alone exceed the budget.
 
 Story and God also have separate long-term memory namespaces. A Story wake
 retrieves a small slice of active narrative-thread summaries; a God wake

@@ -127,6 +127,11 @@ is required. For example, ledger review may require `definition_type: behavior`,
 which prevents God from substituting a signal rule or unrelated capability.
 An optional `assign_to: [梅岚]` makes the expected executor explicit and ensures
 the new behavior enters that character's next decision catalog.
+A wake that reviews `research.completed` (or `research.progressed`) evidence also shows
+the God how to submit a research source (`propose_entity` with a `document`,
+`research_discoveries`, `research_required` and `research_assignees`). The wording of
+`result` does not switch that note on, so a wake may list a research source next to
+other levers such as `revise_institution` without steering the choice.
 These fields are optional
 guidance for that one wake. Bootstrap compiles this into the internal
 `schedule`, `event_wake_policy`, `event_groups`, and evidence selector fields.
@@ -154,7 +159,8 @@ event therefore fails validation before the world is created.
   world's configured attribute, need, and capability defaults.
 
 Both roles receive a bounded `<world_history>` section with recent validated
-events. They can use the read-only `query_history` tool for an older causal
+events (minute ticks are skipped, and a wake's own source events appear once, as
+`<triggering_evidence>`). They can use the read-only `query_history` tool for an older causal
 slice (`event_type`, visible `actor`, `contains`, `since_minute`, and
 `until_minute`). The tool returns visible names and compact details without
 internal IDs. Add `query_history` to a wake's `tools` list when that event
@@ -174,6 +180,84 @@ events emitted by runtime infrastructure, define the consumer in `wakes`.
 Use `on: 'rule:*'` for a direct task-prefix wake when a world rule should wake
 the same consumer. The runtime expands that wildcard into its task-prefix
 allowlist; ordinary event names remain exact and countable.
+
+### Delivery, novelty and stagnation
+
+These optional fields keep an evolving world from settling into a loop that
+no consumer notices:
+
+- `manual_only: true` delivers the event to that consumer **only** through an
+  explicit producer declaration (`wake:` or `outcome_events` on an Action or
+  BT). Platform's own publication of the same event (for example an
+  institution allocation it settled) is the automatic path and does not wake
+  the consumer one event at a time. A manual-only event is not compiled into
+  `direct_event_types`.
+- `distinct_by: [source_id, stage_id]` makes `count` count only **novel**
+  evidence. The listed keys (payload fields, or the `actor_id` and
+  `event_type` columns) identify what is new; a combination already counted
+  never counts again, so a repeated outcome needs no calendar `every`
+  cooldown. The last 512 combinations are remembered per group. A wake with `distinct_by` carries its matching events
+  as `<triggering_evidence>`, like any other contract wake.
+- `stagnation: {window: 1d, max_interval: 1w}` turns on the derived
+  `world.stagnation` event. Once per window Platform compares each living
+  character's cumulative set of executable options (behaviors plus parameter
+  options such as configured research sources) with the previous window; the
+  first window only records the baseline. Any growth resets the counter. When
+  nothing grew, the event is published after 1, 2, 4, ... stagnant windows,
+  never farther apart than `max_interval`, and lists per character what they
+  can do now and which conditions block the rest. A blocked Action names the
+  failing check in its own terms: the unmet precondition, the exhausted
+  resource, or the pool and policy minimum of an institution allocation
+  (`Action settle_institution_allocation cannot start: the pool holds 1.5 but
+  the policy minimum needs 3`). The world decides who
+  receives it, for example
+  `- {"on": world.stagnation, for: god, tools: [...], purpose: ..., result: ...}`;
+  validation requires `stagnation.window` for any wake on `world.stagnation`.
+  Each evaluated character costs one decision view, which grows with the
+  population, so a window evaluates at most `max_characters` of them (default
+  12, the number the event lists; at most 64). A larger roster is walked by a
+  deterministic rotating cohort in id order, each character keeping its own
+  cumulative options, and a character met for the first time only records its
+  baseline instead of counting as growth. In a roster that fits in one cohort
+  a newly appeared character does count as growth.
+
+A configured Story beat whose trigger is a source event (for example
+`research.completed`) is also offered in the `civilization.milestone` session
+that source produced: Platform reads the originating event type from the
+stored milestone, never from the model. While such a beat applies, Story
+cannot submit an emergent beat in its place. Activating a configured beat
+always records the `story:<beat id>` knowledge key, so a behavior guarded by
+`actor.knowledge.story:<beat id>` becomes executable.
+
+### Proposals must be reachable
+
+Platform rejects God content that no character could ever use, inside the same
+transaction that would have stored it (nothing remains after a rejection):
+
+- A research source whose `research_assignees` names an unknown character is a
+  schema rejection. One whose assignee has no research choice, or sits at a
+  location the assignee cannot reach, is rejected with
+  `failed_check: entity_unreachable`; the answer lists the characters who can
+  research now. The check reads each assignee's own decision view.
+- A `recipe` definition is rejected while no registered Action can craft one
+  (`costs.reserve.recipe_inputs` or `duration.mode: recipe_duration`).
+- An institution's `policy.allocation` (`minimum_per_subject >= 0`,
+  `contribution_share` between 0 and 1) and `ledger.selectors` (each naming
+  `event_types`, `behavior_ids` or `action_ids`; a selector without a source
+  would credit every event) are validated when proposed and when revised.
+
+An active institution can follow its own results. God's `revise_institution`
+replaces `policy` and/or `ledger.selectors` once the institution has recorded
+a ledger entry or applied an allocation since its latest terms. The ledger
+`period` cannot change, and each revision needs fresh operating evidence.
+Platform emits `institution.revised` (usable in `wakes`) and the God view shows
+the current `[terms: ...]` next to each active institution.
+
+Keep loops open in content, not in code: declare `resource_regeneration`
+(`resource_id`, `every_minutes`, `amount`, `cap`) for materials characters
+keep consuming, and gate consumption behaviors with the world's own threshold
+(for example `actor.need.hydration <= context.hydration_alert_threshold`) so
+an item is not spent when its effect would be clamped to nothing.
 
 The evidence check is structural provenance, not a social-trust score: it asks
 whether the named event was actually persisted and whether the threshold was

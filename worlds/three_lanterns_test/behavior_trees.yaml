@@ -31,6 +31,7 @@ behavior_trees:
   entry_conditions:
   - actor.alive
   - actor.inventory.蓄水 > 0
+  - actor.need.hydration <= context.hydration_alert_threshold
   estimated_minutes: 1
   requirements: [Carry one unit of the configured water item.]
   goal_tags: [hydration, recovery, readiness]

@@ -1,11 +1,95 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 from uuid import uuid4
 
-from ..actions.institutions import entity_quantity
+from ..actions.institutions import describe_institution_terms, entity_quantity
 from ..evolution.memory import remember_role
+
+_ALLOCATION_FIELDS = frozenset({"minimum_per_subject", "contribution_share", "category"})
+_LEDGER_FIELDS = frozenset({"period", "selectors", "evidence"})
+_SELECTOR_SOURCE_FIELDS = ("event_types", "events", "behavior_ids", "behaviors", "action_ids", "actions")
+_SELECTOR_FIELDS = frozenset({*_SELECTOR_SOURCE_FIELDS, "category", "points", "amount"})
+_SELECTOR_LIMIT = 16
+
+
+def _finite_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+
+
+def _short_label(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip()) and len(value) <= 60
+
+
+def institution_term_errors(policy: Any = None, ledger: Any = None) -> list[str]:
+    """Return why an institution's allocation policy or ledger would be unusable.
+
+    The same contract guards a new proposal and a later revision, so terms
+    that cannot be settled (a negative minimum, a share above one) or that
+    would credit every event (a selector without a source) never enter the
+    world.  ``None`` and ``{}`` mean "nothing to validate".
+    """
+
+    errors: list[str] = []
+    if policy not in (None, {}):
+        if not isinstance(policy, dict):
+            errors.append("policy must be an object")
+        else:
+            unknown = sorted(str(key) for key in policy if key != "allocation")
+            if unknown:
+                errors.append(f"policy has unknown field(s): {', '.join(unknown)}; the supported field is allocation")
+            allocation = policy.get("allocation")
+            if allocation is not None and not isinstance(allocation, dict):
+                errors.append("policy.allocation must be an object")
+            elif isinstance(allocation, dict):
+                unknown = sorted(str(key) for key in allocation if key not in _ALLOCATION_FIELDS)
+                if unknown:
+                    errors.append(f"policy.allocation has unknown field(s): {', '.join(unknown)}")
+                if not _finite_number(allocation.get("minimum_per_subject", 0)) or float(allocation.get("minimum_per_subject", 0)) < 0:
+                    errors.append("policy.allocation.minimum_per_subject must be a number of at least 0")
+                if not _finite_number(allocation.get("contribution_share", 0)) or not 0 <= float(allocation.get("contribution_share", 0)) <= 1:
+                    errors.append("policy.allocation.contribution_share must be a number from 0 to 1")
+                if allocation.get("category") is not None and not _short_label(allocation.get("category")):
+                    errors.append("policy.allocation.category must be a short non-empty string")
+    if ledger not in (None, {}):
+        if not isinstance(ledger, dict):
+            errors.append("ledger must be an object")
+            return errors
+        unknown = sorted(str(key) for key in ledger if key not in _LEDGER_FIELDS)
+        if unknown:
+            errors.append(f"ledger has unknown field(s): {', '.join(unknown)}; use period and selectors")
+        period = ledger.get("period")
+        if period is not None and not (_short_label(period) or (_finite_number(period) and float(period) > 0)):
+            errors.append("ledger.period must be a calendar name such as day or week, or a positive number of minutes")
+        selectors = ledger.get("selectors", ledger.get("evidence"))
+        if selectors is not None:
+            if not isinstance(selectors, list) or not selectors:
+                errors.append("ledger.selectors must be a non-empty list")
+            elif len(selectors) > _SELECTOR_LIMIT:
+                errors.append(f"ledger.selectors may contain at most {_SELECTOR_LIMIT} entries")
+            else:
+                for index, selector in enumerate(selectors):
+                    label = f"ledger.selectors[{index}]"
+                    if not isinstance(selector, dict):
+                        errors.append(f"{label} must be an object")
+                        continue
+                    unknown = sorted(str(key) for key in selector if key not in _SELECTOR_FIELDS)
+                    if unknown:
+                        errors.append(f"{label} has unknown field(s): {', '.join(unknown)}")
+                    named = [selector.get(key) for key in _SELECTOR_SOURCE_FIELDS if selector.get(key)]
+                    if not named or not all(
+                        (isinstance(value, str) and value.strip())
+                        or (isinstance(value, list) and all(isinstance(item, str) and item.strip() for item in value))
+                        for value in named
+                    ):
+                        errors.append(f"{label} must name event_types, behavior_ids or action_ids; a selector without a source would credit every event")
+                    if not _finite_number(selector.get("points", selector.get("amount", 1))) or float(selector.get("points", selector.get("amount", 1))) <= 0:
+                        errors.append(f"{label}.points must be a positive number")
+                    if selector.get("category") is not None and not _short_label(selector.get("category")):
+                        errors.append(f"{label}.category must be a short non-empty string")
+    return errors
 
 
 class SocialRuntimeMixin:
@@ -100,6 +184,15 @@ class SocialRuntimeMixin:
             return self._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "Institution name must be 2 to 120 characters.", "failed_check": "name", "retryable": True})
         if len(purpose) < 12 or len(purpose) > 500:
             return self._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "Institution purpose must be 12 to 500 characters.", "failed_check": "purpose", "retryable": True})
+        term_errors = institution_term_errors(proposal.get("policy") or None, proposal.get("ledger") or None)
+        if term_errors:
+            return self._reject_intent(intent_id, actor_id, "propose_institution", proposal, {
+                "status": "rejected",
+                "message": "The institution's policy or ledger could not be settled as written.",
+                "failed_check": "institution_terms",
+                "errors": term_errors,
+                "retryable": True,
+            })
         evidence_count = 0
         evidence_sources = [item for item in (proposal.get("evidence_sources") or []) if isinstance(item, dict)]
         minimum_evidence = max(1, int(proposal.get("minimum_evidence", 1) or 1))
@@ -208,6 +301,177 @@ class SocialRuntimeMixin:
                 }, memory_key=f"god:institution-activated:{selected.get('institution_id')}", source_event_id=event_id)
             self.store.create_intent(intent_id, actor_id, "activate_institution", {"institution": choice, "reason": reason}, minute)
             result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "institution": {"name": selected.get("name"), "status": "active"}}
+            self.store.finish_intent(intent_id, "accepted", result)
+        return result
+
+    def _institution_operations_since_revision(self, selected: dict[str, Any]) -> int:
+        """Count settled operations (ledger entries, applied allocations) after the latest revision.
+
+        A revision is judged against recorded results, so each one needs fresh
+        operating evidence from the terms it replaces.  Event ids are strictly
+        increasing, which keeps two revisions in one minute from sharing the
+        same evidence.
+        """
+
+        baseline = int(selected.get("last_revision_event_id", 0) or 0)
+        since = int(selected.get("activated_minute") or 0)
+        identities = {str(selected.get("name") or "").casefold(), str(selected.get("institution_id") or "").casefold()} - {""}
+        rows = self.store.connection.execute(
+            "SELECT data_json FROM event_log WHERE event_id>? AND world_minute>=? "
+            "AND event_type IN ('institution.allocation_applied','institution.ledger_entry')",
+            (baseline, since),
+        ).fetchall()
+        count = 0
+        for row in rows:
+            try:
+                payload = json.loads(row["data_json"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                continue
+            reference = payload.get("institution")
+            label = reference.get("name") if isinstance(reference, dict) else reference
+            if str(label or "").casefold() in identities:
+                count += 1
+        return count
+
+    def revise_institution(
+        self,
+        actor_id: str,
+        institution: str,
+        *,
+        policy: Any = None,
+        ledger: Any = None,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        """Revise the allocation policy or ledger selectors of one active institution.
+
+        An institution is world data that must be able to follow its own
+        results.  The revision is declarative, validated like a proposal, and
+        allowed only after the institution has operated since its latest
+        terms.  The ledger period is fixed once active because settlements
+        and verified totals are keyed by it.
+        """
+
+        intent_id = str(uuid4())
+        choice = str(institution or "").strip()
+        data = {"institution": choice, "policy": policy, "ledger": ledger, "reason": reason}
+        if str(actor_id) != "god":
+            return self._reject_intent(intent_id, actor_id, "revise_institution", data, {
+                "status": "rejected",
+                "message": "Only God may revise a world institution.",
+                "failed_check": "institution_authority",
+                "retryable": False,
+            })
+        active = self.store.list_institutions(status="active", limit=200)
+        candidates = [
+            item for item in active
+            if str(item.get("name", "")).casefold() == choice.casefold() or str(item.get("institution_id", "")) == choice
+        ]
+        if len(candidates) != 1:
+            return self._reject_intent(intent_id, actor_id, "revise_institution", data, {
+                "status": "rejected",
+                "message": "Choose one exact active institution name.",
+                "failed_check": "institution_choice",
+                "retryable": True,
+                "available_choices": [str(item.get("name", "")) for item in active[:20]],
+            })
+        selected = candidates[0]
+        reason_text = str(reason or "").strip()
+        if len(reason_text) < 12 or len(reason_text) > 500:
+            return self._reject_intent(intent_id, actor_id, "revise_institution", data, {
+                "status": "rejected",
+                "message": "Revision reason must cite the recorded result in 12 to 500 characters.",
+                "failed_check": "reason",
+                "retryable": True,
+            })
+        if not policy and not ledger:
+            return self._reject_intent(intent_id, actor_id, "revise_institution", data, {
+                "status": "rejected",
+                "message": "Provide a replacement policy, replacement ledger selectors, or both.",
+                "failed_check": "institution_terms",
+                "retryable": True,
+            })
+        errors = institution_term_errors(policy or None, ledger or None)
+        old_policy = dict(selected.get("policy") or {}) if isinstance(selected.get("policy"), dict) else {}
+        old_ledger = dict(selected.get("ledger") or {}) if isinstance(selected.get("ledger"), dict) else {}
+        new_policy = old_policy
+        new_ledger = old_ledger
+        if policy:
+            if isinstance(policy, dict) and not policy.get("allocation"):
+                errors.append("policy.allocation is required when replacing the policy")
+            new_policy = dict(policy) if isinstance(policy, dict) else old_policy
+        if ledger and isinstance(ledger, dict):
+            if not ledger.get("selectors"):
+                errors.append("ledger.selectors is required when replacing the ledger")
+            if "period" in ledger and old_ledger.get("period") not in (None, ledger.get("period")):
+                errors.append(f"the ledger period cannot change after activation (it is {old_ledger.get('period')}); omit period")
+            new_ledger = {**old_ledger, "selectors": list(ledger.get("selectors") or [])}
+            if "period" in ledger:
+                new_ledger["period"] = ledger["period"]
+            new_ledger.pop("evidence", None)
+        if errors:
+            return self._reject_intent(intent_id, actor_id, "revise_institution", data, {
+                "status": "rejected",
+                "message": "The revised terms could not be settled as written.",
+                "failed_check": "institution_terms",
+                "errors": errors,
+                "retryable": True,
+            })
+        if new_policy == old_policy and new_ledger == old_ledger:
+            return self._reject_intent(intent_id, actor_id, "revise_institution", data, {
+                "status": "rejected",
+                "message": "The revision does not change the institution's current terms.",
+                "failed_check": "institution_unchanged",
+                "retryable": True,
+            })
+        operations = self._institution_operations_since_revision(selected)
+        if operations < 1:
+            return self._reject_intent(intent_id, actor_id, "revise_institution", data, {
+                "status": "rejected",
+                "message": "An institution can be revised only after it has settled or recorded something under its current terms.",
+                "failed_check": "institution_evidence",
+                "retryable": True,
+                "observed_operations": operations,
+            })
+        minute = int(self.store.get_meta("world_minute", 0))
+        revision = int(selected.get("revision", 0) or 0) + 1
+        changed_before: dict[str, Any] = {}
+        changed_after: dict[str, Any] = {}
+        if new_policy != old_policy:
+            changed_before["policy"], changed_after["policy"] = old_policy, new_policy
+        if new_ledger != old_ledger:
+            changed_before["ledger"] = {"selectors": old_ledger.get("selectors", old_ledger.get("evidence", []))}
+            changed_after["ledger"] = {"selectors": new_ledger.get("selectors", [])}
+        with self.store.transaction():
+            terms = {key: value for key, value in selected.items() if key not in {"institution_id", "status", "created_minute", "activated_minute"}}
+            terms.update({"policy": new_policy, "ledger": new_ledger, "revision": revision, "last_revised_minute": minute})
+            event_id = self.store.append_event("institution.revised", actor_id, minute, {
+                "institution": {"name": selected.get("name"), "purpose": selected.get("purpose")},
+                "before": changed_before,
+                "after": changed_after,
+                "reason": reason_text,
+                "revision": revision,
+                "summary": f"{selected.get('name')} was revised: {describe_institution_terms({**terms})}.",
+            })
+            terms["last_revision_event_id"] = event_id
+            self.store.put_institution(
+                str(selected["institution_id"]), "active", terms,
+                int(selected.get("created_minute", minute)), int(selected["activated_minute"]) if selected.get("activated_minute") is not None else minute,
+            )
+            self._wake_configured_evolution_consumers(event_id, "institution.revised", actor_id, minute)
+            remember_role(self.store, "god", "institution_decision", {
+                "summary": f"Revised institution {selected.get('name')}: {reason_text}",
+                "institution": selected.get("name"),
+                "status": "active",
+                "reason": reason_text,
+            }, memory_key=f"god:institution-revised:{selected.get('institution_id')}:{revision}", source_event_id=event_id)
+            self.store.create_intent(intent_id, actor_id, "revise_institution", data, minute)
+            result = {
+                "status": "accepted",
+                "intent_id": intent_id,
+                "event_id": event_id,
+                "institution": {"name": selected.get("name"), "status": "active", "revision": revision},
+                "terms": describe_institution_terms(terms),
+            }
             self.store.finish_intent(intent_id, "accepted", result)
         return result
 

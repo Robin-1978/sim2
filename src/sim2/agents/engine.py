@@ -75,7 +75,7 @@ def configured_evolution_group(platform: Platform, task_type: str) -> dict[str, 
 ROLE_INTENTS = {
     "agent_decision": {"select_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "wait"},
     "agent_reflection": {"record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "wait"},
-    "god": {"record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "propose_institution", "approve_institution", "wait"},
+    "god": {"record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "propose_institution", "approve_institution", "revise_institution", "wait"},
     "story": {"record_world_progress", "propose_story_beat", "wait"},
     "world_builder": {"submit_world_template", "wait"},
 }
@@ -230,6 +230,13 @@ class AgentEngine:
         if event_ids:
             verified_events = self.platform.store.events_by_ids(event_ids)
             context["triggering_evidence"] = []
+            if "recent_history" in context:
+                # The validated trigger is shown once as evidence; repeating
+                # it in the history would spend prompt budget on the same text.
+                shown = {int(item.get("event_id", 0) or 0) for item in verified_events[-16:]}
+                context["recent_history"] = [
+                    item for item in context["recent_history"] if int(item.get("event_id", 0) or 0) not in shown
+                ]
             for item in verified_events[-16:]:
                 evidence = {
                     "event_type": item.get("event_type"),
@@ -788,6 +795,7 @@ class AgentEngine:
                 "propose_story_beat": "propose_story_beat",
                 "propose_institution": "propose_institution",
                 "approve_institution": "approve_institution",
+                "revise_institution": "revise_institution",
                 "wait": "wait",
             }
             intent_type_value = aliases.get(str(command_value).casefold())
@@ -910,6 +918,11 @@ class AgentEngine:
                 })
             if intent_type == "approve_institution":
                 return self.platform.activate_institution(actor_id, str(data.get("institution") or ""), str(data.get("reason") or ""))
+            if intent_type == "revise_institution":
+                return self.platform.revise_institution(
+                    actor_id, str(data.get("institution") or ""),
+                    policy=data.get("policy"), ledger=data.get("ledger"), reason=str(data.get("reason") or ""),
+                )
             if intent_type == "update_belief":
                 return self.platform.submit_belief_update(actor_id, "", str(data.get("statement") or data.get("belief") or ""), float(data.get("confidence", 0.0)), str(data.get("reason") or ""))
             if intent_type == "update_goal":

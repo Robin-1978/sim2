@@ -835,6 +835,9 @@ def _validate_event_wake_references(
                 for value in (group.get("event_types") or [])
             }
             direct_events = {str(value) for value in (policy.get("direct_event_types") or [])}
+            # A manual-only event is exactly the one an explicit producer
+            # ``wake`` list may deliver, so it is a declared admission too.
+            direct_events |= {str(value) for value in (policy.get("manual_event_types") or [])}
             direct_prefixes = [str(value) for value in (policy.get("direct_task_type_prefixes") or [])]
             if event_type in grouped_events or event_type in direct_events:
                 continue
@@ -859,6 +862,28 @@ def _validate_event_wake_references(
                         f"event group {group.get('id', 'group')} for {role} has no producer for {event_type}; "
                         "add a matching wake declaration or list it as an explicit external event"
                     )
+
+    # ``world.stagnation`` is derived from state and exists only when the
+    # package configures a stagnation window; otherwise the wake can never fire.
+    stagnation_consumers = sorted(
+        str(role)
+        for role, policy in consumers.items()
+        if isinstance(policy, dict) and "world.stagnation" in (
+            {str(value) for value in (policy.get("direct_event_types") or [])}
+            | {str(value) for value in (policy.get("manual_event_types") or [])}
+            | {
+                str(value)
+                for group in (policy.get("event_groups") or policy.get("groups") or [])
+                if isinstance(group, dict)
+                for value in (group.get("event_types") or [])
+            }
+        )
+    )
+    if stagnation_consumers and not (isinstance(root, dict) and isinstance(root.get("stagnation"), dict)):
+        errors.append(
+            "wake on world.stagnation for " + ", ".join(stagnation_consumers)
+            + " needs an evolution stagnation window, for example stagnation: {window: 1d}"
+        )
 
 
 def validate_config(config_dir: Path) -> dict[str, Any]:

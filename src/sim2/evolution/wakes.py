@@ -30,6 +30,71 @@ class EventWakeScheduler:
         # preferred form is ``consumers: {name: ...}``.
         return dict(policy)
 
+    # Bounded memory of already-woken evidence keys per group.  A key older
+    # than this window may wake the consumer again, which is the desired
+    # behavior for a long-running world.
+    _SEEN_KEY_LIMIT = 512
+
+    def _novel_rows(
+        self,
+        group_state: dict[str, Any],
+        event_types: list[str],
+        distinct_by: list[str],
+        last_event_id: int,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Return pending events whose evidence key has not woken this group.
+
+        ``distinct_by`` names event fields (payload fields, or the ``actor_id``
+        and ``event_type`` columns).  Two events with the same values are the
+        same evidence, so only the first one counts toward ``minimum_events``.
+        Unlike a time cooldown this never suppresses genuinely new evidence.
+        """
+
+        scanned = int(group_state.get("scanned_event_id", last_event_id) or last_event_id)
+        seen = [str(item) for item in (group_state.get("seen_keys") or [])]
+        pending = [item for item in (group_state.get("pending") or []) if isinstance(item, dict) and "key" in item]
+        known = set(seen) | {str(item["key"]) for item in pending}
+        placeholders = ",".join("?" for _ in event_types)
+        fetched = self.store.connection.execute(
+            "SELECT event_id,event_type,actor_id,data_json FROM event_log "
+            f"WHERE event_id>? AND event_type IN ({placeholders}) ORDER BY event_id",
+            (scanned, *event_types),
+        ).fetchall()
+        for row in fetched:
+            key = self._distinct_key(row, distinct_by)
+            scanned = int(row["event_id"])
+            if key in known:
+                continue
+            known.add(key)
+            pending.append({
+                "event_id": int(row["event_id"]),
+                "event_type": str(row["event_type"]),
+                "actor_id": row["actor_id"],
+                "key": key,
+            })
+        pending = pending[-self._SEEN_KEY_LIMIT:]
+        state = {
+            "scanned_event_id": scanned,
+            "seen_keys": seen[-self._SEEN_KEY_LIMIT:],
+            "pending": pending,
+        }
+        return pending, state
+
+    @staticmethod
+    def _distinct_key(row: Any, distinct_by: list[str]) -> str:
+        try:
+            payload = json.loads(row["data_json"] or "{}")
+        except (TypeError, ValueError):
+            payload = {}
+        values: list[str] = []
+        for key in distinct_by:
+            if key in {"event_type", "actor_id"}:
+                value = row[key]
+            else:
+                value = payload.get(key) if isinstance(payload, dict) else None
+            values.append("" if value is None else str(value))
+        return json.dumps(values, ensure_ascii=False, separators=(",", ":"))
+
     def queue(
         self,
         consumer: str,
@@ -72,15 +137,34 @@ class EventWakeScheduler:
                 event_types = [str(value) for value in (group.get("event_types") or [])]
                 if not event_types:
                     continue
-                placeholders = ",".join("?" for _ in event_types)
-                rows = self.store.connection.execute(
-                    f"SELECT event_id,event_type,actor_id FROM event_log WHERE event_id>? AND event_type IN ({placeholders}) ORDER BY event_id",
-                    (last_event_id, *event_types),
-                ).fetchall()
                 minimum = max(1, int(group.get("minimum_events", 1) or 1))
-                if len(rows) < minimum:
-                    continue
+                distinct_by = [str(value) for value in (group.get("distinct_by") or []) if str(value)]
+                new_state: dict[str, Any] = {}
+                if distinct_by:
+                    rows, new_state = self._novel_rows(group_state, event_types, distinct_by, last_event_id)
+                    if len(rows) < minimum:
+                        # Keep the scan position and the novel evidence seen so
+                        # far, so repeated events never re-enter the count.
+                        states[group_id] = {**group_state, **new_state}
+                        self.store.set_meta(state_key, states)
+                        continue
+                    # The pending evidence wakes the consumer now; its keys
+                    # are spent and must not count toward a later wake.
+                    new_state = {
+                        "scanned_event_id": new_state["scanned_event_id"],
+                        "seen_keys": (new_state["seen_keys"] + [str(item["key"]) for item in rows])[-self._SEEN_KEY_LIMIT:],
+                        "pending": [],
+                    }
+                else:
+                    placeholders = ",".join("?" for _ in event_types)
+                    rows = self.store.connection.execute(
+                        f"SELECT event_id,event_type,actor_id FROM event_log WHERE event_id>? AND event_type IN ({placeholders}) ORDER BY event_id",
+                        (last_event_id, *event_types),
+                    ).fetchall()
+                    if len(rows) < minimum:
+                        continue
                 states[group_id] = {
+                    **new_state,
                     "last_event_id": int(rows[-1]["event_id"]),
                     "observed_count": len(rows),
                     "minimum_events": minimum,

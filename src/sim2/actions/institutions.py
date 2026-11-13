@@ -16,6 +16,43 @@ def entity_quantity(entity: dict[str, Any]) -> float:
         return 0.0
 
 
+def describe_institution_terms(institution: dict[str, Any]) -> str:
+    """Summarize an institution's persisted terms for a world-level reviewer.
+
+    The text is derived from the stored policy and ledger only, so a reviewer
+    can compare the terms with the recorded results without any per-world
+    wording.
+    """
+
+    policy = institution.get("policy") if isinstance(institution.get("policy"), dict) else {}
+    allocation = policy.get("allocation") if isinstance(policy.get("allocation"), dict) else {}
+    parts: list[str] = []
+    if allocation:
+        category = str(allocation.get("category") or "any")
+        parts.append(
+            f"allocation: at least {float(allocation.get('minimum_per_subject', 0) or 0):g} per subject, "
+            f"{float(allocation.get('contribution_share', 0) or 0):.0%} of the remainder by verified {category} contribution"
+        )
+    ledger = institution.get("ledger") if isinstance(institution.get("ledger"), dict) else {}
+    selectors = ledger.get("selectors", ledger.get("evidence", []))
+    counted: list[str] = []
+    for selector in selectors if isinstance(selectors, list) else []:
+        if not isinstance(selector, dict):
+            continue
+        sources: list[str] = []
+        for keys in (("event_types", "events"), ("behavior_ids", "behaviors"), ("action_ids", "actions")):
+            value = next((selector[key] for key in keys if key in selector), [])
+            sources.extend([str(value)] if isinstance(value, str) else [str(item) for item in value or []])
+        points = float(selector.get("points", selector.get("amount", 1)) or 0)
+        counted.append(f"{'/'.join(sources) or 'any event'} +{points:g} {selector.get('category') or 'general'}")
+    if counted:
+        parts.append(f"ledger per {ledger.get('period', 'world')}: " + "; ".join(counted[:6]))
+    revisions = int(institution.get("revision", 0) or 0)
+    if revisions:
+        parts.append(f"revised {revisions} time(s)")
+    return "; ".join(parts)
+
+
 def allocation_preflight(
     store: Any,
     institution: Any,

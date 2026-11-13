@@ -26,6 +26,7 @@ from ..evolution import EventWakeScheduler, WorldProposalEvaluator
 from .activity import ActivityRuntimeMixin
 from .learning import LearningRuntimeMixin
 from .social import SocialRuntimeMixin
+from .stagnation import StagnationRuntimeMixin
 from .world_evolution import WorldEvolutionRuntimeMixin
 
 
@@ -33,6 +34,7 @@ class Platform(
     ActivityRuntimeMixin,
     LearningRuntimeMixin,
     SocialRuntimeMixin,
+    StagnationRuntimeMixin,
     WorldEvolutionRuntimeMixin,
 ):
     """The only component allowed to commit world state changes.
@@ -1505,6 +1507,7 @@ class Platform(
             self._emit_world_rule_signals(minute, agent_ids=agent_ids)
             self.proposal_evaluator.evaluate_due(minute)
             self._emit_evolution_triggers(minute, agent_ids=agent_ids)
+            self._emit_stagnation_signal(minute, agents=agents)
             self._emit_due_evolution_tasks(minute)
         return {
             "status": "advanced",

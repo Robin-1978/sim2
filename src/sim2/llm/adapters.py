@@ -111,6 +111,7 @@ class LongCatAdapter(ModelAdapter):
             "propose_definition": "propose_definition",
             "propose_world_change": "propose_world_change",
             "approve_institution": "approve_institution",
+            "revise_institution": "revise_institution",
             "propose_story_beat": "propose_story_beat",
             "submit_world_template": "submit_world_template",
         }

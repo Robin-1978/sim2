@@ -261,6 +261,21 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "additionalProperties": False,
         },
     },
+    "revise_institution": {
+        "purpose": "Revise the allocation policy or the ledger selectors of one active institution after its recorded results show the current terms no longer fit.",
+        "kind": "intent",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "institution": {"type": "string", "description": "The exact visible active institution name."},
+                "policy": {"type": "object", "description": "Replacement allocation policy, for example {allocation:{minimum_per_subject:0.5, contribution_share:0.5, category:'civic_work'}}. Omit to keep the current policy."},
+                "ledger": {"type": "object", "description": "Replacement ledger selectors, for example {selectors:[{event_types:[...], behavior_ids:[...], category:'civic_work', points:1}]}. Every selector must name event_types, behavior_ids or action_ids; the ledger period cannot change. Omit to keep the current selectors."},
+                "reason": {"type": "string", "description": "The recorded result that justifies the change, 12 to 500 characters."},
+            },
+            "required": ["institution", "reason"],
+            "additionalProperties": False,
+        },
+    },
     "update_belief": {
         "purpose": "Submit a confidence update for a known fact or belief.",
         "kind": "intent",
@@ -480,7 +495,7 @@ ROLE_TOOLS: dict[str, list[str]] = {
     # Story receives the validated source and recent history in its world view;
     # query_history is the bounded read path for an older causal thread.
     "story": ["query_history", "record_world_progress", "propose_story_beat", "wait"],
-    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "query_history", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "propose_institution", "approve_institution", "wait"],
+    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "query_history", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "propose_institution", "approve_institution", "revise_institution", "wait"],
     "world_builder": ["validate_world_template", "submit_world_template", "wait"],
 }
 
@@ -892,6 +907,15 @@ class AgentToolExecutor:
 
     def _approve_institution(self, institution: str, reason: str = "") -> dict[str, Any]:
         return self.platform.activate_institution(self.actor_id, institution, reason)
+
+    def _revise_institution(
+        self,
+        institution: str,
+        reason: str,
+        policy: dict[str, Any] | None = None,
+        ledger: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self.platform.revise_institution(self.actor_id, institution, policy=policy, ledger=ledger, reason=reason)
 
     def _update_belief(self, confidence: float, belief: str = "", statement: str = "", reason: str = "") -> dict[str, Any]:
         return self.platform.submit_belief_update(self.actor_id, "", statement or belief, float(confidence), reason)

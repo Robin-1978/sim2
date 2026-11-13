@@ -1,6 +1,9 @@
 cadence:
   reflection: 1d
   god: 1d
+stagnation:
+  window: 1d
+  max_interval: 1w
 triggers:
 - id: town_security_milestone
   when: world.town_security >= 0.8
@@ -20,18 +23,17 @@ wakes:
 - id: research_synthesis
   "on": research.completed
   for: god
-  count: 1
-  every: 1w
+  distinct_by: [source_id, stage_id]
   tools: [propose_entity, propose_definition, wait]
-  purpose: A completed multi-step research source requires a grounded executable continuation of the research, such as a newly assigned source with declarative stages or a genuinely new capability.
-  result: The source already reached its configured completion count. If no assigned source has an open stage, create one new research source with research_discoveries, research_required or stage required values, and research_assignees for the existing generic research behavior; otherwise propose the smallest distinct executable continuation. A descriptive faction alone does not satisfy this research continuation.
+  purpose: A research stage was completed. Researchers need a grounded executable continuation once their open stages run out, such as a newly assigned source with declarative stages or a genuinely new capability.
+  result: If no assigned source has an open stage, create one new research source with research_discoveries, research_required or stage required values, and research_assignees naming a character who can already perform research with the existing generic research behavior; otherwise propose the smallest distinct executable continuation or wait, because an open stage already is the researchers' next step. A descriptive faction alone does not satisfy this research continuation.
 - id: gathering_synthesis
   "on": resource.gathered
   for: god
   count: 3
   every: 1w
   tools: [propose_entity, propose_definition, wait]
-  purpose: Three verified resource-gathering outcomes are evidence that the town has a usable material flow; choose a grounded next use such as a research source, recipe, storage or trade structure.
+  purpose: Three verified resource-gathering outcomes are evidence that the town has a usable material flow; choose a grounded next use such as a research source, storage or trade structure, or a recipe once a registered Action can craft it.
   result: Reuse the generic research, recipe, trade or production mechanism when it already fits. Create one distinct configured entity or definition only when the gathered material and recorded outcomes justify it; do not create another behavior that merely repeats the same action.
 - id: institution_ledger_review
   "on": institution.ledger_entry
@@ -48,10 +50,16 @@ wakes:
   for: god
   count: 3
   every: 1w
-  tools: [propose_definition, propose_entity, wait]
+  tools: [propose_definition, propose_entity, revise_institution, wait]
   purpose: Review repeated allocation outcomes and create the next structural improvement when the reserve trend or institution results justify it.
-  result: Propose one new capability, production behavior, research source or structural entity when the verified trend supports progress; wait only when no grounded improvement is justified.
+  result: Compare the institution's current terms with the recorded allocations and ledger totals. Revise the terms of the active institution when the results show they no longer fit (for example a minimum the pool can never cover, or a ledger that credits too little or too much work); otherwise propose one new capability, production behavior, research source or structural entity when the verified trend supports progress; wait only when no grounded improvement is justified.
 - {"on": civilization.milestone, for: god}
+- id: option_stagnation
+  "on": world.stagnation
+  for: god
+  tools: [inspect_entity, query_history, propose_entity, propose_definition, propose_institution, revise_institution, propose_world_change, wait]
+  purpose: No character has gained a new executable option for a full window, so the town has stopped evolving on its own. The evidence lists what each character can do now and which listed conditions block the rest.
+  result: Pick a blocked item whose listed reason you can change and change it with the matching tool. A research source assigned to a character who can already research fits when no open stage remains, a behavior assigned to a character who meets its entry conditions fits a missing behavior, and revise_institution fits when the reason names an institution allocation minimum or ledger that the current pool or work cannot meet. Check the listed conditions before assigning content, and do not repeat content the history shows was created and left unused. Wait only when the evidence shows that nothing grounded can be added.
 - id: institution_proposal_review
   "on": institution.proposed
   for: god

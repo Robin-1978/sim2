@@ -1073,10 +1073,13 @@ class WorldStore:
         )
         return int(cur.lastrowid)
 
-    def recent_events(self, *, limit: int = 20) -> list[dict[str, Any]]:
+    def recent_events(self, *, limit: int = 20, exclude_types: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+        """Return the newest events, optionally skipping bookkeeping types such as the minute tick."""
+
+        event_filter = f"WHERE event_type NOT IN ({','.join('?' for _ in exclude_types)}) " if exclude_types else ""
         rows = self.connection.execute(
-            "SELECT event_id,event_type,actor_id,world_minute,data_json FROM event_log ORDER BY event_id DESC LIMIT ?",
-            (max(1, min(int(limit), 10000)),),
+            f"SELECT event_id,event_type,actor_id,world_minute,data_json FROM event_log {event_filter}ORDER BY event_id DESC LIMIT ?",
+            (*exclude_types, max(1, min(int(limit), 10000))),
         ).fetchall()
         return [{"event_id": row["event_id"], "event_type": row["event_type"], "actor_id": row["actor_id"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
 

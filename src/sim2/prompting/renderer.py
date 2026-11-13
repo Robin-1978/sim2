@@ -155,6 +155,45 @@ def _remove_block(text: str, tag: str) -> tuple[str, bool]:
     return text[:start].rstrip() + text[end:], True
 
 
+# Background sections an over-long prompt gives up whole, in this order. The
+# character sections come first. The world-level ones follow: statistics, the
+# rule-field list and recent outcomes only matter to particular proposals, while
+# the evidence, the institutions and the task decide every session and are never
+# dropped.
+_BACKGROUND_SECTIONS = (
+    "registered_actions", "knowledge_and_memory", "nearby_entities", "relationships", "recent_actions",
+    "world_trends", "rule_condition_fields", "world_outcomes",
+)
+
+
+def _compact_world_prompt(rendered: str, max_chars: int) -> str | None:
+    """Fit a world-level prompt by cutting reference prose, never institutions or the task.
+
+    The reviewer reads its evidence first and the institutions it may revise
+    and the task last, so only the end of the reference sections in between
+    gives way.  Returns ``None`` when even those two do not fit.
+    """
+
+    decision_start = rendered.find("<decision>")
+    if decision_start < 0:
+        return None
+    marker = "\n<context_limit>Earlier context was compacted; use a read tool if needed.</context_limit>\n"
+    tail = rendered[decision_start:]
+    institutions_start = rendered.find("<social_institutions>")
+    institutions_end = rendered.find("</social_institutions>", institutions_start) if institutions_start >= 0 else -1
+    if institutions_start >= 0 and 0 <= institutions_end < decision_start:
+        preserved = rendered[institutions_start : institutions_end + len("</social_institutions>")] + "\n"
+        head = rendered[:institutions_start]
+    else:
+        preserved = ""
+        head = rendered[:decision_start]
+    budget = max_chars - len(marker) - len(preserved) - len(tail)
+    if budget <= 0:
+        return None
+    # Cut at a line end so the reviewer never reads half a sentence.
+    return head[:budget].rsplit("\n", 1)[0] + marker + preserved + tail
+
+
 def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000) -> str:
     """Render a stable XML-like prefix followed by dynamic Agent state.
 
@@ -222,7 +261,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 f"actor={_line(item.get('actor'))}; {_plain(item.get('details') or {})}"
             )
         if not history:
-            lines.append("  - no recent validated history")
+            lines.append("  - no other recent validated history" if triggering_evidence else "  - no recent validated history")
         lines.append("  Use query_history for an older or narrower causal slice before proposing a continuation.")
         lines.append("</world_history>")
 
@@ -468,9 +507,17 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 lines.append(f"  evidence selectors: {_plain(trigger.get('evidence_sources'))}")
             if trigger.get("minimum_evidence") is not None:
                 lines.append(f"  minimum matching events: {trigger.get('minimum_evidence')}; observed: {trigger.get('observed_evidence', 'unknown')}")
-            required_result = str(trigger.get("required_result") or "")
-            if "research" in required_result.casefold() and "source" in required_result.casefold():
-                lines.append("  For this research continuation, use propose_entity with entity_type=document (not agent), a short name, a visible location, and state containing research_discoveries: [{fact: 'one new question or finding'}], research_required: a positive number, and research_assignees: [an exact visible researcher name]. Omit internal ids; Platform assigns stage keys. Do not submit a faction or descriptive agent without a research source.")
+            # The submission format of a research source is shown to wakes that
+            # review research evidence. Matching the wording of the required
+            # result instead pulled every wake that merely listed a research
+            # source among its options toward proposing one.
+            evidence_types = {
+                str(event_type)
+                for source in (trigger.get("evidence_sources") or []) if isinstance(source, dict)
+                for event_type in (source.get("event_types") or [])
+            }
+            if evidence_types & {"research.completed", "research.progressed"}:
+                lines.append("  For this research continuation, use propose_entity with entity_type=document (not agent), a short name, a visible location, and state containing research_discoveries: [{fact: 'one new question or finding'}], research_required: a positive number, and research_assignees: [the exact visible name of a character whose own choices already include researching a configured source; Platform rejects any other assignee]. Omit internal ids; Platform assigns stage keys. Do not submit a faction or descriptive agent without a research source.")
             lines.append("  Use only the configured trigger tools. A rule signal or narrative acknowledgement is not a substitute for the required result.")
             lines.append("</evolution_trigger>")
         lines.append("<world_proposal_contract>")
@@ -624,7 +671,12 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("  pending:")
         lines.extend([f"    - {item.get('name')}: {item.get('purpose')}" for item in pending_institutions[:6]] or ["    - none"])
         lines.append("  active:")
-        lines.extend([f"    - {item.get('name')}: {item.get('purpose')}" for item in active_institutions[:6]] or ["    - none"])
+        # Only the world-level reviewer compares terms with results; the
+        # characters see what an institution is for, not its bookkeeping.
+        lines.extend([
+            f"    - {item.get('name')}: {item.get('purpose')}" + (f" [terms: {item.get('terms')}]" if role == "god" and item.get("terms") else "")
+            for item in active_institutions[:6]
+        ] or ["    - none"])
         if institution_ledgers:
             lines.append("  verified ledger totals:")
             for ledger in institution_ledgers[:4]:
@@ -710,18 +762,13 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     # Preserve the current task, executable choices, active execution and
     # latest tool result. Remove only retrievable background sections first;
     # cutting the middle of the behavior catalog can leave an unusable prompt.
-    for tag in ("registered_actions", "knowledge_and_memory", "nearby_entities", "relationships", "recent_actions"):
+    for tag in _BACKGROUND_SECTIONS:
         rendered, removed = _remove_block(rendered, tag)
         if removed:
             omitted.append(tag)
-        if len(rendered) <= max_chars:
-            break
-    if len(rendered) <= max_chars:
-        note = ", ".join(omitted) or "low-priority details"
-        suffix = f"\n<context_limit>Omitted {note}; use a read tool if needed.</context_limit>"
-        if len(rendered) + len(suffix) <= max_chars:
-            return rendered + suffix
-        return rendered[: max_chars - len(suffix)] + suffix
+            note = f"\n<context_limit>Omitted {', '.join(omitted)}; use a read tool if needed.</context_limit>"
+            if len(rendered) + len(note) <= max_chars:
+                return rendered + note
     # As a final guard, keep the complete behavior catalog and the final task
     # section while compacting the remaining prose. This is rarely reached
     # because the compiler already caps memories, facts, and candidates.
@@ -735,4 +782,8 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         prefix_budget = max(0, max_chars - len(preserved) - len(tail) - 120)
         prefix = rendered[:prefix_budget]
         return prefix + "\n<context_limit>Earlier context was compacted; use a read tool if needed.</context_limit>\n" + preserved + "\n" + tail
+    if role in {"god", "story"}:
+        compacted = _compact_world_prompt(rendered, max_chars)
+        if compacted is not None:
+            return compacted
     return rendered[: max_chars - 100] + "\n<context_limit>Context was compacted; use a read tool if needed.</context_limit>"

@@ -7,6 +7,50 @@ from typing import Any
 ROLE_IDS = {"story", "god"}
 
 
+def update_role_memory_status(
+    store: Any,
+    role: str,
+    *,
+    beat_id: str,
+    status: str,
+    world_minute: int,
+    behavior_id: str | None = None,
+) -> int:
+    """Close Story thread memories when their persisted beat closes.
+
+    ``story_state`` is authoritative, but Story also receives long-term
+    thread summaries. Keeping a completed summary marked active makes a later
+    Story prompt treat an old chapter as current and can recreate it.
+    """
+
+    role = str(role or "").strip()
+    beat_id = str(beat_id or "").strip()
+    status = str(status or "").strip()
+    if role not in ROLE_IDS or not beat_id or not status:
+        return 0
+    rows = store.connection.execute(
+        "SELECT id,data_json FROM memory_item WHERE agent_id=? AND memory_type='story_thread'",
+        (role,),
+    ).fetchall()
+    changed = 0
+    for row in rows:
+        try:
+            data = json.loads(row["data_json"] or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict) or str(data.get("beat_id") or "") != beat_id:
+            continue
+        data["status"] = status
+        data["closed_minute"] = int(world_minute)
+        if behavior_id:
+            data["closed_by_behavior"] = str(behavior_id)
+        encoded = json.dumps(data, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        store.connection.execute("UPDATE memory_item SET data_json=? WHERE id=?", (encoded, int(row["id"])))
+        store.connection.execute("UPDATE memory_fts SET content=? WHERE memory_id=?", (encoded, str(row["id"])))
+        changed += 1
+    return changed
+
+
 def remember_role(
     store: Any,
     role: str,

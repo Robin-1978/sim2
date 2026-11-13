@@ -230,6 +230,9 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
             checks.append(_check("god_institution_platform_applied", turn.result.get("status") == "accepted" and str((turn.result.get("institution") or {}).get("status", "")) == "active", f"status={turn.result.get('status')}; institution_status={(turn.result.get('institution') or {}).get('status')}"))
         elif name == "propose_institution":
             checks.append(_check("god_institution_platform_applied", turn.result.get("status") == "accepted" and bool(turn.result.get("institution")), f"status={turn.result.get('status')}; institution={bool(turn.result.get('institution'))}"))
+        elif name == "revise_institution":
+            checks.append(_check("god_institution_revision_applied", turn.result.get("status") == "accepted" and int((turn.result.get("institution") or {}).get("revision", 0) or 0) >= 1, f"status={turn.result.get('status')}; revision={(turn.result.get('institution') or {}).get('revision')}"))
+            checks.append(_check("god_institution_revision_reason_is_specific", len(str(payload.get("reason") or "").strip()) >= 12, f"reason_length={len(str(payload.get('reason') or ''))}"))
         elif name == "propose_entity":
             checks.append(_check("god_entity_has_type_and_name", bool(payload.get("entity_type")) and len(str(payload.get("name", "")).strip()) >= 2, f"type={payload.get('entity_type')}; name={payload.get('name')}"))
             checks.append(_check("god_entity_platform_created", bool(turn.result.get("entity_id")), f"entity_id={turn.result.get('entity_id')}"))

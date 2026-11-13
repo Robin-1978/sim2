@@ -8,13 +8,93 @@ from uuid import uuid4
 
 from ..actions.conditions import ConditionEngine
 from ..actions.effects import EffectPipeline
-from ..evolution.story import eligible_story_beats
+from ..evolution.story import eligible_story_beats, story_evidence_event_types
 from ..evolution.memory import remember_role
 from ..world.schema import AttributeSchema
 
 
+class _UnreachableProposal(ValueError):
+    """Roll a proposal back because the content it adds could never be used.
+
+    Raised inside the proposal transaction after the content was written, so
+    the check sees the world exactly as the affected characters would.
+    """
+
+    def __init__(self, errors: list[str]) -> None:
+        super().__init__("; ".join(errors))
+        self.errors = errors
+
+
 class WorldEvolutionRuntimeMixin:
     """Validated intent handlers separated from the Platform coordinator."""
+
+    @staticmethod
+    def _is_recipe_action(action: dict[str, Any]) -> bool:
+        """Whether an Action definition can consume a recipe (same contract as the behavior compiler)."""
+
+        duration = action.get("duration") if isinstance(action.get("duration"), dict) else {}
+        costs = action.get("costs") if isinstance(action.get("costs"), dict) else {}
+        reserve = costs.get("reserve") if isinstance(costs.get("reserve"), dict) else {}
+        return duration.get("mode") == "recipe_duration" or "recipe_inputs" in reserve
+
+    def _resolve_research_assignees(self, state: dict[str, Any]) -> tuple[list[tuple[str, str]], list[str]]:
+        """Resolve ``research_assignees`` to ``(agent_id, visible_name)`` pairs."""
+
+        raw = state.get("research_assignees")
+        if raw in (None, "", [], ()):
+            return [], []
+        if isinstance(raw, str):
+            values: list[Any] = [raw]
+        elif isinstance(raw, (list, tuple)):
+            values = list(raw)
+        else:
+            return [], ["research_assignees must be a character name or a list of character names"]
+        resolved: list[tuple[str, str]] = []
+        errors: list[str] = []
+        for value in values:
+            canonical = self.targets.canonical_id(value) if isinstance(value, str) else None
+            try:
+                agent = self.store.get_agent(str(canonical or value))
+            except KeyError:
+                errors.append(f"unknown character in research_assignees: {value}")
+                continue
+            resolved.append((str(agent["id"]), str(agent.get("name") or agent["id"])))
+        return resolved, errors
+
+    def _unreachable_research_assignees(self, source_name: str, assignees: list[tuple[str, str]]) -> list[str]:
+        """Return why an assignee's own decision view does not offer ``source_name``.
+
+        A research source that no assigned character can reach is dead content:
+        it is registered, announced and never studied.  The check reuses the
+        character's decision view, so capability, aliveness and location
+        reachability are judged by the same code that later offers the choice.
+        """
+
+        definitions = {str(item["id"]): item for item in self.store.get_definitions("bt_def")}
+        marker = "|source_id="
+        problems: list[str] = []
+        for agent_id, visible_name in assignees:
+            options = self.view.option_snapshot(agent_id, bt_defs=definitions)["options"]
+            if any(option.endswith(f"{marker}{source_name}") for option in options):
+                continue
+            if any(marker in option for option in options):
+                problems.append(
+                    f"{visible_name} can research other sources but cannot reach {source_name}; "
+                    f"put it at a location {visible_name} can travel to"
+                )
+            else:
+                problems.append(f"{visible_name} has no choice that researches a configured source")
+        if problems:
+            assigned = {agent_id for agent_id, _ in assignees}
+            able = [
+                str(agent.get("name") or agent["id"])
+                for agent in self.store.list_agents()
+                if str(agent["id"]) not in assigned
+                and any(marker in option for option in self.view.option_snapshot(str(agent["id"]), bt_defs=definitions)["options"])
+            ]
+            if able:
+                problems.append("characters who can research configured sources now: " + ", ".join(sorted(able)[:6]))
+        return problems
 
     @staticmethod
     def _definition_slug(value: Any) -> str:
@@ -278,6 +358,13 @@ class WorldEvolutionRuntimeMixin:
                     errors.append(f"recipe.{field} must be a non-empty list")
                 elif any(not isinstance(item, dict) or not item.get("item") or not isinstance(item.get("quantity"), (int, float)) or float(item.get("quantity", 0)) <= 0 for item in values):
                     errors.append(f"recipe.{field} entries need item and positive quantity")
+            # A recipe is only ever produced through an Action that consumes
+            # recipes.  Without one the recipe can never be crafted by anybody.
+            if not any(self._is_recipe_action(item) for item in self.store.get_definitions("action_def")):
+                errors.append(
+                    "no registered Action can craft a recipe (it must reserve recipe_inputs or use duration.mode recipe_duration); "
+                    "register such an Action and a behavior that uses it before adding recipes"
+                )
             definition.update({"id": definition_id, "version": 1, "definition_version": 1, "name": definition.get("name") or name, "definition_source": "god_proposal", "validation_status": "validated"})
         elif kind == "capability":
             default = definition.get("default", definition.get("initial", 0))
@@ -589,6 +676,8 @@ class WorldEvolutionRuntimeMixin:
             or float(proposed_state.get("research_required", 0) or 0) < 1
         ):
             errors.append("research_required must be a positive number")
+        research_assignees, assignee_errors = self._resolve_research_assignees(proposed_state)
+        errors.extend(assignee_errors)
         try:
             self.store.get_entity(entity_id)
             errors.append("entity_id already exists")
@@ -623,34 +712,50 @@ class WorldEvolutionRuntimeMixin:
             entity_data["initial_state"] = proposed_state
         if proposal.get("location_id"):
             entity_data["initial_state"]["location_id"] = proposal["location_id"]
-        with self.store.transaction():
-            self.store.create_intent(intent_id, actor_id, "propose_entity", data, world_minute)
-            if agent_state is not None:
-                self.store.put_agent(entity_id, agent_state, str(proposal["name"]))
-                for knowledge in agent_state.get("knowledge_seed", []):
-                    if not isinstance(knowledge, dict):
-                        continue
-                    fact_key = str(knowledge.get("id") or knowledge.get("fact_key") or "").strip()
-                    if fact_key:
-                        self.store.put_knowledge_fact(entity_id, fact_key, {
-                            "fact": str(knowledge.get("fact") or knowledge.get("summary") or fact_key),
-                            "source_type": str(knowledge.get("source_type") or "god_created"),
-                            "confidence": float(knowledge.get("confidence", 1.0)),
-                            "claim_status": str(knowledge.get("claim_status") or "observed"),
-                        })
-            else:
-                self.store.put_entity(entity_id, entity_type, str(proposal["name"]), entity_data)
-            event_id = self.store.append_event("entity.created", actor_id, world_minute, {"intent_id": intent_id, "entity_id": entity_id, "entity_type": entity_type, "summary": proposal.get("description", "")})
-            self._wake_configured_evolution_consumers(event_id, "entity.created", actor_id, world_minute)
-            if actor_id == "god":
-                remember_role(self.store, "god", "world_entity", {
-                    "summary": f"Created {entity_type}: {proposal.get('name', entity_id)}.",
-                    "entity_type": entity_type,
-                    "entity_id": entity_id,
-                    "status": "accepted",
-                }, memory_key=f"god:entity:{intent_id}", source_event_id=event_id)
-            result = {"status": "accepted", "intent_id": intent_id, "entity_id": entity_id, "event_id": event_id, "applied": True}
-            self.store.finish_intent(intent_id, "accepted", result)
+        try:
+            with self.store.transaction():
+                self.store.create_intent(intent_id, actor_id, "propose_entity", data, world_minute)
+                if agent_state is not None:
+                    self.store.put_agent(entity_id, agent_state, str(proposal["name"]))
+                    for knowledge in agent_state.get("knowledge_seed", []):
+                        if not isinstance(knowledge, dict):
+                            continue
+                        fact_key = str(knowledge.get("id") or knowledge.get("fact_key") or "").strip()
+                        if fact_key:
+                            self.store.put_knowledge_fact(entity_id, fact_key, {
+                                "fact": str(knowledge.get("fact") or knowledge.get("summary") or fact_key),
+                                "source_type": str(knowledge.get("source_type") or "god_created"),
+                                "confidence": float(knowledge.get("confidence", 1.0)),
+                                "claim_status": str(knowledge.get("claim_status") or "observed"),
+                            })
+                else:
+                    self.store.put_entity(entity_id, entity_type, str(proposal["name"]), entity_data)
+                    if research_assignees:
+                        # Judge reachability with the assignees' own views of
+                        # the world that already contains the new source.
+                        problems = self._unreachable_research_assignees(proposed_name, research_assignees)
+                        if problems:
+                            raise _UnreachableProposal(problems)
+                event_id = self.store.append_event("entity.created", actor_id, world_minute, {"intent_id": intent_id, "entity_id": entity_id, "entity_type": entity_type, "summary": proposal.get("description", "")})
+                self._wake_configured_evolution_consumers(event_id, "entity.created", actor_id, world_minute)
+                if actor_id == "god":
+                    remember_role(self.store, "god", "world_entity", {
+                        "summary": f"Created {entity_type}: {proposal.get('name', entity_id)}.",
+                        "entity_type": entity_type,
+                        "entity_id": entity_id,
+                        "status": "accepted",
+                    }, memory_key=f"god:entity:{intent_id}", source_event_id=event_id)
+                result = {"status": "accepted", "intent_id": intent_id, "entity_id": entity_id, "event_id": event_id, "applied": True}
+                self.store.finish_intent(intent_id, "accepted", result)
+        except _UnreachableProposal as exc:
+            # The transaction has rolled back: nothing of the proposal exists.
+            return self._reject_intent(intent_id, actor_id, "propose_entity", data, {
+                "status": "rejected",
+                "message": "The proposed research source would be unreachable for its assignees; nothing was created.",
+                "failed_check": "entity_unreachable",
+                "errors": exc.errors,
+                "retryable": True,
+            })
         return result
 
     def submit_story_beat(
@@ -705,7 +810,7 @@ class WorldEvolutionRuntimeMixin:
         scoped_beats = eligible_story_beats(
             beats,
             state,
-            source_event_type=str((source_event or {}).get("event_type") or ""),
+            source_event_type=story_evidence_event_types(source_event),
             observed_events=observed_events,
             observed_facts=observed_facts,
         )
@@ -1008,6 +1113,11 @@ class WorldEvolutionRuntimeMixin:
                         targets.append(research_source_id)
                     target["research_targets"] = targets[-16:]
                 fact = str(beat.get("fact") or proposal.get("fact") or "").strip()
+                if not fact and not emergent:
+                    # Behavior entry conditions may depend on the public
+                    # ``story:<beat_id>`` key.  A configured beat must grant it
+                    # even when the model supplies no separate fact text.
+                    fact = str(beat.get("summary") or beat.get("agent_label") or "").strip()
                 if fact:
                     self.store.merge_knowledge_fact(target["id"], f"story:{beat_id}", {"fact": fact, "source_type": "story", "source_id": beat_id, "confidence": 0.9, "observed_at": minute})
                 self.store.update_agent(target["id"], target)

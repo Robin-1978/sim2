@@ -34,6 +34,10 @@ resource_regeneration:
   every_minutes: 1440
   amount: 12
   cap: 48
+- resource_id: reed_bundle
+  every_minutes: 1440
+  amount: 6
+  cap: 30
 resource_property_projections:
   cistern_water: cistern_reserve
 capability_progression:

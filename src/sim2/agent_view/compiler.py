@@ -8,13 +8,13 @@ from typing import Any
 from ..actions.conditions import ConditionEngine
 from ..actions.capacity import check_action_capacity
 from ..actions.resources import ResourceLedger
-from ..actions.institutions import allocation_preflight
+from ..actions.institutions import allocation_preflight, describe_institution_terms
 from ..actions.targets import TargetResolver
 from ..agents.tools import tools_for_role
 from ..agents.policies import default_platform_rules, default_protocol
 from ..behavior.estimator import BehaviorDurationEstimator
 from ..behavior.recovery import failure_block_recovered
-from ..evolution.story import eligible_story_beats
+from ..evolution.story import eligible_story_beats, story_evidence_event_types
 from ..evolution.memory import role_memory_query
 from ..memory.service import MemoryService
 from ..persistence.store import WorldStore
@@ -24,6 +24,11 @@ from ..world.rules import RuleCompiler
 from ..world.schema import AttributeSchema
 from ..world.context import configured_context_values
 from ..world.time import world_time_view
+
+
+# Bookkeeping events that fill the newest-first history window without telling
+# a reviewer anything (one per world minute).
+_TICK_EVENT_TYPES = ("world_minute.advanced",)
 
 
 def _label(value: str) -> str:
@@ -193,7 +198,7 @@ class AgentViewCompiler:
     def _recent_history_view(self, limit: int = 16) -> list[dict[str, Any]]:
         """Return a compact, visible-name projection of recent world facts."""
 
-        events = self.store.recent_events(limit=max(1, min(int(limit), 32)))
+        events = self.store.recent_events(limit=max(1, min(int(limit), 32)), exclude_types=_TICK_EVENT_TYPES)
         bt_labels = {
             str(item.get("id")): str(item.get("agent_label") or item.get("summary") or item.get("id"))
             for item in self.store.get_definitions("bt_def")
@@ -216,6 +221,7 @@ class AgentViewCompiler:
                         value = bt_labels.get(str(value), value)
                     details[key] = value
             result.append({
+                "event_id": int(event.get("event_id", 0) or 0),
                 "event_type": str(event.get("event_type") or "event"),
                 "world_minute": int(event.get("world_minute", 0) or 0),
                 "actor": actor_name,
@@ -396,6 +402,47 @@ class AgentViewCompiler:
             item["choice"] = base if counts[key] == 1 else f"{base} (option {seen[key]})"
             result.append(item)
         return result
+
+    def option_snapshot(self, agent_id: str, *, bt_defs: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+        """Project one character's executable options for stagnation audits.
+
+        The character's own decision view is the only authority on what it can
+        do now, so the snapshot is derived from it instead of re-implementing
+        executability.  ``options`` are stable identifiers: a behavior, or a
+        behavior plus one parameter option (for example a configured research
+        source), so new content that only adds a parameter option still counts
+        as growth.  ``choices`` and ``blocked`` use the visible wording the
+        character sees; blocked entries carry the failing conditions.
+        """
+
+        view = self.build_decision_view(agent_id, role="agent_decision", include_diagnostics=True)
+        definitions = bt_defs if bt_defs is not None else {str(item["id"]): item for item in self.store.get_definitions("bt_def")}
+        options: set[str] = set()
+        choices: list[str] = []
+        for item in view.get("executable_behaviors", []) or []:
+            ref = str(item.get("ref") or "")
+            if not ref:
+                continue
+            options.add(ref)
+            choices.append(str(item.get("choice") or ref))
+            for parameter, entries in (item.get("parameter_options") or {}).items():
+                for entry in entries or []:
+                    name = str((entry or {}).get("name") or "").strip()
+                    if name:
+                        options.add(f"{ref}|{parameter}={name}")
+        blocked: list[dict[str, Any]] = []
+        for diagnostic in view.get("unavailable_behavior_diagnostics", []) or []:
+            reasons = [str(text) for text in (diagnostic.get("failed") or [])]
+            # A cooldown is a temporary pause, not a structural obstacle.
+            if reasons and all(text.startswith("cooldown until") for text in reasons):
+                continue
+            behavior_id = str(diagnostic.get("behavior_id") or "")
+            definition = definitions.get(behavior_id, {})
+            blocked.append({
+                "choice": str(definition.get("agent_label") or definition.get("summary") or _label(behavior_id)),
+                "needs": [str(text)[:120] for text in (diagnostic.get("failed") or [])][:3],
+            })
+        return {"options": sorted(options), "choices": choices, "blocked": blocked}
 
     def resolve_behavior_choice(self, agent_id: str, choice: Any) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
         """Resolve a visible choice to an internal behavior only in Platform.
@@ -744,6 +791,7 @@ class AgentViewCompiler:
             action_failures = []
             action_unavailable = False
             unavailable_action = ""
+            unavailable_reason: str | None = None
             simulated_agent = copy.deepcopy(agent)
             estimator.capabilities = simulated_agent.get("capabilities", {}) or {}
             simulated_location = dict(current_location)
@@ -763,7 +811,8 @@ class AgentViewCompiler:
                 ):
                     continue
                 action_minutes = estimator._action_minutes(action, parameters, simulated_state.get("location_id"))
-                if not self._action_available(simulated_agent, action, parameters, simulated_location, action_minutes):
+                unavailable_reason = self._action_unavailable_reason(simulated_agent, action, parameters, simulated_location, action_minutes)
+                if unavailable_reason is not None:
                     action_unavailable = True
                     unavailable_action = str(action.get("id") or "unknown action")
                     break
@@ -822,7 +871,7 @@ class AgentViewCompiler:
                     except KeyError:
                         simulated_location = {}
             if action_unavailable:
-                diagnostics.append({"behavior_id": bt_id, "failed": [f"Action {unavailable_action} failed its resolved preconditions or costs"]})
+                diagnostics.append({"behavior_id": bt_id, "failed": [f"Action {unavailable_action} cannot start: {unavailable_reason}"]})
                 continue
             if not steps:
                 diagnostics.append({"behavior_id": bt_id, "failed": ["behavior has no executable Action steps"]})
@@ -1103,7 +1152,7 @@ class AgentViewCompiler:
             for item in self.store.list_institutions(status="proposed", limit=12)
         ]
         active_institutions = [
-            {"name": str(item.get("name", "")), "purpose": str(item.get("purpose", "")), "scope": str(item.get("scope", "world")), "status": "active"}
+            {"name": str(item.get("name", "")), "purpose": str(item.get("purpose", "")), "scope": str(item.get("scope", "world")), "status": "active", "terms": describe_institution_terms(item)}
             for item in self.store.list_institutions(status="active", limit=12)
         ]
         institution_ledgers = []
@@ -1232,6 +1281,16 @@ class AgentViewCompiler:
         return [str(row["event_type"]) for row in rows]
 
     def _action_available(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], location: dict[str, Any], duration_minutes: int | None = None) -> bool:
+        return self._action_unavailable_reason(agent, action, parameters, location, duration_minutes) is None
+
+    def _action_unavailable_reason(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], location: dict[str, Any], duration_minutes: int | None = None) -> str | None:
+        """Return why one Action cannot start for this actor, or ``None`` when it can.
+
+        The reason names the failing check in the Action's own terms so a
+        reviewer who sees a blocked behavior learns what to change, instead of
+        a generic refusal.
+        """
+
         resource_parameters = (action.get("parameter_defaults", {}) or {})
         resource_key = next((key for key, value in resource_parameters.items() if value == "first_available_resource"), None)
         if resource_key and parameters.get(resource_key) in {None, "", "context.resource_tag"}:
@@ -1241,7 +1300,7 @@ class AgentViewCompiler:
             source = next((item for item in self.store.entities_at_location((agent.get("initial_state") or {}).get("location_id")) if item.get("entity_type") in entity_types and not (item.get("initial_state") or {}).get(protected_key) and self._entity_quantity(item) > 0), None)
             parameters["resource_tag"] = source.get("id") if source else parameters.get("resource_tag")
         if action.get("requires_destination") and parameters.get("location_id") == (agent.get("initial_state") or {}).get("location_id"):
-            return False
+            return "the actor is already at the destination"
         context = {
             "current_location": location,
             "location_id": (agent.get("initial_state") or {}).get("location_id"),
@@ -1291,17 +1350,21 @@ class AgentViewCompiler:
                 "institution.allocation_required": check.get("required", 0.0),
             })
             if not check.get("possible"):
-                return False
+                return (
+                    f"the pool holds {float(check.get('available', 0) or 0):g} but the policy minimum needs {float(check.get('required', 0) or 0):g}"
+                    if check.get("reason") == "minimum_allocation"
+                    else f"the institution allocation is not possible ({check.get('reason') or 'unavailable'})"
+                )
         if parameters.get("object_id"):
             try:
                 context["current_object"] = self.store.get_entity(str(parameters["object_id"]))
             except KeyError:
-                return False
+                return "the referenced object does not exist"
         if parameters.get("source_id"):
             try:
                 context["source"] = self.store.get_entity(str(parameters["source_id"]))
             except KeyError:
-                return False
+                return "the referenced source does not exist"
             context["research_discoveries"] = self.store.research_discoveries(str(parameters["source_id"]))
         if (
             action.get("duration", {}).get("mode") == "recipe_duration"
@@ -1309,11 +1372,11 @@ class AgentViewCompiler:
         ):
             recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
             if recipe is None:
-                return False
+                return "the recipe is not registered"
             context["station_tags"] = list(recipe.get("station_tags", []) or [])
         resolved_target, target_error = self.targets.resolve(agent, parameters)
         if target_error:
-            return False
+            return "no permitted target can be resolved"
         target = {**parameters, **(resolved_target or {})}
         context["target"] = resolved_target or {}
         context["target.visible"] = bool((resolved_target or {}).get("visible", False))
@@ -1325,20 +1388,20 @@ class AgentViewCompiler:
             context=context,
             world=self.store.get_meta("world_properties", {}) or {},
         ):
-            return False
+            return "an active rule denies it"
         for predicate in action.get("preconditions", []) or []:
             if not self.conditions.evaluate(str(predicate), agent=agent, target=target, context=context, world=self.store.get_meta("world_properties", {}) or {}):
-                return False
-        capacity_ok, _ = check_action_capacity(
+                return f"precondition not met: {predicate}"
+        capacity_ok, capacity_detail = check_action_capacity(
             agent,
             action,
             max(1, int(duration_minutes or 1)),
             self.store.get_meta("attributes", []) or [],
         )
         if not capacity_ok:
-            return False
-        allowed, _, _ = self.resources.reserve(agent, action, parameters, commit=False)
-        return allowed
+            return str(capacity_detail or "the actor lacks the capacity for its duration")
+        allowed, reserve_detail, _ = self.resources.reserve(agent, action, parameters, commit=False)
+        return None if allowed else str(reserve_detail or "required resources are unavailable")
 
     @staticmethod
     def _entity_quantity(entity: dict[str, Any]) -> float:
@@ -1536,7 +1599,7 @@ class AgentViewCompiler:
         scoped_beats = eligible_story_beats(
             list(story_root.get("beats", []) or []) + list(story_state.get("emergent_beats", []) or []),
             story_state,
-            source_event_type=str((source_event or {}).get("event_type") or ""),
+            source_event_type=story_evidence_event_types(source_event),
             observed_events=observed_events,
             observed_facts=observed_facts,
         )
@@ -1800,7 +1863,7 @@ class AgentViewCompiler:
                 for item in self.store.list_institutions(status="proposed", limit=20)
             ],
             "active_institutions": [
-                {"name": str(item.get("name", "")), "purpose": str(item.get("purpose", "")), "scope": str(item.get("scope", "world")), "status": "active"}
+                {"name": str(item.get("name", "")), "purpose": str(item.get("purpose", "")), "scope": str(item.get("scope", "world")), "status": "active", "terms": describe_institution_terms(item)}
                 for item in self.store.list_institutions(status="active", limit=20)
             ],
             "institution_ledgers": [

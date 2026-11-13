@@ -9,6 +9,7 @@ from ..world.navigation import reachable_locations
 from ..world.time import world_time_view
 from ..world.context import configured_context_values
 from ..actions.institutions import allocation_preflight
+from ..evolution.memory import update_role_memory_status
 
 
 class ActivityRuntimeMixin:
@@ -774,7 +775,11 @@ class ActivityRuntimeMixin:
         evolution = evolution.get("evolution", evolution) if isinstance(evolution, dict) else {}
         consumers = ((evolution.get("event_wake_policy", {}) or {}).get("consumers", {}) or {}) if isinstance(evolution, dict) else {}
         manual_events = {str(item) for item in ((consumers.get(role, {}) or {}).get("manual_event_types") or [])}
-        if explicit and str(event_type) in manual_events:
+        # ``manual_only`` events reach a consumer only through an explicit
+        # producer declaration (a behavior/Action ``wake`` list).  Platform's
+        # own fan-out of the same event is automatic, so it must not wake the
+        # consumer one event at a time.
+        if not explicit and str(event_type) in manual_events:
             return None
         if role in {"agent_decision", "agent_reflection"} and resolved_actor:
             task_id = f"{role}:event:{int(event_id)}:{resolved_actor}"
@@ -1321,6 +1326,14 @@ class ActivityRuntimeMixin:
             entry = dict(entry)
             entry.update({"status": "blocked", "blocked_minute": int(minute), "blocked_by_behavior": str(behavior_id), "blocked_result": str(result)})
             state[beat_id] = entry
+            update_role_memory_status(
+                self.store,
+                "story",
+                beat_id=str(beat_id),
+                status="blocked",
+                world_minute=minute,
+                behavior_id=behavior_id,
+            )
             changed = True
             goal_hint = str(beat.get("goal_hint") or "").strip()
             if goal_hint:
@@ -1405,6 +1418,14 @@ class ActivityRuntimeMixin:
             entry["completed_minute"] = int(minute)
             entry["completed_by_behavior"] = str(behavior_id)
             state[beat_id] = entry
+            update_role_memory_status(
+                self.store,
+                "story",
+                beat_id=str(beat_id),
+                status="completed",
+                world_minute=minute,
+                behavior_id=behavior_id,
+            )
             changed = True
             self.store.append_event("story.beat.completed", actor_id, minute, {"beat_id": beat_id, "behavior_id": behavior_id})
         if changed:

@@ -113,14 +113,20 @@ def test_story_receives_only_configured_direct_events(tmp_path: Path):
         assert platform._queue_event_consumer_task(
             "story", ledger_id, "institution.ledger_entry", "mei_lan", 1,
         ) is None
+        # Routine allocation completions are manual-only for Story: the
+        # automatic fan-out must not wake it one completion at a time.
         allocation_id = platform.store.append_event("institution.allocation_completed", "mei_lan", 2, {"amount": 1})
-        task_id = platform._queue_event_consumer_task(
+        assert platform._queue_event_consumer_task(
             "story", allocation_id, "institution.allocation_completed", "mei_lan", 2,
+        ) is None
+        activated_id = platform.store.append_event("institution.activated", "god", 3, {"name": "Public Ledger"})
+        task_id = platform._queue_event_consumer_task(
+            "story", activated_id, "institution.activated", "god", 3,
         )
         assert task_id
         task = next(item for item in platform.ready_evolution_tasks() if item["task_id"] == task_id)
         assert task["role"] == "story"
-        assert task["source_event_type"] == "institution.allocation_completed"
+        assert task["source_event_type"] == "institution.activated"
     finally:
         platform.close()
 

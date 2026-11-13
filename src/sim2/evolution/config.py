@@ -14,6 +14,9 @@ from typing import Any
 
 _DURATION = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([mhdw])\s*$", re.IGNORECASE)
 _UNIT_MINUTES = {"m": 1, "h": 60, "d": 1440, "w": 10080}
+# One decision view per evaluated character is the per-window cost, so the
+# configurable cohort is capped to keep a window evaluation bounded.
+STAGNATION_CHARACTER_CAP = 64
 _RUNTIME_EVENTS = {
     "civilization.milestone",
     "entity.created",
@@ -21,8 +24,10 @@ _RUNTIME_EVENTS = {
     "behavior.registered",
     "institution.proposed",
     "institution.activated",
+    "institution.revised",
     "institution.ledger_entry",
     "institution.allocation_completed",
+    "world.stagnation",
 }
 
 
@@ -49,6 +54,52 @@ def _group_id(event_types: list[str], role: str, index: int) -> str:
     base = next(iter(event_types), f"wake_{index}")
     safe = re.sub(r"[^a-z0-9]+", "_", base.casefold()).strip("_") or f"wake_{index}"
     return f"{safe}_{role}"
+
+
+def _stagnation(value: Any) -> dict[str, int]:
+    """Compile the author-facing ``stagnation`` section.
+
+    ``window`` is how long the whole world may go without any character
+    gaining a new executable option before Platform publishes a
+    ``world.stagnation`` event.  ``max_interval`` caps how rarely the event is
+    repeated while the same stagnation persists (the spacing doubles from one
+    window up to this cap).  ``max_characters`` bounds how many characters are
+    evaluated per window; building a decision view per character is the cost
+    that grows with the population, so a larger roster is covered by a
+    rotating cohort instead of a full sweep.
+    """
+
+    if not isinstance(value, dict):
+        raise ValueError("stagnation must be an object with a window")
+    unknown = sorted(str(key) for key in value if key not in {"window", "max_interval", "max_characters"})
+    if unknown:
+        raise ValueError("unknown stagnation field(s): " + ", ".join(unknown) + "; use window, max_interval, max_characters")
+    if value.get("window") in (None, ""):
+        raise ValueError("stagnation.window is required, for example 1d")
+    window = duration_minutes(value["window"])
+    if window <= 0:
+        raise ValueError("stagnation.window must be positive")
+    max_interval = duration_minutes(value["max_interval"]) if value.get("max_interval") not in (None, "") else max(window, _UNIT_MINUTES["w"])
+    if max_interval < window:
+        raise ValueError("stagnation.max_interval must not be shorter than stagnation.window")
+    compiled = {"window_minutes": window, "max_interval_minutes": max_interval}
+    if value.get("max_characters") not in (None, ""):
+        count = value["max_characters"]
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= STAGNATION_CHARACTER_CAP:
+            raise ValueError(f"stagnation.max_characters must be an integer from 1 to {STAGNATION_CHARACTER_CAP}")
+        compiled["max_characters"] = count
+    return compiled
+
+
+def _distinct_keys(value: Any, index: int) -> list[str]:
+    """Normalize ``distinct_by`` into a list of event payload keys."""
+
+    if value is None or value == "":
+        return []
+    keys = [value] if isinstance(value, str) else value
+    if not isinstance(keys, (list, tuple)) or not all(isinstance(item, str) and item.strip() for item in keys):
+        raise ValueError(f"wake {index + 1} distinct_by must be an event field name or a list of field names")
+    return list(dict.fromkeys(item.strip() for item in keys))
 
 
 def _contract(spec: dict[str, Any], event_types: list[str], minimum: int) -> dict[str, Any]:
@@ -111,10 +162,12 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
             "evolution uses retired fields " + ", ".join(legacy)
             + "; use top-level cadence and wakes instead"
         )
-    known = {"cadence", "wakes", "triggers", "limits"}
+    known = {"cadence", "wakes", "triggers", "limits", "stagnation"}
     unknown = sorted(str(key) for key in root if key not in known)
     if unknown:
         raise ValueError("unknown evolution field(s): " + ", ".join(unknown))
+    if "stagnation" in root:
+        root["stagnation"] = _stagnation(root["stagnation"])
 
     cadence = root.get("cadence") if isinstance(root.get("cadence"), dict) else {}
     cadence_known = {"reflection", "innovation", "god", "god_structural"}
@@ -147,12 +200,12 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
         for index, raw_spec in enumerate(wakes):
             if not isinstance(raw_spec, dict):
                 continue
-            known_wake = {"id", "on", "for", "count", "every", "tools", "purpose", "result", "evidence", "external", "definition_type", "assign_to", "manual_only"}
+            known_wake = {"id", "on", "for", "count", "every", "tools", "purpose", "result", "evidence", "external", "definition_type", "assign_to", "manual_only", "distinct_by"}
             unknown_wake = sorted(str(key) for key in raw_spec if key not in known_wake)
             if unknown_wake:
                 raise ValueError(
                     f"wake {index + 1} has unknown field(s): " + ", ".join(unknown_wake)
-                    + "; use id, on, for, count, every, tools, purpose, result, evidence"
+                    + "; use id, on, for, count, every, distinct_by, tools, purpose, result, evidence, manual_only"
                 )
             role = str(raw_spec.get("for", "") or "").strip()
             # YAML 1.1 parsers (including PyYAML's safe loader) treat an
@@ -178,7 +231,9 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
                 consumer["direct_task_type_prefixes"] = list(dict.fromkeys(
                     [str(item) for item in (consumer.get("direct_task_type_prefixes") or [])] + prefixes
                 ))
-            has_contract = any(key in raw_spec for key in contract_fields) or count > 1 or cooldown > 0
+            distinct_by = _distinct_keys(raw_spec.get("distinct_by"), index)
+            has_contract = any(key in raw_spec for key in contract_fields) or count > 1 or cooldown > 0 or bool(distinct_by)
+            manual_only = bool(raw_spec.get("manual_only"))
             if has_contract and exact_events:
                 group = {
                     "id": str(raw_spec.get("id") or _group_id(event_types, role, index)),
@@ -187,10 +242,15 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
                     "cooldown_minutes": cooldown,
                     "agent_contract": _contract(raw_spec, event_types, count),
                 }
+                if distinct_by:
+                    group["distinct_by"] = distinct_by
                 groups.append(group)
-            else:
+            elif not manual_only:
+                # A manual-only event is admitted by explicit producers
+                # (see ``manual_event_types``); listing it as a direct event
+                # would also let the automatic fan-out wake the consumer.
                 direct.extend(exact_events)
-            if bool(raw_spec.get("manual_only")):
+            if manual_only:
                 manual_events.extend(exact_events)
             consumer["direct_event_types"] = list(dict.fromkeys(str(item) for item in direct))
             consumer["manual_event_types"] = list(dict.fromkeys(str(item) for item in manual_events))
