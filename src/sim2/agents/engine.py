@@ -183,6 +183,26 @@ class AgentEngine:
         )
         return any(marker in text for marker in markers)
 
+    @staticmethod
+    def _read_signature(tool_name: str, arguments: dict[str, Any]) -> str:
+        """Normalize a read request so reworded repeats are visible to the guard."""
+
+        name = str(tool_name)
+        if name in {"observe_nearby", "listen"}:
+            return name
+        if name == "inspect_entity":
+            return f"{name}:{str(arguments.get('entity') or '').casefold().strip()}"
+        if name == "read_public_record":
+            return f"{name}:{str(arguments.get('record') or '').casefold().strip()}"
+        if name == "preview_behavior":
+            return f"{name}:{str(arguments.get('choice') or '').casefold().strip()}"
+        normalized = {
+            str(key): " ".join(str(value).casefold().split())
+            for key, value in sorted(arguments.items())
+            if key != "question"
+        }
+        return f"{name}:{json.dumps(normalized, ensure_ascii=False, sort_keys=True)}"
+
     def run(
         self,
         *,
@@ -289,6 +309,7 @@ class AgentEngine:
         initial_context = copy.deepcopy(context)
         prompt_history: list[str] = []
         repeated: dict[str, int] = {}
+        read_signatures: set[str] = set()
         tool_calls_used = 0
         read_tool_calls = 0
         # World-level reviewers must make a bounded decision after a small
@@ -309,12 +330,16 @@ class AgentEngine:
             prompt_history.append(prompt)
             try:
                 self._last_usage = {}
+                call_tools = session_tools
+                if role == "agent_decision" and not str(task_type).startswith("instant:") and read_tool_calls >= read_budget:
+                    available = session_tools if session_tools is not None else [str(item.get("name")) for item in (context.get("tools") or [])]
+                    call_tools = [name for name in available if TOOL_DEFINITIONS.get(name, {}).get("kind") != "read"]
                 response = self._complete(
                     role=role,
                     system=system_policy,
                     context=prompt,
                     messages=conversation_messages,
-                    allowed_tools=session_tools,
+                    allowed_tools=call_tools,
                 )
                 if not isinstance(response, dict):
                     raise ValueError("LLM response must be a JSON object")
@@ -376,6 +401,8 @@ class AgentEngine:
                         tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "tool_budget", "message": "Tool-call budget exhausted; submit one final Intent now."}
                     elif is_read_tool and read_tool_calls > read_budget:
                         tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "read_budget", "message": "Read budget exhausted; use the facts already collected and submit one final Intent."}
+                    elif is_read_tool and self._read_signature(tool_name, arguments) in read_signatures:
+                        tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "repeated_read", "retryable": True, "message": "This scene, entity or behavior was already read in this session. Use the existing result and submit a behavior or wait."}
                     elif repeated[signature_key] > self.max_repeated_tool_calls:
                         tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "repeated_tool_call", "message": "The same tool request was repeated; use the previous result or choose the previous result."}
                     elif interaction_tools is not None and tool_name not in interaction_tools:
@@ -398,6 +425,10 @@ class AgentEngine:
                         tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "event_already_recorded", "retryable": True, "message": "The triggering event is already recorded. Do not add a narrative acknowledgement; return wait or submit one typed rule, progress, entity, relationship, or faction proposal grounded in the observed result."}
                     else:
                         tool_result = executor.execute(tool_name, arguments)
+                    if is_read_tool and tool_result.get("status") == "ok":
+                        read_signatures.add(self._read_signature(tool_name, arguments))
+                        if role == "agent_decision":
+                            context["decision_guidance"] = f"{read_tool_calls} focused read(s) completed. Use those results now; choose one listed behavior or wait."
                     model_tool_result = self._model_tool_result(tool_name, tool_result)
                     internal_tool_result = self._restore_internal_tool_result(tool_name, arguments, tool_result)
                     transcript.append({
@@ -824,6 +855,18 @@ class AgentEngine:
             and str(data.get("reason") or "").strip()
             and not any(data.get(key) for key in ("message", "recipient", "offer", "give", "want"))
         ):
+            intent_type = "wait"
+        if (
+            not intent_type
+            and role == "agent_decision"
+            and not (context or {}).get("executable_behaviors")
+            and str(data.get("reason") or "").strip()
+            and not any(data.get(key) for key in ("choice", "behavior", "behavior_ref", "message", "recipient", "offer", "give", "want"))
+        ):
+            # A decision model may finish with a concise explanation instead
+            # of selecting the exposed wait tool. When Platform has already
+            # projected no executable behavior, that explanation is an
+            # unambiguous no-op and should close the session cleanly.
             intent_type = "wait"
         if (
             not intent_type

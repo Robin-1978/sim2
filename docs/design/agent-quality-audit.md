@@ -77,12 +77,16 @@ records prompt, completion, latency, and tool iteration counts, so a review can
 distinguish a large dynamic context from a verbose model response. A provider
 requiring a different transport field can override it through `extra_body`.
 
-Decision, Story, and God sessions also cap ordinary read tools at two per
-turn and retain only the initial snapshot plus a short ReAct tail.  This keeps
-an Agent from reopening the same scene for six iterations and prevents tool
-results from being resent as an ever-growing conversation.  A rejected read
-budget is fed back as a normal Platform error, after which the model must use
-the facts it already has or submit `wait`/one intent.
+Decision, Story, and God sessions cap ordinary read tools through the role
+configuration (the example gives NPC decisions three focused reads and five
+ReAct turns; world reviewers may use a larger evidence budget). The decision
+schema is narrowed to intent and wait after the NPC read budget is reached, and
+reworded reads of the same scene/entity/behavior are rejected with guidance to
+use the existing result. This keeps an Agent from reopening the same scene for
+six iterations and prevents tool results from being resent as an ever-growing
+conversation. A rejected read budget is fed back as a normal Platform error,
+after which the model must use the facts it already has or submit `wait`/one
+intent.
 
 Event-driven Story and God tasks now receive their exact validated source in
 the initial view and expose submission tools only. They cannot spend extra

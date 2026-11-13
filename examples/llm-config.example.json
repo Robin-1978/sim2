@@ -1,7 +1,7 @@
 {
   "default_provider": "local",
   "roles": {
-    "agent_decision": {"provider": "local", "max_completion_tokens": 512, "max_agent_iterations": 3},
+    "agent_decision": {"provider": "local", "max_completion_tokens": 512, "max_agent_iterations": 5, "max_read_tool_calls": 3},
     "agent_reflection": {"provider": "local", "max_completion_tokens": 1024, "max_agent_iterations": 4},
     "story": {"max_completion_tokens": 512, "max_agent_iterations": 3},
     "god": {"provider": "remote", "max_completion_tokens": 1024, "max_agent_iterations": 4},

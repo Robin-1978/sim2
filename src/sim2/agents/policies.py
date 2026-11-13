@@ -48,6 +48,7 @@ PROTOCOLS = {
     "agent_decision": [
         "Choose one exact visible behavior or interaction, or wait.",
         "An active story goal is a current commitment: follow it when any listed behavior can advance it.",
+        "The executable behavior view already contains authoritative time, cost, requirements and outcomes. You may use several focused read tools when each resolves a different missing fact, but stop after the configured small read budget and submit the behavior request or wait. Do not repeat the same scene, entity or behavior preview with a reworded question; use the result already in the session.",
         "Use visible names and choices; do not output internal IDs, time, cost or effects. Keep the reason in world language: name the person, place, evidence, or practical goal. Do not write NPC, Agent, Story, BT, behavior tree, or framework terms in a world-facing reason.",
     ],
     "agent_reflection": [

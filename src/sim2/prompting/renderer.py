@@ -767,7 +767,10 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     if last:
         lines.append(f"    latest_platform_result: {_result_line(last)}")
     lines.append("</interaction_history>")
-    lines.extend(["<decision>", f"  {task}", "</decision>"])
+    lines.extend(["<decision>", f"  {task}"])
+    if role == "agent_decision" and context.get("decision_guidance"):
+        lines.append(f"  Decision guidance: {context['decision_guidance']}")
+    lines.append("</decision>")
     rendered = "\n".join(lines)
     if role in {"god", "story"}:
         # World-level roles have projections rather than a character body,
