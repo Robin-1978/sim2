@@ -9,7 +9,6 @@ stagnation:
   - research.completed
   - exploration.completed
   - institution.revised
-  - resource.safety_low
 triggers:
 - id: town_security_milestone
   when: world.town_security >= 0.8
