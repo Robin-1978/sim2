@@ -110,8 +110,8 @@ memory, simulation, Actions and API projections use those typed objects.
 Repository-internal cross-domain calls also use named repositories. The
 dynamic Store method façade has been removed.
 
-**Completed:** the façade removal and test migration are committed after the
-full suite passed. Store remains responsible only for SQLite connection,
+**Completed:** the façade removal and test migration are ready to commit after
+the full suite passed. Store remains responsible only for SQLite connection,
 transaction, metadata, snapshots and lifecycle primitives.
 
 **Gate:** no repository commits independently; event and projection writes are
