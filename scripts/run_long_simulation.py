@@ -72,7 +72,7 @@ def main() -> int:
         try:
             report = platform.run(args.minutes, providers={"agent_decision": provider, "agent_reflection": provider, "god": provider, "story": provider})
             agents = []
-            for agent in platform.store.list_agents():
+            for agent in platform.store.repositories.entities.list_agents():
                 state = dict(agent.get("initial_state", {}) or {})
                 agents.append({
                     "name": agent.get("name", agent.get("id")),
@@ -85,9 +85,10 @@ def main() -> int:
                     "inventory": agent.get("inventory", {}),
                 })
             resources = []
-            for entity_type in (platform.store.get_meta("rules", {}) or {}).get("resource_entity_types", ["resource", "material"]):
-                for row in platform.store.entities_of_type(str(entity_type)):
-                    item = platform.store.get_entity(str(row["id"]))
+            rules = platform.store.get_meta("rules", {}) or {}
+            for entity_type in rules.get("resource_entity_types", ["resource", "material"]):
+                for row in platform.store.repositories.entities.entities_of_type(str(entity_type)):
+                    item = platform.store.repositories.entities.get_entity(str(row["id"]))
                     resources.append({
                         "name": item.get("name", item.get("id")),
                         "type": item.get("entity_type"),
