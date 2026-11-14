@@ -3,7 +3,18 @@ from __future__ import annotations
 import re
 from typing import Any
 
-import yaml
+from ..dsl.expressions import (
+    BinaryExpression,
+    Expression,
+    ExpressionSyntaxError,
+    LiteralExpression,
+    ReferenceExpression,
+    UnaryExpression,
+    parse_expression,
+)
+
+
+_UNKNOWN = object()
 
 
 class ConditionEngine:
@@ -13,8 +24,6 @@ class ConditionEngine:
     ``destination.reachable``.  The engine never evaluates Python or SQL; an
     unknown predicate is false and is returned to Platform as a failed check.
     """
-
-    _comparison = re.compile(r"^\s*([\w.]+)\s*(==|!=|>=|<=|>|<)\s*(.+?)\s*$")
 
     def __init__(self, config: dict[str, Any] | None = None):
         config = config or {}
@@ -35,43 +44,12 @@ class ConditionEngine:
         expression = str(expression or "").strip()
         if not expression:
             return True
-        if expression.startswith("(") and expression.endswith(")"):
-            expression = expression[1:-1].strip()
-        for operator in (" or ", " and "):
-            if operator in expression:
-                parts = [part.strip() for part in expression.split(operator)]
-                values = [self.evaluate(part, agent=agent, target=target, world=world, context=context) for part in parts]
-                return any(values) if operator.strip() == "or" else all(values)
-        if expression.startswith("not "):
-            return not self.evaluate(expression[4:], agent=agent, target=target, world=world, context=context)
-        for operator in (" not_in ", " in "):
-            if operator in expression:
-                left_path, right_text = expression.split(operator, 1)
-                left = self._value(left_path.strip(), agent, target, world, context)
-                right = self._literal(right_text)
-                if left is None:
-                    # An absent membership value is still outside an
-                    # explicitly listed set.  This lets declarative access
-                    # rules distinguish “no faction/permission” from a
-                    # matching member without story-specific code.
-                    return operator.strip() == "not_in"
-                try:
-                    return left not in right if operator.strip() == "not_in" else left in right
-                except TypeError:
-                    return False
-        comparison = self._comparison.match(expression)
-        if comparison:
-            left = self._value(comparison.group(1), agent, target, world, context)
-            right_text = comparison.group(3).strip()
-            right = self._value(right_text, agent, target, world, context) if right_text.startswith("context.") else self._literal(right_text)
-            if left is None:
-                return False
-            try:
-                operator = comparison.group(2)
-                return self._compare(left, operator, right)
-            except TypeError:
-                return False
-        return bool(self._value(expression, agent, target, world, context))
+        try:
+            tree = parse_expression(expression)
+            value = self._evaluate_tree(tree, agent, target, world, context)
+        except (ExpressionSyntaxError, TypeError, ValueError):
+            return False
+        return bool(value) if value is not None else False
 
     def evaluate_known(self, expression: str, *, agent: dict[str, Any], target: dict[str, Any] | None = None, world: dict[str, Any] | None = None, context: dict[str, Any] | None = None) -> bool | None:
         """Evaluate a predicate when it is part of the declarative language.
@@ -88,52 +66,86 @@ class ConditionEngine:
         expression = str(expression or "").strip()
         if not expression:
             return True
-        if expression.startswith("(") and expression.endswith(")"):
-            expression = expression[1:-1].strip()
-        for operator in (" or ", " and "):
-            if operator in expression:
-                parts = [part.strip() for part in expression.split(operator)]
-                values = [self.evaluate_known(part, agent=agent, target=target, world=world, context=context) for part in parts]
-                if any(value is None for value in values):
-                    return None
-                return any(values) if operator.strip() == "or" else all(values)
-        if expression.startswith("not "):
-            value = self.evaluate_known(expression[4:], agent=agent, target=target, world=world, context=context)
-            return None if value is None else not value
-        for operator in (" not_in ", " in "):
-            if operator in expression:
-                left_path, right_text = expression.split(operator, 1)
-                if not self._known_path(left_path.strip()):
-                    return None
-                left = self._value(left_path.strip(), agent, target, world, context)
-                right = self._literal(right_text)
-                try:
-                    return left not in right if operator.strip() == "not_in" else left in right
-                except TypeError:
-                    return False
-        comparison = self._comparison.match(expression)
-        if comparison:
-            left_path = comparison.group(1)
-            if not self._known_path(left_path):
-                return None
-            left = self._value(left_path, agent, target, world, context)
-            right_text = comparison.group(3).strip()
-            if right_text.startswith("context."):
-                if not self._known_path(right_text):
-                    return None
-                right = self._value(right_text, agent, target, world, context)
-            else:
-                right = self._literal(right_text)
-            if left is None:
-                return False
-            try:
-                operator = comparison.group(2)
-                return self._compare(left, operator, right)
-            except TypeError:
-                return False
-        if not self._known_path(expression):
+        try:
+            tree = parse_expression(expression)
+            value = self._evaluate_tree(tree, agent, target, world, context, known=True)
+        except (ExpressionSyntaxError, TypeError, ValueError):
             return None
-        return bool(self._value(expression, agent, target, world, context))
+        return None if value is _UNKNOWN else bool(value)
+
+    def _evaluate_tree(
+        self,
+        tree: Expression,
+        agent: dict[str, Any],
+        target: dict[str, Any] | None,
+        world: dict[str, Any] | None,
+        context: dict[str, Any] | None,
+        *,
+        known: bool = False,
+    ) -> Any:
+        if isinstance(tree, LiteralExpression):
+            if isinstance(tree.value, list):
+                return [
+                    self._evaluate_tree(item, agent, target, world, context, known=known)
+                    if isinstance(item, Expression) else item
+                    for item in tree.value
+                ]
+            return tree.value
+        if isinstance(tree, ReferenceExpression):
+            if known and not self._known_path(tree.path):
+                return _UNKNOWN
+            return self._value(tree.path, agent, target, world, context)
+        if isinstance(tree, UnaryExpression):
+            value = self._evaluate_tree(tree.operand, agent, target, world, context, known=known)
+            if value is _UNKNOWN:
+                return _UNKNOWN
+            if tree.operator == "not":
+                return not bool(value)
+            if tree.operator == "+":
+                return +value
+            if tree.operator == "-":
+                return -value
+            return value
+        if not isinstance(tree, BinaryExpression):
+            return _UNKNOWN if known else None
+        if tree.operator == "and":
+            left = self._evaluate_tree(tree.left, agent, target, world, context, known=known)
+            if left is not _UNKNOWN and not bool(left):
+                return False
+            right = self._evaluate_tree(tree.right, agent, target, world, context, known=known)
+            if right is not _UNKNOWN and not bool(right):
+                return False
+            return _UNKNOWN if known and (left is _UNKNOWN or right is _UNKNOWN) else True
+        if tree.operator == "or":
+            left = self._evaluate_tree(tree.left, agent, target, world, context, known=known)
+            if left is not _UNKNOWN and bool(left):
+                return True
+            right = self._evaluate_tree(tree.right, agent, target, world, context, known=known)
+            if right is not _UNKNOWN and bool(right):
+                return True
+            return _UNKNOWN if known and (left is _UNKNOWN or right is _UNKNOWN) else False
+        left = self._evaluate_tree(tree.left, agent, target, world, context, known=known)
+        right = self._evaluate_tree(tree.right, agent, target, world, context, known=known)
+        if left is _UNKNOWN or right is _UNKNOWN:
+            return _UNKNOWN
+        if left is None and tree.operator in {"in", "not_in"}:
+            return tree.operator == "not_in"
+        try:
+            if tree.operator == "in":
+                return left in right
+            if tree.operator == "not_in":
+                return left not in right
+            if tree.operator == "+":
+                return left + right
+            if tree.operator == "-":
+                return left - right
+            if tree.operator == "*":
+                return left * right
+            if tree.operator == "/":
+                return left / right if right != 0 else 0
+            return self._compare(left, tree.operator, right)
+        except (TypeError, KeyError):
+            return False
 
     @staticmethod
     def _compare(left: Any, operator: str, right: Any) -> bool:
@@ -351,18 +363,3 @@ class ConditionEngine:
                 return None
             current = current[part]
         return current
-
-    @staticmethod
-    def _literal(value: str) -> Any:
-        value = value.strip().strip("\"")
-        if value.startswith("[") or value.startswith("{"):
-            try:
-                return yaml.safe_load(value)
-            except yaml.YAMLError:
-                return value
-        if value.lower() in {"true", "false"}:
-            return value.lower() == "true"
-        try:
-            return float(value) if "." in value else int(value)
-        except ValueError:
-            return value

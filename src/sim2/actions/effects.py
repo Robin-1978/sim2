@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import ast
-import operator
 from typing import Any
+
+from ..dsl.expressions import BinaryExpression, Expression, ExpressionSyntaxError, LiteralExpression, ReferenceExpression, UnaryExpression, parse_expression
 
 from ..world.schema import AttributeSchema
 
@@ -113,23 +113,30 @@ class EffectPipeline:
             "weapon": target.get("weapon", {}) if isinstance(target, dict) else {},
         }
 
-        def evaluate(node: ast.AST) -> float:
-            if isinstance(node, ast.Expression):
-                return evaluate(node.body)
-            if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        def evaluate(node: Expression) -> float:
+            if isinstance(node, LiteralExpression) and isinstance(node.value, (int, float)):
                 return float(node.value)
-            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
-                return float(values.get(node.value.id, {}).get(node.attr, 0))
-            if isinstance(node, ast.BinOp) and type(node.op) in {ast.Add, ast.Sub, ast.Mult, ast.Div}:
+            if isinstance(node, ReferenceExpression):
+                root, _, path = node.path.partition(".")
+                if not path or root not in values:
+                    raise ValueError("unsupported effect formula reference")
+                return float(values[root].get(path, 0))
+            if isinstance(node, UnaryExpression) and node.operator in {"+", "-"}:
+                value = evaluate(node.operand)
+                return value if node.operator == "+" else -value
+            if isinstance(node, BinaryExpression) and node.operator in {"+", "-", "*", "/"}:
                 left = evaluate(node.left)
                 right = evaluate(node.right)
-                return {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv}[type(node.op)](left, right) if not (isinstance(node.op, ast.Div) and right == 0) else 0.0
-            if isinstance(node, ast.UnaryOp) and type(node.op) in {ast.UAdd, ast.USub}:
-                value = evaluate(node.operand)
-                return value if isinstance(node.op, ast.UAdd) else -value
+                if node.operator == "+":
+                    return left + right
+                if node.operator == "-":
+                    return left - right
+                if node.operator == "*":
+                    return left * right
+                return left / right if right else 0.0
             raise ValueError("unsupported effect formula")
 
         try:
-            return max(0.0, evaluate(ast.parse(str(formula), mode="eval")))
-        except (SyntaxError, ValueError, TypeError, ZeroDivisionError):
+            return max(0.0, evaluate(parse_expression(str(formula))))
+        except (ExpressionSyntaxError, ValueError, TypeError, ZeroDivisionError):
             return 0.0
