@@ -14,6 +14,7 @@ from sim2.actions.conditions import ConditionEngine
 from sim2.actions.effects import EffectPipeline
 from sim2.llm.adapters import BeamAdapter, IcemanAdapter, LongCatAdapter, resolve_adapter
 from sim2.llm.gateway import _json_from_text
+from sim2.agents.session import model_tool_result
 
 
 class WaitProvider:
@@ -595,7 +596,7 @@ def test_god_cannot_acknowledge_an_already_recorded_event_as_new_world_change(tm
 
 
 def test_model_tool_view_compacts_nested_entity_state():
-    result = AgentEngine._model_tool_result(
+    result = model_tool_result(
         "inspect_entity",
         {
             "status": "ok",

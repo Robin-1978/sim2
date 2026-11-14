@@ -15,7 +15,7 @@ from .runtime_policy import (
 from .policies import task_text
 from .audit import AgentAudit
 from .protocol import ProviderProtocol, normalize_provider_intent, readable_model_response
-from .session import AgentTurn, trim_conversation_messages
+from .session import AgentTurn, model_tool_result, trim_conversation_messages
 from .tools import AgentToolExecutor, TOOL_DEFINITIONS, parse_tool_call
 
 
@@ -351,7 +351,7 @@ class AgentEngine:
                         read_signatures.add(self._read_signature(tool_name, arguments))
                         if role == "agent_decision":
                             context["decision_guidance"] = f"{read_tool_calls} focused read(s) completed. Use those results now; choose one listed behavior or wait."
-                    model_tool_result = self._model_tool_result(tool_name, tool_result)
+                    model_result = model_tool_result(tool_name, tool_result)
                     internal_tool_result = self._restore_internal_tool_result(tool_name, arguments, tool_result)
                     transcript.append({
                         "step": "tool",
@@ -361,19 +361,19 @@ class AgentEngine:
                         # receives only ``model_result`` below.  Keep one raw
                         # copy for provenance instead of duplicating it under
                         # two transcript keys in every audit artifact.
-                        "model_result": model_tool_result,
+                        "model_result": model_result,
                         "result": internal_tool_result,
                     })
                     context.setdefault("interaction_history", []).extend([
                         {"kind": "assistant_tool_call", "name": tool_name, "arguments": arguments},
-                        {"kind": "tool_result", "name": tool_name, "result": model_tool_result},
+                        {"kind": "tool_result", "name": tool_name, "result": model_result},
                     ])
-                    context.setdefault("tool_results", []).append({"tool": tool_name, "result": model_tool_result})
-                    context["last_platform_result"] = model_tool_result
+                    context.setdefault("tool_results", []).append({"tool": tool_name, "result": model_result})
+                    context["last_platform_result"] = model_result
                     last_result = internal_tool_result
                     if native_call is not None:
-                        conversation_messages.append({"role": "tool", "tool_call_id": native_call.get("id", "tool_call"), "name": tool_name, "content": json.dumps(model_tool_result, ensure_ascii=False)})
-                    if TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "intent" and model_tool_result.get("status") in {"accepted", "wait"}:
+                        conversation_messages.append({"role": "tool", "tool_call_id": native_call.get("id", "tool_call"), "name": tool_name, "content": json.dumps(model_result, ensure_ascii=False)})
+                    if TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "intent" and model_result.get("status") in {"accepted", "wait"}:
                         accepted_result = internal_tool_result
                         # One session may batch read tools, but a decision or
                         # proposal is a single side effect. Ignore any later
@@ -387,7 +387,7 @@ class AgentEngine:
                     pass
                 else:
                     conversation_messages.append({"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
-                    conversation_messages.append({"role": "user", "content": f"Tool results: {json.dumps(model_tool_result, ensure_ascii=False)}"})
+                    conversation_messages.append({"role": "user", "content": f"Tool results: {json.dumps(model_result, ensure_ascii=False)}"})
                 # Keep the stable system prompt and initial snapshot, plus a
                 # bounded tail of the current ReAct exchange.  Without this
                 # cap every read result is resent on every iteration, so a
@@ -562,69 +562,6 @@ class AgentEngine:
         """
 
         return readable_model_response(response)
-
-    @classmethod
-    def _model_tool_result(cls, tool_name: str, result: dict[str, Any]) -> dict[str, Any]:
-        """Compile one tool result into a small model-facing view.
-
-        Store/API responses may contain complete entity state, nested previous
-        outcomes, and internal identifiers.  Those details remain in the
-        private transcript for diagnostics, but repeating them in every ReAct
-        message wastes context and encourages the model to re-read the same
-        facts.  The model view keeps visible facts, status, and the next
-        decision signal only.
-        """
-
-        def compact(value: Any, *, key: str = "", depth: int = 0) -> Any:
-            if depth > 4:
-                return "[details omitted]"
-            if isinstance(value, float):
-                return round(value, 4)
-            if isinstance(value, (str, int, bool)) or value is None:
-                text = value
-                if isinstance(value, str) and len(value) > 500:
-                    text = value[:497] + "..."
-                return text
-            if isinstance(value, list):
-                return [compact(item, depth=depth + 1) for item in value[:8]]
-            if not isinstance(value, dict):
-                return str(value)
-            if key in {"last_outcome", "outcome_history", "transcript", "prompt_history", "data_json"}:
-                return "[details omitted]"
-            drop = {
-                "id", "intent_id", "execution_id", "event_id", "entity_id",
-                "action_instance_id", "active_bt_instance", "active_action_instance",
-            }
-            output: dict[str, Any] = {}
-            for child_key, child_value in value.items():
-                normalized = str(child_key)
-                if normalized in drop or normalized.endswith("_id"):
-                    continue
-                if normalized in {"initial_state", "state"} and isinstance(child_value, dict):
-                    state_keys = {
-                        "status", "location_id", "active_behavior", "active_action",
-                        "remaining_minutes", "energy", "attention", "health",
-                        "exposure", "threat_level", "reputation",
-                    }
-                    child_value = {k: v for k, v in child_value.items() if k in state_keys}
-                output[normalized] = compact(child_value, key=normalized, depth=depth + 1)
-            return output
-
-        compacted = compact(result)
-        if not isinstance(compacted, dict):
-            compacted = {"status": "ok", "result": compacted}
-        compacted.setdefault("tool", str(tool_name))
-        # Keep a hard upper bound even for an unexpectedly large configured
-        # record.  The full value is still available in the private transcript.
-        encoded = json.dumps(compacted, ensure_ascii=False, separators=(",", ":"))
-        if len(encoded) > 6000:
-            compacted = {
-                key: compacted[key]
-                for key in ("status", "message", "failed_check", "errors", "invalid_choices", "available_choices", "choice", "summary", "remaining_minutes", "tool")
-                if key in compacted
-            }
-            compacted["message"] = str(compacted.get("message") or "Detailed tool output omitted; use the visible facts already collected.")
-        return compacted
 
     def _submit_response(
         self,

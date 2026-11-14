@@ -105,6 +105,8 @@ or world configuration.
   caused a real ten-round run to wait while the NPC repeated inspection.
 - Agent task wording now lives with role policies (`policies.py`); the bounded
   session engine schedules and executes it without owning role semantics.
+- The bounded model-facing tool-result projection now lives in `agents/session.py`;
+  AgentEngine retains only scheduling, protocol calls and private provenance.
 
 ### Review conclusion
 
