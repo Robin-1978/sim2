@@ -162,7 +162,7 @@ def _remove_block(text: str, tag: str) -> tuple[str, bool]:
 # dropped.
 _BACKGROUND_SECTIONS = (
     "registered_actions", "knowledge_and_memory", "nearby_entities", "relationships", "recent_actions",
-    "world_outcomes", "world_trends", "knowledge_gaps", "rule_condition_fields",
+    "world_trends", "world_outcomes", "knowledge_gaps", "rule_condition_fields",
 )
 
 
@@ -808,7 +808,24 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     # Preserve the current task, executable choices, active execution and
     # latest tool result. Remove only retrievable background sections first;
     # cutting the middle of the behavior catalog can leave an unusable prompt.
-    for tag in _BACKGROUND_SECTIONS:
+    background_sections = list(_BACKGROUND_SECTIONS)
+    # An empty outcome scaffold is less useful than the resource/trend
+    # projection. Once a proposal or outcome exists, preserve that causal
+    # review section and compact trends first. This keeps the choice driven by
+    # evidence instead of a fixed token-order accident.
+    outcomes_start = rendered.find("<world_outcomes>")
+    outcomes_end = rendered.find("</world_outcomes>", outcomes_start)
+    if outcomes_start >= 0 and outcomes_end > outcomes_start:
+        outcomes = rendered[outcomes_start:outcomes_end]
+        has_active_institution = "[terms:" in rendered
+        if (
+            "Pending proposal evaluations: none." in outcomes
+            and "- no recent world proposal result" in outcomes
+            and not has_active_institution
+        ):
+            background_sections.remove("world_outcomes")
+            background_sections.insert(0, "world_outcomes")
+    for tag in background_sections:
         rendered, removed = _remove_block(rendered, tag)
         if removed:
             omitted.append(tag)
