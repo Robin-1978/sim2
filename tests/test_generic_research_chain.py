@@ -218,13 +218,17 @@ def test_failed_story_followup_is_blocked_and_story_is_woken(tmp_path: Path):
                     "emergent:blocked-followup": {"status": "active", "audience": ["luo_shan"]},
                 },
             )
-        platform._block_story_beats_for_failed_followup("luo_shan", "gather_reeds", 10, 999, "resource_empty")
+        with platform.store.transaction():
+            source_event_id = platform._services["events"].append(
+                "behavior.failed", "luo_shan", 10, {"behavior_id": "gather_reeds", "result": "resource_empty"},
+            )
+        platform._block_story_beats_for_failed_followup("luo_shan", "gather_reeds", 10, source_event_id, "resource_empty")
         state = platform.store.get_meta("story_state")
         assert state["emergent:blocked-followup"]["status"] == "blocked"
         assert goal not in platform.store.get_agent("luo_shan").get("story_goals", [])
         task = platform.store.connection.execute(
             "SELECT role,task_type,status FROM evolution_task WHERE task_id=?",
-            ("story:event:999",),
+            (f"story:event:{source_event_id}",),
         ).fetchone()
         assert task is not None and task["role"] == "story" and task["task_type"] == "story:behavior.failed"
     finally:

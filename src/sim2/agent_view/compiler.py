@@ -175,6 +175,12 @@ class AgentViewCompiler:
 
     def __init__(self, store: WorldStore):
         self.store = store
+        self.entities_repo = store.repositories.entities
+        self.memory_repo = store.repositories.memory
+        self.activity_repo = store.repositories.activity
+        self.events_repo = store.repositories.events
+        self.evolution_repo = store.repositories.evolution
+        self.social_repo = store.repositories.social
         self.conditions = ConditionEngine((self.store.get_meta("rules", {}) or {}))
         self.rule_compiler = self._new_rule_compiler()
         self.resources = ResourceLedger(store)
@@ -188,7 +194,7 @@ class AgentViewCompiler:
             aliases[str(key)] = str(key)
             aliases[str(key).replace("_", " ")] = str(key)
         for entity_type in ("resource", "material", "location", "object", "faction", "agent"):
-            for item in self.store.entities_of_type(entity_type):
+            for item in self.entities_repo.entities_of_type(entity_type):
                 identifier, visible = str(item.get("id") or ""), str(item.get("name") or "")
                 if identifier and visible:
                     aliases[visible] = identifier
@@ -198,16 +204,16 @@ class AgentViewCompiler:
     def _recent_history_view(self, limit: int = 16) -> list[dict[str, Any]]:
         """Return a compact, visible-name projection of recent world facts."""
 
-        events = self.store.recent_events(limit=max(1, min(int(limit), 32)), exclude_types=_TICK_EVENT_TYPES)
+        events = self.events_repo.recent_events(limit=max(1, min(int(limit), 32)), exclude_types=_TICK_EVENT_TYPES)
         bt_labels = {
             str(item.get("id")): str(item.get("agent_label") or item.get("summary") or item.get("id"))
-            for item in self.store.get_definitions("bt_def")
+            for item in self.entities_repo.get_definitions("bt_def")
         }
         result: list[dict[str, Any]] = []
         for event in events:
             actor_id = str(event.get("actor_id") or "")
             try:
-                actor_name = str(self.store.get_entity(actor_id).get("name") or actor_id or "world")
+                actor_name = str(self.entities_repo.get_entity(actor_id).get("name") or actor_id or "world")
             except KeyError:
                 actor_name = actor_id or "world"
             details: dict[str, Any] = {}
@@ -233,7 +239,7 @@ class AgentViewCompiler:
         """Expose current research questions without internal identifiers."""
 
         result: list[dict[str, Any]] = []
-        for row in self.store.list_knowledge_gaps(status=status, limit=limit):
+        for row in self.memory_repo.list_knowledge_gaps(status=status, limit=limit):
             item: dict[str, Any] = {
                 "question": str(row.get("question") or ""),
                 "status": str(row.get("status") or status),
@@ -245,7 +251,7 @@ class AgentViewCompiler:
             if total:
                 item["stages"] = f"{len(row.get('completed_stages') or [])}/{total} completed"
             try:
-                item["source"] = str(self.store.get_entity(str(row.get("current_source_id"))).get("name") or "")
+                item["source"] = str(self.entities_repo.get_entity(str(row.get("current_source_id"))).get("name") or "")
             except (KeyError, TypeError):
                 pass
             result.append(item)
@@ -258,7 +264,7 @@ class AgentViewCompiler:
         conflict_types = {str(item) for item in (rules.get("conflict_relation_types", ["conflict"]) or [])}
         participant_ids = {str(item.get("id")) for item in participants}
         available = False
-        for relation in self.store.get_related_relationships(agent["id"], limit=50):
+        for relation in self.entities_repo.get_related_relationships(agent["id"], limit=50):
             if str(relation.get("person")) not in participant_ids or str(relation.get("relation")) not in conflict_types:
                 continue
             value = relation.get("relation_strength", relation.get("value", 0))
@@ -307,7 +313,7 @@ class AgentViewCompiler:
         if behavior_id in seen:
             return
         seen.add(behavior_id)
-        definitions = {item["id"]: item for item in self.store.get_definitions("bt_def")}
+        definitions = {item["id"]: item for item in self.entities_repo.get_definitions("bt_def")}
         behavior = definitions.get(behavior_id) or {}
 
         def visit(nodes: list[Any], branch_seen: set[str]):
@@ -338,7 +344,7 @@ class AgentViewCompiler:
         return world_time_view(self.store, minute)
 
     def _prompt_sections(self, role: str) -> tuple[list[str], list[str]]:
-        prompt = self.store.get_prompt("agent", {}) or {}
+        prompt = self.memory_repo.get_prompt("agent", {}) or {}
         prompt = prompt.get("agent_prompt", prompt) if isinstance(prompt, dict) else {}
         protocol = prompt.get("protocol", {}) if isinstance(prompt, dict) else {}
         protocol_lines = list(protocol.get(role, []) or []) if isinstance(protocol, dict) else []
@@ -359,7 +365,7 @@ class AgentViewCompiler:
         return protocol_lines, rules
 
     def _role_tools(self, role: str) -> list[dict[str, Any]]:
-        prompt = self.store.get_prompt("agent", {}) or {}
+        prompt = self.memory_repo.get_prompt("agent", {}) or {}
         prompt = prompt.get("agent_prompt", prompt) if isinstance(prompt, dict) else {}
         policy = prompt.get("tool_policy", {}) if isinstance(prompt, dict) else {}
         names = policy.get(role) if isinstance(policy, dict) else None
@@ -372,7 +378,7 @@ class AgentViewCompiler:
         for key in (self.store.get_meta("world_properties", {}) or {}):
             labels[str(key)] = str(key).replace("_", " ")
         for entity_type in ("resource", "material", "location", "object", "faction", "agent"):
-            for item in self.store.entities_of_type(entity_type):
+            for item in self.entities_repo.entities_of_type(entity_type):
                 if item.get("id") and item.get("name"):
                     identifier = str(item["id"])
                     name = str(item["name"])
@@ -438,7 +444,7 @@ class AgentViewCompiler:
         """
 
         view = self.build_decision_view(agent_id, role="agent_decision", include_diagnostics=True)
-        definitions = bt_defs if bt_defs is not None else {str(item["id"]): item for item in self.store.get_definitions("bt_def")}
+        definitions = bt_defs if bt_defs is not None else {str(item["id"]): item for item in self.entities_repo.get_definitions("bt_def")}
         options: set[str] = set()
         choices: list[str] = []
         for item in view.get("executable_behaviors", []) or []:
@@ -504,10 +510,10 @@ class AgentViewCompiler:
 
     def _trade_offer_view(self, agent_id: str) -> list[dict[str, Any]]:
         offers: list[dict[str, Any]] = []
-        for offer in self.store.list_trade_offers(agent_id, include_closed=False, limit=8):
+        for offer in self.social_repo.list_trade_offers(agent_id, include_closed=False, limit=8):
             other_id = offer["recipient_id"] if offer["offerer_id"] == agent_id else offer["offerer_id"]
             try:
-                other_name = self.store.get_agent(other_id).get("name", other_id)
+                other_name = self.entities_repo.get_agent(other_id).get("name", other_id)
             except KeyError:
                 other_name = other_id
             direction = "to" if offer["offerer_id"] == agent_id else "from"
@@ -550,7 +556,7 @@ class AgentViewCompiler:
             for value in raw_value.split(":"):
                 value = value.strip()
                 try:
-                    entity_name = self.store.get_entity(value).get("name")
+                    entity_name = self.entities_repo.get_entity(value).get("name")
                 except KeyError:
                     entity_name = None
                 visible_parts.append(str(entity_name if entity_name and entity_name != value else value.replace("_", " ")))
@@ -626,7 +632,7 @@ class AgentViewCompiler:
 
         text = str(value)
         entities: list[tuple[str, str]] = []
-        for entity in self.store.entities_of_type("location") + self.store.entities_of_type("agent") + self.store.entities_of_type("object"):
+        for entity in self.entities_repo.entities_of_type("location") + self.entities_repo.entities_of_type("agent") + self.entities_repo.entities_of_type("object"):
             key = str(entity.get("id") or "")
             name = str(entity.get("name") or key)
             if key and name:
@@ -635,7 +641,7 @@ class AgentViewCompiler:
         # particular world vocabulary; ``entities_of_type`` is cheap for the
         # bounded Agent projection and keeps new worlds generic.
         for entity_type in ("resource", "material", "artifact", "document", "tool", "consumable", "shared_stock", "market_stock"):
-            for entity in self.store.entities_of_type(entity_type):
+            for entity in self.entities_repo.entities_of_type(entity_type):
                 key = str(entity.get("id") or "")
                 name = str(entity.get("name") or key)
                 if key and name:
@@ -672,7 +678,7 @@ class AgentViewCompiler:
         self.conditions = ConditionEngine(rules)
         self.rule_compiler = self._new_rule_compiler()
         try:
-            agent = self.store.get_agent(agent_id)
+            agent = self.entities_repo.get_agent(agent_id)
         except KeyError:
             if role in {"god", "story", "world_builder"}:
                 if role == "story":
@@ -680,9 +686,9 @@ class AgentViewCompiler:
                 return self._build_world_view(agent_id, role)
             raise
         configured_context = configured_context_values(rules, agent)
-        bt_defs = {x["id"]: x for x in self.store.get_definitions("bt_def")}
-        action_defs = {x["id"]: x for x in self.store.get_definitions("action_def")}
-        recipe_defs = {x["id"]: x for x in self.store.get_definitions("recipe_def")}
+        bt_defs = {x["id"]: x for x in self.entities_repo.get_definitions("bt_def")}
+        action_defs = {x["id"]: x for x in self.entities_repo.get_definitions("action_def")}
+        recipe_defs = {x["id"]: x for x in self.entities_repo.get_definitions("recipe_def")}
         estimator = BehaviorDurationEstimator(
             action_defs,
             bt_defs,
@@ -704,9 +710,9 @@ class AgentViewCompiler:
         resource_node = nearest_resource_node(self.store, location_id)
         health_location_id = nearest_location_with_tag(self.store, location_id, configured_location_tags(self.store, "health_service", {"health", "clinic"}))
         known_route_destinations = reachable_locations(self.store, location_id)
-        mapped_areas = self.store.explored_areas(agent_id)
-        researched_sources = self.store.researched_sources(agent_id)
-        known_fact_keys = [item.get("fact_key") for item in self.store.list_knowledge_facts(agent_id, limit=1000) if item.get("fact_key")]
+        mapped_areas = self.memory_repo.explored_areas(agent_id)
+        researched_sources = self.memory_repo.researched_sources(agent_id)
+        known_fact_keys = [item.get("fact_key") for item in self.memory_repo.list_knowledge_facts(agent_id, limit=1000) if item.get("fact_key")]
         configured_research_sources: set[str] = {
             str(value)
             for bt_id in catalog_ids
@@ -726,7 +732,7 @@ class AgentViewCompiler:
         current_location = {}
         if location_id:
             try:
-                current_location = self.store.get_entity(location_id)
+                current_location = self.entities_repo.get_entity(location_id)
             except KeyError:
                 pass
         participants = self.targets.visible_agents(agent)
@@ -801,7 +807,7 @@ class AgentViewCompiler:
                 continue
             cooldown_minutes = max(0, int(bt.get("cooldown_minutes", 0) or 0))
             if cooldown_minutes:
-                last_minute = self.store.last_behavior_minute(agent_id, bt_id)
+                last_minute = self.activity_repo.last_behavior_minute(agent_id, bt_id)
                 current_minute = int(self.store.get_meta("world_minute", 0))
                 if last_minute is not None and current_minute - last_minute < cooldown_minutes:
                     diagnostics.append({"behavior_id": bt_id, "failed": [f"cooldown until world minute {last_minute + cooldown_minutes}"]})
@@ -847,11 +853,11 @@ class AgentViewCompiler:
                 progress_definition = action.get("progress") if isinstance(action.get("progress"), dict) else {}
                 if progress_definition.get("key") and "{source_id}" in str(progress_definition.get("key")) and parameters.get("source_id"):
                     try:
-                        research_source = self.store.get_entity(str(parameters["source_id"]))
+                        research_source = self.entities_repo.get_entity(str(parameters["source_id"]))
                     except KeyError:
                         research_source = {}
                     source_state = research_source.get("initial_state") if isinstance(research_source.get("initial_state"), dict) else {}
-                    discoveries = self.store.research_discoveries(str(parameters["source_id"]))
+                    discoveries = self.memory_repo.research_discoveries(str(parameters["source_id"]))
                     known = set(known_fact_keys)
                     current_stage = next((item for item in discoveries if str(item.get("id")) not in known and str(item.get("status") or "active").casefold() not in {"obsolete", "disabled"}), None)
                     required = (current_stage or {}).get("required")
@@ -889,7 +895,7 @@ class AgentViewCompiler:
                 if moves_actor and parameters.get("location_id"):
                     simulated_state["location_id"] = str(parameters["location_id"])
                     try:
-                        simulated_location = self.store.get_entity(str(parameters["location_id"]))
+                        simulated_location = self.entities_repo.get_entity(str(parameters["location_id"]))
                     except KeyError:
                         simulated_location = {}
             if action_unavailable:
@@ -927,18 +933,18 @@ class AgentViewCompiler:
             bound_value = next((binding_values.get(str(resolver)) for resolver in bindings.values() if binding_values.get(str(resolver))), None)
             if bound_value and any(str(resolver) == "nearest_safe_location" for resolver in bindings.values()):
                 try:
-                    target_text = f"Configured safe location: {self.store.get_entity(bound_value).get('name', bound_value)}."
+                    target_text = f"Configured safe location: {self.entities_repo.get_entity(bound_value).get('name', bound_value)}."
                 except KeyError:
                     target_text = "Configured safe location is available."
             elif bound_value and any(str(resolver) == "nearest_health_service" for resolver in bindings.values()):
                 try:
-                    target_text = f"Health service: {self.store.get_entity(bound_value).get('name', bound_value)}."
+                    target_text = f"Health service: {self.entities_repo.get_entity(bound_value).get('name', bound_value)}."
                 except KeyError:
                     target_text = "Configured health service is available."
             elif resource_node and any(str(resolver) == "nearest_resource_node" for resolver in bindings.values()):
                 try:
-                    resource = self.store.get_entity(resource_node["resource_tag"])
-                    location = self.store.get_entity(resource_node["location_id"])
+                    resource = self.entities_repo.get_entity(resource_node["resource_tag"])
+                    location = self.entities_repo.get_entity(resource_node["location_id"])
                     target_text = (
                         f"Collect {resource.get('name', resource_node['resource_tag'])} from "
                         f"{location.get('name', resource_node['location_id'])}. "
@@ -952,8 +958,8 @@ class AgentViewCompiler:
                 for node in bt.get("nodes", []) or []
             ):
                 try:
-                    resource = self.store.get_entity(resource_node["resource_tag"])
-                    location = self.store.get_entity(resource_node["location_id"])
+                    resource = self.entities_repo.get_entity(resource_node["resource_tag"])
+                    location = self.entities_repo.get_entity(resource_node["location_id"])
                     target_text = f"Resource: {resource.get('name', resource_node['resource_tag'])} at {location.get('name', resource_node['location_id'])}. Platform reserves the configured amount."
                 except KeyError:
                     target_text = "A configured resource is available at the nearest known node."
@@ -996,11 +1002,11 @@ class AgentViewCompiler:
             })
         # Long-term goal tags are context only.  They must not promote a
         # behavior whose current drive, need, or resource conditions are weak.
-        nearby = [item for item in (self.store.entities_at_location(location_id) if location_id else []) if item.get("id") != agent_id]
+        nearby = [item for item in (self.entities_repo.entities_at_location(location_id) if location_id else []) if item.get("id") != agent_id]
         known_routes = []
         for route_id in (current_location.get("routes", []) if isinstance(current_location, dict) else []):
             try:
-                known_routes.append(self.store.get_entity(str(route_id)).get("name", str(route_id)))
+                known_routes.append(self.entities_repo.get_entity(str(route_id)).get("name", str(route_id)))
             except KeyError:
                 known_routes.append(str(route_id))
         active_behavior_id = state.get("active_behavior_id")
@@ -1068,15 +1074,15 @@ class AgentViewCompiler:
                 source_id = params.get("source_id")
                 if not source_id or str(source_id).startswith("context.") or str(source_id) in seen_sources:
                     continue
-                discoveries = self.store.research_discoveries(str(source_id))
+                discoveries = self.memory_repo.research_discoveries(str(source_id))
                 if not discoveries:
                     continue
                 seen_sources.add(str(source_id))
                 try:
-                    source_entity = self.store.get_entity(str(source_id))
+                    source_entity = self.entities_repo.get_entity(str(source_id))
                     source_name = source_entity.get("name", source_id)
                     source_location_id = (source_entity.get("initial_state") or {}).get("location_id") or source_entity.get("location_id")
-                    source_location = self.store.get_entity(str(source_location_id)).get("name", source_location_id) if source_location_id else "configured source"
+                    source_location = self.entities_repo.get_entity(str(source_location_id)).get("name", source_location_id) if source_location_id else "configured source"
                 except KeyError:
                     source_entity = {}
                     source_name = source_id
@@ -1094,24 +1100,24 @@ class AgentViewCompiler:
                         for item in discoveries
                     ],
                 })
-        relationships = self.store.get_related_relationships(agent_id, limit=5)
+        relationships = self.entities_repo.get_related_relationships(agent_id, limit=5)
         for relationship in relationships:
             person_id = relationship.get("person")
             try:
-                relationship["person"] = self.store.get_agent(person_id).get("name", person_id)
+                relationship["person"] = self.entities_repo.get_agent(person_id).get("name", person_id)
             except KeyError:
                 try:
-                    relationship["person"] = self.store.get_entity(person_id).get("name", person_id)
+                    relationship["person"] = self.entities_repo.get_entity(person_id).get("name", person_id)
                 except KeyError:
                     pass
-        actor_events = self.store.recent_events_for_actor(agent_id, limit=8)
+        actor_events = self.events_repo.recent_events_for_actor(agent_id, limit=8)
         recent_actions = [
             self._with_behavior_choice(self._humanize_record(item), bt_defs)
             for item in actor_events[:2]
         ]
         recent_outcomes = [
             self._with_behavior_choice(self._humanize_record(item), bt_defs)
-            for item in self.store.recent_outcomes_for_actor(agent_id, limit=3)
+            for item in self.events_repo.recent_outcomes_for_actor(agent_id, limit=3)
         ]
         for outcome in recent_outcomes:
             if outcome.get("behavior_choice"):
@@ -1156,7 +1162,7 @@ class AgentViewCompiler:
             decision_constraints.append("No BT is executable in this state; return wait.")
         capability_update_candidates = []
         progression_rules = rules.get("capability_progression", {}) or {}
-        capability_defs = {str(item.get("id")): item for item in self.store.get_definitions("capability_def")}
+        capability_defs = {str(item.get("id")): item for item in self.entities_repo.get_definitions("capability_def")}
         owned_capabilities = agent.get("capabilities") or {}
         for capability, definition in progression_rules.items():
             capability = str(capability)
@@ -1164,24 +1170,24 @@ class AgentViewCompiler:
             if not catalog_entry or (capability not in owned_capabilities and not bool(catalog_entry.get("acquirable", False))):
                 continue
             last = self.store.connection.execute("SELECT MAX(world_minute) AS minute FROM capability_progress WHERE agent_id=? AND capability=?", (agent_id, str(capability))).fetchone()["minute"]
-            evidence_events = self.store.capability_evidence(agent_id, capability, after_minute=int(last) if last is not None else -1)
+            evidence_events = self.activity_repo.capability_evidence(agent_id, capability, after_minute=int(last) if last is not None else -1)
             completed = len(evidence_events)
             required = int((definition or {}).get("minimum_completed_outcomes", 3) or 3)
             if int(completed or 0) >= required:
                 capability_update_candidates.append({"capability": capability, "completed_outcomes": int(completed), "required_outcomes": required, "max_delta": float((definition or {}).get("max_delta", 0.1) or 0.1), "evidence_sources": list(dict.fromkeys(str(item.get("source") or "configured result") for item in evidence_events))})
         pending_institutions = [
             {"name": str(item.get("name", "")), "purpose": str(item.get("purpose", "")), "scope": str(item.get("scope", "world")), "status": "proposed"}
-            for item in self.store.list_institutions(status="proposed", limit=12)
+            for item in self.social_repo.list_institutions(status="proposed", limit=12)
         ]
         active_institutions = [
             {"name": str(item.get("name", "")), "purpose": str(item.get("purpose", "")), "scope": str(item.get("scope", "world")), "status": "active", "terms": describe_institution_terms(item)}
-            for item in self.store.list_institutions(status="active", limit=12)
+            for item in self.social_repo.list_institutions(status="active", limit=12)
         ]
         institution_ledgers = []
-        for item in self.store.list_institutions(status="active", limit=12):
+        for item in self.social_repo.list_institutions(status="active", limit=12):
             institution_ledgers.append({
                 "name": str(item.get("name", "")),
-                "entries": self.store.institution_ledger_totals(str(item.get("institution_id")), None)[:12],
+                "entries": self.social_repo.institution_ledger_totals(str(item.get("institution_id")), None)[:12],
             })
         story_goals = list(agent.get("story_goals", []) or [])[-3:]
         behavior_assignments = [
@@ -1222,7 +1228,7 @@ class AgentViewCompiler:
             "self": {"id": agent_id, "name": agent.get("name", agent_id), "role": agent.get("role", "agent"), "status": state.get("status", "idle"), "location": current_location.get("name", location_id) if isinstance(current_location, dict) else location_id, "known_routes": known_routes, "attributes": self._attribute_values(agent, state), "goal": agent.get("ultimate_goal")},
             "identity": {"traits": agent.get("traits", {}), "beliefs": agent.get("beliefs", []), "capabilities": agent.get("capabilities", {})},
             "goal_tags": agent.get("goal_tags", []),
-            "capability_history": self.store.list_capability_progress(agent_id, limit=5),
+            "capability_history": self.activity_repo.list_capability_progress(agent_id, limit=5),
             "capability_update_candidates": capability_update_candidates,
             "needs": needs, "inventory": agent.get("inventory", {}), "injuries": state.get("injuries", []),
             "drives": drives[:5], "drive_model": drive_model, "observation": {"facts": observation_facts[:6], "source": "current_state"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "research_tracks": research_tracks[:8], "memories": memories, "short_term_memories": short_term_memories, "long_term_memories": long_term_memories, "memory_query": memory_query, "recent_actions": recent_actions, "recent_outcomes": recent_outcomes, "direct_relationships": relationships,
@@ -1287,7 +1293,7 @@ class AgentViewCompiler:
         while queue:
             current, distance = queue.pop(0)
             try:
-                location = self.store.get_entity(current)
+                location = self.entities_repo.get_entity(current)
             except KeyError:
                 continue
             for neighbor in location.get("routes", []) or []:
@@ -1324,7 +1330,7 @@ class AgentViewCompiler:
             rules = self.store.get_meta("rules", {}) or {}
             entity_types = {str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])}
             protected_key = str(rules.get("resource_protected_state", "protected"))
-            source = next((item for item in self.store.entities_at_location((agent.get("initial_state") or {}).get("location_id")) if item.get("entity_type") in entity_types and not (item.get("initial_state") or {}).get(protected_key) and self._entity_quantity(item) > 0), None)
+            source = next((item for item in self.entities_repo.entities_at_location((agent.get("initial_state") or {}).get("location_id")) if item.get("entity_type") in entity_types and not (item.get("initial_state") or {}).get(protected_key) and self._entity_quantity(item) > 0), None)
             parameters["resource_tag"] = source.get("id") if source else parameters.get("resource_tag")
         if action.get("requires_destination") and parameters.get("location_id") == (agent.get("initial_state") or {}).get("location_id"):
             return "the actor is already at the destination"
@@ -1340,11 +1346,11 @@ class AgentViewCompiler:
             "inventory": agent.get("inventory", {}) or {},
             "station_tags": [],
             "known_route_destinations": reachable_locations(self.store, (agent.get("initial_state") or {}).get("location_id")),
-            "mapped_areas": self.store.explored_areas(str(agent.get("id", ""))),
-            "researched_sources": self.store.researched_sources(str(agent.get("id", ""))),
+            "mapped_areas": self.memory_repo.explored_areas(str(agent.get("id", ""))),
+            "researched_sources": self.memory_repo.researched_sources(str(agent.get("id", ""))),
             "known_fact_keys": [
                 item.get("fact_key")
-                for item in self.store.list_knowledge_facts(str(agent.get("id", "")), limit=1000)
+                for item in self.memory_repo.list_knowledge_facts(str(agent.get("id", "")), limit=1000)
                 if item.get("fact_key")
             ],
             "recent_event_types": self._recent_event_types(),
@@ -1384,20 +1390,20 @@ class AgentViewCompiler:
                 )
         if parameters.get("object_id"):
             try:
-                context["current_object"] = self.store.get_entity(str(parameters["object_id"]))
+                context["current_object"] = self.entities_repo.get_entity(str(parameters["object_id"]))
             except KeyError:
                 return "the referenced object does not exist"
         if parameters.get("source_id"):
             try:
-                context["source"] = self.store.get_entity(str(parameters["source_id"]))
+                context["source"] = self.entities_repo.get_entity(str(parameters["source_id"]))
             except KeyError:
                 return "the referenced source does not exist"
-            context["research_discoveries"] = self.store.research_discoveries(str(parameters["source_id"]))
+            context["research_discoveries"] = self.memory_repo.research_discoveries(str(parameters["source_id"]))
         if (
             action.get("duration", {}).get("mode") == "recipe_duration"
             or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
         ):
-            recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
+            recipe = next((item for item in self.entities_repo.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
             if recipe is None:
                 return "the recipe is not registered"
             context["station_tags"] = list(recipe.get("station_tags", []) or [])
@@ -1460,13 +1466,13 @@ class AgentViewCompiler:
         result: list[dict[str, Any]] = []
         configured_source_ids = {str(item) for item in (configured_source_ids or set())}
         agent_name = str(agent.get("name") or agent.get("id") or "")
-        for source in self.store.research_source_catalog():
+        for source in self.memory_repo.research_source_catalog():
             source_id = str(source.get("id") or "")
             if not source_id:
                 continue
             source_state = {}
             try:
-                source_entity = self.store.get_entity(source_id)
+                source_entity = self.entities_repo.get_entity(source_id)
                 source_state = source_entity.get("initial_state") if isinstance(source_entity.get("initial_state"), dict) else {}
             except KeyError:
                 source_entity = {}
@@ -1493,7 +1499,7 @@ class AgentViewCompiler:
             if not pending and discoveries:
                 continue
             try:
-                location_name = self.store.get_entity(str(source_location)).get("name", source_location) if source_location else "configured source"
+                location_name = self.entities_repo.get_entity(str(source_location)).get("name", source_location) if source_location else "configured source"
             except KeyError:
                 location_name = source_location or "configured source"
             result.append({
@@ -1509,7 +1515,7 @@ class AgentViewCompiler:
         story_root = self.store.get_meta("story", {}) or {}
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
         story_state = self.store.get_meta("story_state", {}) or {}
-        recent_events = self.store.recent_events(limit=80)
+        recent_events = self.events_repo.recent_events(limit=80)
         # Prefer the validated information event over the later wrapper
         # ``behavior.completed`` row.  The wrapper often says only
         # ``research_progressed``; using it as the source hides the completed
@@ -1553,12 +1559,12 @@ class AgentViewCompiler:
             actual = outcome.get("actual") if isinstance(outcome.get("actual"), dict) else {}
             actor_id = source_event.get("actor_id")
             try:
-                actor_name = self.store.get_entity(str(actor_id)).get("name", actor_id) if actor_id else "The world"
+                actor_name = self.entities_repo.get_entity(str(actor_id)).get("name", actor_id) if actor_id else "The world"
             except KeyError:
                 actor_name = actor_id or "The world"
             location_id = actual.get("location") or source_event.get("location_id")
             try:
-                location_name = self.store.get_entity(str(location_id)).get("name", location_id) if location_id else "unknown"
+                location_name = self.entities_repo.get_entity(str(location_id)).get("name", location_id) if location_id else "unknown"
             except KeyError:
                 location_name = location_id or "unknown"
             validated_source = {
@@ -1572,7 +1578,7 @@ class AgentViewCompiler:
             source_id = source_event.get("source_id")
             if source_id:
                 try:
-                    validated_source["research_source"] = self.store.get_entity(str(source_id)).get("name", source_id)
+                    validated_source["research_source"] = self.entities_repo.get_entity(str(source_id)).get("name", source_id)
                 except KeyError:
                     validated_source["research_source"] = str(source_id)
             if str(source_event.get("event_type")) == "institution.allocation_completed":
@@ -1737,7 +1743,7 @@ class AgentViewCompiler:
         seen: set[str] = set()
         for candidate_id in candidate_ids:
             try:
-                agent = self.store.get_agent(str(candidate_id))
+                agent = self.entities_repo.get_agent(str(candidate_id))
             except KeyError:
                 continue
             name = str(agent.get("name") or candidate_id).strip()
@@ -1766,28 +1772,28 @@ class AgentViewCompiler:
 
     def _build_world_view(self, actor_id: str, role: str) -> dict[str, Any]:
         minute = self.store.get_meta("world_minute", 0)
-        all_events = self.store.recent_events(limit=20)
-        recent_world_changes = self.store.recent_world_change_events(limit=6)
-        world_proposals = self.store.list_world_proposals(limit=8)
-        recent_agent_outcomes = self.store.recent_behavior_outcomes(limit=6)
-        world_trends = self.store.world_trends(current_minute=int(minute))
+        all_events = self.events_repo.recent_events(limit=20)
+        recent_world_changes = self.events_repo.recent_world_change_events(limit=6)
+        world_proposals = self.evolution_repo.list_world_proposals(limit=8)
+        recent_agent_outcomes = self.events_repo.recent_behavior_outcomes(limit=6)
+        world_trends = self.events_repo.world_trends(current_minute=int(minute))
         god_memory_query = "world diagnosis proposal outcome trend " + " ".join(
             str(item.get("event_type") or "") for item in recent_world_changes[:4]
         )
         god_memories = [self._humanize_record(item) for item in role_memory_query(self.store, "god", god_memory_query, limit=6)]
-        bt_defs = {item["id"]: item for item in self.store.get_definitions("bt_def")}
+        bt_defs = {item["id"]: item for item in self.entities_repo.get_definitions("bt_def")}
         for outcome in recent_agent_outcomes:
             behavior = bt_defs.get(str(outcome.get("behavior_id", "")), {})
             outcome["behavior_choice"] = behavior.get("agent_label") or behavior.get("summary") or behavior.get("description") or "a behavior"
             outcome_actor_id = outcome.get("actor_id")
             if outcome_actor_id:
                 try:
-                    outcome["actor_name"] = self.store.get_entity(str(outcome_actor_id)).get("name", "a character")
+                    outcome["actor_name"] = self.entities_repo.get_entity(str(outcome_actor_id)).get("name", "a character")
                 except KeyError:
                     outcome["actor_name"] = "a character"
         recent_world_events = (recent_world_changes + [item for item in all_events if item.get("actor_id") == actor_id])[:6]
         active_count = sum(
-            1 for agent in self.store.list_agents()
+            1 for agent in self.entities_repo.list_agents()
             if (agent.get("initial_state") or {}).get("status") in {"executing", "paused"}
         )
         world_properties = self.store.get_meta("world_properties", {}) or {}
@@ -1802,7 +1808,7 @@ class AgentViewCompiler:
                 continue
             resource_id = str(raw.get("resource_id"))
             try:
-                resource_name = str(self.store.get_entity(resource_id).get("name") or resource_id)
+                resource_name = str(self.entities_repo.get_entity(resource_id).get("name") or resource_id)
             except KeyError:
                 resource_name = resource_id.replace("_", " ")
             configured_regeneration.append({
@@ -1820,7 +1826,7 @@ class AgentViewCompiler:
                 "success": [str(item).replace("_", " ") for item in (behavior.get("success_results") or [])[:3]],
             })
         action_catalog = []
-        for action in self.store.get_definitions("action_def"):
+        for action in self.entities_repo.get_definitions("action_def"):
             action_catalog.append({
                 "name": action.get("agent_label") or _label(str(action.get("id", "action"))),
                 "purpose": action.get("agent_summary") or action.get("description") or "configured action",
@@ -1843,7 +1849,7 @@ class AgentViewCompiler:
         )
         visible_entities = []
         for entity_type in ("location", "agent", "faction", "object", "resource", "material"):
-            for item in self.store.entities_of_type(entity_type):
+            for item in self.entities_repo.entities_of_type(entity_type):
                 name = str(item.get("name") or "").strip()
                 if name:
                     visible_entities.append({"name": name, "type": entity_type})
@@ -1874,7 +1880,7 @@ class AgentViewCompiler:
             "recent_agent_outcomes": recent_agent_outcomes,
             "world_trends": world_trends,
             "configured_resource_regeneration": configured_regeneration,
-            "civilization_progress": self.store.list_progress(world_id, limit=20),
+            "civilization_progress": self.activity_repo.list_progress(world_id, limit=20),
             "world_progress_candidates": [
                 {
                     "progress_key": str(key),
@@ -1889,15 +1895,15 @@ class AgentViewCompiler:
             ],
             "pending_institutions": [
                 {"name": str(item.get("name", "")), "purpose": str(item.get("purpose", "")), "scope": str(item.get("scope", "world")), "status": "proposed"}
-                for item in self.store.list_institutions(status="proposed", limit=20)
+                for item in self.social_repo.list_institutions(status="proposed", limit=20)
             ],
             "active_institutions": [
                 {"name": str(item.get("name", "")), "purpose": str(item.get("purpose", "")), "scope": str(item.get("scope", "world")), "status": "active", "terms": describe_institution_terms(item)}
-                for item in self.store.list_institutions(status="active", limit=20)
+                for item in self.social_repo.list_institutions(status="active", limit=20)
             ],
             "institution_ledgers": [
-                {"name": str(item.get("name", "")), "entries": self.store.institution_ledger_totals(str(item.get("institution_id")), None)[:20]}
-                for item in self.store.list_institutions(status="active", limit=20)
+                {"name": str(item.get("name", "")), "entries": self.social_repo.institution_ledger_totals(str(item.get("institution_id")), None)[:20]}
+                for item in self.social_repo.list_institutions(status="active", limit=20)
             ],
             "active_world_rules": self.rule_compiler.model_view(
                 self._world_rule_labels(),

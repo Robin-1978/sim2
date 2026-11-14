@@ -110,6 +110,11 @@ typed objects directly. The old dynamic lookup is still present for the
 remaining runtime readers; the next increments migrate read-heavy projections
 and repository-internal cross-calls before deleting that lookup.
 
+**Progress:** `AgentViewCompiler` now reads entity, memory, activity, event,
+social and evolution data through named repositories. Its remaining Store
+accesses are core metadata and the SQLite connection used for bounded
+projections.
+
 **Gate:** no repository commits independently; event and projection writes are
 atomic; claimed evolution tasks are recovered after restart; replay preserves
 event IDs and revisions.
