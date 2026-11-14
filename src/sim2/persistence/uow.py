@@ -9,15 +9,16 @@ class EventRepository:
 
     def __init__(self, store: Any) -> None:
         self.store = store
+        self.repository = store.repositories.events
 
     def append(self, event_type: str, actor_id: str | None, minute: int, payload: dict[str, Any]) -> int:
-        return self.store.append_event(event_type, actor_id, minute, payload)
+        return self.repository.append_event(event_type, actor_id, minute, payload)
 
     def recent(self, *, limit: int = 20) -> list[dict[str, Any]]:
-        return self.store.recent_events(limit=limit)
+        return self.repository.recent_events(limit=limit)
 
     def by_ids(self, event_ids: list[int]) -> list[dict[str, Any]]:
-        return self.store.events_by_ids(event_ids)
+        return self.repository.events_by_ids(event_ids)
 
 
 class EvolutionRepository:
@@ -25,6 +26,7 @@ class EvolutionRepository:
 
     def __init__(self, store: Any) -> None:
         self.store = store
+        self.repository = store.repositories.evolution
 
     def put_task(
         self,
@@ -38,7 +40,7 @@ class EvolutionRepository:
         status: str = "scheduled",
         data: dict[str, Any] | None = None,
     ) -> None:
-        self.store.put_evolution_task(
+        self.repository.put_evolution_task(
             task_id,
             role,
             actor_id,
@@ -50,25 +52,25 @@ class EvolutionRepository:
         )
 
     def due_tasks(self, world_minute: int) -> list[dict[str, Any]]:
-        return self.store.due_evolution_tasks(world_minute)
+        return self.repository.due_evolution_tasks(world_minute)
 
     def ready_tasks(self) -> list[dict[str, Any]]:
-        return self.store.ready_evolution_tasks()
+        return self.repository.ready_evolution_tasks()
 
     def mark_ready(self, task_id: str) -> None:
-        self.store.mark_evolution_task_ready(task_id)
+        self.repository.mark_evolution_task_ready(task_id)
 
     def claim(self, task_id: str, world_minute: int) -> dict[str, Any] | None:
-        return self.store.claim_evolution_task(task_id, world_minute)
+        return self.repository.claim_evolution_task(task_id, world_minute)
 
     def recover_claimed(self, world_minute: int) -> list[str]:
-        return self.store.recover_claimed_evolution_tasks(world_minute)
+        return self.repository.recover_claimed_evolution_tasks(world_minute)
 
     def reschedule(self, task_id: str, due_minute: int, data: dict[str, Any] | None = None) -> None:
-        self.store.reschedule_evolution_task(task_id, due_minute, data)
+        self.repository.reschedule_evolution_task(task_id, due_minute, data)
 
     def complete(self, task_id: str, completed_minute: int) -> None:
-        self.store.complete_evolution_task(task_id, completed_minute)
+        self.repository.complete_evolution_task(task_id, completed_minute)
 
 
 class UnitOfWork:

@@ -97,6 +97,12 @@ wake can be traced to a committed event.
 - Delete the façade only after `rg "\.store\.[A-Za-z_]" src/sim2` shows no
   unclassified access.
 
+**Current state:** `WorldStore.repositories` now exposes one named repository
+per persistence domain, and UnitOfWork event/evolution operations use those
+typed objects directly. The old dynamic lookup is still present for the
+remaining runtime readers; the next increments migrate read-heavy projections
+and repository-internal cross-calls before deleting that lookup.
+
 **Gate:** no repository commits independently; event and projection writes are
 atomic; claimed evolution tasks are recovered after restart; replay preserves
 event IDs and revisions.

@@ -6,6 +6,7 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Iterator
 
 SCHEMA = """
@@ -294,15 +295,19 @@ class WorldStore:
         from .repositories.events import EventsRepository
         from .repositories.evolution import EvolutionRepository
         from .repositories.llm import LlmRepository
-        self._repositories = [
-            EntitiesRepository(self),
-            MemoryRepository(self),
-            ActivityRepository(self),
-            SocialRepository(self),
-            EventsRepository(self),
-            EvolutionRepository(self),
-            LlmRepository(self),
-        ]
+        self.repositories = SimpleNamespace(
+            entities=EntitiesRepository(self),
+            memory=MemoryRepository(self),
+            activity=ActivityRepository(self),
+            social=SocialRepository(self),
+            events=EventsRepository(self),
+            evolution=EvolutionRepository(self),
+            llm=LlmRepository(self),
+        )
+        # Temporary migration surface for callers that have not moved to the
+        # named repository yet. New runtime code must use
+        # ``store.repositories.<domain>`` or UnitOfWork.
+        self._repositories = list(vars(self.repositories).values())
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

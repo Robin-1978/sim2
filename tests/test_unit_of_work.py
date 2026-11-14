@@ -14,6 +14,8 @@ WORLD = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
 def test_event_and_evolution_repositories_share_platform_transaction(tmp_path: Path) -> None:
     platform = Platform(create_instance(WORLD, "uow-boundary", tmp_path / "runtime"))
     try:
+        assert platform.uow.events.repository is platform.store.repositories.events
+        assert platform.uow.evolution.repository is platform.store.repositories.evolution
         with platform.uow.transaction() as uow:
             event_id = uow.events.append("test.committed", "luo_shan", 0, {"value": 1})
             uow.evolution.put_task(
