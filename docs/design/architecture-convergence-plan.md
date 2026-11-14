@@ -191,10 +191,10 @@ another service's private method.
 
 **Status:** the first persistence boundary is in place: `UnitOfWork` owns the
 SQLite transaction and exposes typed `EventRepository` and
-`EvolutionRepository` entry points. `WakeService` now writes evolution tasks
-through this boundary, and rollback coverage is present. The remaining
-repositories must be migrated one domain at a time before the broad Store
-facade is removed.
+`EvolutionRepository` entry points. All Platform event writes and evolution
+task operations now use these repositories, and rollback coverage is present.
+The remaining repositories must be migrated one domain at a time before the
+broad Store facade is removed.
 
 Replace the broad `WorldStore` API with repositories behind one Unit of Work:
 

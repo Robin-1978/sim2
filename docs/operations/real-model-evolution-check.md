@@ -59,3 +59,24 @@ Story receives the actual outcome event. The JSON records new entities,
 registered definitions, NPC choices, Story beats, resource quantities and
 the retained story state. The SQLite file and `evolution-audit.jsonl` stay
 under the supplied runtime directory.
+
+## Recent architecture-convergence verification
+
+On 2026-11-14, after the Platform service and Unit-of-Work refactor:
+
+- `remote_beam` was tested from an interactive shell. The provider returned
+  `finish_reason=length` with no tool call at both 1024 and 2048 completion
+  tokens, so that run is recorded as a provider/model transport failure rather
+  than a world-quality pass.
+- `remote` (`deepseek-v4.1-flash`) completed a 10-round Aster Relay run with
+  no LLM errors or rejected turns. God created a conserved supply Action and
+  bound BT, the assigned NPC received the new behavior as actor work and
+  executed it, the public reserve changed from 0 to 1, Story received the
+  supply event, and later rounds created new research objects. Near-duplicate
+  research proposals and duplicate Story continuations returned `wait`.
+- The deterministic one-week smoke run reached minute 10080 with 1,608
+  provider calls, 1,541 decisions, 72 reflections, 5 God sessions, 4 Story
+  sessions, 0 LLM errors, and 0 rejected turns. It also reported
+  `vital_depleted:fei_lan`; this is a content/balance signal from the
+  deterministic provider and remains a separate world-tuning item, not a
+  convergence pass criterion.
