@@ -15,6 +15,7 @@ from sim2.actions.effects import EffectPipeline
 from sim2.llm.adapters import BeamAdapter, IcemanAdapter, LongCatAdapter, resolve_adapter
 from sim2.llm.gateway import _json_from_text
 from sim2.agents.session import model_tool_result
+from sim2.agents.protocol import normalize_provider_intent
 
 
 class WaitProvider:
@@ -114,7 +115,7 @@ def test_compatible_tool_use_envelopes_are_normalized():
 
 
 def test_provider_intent_wrapper_uses_visible_behavior_choice():
-    normalized = AgentEngine._normalize_provider_intent(
+    normalized = normalize_provider_intent(
         "agent_decision",
         {
             "choice": "request_behavior",
@@ -125,7 +126,7 @@ def test_provider_intent_wrapper_uses_visible_behavior_choice():
     assert normalized["choice"] == "Explore Greywood"
     assert normalized["target"] == {"name": "Greywood edge"}
 
-    detailed = AgentEngine._normalize_provider_intent(
+    detailed = normalize_provider_intent(
         "agent_decision",
         {
             "choice": "request_behavior",
@@ -137,7 +138,7 @@ def test_provider_intent_wrapper_uses_visible_behavior_choice():
     assert detailed["choice"] == "Manage Ration"
     assert detailed["target"] == {"name": "粮仓"}
 
-    nested = AgentEngine._normalize_provider_intent(
+    nested = normalize_provider_intent(
         "agent_decision",
         {
             "choice": "request_behavior",
@@ -163,7 +164,7 @@ def test_longcat_bare_function_object_is_unwrapped_at_adapter_boundary():
 
 
 def test_provider_target_alias_is_mapped_to_visible_name():
-    normalized = AgentEngine._normalize_provider_intent(
+    normalized = normalize_provider_intent(
         "agent_decision",
         {"choice": "Exchange information with another character.", "target": {"Participant": "余歌"}},
     )
@@ -582,7 +583,7 @@ def test_god_cannot_acknowledge_an_already_recorded_event_as_new_world_change(tm
     platform = Platform(create_instance(_config(), "god-event-guard", tmp_path / "runtime"))
     try:
         engine = AgentEngine(platform, WaitProvider())
-        result = engine._submit_response(
+        result = engine.intent_gateway.submit(
             "god",
             "god",
             {"change_type": "event", "summary": "Repeat the recorded event", "effects": [], "expected_effects": []},
@@ -632,7 +633,7 @@ def test_decision_wait_alias_is_a_valid_terminal_intent(tmp_path: Path):
     platform = Platform(create_instance(_config(), "decision-wait-alias", tmp_path / "runtime"))
     try:
         engine = AgentEngine(platform, WaitProvider())
-        result = engine._submit_response(
+        result = engine.intent_gateway.submit(
             "god", "god", {"decision": "wait", "reason": "No new typed change is supported."},
             context={}, task_type="event:security.marks_classified",
         )

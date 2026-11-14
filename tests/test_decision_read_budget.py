@@ -62,7 +62,7 @@ def test_reason_only_no_behavior_response_closes_as_wait(tmp_path: Path) -> None
     platform = Platform(create_instance(world, "reason-only-wait", tmp_path / "runtime"))
     try:
         engine = AgentEngine(platform, ReasonOnlyWaitProvider())
-        result = engine._submit_response(
+        result = engine.intent_gateway.submit(
             "agent_decision",
             "luo_shan",
             {"reason": "No executable behaviors are available; wait for the world to change."},

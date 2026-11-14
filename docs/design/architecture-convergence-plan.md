@@ -107,6 +107,9 @@ or world configuration.
   session engine schedules and executes it without owning role semantics.
 - The bounded model-facing tool-result projection now lives in `agents/session.py`;
   AgentEngine retains only scheduling, protocol calls and private provenance.
+- Final Intent normalization, role permissions and Platform submission now live
+  in `agents/intent_gateway.py`; AgentEngine no longer owns the mutation
+  dispatch table.
 
 ### Review conclusion
 
