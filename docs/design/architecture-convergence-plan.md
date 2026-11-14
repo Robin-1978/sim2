@@ -162,6 +162,11 @@ the model-facing schema and Platform.
 - Record input source, response summary, tool arguments, accepted/rejected
   intent, latency, token usage and resulting event IDs without secrets.
 
+**Progress:** LLM audit persistence now lives in `agents/audit.py`; AgentEngine
+keeps the bounded ReAct orchestration and calls the audit owner. Provider
+normalization and protocol-specific response helpers remain in Engine and are
+the next extraction target. Agent-focused regression tests pass.
+
 **Gate:** prompt history has a stable prefix, bounded suffix and explicit
   truncation reason; a provider failure resumes or waits according to policy;
   no reflection or Story/God output is silently rewritten into a different

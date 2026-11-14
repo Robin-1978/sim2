@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import inspect
 import json
 from typing import Any
@@ -14,6 +13,7 @@ from .runtime_policy import (
     ROLE_INTENTS, ROLE_NAMES, configured_evolution_group, configured_evolution_trigger,
     configured_role_tools, role_policy,
 )
+from .audit import AgentAudit
 from .session import AgentTurn
 from .tools import AgentToolExecutor, TOOL_DEFINITIONS, parse_tool_call, tool_schemas_for_role
 
@@ -42,6 +42,7 @@ class AgentEngine:
         # cache and repeats BGE inference for identical goal/location views.
         self.view = platform.view
         self._last_usage: dict[str, Any] = {}
+        self.audit = AgentAudit(platform)
 
     def _complete(
         self,
@@ -274,7 +275,7 @@ class AgentEngine:
                 context["last_platform_result"] = last_result
                 transcript.append({"step": "llm_error", "error": str(exc)})
                 context.setdefault("interaction_history", []).append({"kind": "llm_error", "error": str(exc)})
-                self._audit(actor_id, role, task_type, iteration, prompt, {"error": str(exc)}, "llm_error", usage=self._last_usage)
+                self.audit.record(actor_id, role, task_type, iteration, prompt, {"error": str(exc)}, "llm_error", usage=self._last_usage)
                 # A provider/configuration failure is outside the model's
                 # ReAct loop. Retrying it immediately six times creates an
                 # error storm; the scheduler will retry after backoff.
@@ -283,7 +284,7 @@ class AgentEngine:
             readable_response = self._readable_model_response(response)
             last_response = readable_response
             transcript.append({"step": "llm", "response": readable_response})
-            self._audit(actor_id, role, task_type, iteration, prompt, readable_response, "response", usage=self._last_usage)
+            self.audit.record(actor_id, role, task_type, iteration, prompt, readable_response, "response", usage=self._last_usage)
 
             try:
                 call = parse_tool_call(response)
@@ -1023,45 +1024,3 @@ class AgentEngine:
             if len(matches) == 1:
                 resolved.append(matches[0])
         return resolved
-
-    def _audit(
-        self,
-        actor_id: str,
-        role: str,
-        task_type: str,
-        iteration: int,
-        context: str,
-        response: dict[str, Any],
-        status: str,
-        usage: dict[str, Any] | None = None,
-    ) -> None:
-        """Persist a redacted-size response and a context digest for replay."""
-
-        try:
-            digest = hashlib.sha256(context.encode("utf-8")).hexdigest()
-            # Keep audit rows bounded even when a provider accidentally emits a
-            # very large object.  The full model context is reconstructed from
-            # the instance and the digest still detects replay drift.
-            encoded = json.dumps(response, ensure_ascii=False)
-            if len(encoded) > 16_000:
-                response = {"truncated": True, "sha256": hashlib.sha256(encoded.encode("utf-8")).hexdigest()}
-            static_prefix = context.split("<world_state>", 1)[0]
-            dynamic_text = context[len(static_prefix):]
-            prefix_hash = hashlib.sha256(static_prefix.encode("utf-8")).hexdigest()
-            self.platform.store.repositories.llm.append_llm_call(
-                actor_id,
-                role,
-                task_type,
-                iteration,
-                digest,
-                response,
-                status,
-                usage=usage or {},
-                static_prefix_hash=prefix_hash,
-                static_prefix_chars=len(static_prefix),
-                dynamic_chars=len(dynamic_text),
-                request_latency_ms=usage.get("request_latency_ms") if isinstance(usage, dict) else None,
-            )
-        except Exception:
-            # Observability must never turn a valid Intent into a failed turn.
-            return
