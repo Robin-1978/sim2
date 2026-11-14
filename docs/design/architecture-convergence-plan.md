@@ -140,7 +140,12 @@ JSON Schema for `propose_definition`; the God tool registry imports it instead
 of carrying a second hand-written copy. Fresh schema instances and the
 God-created Action+BT path are covered by tests. Semantic normalization and
 Platform validation still need to consume this same module before this
-package is complete.
+package is complete. The structural compiler is now
+`world/definition_compiler.py`; it owns definition kinds, declarative field
+checks, Action result/effect contracts, BT outcome-event shape, Recipe and
+Capability shape, and model shorthand normalization. Platform retains only
+instance-dependent reference, reachability, conservation and duplicate
+checks. This compiler boundary is committed as `82d4954`.
 
 **Gate:** a world with unrelated names, attributes, objects and entities boots
 without Python changes; the same invalid proposal is rejected consistently by
@@ -164,8 +169,11 @@ the model-facing schema and Platform.
 
 **Progress:** LLM audit persistence now lives in `agents/audit.py`; AgentEngine
 keeps the bounded ReAct orchestration and calls the audit owner. Provider
-normalization and protocol-specific response helpers remain in Engine and are
-the next extraction target. Agent-focused regression tests pass.
+normalization and protocol-specific response helpers now live in
+`agents/protocol.py`; bounded native-message trimming lives in
+`agents/session.py`. Engine retains thin proxies for the existing test/API
+surface. Provider usage is extracted without mutating the wire response, and
+the extraction is committed as `ce605a5`.
 
 **Gate:** prompt history has a stable prefix, bounded suffix and explicit
   truncation reason; a provider failure resumes or waits according to policy;
@@ -701,7 +709,7 @@ close the architecture work. The next work is deliberately limited to the
 four items below. They are ordered by dependency; do not start a later item
 by adding a compatibility shim for an earlier failure.
 
-### 1. Finish the canonical definition compiler
+### 1. Finish the canonical definition compiler — complete
 
 **Files:** `src/sim2/world/definition_schema.py`,
 `src/sim2/platform/definition_runtime.py`,
@@ -719,11 +727,15 @@ an invalid definition is rejected identically at schema and Platform
 boundaries; a God-created Action is immediately selectable through its bound
 generic BT; no standalone Action remains executable.
 
+**Status:** structural compiler and regression tests passed. The remaining
+semantic checks are intentionally instance-owned and are covered by the
+existing action-binding and vertical-slice suites.
+
 **Stop condition:** any fix that adds a world-name, visible-name, or legacy
 schema branch stops this item and is replaced by a compiler or configuration
 fix.
 
-### 2. Finish AgentEngine protocol boundaries
+### 2. Finish AgentEngine protocol boundaries — complete
 
 **Files:** `src/sim2/agents/engine.py`, `src/sim2/agents/session.py`,
 `src/sim2/agents/protocol.py`, `src/sim2/agents/tool_executor.py`,
@@ -735,6 +747,10 @@ the persisted call identity; the model may only supply function name and
 arguments. Keep a bounded stable prefix and a bounded suffix, and record the
 truncation reason, prompt size, completion size, cache usage, latency and
 accepted event IDs.
+
+**Status:** provider protocol extraction and focused regression tests passed;
+the remaining work in this stage is operational observation during the final
+real-provider gate.
 
 **Required checks:** provider errors become explicit failed turns; a tool
 schema error is not rewritten into `wait`; reflection, Story and God outputs
