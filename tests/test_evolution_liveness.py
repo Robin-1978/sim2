@@ -1163,7 +1163,9 @@ def test_research_submission_note_follows_the_wake_evidence_not_its_wording(tmp_
             "required_result": "Create one new research source for the researchers.",
             "evidence_sources": [{"event_types": ["research.completed"]}],
         }
-        assert "For this research continuation" in render_context(view, "Review the evidence.")
+        rendered = render_context(view, "Review the evidence.")
+        assert "For this research continuation" in rendered
+        assert "distinct causal dimension" in rendered
 
         # The same wording on a wake with other evidence lists the source as one lever among several.
         view["evolution_trigger"]["evidence_sources"] = [{"event_types": ["world.stagnation"]}]

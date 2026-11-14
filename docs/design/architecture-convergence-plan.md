@@ -792,6 +792,14 @@ definition projections reduced the same 120-minute cProfile sample from
 invalidated by committed world revisions, so dynamic God definitions remain
 visible without a world-specific branch.
 
+**Research liveness evidence:** one real DeepSeek run reached a genuine
+absorbing state after God rejected a near-duplicate question and the NPC had
+only the same archive inspection left. The generic research-trigger prompt
+now tells God to shift to a distinct causal dimension when a source is
+exhausted, while retaining the platform duplicate guard. The next 10-round
+run created provenance, calibration and sign-off sources and passed with no
+absorbing-state flag.
+
 ### 4. Run the final model-backed acceptance gate
 
 Use an interactive shell for every provider run:

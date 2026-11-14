@@ -250,3 +250,31 @@ probe now correctly stops and exits nonzero with:
 The audit change is deliberate: any provider/Agent rejection or incomplete
 requested round count blocks a quality pass. Provider failures are not
 absorbing-world evidence and are not hidden by the structural-progress check.
+
+### Research liveness failure and prompt-level fix
+
+One DeepSeek run after the audit safeguard still failed the world-quality
+gate, with `absorbing_state:three_rounds_without_structural_or_story_progress`.
+Rounds 8–10 showed God waiting because the only proposed question repeated
+the existing `relay_checksum_ion_storm` novelty key, while Mira repeatedly
+selected `Inspect Archive` and no new event was produced. This was a real
+evolution stop, not a transport problem.
+
+The fix is in the generic God protocol and research-trigger projection. When
+all current sources are exhausted, the prompt now directs God to derive a
+distinct causal dimension from the verified result (effect, risk,
+intervention, provenance, or application), assign a new novelty key, and
+require a different fact or decision. It still rejects renamed copies and
+near-duplicate sources.
+
+The post-fix DeepSeek run is
+`/tmp/sim2-evolution-final-liveness-fix/evolution-audit.jsonl` and ended with:
+
+```json
+{"status":"passed","flags":[],"rounds":10,"requested_rounds":10}
+```
+
+God created new provenance, calibration and sign-off sources in later rounds;
+Mira continued using the generic research behavior, and Story connected each
+verified result to the next executable choice. No repeated three-round
+absorbing state remained.
