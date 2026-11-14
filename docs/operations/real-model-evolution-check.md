@@ -558,3 +558,15 @@ success check. The browser bundle and authoring endpoints are covered by
 `tests/test_web_client.py`, including opening an existing package, root
 confinement, compile, smoke, export and the explicit WorldBuilder rejection
 path. No server process is left running by these checks.
+
+The final Beam check is recorded separately at `/tmp/sim2-web-final-beam/`.
+With the configured role limits, both the first God call (2,048 completion
+tokens) and the NPC call (512) returned `finish_reason=length` with no content
+or tool call; the audit marked both as `llm_error` and produced no world event.
+A one-round retry with an 8,192-token override produced one malformed God
+proposal followed by a bounded `llm_response` failure, while the NPC action
+remained a valid committed result. This is correctly classified as a Beam
+provider/protocol failure, not a world-quality pass or a reason to rewrite the
+turn to `wait`. The runtime remains safe and auditable, but Beam does not meet
+the ten-round semantic gate until its output budget and native tool payloads
+are corrected upstream.
