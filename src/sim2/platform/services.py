@@ -69,19 +69,66 @@ class PlatformService:
     def __init__(self, context: PlatformContext) -> None:
         object.__setattr__(self, "_context", context)
 
-    def __getattr__(self, name: str) -> Any:
-        if name in self._context.dependencies:
-            return self._context.dependencies[name]
-        raise AttributeError(name)
+    def _dependency(self, name: str) -> Any:
+        """Read one declared dependency without arbitrary attribute lookup."""
 
-    def __setattr__(self, name: str, value: Any) -> None:
-        if name == "_context":
-            object.__setattr__(self, name, value)
-            return
-        if name in self._context._DEPENDENCY_NAMES:
-            self._context.set_dependency(name, value)
-            return
-        object.__setattr__(self, name, value)
+        return self._context.dependencies[name]
+
+    @property
+    def store(self) -> Any:
+        return self._dependency("store")
+
+    @property
+    def uow(self) -> Any:
+        return self._dependency("uow")
+
+    @property
+    def view(self) -> Any:
+        return self._dependency("view")
+
+    @property
+    def perception(self) -> Any:
+        return self._dependency("perception")
+
+    @property
+    def memory(self) -> Any:
+        return self._dependency("memory")
+
+    @property
+    def attribute_schema(self) -> Any:
+        return self._dependency("attribute_schema")
+
+    @property
+    def conditions(self) -> Any:
+        return self._dependency("conditions")
+
+    @property
+    def effects(self) -> Any:
+        return self._dependency("effects")
+
+    @property
+    def targets(self) -> Any:
+        return self._dependency("targets")
+
+    @property
+    def resources(self) -> Any:
+        return self._dependency("resources")
+
+    @property
+    def rule_compiler(self) -> Any:
+        return self._dependency("rule_compiler")
+
+    @property
+    def wakes(self) -> Any:
+        return self._dependency("wakes")
+
+    @property
+    def snapshots(self) -> Any:
+        return self._dependency("snapshots")
+
+    @property
+    def proposal_evaluator(self) -> Any:
+        return self._dependency("proposal_evaluator")
 
 
 class ActivityService(PlatformService, ActivityRuntimeMixin):

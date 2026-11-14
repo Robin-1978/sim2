@@ -917,9 +917,10 @@ class DefinitionRuntimeMixin:
             self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         if definition_type == "attribute":
             attributes = self.store.get_meta("attributes", []) or []
-            self.attribute_schema = AttributeSchema(attributes, self.store.get_meta("rules", {}) or {})
-            self.effects = EffectPipeline(attributes)
-            self.conditions = ConditionEngine(self.store.get_meta("rules", {}) or {})
-            self.rule_compiler = self._context.services["api"]._new_rule_compiler()
+            rules = self.store.get_meta("rules", {}) or {}
+            self._context.set_dependency("attribute_schema", AttributeSchema(attributes, rules))
+            self._context.set_dependency("effects", EffectPipeline(attributes))
+            self._context.set_dependency("conditions", ConditionEngine(rules))
+            self._context.set_dependency("rule_compiler", self._context.services["api"]._new_rule_compiler())
         return result
 

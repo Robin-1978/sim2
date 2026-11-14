@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from sim2.bootstrap.service import create_instance
 from sim2.platform.runtime import Platform
 
@@ -69,5 +71,18 @@ def test_new_behavior_assignment_returns_as_actor_work(tmp_path: Path) -> None:
         assert tasks
         view = platform.decision_view("mei_lan")
         assert any("Record the verified assignment result" in str(item) for item in view.get("behavior_assignments", []))
+    finally:
+        platform.close()
+
+
+def test_services_expose_only_declared_dependencies(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "explicit-service-dependencies", tmp_path / "runtime"))
+    try:
+        events = platform._services["events"]
+        assert events.store is platform.store
+        with pytest.raises(AttributeError):
+            _ = events.submit_behavior
+        with pytest.raises(AttributeError):
+            _ = events.missing_dependency
     finally:
         platform.close()

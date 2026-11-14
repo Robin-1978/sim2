@@ -162,8 +162,8 @@ class WorldChangesRuntimeMixin:
                 world_rules.append(dict(proposal["rule"]))
                 rules["world_rules"] = world_rules
                 self.store.set_meta("rules", rules)
-                self.conditions = ConditionEngine(rules)
-                self.rule_compiler = self._context.services["api"]._new_rule_compiler()
+                self._context.set_dependency("conditions", ConditionEngine(rules))
+                self._context.set_dependency("rule_compiler", self._context.services["api"]._new_rule_compiler())
                 effect = {"rule_added": dict(proposal["rule"]), "rule_count": len(world_rules)}
             elif change_type == "relationship":
                 relation = dict(proposal["relationship"])
