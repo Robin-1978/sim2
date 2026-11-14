@@ -48,7 +48,7 @@ def test_god_can_create_an_executable_character_from_configured_defaults(tmp_pat
         })
 
         assert result["status"] == "accepted", result
-        character = platform.store.get_agent(result["entity_id"])
+        character = platform.store.repositories.entities.get_agent(result["entity_id"])
         assert character["name"] == "岑舟"
         assert character["initial_bt_ids"] == ["inspect_cistern"]
         assert character["initial_state"]["location_id"] == "lantern_square"

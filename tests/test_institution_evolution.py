@@ -78,7 +78,7 @@ def test_god_behavior_parameters_use_canonical_entity_ids(tmp_path: Path):
             },
         })
         assert result["status"] == "accepted"
-        definition = next(item for item in platform.store.get_definitions("bt_def") if item["agent_label"] == "Inspect Visible Cistern")
+        definition = next(item for item in platform.store.repositories.entities.get_definitions("bt_def") if item["agent_label"] == "Inspect Visible Cistern")
         assert definition["nodes"][0]["parameters"]["location_id"] == "cistern_house"
         assert definition["nodes"][1]["parameters"]["object_id"] == "cistern_water"
         assert any(item["choice"] == "Inspect Visible Cistern" for item in platform.decision_view("mei_lan")["executable_behaviors"])
@@ -101,7 +101,7 @@ def test_god_behavior_rejects_unknown_entity_parameter_before_registration(tmp_p
             })
         assert result["status"] == "rejected"
         assert any("exact visible entity name" in error for error in result["errors"])
-        assert not any(item.get("agent_label") == "Invalid Pool Settlement" for item in platform.store.get_definitions("bt_def"))
+        assert not any(item.get("agent_label") == "Invalid Pool Settlement" for item in platform.store.repositories.entities.get_definitions("bt_def"))
     finally:
         platform.close()
 
@@ -109,17 +109,17 @@ def test_god_behavior_rejects_unknown_entity_parameter_before_registration(tmp_p
 def test_story_receives_only_configured_direct_events(tmp_path: Path):
     platform = _town(tmp_path, "story-direct-allowlist")
     try:
-        ledger_id = platform.store.append_event("institution.ledger_entry", "mei_lan", 1, {"amount": 1})
+        ledger_id = platform.store.repositories.events.append_event("institution.ledger_entry", "mei_lan", 1, {"amount": 1})
         assert platform.wakes.queue(
             "story", ledger_id, "institution.ledger_entry", "mei_lan", 1,
         ) is None
         # Routine allocation completions are manual-only for Story: the
         # automatic fan-out must not wake it one completion at a time.
-        allocation_id = platform.store.append_event("institution.allocation_completed", "mei_lan", 2, {"amount": 1})
+        allocation_id = platform.store.repositories.events.append_event("institution.allocation_completed", "mei_lan", 2, {"amount": 1})
         assert platform.wakes.queue(
             "story", allocation_id, "institution.allocation_completed", "mei_lan", 2,
         ) is None
-        activated_id = platform.store.append_event("institution.activated", "god", 3, {"name": "Public Ledger"})
+        activated_id = platform.store.repositories.events.append_event("institution.activated", "god", 3, {"name": "Public Ledger"})
         task_id = platform.wakes.queue(
             "story", activated_id, "institution.activated", "god", 3,
         )
@@ -136,7 +136,7 @@ def test_failed_allocation_effect_fails_the_behavior_instead_of_reporting_succes
     try:
         with platform.store.transaction():
             for minute in (1, 2, 3):
-                event_id = platform.store.append_event(
+                event_id = platform.store.repositories.events.append_event(
                     "cistern.reviewed", "mei_lan", minute,
                     {"behavior_id": "inspect_cistern"},
                 )
@@ -161,17 +161,17 @@ def test_failed_allocation_effect_fails_the_behavior_instead_of_reporting_succes
             },
         })
         assert created["status"] == "accepted"
-        empty_pool = platform.store.get_entity("cistern_water")
+        empty_pool = platform.store.repositories.entities.get_entity("cistern_water")
         empty_pool["initial_state"]["quantity"] = 0
-        platform.store.put_entity("cistern_water", "resource", empty_pool["name"], {key: value for key, value in empty_pool.items() if key not in {"id", "entity_type", "name"}})
-        behavior = next(item for item in platform.store.get_definitions("bt_def") if item.get("agent_label") == "Try Broken Allocation")
+        platform.store.repositories.entities.put_entity("cistern_water", "resource", empty_pool["name"], {key: value for key, value in empty_pool.items() if key not in {"id", "entity_type", "name"}})
+        behavior = next(item for item in platform.store.repositories.entities.get_definitions("bt_def") if item.get("agent_label") == "Try Broken Allocation")
         started = platform.submit_behavior(BehaviorIntent(
             "mei_lan", f"behavior:{behavior['id']}", {}, {}, "Exercise a failing settlement effect.", 0.8, "broken-allocation",
         ))
         assert started["status"] == "accepted"
         step_n(platform, int(started["remaining_minutes"]) + 1)
-        assert any(item["event_type"] == "behavior.failed" for item in platform.store.recent_events(limit=20))
-        assert not any(item["event_type"] == "behavior.completed" for item in platform.store.recent_events(limit=5))
+        assert any(item["event_type"] == "behavior.failed" for item in platform.store.repositories.events.recent_events(limit=20))
+        assert not any(item["event_type"] == "behavior.completed" for item in platform.store.repositories.events.recent_events(limit=5))
     finally:
         platform.close()
 
@@ -182,7 +182,7 @@ def test_active_institution_accounts_for_configured_behavior_result_events(tmp_p
     platform = _town(tmp_path, "allocation-result-ledger")
     try:
         with platform.store.transaction():
-            evidence_id = platform.store.append_event(
+            evidence_id = platform.store.repositories.events.append_event(
                 "cistern.reviewed", "mei_lan", 1,
                 {"behavior_id": "inspect_cistern", "summary": "Initial verified review."},
             )
@@ -203,13 +203,13 @@ def test_active_institution_accounts_for_configured_behavior_result_events(tmp_p
         ))
         assert started["status"] == "accepted", started
         step_n(platform, int(started["remaining_minutes"]) + 1)
-        institution = platform.store.list_institutions(status="active", limit=1)[0]
-        totals = platform.store.institution_ledger_totals(str(institution["institution_id"]))
+        institution = platform.store.repositories.social.list_institutions(status="active", limit=1)[0]
+        totals = platform.store.repositories.social.institution_ledger_totals(str(institution["institution_id"]))
         assert totals and sum(float(item["total"]) for item in totals) >= 1
         assert any(
             item["event_type"] == "institution.ledger_entry"
             and int(item.get("source_event_id", 0) or 0) != evidence_id
-            for item in platform.store.recent_events(limit=100)
+            for item in platform.store.repositories.events.recent_events(limit=100)
         )
     finally:
         platform.close()
@@ -219,7 +219,7 @@ def test_resource_property_projection_follows_configured_alias(tmp_path: Path):
     platform = _town(tmp_path, "resource-property-projection")
     try:
         with platform.store.transaction():
-            result = platform.store.sync_world_property_from_resource("cistern_water", 17)
+            result = platform.store.repositories.entities.sync_world_property_from_resource("cistern_water", 17)
         assert result == {"world_property": "cistern_reserve", "before": 48, "after": 17}
         assert platform.store.get_meta("world_properties")["cistern_reserve"] == 17
     finally:
@@ -229,15 +229,15 @@ def test_resource_property_projection_follows_configured_alias(tmp_path: Path):
 def test_configured_cistern_regeneration_updates_resource_and_world_view(tmp_path: Path):
     platform = _town(tmp_path, "resource-regeneration-projection")
     try:
-        resource = platform.store.get_entity("cistern_water")
+        resource = platform.store.repositories.entities.get_entity("cistern_water")
         resource["initial_state"]["quantity"] = 20
-        platform.store.put_entity("cistern_water", "resource", resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
+        platform.store.repositories.entities.put_entity("cistern_water", "resource", resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
         properties = dict(platform.store.get_meta("world_properties") or {})
         properties["cistern_reserve"] = 20
         platform.store.set_meta("world_properties", properties)
         platform.store.connection.commit()
         step_n(platform, 1440)
-        assert platform.store.get_entity("cistern_water")["initial_state"]["quantity"] == 32.0
+        assert platform.store.repositories.entities.get_entity("cistern_water")["initial_state"]["quantity"] == 32.0
         assert platform.store.get_meta("world_properties")["cistern_reserve"] == 32.0
     finally:
         platform.close()
@@ -246,10 +246,10 @@ def test_configured_cistern_regeneration_updates_resource_and_world_view(tmp_pat
 def test_allocated_water_is_personal_inventory_and_drink_behavior_consumes_it(tmp_path: Path):
     platform = _town(tmp_path, "drink-water-loop")
     try:
-        agent = platform.store.get_agent("mei_lan")
+        agent = platform.store.repositories.entities.get_agent("mei_lan")
         agent["inventory"]["蓄水"] = 1
         agent["needs"]["hydration"] = 30
-        platform.store.update_agent("mei_lan", agent)
+        platform.store.repositories.entities.update_agent("mei_lan", agent)
         platform.store.connection.commit()
         view = platform.decision_view("mei_lan")
         assert any(item["choice"] == "Drink Water" for item in view["executable_behaviors"])
@@ -258,14 +258,14 @@ def test_allocated_water_is_personal_inventory_and_drink_behavior_consumes_it(tm
         ))
         assert started["status"] == "accepted", started
         step_n(platform, int(started["remaining_minutes"]) + 1)
-        after = platform.store.get_agent("mei_lan")
+        after = platform.store.repositories.entities.get_agent("mei_lan")
         assert after["inventory"].get("蓄水", 0) == 0
         assert after["needs"]["hydration"] > 30
         assert any(
             item["event_type"] == "behavior.completed"
             and item.get("behavior_id") == "drink_water"
             and item.get("result") == "drank_water"
-            for item in platform.store.recent_events(limit=30)
+            for item in platform.store.repositories.events.recent_events(limit=30)
         )
     finally:
         platform.close()
@@ -275,11 +275,11 @@ def test_institution_evidence_selectors_support_behavior_only_and_deduplicate(tm
     platform = _town(tmp_path, "institution-evidence-selectors")
     try:
         with platform.store.transaction():
-            first = platform.store.append_event("behavior.completed", "mei_lan", 1, {"behavior_id": "inspect_cistern"})
-            second = platform.store.append_event("behavior.completed", "mei_lan", 2, {"behavior_id": "inspect_cistern"})
-            platform.store.append_event("behavior.completed", "mei_lan", 3, {"behavior_id": "other_behavior"})
-            platform.store.append_event("behavior.completed", "mei_lan", 4, {"behavior_id": "inspect_cistern"})
-            platform.store.append_event("behavior.completed", "mei_lan", 5, {"malformed": True})
+            first = platform.store.repositories.events.append_event("behavior.completed", "mei_lan", 1, {"behavior_id": "inspect_cistern"})
+            second = platform.store.repositories.events.append_event("behavior.completed", "mei_lan", 2, {"behavior_id": "inspect_cistern"})
+            platform.store.repositories.events.append_event("behavior.completed", "mei_lan", 3, {"behavior_id": "other_behavior"})
+            platform.store.repositories.events.append_event("behavior.completed", "mei_lan", 4, {"behavior_id": "inspect_cistern"})
+            platform.store.repositories.events.append_event("behavior.completed", "mei_lan", 5, {"malformed": True})
         result = platform.submit_institution_proposal("god", {
             "name": "Verified Work Register",
             "purpose": "Count verified public work before a later allocation decision.",
@@ -290,7 +290,7 @@ def test_institution_evidence_selectors_support_behavior_only_and_deduplicate(tm
             "minimum_evidence": 3,
         })
         assert result["status"] == "accepted"
-        institution = platform.store.list_institutions(limit=1)[0]
+        institution = platform.store.repositories.social.list_institutions(limit=1)[0]
         assert institution["evidence_count_at_creation"] == 3
     finally:
         platform.close()
@@ -302,7 +302,7 @@ def test_story_npc_evidence_and_god_institution_chain_uses_llm_tools(tmp_path: P
     platform = _town(tmp_path, "institution-llm-chain")
     try:
         with platform.store.transaction():
-            source_event_id = platform.store.append_event(
+            source_event_id = platform.store.repositories.events.append_event(
                 "cistern.reviewed",
                 "mei_lan",
                 1,
@@ -337,11 +337,11 @@ def test_story_npc_evidence_and_god_institution_chain_uses_llm_tools(tmp_path: P
             role="agent_decision", actor_id="mei_lan", task_type="agent_plan_selection",
         )
         assert npc_turn.result["status"] == "accepted"
-        started = platform.store.get_agent("mei_lan")["initial_state"].get("active_bt_instance")
+        started = platform.store.repositories.entities.get_agent("mei_lan")["initial_state"].get("active_bt_instance")
         assert started
 
         # The behavior itself is the NPC evidence; no NPC institution write is needed.
-        execution = platform.store.get_agent("mei_lan")["initial_state"].get("remaining_minutes", 0)
+        execution = platform.store.repositories.entities.get_agent("mei_lan")["initial_state"].get("remaining_minutes", 0)
         for _ in range(int(execution) + 1):
             platform.step()
         props = dict(platform.store.get_meta("world_properties", {}) or {})
@@ -381,7 +381,7 @@ def test_story_npc_evidence_and_god_institution_chain_uses_llm_tools(tmp_path: P
             role="god", actor_id="god", task_type="event_group:institution_proposal_review",
         )
         assert approve_turn.result["status"] == "accepted"
-        active = platform.store.list_institutions(status="active")
+        active = platform.store.repositories.social.list_institutions(status="active")
         assert [item["name"] for item in active] == ["Public Ration Ledger"]
         assert any(item["role"] == "story" and item["task_type"] == "event:institution.activated" for item in platform.ready_evolution_tasks())
         assert any(item["role"] == "god" and item["task_type"] == "event_group:institution_activation_followup" for item in platform.ready_evolution_tasks())
@@ -389,11 +389,11 @@ def test_story_npc_evidence_and_god_institution_chain_uses_llm_tools(tmp_path: P
         assert "<social_institutions>" in god_provider.calls[-1]["context"]
         assert "Public Ration Ledger" in god_provider.calls[-1]["context"]
 
-        event_id = platform.store.append_event(
+        event_id = platform.store.repositories.events.append_event(
             "behavior.completed", "mei_lan", 40, {"behavior_id": "inspect_cistern", "result": "record_inspected"}
         )
         platform._record_active_institution_entries(event_id, "behavior.completed", "mei_lan", 40, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
-        ledger = platform.store.institution_ledger_totals(active[0]["institution_id"])
+        ledger = platform.store.repositories.social.institution_ledger_totals(active[0]["institution_id"])
         assert ledger and ledger[0]["subject_id"] == "mei_lan"
         allocation = platform.calculate_institution_allocation("Public Ration Ledger", ["mei_lan", "luo_shan"], 10, "week:0")
         assert allocation["status"] == "accepted"
@@ -408,7 +408,7 @@ def test_god_and_story_continue_after_institution_activation(tmp_path: Path):
         source_ids = []
         with platform.store.transaction():
             for minute in (1, 2, 3):
-                source_ids.append(platform.store.append_event(
+                source_ids.append(platform.store.repositories.events.append_event(
                     "behavior.completed", "mei_lan", minute,
                     {"behavior_id": "inspect_cistern", "result": "record_inspected"},
                 ))
@@ -423,7 +423,7 @@ def test_god_and_story_continue_after_institution_activation(tmp_path: Path):
         })
         assert proposal["status"] == "accepted"
         assert platform.activate_institution("god", "Public Ration Ledger", "The evidence threshold was reached.")["status"] == "accepted"
-        active = platform.store.list_institutions(status="active")[0]
+        active = platform.store.repositories.social.list_institutions(status="active")[0]
 
         for source_id, minute in zip(source_ids, (10, 11, 12)):
             platform._record_active_institution_entries(
@@ -435,7 +435,7 @@ def test_god_and_story_continue_after_institution_activation(tmp_path: Path):
             if item["role"] == "god" and item["task_type"] == "event_group:institution_ledger_review"
         ]
         assert review_tasks
-        ledger = platform.store.institution_ledger_totals(active["institution_id"])
+        ledger = platform.store.repositories.social.institution_ledger_totals(active["institution_id"])
         assert ledger[0]["total"] == 3
 
         god_provider = SequenceProvider([{"intent": "wait", "reason": "The active ledger has been reviewed; no further structural change is justified yet."}])
@@ -456,7 +456,7 @@ def test_god_creates_new_settlement_behavior_after_ledger_review(tmp_path: Path)
     try:
         with platform.store.transaction():
             for minute in (1, 2, 3):
-                platform.store.append_event("behavior.completed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
+                platform.store.repositories.events.append_event("behavior.completed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
         assert platform.submit_institution_proposal("god", {
             "name": "Public Ration Ledger",
             "purpose": "Record verified public work before a scarce reserve is allocated.",
@@ -467,7 +467,7 @@ def test_god_creates_new_settlement_behavior_after_ledger_review(tmp_path: Path)
             "policy": {"allocation": {"minimum_per_subject": 1, "contribution_share": 0.5}},
         })["status"] == "accepted"
         assert platform.activate_institution("god", "Public Ration Ledger", "Evidence threshold reached.")["status"] == "accepted"
-        active = platform.store.list_institutions(status="active")[0]
+        active = platform.store.repositories.social.list_institutions(status="active")[0]
         for source_id, minute in zip((10, 11, 12), (10, 11, 12)):
             platform._record_active_institution_entries(source_id, "behavior.completed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
         review_task = next(item for item in platform.ready_evolution_tasks() if item["task_type"] == "event_group:institution_ledger_review")
@@ -489,9 +489,9 @@ def test_god_creates_new_settlement_behavior_after_ledger_review(tmp_path: Path)
         }}}])
         turn = AgentEngine(platform, god_provider, max_iterations=1).run(role="god", actor_id="god", task_type="event_group:institution_ledger_review", source_events=review_task.get("source_events") or [])
         assert turn.result["status"] == "accepted"
-        behavior = next(item for item in platform.store.get_definitions("bt_def") if item.get("agent_label") == "Settle Active Institution Allocation")
-        assert behavior["id"] in platform.store.get_agent("mei_lan").get("unlocked_bt_ids", [])
-        before = platform.store.get_entity("cistern_water")["initial_state"]["quantity"]
+        behavior = next(item for item in platform.store.repositories.entities.get_definitions("bt_def") if item.get("agent_label") == "Settle Active Institution Allocation")
+        assert behavior["id"] in platform.store.repositories.entities.get_agent("mei_lan").get("unlocked_bt_ids", [])
+        before = platform.store.repositories.entities.get_entity("cistern_water")["initial_state"]["quantity"]
         started = platform.submit_behavior(BehaviorIntent(
             "mei_lan", f"behavior:{behavior['id']}",
             {"institution": "Public Ration Ledger", "pool_entity": "cistern_water", "item": "water", "period": "week"},
@@ -499,9 +499,9 @@ def test_god_creates_new_settlement_behavior_after_ledger_review(tmp_path: Path)
         ))
         assert started["status"] == "accepted"
         step_n(platform, started["remaining_minutes"])
-        assert platform.store.get_entity("cistern_water")["initial_state"]["quantity"] < before
-        assert platform.store.get_agent("mei_lan")["inventory"].get("water", 0) > 0
-        assert any(item["event_type"] == "institution.allocation_completed" for item in platform.store.recent_events(limit=100))
+        assert platform.store.repositories.entities.get_entity("cistern_water")["initial_state"]["quantity"] < before
+        assert platform.store.repositories.entities.get_agent("mei_lan")["inventory"].get("water", 0) > 0
+        assert any(item["event_type"] == "institution.allocation_completed" for item in platform.store.repositories.events.recent_events(limit=100))
     finally:
         platform.close()
 
@@ -553,7 +553,7 @@ def test_research_source_can_gain_new_stages_and_supersede_old_facts(tmp_path: P
         })
         assert behavior["status"] == "accepted"
         assert any(item["role"] == "god" and item["task_type"] == "event:definition.registered" for item in platform.ready_evolution_tasks())
-        behavior_def = next(item for item in platform.store.get_definitions("bt_def") if item.get("agent_label") == "Continue Later Source Research")
+        behavior_def = next(item for item in platform.store.repositories.entities.get_definitions("bt_def") if item.get("agent_label") == "Continue Later Source Research")
 
         for stage in range(2):
             started = platform.submit_behavior(BehaviorIntent(
@@ -569,7 +569,7 @@ def test_research_source_can_gain_new_stages_and_supersede_old_facts(tmp_path: P
             assert started["status"] == "accepted"
             step_n(platform, int(started["remaining_minutes"]))
 
-        facts = {item["fact_key"]: item for item in platform.store.list_knowledge_facts("luo_shan", limit=100)}
+        facts = {item["fact_key"]: item for item in platform.store.repositories.memory.list_knowledge_facts("luo_shan", limit=100)}
         assert facts["researched:later_source:initial"]["status"] == "superseded"
         assert facts["researched:later_source:revision"]["status"] == "active"
         assert facts["researched:later_source:revision"]["supersedes"] == "researched:later_source:initial"
@@ -596,7 +596,7 @@ def test_ten_round_story_god_chain_keeps_creating_followups(tmp_path: Path):
     try:
         with platform.store.transaction():
             for minute in (1, 2, 3):
-                platform.store.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
+                platform.store.repositories.events.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
         proposal = platform.submit_institution_proposal("god", {
             "name": "Test Public Ledger",
             "purpose": "Record verified public work before a shared reserve is allocated.",
@@ -637,7 +637,7 @@ def test_ten_round_story_god_chain_keeps_creating_followups(tmp_path: Path):
             platform.store.set_meta("god:event_wake_group_state", state)
             base = 10 + cycle * 3
             for minute in (base, base + 1, base + 2):
-                event_id = platform.store.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
+                event_id = platform.store.repositories.events.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
                 platform._record_active_institution_entries(event_id, "cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
             review = next(item for item in platform.ready_evolution_tasks() if item["task_type"] == "event_group:institution_ledger_review")
             behavior_id = f"settle_public_ledger_{cycle}"
@@ -671,7 +671,7 @@ def test_ten_round_story_god_chain_keeps_creating_followups(tmp_path: Path):
             platform.complete_evolution_task(definition_task["task_id"])
             completed_turns += 1
 
-            behavior = next(item for item in platform.store.get_definitions("bt_def") if item.get("agent_label") == f"Settle Public Ledger {cycle}")
+            behavior = next(item for item in platform.store.repositories.entities.get_definitions("bt_def") if item.get("agent_label") == f"Settle Public Ledger {cycle}")
             started = platform.submit_behavior(BehaviorIntent(
                 "mei_lan", f"behavior:{behavior['id']}", {}, {}, "Execute the newly registered settlement behavior.", 0.9, f"settle-round-{cycle}",
             ))
@@ -709,8 +709,8 @@ def test_ten_round_story_god_chain_keeps_creating_followups(tmp_path: Path):
                 completed_turns += 1
 
         assert completed_turns == 36
-        assert len([item for item in platform.store.recent_events(limit=500) if item["event_type"] == "institution.allocation_completed"]) >= rounds
-        assert len([item for item in platform.store.list_institutions(status="active")]) == 1
+        assert len([item for item in platform.store.repositories.events.recent_events(limit=500) if item["event_type"] == "institution.allocation_completed"]) >= rounds
+        assert len([item for item in platform.store.repositories.social.list_institutions(status="active")]) == 1
     finally:
         platform.close()
 

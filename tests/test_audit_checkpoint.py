@@ -167,7 +167,7 @@ def test_audit_verifies_capability_update_sources(tmp_path: Path):
     try:
         with platform.store.transaction():
             source_ids = [
-                platform.store.append_event(
+                platform.store.repositories.events.append_event(
                     "capability.evidence", "liang_he", minute,
                     {"capability": "cooking", "source": "recipe:craft_meal"},
                 )

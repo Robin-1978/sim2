@@ -146,7 +146,7 @@ def test_completely_different_world_builds_and_runs_without_platform_changes(tmp
     db_path = create_instance(package, "orbital-instance", tmp_path / "runtime")
     platform = Platform(db_path)
     try:
-        agent = platform.store.get_agent("unit_seven")
+        agent = platform.store.repositories.entities.get_agent("unit_seven")
         assert "health" not in agent["initial_state"]
         assert "energy" not in agent["initial_state"]
         assert "satiety" not in agent["needs"]
@@ -164,11 +164,11 @@ def test_completely_different_world_builds_and_runs_without_platform_changes(tmp
         assert prompt_turn.result["status"] == "accepted"
         for _ in range(prompt_turn.result["remaining_minutes"]):
             platform.step()
-        updated = platform.store.get_agent("unit_seven")
+        updated = platform.store.repositories.entities.get_agent("unit_seven")
         assert updated["initial_state"]["charge"] == 92
         assert platform.store.get_meta("world_properties")["reactor_stability"] == 0.5
         assert updated["needs"]["signal_clarity"] < 55
-        assert any(event["event_type"] == "behavior.completed" for event in platform.store.recent_events(limit=50))
+        assert any(event["event_type"] == "behavior.completed" for event in platform.store.repositories.events.recent_events(limit=50))
     finally:
         platform.close()
 

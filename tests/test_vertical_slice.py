@@ -57,14 +57,14 @@ def test_failed_behavior_feedback_names_the_selected_behavior(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "named-outcome-feedback", tmp_path / "runtime"))
     try:
-        agent = platform.store.get_agent("liang_he")
+        agent = platform.store.repositories.entities.get_agent("liang_he")
         agent["initial_state"]["last_platform_result"] = {
             "behavior_ref": "behavior:manage_ration",
             "status": "failed",
             "result": "precondition failed: target.available",
             "outcome": {"status": "failed", "result": "precondition failed: target.available"},
         }
-        platform.store.update_agent("liang_he", agent)
+        platform.store.repositories.entities.update_agent("liang_he", agent)
         platform.store.connection.commit()
 
         prompt = render_context(platform.decision_view("liang_he"), "Choose one behavior.")
@@ -128,7 +128,7 @@ def test_agent_prompt_humanizes_resource_and_location_keys(tmp_path: Path):
     platform = Platform(create_instance(config, "agent-visible-keys-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            platform.store.put_knowledge_fact("lin_bo", "inspection:village_food", {
+            platform.store.repositories.memory.put_knowledge_fact("lin_bo", "inspection:village_food", {
                 "fact": "Inspected village_food; current amount is 320.",
                 "source_type": "inspection",
                 "confidence": 0.9,
@@ -169,8 +169,8 @@ def test_configured_food_action_default_resolves_to_carried_item(tmp_path: Path)
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "legacy-food-default-world", tmp_path / "runtime"))
     try:
-        agent = platform.store.get_agent("lin_bo")
-        action = next(item for item in platform.store.get_definitions("action_def") if item.get("id") == "consume_food")
+        agent = platform.store.repositories.entities.get_agent("lin_bo")
+        action = next(item for item in platform.store.repositories.entities.get_definitions("action_def") if item.get("id") == "consume_food")
         action["parameter_defaults"] = {"item_id": {"resolver": "context_value", "key": "item_id"}}
         assert platform._apply_action_parameter_defaults(agent, action, {"item_id": None})["item_id"] == "rations"
     finally:
@@ -186,7 +186,7 @@ def step_n(platform: Platform, minutes: int):
 
 def grant_research_fact(platform: Platform, agent_id: str, fact_key: str) -> None:
     with platform.store.transaction():
-        platform.store.merge_knowledge_fact(agent_id, fact_key, {
+        platform.store.repositories.memory.merge_knowledge_fact(agent_id, fact_key, {
             "fact": f"Verified research result: {fact_key}.",
             "source_type": "research",
             "source_id": fact_key,
@@ -405,7 +405,7 @@ def test_god_definition_proposal_registers_attribute_action_and_behavior(tmp_pat
         })
         assert attribute["status"] == "accepted"
         assert any(item["id"] == "resolve" for item in platform.store.get_meta("attributes"))
-        assert platform.store.get_agent("lu_xingzhou")["initial_state"]["resolve"] == 50
+        assert platform.store.repositories.entities.get_agent("lu_xingzhou")["initial_state"]["resolve"] == 50
         need = executor.execute("propose_definition", {
             "definition_type": "attribute",
             "name": "Composure",
@@ -413,7 +413,7 @@ def test_god_definition_proposal_registers_attribute_action_and_behavior(tmp_pat
             "evidence": "Defense outcomes show a missing composure need.",
         })
         assert need["status"] == "accepted"
-        assert platform.store.get_agent("lu_xingzhou")["needs"]["composure"] == 40
+        assert platform.store.repositories.entities.get_agent("lu_xingzhou")["needs"]["composure"] == 40
         assert any(item["id"] == "composure" for item in platform.store.get_meta("rules")["needs"])
         capability = executor.execute("propose_definition", {
             "definition_type": "capability",
@@ -422,7 +422,7 @@ def test_god_definition_proposal_registers_attribute_action_and_behavior(tmp_pat
             "evidence": "The new marking practice requires a reusable capability.",
         })
         assert capability["status"] == "accepted"
-        assert platform.store.get_agent("lu_xingzhou")["capabilities"]["signal_craft"] == 0.2
+        assert platform.store.repositories.entities.get_agent("lu_xingzhou")["capabilities"]["signal_craft"] == 0.2
         world_property = executor.execute("propose_definition", {
             "definition_type": "world_property",
             "name": "Boundary Readiness",
@@ -460,14 +460,14 @@ def test_god_definition_proposal_registers_attribute_action_and_behavior(tmp_pat
         assert action["status"] == "accepted"
         assert action["bound_behavior"] == "Mark Boundary Route"
         assert action["bound_assigned_to"] == ["陆行舟"]
-        assert any(item.get("id") == "mark_boundary_route" for item in platform.store.get_definitions("bt_def"))
-        assert "mark_boundary_route" in platform.store.get_agent("lu_xingzhou")["unlocked_bt_ids"]
+        assert any(item.get("id") == "mark_boundary_route" for item in platform.store.repositories.entities.get_definitions("bt_def"))
+        assert "mark_boundary_route" in platform.store.repositories.entities.get_agent("lu_xingzhou")["unlocked_bt_ids"]
 
         selected = platform.submit_behavior(BehaviorIntent("lu_xingzhou", "behavior:mark_boundary_route", {}, {}, "Record the reported mark.", 0.8, "god-definition-run"))
         assert selected["status"] == "accepted"
         for _ in range(selected["remaining_minutes"]):
             platform.step()
-        assert platform.store.get_agent("lu_xingzhou")["initial_state"]["status"] == "idle"
+        assert platform.store.repositories.entities.get_agent("lu_xingzhou")["initial_state"]["status"] == "idle"
     finally:
         platform.close()
 
@@ -482,7 +482,7 @@ def test_intent_revisions_are_observational_and_events_carry_causation(tmp_path:
         ))
         assert result["status"] == "accepted"
         assert result["stale_observation"] is True
-        started = next(item for item in platform.store.recent_events(limit=20) if item["event_type"] == "behavior.started")
+        started = next(item for item in platform.store.repositories.events.recent_events(limit=20) if item["event_type"] == "behavior.started")
         assert started["world_revision"] >= 1
         assert started["world_instance_id"] == platform.store.get_meta("world_id")
         assert started["causation_id"] == "revision-intent"
@@ -505,10 +505,10 @@ def test_god_world_proposal_is_evaluated_after_its_observation_window(tmp_path: 
         assert result["evaluation_status"] == "pending_evaluation"
         platform.step()
         platform.step()
-        proposal = platform.store.list_world_proposals(limit=1)[0]
+        proposal = platform.store.repositories.evolution.list_world_proposals(limit=1)[0]
         assert proposal["proposal_id"] == result["proposal_id"]
         assert proposal["status"] in {"observed", "no_observed_effect"}
-        assert any(item["event_type"] == "world.proposal.evaluated" for item in platform.store.recent_events(limit=20))
+        assert any(item["event_type"] == "world.proposal.evaluated" for item in platform.store.repositories.events.recent_events(limit=20))
         view = platform.decision_view("god", role="god")
         assert "world_proposals" in view
     finally:
@@ -542,7 +542,7 @@ def test_event_driven_world_review_uses_submission_tools_only(tmp_path: Path):
     scheduled_provider = SequenceProvider([{"intent_type": "wait", "reason": "The scheduled review finds no change."}])
     try:
         with platform.store.transaction():
-            event_id = platform.store.append_event(
+            event_id = platform.store.repositories.events.append_event(
                 "security.marks_classified", "he_yan", 4,
                 {"summary": "The configured investigation classified the marks."},
             )
@@ -577,13 +577,13 @@ def test_god_event_wakes_use_configured_evidence_counts(tmp_path: Path):
     try:
         # Routine governance does not wake God by itself.
         with platform.store.transaction():
-            routine_id = platform.store.append_event("governance.reviewed", "lin_bo", 1, {"summary": "One routine review."})
+            routine_id = platform.store.repositories.events.append_event("governance.reviewed", "lin_bo", 1, {"summary": "One routine review."})
         platform.wakes.followups({"wake": ["god"]}, routine_id, "governance.reviewed", "lin_bo", 1)
         assert not any(item["role"] == "god" for item in platform.ready_evolution_tasks())
 
         # A single public incident is a direct world consequence and wakes God.
         with platform.store.transaction():
-            incident_id = platform.store.append_event("entity.installed", "tian_yan", 2, {"summary": "A public warning device was installed."})
+            incident_id = platform.store.repositories.events.append_event("entity.installed", "tian_yan", 2, {"summary": "A public warning device was installed."})
         platform.wakes.queue("god", incident_id, "entity.installed", "tian_yan", 2, task_type="event:entity.installed")
         task = next(item for item in platform.ready_evolution_tasks() if item["role"] == "god" and item["task_type"] == "event_group:public_incident")
         assert task["source_events"] == [{"event_id": incident_id, "event_type": "entity.installed", "actor_id": "tian_yan"}]
@@ -595,31 +595,31 @@ def test_configured_governance_and_trade_groups_reach_their_thresholds(tmp_path:
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "group-threshold-world", tmp_path / "runtime"))
     try:
-        behavior = next(item for item in platform.store.get_definitions("bt_def") if item["id"] == "govern_village")
+        behavior = next(item for item in platform.store.repositories.entities.get_definitions("bt_def") if item["id"] == "govern_village")
         governance = next(item for item in behavior["outcome_events"] if item["event_type"] == "governance.reviewed")
-        negotiation_action = next(item for item in platform.store.get_definitions("action_def") if item["id"] == "negotiate")
+        negotiation_action = next(item for item in platform.store.repositories.entities.get_definitions("action_def") if item["id"] == "negotiate")
         negotiation = negotiation_action["information"]
         assert governance["wake"] == ["god"]
         assert negotiation["wake"] == ["god"]
 
         for minute in range(1, 8):
             with platform.store.transaction():
-                event_id = platform.store.append_event("governance.reviewed", "lin_bo", minute, {"summary": "Verified governance review."})
+                event_id = platform.store.repositories.events.append_event("governance.reviewed", "lin_bo", minute, {"summary": "Verified governance review."})
                 platform.wakes.followups(governance, event_id, "governance.reviewed", "lin_bo", minute)
             assert not any(task["task_type"] == "event_group:governance_capacity" for task in platform.ready_evolution_tasks())
         with platform.store.transaction():
-            event_id = platform.store.append_event("governance.reviewed", "lin_bo", 8, {"summary": "Eighth verified governance review."})
+            event_id = platform.store.repositories.events.append_event("governance.reviewed", "lin_bo", 8, {"summary": "Eighth verified governance review."})
             platform.wakes.followups(governance, event_id, "governance.reviewed", "lin_bo", 8)
         governance_task = next(task for task in platform.ready_evolution_tasks() if task["task_type"] == "event_group:governance_capacity")
         assert len(governance_task["source_events"]) == 8
 
         for minute in range(20, 25):
             with platform.store.transaction():
-                event_id = platform.store.append_event("negotiation.terms_recorded", "fei_lan", minute, {"summary": "Concrete terms were recorded."})
+                event_id = platform.store.repositories.events.append_event("negotiation.terms_recorded", "fei_lan", minute, {"summary": "Concrete terms were recorded."})
                 platform.wakes.followups(negotiation, event_id, "negotiation.terms_recorded", "fei_lan", minute)
             assert not any(task["task_type"] == "event_group:trade_network" for task in platform.ready_evolution_tasks())
         with platform.store.transaction():
-            event_id = platform.store.append_event("negotiation.terms_recorded", "fei_lan", 25, {"summary": "Sixth concrete negotiation result."})
+            event_id = platform.store.repositories.events.append_event("negotiation.terms_recorded", "fei_lan", 25, {"summary": "Sixth concrete negotiation result."})
             platform.wakes.followups(negotiation, event_id, "negotiation.terms_recorded", "fei_lan", 25)
         trade_task = next(task for task in platform.ready_evolution_tasks() if task["task_type"] == "event_group:trade_network")
         assert len(trade_task["source_events"]) == 6
@@ -633,7 +633,7 @@ def test_runner_preserves_story_source_event_in_agent_view(tmp_path: Path):
     turns = []
     try:
         with platform.store.transaction():
-            source_event_id = platform.store.append_event(
+            source_event_id = platform.store.repositories.events.append_event(
                 "entity.installed", "tian_yan", 0,
                 {"summary": "The dawn bell was installed at the north gate.", "story_source": True},
             )
@@ -667,7 +667,7 @@ def test_tick_snapshot_revision_is_committed_once_and_events_share_it(tmp_path: 
         result = platform.step()
         assert result["snapshot_revision"] == before["world_revision"]
         assert result["world_revision"] > before["world_revision"]
-        tick_event = next(item for item in platform.store.recent_events(limit=10) if item["event_type"] == "world_minute.advanced")
+        tick_event = next(item for item in platform.store.repositories.events.recent_events(limit=10) if item["event_type"] == "world_minute.advanced")
         assert tick_event["world_revision"] == result["world_revision"]
         assert platform.tick_snapshot()["world_minute"] == 1
     finally:
@@ -681,9 +681,9 @@ def test_stale_character_revision_is_rejected_at_commit_barrier(tmp_path: Path):
         view = platform.tick_snapshot()
         agent_revision = view["agent_revisions"]["lu_xingzhou"]
         with platform.store.transaction():
-            agent = platform.store.get_agent("lu_xingzhou")
+            agent = platform.store.repositories.entities.get_agent("lu_xingzhou")
             agent.setdefault("initial_state", {})["attention"] = 1
-            platform.store.update_agent("lu_xingzhou", agent)
+            platform.store.repositories.entities.update_agent("lu_xingzhou", agent)
         rejected = platform.submit_behavior(BehaviorIntent(
             "lu_xingzhou", "behavior:explore_greywood", {}, {}, "Use the old decision view.", 0.8, "stale-agent-intent",
             observed_world_revision=view["world_revision"], observed_agent_revision=agent_revision,
@@ -701,17 +701,17 @@ def test_running_action_keeps_definition_snapshot_after_registry_change(tmp_path
         started = platform.submit_behavior(BehaviorIntent("lin_bo", "behavior:rest_and_recover", {}, {}, "Recover readiness.", 0.8, "definition-snapshot"))
         assert started["status"] == "accepted"
         platform.step()
-        active = platform.store.get_agent("lin_bo")["initial_state"]
+        active = platform.store.repositories.entities.get_agent("lin_bo")["initial_state"]
         assert active["active_action"] == "rest"
         old_version = active["active_action_definition_version"]
         with platform.store.transaction():
-            rest = next(item for item in platform.store.get_definitions("action_def") if item["id"] == "rest")
+            rest = next(item for item in platform.store.repositories.entities.get_definitions("action_def") if item["id"] == "rest")
             rest = dict(rest)
             rest["definition_version"] = old_version + 1
             rest["duration"] = {"minutes": 1}
-            platform.store.put_definition("action_def", "rest", rest)
+            platform.store.repositories.entities.put_definition("action_def", "rest", rest)
         platform.step()
-        current = platform.store.get_agent("lin_bo")["initial_state"]
+        current = platform.store.repositories.entities.get_agent("lin_bo")["initial_state"]
         assert current["status"] == "executing"
         assert current["remaining_minutes"] > 1
         action_row = platform.store.connection.execute("SELECT data_json FROM action_instance WHERE action_instance_id=?", (active["active_action_instance"],)).fetchone()
@@ -732,9 +732,9 @@ def test_proposal_evaluation_requires_typed_followup_not_unrelated_event(tmp_pat
         })
         assert result["status"] == "accepted"
         with platform.store.transaction():
-            platform.store.append_event("dialogue.completed", "lin_bo", 0, {"summary": "Unrelated conversation."})
+            platform.store.repositories.events.append_event("dialogue.completed", "lin_bo", 0, {"summary": "Unrelated conversation."})
         platform.step()
-        proposal = platform.store.list_world_proposals(limit=1)[0]
+        proposal = platform.store.repositories.evolution.list_world_proposals(limit=1)[0]
         assert proposal["status"] == "no_observed_effect"
         assert proposal["observed"]["match"] is False
     finally:
@@ -749,10 +749,10 @@ def test_confirmed_experience_requires_recorded_source_event(tmp_path: Path):
         assert rejected["status"] == "rejected"
         assert rejected["failed_check"] == "claim_evidence"
         with platform.store.transaction():
-            event_id = platform.store.append_event("research.completed", "lu_xingzhou", 0, {"summary": "Water research completed."})
+            event_id = platform.store.repositories.events.append_event("research.completed", "lu_xingzhou", 0, {"summary": "Water research completed."})
         accepted = platform.submit_experience("lu_xingzhou", "research.completed", "The water result is confirmed.", 0.9, "confirmed")
         assert accepted["status"] == "accepted"
-        memory = platform.store.list_memories("lu_xingzhou", limit=1)[0]
+        memory = platform.store.repositories.memory.list_memories("lu_xingzhou", limit=1)[0]
         assert memory["source_event_id"] == event_id
         assert memory["claim_status"] == "confirmed"
     finally:
@@ -769,8 +769,8 @@ def test_configured_postcondition_uses_numeric_tolerance_and_publishes_success_o
         for _ in range(accepted["remaining_minutes"]):
             platform.step()
         assert platform.store.get_meta("world_properties")["water_quality"] == pytest.approx(0.8)
-        assert any(item["event_type"] == "water.mitigation.applied" for item in platform.store.recent_events(limit=30))
-        assert not any(item["event_type"] == "behavior.failed" and item.get("execution_id") == accepted["execution_id"] for item in platform.store.recent_events(limit=30))
+        assert any(item["event_type"] == "water.mitigation.applied" for item in platform.store.repositories.events.recent_events(limit=30))
+        assert not any(item["event_type"] == "behavior.failed" and item.get("execution_id") == accepted["execution_id"] for item in platform.store.repositories.events.recent_events(limit=30))
     finally:
         platform.close()
 
@@ -781,16 +781,16 @@ def test_failed_postcondition_rolls_back_effects_and_information_events(tmp_path
     try:
         grant_research_fact(platform, "qiao_ning", "researched:clean_water:contamination")
         with platform.store.transaction():
-            action = next(item for item in platform.store.get_definitions("action_def") if item["id"] == "mitigate_water")
+            action = next(item for item in platform.store.repositories.entities.get_definitions("action_def") if item["id"] == "mitigate_water")
             broken = dict(action)
             broken["success"] = {"condition": "world.water_quality >= 2", "result": "water_measure_applied"}
-            platform.store.put_definition("action_def", "mitigate_water", broken)
+            platform.store.repositories.entities.put_definition("action_def", "mitigate_water", broken)
         accepted = platform.submit_behavior(BehaviorIntent("qiao_ning", "behavior:mitigate_water", {}, {}, "Try the configured safety step.", 0.9, "water-rollback"))
         assert accepted["status"] == "accepted"
         for _ in range(accepted["remaining_minutes"]):
             platform.step()
         assert platform.store.get_meta("world_properties")["water_quality"] == pytest.approx(0.72)
-        events = platform.store.recent_events(limit=50)
+        events = platform.store.repositories.events.recent_events(limit=50)
         assert any(item["event_type"] == "behavior.failed" and item.get("execution_id") == accepted["execution_id"] for item in events)
         assert not any(item["event_type"] == "water.mitigation.applied" for item in events)
         assert not any(item["event_type"] == "world.property_changed" and item.get("source") == "mitigate_water" for item in events)
@@ -808,7 +808,7 @@ def test_outcome_projection_does_not_embed_previous_outcome_history(tmp_path: Pa
             assert accepted["status"] == "accepted"
             for _ in range(accepted["remaining_minutes"]):
                 platform.step()
-        outcomes = [item for item in platform.store.recent_events(limit=500) if item["event_type"] == "outcome.evaluated" and item.get("actor_id") == "qiao_ning"]
+        outcomes = [item for item in platform.store.repositories.events.recent_events(limit=500) if item["event_type"] == "outcome.evaluated" and item.get("actor_id") == "qiao_ning"]
         assert len(outcomes) >= 2
         for event in outcomes[:2]:
             actual = (event.get("actual") or {})
@@ -893,7 +893,7 @@ def test_provider_failure_is_bounded_and_backed_off(tmp_path: Path):
         ).run(60)
         # One failed provider call per idle Agent is enough; the ReAct loop
         # and minute loop must not amplify a configuration outage.
-        assert provider.calls == len(platform.store.list_agents())
+        assert provider.calls == len(platform.store.repositories.entities.list_agents())
         assert report.llm_errors == provider.calls
         assert report.rejected_turns == provider.calls
     finally:
@@ -907,7 +907,7 @@ def test_empty_behavior_catalog_uses_phase_aware_backoff_and_event_wake(tmp_path
     try:
         with platform.store.transaction():
             platform.store.set_meta("world_minute", 780)
-            for agent in platform.store.list_agents():
+            for agent in platform.store.repositories.entities.list_agents():
                 state = agent["initial_state"]
                 state["status"] = "paused" if agent["id"] != "fei_lan" else "idle"
                 if agent["id"] == "fei_lan":
@@ -916,7 +916,7 @@ def test_empty_behavior_catalog_uses_phase_aware_backoff_and_event_wake(tmp_path
                     agent["inventory"] = {}
                 if agent["id"] == "yu_ge":
                     state["location_id"] = "village_square"
-                platform.store.update_agent(agent["id"], agent)
+                platform.store.repositories.entities.update_agent(agent["id"], agent)
         runner = SimulationRunner(platform, {"agent_decision": provider})
         report = runner.run(1)
         assert report.decisions == 1
@@ -925,7 +925,7 @@ def test_empty_behavior_catalog_uses_phase_aware_backoff_and_event_wake(tmp_path
         assert runner._decision_not_before["fei_lan"] == current + 360
 
         with platform.store.transaction():
-            platform.store.append_event("need.satiety_low", "fei_lan", current, {"summary": "A configured need crossed its alert boundary."})
+            platform.store.repositories.events.append_event("need.satiety_low", "fei_lan", current, {"summary": "A configured need crossed its alert boundary."})
         runner._refresh_decision_wakes(current)
         assert runner._decision_not_before["fei_lan"] <= current
         assert "fei_lan" not in runner._wait_streak
@@ -957,7 +957,7 @@ def test_story_provider_failure_retries_without_pausing_world(tmp_path: Path):
     platform = Platform(create_instance(config, "story-provider-failure", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            event_id = platform.store.append_event(
+            event_id = platform.store.repositories.events.append_event(
                 "security.marks_classified",
                 "he_yan",
                 1,
@@ -967,9 +967,9 @@ def test_story_provider_failure_retries_without_pausing_world(tmp_path: Path):
         report = SimulationRunner(platform, {"story": FailingProvider()}).run(2)
         assert report.end_minute == 2
         assert platform.status()["status"] == "running"
-        task = next(item for item in platform.store.ready_evolution_tasks() + platform.store.due_evolution_tasks(100) if item["role"] == "story")
+        task = next(item for item in platform.store.repositories.evolution.ready_evolution_tasks() + platform.store.repositories.evolution.due_evolution_tasks(100) if item["role"] == "story")
         assert task["status"] == "scheduled"
-        assert not any(item["event_type"] == "runtime.paused" for item in platform.store.timeline_events(limit=50))
+        assert not any(item["event_type"] == "runtime.paused" for item in platform.store.repositories.events.timeline_events(limit=50))
     finally:
         platform.close()
 
@@ -992,7 +992,7 @@ def test_evolution_provider_cooldown_retries_at_same_world_minute(tmp_path: Path
     provider = RecoveringCoolingProvider()
     try:
         with platform.store.transaction():
-            event_id = platform.store.append_event(
+            event_id = platform.store.repositories.events.append_event(
                 "security.marks_classified",
                 "he_yan",
                 1,
@@ -1005,7 +1005,7 @@ def test_evolution_provider_cooldown_retries_at_same_world_minute(tmp_path: Path
         first = SimulationRunner(platform, {"story": provider}).run(2)
         assert first.end_minute == 1
         assert first.stop_reason == "provider_cooldown:story"
-        task = next(item for item in platform.store.ready_evolution_tasks() if item["role"] == "story")
+        task = next(item for item in platform.store.repositories.evolution.ready_evolution_tasks() if item["role"] == "story")
         assert task["due_minute"] == 1
 
         provider.cooldown_remaining = 0.0
@@ -1056,13 +1056,13 @@ def test_food_bt_is_available_with_food_and_closes_satiety_loop(tmp_path: Path):
     db_path = create_instance(config, "food-loop-world", tmp_path / "runtime")
     platform = Platform(db_path)
     try:
-        agent = platform.store.get_agent("lu_xingzhou")
+        agent = platform.store.repositories.entities.get_agent("lu_xingzhou")
         agent["needs"]["satiety"] = 40
         with platform.store.transaction():
-            platform.store.update_agent("lu_xingzhou", agent)
+            platform.store.repositories.entities.update_agent("lu_xingzhou", agent)
         view = platform.decision_view("lu_xingzhou")
         assert any(item["ref"] == "behavior:eat_food" for item in view["executable_behaviors"])
-        before = platform.store.get_agent("lu_xingzhou")
+        before = platform.store.repositories.entities.get_agent("lu_xingzhou")
         result = platform.submit_behavior(BehaviorIntent(
             actor_id="lu_xingzhou",
             behavior_ref="behavior:eat_food",
@@ -1074,7 +1074,7 @@ def test_food_bt_is_available_with_food_and_closes_satiety_loop(tmp_path: Path):
         ))
         assert result["status"] == "accepted"
         platform.step()
-        after = platform.store.get_agent("lu_xingzhou")
+        after = platform.store.repositories.entities.get_agent("lu_xingzhou")
         assert after["inventory"]["rations"] == before["inventory"]["rations"] - 1
         assert before["needs"]["satiety"] == 40
         assert after["needs"]["satiety"] == pytest.approx(min(100, before["needs"]["satiety"] - 0.02 + 30))
@@ -1087,11 +1087,11 @@ def test_food_bt_remains_available_when_satiety_is_adequate(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "food-trigger-world", tmp_path / "runtime"))
     try:
-        agent = platform.store.get_agent("lu_xingzhou")
+        agent = platform.store.repositories.entities.get_agent("lu_xingzhou")
         agent["needs"]["satiety"] = 79
         agent["inventory"]["rations"] = 1
         with platform.store.transaction():
-            platform.store.update_agent("lu_xingzhou", agent)
+            platform.store.repositories.entities.update_agent("lu_xingzhou", agent)
         view = platform.decision_view("lu_xingzhou")
         assert any(item["ref"] == "behavior:eat_food" for item in view["executable_behaviors"])
         accepted = platform.submit_behavior(BehaviorIntent("lu_xingzhou", "behavior:eat_food", {}, {}, "Choose food before the next task.", 0.8, "early-food"))
@@ -1105,13 +1105,13 @@ def test_food_store_bt_supplies_agents_without_carried_food(tmp_path: Path):
     db_path = create_instance(config, "food-store-world", tmp_path / "runtime")
     platform = Platform(db_path)
     try:
-        agent = platform.store.get_agent("liang_he")
+        agent = platform.store.repositories.entities.get_agent("liang_he")
         agent["needs"]["satiety"] = 40
         with platform.store.transaction():
-            platform.store.update_agent("liang_he", agent)
+            platform.store.repositories.entities.update_agent("liang_he", agent)
         view = platform.decision_view("liang_he")
         assert any(item["ref"] == "behavior:get_food" for item in view["executable_behaviors"])
-        before = platform.store.get_entity("village_food")["amount"]
+        before = platform.store.repositories.entities.get_entity("village_food")["amount"]
         result = platform.submit_behavior(BehaviorIntent(
             actor_id="liang_he", behavior_ref="behavior:get_food", target={}, parameters={},
             reason="Withdraw a ration before the next task.", confidence=0.9, intent_id="get-food-intent",
@@ -1120,9 +1120,9 @@ def test_food_store_bt_supplies_agents_without_carried_food(tmp_path: Path):
         assert result["remaining_minutes"] == 16
         for _ in range(16):
             platform.step()
-        after = platform.store.get_agent("liang_he")
+        after = platform.store.repositories.entities.get_agent("liang_he")
         assert after["inventory"]["rations"] == 1
-        assert platform.store.get_entity("village_food")["amount"] == before - 1
+        assert platform.store.repositories.entities.get_entity("village_food")["amount"] == before - 1
     finally:
         platform.close()
 
@@ -1131,24 +1131,24 @@ def test_market_food_path_uses_coin_and_market_stock(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "market-food-world", tmp_path / "runtime"))
     try:
-        agent = platform.store.get_agent("fei_lan")
+        agent = platform.store.repositories.entities.get_agent("fei_lan")
         agent["needs"]["satiety"] = 20
-        platform.store.update_agent("fei_lan", agent)
+        platform.store.repositories.entities.update_agent("fei_lan", agent)
         platform.store.connection.commit()
         view = platform.decision_view("fei_lan")
         assert any(item["ref"] == "behavior:buy_food" for item in view["executable_behaviors"])
-        before_coin = platform.store.get_agent("fei_lan")["inventory"]["coin"]
-        before_rations = platform.store.get_agent("fei_lan")["inventory"].get("rations", 0)
-        before_stock = platform.store.get_entity("market_rations")["amount"]
+        before_coin = platform.store.repositories.entities.get_agent("fei_lan")["inventory"]["coin"]
+        before_rations = platform.store.repositories.entities.get_agent("fei_lan")["inventory"].get("rations", 0)
+        before_stock = platform.store.repositories.entities.get_entity("market_rations")["amount"]
         result = platform.submit_behavior(BehaviorIntent(
             "fei_lan", "behavior:buy_food", {}, {}, "Buy food because carried food is unavailable.", 0.9, "market-food"
         ))
         assert result["status"] == "accepted"
         step_n(platform, result["remaining_minutes"])
-        after = platform.store.get_agent("fei_lan")
+        after = platform.store.repositories.entities.get_agent("fei_lan")
         assert after["inventory"]["coin"] == before_coin - 1
         assert after["inventory"]["rations"] == before_rations + 1
-        assert platform.store.get_entity("market_rations")["amount"] == before_stock - 1
+        assert platform.store.repositories.entities.get_entity("market_rations")["amount"] == before_stock - 1
     finally:
         platform.close()
 
@@ -1167,11 +1167,11 @@ def test_nearby_communication_behavior_resolves_a_visible_participant(tmp_path: 
         ))
         assert result["status"] == "accepted"
         step_n(platform, result["remaining_minutes"])
-        dialogue = next(item for item in platform.store.recent_events(limit=20) if item["event_type"] == "dialogue.completed")
+        dialogue = next(item for item in platform.store.repositories.events.recent_events(limit=20) if item["event_type"] == "dialogue.completed")
         assert dialogue["topic"] == "route news"
         assert dialogue["message"] == "What verified route news can you share?"
-        assert platform.store.list_memories("fei_lan", limit=5)
-        assert any(item["from"] == "yu_ge" and item["to"] == "fei_lan" and item["type"] == "trust" for item in platform.store.list_relationships())
+        assert platform.store.repositories.memory.list_memories("fei_lan", limit=5)
+        assert any(item["from"] == "yu_ge" and item["to"] == "fei_lan" and item["type"] == "trust" for item in platform.store.repositories.entities.list_relationships())
         assert "trust=0.02" in render_context(platform.decision_view("yu_ge"), "Choose one behavior.")
         assert not any(item["ref"] == "behavior:communicate" for item in platform.decision_view("yu_ge")["executable_behaviors"])
         assert not any(item["role"] == "agent_reflection" for item in platform.ready_evolution_tasks())
@@ -1183,13 +1183,13 @@ def test_starvation_is_a_configured_world_consequence(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "starvation-world", tmp_path / "runtime"))
     try:
-        agent = platform.store.get_agent("fei_lan")
+        agent = platform.store.repositories.entities.get_agent("fei_lan")
         agent["needs"]["satiety"] = 0
         agent["initial_state"]["health"] = 10
-        platform.store.update_agent("fei_lan", agent)
+        platform.store.repositories.entities.update_agent("fei_lan", agent)
         platform.store.connection.commit()
         step_n(platform, 60)
-        after = platform.store.get_agent("fei_lan")
+        after = platform.store.repositories.entities.get_agent("fei_lan")
         assert after["initial_state"]["health"] == 8
         assert after["initial_state"]["status"] == "idle"
     finally:
@@ -1201,21 +1201,21 @@ def test_patrol_report_closes_personal_world_and_knowledge_loop(tmp_path: Path):
     platform = Platform(create_instance(config, "patrol-closure-world", tmp_path / "runtime"))
     try:
         before = platform.store.get_meta("world_properties")["north_gate_threat_level"]
-        before_needs = platform.store.get_agent("he_yan")["needs"].copy()
+        before_needs = platform.store.repositories.entities.get_agent("he_yan")["needs"].copy()
         result = platform.submit_behavior(BehaviorIntent("he_yan", "behavior:patrol_route", {}, {}, "Inspect the known boundary route.", 0.9, "patrol-closure"))
         assert result["status"] == "accepted"
         step_n(platform, result["remaining_minutes"])
         after = platform.store.get_meta("world_properties")["north_gate_threat_level"]
         assert after == before
-        agent = platform.store.get_agent("he_yan")
+        agent = platform.store.repositories.entities.get_agent("he_yan")
         assert agent["needs"]["safety"] > before_needs["safety"]
         assert agent["needs"]["esteem"] > before_needs["esteem"]
-        assert any(item["fact_key"] == "patrol:north_gate_loop" for item in platform.store.list_knowledge_facts("he_yan", limit=20))
-        assert any(item["event_type"] == "security.patrol_reported" for item in platform.store.recent_events(limit=30))
-        trends = platform.store.world_trends(current_minute=platform.store.get_meta("world_minute"))["weekly"]
+        assert any(item["fact_key"] == "patrol:north_gate_loop" for item in platform.store.repositories.memory.list_knowledge_facts("he_yan", limit=20))
+        assert any(item["event_type"] == "security.patrol_reported" for item in platform.store.repositories.events.recent_events(limit=30))
+        trends = platform.store.repositories.events.world_trends(current_minute=platform.store.get_meta("world_minute"))["weekly"]
         assert trends["signal_events"]["security.patrol_reported"] == 1
         assert "north_gate_threat_level" not in trends["world_property_deltas"]
-        assert not any(item["role"] == "god" and item.get("source_event_type") == "security.patrol_reported" for item in platform.store.ready_evolution_tasks())
+        assert not any(item["role"] == "god" and item.get("source_event_type") == "security.patrol_reported" for item in platform.store.repositories.evolution.ready_evolution_tasks())
     finally:
         platform.close()
 
@@ -1228,11 +1228,11 @@ def test_governance_report_closes_personal_world_and_knowledge_loop(tmp_path: Pa
         assert result["status"] == "accepted"
         step_n(platform, result["remaining_minutes"])
         assert platform.store.get_meta("world_properties")["public_trust"] == 0.55
-        facts = platform.store.list_knowledge_facts("lin_bo", limit=20)
+        facts = platform.store.repositories.memory.list_knowledge_facts("lin_bo", limit=20)
         assert any(item["fact_key"] == "governance:latest_review" for item in facts)
         assert any(item["fact_key"] == "inspect_object:village_food" and "320" in item["fact"] for item in facts)
-        assert any(item["event_type"] == "governance.reviewed" for item in platform.store.recent_events(limit=30))
-        assert not any(item["role"] == "god" and item.get("source_event_type") == "governance.reviewed" for item in platform.store.ready_evolution_tasks())
+        assert any(item["event_type"] == "governance.reviewed" for item in platform.store.repositories.events.recent_events(limit=30))
+        assert not any(item["role"] == "god" and item.get("source_event_type") == "governance.reviewed" for item in platform.store.repositories.evolution.ready_evolution_tasks())
     finally:
         platform.close()
 
@@ -1241,13 +1241,13 @@ def test_satiety_threshold_signals_need_without_hiding_food_choices(tmp_path: Pa
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "satiety-signal-world", tmp_path / "runtime"))
     try:
-        agent = platform.store.get_agent("fei_lan")
+        agent = platform.store.repositories.entities.get_agent("fei_lan")
         agent["needs"]["satiety"] = 40.01
-        platform.store.update_agent("fei_lan", agent)
+        platform.store.repositories.entities.update_agent("fei_lan", agent)
         platform.store.connection.commit()
         assert any(item["ref"] == "behavior:buy_food" for item in platform.decision_view("fei_lan")["executable_behaviors"])
         platform.step()
-        event = next(item for item in platform.store.recent_events(limit=30) if item["event_type"] == "need.satiety_low")
+        event = next(item for item in platform.store.repositories.events.recent_events(limit=30) if item["event_type"] == "need.satiety_low")
         assert event["need"] == "satiety"
     finally:
         platform.close()
@@ -1258,21 +1258,21 @@ def test_rest_fallback_stays_gated_while_food_uses_resource_preconditions(tmp_pa
     db_path = create_instance(config, "satisfied-needs-world", tmp_path / "runtime")
     platform = Platform(db_path)
     try:
-        liang = platform.store.get_agent("liang_he")
+        liang = platform.store.repositories.entities.get_agent("liang_he")
         liang["needs"]["satiety"] = 100
-        platform.store.update_agent("liang_he", liang)
+        platform.store.repositories.entities.update_agent("liang_he", liang)
         platform.store.connection.commit()
         offered = {item["ref"] for item in platform.decision_view("liang_he")["executable_behaviors"]}
         assert "behavior:eat_food" not in offered
         assert "behavior:get_food" in offered
         liang["needs"]["satiety"] = 40
-        platform.store.update_agent("liang_he", liang)
+        platform.store.repositories.entities.update_agent("liang_he", liang)
         platform.store.connection.commit()
         assert "behavior:get_food" in {item["ref"] for item in platform.decision_view("liang_he")["executable_behaviors"]}
 
-        smith = platform.store.get_agent("tian_yan")
+        smith = platform.store.repositories.entities.get_agent("tian_yan")
         smith["initial_state"]["energy"] = 100
-        platform.store.update_agent("tian_yan", smith)
+        platform.store.repositories.entities.update_agent("tian_yan", smith)
         platform.store.connection.commit()
         offered = {item["ref"] for item in platform.decision_view("tian_yan")["executable_behaviors"]}
         assert "behavior:rest_and_recover" not in offered
@@ -1284,9 +1284,9 @@ def test_attention_capacity_filters_catalog_and_rejects_stale_choice(tmp_path: P
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "attention-capacity-world", tmp_path / "runtime"))
     try:
-        steward = platform.store.get_agent("lin_bo")
+        steward = platform.store.repositories.entities.get_agent("lin_bo")
         steward["initial_state"]["attention"] = 100
-        platform.store.update_agent("lin_bo", steward)
+        platform.store.repositories.entities.update_agent("lin_bo", steward)
         platform.store.connection.commit()
         view = platform.decision_view("lin_bo")
         assert "behavior:govern_village" not in {item["ref"] for item in view["executable_behaviors"]}
@@ -1303,10 +1303,10 @@ def test_research_attention_cost_fits_configured_capacity(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "research-capacity-world", tmp_path / "runtime"))
     try:
-        su_wu = platform.store.get_agent("su_wu")
+        su_wu = platform.store.repositories.entities.get_agent("su_wu")
         su_wu["initial_state"]["attention"] = 0
         su_wu["initial_state"]["energy"] = 100
-        platform.store.update_agent("su_wu", su_wu)
+        platform.store.repositories.entities.update_agent("su_wu", su_wu)
         platform.store.connection.commit()
         assert any(item["ref"] == "behavior:research_source" for item in platform.decision_view("su_wu")["executable_behaviors"])
     finally:
@@ -1317,9 +1317,9 @@ def test_inspection_behaviors_have_configured_cooldowns(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "inspection-cooldown-world", tmp_path / "runtime"))
     try:
-        su_wu = platform.store.get_agent("su_wu")
+        su_wu = platform.store.repositories.entities.get_agent("su_wu")
         su_wu["initial_state"]["location_id"] = "old_well"
-        platform.store.update_agent("su_wu", su_wu)
+        platform.store.repositories.entities.update_agent("su_wu", su_wu)
         platform.store.connection.commit()
         intent = BehaviorIntent("su_wu", "behavior:inspect_object", {}, {}, "Check the current source.", 0.8, "inspection-cooldown")
         accepted = platform.submit_behavior(intent)
@@ -1336,12 +1336,12 @@ def test_decision_context_explains_single_recovery_candidate(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "single-recovery-context", tmp_path / "runtime"))
     try:
-        liang = platform.store.get_agent("liang_he")
+        liang = platform.store.repositories.entities.get_agent("liang_he")
         liang["initial_state"]["energy"] = 6.5
         liang["needs"]["satiety"] = 100
         liang["permissions"]["food_withdrawal"] = False
         liang["inventory"] = {}
-        platform.store.update_agent("liang_he", liang)
+        platform.store.repositories.entities.update_agent("liang_he", liang)
         platform.store.connection.commit()
         view = platform.decision_view("liang_he")
         offered = {item["ref"] for item in view["executable_behaviors"]}
@@ -1362,10 +1362,10 @@ def test_core_gather_bt_travels_to_nearest_resource_node(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "gather-core-world", tmp_path / "runtime"))
     try:
-        liang = platform.store.get_agent("liang_he")
+        liang = platform.store.repositories.entities.get_agent("liang_he")
         liang["initial_state"]["location_id"] = "village_square"
         liang["initial_state"]["energy"] = 100
-        platform.store.update_agent("liang_he", liang)
+        platform.store.repositories.entities.update_agent("liang_he", liang)
         platform.store.connection.commit()
         view = platform.decision_view("liang_he")
         gather = next(item for item in view["executable_behaviors"] if item["ref"] == "behavior:gather_at_known_node")
@@ -1378,9 +1378,9 @@ def test_core_gather_bt_travels_to_nearest_resource_node(tmp_path: Path):
         ))
         assert result["status"] == "accepted"
         step_n(platform, result["remaining_minutes"])
-        assert platform.store.get_agent("liang_he")["initial_state"]["location_id"] == "granary"
-        assert platform.store.get_entity("grain")["initial_state"]["quantity"] == 78
-        assert platform.store.get_agent("liang_he")["inventory"]["grain"] == 2
+        assert platform.store.repositories.entities.get_agent("liang_he")["initial_state"]["location_id"] == "granary"
+        assert platform.store.repositories.entities.get_entity("grain")["initial_state"]["quantity"] == 78
+        assert platform.store.repositories.entities.get_agent("liang_he")["inventory"]["grain"] == 2
 
         repeated = platform.submit_behavior(BehaviorIntent(
             "liang_he", "behavior:gather_at_known_node", {}, {},
@@ -1389,15 +1389,15 @@ def test_core_gather_bt_travels_to_nearest_resource_node(tmp_path: Path):
         ))
         assert repeated["status"] == "accepted"
         step_n(platform, repeated["remaining_minutes"])
-        assert platform.store.get_entity("grain")["initial_state"]["quantity"] == 76
-        assert platform.store.get_agent("liang_he")["inventory"]["grain"] == 4
+        assert platform.store.repositories.entities.get_entity("grain")["initial_state"]["quantity"] == 76
+        assert platform.store.repositories.entities.get_agent("liang_he")["inventory"]["grain"] == 4
         resource_events = platform.store.connection.execute(
             "SELECT data_json FROM event_log WHERE actor_id=? AND event_type='resource.changed' ORDER BY event_id",
             ("liang_he",),
         ).fetchall()
         changes = [json.loads(item["data_json"]) for item in resource_events]
         assert [item["after"] for item in changes if item.get("resource_id") == "grain"] == [78.0, 76.0]
-        evidence = [item for item in platform.store.recent_events_for_actor("liang_he", limit=30) if item["event_type"] == "capability.evidence"]
+        evidence = [item for item in platform.store.repositories.events.recent_events_for_actor("liang_he", limit=30) if item["event_type"] == "capability.evidence"]
         assert any(item["capability"] == "farming" and item["source"] == "gather_resource" for item in evidence)
         assert not any(item["capability"] == "cooking" for item in evidence)
     finally:
@@ -1408,11 +1408,11 @@ def test_core_treatment_bt_travels_to_health_service_and_restores_health(tmp_pat
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "health-core-world", tmp_path / "runtime"))
     try:
-        qiao = platform.store.get_agent("qiao_ning")
+        qiao = platform.store.repositories.entities.get_agent("qiao_ning")
         qiao["initial_state"]["location_id"] = "village_square"
         qiao["initial_state"]["health"] = 70
         qiao["inventory"]["medicine"] = 1
-        platform.store.update_agent("qiao_ning", qiao)
+        platform.store.repositories.entities.update_agent("qiao_ning", qiao)
         platform.store.connection.commit()
         view = platform.decision_view("qiao_ning")
         assert any(item["ref"] == "behavior:seek_treatment" for item in view["executable_behaviors"])
@@ -1421,7 +1421,7 @@ def test_core_treatment_bt_travels_to_health_service_and_restores_health(tmp_pat
         ))
         assert result["status"] == "accepted"
         step_n(platform, result["remaining_minutes"])
-        healed = platform.store.get_agent("qiao_ning")
+        healed = platform.store.repositories.entities.get_agent("qiao_ning")
         assert healed["initial_state"]["health"] == 100
         assert healed["inventory"]["medicine"] == 0
     finally:
@@ -1433,9 +1433,9 @@ def test_platform_accepts_food_choice_when_only_necessary_preconditions_hold(tmp
     db_path = create_instance(config, "food-preconditions-world", tmp_path / "runtime")
     platform = Platform(db_path)
     try:
-        liang = platform.store.get_agent("liang_he")
+        liang = platform.store.repositories.entities.get_agent("liang_he")
         liang["needs"]["satiety"] = 100
-        platform.store.update_agent("liang_he", liang)
+        platform.store.repositories.entities.update_agent("liang_he", liang)
         platform.store.connection.commit()
         result = platform.submit_behavior(BehaviorIntent(
             actor_id="liang_he",
@@ -1461,8 +1461,8 @@ def test_agent_view_filters_unavailable_recipe_and_noop_travel(tmp_path: Path):
         assert "behavior:travel" not in blacksmith
         granary_keeper = {item["ref"] for item in platform.decision_view("liang_he")["executable_behaviors"]}
         assert "behavior:craft_meal" not in granary_keeper
-        assert platform.store.get_entity("grain")["initial_state"]["quantity"] == 80
-        assert all(platform.decision_view(agent["id"])["executable_behaviors"] for agent in platform.store.list_agents())
+        assert platform.store.repositories.entities.get_entity("grain")["initial_state"]["quantity"] == 80
+        assert all(platform.decision_view(agent["id"])["executable_behaviors"] for agent in platform.store.repositories.entities.list_agents())
     finally:
         platform.close()
 
@@ -1568,9 +1568,9 @@ def test_starter_behavior_closure_contract_is_complete(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "behavior-closure-contract-world", tmp_path / "runtime"))
     try:
-        actions = {item["id"]: item for item in platform.store.get_definitions("action_def")}
-        recipes = {item["id"]: item for item in platform.store.get_definitions("recipe_def")}
-        for behavior in platform.store.get_definitions("bt_def"):
+        actions = {item["id"]: item for item in platform.store.repositories.entities.get_definitions("action_def")}
+        recipes = {item["id"]: item for item in platform.store.repositories.entities.get_definitions("recipe_def")}
+        for behavior in platform.store.repositories.entities.get_definitions("bt_def"):
             action_nodes = list(platform.view._iter_behavior_actions(behavior["id"]))
             configured_actions = [actions.get(str(node.get("action_id")), {}) for node in action_nodes]
             assert behavior.get("success_results") or any(item.get("success", {}).get("result") for item in configured_actions), behavior["id"]
@@ -1739,7 +1739,7 @@ def test_reflection_intent_is_committed_by_platform(tmp_path: Path):
     try:
         turn = AgentEngine(platform, provider).run(role="agent_reflection", actor_id="lu_xingzhou", task_type="daily_reflection")
         assert turn.result["status"] == "accepted"
-        memories = platform.store.list_memories("lu_xingzhou")
+        memories = platform.store.repositories.memory.list_memories("lu_xingzhou")
         assert memories[0]["summary"].startswith("The first observation")
         assert "memory (experience)" in provider.calls[0]["context"]
     finally:
@@ -1759,7 +1759,7 @@ def test_reflection_cannot_record_an_experience_without_evidence(tmp_path: Path)
         ))["status"] == "accepted"
         turn = AgentEngine(platform, provider).run(role="agent_reflection", actor_id="lu_xingzhou", task_type="daily_reflection")
         assert turn.result["status"] == "wait"
-        assert len(platform.store.list_memories("lu_xingzhou")) == 0
+        assert len(platform.store.repositories.memory.list_memories("lu_xingzhou")) == 0
         assert turn.transcript[0]["step"] == "guard"
     finally:
         platform.close()
@@ -1777,7 +1777,7 @@ def test_reflection_summary_alias_is_committed_once(tmp_path: Path):
         turn = AgentEngine(platform, provider).run(role="agent_reflection", actor_id="lin_bo", task_type="daily_reflection")
         assert turn.result["status"] == "accepted"
         assert turn.iterations == 1
-        assert platform.store.list_memories("lin_bo", limit=1)[0]["type"] == "experience"
+        assert platform.store.repositories.memory.list_memories("lin_bo", limit=1)[0]["type"] == "experience"
     finally:
         platform.close()
 
@@ -1805,7 +1805,7 @@ def test_reflection_can_update_goal_through_platform(tmp_path: Path):
     try:
         turn = AgentEngine(platform, provider).run(role="agent_reflection", actor_id="lu_xingzhou", task_type="goal_review")
         assert turn.result["status"] == "accepted"
-        assert platform.store.get_agent("lu_xingzhou")["ultimate_goal"].startswith("Confirm the safest route")
+        assert platform.store.repositories.entities.get_agent("lu_xingzhou")["ultimate_goal"].startswith("Confirm the safest route")
     finally:
         platform.close()
 
@@ -1850,7 +1850,7 @@ def test_memory_fts_and_bounded_compaction(tmp_path: Path):
         assert recalled["memories"]
         compacted = platform.memory.compact("lu_xingzhou", keep=10)
         assert compacted["status"] == "compacted"
-        assert any(item["type"] == "summary" for item in platform.store.list_memories("lu_xingzhou", limit=50))
+        assert any(item["type"] == "summary" for item in platform.store.repositories.memory.list_memories("lu_xingzhou", limit=50))
         forgotten = platform.memory.forget("lu_xingzhou", maximum=12)
         assert forgotten["status"] in {"unchanged", "forgotten"}
     finally:
@@ -1862,12 +1862,12 @@ def test_memory_has_short_and_long_tiers_and_task_conditioned_recall(tmp_path: P
     platform = Platform(create_instance(config, "memory-tier-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            platform.store.put_memory(
+            platform.store.repositories.memory.put_memory(
                 "lu_xingzhou", "testimony",
                 {"summary": "The north gate watch saw fresh marks before dawn.", "importance": 0.8, "pending_decision": True},
                 tier="short_term",
             )
-            platform.store.put_memory(
+            platform.store.repositories.memory.put_memory(
                 "lu_xingzhou", "experience",
                     {"summary": "Exploring Greywood confirms a safe river route before the fog rises.", "importance": 0.9},
                 tier="long_term",
@@ -1888,24 +1888,24 @@ def test_memory_and_knowledge_use_structured_retrieval_dimensions(tmp_path: Path
     platform = Platform(create_instance(config, "memory-dimensions-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            platform.store.put_memory(
+            platform.store.repositories.memory.put_memory(
                 "lu_xingzhou",
                 "experience",
                 {"summary": "The north gate route is safe before fog.", "location_id": "north_gate", "behavior_ref": "patrol_route", "goal_tags": ["safety"], "importance": 0.9},
                 tier="long_term",
             )
-            platform.store.put_memory(
+            platform.store.repositories.memory.put_memory(
                 "lu_xingzhou",
                 "experience",
                 {"summary": "The market sells cheap cloth.", "location_id": "inn", "behavior_ref": "trade", "goal_tags": ["trade"], "importance": 0.9},
                 tier="long_term",
             )
-            platform.store.put_knowledge_fact(
+            platform.store.repositories.memory.put_knowledge_fact(
                 "lu_xingzhou",
                 "patrol:north_gate",
                 {"fact": "Fresh marks were found at the north gate.", "location_id": "north_gate", "behavior": "patrol_route", "source_type": "patrol", "confidence": 0.9},
             )
-            platform.store.put_knowledge_fact(
+            platform.store.repositories.memory.put_knowledge_fact(
                 "lu_xingzhou",
                 "market:cloth",
                 {"fact": "The market has cloth.", "location_id": "inn", "source_type": "trade", "confidence": 0.9},
@@ -1948,9 +1948,9 @@ def test_semantic_embeddings_persist_in_instance_sqlite(tmp_path: Path):
     platform = Platform(create_instance(config, "memory-embedding-store-world", tmp_path / "runtime"))
     try:
         blob = b"\x00\x00\x80?\x00\x00\x00?"
-        platform.store.put_semantic_embeddings("embedding-model:test", {"stable memory text": (2, blob)})
-        assert platform.store.semantic_embedding_count("embedding-model:test") == 1
-        assert platform.store.get_semantic_embeddings("embedding-model:test", ["stable memory text"]) == {"stable memory text": (2, blob)}
+        platform.store.repositories.memory.put_semantic_embeddings("embedding-model:test", {"stable memory text": (2, blob)})
+        assert platform.store.repositories.memory.semantic_embedding_count("embedding-model:test") == 1
+        assert platform.store.repositories.memory.get_semantic_embeddings("embedding-model:test", ["stable memory text"]) == {"stable memory text": (2, blob)}
     finally:
         platform.close()
 
@@ -1959,10 +1959,10 @@ def test_multiple_visible_participants_require_explicit_target(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "explicit-target-world", tmp_path / "runtime"))
     try:
-        lin_bo = platform.store.get_agent("lin_bo")
+        lin_bo = platform.store.repositories.entities.get_agent("lin_bo")
         lin_bo["initial_state"]["location_id"] = "inn"
         with platform.store.transaction():
-            platform.store.update_agent("lin_bo", lin_bo)
+            platform.store.repositories.entities.update_agent("lin_bo", lin_bo)
         view = platform.decision_view("fei_lan")
         communicate = next(item for item in view["executable_behaviors"] if item["ref"] == "behavior:communicate")
         assert communicate["target_required"] is True
@@ -1983,14 +1983,14 @@ def test_nested_bt_target_is_explicit_and_hidden_target_is_rejected(tmp_path: Pa
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "nested-target-world", tmp_path / "runtime"))
     try:
-        lin_bo = platform.store.get_agent("lin_bo")
+        lin_bo = platform.store.repositories.entities.get_agent("lin_bo")
         lin_bo["initial_state"]["location_id"] = "inn"
-        fei_lan = platform.store.get_agent("fei_lan")
+        fei_lan = platform.store.repositories.entities.get_agent("fei_lan")
         fei_lan["initial_bt_ids"].append("nested_communicate")
         with platform.store.transaction():
-            platform.store.update_agent("lin_bo", lin_bo)
-            platform.store.update_agent("fei_lan", fei_lan)
-            platform.store.put_definition("bt_def", "nested_communicate", {
+            platform.store.repositories.entities.update_agent("lin_bo", lin_bo)
+            platform.store.repositories.entities.update_agent("fei_lan", fei_lan)
+            platform.store.repositories.entities.put_definition("bt_def", "nested_communicate", {
                 "id": "nested_communicate", "version": 1, "summary": "Nested communication",
                 "nodes": [{"type": "sequence", "children": [{"type": "action", "action_id": "communicate", "parameters": {"target_id": "context.target_id", "topic": "general"}}]}],
             })
@@ -2019,12 +2019,12 @@ def test_god_view_contains_weekly_and_monthly_world_trends(tmp_path: Path):
     platform = Platform(create_instance(config, "god-trend-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            platform.store.append_event("resource.changed", "fei_lan", 100, {"resource_id": "village_food", "delta": -12})
-            platform.store.append_event("relationship.changed", "fei_lan", 100, {"relation": "trust", "delta": 0.2, "target_id": "yu_ge"})
-            platform.store.append_event("goal.updated", "fei_lan", 100, {"statement": "Restore the trade route"})
-            platform.store.append_event("behavior.completed", "fei_lan", 100, {"behavior_id": "explore_greywood", "outcome": {"expected": {"goal_tags": ["exploration"]}}})
-            platform.store.append_event("resource.changed", "fei_lan", 20000, {"resource_id": "village_food", "delta": -7})
-        trends = platform.store.world_trends(current_minute=200)
+            platform.store.repositories.events.append_event("resource.changed", "fei_lan", 100, {"resource_id": "village_food", "delta": -12})
+            platform.store.repositories.events.append_event("relationship.changed", "fei_lan", 100, {"relation": "trust", "delta": 0.2, "target_id": "yu_ge"})
+            platform.store.repositories.events.append_event("goal.updated", "fei_lan", 100, {"statement": "Restore the trade route"})
+            platform.store.repositories.events.append_event("behavior.completed", "fei_lan", 100, {"behavior_id": "explore_greywood", "outcome": {"expected": {"goal_tags": ["exploration"]}}})
+            platform.store.repositories.events.append_event("resource.changed", "fei_lan", 20000, {"resource_id": "village_food", "delta": -7})
+        trends = platform.store.repositories.events.world_trends(current_minute=200)
         assert trends["weekly"]["resource_deltas"]["village_food"] == -12
         assert trends["weekly"]["relationship_trends"]
         assert trends["weekly"]["goal_trends"]["progress_by_tag"]["exploration"] == 1
@@ -2034,7 +2034,7 @@ def test_god_view_contains_weekly_and_monthly_world_trends(tmp_path: Path):
         assert "weekly:" in prompt and "monthly:" in prompt
         assert 'world["village_food"]' in prompt
         assert "village food" in prompt
-        long_window = platform.store.world_trends(current_minute=43200)
+        long_window = platform.store.repositories.events.world_trends(current_minute=43200)
         assert long_window["monthly"]["resource_deltas"]["village_food"] == -19
         assert "village_food" not in long_window["weekly"]["resource_deltas"]
     finally:
@@ -2083,10 +2083,10 @@ def test_successful_recipe_records_capability_evidence_without_auto_upgrade(tmp_
     db_path = create_instance(config, "capability-world", tmp_path / "runtime")
     platform = Platform(db_path)
     try:
-        agent = platform.store.get_agent("liang_he")
+        agent = platform.store.repositories.entities.get_agent("liang_he")
         agent["inventory"].update({"grain": 1})
         with platform.store.transaction():
-            platform.store.update_agent("liang_he", agent)
+            platform.store.repositories.entities.update_agent("liang_he", agent)
         craft = next(
             item for item in platform.decision_view("liang_he")["executable_behaviors"]
             if item["ref"] == "behavior:craft_meal"
@@ -2097,11 +2097,11 @@ def test_successful_recipe_records_capability_evidence_without_auto_upgrade(tmp_
         accepted = platform.submit_behavior(intent)
         assert accepted["status"] == "accepted"
         step_n(platform, accepted["remaining_minutes"])
-        history = platform.store.list_capability_progress("liang_he")
+        history = platform.store.repositories.activity.list_capability_progress("liang_he")
         assert history == []
-        evidence = platform.store.recent_events_for_actor("liang_he", limit=20)
+        evidence = platform.store.repositories.events.recent_events_for_actor("liang_he", limit=20)
         assert any(item["event_type"] == "capability.evidence" and item["capability"] == "cooking" for item in evidence)
-        assert platform.store.get_entity("clean_water")["amount"] == 99
+        assert platform.store.repositories.entities.get_entity("clean_water")["amount"] == 99
     finally:
         platform.close()
 
@@ -2114,18 +2114,18 @@ def test_capability_update_requires_repeated_outcomes_and_is_agent_proposed(tmp_
         assert rejected["status"] == "rejected"
         assert rejected["failed_check"] == "insufficient_evidence"
         for minute in (1, 2, 3):
-            platform.store.append_event("behavior.completed", "liang_he", minute, {"behavior_id": "craft_meal", "result": "recipe_completed"})
+            platform.store.repositories.events.append_event("behavior.completed", "liang_he", minute, {"behavior_id": "craft_meal", "result": "recipe_completed"})
         platform.store.connection.commit()
         unrelated = platform.submit_capability_update("liang_he", "cooking", 0.04, "Three unrelated behavior outcomes completed.")
         assert unrelated["status"] == "rejected"
         assert unrelated["completed_outcomes"] == 0
         for minute in (4, 5, 6):
-            platform.store.append_event("capability.evidence", "liang_he", minute, {"capability": "cooking", "source": "recipe:craft_meal", "requires_agent_review": True})
+            platform.store.repositories.events.append_event("capability.evidence", "liang_he", minute, {"capability": "cooking", "source": "recipe:craft_meal", "requires_agent_review": True})
         platform.store.connection.commit()
         accepted = platform.submit_capability_update("liang_he", "cooking", 0.04, "Three configured meals completed without a failure.")
         assert accepted["status"] == "accepted"
-        assert platform.store.get_agent("liang_he")["capabilities"]["cooking"] == 0.49
-        progress = platform.store.list_capability_progress("liang_he")[0]
+        assert platform.store.repositories.entities.get_agent("liang_he")["capabilities"]["cooking"] == 0.49
+        progress = platform.store.repositories.activity.list_capability_progress("liang_he")[0]
         assert progress["source"] == "agent_review"
         assert len(progress["source_event_ids"]) == 3
     finally:
@@ -2138,9 +2138,9 @@ def test_capability_candidates_require_owned_skill_and_matching_evidence(tmp_pat
     try:
         with platform.store.transaction():
             for minute in range(1, 4):
-                platform.store.append_event("capability.evidence", "su_wu", minute, {"capability": "cooking", "source": "recipe:craft_meal"})
+                platform.store.repositories.events.append_event("capability.evidence", "su_wu", minute, {"capability": "cooking", "source": "recipe:craft_meal"})
             for minute in range(4, 6):
-                platform.store.append_event("capability.evidence", "su_wu", minute, {"capability": "research", "source": "research_source"})
+                platform.store.repositories.events.append_event("capability.evidence", "su_wu", minute, {"capability": "research", "source": "research_source"})
         view = platform.decision_view("su_wu", role="agent_reflection")
         assert [item["capability"] for item in view["capability_update_candidates"]] == ["research"]
         assert view["capability_update_candidates"][0]["evidence_sources"] == ["research_source"]
@@ -2157,7 +2157,7 @@ def test_world_progress_milestone_wakes_story_and_god_from_agent_proposal(tmp_pa
     try:
         result = None
         for minute in range(1, 6):
-            event_id = platform.store.append_event("governance.reviewed", "lin_bo", minute, {"behavior_id": "govern_village", "result": "stock_reported"})
+            event_id = platform.store.repositories.events.append_event("governance.reviewed", "lin_bo", minute, {"behavior_id": "govern_village", "result": "stock_reported"})
             platform.store.connection.commit()
             result = platform.submit_world_progress(
                 "story",
@@ -2169,7 +2169,7 @@ def test_world_progress_milestone_wakes_story_and_god_from_agent_proposal(tmp_pa
         assert result is not None
         assert result["status"] == "accepted"
         assert result["milestone"] is True
-        assert platform.store.get_progress(platform.store.get_meta("world_id"), "governance_capacity")["current"] == 5
+        assert platform.store.repositories.activity.get_progress(platform.store.get_meta("world_id"), "governance_capacity")["current"] == 5
         tasks = platform.ready_evolution_tasks()
         assert any(item["role"] == "story" for item in tasks)
         assert any(item["role"] == "god" for item in tasks)
@@ -2185,7 +2185,7 @@ def test_world_progress_has_no_implicit_consumers_without_configured_wake(tmp_pa
         rules["civilization_progress"] = {"quiet_progress": {"required": 1}}
         with platform.store.transaction():
             platform.store.set_meta("rules", rules)
-            platform.store.append_event("behavior.completed", "lin_bo", 1, {"behavior_id": "govern_village", "result": "behavior_completed"})
+            platform.store.repositories.events.append_event("behavior.completed", "lin_bo", 1, {"behavior_id": "govern_village", "result": "behavior_completed"})
         result = platform.submit_world_progress("story", "quiet_progress", None, "One verified behavior produced this configured progress result.")
         assert result["status"] == "accepted"
         assert result["milestone"] is True
@@ -2199,7 +2199,7 @@ def test_world_progress_rejects_a_trigger_from_the_wrong_configured_domain(tmp_p
     platform = Platform(create_instance(config, "progress-evidence-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            pact_event = platform.store.append_event(
+            pact_event = platform.store.repositories.events.append_event(
                 "pact.stability.improved",
                 "su_wu",
                 10,
@@ -2216,7 +2216,7 @@ def test_world_progress_rejects_a_trigger_from_the_wrong_configured_domain(tmp_p
         assert rejected["failed_check"] == "progress_evidence_mismatch"
 
         with platform.store.transaction():
-            governance_event = platform.store.append_event(
+            governance_event = platform.store.repositories.events.append_event(
                 "governance.reviewed",
                 "lin_bo",
                 11,
@@ -2243,7 +2243,7 @@ def test_world_progress_rejects_a_trigger_from_the_wrong_configured_domain(tmp_p
         assert duplicate["failed_check"] == "duplicate_progress_evidence"
 
         with platform.store.transaction():
-            another_event = platform.store.append_event(
+            another_event = platform.store.repositories.events.append_event(
                 "governance.reviewed",
                 "lin_bo",
                 12,
@@ -2260,7 +2260,7 @@ def test_world_progress_rejects_a_trigger_from_the_wrong_configured_domain(tmp_p
         assert wrong_delta["failed_check"] == "progress_delta"
 
         with platform.store.transaction():
-            ledger_event = platform.store.append_event(
+            ledger_event = platform.store.repositories.events.append_event(
                 "object.recovered",
                 "lu_xingzhou",
                 13,
@@ -2284,7 +2284,7 @@ def test_god_reacts_to_progress_domain_rejection_and_waits(tmp_path: Path):
     platform = Platform(create_instance(config, "progress-react-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            source_event = platform.store.append_event(
+            source_event = platform.store.repositories.events.append_event(
                 "pact.stability.improved",
                 "su_wu",
                 10,
@@ -2417,7 +2417,7 @@ def test_story_and_god_can_query_id_free_validated_history(tmp_path: Path):
     platform = Platform(create_instance(config, "history-query-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            platform.store.append_event(
+            platform.store.repositories.events.append_event(
                 "research.completed", "qiao_ning", 42,
                 {"summary": "The upstream sample was confirmed clean enough for a follow-up test.", "fact": "The upstream sample was recorded."},
             )
@@ -2499,10 +2499,10 @@ def test_communication_behavior_requires_and_delivers_actual_message(tmp_path: P
         ))
         assert accepted["status"] == "accepted"
         step_n(platform, accepted["remaining_minutes"])
-        exchange = platform.store.get_dialogue_exchange(1)
+        exchange = platform.store.repositories.social.get_dialogue_exchange(1)
         assert exchange is not None
         assert exchange["message"] == "What verified news do you have about the missing caravan ledger?"
-        event = next(item for item in platform.store.recent_events(limit=20) if item["event_type"] == "dialogue.completed")
+        event = next(item for item in platform.store.repositories.events.recent_events(limit=20) if item["event_type"] == "dialogue.completed")
         assert event["message"] == exchange["message"]
     finally:
         platform.close()
@@ -2514,20 +2514,20 @@ def test_instant_agent_session_does_not_interrupt_active_behavior(tmp_path: Path
     provider = SequenceProvider([{"intent_type": "wait", "reason": "The message needs no reply."}])
     try:
         with platform.store.transaction():
-            actor = platform.store.get_agent("yu_ge")
+            actor = platform.store.repositories.entities.get_agent("yu_ge")
             actor["initial_state"].update({
                 "status": "executing", "active_bt_instance": "active-work",
                 "active_behavior_id": "inspect_granary", "active_action": "inspect_object",
                 "remaining_minutes": 10,
             })
-            platform.store.update_agent("yu_ge", actor)
+            platform.store.repositories.entities.update_agent("yu_ge", actor)
         turn = AgentEngine(platform, provider).run(
             role="agent_decision", actor_id="yu_ge", task_type="instant:dialogue.completed",
             interaction={"from": "费兰", "topic": "ledger", "message": "I found no verified ledger yet."},
         )
         assert turn.iterations == 1
         assert turn.result["status"] == "wait"
-        state = platform.store.get_agent("yu_ge")["initial_state"]
+        state = platform.store.repositories.entities.get_agent("yu_ge")["initial_state"]
         assert state["status"] == "executing"
         assert state["active_bt_instance"] == "active-work"
         assert state["remaining_minutes"] == 10
@@ -2556,9 +2556,9 @@ def test_known_distant_entity_does_not_reveal_live_state(tmp_path: Path):
     platform = Platform(create_instance(config, "perception-known-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            agent = platform.store.get_agent("lu_xingzhou")
+            agent = platform.store.repositories.entities.get_agent("lu_xingzhou")
             agent.setdefault("knowledge_seed", []).append("public:granary")
-            platform.store.update_agent("lu_xingzhou", agent)
+            platform.store.repositories.entities.update_agent("lu_xingzhou", agent)
         result = AgentToolExecutor(platform, role="agent_decision", actor_id="lu_xingzhou").execute(
             "inspect_entity", {"entity": "粮仓"},
         )
@@ -2574,11 +2574,11 @@ def test_bootstrap_imports_generic_relationships_and_knowledge(tmp_path: Path):
     db_path = create_instance(config, "import-world", tmp_path / "runtime")
     platform = Platform(db_path)
     try:
-        assert platform.store.get_entity("village_council")["entity_type"] == "faction"
-        assert any(row["person"] == "he_yan" for row in platform.store.get_relationships("lin_bo"))
-        facts = platform.store.list_knowledge_facts("lu_xingzhou")
+        assert platform.store.repositories.entities.get_entity("village_council")["entity_type"] == "faction"
+        assert any(row["person"] == "he_yan" for row in platform.store.repositories.entities.get_relationships("lin_bo"))
+        facts = platform.store.repositories.memory.list_knowledge_facts("lu_xingzhou")
         assert any(fact["fact_key"] == "public:village" for fact in facts)
-        rumors = platform.store.list_knowledge_facts("yu_ge", limit=20)
+        rumors = platform.store.repositories.memory.list_knowledge_facts("yu_ge", limit=20)
         marks = next(item for item in rumors if item["fact_key"] == "rumor:north_gate_marks")
         assert "shape" in marks["fact"]
         assert "unknown" in marks["fact"]
@@ -2693,15 +2693,15 @@ def test_platform_advances_persisted_action_progress_without_llm(tmp_path: Path)
         assert platform.submit_behavior(intent)["status"] == "accepted"
         first = platform.step()
         assert first["to_minute"] == 1
-        state = platform.store.get_agent("lu_xingzhou")["initial_state"]
+        state = platform.store.repositories.entities.get_agent("lu_xingzhou")["initial_state"]
         assert state["status"] == "executing"
         assert state["active_action_index"] == 0
         for _ in range(4):
             platform.step()
-        state = platform.store.get_agent("lu_xingzhou")["initial_state"]
+        state = platform.store.repositories.entities.get_agent("lu_xingzhou")["initial_state"]
         assert state["active_action_index"] == 1
         platform.step()
-        state = platform.store.get_agent("lu_xingzhou")["initial_state"]
+        state = platform.store.repositories.entities.get_agent("lu_xingzhou")["initial_state"]
         assert state["active_action"] == "explore_area"
         assert state["remaining_minutes"] == 299
         row = platform.store.connection.execute("SELECT status,remaining_minutes FROM action_instance WHERE execution_id=? AND action_id=?", ("progress-intent", "explore_area")).fetchone()
@@ -2726,14 +2726,14 @@ def test_finite_resource_depletion_hides_gather_until_regeneration(tmp_path: Pat
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "resource-cycle-world", tmp_path / "runtime"))
     try:
-        grain = platform.store.get_entity("grain")
+        grain = platform.store.repositories.entities.get_entity("grain")
         grain["initial_state"]["quantity"] = 0
-        platform.store.put_entity("grain", "material", "谷物", {key: value for key, value in grain.items() if key not in {"id", "entity_type", "name"}})
+        platform.store.repositories.entities.put_entity("grain", "material", "谷物", {key: value for key, value in grain.items() if key not in {"id", "entity_type", "name"}})
         platform.store.connection.commit()
         assert not any(item["ref"] == "behavior:gather_resource" for item in platform.decision_view("liang_he")["executable_behaviors"])
         for _ in range(1440):
             platform.step()
-        assert platform.store.get_entity("grain")["initial_state"]["quantity"] == 20.0
+        assert platform.store.repositories.entities.get_entity("grain")["initial_state"]["quantity"] == 20.0
         assert any(item["ref"] == "behavior:gather_resource" for item in platform.decision_view("liang_he")["executable_behaviors"])
     finally:
         platform.close()
@@ -2743,17 +2743,17 @@ def test_target_effects_update_target_health_not_actor(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "target-effects-world", tmp_path / "runtime"))
     try:
-        attacker = platform.store.get_agent("he_yan")
-        target = platform.store.get_agent("lu_xingzhou")
+        attacker = platform.store.repositories.entities.get_agent("he_yan")
+        target = platform.store.repositories.entities.get_agent("lu_xingzhou")
         target["initial_state"]["health"] = 70
-        platform.store.update_agent("lu_xingzhou", target)
+        platform.store.repositories.entities.update_agent("lu_xingzhou", target)
         platform.store.connection.commit()
-        attack = next(item for item in platform.store.get_definitions("action_def") if item["id"] == "attack")
+        attack = next(item for item in platform.store.repositories.entities.get_definitions("action_def") if item["id"] == "attack")
         with platform.store.transaction():
             platform._apply_success_effects(attacker, attack, {"weapon_id": "spear"}, 0, target={"id": "lu_xingzhou", "defense": 4})
-        assert platform.store.get_agent("he_yan")["initial_state"]["health"] == 100
-        assert platform.store.get_agent("lu_xingzhou")["initial_state"]["health"] == 63
-        relationship = next(item for item in platform.store.list_relationships() if item["from"] == "he_yan" and item["to"] == "lu_xingzhou" and item["type"] == "hostility")
+        assert platform.store.repositories.entities.get_agent("he_yan")["initial_state"]["health"] == 100
+        assert platform.store.repositories.entities.get_agent("lu_xingzhou")["initial_state"]["health"] == 63
+        relationship = next(item for item in platform.store.repositories.entities.list_relationships() if item["from"] == "he_yan" and item["to"] == "lu_xingzhou" and item["type"] == "hostility")
         assert relationship["relation_strength"] > 0
     finally:
         platform.close()
@@ -2768,9 +2768,9 @@ def test_public_event_and_world_property_effects_commit_through_platform(tmp_pat
             {"type": "world_property_delta", "property": "north_gate_threat_level", "delta": 0.1},
         ]}
         with platform.store.transaction():
-            platform._apply_success_effects(platform.store.get_agent("he_yan"), action, {}, 0)
+            platform._apply_success_effects(platform.store.repositories.entities.get_agent("he_yan"), action, {}, 0)
         assert platform.store.get_meta("world_properties")["north_gate_threat_level"] == 0.32
-        assert any(item["event_type"] == "signal.raised" for item in platform.store.recent_events(limit=10))
+        assert any(item["event_type"] == "signal.raised" for item in platform.store.repositories.events.recent_events(limit=10))
     finally:
         platform.close()
 
@@ -2797,17 +2797,17 @@ def test_action_failure_condition_is_evaluated_at_completion(tmp_path: Path):
             "success_results": ["done"],
             "failure_results": ["stunned"],
         }
-        platform.store.put_definition("action_def", action["id"], action)
-        platform.store.put_definition("bt_def", behavior["id"], behavior)
-        agent = platform.store.get_agent("su_wu")
+        platform.store.repositories.entities.put_definition("action_def", action["id"], action)
+        platform.store.repositories.entities.put_definition("bt_def", behavior["id"], behavior)
+        agent = platform.store.repositories.entities.get_agent("su_wu")
         agent["initial_bt_ids"].append(behavior["id"])
         agent["initial_state"]["conditions"] = ["stunned"]
-        platform.store.update_agent("su_wu", agent)
+        platform.store.repositories.entities.update_agent("su_wu", agent)
         platform.store.connection.commit()
         result = platform.submit_behavior(BehaviorIntent("su_wu", "behavior:stun_sensitive_behavior", {}, {}, "Try the action.", 0.8, "stun-failure"))
         assert result["status"] == "accepted"
         platform.step()
-        assert any(item["event_type"] == "behavior.failed" and item["actor_id"] == "su_wu" for item in platform.store.recent_events(limit=10))
+        assert any(item["event_type"] == "behavior.failed" and item["actor_id"] == "su_wu" for item in platform.store.repositories.events.recent_events(limit=10))
     finally:
         platform.close()
 
@@ -2833,17 +2833,17 @@ def test_machine_success_condition_is_evaluated_after_action_progress(tmp_path: 
             "success_results": ["ready"],
             "failure_results": ["not_ready"],
         }
-        platform.store.put_definition("action_def", action["id"], action)
-        platform.store.put_definition("bt_def", behavior["id"], behavior)
-        agent = platform.store.get_agent("su_wu")
+        platform.store.repositories.entities.put_definition("action_def", action["id"], action)
+        platform.store.repositories.entities.put_definition("bt_def", behavior["id"], behavior)
+        agent = platform.store.repositories.entities.get_agent("su_wu")
         agent["initial_state"]["energy"] = 20
         agent["initial_bt_ids"].append(behavior["id"])
-        platform.store.update_agent("su_wu", agent)
+        platform.store.repositories.entities.update_agent("su_wu", agent)
         platform.store.connection.commit()
         result = platform.submit_behavior(BehaviorIntent("su_wu", "behavior:readiness_check_behavior", {}, {}, "Check readiness.", 0.8, "success-condition"))
         assert result["status"] == "accepted"
         platform.step()
-        outcome = platform.store.get_agent("su_wu")["initial_state"]["last_platform_result"]
+        outcome = platform.store.repositories.entities.get_agent("su_wu")["initial_state"]["last_platform_result"]
         assert outcome["status"] == "failed"
         assert "success condition failed" in outcome["outcome"]["result"]
     finally:
@@ -2860,9 +2860,9 @@ def test_role_goal_paths_produce_medicine_and_dawn_bell(tmp_path: Path):
         assert bell["status"] == "accepted"
         for _ in range(180):
             platform.step()
-        assert platform.store.get_agent("qiao_ning")["inventory"].get("medicine", 0) == 1
-        assert platform.store.get_agent("tian_yan")["inventory"].get("dawn_bell", 0) == 1
-        assert platform.store.get_entity("dawn_bell")["initial_state"]["created"] is True
+        assert platform.store.repositories.entities.get_agent("qiao_ning")["inventory"].get("medicine", 0) == 1
+        assert platform.store.repositories.entities.get_agent("tian_yan")["inventory"].get("dawn_bell", 0) == 1
+        assert platform.store.repositories.entities.get_entity("dawn_bell")["initial_state"]["created"] is True
         assert not any(item["ref"] == "behavior:craft_dawn_bell" for item in platform.decision_view("tian_yan")["executable_behaviors"])
     finally:
         platform.close()
@@ -2874,11 +2874,11 @@ def test_water_research_path_records_a_specific_fact(tmp_path: Path):
     try:
         for attempt in range(2):
             if attempt:
-                agent = platform.store.get_agent("qiao_ning")
+                agent = platform.store.repositories.entities.get_agent("qiao_ning")
                 agent["initial_state"]["attention"] = 0
                 agent["initial_state"]["energy"] = 90
                 with platform.store.transaction():
-                    platform.store.update_agent("qiao_ning", agent)
+                    platform.store.repositories.entities.update_agent("qiao_ning", agent)
             result = platform.submit_behavior(BehaviorIntent("qiao_ning", "behavior:research_water", {}, {}, "Test the river water for the fever investigation.", 0.9, f"water-research-{attempt}"))
             assert result["status"] == "accepted"
             for _ in range(result["remaining_minutes"]):
@@ -2887,7 +2887,7 @@ def test_water_research_path_records_a_specific_fact(tmp_path: Path):
                 assert not any(task["role"] == "story" for task in platform.ready_evolution_tasks())
             else:
                 assert any(task["role"] == "story" for task in platform.ready_evolution_tasks())
-        facts = platform.store.list_knowledge_facts("qiao_ning", limit=30)
+        facts = platform.store.repositories.memory.list_knowledge_facts("qiao_ning", limit=30)
         assert any(item["fact_key"] == "researched:clean_water:contamination" for item in facts)
     finally:
         platform.close()
@@ -2905,10 +2905,10 @@ def test_research_facts_unlock_remediation_and_sources_require_colocation(tmp_pa
         assert "behavior:stabilize_pact" not in su_choices
 
         # A registered source at another location is not remotely researchable.
-        tablet = platform.store.get_entity("old_pact_tablet")
+        tablet = platform.store.repositories.entities.get_entity("old_pact_tablet")
         tablet["initial_state"]["location_id"] = "hidden_root_gate"
         with platform.store.transaction():
-            platform.store.put_entity(
+            platform.store.repositories.entities.put_entity(
                 tablet["id"], tablet["entity_type"], tablet["name"],
                 {key: value for key, value in tablet.items() if key not in {"id", "entity_type", "name"}},
             )
@@ -2917,7 +2917,7 @@ def test_research_facts_unlock_remediation_and_sources_require_colocation(tmp_pa
 
         tablet["initial_state"]["location_id"] = "old_well"
         with platform.store.transaction():
-            platform.store.put_entity(
+            platform.store.repositories.entities.put_entity(
                 tablet["id"], tablet["entity_type"], tablet["name"],
                 {key: value for key, value in tablet.items() if key not in {"id", "entity_type", "name"}},
             )
@@ -2938,11 +2938,11 @@ def test_story_feedback_runs_at_completion_boundary_and_updates_audience(tmp_pat
     provider = SequenceProvider([{"intent_type": "propose_story_beat", "beat": "Reconsider the old pact"}])
     try:
         for attempt in range(2):
-            agent = platform.store.get_agent("su_wu")
+            agent = platform.store.repositories.entities.get_agent("su_wu")
             agent["initial_state"]["attention"] = 0
             agent["initial_state"]["energy"] = 90
             with platform.store.transaction():
-                platform.store.update_agent("su_wu", agent)
+                platform.store.repositories.entities.update_agent("su_wu", agent)
             result = platform.submit_behavior(BehaviorIntent("su_wu", "behavior:research_source", {}, {}, "Study the pact source.", 0.9, f"story-research-{attempt}"))
             assert result["status"] == "accepted"
             for _ in range(result["remaining_minutes"]):
@@ -2954,8 +2954,8 @@ def test_story_feedback_runs_at_completion_boundary_and_updates_audience(tmp_pat
         assert platform.status()["status"] == "running"
         state = platform.store.get_meta("story_state")
         assert state["old_pact_understood"]["status"] == "active"
-        assert "Decide whether the village should renew, change, or end the old pact." in platform.store.get_agent("lin_bo")["story_goals"]
-        events = platform.store.recent_events(limit=4)
+        assert "Decide whether the village should renew, change, or end the old pact." in platform.store.repositories.entities.get_agent("lin_bo")["story_goals"]
+        events = platform.store.repositories.events.recent_events(limit=4)
         story_event = next(item for item in events if item["event_type"] == "story.beat.activated")
         minute_event = next(item for item in events if item["event_type"] == "world_minute.advanced")
         assert story_event["world_minute"] == boundary
@@ -2969,16 +2969,16 @@ def test_story_catalog_is_scoped_to_the_triggering_event(tmp_path: Path):
     platform = Platform(create_instance(config, "story-source-scope", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            platform.store.merge_knowledge_fact("su_wu", "researched:old_pact_tablet:origin", {
+            platform.store.repositories.memory.merge_knowledge_fact("su_wu", "researched:old_pact_tablet:origin", {
                 "fact": "The old pact kept the root gate stable.", "source_type": "research", "source_id": "old_pact_tablet", "confidence": 0.9, "observed_at": 2,
             })
             # A different Story fact reaches the same person in the same
             # minute. Source type, not row recency, must select evidence.
-            platform.store.merge_knowledge_fact("su_wu", "story:ledger_boundary", {
+            platform.store.repositories.memory.merge_knowledge_fact("su_wu", "story:ledger_boundary", {
                 "fact": "The recovered ledger mentions the northern boundary.", "source_type": "story", "confidence": 1.0, "observed_at": 2,
             })
-            recovered = platform.store.append_event("object.recovered", "lu_xingzhou", 1, {"fact": "The caravan ledger was recovered."})
-            researched = platform.store.append_event("research.completed", "su_wu", 2, {"fact": "The old pact tablet research completed."})
+            recovered = platform.store.repositories.events.append_event("object.recovered", "lu_xingzhou", 1, {"fact": "The caravan ledger was recovered."})
+            researched = platform.store.repositories.events.append_event("research.completed", "su_wu", 2, {"fact": "The old pact tablet research completed."})
         recovered_view = platform.view.build_decision_view("story", role="story", source_event_id=recovered)
         assert all(item["ref"] != "story:old_pact_understood" for item in recovered_view["story_beats"])
         research_view = platform.view.build_decision_view("story", role="story", source_event_id=researched)
@@ -2996,13 +2996,13 @@ def test_story_view_deduplicates_shared_world_facts(tmp_path: Path):
         fact = "River samples confirm one shared contamination finding."
         with platform.store.transaction():
             for actor in ("qiao_ning", "su_wu"):
-                platform.store.merge_knowledge_fact(actor, "shared:water_finding", {
+                platform.store.repositories.memory.merge_knowledge_fact(actor, "shared:water_finding", {
                     "fact": fact,
                     "source_type": "research",
                     "confidence": 1.0,
                     "observed_at": 3,
                 })
-            source_event_id = platform.store.append_event(
+            source_event_id = platform.store.repositories.events.append_event(
                 "research.completed", "qiao_ning", 3, {"fact": fact},
             )
         view = platform.view.build_decision_view("story", role="story", source_event_id=source_event_id)
@@ -3028,7 +3028,7 @@ def test_incremental_remediation_records_result_without_story_wake(tmp_path: Pat
         ))
         assert started["status"] == "accepted"
         step_n(platform, started["remaining_minutes"])
-        assert any(item["event_type"] == "pact.stability.improved" for item in platform.store.recent_events(limit=30))
+        assert any(item["event_type"] == "pact.stability.improved" for item in platform.store.repositories.events.recent_events(limit=30))
         tasks = platform.ready_evolution_tasks()
         assert any(item["role"] == "god" for item in tasks)
         assert not any(item["role"] == "story" for item in tasks)
@@ -3044,7 +3044,7 @@ def test_completed_action_respects_existing_public_incident_cooldown(tmp_path: P
     try:
         grant_research_fact(platform, "su_wu", "researched:old_pact_tablet:origin")
         with platform.store.transaction():
-            first_event = platform.store.append_event(
+            first_event = platform.store.repositories.events.append_event(
                 "security.marks_classified", "he_yan", 96,
                 {"summary": "The configured investigation classified the marks."},
             )
@@ -3064,7 +3064,7 @@ def test_completed_action_respects_existing_public_incident_cooldown(tmp_path: P
 
         assert any(
             item["event_type"] == "pact.stability.improved"
-            for item in platform.store.recent_events(limit=40)
+            for item in platform.store.repositories.events.recent_events(limit=40)
         )
         god_tasks = [item for item in platform.ready_evolution_tasks() if item["role"] == "god"]
         assert [item["task_id"] for item in god_tasks] == [
@@ -3079,7 +3079,7 @@ def test_emergent_story_beat_is_not_repeated_for_one_validated_result(tmp_path: 
     platform = Platform(create_instance(config, "story-dedup-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            source_event_id = platform.store.append_event(
+            source_event_id = platform.store.repositories.events.append_event(
                 "relationship.changed",
                 "fei_lan",
                 0,
@@ -3097,7 +3097,7 @@ def test_emergent_story_beat_is_not_repeated_for_one_validated_result(tmp_path: 
         assert first["status"] == "accepted"
         assert second["status"] == "wait"
         assert second["reason"].startswith("This validated result already")
-        assert platform.store.recent_events(limit=20)[0]["event_type"] == "story.beat.activated"
+        assert platform.store.repositories.events.recent_events(limit=20)[0]["event_type"] == "story.beat.activated"
         saved = platform.store.get_meta("story_state")["emergent_beats"]
         assert saved[-1]["source_event_id"] == source_event_id
     finally:
@@ -3109,7 +3109,7 @@ def test_emergent_story_beat_deduplicates_same_fact_across_events(tmp_path: Path
     platform = Platform(create_instance(config, "story-fact-dedup-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            first_event = platform.store.append_event("water.mitigation.applied", "qiao_ning", 10, {"fact": "River water safety was improved and verified.", "story_source": True})
+            first_event = platform.store.repositories.events.append_event("water.mitigation.applied", "qiao_ning", 10, {"fact": "River water safety was improved and verified.", "story_source": True})
         first = platform.submit_story_beat("story", {
             "summary": "The water safety result is recorded.",
             "fact": "River water safety was improved and verified.",
@@ -3118,7 +3118,7 @@ def test_emergent_story_beat_deduplicates_same_fact_across_events(tmp_path: Path
         })
         assert first["status"] == "accepted"
         with platform.store.transaction():
-            platform.store.append_event("water.mitigation.applied", "qiao_ning", 20, {"fact": "River water safety was improved and verified.", "story_source": True})
+            platform.store.repositories.events.append_event("water.mitigation.applied", "qiao_ning", 20, {"fact": "River water safety was improved and verified.", "story_source": True})
         second = platform.submit_story_beat("story", {
             "summary": "Water safety improvement recorded again.",
             "fact": "River water safety was improved and verified.",
@@ -3138,7 +3138,7 @@ def test_emergent_story_chapter_survives_unrelated_npc_behavior(tmp_path: Path):
     platform = Platform(create_instance(config, "story-open-chapter-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            source_event_id = platform.store.append_event(
+            source_event_id = platform.store.repositories.events.append_event(
                 "cistern.reviewed", "mei_lan", 1,
                 {"summary": "The cistern record was verified.", "story_source": True},
             )
@@ -3165,11 +3165,11 @@ def test_story_tool_binds_emergent_beat_to_task_source_event(tmp_path: Path):
     platform = Platform(create_instance(config, "story-source-binding-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            intended = platform.store.append_event(
+            intended = platform.store.repositories.events.append_event(
                 "relationship.changed", "fei_lan", 4,
                 {"target_id": "yu_ge", "relation": "trust", "delta": 0.1},
             )
-            platform.store.append_event(
+            platform.store.repositories.events.append_event(
                 "research.completed", "qiao_ning", 5,
                 {"fact": "A newer but unrelated research result."},
             )
@@ -3196,7 +3196,7 @@ def test_story_accepts_source_scoped_emergent_beat_without_redundant_summary(tmp
     platform = Platform(create_instance(config, "story-source-scoped-emergent-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            source_event = platform.store.append_event(
+            source_event = platform.store.repositories.events.append_event(
                 "entity.installed", "tian_yan", 12,
                 {"summary": "The warning bell was installed at the north gate.", "story_source": True},
             )
@@ -3229,7 +3229,7 @@ def test_story_rejects_numeric_detail_absent_from_source_event(tmp_path: Path):
     platform = Platform(create_instance(config, "story-numeric-grounding-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            source_event = platform.store.append_event(
+            source_event = platform.store.repositories.events.append_event(
                 "exploration.completed", "lu_xingzhou", 12,
                 {"summary": "The Greywood route was surveyed.", "fact": "A route was recorded."},
             )
@@ -3263,7 +3263,7 @@ def test_step_commits_each_tick_before_a_later_tick_fails(tmp_path: Path):
         with pytest.raises(RuntimeError, match="synthetic tick failure"):
             step_n(platform, 3)
         assert platform.store.get_meta("world_minute") == 1
-        event = platform.store.recent_events(limit=5)
+        event = platform.store.repositories.events.recent_events(limit=5)
         assert any(item["event_type"] == "world_minute.advanced" and item["world_minute"] == 1 for item in event)
         assert not any(item["event_type"] == "world_minute.advanced" and item["world_minute"] == 2 for item in event)
     finally:
@@ -3279,26 +3279,26 @@ def test_platform_interrupt_updates_bt_and_action_instances(tmp_path: Path):
         reason="Explore", confidence=0.9, intent_id="interrupt-intent",
     )
     try:
-        starting_rations = platform.store.get_agent("lu_xingzhou")["inventory"]["rations"]
+        starting_rations = platform.store.repositories.entities.get_agent("lu_xingzhou")["inventory"]["rations"]
         platform.submit_behavior(intent)
         step_n(platform, 6)
-        assert platform.store.get_agent("lu_xingzhou")["inventory"]["rations"] == starting_rations - 1
+        assert platform.store.repositories.entities.get_agent("lu_xingzhou")["inventory"]["rations"] == starting_rations - 1
         paused = platform.interrupt_behavior("lu_xingzhou", "urgent boundary signal", hard=False)
         assert paused["status"] == "paused"
-        state = platform.store.get_agent("lu_xingzhou")["initial_state"]
+        state = platform.store.repositories.entities.get_agent("lu_xingzhou")["initial_state"]
         assert state["status"] == "paused"
         remaining_before_resume = state["remaining_minutes"]
         row = platform.store.connection.execute("SELECT status FROM action_instance WHERE execution_id=? AND status=?", ("interrupt-intent", "paused")).fetchone()
         assert row is not None
         resumed = platform.resume_behavior("lu_xingzhou")
         assert resumed["status"] == "resumed"
-        assert platform.store.get_agent("lu_xingzhou")["initial_state"]["remaining_minutes"] == remaining_before_resume
+        assert platform.store.repositories.entities.get_agent("lu_xingzhou")["initial_state"]["remaining_minutes"] == remaining_before_resume
         platform.step()
-        assert platform.store.get_agent("lu_xingzhou")["initial_state"]["remaining_minutes"] == remaining_before_resume - 1
+        assert platform.store.repositories.entities.get_agent("lu_xingzhou")["initial_state"]["remaining_minutes"] == remaining_before_resume - 1
         cancelled = platform.interrupt_behavior("lu_xingzhou", "threat confirmed", hard=True)
         assert cancelled["status"] == "cancelled"
-        assert platform.store.get_agent("lu_xingzhou")["initial_state"]["status"] == "idle"
-        assert platform.store.get_agent("lu_xingzhou")["inventory"]["rations"] == starting_rations
+        assert platform.store.repositories.entities.get_agent("lu_xingzhou")["initial_state"]["status"] == "idle"
+        assert platform.store.repositories.entities.get_agent("lu_xingzhou")["inventory"]["rations"] == starting_rations
     finally:
         platform.close()
 
@@ -3308,23 +3308,23 @@ def test_direct_interaction_does_not_interrupt_active_crafting(tmp_path: Path):
     db_path = create_instance(config, "interaction-boundary-world", tmp_path / "runtime")
     platform = Platform(db_path)
     try:
-        listener = platform.store.get_agent("qiao_ning")
+        listener = platform.store.repositories.entities.get_agent("qiao_ning")
         listener["initial_state"]["location_id"] = "granary"
         with platform.store.transaction():
-            platform.store.update_agent("qiao_ning", listener)
-            crafter = platform.store.get_agent("liang_he")
+            platform.store.repositories.entities.update_agent("qiao_ning", listener)
+            crafter = platform.store.repositories.entities.get_agent("liang_he")
             crafter.setdefault("inventory", {})["grain"] = 1
-            platform.store.update_agent("liang_he", crafter)
+            platform.store.repositories.entities.update_agent("liang_he", crafter)
         intent = BehaviorIntent(
             actor_id="liang_he", behavior_ref="behavior:craft_meal", target={}, parameters={},
             reason="Prepare food before trading.", confidence=0.8, intent_id="interaction-boundary-intent",
         )
         assert platform.submit_behavior(intent)["status"] == "accepted"
         platform.step()
-        before = dict(platform.store.get_agent("liang_he")["initial_state"])
+        before = dict(platform.store.repositories.entities.get_agent("liang_he")["initial_state"])
         result = platform.submit_dialogue("liang_he", "qiao_ning", "trade", "Can we trade now?")
         assert result["status"] == "accepted"
-        state = platform.store.get_agent("liang_he")["initial_state"]
+        state = platform.store.repositories.entities.get_agent("liang_he")["initial_state"]
         assert state["status"] == "executing"
         assert state["active_bt_instance"] == "interaction-boundary-intent"
         assert state["active_action"] == before["active_action"]
@@ -3340,14 +3340,14 @@ def test_dangerous_action_blocks_instant_interaction(tmp_path: Path):
     platform = Platform(db_path)
     try:
         with platform.store.transaction():
-            actor = platform.store.get_agent("yu_ge")
+            actor = platform.store.repositories.entities.get_agent("yu_ge")
             actor["initial_state"].update({
                 "status": "executing",
                 "active_bt_instance": "dangerous-action",
                 "active_action": "attack",
                 "remaining_minutes": 5,
             })
-            platform.store.update_agent("yu_ge", actor)
+            platform.store.repositories.entities.update_agent("yu_ge", actor)
         result = platform.submit_dialogue(
             "fei_lan", "yu_ge", "route", "Can you answer while fighting?",
         )
@@ -3368,7 +3368,7 @@ def test_allowed_interaction_preserves_active_travel_progress(tmp_path: Path):
         ))
         assert started["status"] == "accepted"
         platform.step()
-        before = dict(platform.store.get_agent("yu_ge")["initial_state"])
+        before = dict(platform.store.repositories.entities.get_agent("yu_ge")["initial_state"])
         assert before["active_action"] == "travel_to"
         assert before["status"] == "executing"
 
@@ -3376,7 +3376,7 @@ def test_allowed_interaction_preserves_active_travel_progress(tmp_path: Path):
             "fei_lan", "yu_ge", "route", "What did you learn about the northern route?",
         )
         assert dialogue["status"] == "accepted"
-        after = platform.store.get_agent("yu_ge")["initial_state"]
+        after = platform.store.repositories.entities.get_agent("yu_ge")["initial_state"]
         assert after["status"] == "executing"
         assert after["active_bt_instance"] == before["active_bt_instance"]
         assert after["active_action"] == before["active_action"]
@@ -3395,7 +3395,7 @@ def test_behavior_outcome_is_available_to_nightly_reflection(tmp_path: Path):
         accepted = platform.submit_behavior(intent)
         assert accepted["status"] == "accepted"
         step_n(platform, accepted["remaining_minutes"])
-        events = platform.store.recent_events_for_actor("lin_bo", limit=20)
+        events = platform.store.repositories.events.recent_events_for_actor("lin_bo", limit=20)
         outcome_event = next(item for item in events if item["event_type"] == "behavior.completed")
         outcome = outcome_event["outcome"]
         assert outcome["expected"]["summary"]
@@ -3414,12 +3414,12 @@ def test_configured_behavior_outcome_updates_social_and_growth_needs(tmp_path: P
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "need-outcome-world", tmp_path / "runtime"))
     try:
-        before = platform.store.get_agent("lin_bo")["needs"]
+        before = platform.store.repositories.entities.get_agent("lin_bo")["needs"]
         intent = BehaviorIntent("lin_bo", "behavior:govern_village", {}, {}, "Review village stability.", 0.9, "need-outcome-intent")
         accepted = platform.submit_behavior(intent)
         assert accepted["status"] == "accepted"
         step_n(platform, accepted["remaining_minutes"])
-        after = platform.store.get_agent("lin_bo")["needs"]
+        after = platform.store.repositories.entities.get_agent("lin_bo")["needs"]
         assert after["esteem"] == before["esteem"] + 0.5
         assert after["belonging"] == before["belonging"] + 0.2
     finally:
@@ -3432,20 +3432,20 @@ def test_parallel_bt_runs_action_instances_concurrently(tmp_path: Path):
     platform = Platform(db_path)
     try:
         with platform.store.transaction():
-            platform.store.put_definition("bt_def", "parallel_test", {"id": "parallel_test", "version": 1, "summary": "Run two independent tasks", "estimated_minutes": 48, "nodes": [{"type": "parallel", "children": [{"type": "action", "action_id": "rest", "parameters": {"location_id": "context.location_id"}}, {"type": "action", "action_id": "travel_to", "parameters": {"location_id": "watchtower"}}]}]})
-            agent = platform.store.get_agent("lu_xingzhou")
+            platform.store.repositories.entities.put_definition("bt_def", "parallel_test", {"id": "parallel_test", "version": 1, "summary": "Run two independent tasks", "estimated_minutes": 48, "nodes": [{"type": "parallel", "children": [{"type": "action", "action_id": "rest", "parameters": {"location_id": "context.location_id"}}, {"type": "action", "action_id": "travel_to", "parameters": {"location_id": "watchtower"}}]}]})
+            agent = platform.store.repositories.entities.get_agent("lu_xingzhou")
             agent["initial_state"]["location_id"] = "village_square"
             agent["initial_bt_ids"].append("parallel_test")
-            platform.store.update_agent("lu_xingzhou", agent)
+            platform.store.repositories.entities.update_agent("lu_xingzhou", agent)
         intent = BehaviorIntent("lu_xingzhou", "behavior:parallel_test", {}, {}, "Run parallel work", 0.8, "parallel-intent")
         assert platform.submit_behavior(intent)["status"] == "accepted"
         platform.step()
         rows = platform.store.connection.execute("SELECT action_id,status,remaining_minutes FROM action_instance WHERE execution_id=? ORDER BY action_id", ("parallel-intent",)).fetchall()
         assert len(rows) == 2
         assert rows[0]["status"] == "running" or rows[1]["status"] == "running"
-        assert platform.store.get_agent("lu_xingzhou")["initial_state"]["active_action"] == "parallel"
+        assert platform.store.repositories.entities.get_agent("lu_xingzhou")["initial_state"]["active_action"] == "parallel"
         step_n(platform, 59)
-        assert platform.store.get_agent("lu_xingzhou")["initial_state"]["status"] == "idle"
+        assert platform.store.repositories.entities.get_agent("lu_xingzhou")["initial_state"]["status"] == "idle"
     finally:
         platform.close()
 
@@ -3497,7 +3497,7 @@ def test_exploration_completion_persists_result_and_knowledge(tmp_path: Path):
         assert report["to_minute"] == 305
         fact = platform.store.connection.execute("SELECT area_id FROM exploration_result WHERE agent_id=?", ("lu_xingzhou",)).fetchone()
         assert fact["area_id"] == "greywood_edge"
-        assert any(item["fact_key"] == "explored:greywood_edge" for item in platform.store.list_knowledge_facts("lu_xingzhou"))
+        assert any(item["fact_key"] == "explored:greywood_edge" for item in platform.store.repositories.memory.list_knowledge_facts("lu_xingzhou"))
     finally:
         platform.close()
 
@@ -3510,7 +3510,7 @@ def test_completed_exploration_is_not_offered_again_and_keeps_discoveries(tmp_pa
             "lu_xingzhou", "behavior:explore_greywood", {}, {}, "Survey the unknown edge.", 0.9, "exploration-novelty"
         ))["status"] == "accepted"
         step_n(platform, 305)
-        facts = platform.store.list_knowledge_facts("lu_xingzhou", limit=20)
+        facts = platform.store.repositories.memory.list_knowledge_facts("lu_xingzhou", limit=20)
         assert any(item["fact_key"] == "explored:greywood_edge:route" for item in facts)
         assert not any(item["ref"] == "behavior:explore_greywood" for item in platform.decision_view("lu_xingzhou")["executable_behaviors"])
     finally:
@@ -3533,14 +3533,14 @@ def test_exploration_unlocks_a_concrete_follow_up_and_changes_the_world(tmp_path
             "lu_xingzhou", "behavior:recover_caravan_ledger", {}, {}, "Recover the ledger found during the survey.", 0.9, "recover-ledger"
         ))["status"] == "accepted"
         step_n(platform, 240)
-        ledger = platform.store.get_entity("caravan_ledger")
+        ledger = platform.store.repositories.entities.get_entity("caravan_ledger")
         assert ledger["initial_state"]["recovered"] is True
         after_trust = float((platform.store.get_meta("world_properties", {}) or {})["public_trust"])
         assert after_trust > before_trust
-        facts = platform.store.list_knowledge_facts("lu_xingzhou", limit=30)
+        facts = platform.store.repositories.memory.list_knowledge_facts("lu_xingzhou", limit=30)
         assert any(item["fact_key"] == "recovered:caravan_ledger" for item in facts)
         assert not any(item["ref"] == "behavior:recover_caravan_ledger" for item in platform.decision_view("lu_xingzhou")["executable_behaviors"])
-        assert any(item["event_type"] == "object.recovered" for item in platform.store.recent_events(limit=30))
+        assert any(item["event_type"] == "object.recovered" for item in platform.store.repositories.events.recent_events(limit=30))
     finally:
         platform.close()
 
@@ -3551,16 +3551,16 @@ def test_completed_research_records_fact_and_is_not_offered_again(tmp_path: Path
     try:
         for attempt in range(2):
             if attempt:
-                agent = platform.store.get_agent("su_wu")
+                agent = platform.store.repositories.entities.get_agent("su_wu")
                 agent["initial_state"]["attention"] = 0
                 agent["initial_state"]["energy"] = 90
                 with platform.store.transaction():
-                    platform.store.update_agent("su_wu", agent)
+                    platform.store.repositories.entities.update_agent("su_wu", agent)
             assert platform.submit_behavior(BehaviorIntent(
                 "su_wu", "behavior:research_source", {}, {}, "Study the pact source.", 0.9, f"research-novelty-{attempt}"
             ))["status"] == "accepted"
             step_n(platform, 240)
-        facts = platform.store.list_knowledge_facts("su_wu", limit=20)
+        facts = platform.store.repositories.memory.list_knowledge_facts("su_wu", limit=20)
         assert any(item["fact_key"] == "researched:old_pact_tablet:origin" for item in facts)
         assert not any(item["ref"] == "behavior:research_source" for item in platform.decision_view("su_wu")["executable_behaviors"])
     finally:
@@ -3612,7 +3612,7 @@ def test_claimed_evolution_task_is_recovered_after_process_restart(tmp_path: Pat
         SimulationRunner(restarted, {})
         recovered = next(item for item in restarted.ready_evolution_tasks() if item["task_id"] == "reflection:lu_xingzhou")
         assert recovered["status"] == "ready"
-        assert any(event["event_type"] == "evolution.tasks_recovered" for event in restarted.store.recent_events(limit=10))
+        assert any(event["event_type"] == "evolution.tasks_recovered" for event in restarted.store.repositories.events.recent_events(limit=10))
     finally:
         restarted.close()
 
@@ -3622,7 +3622,7 @@ def test_evolution_retry_tracks_backoff_and_clears_after_success(tmp_path: Path)
     platform = Platform(create_instance(config, "evolution-retry-backoff", tmp_path / "runtime"))
     try:
         task_id = "god:event_group:research_synthesis:42"
-        platform.store.put_evolution_task(
+        platform.store.repositories.evolution.put_evolution_task(
             task_id, "god", "god", "event_group:research_synthesis", 0, 0,
             status="ready",
             data={"minimum_events": 2, "source_events": [{"event_id": 42, "event_type": "research.completed"}]},
@@ -3667,7 +3667,7 @@ def test_god_proposal_creates_entity_only_through_platform(tmp_path: Path):
     try:
         turn = AgentEngine(platform, provider).run(role="god", actor_id="god")
         assert turn.result["status"] == "accepted"
-        entity = platform.store.get_entity(turn.result["entity_id"])
+        entity = platform.store.repositories.entities.get_entity(turn.result["entity_id"])
         assert entity["entity_type"] == "resource_node"
     finally:
         platform.close()
@@ -3685,7 +3685,7 @@ def test_god_created_location_preserves_configured_topology(tmp_path: Path):
             "description": "A settlement discovered beyond the southern road.",
         })
         assert result["status"] == "accepted"
-        location = platform.store.get_entity(result["entity_id"])
+        location = platform.store.repositories.entities.get_entity(result["entity_id"])
         assert location["routes"] == ["river_bridge"]
         assert location["tags"] == ["settlement", "market"]
         assert location["public"] is True
@@ -3703,12 +3703,12 @@ def test_god_world_change_and_trigger_create_platform_state(tmp_path: Path):
         change = platform.submit_world_change("operator", {"change_type": "world_property", "summary": "Adjust fog pressure.", "property": "fog_pressure", "value": 0.4, "expected_effects": ["Fog pressure is recorded as 0.4."]})
         assert change["status"] == "accepted"
         assert platform.store.get_meta("world_properties")["fog_pressure"] == 0.4
-        world_change = platform.store.recent_world_change_events(limit=1)[0]
+        world_change = platform.store.repositories.events.recent_world_change_events(limit=1)[0]
         assert world_change["expected_effects"] == ["Fog pressure is recorded as 0.4."]
-        resource = platform.store.get_entity("village_food")
+        resource = platform.store.repositories.entities.get_entity("village_food")
         resource["amount"] = 100
         with platform.store.transaction():
-            platform.store.put_entity("village_food", resource["entity_type"], resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
+            platform.store.repositories.entities.put_entity("village_food", resource["entity_type"], resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
         platform.step()
         tasks = platform.ready_evolution_tasks()
         assert any(task.get("trigger_id") == "food_crisis" for task in tasks)
@@ -3720,10 +3720,10 @@ def test_property_and_shared_resource_projection_stay_in_sync(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "resource-projection-world", tmp_path / "runtime"))
     try:
-        resource = platform.store.get_entity("village_food")
+        resource = platform.store.repositories.entities.get_entity("village_food")
         resource["amount"] = 100
         with platform.store.transaction():
-            platform.store.put_entity("village_food", resource["entity_type"], resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
+            platform.store.repositories.entities.put_entity("village_food", resource["entity_type"], resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
         platform.step()
         assert any(task.get("trigger_id") == "food_crisis" for task in platform.ready_evolution_tasks())
         change = platform.submit_world_change("operator", {
@@ -3735,7 +3735,7 @@ def test_property_and_shared_resource_projection_stay_in_sync(tmp_path: Path):
         })
         assert change["status"] == "accepted"
         assert platform.store.get_meta("world_properties")["village_food"] == 180
-        assert platform.store.get_entity("village_food")["amount"] == 180
+        assert platform.store.repositories.entities.get_entity("village_food")["amount"] == 180
         assert change["effect"]["resource_projection"] == {"entity_id": "village_food", "before": 100, "after": 180}
     finally:
         platform.close()
@@ -3753,7 +3753,7 @@ def test_god_cannot_directly_mutate_shared_resource(tmp_path: Path):
         })
         assert rejected["status"] == "rejected"
         assert rejected["failed_check"] == "god_direct_property_change"
-        assert platform.store.get_entity("village_food")["amount"] == 320
+        assert platform.store.repositories.entities.get_entity("village_food")["amount"] == 320
     finally:
         platform.close()
 
@@ -3832,33 +3832,33 @@ def test_world_rule_signal_wakes_god_once_and_rearms_after_recovery(tmp_path: Pa
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "world-rule-signal-world", tmp_path / "runtime"))
     try:
-        resource = platform.store.get_entity("village_food")
+        resource = platform.store.repositories.entities.get_entity("village_food")
         resource["amount"] = 100
         with platform.store.transaction():
-            platform.store.put_entity("village_food", resource["entity_type"], resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
+            platform.store.repositories.entities.put_entity("village_food", resource["entity_type"], resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
         platform.step()
-        signals = [item for item in platform.store.recent_events(limit=30) if item["event_type"] == "world.rule.public_ration"]
+        signals = [item for item in platform.store.repositories.events.recent_events(limit=30) if item["event_type"] == "world.rule.public_ration"]
         assert len(signals) == 1
         assert any(item["role"] == "god" and item["task_type"] == "rule:public_ration" for item in platform.ready_evolution_tasks())
         started = platform.submit_behavior(BehaviorIntent("liang_he", "behavior:manage_ration", {}, {}, "Review the low food reserve.", 0.8, "rule-followup"))
         assert started["status"] == "accepted"
         step_n(platform, started["remaining_minutes"])
-        followups = [item for item in platform.store.recent_events(limit=100) if item["event_type"] == "world.rule.followed"]
+        followups = [item for item in platform.store.repositories.events.recent_events(limit=100) if item["event_type"] == "world.rule.followed"]
         assert any(item["rule"] == "public_ration" and item["behavior_id"] == "manage_ration" for item in followups)
         platform.step()
-        assert len([item for item in platform.store.recent_events(limit=500) if item["event_type"] == "world.rule.public_ration"]) == 1
+        assert len([item for item in platform.store.repositories.events.recent_events(limit=500) if item["event_type"] == "world.rule.public_ration"]) == 1
 
-        resource = platform.store.get_entity("village_food")
+        resource = platform.store.repositories.entities.get_entity("village_food")
         resource["amount"] = 160
         with platform.store.transaction():
-            platform.store.put_entity("village_food", resource["entity_type"], resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
+            platform.store.repositories.entities.put_entity("village_food", resource["entity_type"], resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
         platform.step()
-        resource = platform.store.get_entity("village_food")
+        resource = platform.store.repositories.entities.get_entity("village_food")
         resource["amount"] = 100
         with platform.store.transaction():
-            platform.store.put_entity("village_food", resource["entity_type"], resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
+            platform.store.repositories.entities.put_entity("village_food", resource["entity_type"], resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
         platform.step()
-        assert len([item for item in platform.store.recent_events(limit=500) if item["event_type"] == "world.rule.public_ration"]) == 2
+        assert len([item for item in platform.store.repositories.events.recent_events(limit=500) if item["event_type"] == "world.rule.public_ration"]) == 2
     finally:
         platform.close()
 
@@ -3948,10 +3948,10 @@ def test_active_world_rule_removes_denied_behavior_from_agent_view(tmp_path: Pat
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "world-rule-denial-world", tmp_path / "runtime"))
     try:
-        agent = platform.store.get_agent("su_wu")
+        agent = platform.store.repositories.entities.get_agent("su_wu")
         agent["faction_ids"] = []
         with platform.store.transaction():
-            platform.store.update_agent("su_wu", agent)
+            platform.store.repositories.entities.update_agent("su_wu", agent)
         view = platform.decision_view("su_wu")
         choices = {item["ref"] for item in view["executable_behaviors"]}
         assert "behavior:inspect_object" not in choices
@@ -3964,7 +3964,7 @@ def test_behavior_constraint_rule_blocks_named_behavior_without_mutating_state(t
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "world-rule-constraint-world", tmp_path / "runtime"))
     try:
-        before = platform.store.get_agent("liang_he")["capabilities"]["cooking"]
+        before = platform.store.repositories.entities.get_agent("liang_he")["capabilities"]["cooking"]
         result = platform.submit_world_change("god", {
             "change_type": "rule",
             "summary": "Review cooking during the reserve review.",
@@ -3976,16 +3976,16 @@ def test_behavior_constraint_rule_blocks_named_behavior_without_mutating_state(t
             },
         })
         assert result["status"] == "accepted"
-        liang = platform.store.get_agent("liang_he")
+        liang = platform.store.repositories.entities.get_agent("liang_he")
         liang["needs"]["satiety"] = 40
-        platform.store.update_agent("liang_he", liang)
+        platform.store.repositories.entities.update_agent("liang_he", liang)
         platform.store.connection.commit()
         view = platform.decision_view("liang_he")
         assert "behavior:craft_meal" not in {item["ref"] for item in view["executable_behaviors"]}
         # The constraint names only the cooking BT; it must not hide an
         # unrelated food Action/BT at the same time.
         assert "behavior:get_food" in {item["ref"] for item in view["executable_behaviors"]}
-        assert platform.store.get_agent("liang_he")["capabilities"]["cooking"] == before
+        assert platform.store.repositories.entities.get_agent("liang_he")["capabilities"]["cooking"] == before
     finally:
         platform.close()
 
@@ -4007,13 +4007,13 @@ def test_recent_event_rule_uses_only_events_reached_by_world_time(tmp_path: Path
             },
         })
         assert result["status"] == "accepted"
-        assert not any(item["event_type"] == "world.rule.fever_event_signal" for item in platform.store.recent_events(limit=30))
+        assert not any(item["event_type"] == "world.rule.fever_event_signal" for item in platform.store.repositories.events.recent_events(limit=30))
         step_n(platform, 11)
-        assert not any(item["event_type"] == "world.rule.fever_event_signal" for item in platform.store.recent_events(limit=100))
+        assert not any(item["event_type"] == "world.rule.fever_event_signal" for item in platform.store.repositories.events.recent_events(limit=100))
         platform.step()
-        assert any(item["event_type"] == "world.rule.fever_event_signal" for item in platform.store.recent_events(limit=100))
+        assert any(item["event_type"] == "world.rule.fever_event_signal" for item in platform.store.repositories.events.recent_events(limit=100))
         step_n(platform, 3)
-        assert len([item for item in platform.store.recent_events(limit=200) if item["event_type"] == "world.rule.fever_event_signal"]) == 1
+        assert len([item for item in platform.store.repositories.events.recent_events(limit=200) if item["event_type"] == "world.rule.fever_event_signal"]) == 1
     finally:
         platform.close()
 
@@ -4025,7 +4025,7 @@ def test_god_can_update_faction_strategy_through_platform(tmp_path: Path):
     try:
         result = platform.submit_world_change("god", {"change_type": "faction", "summary": "The watch changes patrol policy.", "faction": {"id": "village_watch", "strategy": "protect_boundary", "norms": ["protect_civilians", "verify_unknowns"]}})
         assert result["status"] == "accepted"
-        faction = platform.store.get_entity("village_watch")
+        faction = platform.store.repositories.entities.get_entity("village_watch")
         assert faction["strategy"] == "protect_boundary"
     finally:
         platform.close()
@@ -4074,7 +4074,7 @@ def test_experience_repetition_is_rejected_without_time_based_forgetting(tmp_pat
         assert duplicate["status"] == "rejected"
         assert duplicate["failed_check"] in {"duplicate_experience", "similar_experience"}
         platform.store.set_meta("world_minute", 100000)
-        retained = platform.store.list_memories("lu_xingzhou", limit=20)
+        retained = platform.store.repositories.memory.list_memories("lu_xingzhou", limit=20)
         assert any(item.get("summary", "").startswith("The river route") for item in retained)
         recalled = platform.memory.recall("lu_xingzhou", "river route", limit=1)
         assert recalled["memories"][0]["uses"] >= 1
@@ -4089,7 +4089,7 @@ def test_dialogue_trade_negotiation_and_observer_text_view(tmp_path: Path):
     try:
         dialogue = platform.submit_dialogue("fei_lan", "余歌", "route", "The western road is open before dusk.")
         assert dialogue["status"] == "accepted"
-        testimony = platform.store.list_memories("yu_ge", limit=10)
+        testimony = platform.store.repositories.memory.list_memories("yu_ge", limit=10)
         assert any(item.get("type") == "testimony" and item.get("message", "").startswith("The western road") for item in testimony)
         testimony_row = next(item for item in testimony if item.get("type") == "testimony")
         assert testimony_row.get("tags", {}).get("participants") == "费兰"
@@ -4102,7 +4102,7 @@ def test_dialogue_trade_negotiation_and_observer_text_view(tmp_path: Path):
         assert "credibility=" in testimony_prompt
         assert "verification=unverified" in testimony_prompt
         assert "The western road is open before dusk." in testimony_prompt
-        own_statement = next(item for item in platform.store.list_memories("fei_lan", limit=10) if item.get("type") == "dialogue")
+        own_statement = next(item for item in platform.store.repositories.memory.list_memories("fei_lan", limit=10) if item.get("type") == "dialogue")
         assert own_statement["claim_status"] == "observed"
         assert own_statement["source_type"] == "own_statement"
         offer = platform.create_trade_offer("fei_lan", "yu_ge", {"trade_goods": 1}, {"letter_bundle": 1})
@@ -4111,7 +4111,7 @@ def test_dialogue_trade_negotiation_and_observer_text_view(tmp_path: Path):
         assert counter["status"] == "accepted"
         completed = platform.accept_trade_offer("fei_lan", counter["offer_id"])
         assert completed["trade_status"] == "completed"
-        assert platform.store.get_agent("fei_lan")["inventory"]["letter_bundle"] == 1
+        assert platform.store.repositories.entities.get_agent("fei_lan")["inventory"]["letter_bundle"] == 1
         observer = platform.observer_view(event_limit=20)
         assert any(event["event_type"] == "trade.completed" for event in observer["recent_events"])
         assert observer["private_data"] == "excluded"
@@ -4148,7 +4148,7 @@ def test_player_text_session_can_enter_and_move_without_direct_state_write(tmp_p
         travel = platform.submit_behavior(BehaviorIntent("player_text", "behavior:travel", {}, {"location_id": "village_square"}, "Enter the village.", 0.8, "player-travel"))
         assert travel["status"] == "accepted"
         step_n(platform, travel["remaining_minutes"])
-        assert platform.store.get_agent("player_text")["initial_state"]["location_id"] == "village_square"
+        assert platform.store.repositories.entities.get_agent("player_text")["initial_state"]["location_id"] == "village_square"
     finally:
         platform.close()
 
@@ -4182,7 +4182,7 @@ def test_validated_template_creates_a_separate_instance(tmp_path: Path):
         try:
             assert generated.store.get_meta("world_id") == "orbital_lab"
             assert generated.store.get_meta("config_version") == "orbital-lab-1"
-            assert generated.store.get_entity("reactor_bay")["entity_type"] == "location"
+            assert generated.store.repositories.entities.get_entity("reactor_bay")["entity_type"] == "location"
         finally:
             generated.close()
     finally:
@@ -4221,13 +4221,13 @@ def test_player_entry_and_snapshot_restore_use_platform(tmp_path: Path):
     try:
         entered = platform.enter_player("player_one", "courier", name="Ari")
         assert entered["status"] == "accepted"
-        assert platform.store.get_agent("player_one")["initial_state"]["location_id"] == "river_bridge"
+        assert platform.store.repositories.entities.get_agent("player_one")["initial_state"]["location_id"] == "river_bridge"
         platform.snapshot(snapshot)
         step_n(platform, 3)
         assert platform.status()["world_minute"] == 3
         restored = platform.restore_snapshot(snapshot)
         assert restored["world_minute"] == 0
-        assert platform.store.get_agent("player_one")["name"] == "Ari"
+        assert platform.store.repositories.entities.get_agent("player_one")["name"] == "Ari"
     finally:
         platform.close()
 
@@ -4305,7 +4305,7 @@ def test_starter_village_end_to_end_scenario(tmp_path: Path):
         decision = AgentEngine(platform, decision_provider).run(role="agent_decision", actor_id="lu_xingzhou")
         assert decision.result["status"] == "accepted"
         step_n(platform, 305)
-        assert any(item["fact_key"] == "explored:greywood_edge" for item in platform.store.list_knowledge_facts("lu_xingzhou"))
+        assert any(item["fact_key"] == "explored:greywood_edge" for item in platform.store.repositories.memory.list_knowledge_facts("lu_xingzhou"))
         reflection_provider = SequenceProvider([{"intent_type": "record_experience", "event_ref": "exploration.completed", "summary": "The survey revealed a route boundary.", "confidence": 0.9}])
         reflection = AgentEngine(platform, reflection_provider).run(role="agent_reflection", actor_id="lu_xingzhou", task_type="daily_reflection")
         assert reflection.result["status"] == "accepted"
@@ -4322,7 +4322,7 @@ def test_configured_story_beat_resolves_visible_audience_to_ids(tmp_path: Path):
     platform = Platform(create_instance(config, "story-audience-ids", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            source_event_id = platform.store.append_event(
+            source_event_id = platform.store.repositories.events.append_event(
                 "research.completed", "luo_shan", 10,
                 {"source_id": "boundary_stone", "fact": "The boundary stone research completed."},
             )
@@ -4335,12 +4335,12 @@ def test_configured_story_beat_resolves_visible_audience_to_ids(tmp_path: Path):
             "audience": ["罗杉", "韩秋"],
         }, source_event_ids=[source_event_id])
         assert result["status"] == "accepted"
-        event = next(item for item in platform.store.recent_events(limit=5) if item["event_type"] == "story.beat.activated")
+        event = next(item for item in platform.store.repositories.events.recent_events(limit=5) if item["event_type"] == "story.beat.activated")
         assert set(event["audience"]) == {"luo_shan", "han_qiu"}
         for agent_id in ("luo_shan", "han_qiu"):
-            agent = platform.store.get_agent(agent_id)
+            agent = platform.store.repositories.entities.get_agent(agent_id)
             assert "与韩秋核对界碑研究结果，商定下一步核验方式。" in agent.get("story_goals", [])
-            assert any(item["fact_key"] == "story:boundary_stone_research" for item in platform.store.list_knowledge_facts(agent_id))
+            assert any(item["fact_key"] == "story:boundary_stone_research" for item in platform.store.repositories.memory.list_knowledge_facts(agent_id))
     finally:
         platform.close()
 
@@ -4350,7 +4350,7 @@ def test_decision_view_exposes_story_directives_to_audience(tmp_path: Path):
     platform = Platform(create_instance(config, "story-directives-view", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            source_event_id = platform.store.append_event(
+            source_event_id = platform.store.repositories.events.append_event(
                 "research.completed", "luo_shan", 10,
                 {"source_id": "boundary_stone", "fact": "The boundary stone research completed."},
             )
@@ -4379,7 +4379,7 @@ def test_secure_north_watch_gated_behind_story_knowledge(tmp_path: Path):
         before = {item["ref"] for item in platform.decision_view("han_qiu")["executable_behaviors"]}
         assert "behavior:secure_north_watch" not in before
         with platform.store.transaction():
-            source_event_id = platform.store.append_event(
+            source_event_id = platform.store.repositories.events.append_event(
                 "research.completed", "luo_shan", 10,
                 {"source_id": "boundary_stone", "fact": "The boundary stone research completed."},
             )
@@ -4403,7 +4403,7 @@ def test_story_beat_completes_after_audience_followup(tmp_path: Path):
     platform = Platform(create_instance(config, "beat-completion-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            source_event_id = platform.store.append_event(
+            source_event_id = platform.store.repositories.events.append_event(
                 "research.completed", "luo_shan", 10,
                 {"source_id": "boundary_stone", "fact": "The boundary stone research completed."},
             )
@@ -4424,7 +4424,7 @@ def test_story_beat_completes_after_audience_followup(tmp_path: Path):
         state = platform.store.get_meta("story_state")
         assert state["boundary_stone_research"]["status"] == "completed"
         assert state["boundary_stone_research"]["completed_by_behavior"] == "secure_north_watch"
-        assert any(item["event_type"] == "story.beat.completed" for item in platform.store.recent_events(limit=10))
+        assert any(item["event_type"] == "story.beat.completed" for item in platform.store.repositories.events.recent_events(limit=10))
     finally:
         platform.close()
 
@@ -4468,7 +4468,7 @@ def test_unused_invented_behavior_can_be_constrained_by_rule(tmp_path: Path):
         fresh = Platform(platform.store.db_path) if hasattr(platform.store, "db_path") else platform
         view = platform.decision_view("luo_shan")
         assert all(item.get("choice") != "Useless Routine" for item in view["executable_behaviors"])
-        assert behavior_id not in {item["id"] for item in platform.store.get_definitions("bt_def") if False} or True
+        assert behavior_id not in {item["id"] for item in platform.store.repositories.entities.get_definitions("bt_def") if False} or True
     finally:
         platform.close()
 
@@ -4493,10 +4493,10 @@ def test_timeline_shows_discoveries_research_trade_and_beats(tmp_path: Path):
     platform = Platform(create_instance(config, "timeline-rich-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            platform.store.append_event("exploration.completed", "han_qiu", 10, {"area_id": "old_road", "discoveries": ["explored:old_road"]})
-            platform.store.append_event("research.completed", "luo_shan", 11, {"source_id": "boundary_stone", "fact": "界碑褪色与芦苇贸易有关。"})
-            platform.store.append_event("trade.offer_created", "luo_shan", 12, {"recipient_id": "mei_lan", "give": {"reed_bundle": 2}, "want": {"rations": 1}})
-            platform.store.append_event("story.beat.activated", "story", 13, {"beat_id": "boundary_stone_research", "summary": "记录界碑研究结果并决定下一步核验", "audience": ["luo_shan", "han_qiu"]})
+            platform.store.repositories.events.append_event("exploration.completed", "han_qiu", 10, {"area_id": "old_road", "discoveries": ["explored:old_road"]})
+            platform.store.repositories.events.append_event("research.completed", "luo_shan", 11, {"source_id": "boundary_stone", "fact": "界碑褪色与芦苇贸易有关。"})
+            platform.store.repositories.events.append_event("trade.offer_created", "luo_shan", 12, {"recipient_id": "mei_lan", "give": {"reed_bundle": 2}, "want": {"rations": 1}})
+            platform.store.repositories.events.append_event("story.beat.activated", "story", 13, {"beat_id": "boundary_stone_research", "summary": "记录界碑研究结果并决定下一步核验", "audience": ["luo_shan", "han_qiu"]})
         timeline = platform.timeline(limit=10)
         by_type = {item["event_type"]: item["narrative"] for item in timeline["events"]}
         assert "old_road" in by_type["exploration.completed"] or "旧商路" in by_type["exploration.completed"]
@@ -4514,7 +4514,7 @@ def test_beat_completion_requires_declared_followup(tmp_path: Path):
     platform = Platform(create_instance(config, "followup-scope-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            source_event_id = platform.store.append_event(
+            source_event_id = platform.store.repositories.events.append_event(
                 "research.completed", "luo_shan", 10,
                 {"source_id": "boundary_stone", "fact": "The boundary stone research completed."},
             )
@@ -4549,7 +4549,7 @@ def test_maintenance_completion_wakes_story_with_source(tmp_path: Path):
     platform = Platform(create_instance(config, "maintenance-wake-world", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            source_event_id = platform.store.append_event(
+            source_event_id = platform.store.repositories.events.append_event(
                 "research.completed", "luo_shan", 10,
                 {"source_id": "boundary_stone", "fact": "The boundary stone research completed."},
             )
@@ -4568,7 +4568,7 @@ def test_maintenance_completion_wakes_story_with_source(tmp_path: Path):
         step_n(platform, started["remaining_minutes"])
         tasks = [item for item in platform.ready_evolution_tasks() if item["role"] == "story"]
         assert tasks, "secure completion must wake story"
-        wake_event = platform.store.events_by_ids([int(tasks[0].get("source_event_id", 0) or 0)])[0]
+        wake_event = platform.store.repositories.events.events_by_ids([int(tasks[0].get("source_event_id", 0) or 0)])[0]
         assert wake_event["event_type"] == "watch.secured"
     finally:
         platform.close()
@@ -4581,7 +4581,7 @@ def test_town_bootstrap_creates_reflection_and_god_review_tasks(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
     platform = Platform(create_instance(config, "town-schedule-world", tmp_path / "runtime"))
     try:
-        tasks = {item["task_id"]: item for item in platform.store.due_evolution_tasks(10**9)}
+        tasks = {item["task_id"]: item for item in platform.store.repositories.evolution.due_evolution_tasks(10**9)}
         scheduled = [item for item in platform.store.connection.execute("SELECT task_id, role, task_type, cadence_minutes FROM evolution_task").fetchall()]
         by_id = {row["task_id"]: dict(row) for row in scheduled}
         assert by_id["god_local"]["role"] == "god"
@@ -4673,10 +4673,10 @@ def test_research_yields_authored_discovery_content(tmp_path: Path):
             ))
             assert started["status"] == "accepted"
             step_n(platform, started["remaining_minutes"])
-        facts = {item["fact_key"]: item for item in platform.store.list_knowledge_facts("luo_shan", limit=100)}
+        facts = {item["fact_key"]: item for item in platform.store.repositories.memory.list_knowledge_facts("luo_shan", limit=100)}
         assert "researched:boundary_stone:markings" in facts
         assert "三层叠压" in str(facts["researched:boundary_stone:markings"].get("fact", ""))
-        event = next(item for item in platform.store.recent_events(limit=10) if item["event_type"] == "research.completed")
+        event = next(item for item in platform.store.repositories.events.recent_events(limit=10) if item["event_type"] == "research.completed")
         view = platform.view.build_decision_view("story", role="story", source_event_id=event["event_id"])
         assert "三层叠压" in view["validated_source"]["fact"]
     finally:
@@ -4692,7 +4692,7 @@ def test_exploration_yields_concrete_findings(tmp_path: Path):
         ))
         assert started["status"] == "accepted"
         step_n(platform, started["remaining_minutes"])
-        facts = {item["fact_key"]: item for item in platform.store.list_knowledge_facts("han_qiu", limit=100)}
+        facts = {item["fact_key"]: item for item in platform.store.repositories.memory.list_knowledge_facts("han_qiu", limit=100)}
         assert "explored:old_road:post" in facts
         assert "explored:old_road:ruts" in facts
     finally:

@@ -13,7 +13,7 @@ def _town(tmp_path: Path, instance: str) -> Platform:
 def test_story_and_god_keep_bounded_role_memories(tmp_path: Path):
     platform = _town(tmp_path, "role-memory")
     try:
-        source_event = platform.store.append_event(
+        source_event = platform.store.repositories.events.append_event(
             "research.completed", "luo_shan", 10,
             {"source_id": "boundary_stone", "fact": "The boundary inscription was verified.", "story_source": True},
         )

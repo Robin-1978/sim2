@@ -132,12 +132,12 @@ class EventsRepository:
         baseline = self.store.get_meta("resource_baseline", {}) or {}
         resources: list[dict[str, Any]] = []
         resource_labels: dict[str, str] = {}
-        for item in self.store.entities_of_type("resource"):
+        for item in self.store.repositories.entities.entities_of_type("resource"):
             try:
-                entity = self.store.get_entity(str(item["id"]))
+                entity = self.store.repositories.entities.get_entity(str(item["id"]))
             except KeyError:
                 continue
-            amount = self.store._resource_amount(entity)
+            amount = self._resource_amount(entity)
             if amount is None:
                 continue
             resource_labels[str(item["id"])] = str(entity.get("name", item["id"])).replace("_", " ")
@@ -189,7 +189,7 @@ class EventsRepository:
                 if event_type == "world.property_changed":
                     property_id = str(data.get("property", "property"))
                     world_property_deltas[property_id] = world_property_deltas.get(property_id, 0.0) + float(data.get("delta", 0) or 0)
-            current_relationships = self.store.list_relationships()
+            current_relationships = self.store.repositories.entities.list_relationships()
             relation_current: dict[str, dict[str, float]] = {}
             for item in current_relationships:
                 relation = str(item.get("type", "related"))
@@ -230,11 +230,11 @@ class EventsRepository:
         calendar = (self.store.get_meta("setting", {}) or {}).get("calendar", {}) if isinstance(self.store.get_meta("setting", {}), dict) else {}
         week_minutes = max(1, int(calendar.get("minutes_per_week", calendar.get("minutes_per_day", 1440) * 7) or 10080))
         month_minutes = max(week_minutes, int(calendar.get("minutes_per_month", calendar.get("minutes_per_day", 1440) * 30) or 43200))
-        agents = self.store.list_agents()
+        agents = self.store.repositories.entities.list_agents()
         active_goals = [str(agent.get("ultimate_goal", "")).strip() for agent in agents if str(agent.get("ultimate_goal", "")).strip()]
         weekly = aggregate(week_minutes)
         monthly = aggregate(month_minutes)
-        pending_proposals = len(self.store.list_world_proposals(status="pending_evaluation", limit=100))
+        pending_proposals = len(self.store.repositories.evolution.list_world_proposals(status="pending_evaluation", limit=100))
         active_story_threads = sum(
             1 for key, value in (self.store.get_meta("story_state", {}) or {}).items()
             if key != "emergent_beats" and isinstance(value, dict) and value.get("status") == "active"

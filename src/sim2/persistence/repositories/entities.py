@@ -50,7 +50,7 @@ class EntitiesRepository:
     def put_agent(self, agent_id: str, data: dict[str, Any], name: str) -> None:
         data = dict(data)
         data.setdefault("agent_revision", 0)
-        self.store.put_entity(agent_id, "agent", name, data)
+        self.put_entity(agent_id, "agent", name, data)
         self.store.connection.execute(
             "INSERT OR REPLACE INTO agent_state(id,data_json) VALUES (?,?)",
             (agent_id, json_dumps(data)),

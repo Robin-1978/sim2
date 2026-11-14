@@ -104,16 +104,15 @@ wake can be traced to a committed event.
 - Delete the façade only after `rg "\.store\.[A-Za-z_]" src/sim2` shows no
   unclassified access.
 
-**Current state:** `WorldStore.repositories` now exposes one named repository
-per persistence domain, and UnitOfWork event/evolution operations use those
-typed objects directly. The old dynamic lookup is still present for the
-remaining runtime readers; the next increments migrate read-heavy projections
-and repository-internal cross-calls before deleting that lookup.
+**Current state:** `WorldStore.repositories` exposes one named repository per
+persistence domain. UnitOfWork, Platform services, AgentView, perception,
+memory, simulation, Actions and API projections use those typed objects.
+Repository-internal cross-domain calls also use named repositories. The
+dynamic Store method façade has been removed.
 
-**Progress:** `AgentViewCompiler` now reads entity, memory, activity, event,
-social and evolution data through named repositories. Its remaining Store
-accesses are core metadata and the SQLite connection used for bounded
-projections.
+**Completed:** the façade removal and test migration are committed after the
+full suite passed. Store remains responsible only for SQLite connection,
+transaction, metadata, snapshots and lifecycle primitives.
 
 **Gate:** no repository commits independently; event and projection writes are
 atomic; claimed evolution tasks are recovered after restart; replay preserves

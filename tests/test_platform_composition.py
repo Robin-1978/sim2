@@ -59,7 +59,7 @@ def test_new_behavior_assignment_returns_as_actor_work(tmp_path: Path) -> None:
             },
         )
         assert result["status"] == "accepted", result
-        agent = platform.store.get_agent("mei_lan")
+        agent = platform.store.repositories.entities.get_agent("mei_lan")
         assignments = [item for item in agent.get("behavior_assignments", []) if item.get("status") == "assigned"]
         assert assignments and assignments[-1]["goal"] == "Record the verified assignment result before the next review."
         tasks = [

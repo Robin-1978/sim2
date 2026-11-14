@@ -18,7 +18,7 @@ def test_runtime_events_have_one_platform_owner(tmp_path: Path) -> None:
         assert platform._service_context.method_owners["append"] is service
         assert platform._service_context.method_owners["queue_consumer"] is service
         event_id = service.append("audit.fact", "luo_shan", 3, {"summary": "A fact was committed."})
-        event = platform.store.events_by_ids([event_id])[0]
+        event = platform.store.repositories.events.events_by_ids([event_id])[0]
         assert event["world_instance_id"] == platform.store.get_meta("world_id")
         assert event["world_revision"] == int(platform.store.get_meta("world_revision", 0) or 0)
     finally:
@@ -36,7 +36,7 @@ def test_event_service_preserves_explicit_causal_metadata(tmp_path: Path) -> Non
             causation_id="intent-7",
             correlation_id="activity-7",
         )
-        event = platform.store.events_by_ids([event_id])[0]
+        event = platform.store.repositories.events.events_by_ids([event_id])[0]
         assert event["causation_id"] == "intent-7"
         assert event["correlation_id"] == "activity-7"
     finally:
@@ -46,7 +46,7 @@ def test_event_service_preserves_explicit_causal_metadata(tmp_path: Path) -> Non
 def test_information_observation_does_not_become_recovery_without_explicit_flag(tmp_path: Path) -> None:
     platform = Platform(create_instance(WORLD, "observation-is-not-recovery", tmp_path / "runtime"))
     try:
-        agent = platform.store.get_agent("luo_shan")
+        agent = platform.store.repositories.entities.get_agent("luo_shan")
         action = {
             "id": "inspect_without_recovery_flag",
             "information": {
@@ -63,7 +63,7 @@ def test_information_observation_does_not_become_recovery_without_explicit_flag(
                 {"object_id": "caravan_ledger"},
                 0,
             )
-        event_types = [item["event_type"] for item in platform.store.recent_events(limit=10)]
+        event_types = [item["event_type"] for item in platform.store.repositories.events.recent_events(limit=10)]
         assert "observation.object_inspected" in event_types
         assert "object.recovered" not in event_types
     finally:

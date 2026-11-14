@@ -16,7 +16,7 @@ def test_visible_location_name_is_normalized_before_action_execution(tmp_path: P
 
     platform = Platform(create_instance(WORLD, "visible-location", tmp_path / "runtime"))
     try:
-        actor = platform.store.get_agent("liang_he")
+        actor = platform.store.repositories.entities.get_agent("liang_he")
         assert actor["initial_state"]["location_id"] == "granary"
         before = actor["inventory"].get("grain", 0)
 
@@ -48,7 +48,7 @@ def test_visible_location_name_is_normalized_before_action_execution(tmp_path: P
             ("visible-location-gather",),
         ).fetchone()
         assert completed is not None
-        assert platform.store.get_agent("liang_he")["inventory"]["grain"] == before + 2
+        assert platform.store.repositories.entities.get_agent("liang_he")["inventory"]["grain"] == before + 2
     finally:
         platform.close()
 
@@ -80,9 +80,9 @@ def test_deterministic_long_run_provider_skips_choices_requiring_semantic_input(
 def test_remote_fixed_object_is_not_offered_or_executed(tmp_path: Path):
     platform = Platform(create_instance(WORLD, "object-location", tmp_path / "runtime"))
     try:
-        actor = platform.store.get_agent("su_wu")
+        actor = platform.store.repositories.entities.get_agent("su_wu")
         actor["initial_state"]["location_id"] = "village_square"
-        platform.store.update_agent("su_wu", actor)
+        platform.store.repositories.entities.update_agent("su_wu", actor)
         platform.store.connection.commit()
 
         offered = {item["ref"] for item in platform.decision_view("su_wu")["executable_behaviors"]}
@@ -105,9 +105,9 @@ def test_remote_fixed_object_is_not_offered_or_executed(tmp_path: Path):
         assert rejected["status"] == "rejected"
         assert rejected["failed_check"] == "behavior_unavailable"
 
-        actor = platform.store.get_agent("su_wu")
+        actor = platform.store.repositories.entities.get_agent("su_wu")
         actor["initial_state"]["location_id"] = "old_well"
-        platform.store.update_agent("su_wu", actor)
+        platform.store.repositories.entities.update_agent("su_wu", actor)
         platform.store.connection.commit()
         offered = {item["ref"] for item in platform.decision_view("su_wu")["executable_behaviors"]}
         assert "behavior:inspect_object" in offered

@@ -372,7 +372,7 @@ def test_experience_records_claim_provenance(tmp_path: Path):
     try:
         result = platform.submit_experience("yu_ge", "event:dialogue", "The participant promised to bring a route note.", 0.6, "promised")
         assert result["status"] == "accepted"
-        memory = platform.store.list_memories("yu_ge", limit=5)[0]
+        memory = platform.store.repositories.memory.list_memories("yu_ge", limit=5)[0]
         assert memory["claim_status"] == "promised"
     finally:
         platform.close()
@@ -381,7 +381,7 @@ def test_experience_records_claim_provenance(tmp_path: Path):
 def test_social_institution_is_absent_until_proposed_and_activated(tmp_path: Path):
     platform = Platform(create_instance(_config(), "emergent-institution", tmp_path / "runtime"))
     try:
-        assert platform.store.list_institutions() == []
+        assert platform.store.repositories.social.list_institutions() == []
         assert platform.store.connection.execute("SELECT COUNT(*) AS n FROM institution_ledger_entry").fetchone()["n"] == 0
         npc_attempt = platform.submit_institution_proposal(
             "liang_he",
@@ -398,7 +398,7 @@ def test_social_institution_is_absent_until_proposed_and_activated(tmp_path: Pat
         assert npc_attempt["status"] == "rejected"
         assert npc_attempt["failed_check"] == "institution_authority"
         with platform.store.transaction():
-            platform.store.append_event("behavior.completed", "liang_he", 1, {"behavior_id": "gather_resource", "result": "resource_collected"})
+            platform.store.repositories.events.append_event("behavior.completed", "liang_he", 1, {"behavior_id": "gather_resource", "result": "resource_collected"})
         proposed = platform.submit_institution_proposal(
             "god",
             {
@@ -412,16 +412,16 @@ def test_social_institution_is_absent_until_proposed_and_activated(tmp_path: Pat
             },
         )
         assert proposed["status"] == "accepted"
-        assert platform.store.list_institutions(status="active") == []
+        assert platform.store.repositories.social.list_institutions(status="active") == []
         activated = platform.activate_institution("god", "Public Work Ledger", "The proposal has an observed food-allocation problem.")
         assert activated["status"] == "accepted"
-        active = platform.store.list_institutions(status="active")[0]
+        active = platform.store.repositories.social.list_institutions(status="active")[0]
         before = platform.calculate_institution_allocation("Public Work Ledger", ["liang_he", "lin_bo"], 10, "week:0")
         assert before["status"] == "accepted"
         assert all(row["total"] == 1 for row in before["allocations"])
-        event_id = platform.store.append_event("behavior.completed", "liang_he", 20, {"behavior_id": "gather_resource", "result": "resource_collected"})
+        event_id = platform.store.repositories.events.append_event("behavior.completed", "liang_he", 20, {"behavior_id": "gather_resource", "result": "resource_collected"})
         platform._record_active_institution_entries(event_id, "behavior.completed", "liang_he", 20, {"behavior_id": "gather_resource", "result": "resource_collected"})
-        totals = platform.store.institution_ledger_totals(active["institution_id"])
+        totals = platform.store.repositories.social.institution_ledger_totals(active["institution_id"])
         assert totals[0]["subject_id"] == "liang_he"
         assert totals[0]["total"] == 1
     finally:
@@ -432,19 +432,19 @@ def test_starter_bell_installation_closes_entity_and_inventory_loop(tmp_path: Pa
     platform = Platform(create_instance(_config(), "bell-install-loop", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            agent = platform.store.get_agent("tian_yan")
+            agent = platform.store.repositories.entities.get_agent("tian_yan")
             agent["inventory"]["dawn_bell"] = 1
-            platform.store.update_agent("tian_yan", agent)
+            platform.store.repositories.entities.update_agent("tian_yan", agent)
         result = platform.submit_behavior(BehaviorIntent("tian_yan", "behavior:install_dawn_bell", {}, {}, "Install the completed warning artifact.", 0.9, "bell-install"))
         assert result["status"] == "accepted"
         for _ in range(result["remaining_minutes"]):
             platform.step()
-        assert platform.store.get_agent("tian_yan")["inventory"].get("dawn_bell", 0) == 0
-        assert platform.store.get_entity("dawn_bell")["initial_state"]["installed"] is True
-        installed_facts = [str(item.get("fact", "")) for item in platform.store.list_knowledge_facts("tian_yan") if "installed at" in str(item.get("fact", ""))]
+        assert platform.store.repositories.entities.get_agent("tian_yan")["inventory"].get("dawn_bell", 0) == 0
+        assert platform.store.repositories.entities.get_entity("dawn_bell")["initial_state"]["installed"] is True
+        installed_facts = [str(item.get("fact", "")) for item in platform.store.repositories.memory.list_knowledge_facts("tian_yan") if "installed at" in str(item.get("fact", ""))]
         assert installed_facts
         assert all("{" not in fact and "}" not in fact for fact in installed_facts)
-        assert any(item["event_type"] == "entity.installed" for item in platform.store.timeline_events(limit=100))
+        assert any(item["event_type"] == "entity.installed" for item in platform.store.repositories.events.timeline_events(limit=100))
         tasks = [row["task_type"] for row in platform.store.connection.execute("SELECT task_type FROM evolution_task")]
         assert "event:entity.installed" not in tasks  # no redundant Story goal for a closed installation
         assert tasks.count("event_group:public_incident") == 1  # one causal world-level wake
@@ -462,7 +462,7 @@ def test_classified_boundary_marks_remove_repeat_investigation(tmp_path: Path):
         assert result["status"] == "accepted"
         for _ in range(result["remaining_minutes"]):
             platform.step()
-        assert any(item["fact_key"] == "security:north_gate_marks" for item in platform.store.list_knowledge_facts("he_yan", limit=50))
+        assert any(item["fact_key"] == "security:north_gate_marks" for item in platform.store.repositories.memory.list_knowledge_facts("he_yan", limit=50))
         after = {item["ref"] for item in platform.decision_view("he_yan")["executable_behaviors"]}
         assert "behavior:investigate_north_gate_marks" not in after
     finally:
@@ -485,9 +485,9 @@ def test_starter_bell_enables_alarm_only_when_threat_is_configured(tmp_path: Pat
     platform = Platform(create_instance(_config(), "bell-alarm-loop", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            agent = platform.store.get_agent("tian_yan")
+            agent = platform.store.repositories.entities.get_agent("tian_yan")
             agent["inventory"]["dawn_bell"] = 1
-            platform.store.update_agent("tian_yan", agent)
+            platform.store.repositories.entities.update_agent("tian_yan", agent)
         install = platform.submit_behavior(BehaviorIntent("tian_yan", "behavior:install_dawn_bell", {}, {}, "Install the warning artifact.", 0.9, "bell-alarm-install"))
         assert install["status"] == "accepted"
         for _ in range(install["remaining_minutes"]):
@@ -505,7 +505,7 @@ def test_starter_bell_enables_alarm_only_when_threat_is_configured(tmp_path: Pat
         assert alarm["status"] == "accepted"
         for _ in range(alarm["remaining_minutes"]):
             platform.step()
-        assert any(item["event_type"] == "alarm.raised" for item in platform.store.timeline_events(limit=100))
+        assert any(item["event_type"] == "alarm.raised" for item in platform.store.repositories.events.timeline_events(limit=100))
         heard = platform.perception.listen("lin_bo", "Was an alarm raised?", 10)
         assert any(item["event_type"] == "alarm.raised" for item in heard["events"])
 
@@ -523,7 +523,7 @@ def test_starter_bell_enables_alarm_only_when_threat_is_configured(tmp_path: Pat
         after = platform.store.get_meta("world_properties")["north_gate_threat_level"]
         assert after < before
         assert after < 0.7
-        assert any(item["event_type"] == "defense.village_response" for item in platform.store.timeline_events(limit=200))
+        assert any(item["event_type"] == "defense.village_response" for item in platform.store.repositories.events.timeline_events(limit=200))
         assert "behavior:defend_village" not in {
             item["ref"] for item in platform.decision_view("he_yan")["executable_behaviors"]
         }
@@ -541,18 +541,18 @@ def test_food_choices_follow_necessary_preconditions_not_a_satiety_gate(tmp_path
         assert "behavior:buy_food" in refs
 
         with platform.store.transaction():
-            agent = platform.store.get_agent("fei_lan")
+            agent = platform.store.repositories.entities.get_agent("fei_lan")
             agent["needs"]["satiety"] = 90
             agent["inventory"]["rations"] = 1
-            platform.store.update_agent("fei_lan", agent)
+            platform.store.repositories.entities.update_agent("fei_lan", agent)
         view = platform.decision_view("fei_lan")
         refs = {item["ref"] for item in view["executable_behaviors"]}
         assert "behavior:eat_food" in refs
 
         with platform.store.transaction():
-            agent = platform.store.get_agent("fei_lan")
+            agent = platform.store.repositories.entities.get_agent("fei_lan")
             agent["needs"]["satiety"] = 30
-            platform.store.update_agent("fei_lan", agent)
+            platform.store.repositories.entities.update_agent("fei_lan", agent)
         view = platform.decision_view("fei_lan")
         refs = {item["ref"] for item in view["executable_behaviors"]}
         assert "behavior:eat_food" in refs
@@ -627,10 +627,10 @@ def test_starter_water_pact_and_mark_followups_change_world_or_knowledge(tmp_pat
     platform = Platform(create_instance(_config(), "followup-loops", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            platform.store.merge_knowledge_fact("qiao_ning", "researched:clean_water:contamination", {
+            platform.store.repositories.memory.merge_knowledge_fact("qiao_ning", "researched:clean_water:contamination", {
                 "fact": "River contamination was verified.", "source_type": "research", "confidence": 1.0,
             })
-            platform.store.merge_knowledge_fact("su_wu", "researched:old_pact_tablet:origin", {
+            platform.store.repositories.memory.merge_knowledge_fact("su_wu", "researched:old_pact_tablet:origin", {
                 "fact": "The old pact's stabilizing purpose was verified.", "source_type": "research", "confidence": 1.0,
             })
         cases = [
@@ -646,8 +646,8 @@ def test_starter_water_pact_and_mark_followups_change_world_or_knowledge(tmp_pat
                 platform.step()
             if property_name:
                 assert platform.store.get_meta("world_properties")[property_name] >= expected_value - 1e-6
-            assert any(item["event_type"] == event_type for item in platform.store.timeline_events(limit=300))
-        assert any(item["fact_key"] == "security:north_gate_marks" for item in platform.store.list_knowledge_facts("he_yan", limit=20))
+            assert any(item["event_type"] == event_type for item in platform.store.repositories.events.timeline_events(limit=300))
+        assert any(item["fact_key"] == "security:north_gate_marks" for item in platform.store.repositories.memory.list_knowledge_facts("he_yan", limit=20))
     finally:
         platform.close()
 
@@ -655,8 +655,8 @@ def test_starter_water_pact_and_mark_followups_change_world_or_knowledge(tmp_pat
 def test_research_wakes_story_and_god_only_after_configured_rounds(tmp_path: Path):
     platform = Platform(create_instance(_config(), "research-rounds", tmp_path / "runtime"))
     try:
-        agent = platform.store.get_agent("qiao_ning")
-        action = next(item for item in platform.store.get_definitions("action_def") if item["id"] == "research_source")
+        agent = platform.store.repositories.entities.get_agent("qiao_ning")
+        action = next(item for item in platform.store.repositories.entities.get_definitions("action_def") if item["id"] == "research_source")
         first = platform._advance_information_progress(agent, action, {"source_id": "clean_water"}, 100)
         assert first["completed"] is False
         assert platform.store.connection.execute("SELECT COUNT(*) AS n FROM evolution_task WHERE task_type LIKE 'event:%'").fetchone()["n"] == 0
@@ -669,7 +669,7 @@ def test_research_wakes_story_and_god_only_after_configured_rounds(tmp_path: Pat
         # content packs can choose a longer or shorter evidence threshold.
         for minute in (201, 202, 203, 204):
             with platform.store.transaction():
-                event_id = platform.store.append_event("research.completed", "qiao_ning", minute, {"summary": "Another validated research result."})
+                event_id = platform.store.repositories.events.append_event("research.completed", "qiao_ning", minute, {"summary": "Another validated research result."})
             platform.wakes.queue("god", event_id, "research.completed", "qiao_ning", minute, task_type="event:research.completed")
         assert any(item["role"] == "god" and str(item["task_type"]).startswith("event_group:research_synthesis") for item in platform.ready_evolution_tasks())
         assert platform.store.connection.execute("SELECT COUNT(*) AS n FROM event_log WHERE event_type='research.progressed'").fetchone()["n"] == 1
@@ -680,7 +680,7 @@ def test_research_wakes_story_and_god_only_after_configured_rounds(tmp_path: Pat
 def test_legacy_attribute_effects_are_rejected_in_development(tmp_path: Path):
     platform = Platform(create_instance(_config(), "no-legacy-effects", tmp_path / "runtime"))
     try:
-        agent = platform.store.get_agent("qiao_ning")
+        agent = platform.store.repositories.entities.get_agent("qiao_ning")
         before = dict(agent["initial_state"])
         result = platform.effects.apply(agent, {"type": "health_restore", "amount": 5})
         assert result["applied"] is False
@@ -694,7 +694,7 @@ def test_story_rejects_unverified_public_movement_claim(tmp_path: Path):
     platform = Platform(create_instance(_config(), "story-evidence", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            platform.store.append_event(
+            platform.store.repositories.events.append_event(
                 "object.recovered",
                 "lu_xingzhou",
                 10,
@@ -719,7 +719,7 @@ def test_story_visible_names_strip_model_wrapping_quotes(tmp_path: Path):
     platform = Platform(create_instance(_config(), "story-quote-cleanup", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            platform.store.append_event("security.investigation_completed", "he_yan", 10, {"story_source": True, "summary": "The boundary marks were investigated and classified."})
+            platform.store.repositories.events.append_event("security.investigation_completed", "he_yan", 10, {"story_source": True, "summary": "The boundary marks were investigated and classified."})
         result = platform.submit_story_beat(
             "story",
             {
@@ -738,7 +738,7 @@ def test_story_accepts_configured_story_source_event_without_hardcoded_event_nam
     platform = Platform(create_instance(_config(), "story-source-event", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            platform.store.append_event(
+            platform.store.repositories.events.append_event(
                 "security.investigation_completed",
                 "he_yan",
                 10,
@@ -762,8 +762,8 @@ def test_story_task_uses_its_source_event_when_newer_events_exist(tmp_path: Path
     platform = Platform(create_instance(_config(), "story-source-boundary", tmp_path / "runtime"))
     try:
         with platform.store.transaction():
-            source_id = platform.store.append_event("research.completed", "qiao_ning", 5, {"summary": "Water source was confirmed."})
-            platform.store.append_event("relationship.changed", "lin_bo", 6, {"summary": "A later social change was recorded."})
+            source_id = platform.store.repositories.events.append_event("research.completed", "qiao_ning", 5, {"summary": "Water source was confirmed."})
+            platform.store.repositories.events.append_event("relationship.changed", "lin_bo", 6, {"summary": "A later social change was recorded."})
         view = platform.view.build_decision_view("story", role="story", source_event_id=source_id)
         assert view["validated_source"]["event_type"] == "research.completed"
         assert view["validated_source"]["world_minute"] == 5
@@ -783,7 +783,7 @@ def test_world_relationship_proposal_uses_visible_names(tmp_path: Path):
             },
         )
         assert result["status"] == "accepted"
-        assert any(item["from"] == "fei_lan" and item["to"] == "yu_ge" and item["type"] == "trust" for item in platform.store.list_relationships())
+        assert any(item["from"] == "fei_lan" and item["to"] == "yu_ge" and item["type"] == "trust" for item in platform.store.repositories.entities.list_relationships())
     finally:
         platform.close()
 
@@ -937,7 +937,7 @@ def test_wait_decisions_back_off_and_configured_event_wakes_one_agent(tmp_path: 
         runner = SimulationRunner(platform, {"agent_decision": provider})
         runner.run(1)
         initial_calls = len(provider.calls)
-        assert initial_calls == len(platform.store.list_agents())
+        assert initial_calls == len(platform.store.repositories.entities.list_agents())
         runner.run(4)
         assert len(provider.calls) == initial_calls
         runner.run(1)
@@ -966,7 +966,7 @@ def test_assigned_definition_event_wakes_character_by_visible_name(tmp_path: Pat
         runner._decision_not_before["mei_lan"] = minute + 360
         runner._wait_streak["mei_lan"] = 3
         with platform.store.transaction():
-            platform.store.append_event(
+            platform.store.repositories.events.append_event(
                 "definition.registered", "god", minute,
                 {"definition_type": "behavior", "name": "Assigned Review", "assigned_to": ["梅岚"]},
             )

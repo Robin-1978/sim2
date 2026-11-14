@@ -67,7 +67,7 @@ def test_manual_only_wake_is_not_compiled_as_a_direct_event() -> None:
 def test_manual_only_event_skips_automatic_fan_out_but_admits_explicit_producers(tmp_path: Path) -> None:
     platform = _town(tmp_path, "manual-only-wake")
     try:
-        event_id = platform.store.append_event("institution.allocation_completed", "mei_lan", 2, {"amount": 1})
+        event_id = platform.store.repositories.events.append_event("institution.allocation_completed", "mei_lan", 2, {"amount": 1})
         # Platform's own publication of the event is the automatic path.
         platform.wakes.configured(event_id, "institution.allocation_completed", "mei_lan", 2)
         assert _story_tasks(platform) == []
@@ -112,7 +112,7 @@ def _distinct_god_policy(platform: Platform, **extra: object) -> None:
 
 
 def _research_event(platform: Platform, minute: int, source: str, stage: str) -> int:
-    return platform.store.append_event(
+    return platform.store.repositories.events.append_event(
         "research.completed", "luo_shan", minute, {"source_id": source, "stage_id": stage},
     )
 
@@ -232,7 +232,7 @@ def test_meaningful_progress_resets_option_stagnation(tmp_path: Path) -> None:
         _stagnation_world(platform)
         _step(platform, 60)
         with platform.store.transaction():
-            platform.store.append_event("research.progressed", "luo_shan", 90, {"source_id": "boundary_stone", "stage_id": "stage_1"})
+            platform.store.repositories.events.append_event("research.progressed", "luo_shan", 90, {"source_id": "boundary_stone", "stage_id": "stage_1"})
         _step(platform, 60)
         assert _stagnation_minutes(platform) == []
         assert platform.store.get_meta("stagnation_state")["progressed_last_window"] is True
@@ -290,7 +290,7 @@ def test_stagnation_event_names_what_each_character_can_and_cannot_do(tmp_path: 
     try:
         _stagnation_world(platform)
         _step(platform, 120)
-        event = next(item for item in platform.store.recent_events(limit=50) if item["event_type"] == "world.stagnation")
+        event = next(item for item in platform.store.repositories.events.recent_events(limit=50) if item["event_type"] == "world.stagnation")
         assert event["stagnant_windows"] == 1 and event["window_minutes"] == 60
         rows = {item["name"]: item for item in event["characters"]}
         assert {"罗杉", "韩秋", "梅岚"} <= set(rows)
@@ -355,7 +355,7 @@ def test_a_large_roster_is_evaluated_through_a_rotating_cohort(tmp_path: Path) -
         assert state["stagnant_windows"] == 1 and state["last_novel_minute"] == 60
         assert _stagnation_minutes(platform) == [120]
 
-        event = next(item for item in platform.store.recent_events(limit=50) if item["event_type"] == "world.stagnation")
+        event = next(item for item in platform.store.repositories.events.recent_events(limit=50) if item["event_type"] == "world.stagnation")
         assert sorted(item["name"] for item in event["characters"]) == ["梅岚", "罗杉"]
         assert event["omitted_characters"] == 1
         assert "1 more character(s) omitted." in event["summary"]
@@ -410,7 +410,7 @@ def test_configured_resource_safety_publishes_one_crossing_event(tmp_path: Path)
         _set_quantity(platform, "cistern_water", 11)
         platform.step()
         platform.step()
-        events = [item for item in platform.store.recent_events(limit=80) if item["event_type"] == "resource.safety_low"]
+        events = [item for item in platform.store.repositories.events.recent_events(limit=80) if item["event_type"] == "resource.safety_low"]
         assert len(events) == 1 and events[0]["resource_id"] == "cistern_water"
     finally:
         platform.close()
@@ -431,7 +431,7 @@ def test_resource_safety_repeat_signal_reopens_a_persistent_shortage(tmp_path: P
         platform.step()  # crossing at minute 1
         platform.step()  # repeat interval not reached
         platform.step()  # repeat at minute 3
-        events = [item for item in platform.store.recent_events(limit=100) if item["event_type"] == "resource.safety_low"]
+        events = [item for item in platform.store.repositories.events.recent_events(limit=100) if item["event_type"] == "resource.safety_low"]
         events.sort(key=lambda item: item["world_minute"])
         assert [item["world_minute"] for item in events] == [1, 3]
         assert [item["signal_kind"] for item in events] == ["crossing", "repeat"]
@@ -444,7 +444,7 @@ def test_resource_safety_repeat_signal_reopens_a_persistent_shortage(tmp_path: P
 
 def _research_milestone(platform: Platform) -> tuple[int, int]:
     with platform.store.transaction():
-        research_id = platform.store.append_event(
+        research_id = platform.store.repositories.events.append_event(
             "research.completed",
             "luo_shan",
             10,
@@ -481,7 +481,7 @@ def test_milestone_session_activates_configured_beat_and_unlocks_its_followup(tm
         assert result["status"] == "accepted", result
         assert platform.store.get_meta("story_state")["boundary_stone_research"]["status"] == "active"
 
-        keys = {item["fact_key"] for item in platform.store.list_knowledge_facts("han_qiu", limit=100)}
+        keys = {item["fact_key"] for item in platform.store.repositories.memory.list_knowledge_facts("han_qiu", limit=100)}
         assert "story:boundary_stone_research" in keys
         after = platform.view.build_decision_view("han_qiu", role="agent_decision")
         assert "behavior:secure_north_watch" in {item["ref"] for item in after["executable_behaviors"]}
@@ -557,7 +557,7 @@ def _source_proposal(name: str, assignees: list[str]) -> dict:
 
 def _entity_exists(platform: Platform, entity_id: str) -> bool:
     try:
-        platform.store.get_entity(entity_id)
+        platform.store.repositories.entities.get_entity(entity_id)
     except KeyError:
         return False
     return True
@@ -571,7 +571,7 @@ def test_research_source_nobody_assigned_can_reach_is_rejected_and_rolled_back(t
     platform = _town(tmp_path, "unreachable-source")
     try:
         events_before = _event_count(platform)
-        catalog_before = [item["id"] for item in platform.store.research_source_catalog()]
+        catalog_before = [item["id"] for item in platform.store.repositories.memory.research_source_catalog()]
         result = platform.submit_entity_proposal("god", _source_proposal("无人可读的残页", ["梅岚"]))
 
         assert result["status"] == "rejected" and result["failed_check"] == "entity_unreachable"
@@ -582,7 +582,7 @@ def test_research_source_nobody_assigned_can_reach_is_rejected_and_rolled_back(t
         # The whole proposal rolled back: no entity, no event, no new catalog row.
         assert not _entity_exists(platform, "proposed_marker")
         assert _event_count(platform) == events_before
-        assert [item["id"] for item in platform.store.research_source_catalog()] == catalog_before
+        assert [item["id"] for item in platform.store.repositories.memory.research_source_catalog()] == catalog_before
         status = platform.store.connection.execute(
             "SELECT status FROM intent WHERE intent_type = 'propose_entity'"
         ).fetchall()
@@ -668,7 +668,7 @@ def test_research_source_in_an_unreachable_place_is_rejected(tmp_path: Path) -> 
     platform = _town(tmp_path, "unreachable-place")
     try:
         with platform.store.transaction():
-            platform.store.put_entity("island_nowhere", "location", "无路小岛", {
+            platform.store.repositories.entities.put_entity("island_nowhere", "location", "无路小岛", {
                 "description": "A place no route leads to.", "routes": {}, "initial_state": {},
             })
         proposal = _source_proposal("孤岛残页", ["罗杉"])
@@ -697,11 +697,11 @@ def _recipe_proposal() -> dict:
 def test_recipe_is_rejected_when_no_registered_action_can_craft(tmp_path: Path) -> None:
     platform = _town(tmp_path, "recipe-without-craft-action")
     try:
-        assert not any(platform._is_recipe_action(item) for item in platform.store.get_definitions("action_def"))
+        assert not any(platform._is_recipe_action(item) for item in platform.store.repositories.entities.get_definitions("action_def"))
         result = platform.submit_definition_proposal("god", _recipe_proposal())
         assert result["status"] == "rejected" and result["failed_check"] == "definition_schema"
         assert any("no registered Action can craft a recipe" in error for error in result["errors"])
-        assert platform.store.get_definitions("recipe_def") == []
+        assert platform.store.repositories.entities.get_definitions("recipe_def") == []
     finally:
         platform.close()
 
@@ -709,10 +709,10 @@ def test_recipe_is_rejected_when_no_registered_action_can_craft(tmp_path: Path) 
 def test_recipe_is_accepted_when_a_registered_action_can_craft(tmp_path: Path) -> None:
     platform = Platform(create_instance(Path(__file__).parents[1] / "worlds" / "starter_village", "recipe-with-craft-action", tmp_path / "runtime"))
     try:
-        assert any(platform._is_recipe_action(item) for item in platform.store.get_definitions("action_def"))
+        assert any(platform._is_recipe_action(item) for item in platform.store.repositories.entities.get_definitions("action_def"))
         result = platform.submit_definition_proposal("god", _recipe_proposal())
         assert result["status"] == "accepted", result
-        assert "灯芯芦苇束灯" in {item.get("name") for item in platform.store.get_definitions("recipe_def")}
+        assert "灯芯芦苇束灯" in {item.get("name") for item in platform.store.repositories.entities.get_definitions("recipe_def")}
     finally:
         platform.close()
 
@@ -726,14 +726,14 @@ def _record_operation(platform: Platform, minute: int) -> None:
     """Record one verified cistern review the way Platform does when a behavior completes."""
 
     with platform.store.transaction():
-        event_id = platform.store.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern"})
+        event_id = platform.store.repositories.events.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern"})
         platform._record_active_institution_entries(event_id, "cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern"})
 
 
 def _active_institution(platform: Platform) -> dict:
     with platform.store.transaction():
         for minute in (1, 2, 3):
-            platform.store.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern"})
+            platform.store.repositories.events.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern"})
     proposed = platform.submit_institution_proposal("god", {
         "name": INSTITUTION,
         "purpose": "Share the cistern reserve according to verified public work.",
@@ -746,7 +746,7 @@ def _active_institution(platform: Platform) -> dict:
     assert proposed["status"] == "accepted", proposed
     activated = platform.activate_institution("god", INSTITUTION, "The evidence is sufficient.")
     assert activated["status"] == "accepted", activated
-    return platform.store.list_institutions(status="active", limit=1)[0]
+    return platform.store.repositories.social.list_institutions(status="active", limit=1)[0]
 
 
 def _revise(platform: Platform, **terms) -> dict:
@@ -760,7 +760,7 @@ def test_institution_cannot_be_revised_before_it_has_operated(tmp_path: Path) ->
         result = _revise(platform, policy={"allocation": {"minimum_per_subject": 0.25, "contribution_share": 0.5}})
         assert result["status"] == "rejected" and result["failed_check"] == "institution_evidence"
         assert result["observed_operations"] == 0
-        assert platform.store.list_institutions(status="active", limit=1)[0]["policy"]["allocation"]["minimum_per_subject"] == 1
+        assert platform.store.repositories.social.list_institutions(status="active", limit=1)[0]["policy"]["allocation"]["minimum_per_subject"] == 1
     finally:
         platform.close()
 
@@ -782,7 +782,7 @@ def test_revised_policy_governs_the_next_allocation_and_is_visible_to_god(tmp_pa
         assert after["status"] == "accepted"
         assert {row["subject"]: row["minimum"] for row in after["allocations"]} == {"mei_lan": 0.25, "han_qiu": 0.25}
 
-        event = next(item for item in platform.store.recent_events(limit=50) if item["event_type"] == "institution.revised")
+        event = next(item for item in platform.store.repositories.events.recent_events(limit=50) if item["event_type"] == "institution.revised")
         assert event["before"]["policy"]["allocation"]["minimum_per_subject"] == 1
         assert event["after"]["policy"]["allocation"]["minimum_per_subject"] == 0.25
         assert event["revision"] == 1 and event["reason"].startswith("The recorded allocations")
@@ -819,9 +819,9 @@ def test_revised_ledger_selectors_change_what_future_work_is_credited(tmp_path: 
 
         def credited(event_type: str, minute: int) -> float:
             with platform.store.transaction():
-                event_id = platform.store.append_event(event_type, "luo_shan", minute, {})
+                event_id = platform.store.repositories.events.append_event(event_type, "luo_shan", minute, {})
                 platform._record_active_institution_entries(event_id, event_type, "luo_shan", minute, {})
-            totals = platform.store.institution_ledger_totals(institution["institution_id"])
+            totals = platform.store.repositories.social.institution_ledger_totals(institution["institution_id"])
             return sum(float(row["total"]) for row in totals if row["subject_id"] == "luo_shan")
 
         assert credited("resource.gathered", 11) == 0
@@ -831,7 +831,7 @@ def test_revised_ledger_selectors_change_what_future_work_is_credited(tmp_path: 
         ]})
         assert result["status"] == "accepted", result
         assert credited("resource.gathered", 12) == 2
-        assert platform.store.list_institutions(status="active", limit=1)[0]["ledger"]["period"] == "week"
+        assert platform.store.repositories.social.list_institutions(status="active", limit=1)[0]["ledger"]["period"] == "week"
     finally:
         platform.close()
 
@@ -858,7 +858,7 @@ def test_revision_that_cannot_be_settled_is_rejected_and_changes_nothing(tmp_pat
         result = _revise(platform, **terms)
         assert result["status"] == "rejected" and result["failed_check"] == "institution_terms", result
         assert any(expected in error for error in result["errors"]), result["errors"]
-        after = platform.store.list_institutions(status="active", limit=1)[0]
+        after = platform.store.repositories.social.list_institutions(status="active", limit=1)[0]
         assert after["policy"] == before["policy"] and after["ledger"] == before["ledger"]
         assert int(after.get("revision", 0) or 0) == 0
     finally:
@@ -903,7 +903,7 @@ def test_proposal_with_a_ledger_selector_that_credits_every_event_is_rejected(tm
         assert result["status"] == "rejected" and result["failed_check"] == "institution_terms"
         assert any("without a source" in error for error in result["errors"])
         assert any("contribution_share" in error for error in result["errors"])
-        assert platform.store.list_institutions(limit=10) == []
+        assert platform.store.repositories.social.list_institutions(limit=10) == []
     finally:
         platform.close()
 
@@ -948,11 +948,11 @@ def test_drinking_is_offered_only_when_the_configured_threshold_is_reached(tmp_p
     platform = _town(tmp_path, "drink-gate")
     try:
         def offered(hydration: float) -> bool:
-            agent = platform.store.get_agent("mei_lan")
+            agent = platform.store.repositories.entities.get_agent("mei_lan")
             agent["inventory"]["蓄水"] = 3
             agent["needs"]["hydration"] = hydration
             with platform.store.transaction():
-                platform.store.update_agent("mei_lan", agent)
+                platform.store.repositories.entities.update_agent("mei_lan", agent)
             snapshot = platform.view.option_snapshot("mei_lan")
             return "behavior:drink_water" in snapshot["options"]
 
@@ -967,13 +967,13 @@ def test_drinking_is_offered_only_when_the_configured_threshold_is_reached(tmp_p
 def test_gathered_reeds_renew_so_the_gathering_loop_does_not_end(tmp_path: Path) -> None:
     platform = _town(tmp_path, "reed-renewal")
     try:
-        reeds = platform.store.get_entity("reed_bundle")
+        reeds = platform.store.repositories.entities.get_entity("reed_bundle")
         reeds["initial_state"]["quantity"] = 0.0
         with platform.store.transaction():
-            platform.store.put_entity("reed_bundle", "resource", reeds["name"], {key: value for key, value in reeds.items() if key not in {"id", "entity_type", "name"}})
+            platform.store.repositories.entities.put_entity("reed_bundle", "resource", reeds["name"], {key: value for key, value in reeds.items() if key not in {"id", "entity_type", "name"}})
             platform._apply_minute_effects(1440, agents=[])
-        assert platform.store.get_entity("reed_bundle")["initial_state"]["quantity"] == 6.0
-        assert any(item["event_type"] == "resource.regenerated" and item["resource_id"] == "reed_bundle" for item in platform.store.recent_events(limit=20))
+        assert platform.store.repositories.entities.get_entity("reed_bundle")["initial_state"]["quantity"] == 6.0
+        assert any(item["event_type"] == "resource.regenerated" and item["resource_id"] == "reed_bundle" for item in platform.store.repositories.events.recent_events(limit=20))
     finally:
         platform.close()
 
@@ -997,7 +997,7 @@ def test_outcome_review_wake_lets_god_revise_the_institution_it_reviewed(tmp_pat
         _record_operation(platform, 10)
         with platform.store.transaction():
             event_ids = [
-                platform.store.append_event("institution.allocation_completed", "mei_lan", 20 + offset, {"institution": INSTITUTION})
+                platform.store.repositories.events.append_event("institution.allocation_completed", "mei_lan", 20 + offset, {"institution": INSTITUTION})
                 for offset in range(3)
             ]
         for offset, event_id in enumerate(event_ids):
@@ -1018,7 +1018,7 @@ def test_outcome_review_wake_lets_god_revise_the_institution_it_reviewed(tmp_pat
         assert turn.result["institution"]["revision"] == 1
         prompt = provider.calls[0]["context"]
         assert "revise_institution" in prompt and "[terms: allocation: at least 1 per subject" in prompt
-        stored = platform.store.list_institutions(status="active", limit=1)[0]
+        stored = platform.store.repositories.social.list_institutions(status="active", limit=1)[0]
         assert stored["policy"]["allocation"]["minimum_per_subject"] == 0.25
     finally:
         platform.close()
@@ -1033,10 +1033,10 @@ def _blocked_needs(platform: Platform, agent_id: str, label: str) -> list[str]:
 
 
 def _set_quantity(platform: Platform, entity_id: str, quantity: float) -> None:
-    entity = platform.store.get_entity(entity_id)
+    entity = platform.store.repositories.entities.get_entity(entity_id)
     entity["initial_state"]["quantity"] = quantity
     with platform.store.transaction():
-        platform.store.put_entity(entity_id, entity["entity_type"], entity["name"], {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}})
+        platform.store.repositories.entities.put_entity(entity_id, entity["entity_type"], entity["name"], {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}})
 
 
 def test_blocked_gathering_names_the_exhausted_resource(tmp_path: Path) -> None:
@@ -1075,7 +1075,7 @@ def test_blocked_settlement_names_the_pool_and_policy_minimum_until_the_policy_i
             },
         })
         assert created["status"] == "accepted", created
-        behavior_id = next(item["id"] for item in platform.store.get_definitions("bt_def") if item.get("agent_label") == "Settle Reserve Allocation")
+        behavior_id = next(item["id"] for item in platform.store.repositories.entities.get_definitions("bt_def") if item.get("agent_label") == "Settle Reserve Allocation")
 
         _set_quantity(platform, "cistern_water", 1.5)  # three characters x minimum 1 = 3
         assert _blocked_needs(platform, "mei_lan", "Settle Reserve Allocation") == [
@@ -1137,8 +1137,8 @@ def test_god_history_skips_minute_ticks_and_does_not_repeat_the_trigger(tmp_path
     try:
         _step(platform, 25)  # more minute ticks than the history window holds
         with platform.store.transaction():
-            older = platform.store.append_event("cistern.reviewed", "mei_lan", 25, {"summary": "Older review of the cistern."})
-            trigger = platform.store.append_event("cistern.reviewed", "mei_lan", 26, {"summary": "Trigger review of the cistern."})
+            older = platform.store.repositories.events.append_event("cistern.reviewed", "mei_lan", 25, {"summary": "Older review of the cistern."})
+            trigger = platform.store.repositories.events.append_event("cistern.reviewed", "mei_lan", 26, {"summary": "Trigger review of the cistern."})
         history = platform.view.build_decision_view("god", role="god")["recent_history"]
         assert all(item["event_type"] != "world_minute.advanced" for item in history)
         assert {older, trigger} <= {item["event_id"] for item in history}

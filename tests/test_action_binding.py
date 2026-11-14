@@ -29,7 +29,7 @@ def test_action_without_followup_behavior_is_rejected(tmp_path: Path) -> None:
         )
         assert result["status"] == "rejected"
         assert any("followup_behavior" in error for error in result["errors"])
-        assert not any(item.get("name") == "Unbound Action" for item in platform.store.get_definitions("action_def"))
+        assert not any(item.get("name") == "Unbound Action" for item in platform.store.repositories.entities.get_definitions("action_def"))
     finally:
         platform.close()
 
@@ -201,9 +201,9 @@ def test_recipe_action_recipe_and_behavior_bind_atomically(tmp_path: Path) -> No
         assert result["status"] == "accepted", result
         assert result["bound_behavior"] == "Craft Test Token Behavior"
         assert result["bound_recipe"] == "Test Token Recipe"
-        assert any(item.get("name") == "Craft Test Token" for item in platform.store.get_definitions("action_def"))
-        assert any(item.get("name") == "Test Token Recipe" for item in platform.store.get_definitions("recipe_def"))
-        assert any(item.get("agent_label") == "Craft Test Token Behavior" for item in platform.store.get_definitions("bt_def"))
+        assert any(item.get("name") == "Craft Test Token" for item in platform.store.repositories.entities.get_definitions("action_def"))
+        assert any(item.get("name") == "Test Token Recipe" for item in platform.store.repositories.entities.get_definitions("recipe_def"))
+        assert any(item.get("agent_label") == "Craft Test Token Behavior" for item in platform.store.repositories.entities.get_definitions("bt_def"))
         assert any(item.get("choice") == "Craft Test Token Behavior" for item in platform.view.build_decision_view("mei_lan", role="agent_decision")["executable_behaviors"])
     finally:
         platform.close()
@@ -212,9 +212,9 @@ def test_recipe_action_recipe_and_behavior_bind_atomically(tmp_path: Path) -> No
 def test_recipe_action_normalizes_model_shorthand_and_visible_resource(tmp_path: Path) -> None:
     platform = Platform(create_instance(WORLD, "action-recipe-model-shorthand", tmp_path / "runtime"))
     try:
-        luo = platform.store.get_agent("luo_shan")
+        luo = platform.store.repositories.entities.get_agent("luo_shan")
         luo["inventory"] = {**(luo.get("inventory") or {}), "reed_bundle": 2}
-        platform.store.update_agent("luo_shan", luo)
+        platform.store.repositories.entities.update_agent("luo_shan", luo)
         result = platform.submit_definition_proposal(
             "god",
             {
@@ -253,13 +253,13 @@ def test_recipe_action_normalizes_model_shorthand_and_visible_resource(tmp_path:
             },
         )
         assert result["status"] == "accepted", result
-        action = next(item for item in platform.store.get_definitions("action_def") if item.get("name") == "编织测试芦苇席")
+        action = next(item for item in platform.store.repositories.entities.get_definitions("action_def") if item.get("name") == "编织测试芦苇席")
         assert action["parameters"]["recipe_id"] == "string"
         assert action["costs"]["reserve"]["recipe_inputs"] == 1
-        recipe = next(item for item in platform.store.get_definitions("recipe_def") if item.get("name") == "测试芦苇席配方")
+        recipe = next(item for item in platform.store.repositories.entities.get_definitions("recipe_def") if item.get("name") == "测试芦苇席配方")
         assert recipe["inputs"][0]["item"] == "reed_bundle"
         assert any(item.get("choice") == "编织测试芦苇席行为" for item in platform.view.build_decision_view("luo_shan", role="agent_decision")["executable_behaviors"])
-        behavior_id = next(item["id"] for item in platform.store.get_definitions("bt_def") if item.get("agent_label") == "编织测试芦苇席行为")
+        behavior_id = next(item["id"] for item in platform.store.repositories.entities.get_definitions("bt_def") if item.get("agent_label") == "编织测试芦苇席行为")
         started = platform.submit_behavior(BehaviorIntent(
             "luo_shan", f"behavior:{behavior_id}", {}, {},
             "Use the collected reeds to craft the configured mat.", 0.9, "run-bound-recipe-action",
@@ -267,10 +267,10 @@ def test_recipe_action_normalizes_model_shorthand_and_visible_resource(tmp_path:
         assert started["status"] == "accepted", started
         for _ in range(int(started.get("remaining_minutes", 1)) + 4):
             platform.step()
-        state = platform.store.get_agent("luo_shan")["initial_state"]
+        state = platform.store.repositories.entities.get_agent("luo_shan")["initial_state"]
         assert state["status"] == "idle", state
-        assert platform.store.get_agent("luo_shan")["inventory"].get("测试芦苇席", 0) == 1
-        assert platform.store.get_agent("luo_shan")["inventory"].get("reed_bundle", 0) == 0
+        assert platform.store.repositories.entities.get_agent("luo_shan")["inventory"].get("测试芦苇席", 0) == 1
+        assert platform.store.repositories.entities.get_agent("luo_shan")["inventory"].get("reed_bundle", 0) == 0
     finally:
         platform.close()
 
@@ -278,12 +278,12 @@ def test_recipe_action_normalizes_model_shorthand_and_visible_resource(tmp_path:
 def test_dynamic_action_can_transfer_carried_resource_into_world_stock(tmp_path: Path) -> None:
     platform = Platform(create_instance(WORLD, "action-resource-transfer", tmp_path / "runtime"))
     try:
-        agent = platform.store.get_agent("mei_lan")
+        agent = platform.store.repositories.entities.get_agent("mei_lan")
         agent["inventory"] = {**(agent.get("inventory") or {}), "蓄水": 2}
-        platform.store.update_agent("mei_lan", agent)
-        pool = platform.store.get_entity("cistern_water")
+        platform.store.repositories.entities.update_agent("mei_lan", agent)
+        pool = platform.store.repositories.entities.get_entity("cistern_water")
         pool["initial_state"]["quantity"] = 0
-        platform.store.put_entity(pool["id"], pool["entity_type"], pool["name"], {key: value for key, value in pool.items() if key not in {"id", "entity_type", "name"}})
+        platform.store.repositories.entities.put_entity(pool["id"], pool["entity_type"], pool["name"], {key: value for key, value in pool.items() if key not in {"id", "entity_type", "name"}})
         result = platform.submit_definition_proposal(
             "god",
             {
@@ -312,13 +312,13 @@ def test_dynamic_action_can_transfer_carried_resource_into_world_stock(tmp_path:
             },
         )
         assert result["status"] == "accepted", result
-        behavior_id = next(item["id"] for item in platform.store.get_definitions("bt_def") if item.get("agent_label") == "Transfer Carried Water Behavior")
+        behavior_id = next(item["id"] for item in platform.store.repositories.entities.get_definitions("bt_def") if item.get("agent_label") == "Transfer Carried Water Behavior")
         started = platform.submit_behavior(BehaviorIntent("mei_lan", f"behavior:{behavior_id}", {}, {}, "Transfer carried water to the public pool.", 0.9, "transfer-carried-water"))
         assert started["status"] == "accepted", started
         for _ in range(int(started["remaining_minutes"]) + 4):
             platform.step()
-        assert platform.store.get_entity("cistern_water")["initial_state"]["quantity"] == 1
-        assert platform.store.get_agent("mei_lan")["inventory"]["蓄水"] == 1
+        assert platform.store.repositories.entities.get_entity("cistern_water")["initial_state"]["quantity"] == 1
+        assert platform.store.repositories.entities.get_agent("mei_lan")["inventory"]["蓄水"] == 1
     finally:
         platform.close()
 
@@ -326,12 +326,12 @@ def test_dynamic_action_can_transfer_carried_resource_into_world_stock(tmp_path:
 def test_dynamic_resource_transfer_uses_configured_quantity(tmp_path: Path) -> None:
     platform = Platform(create_instance(WORLD, "action-resource-transfer-quantity", tmp_path / "runtime"))
     try:
-        agent = platform.store.get_agent("mei_lan")
+        agent = platform.store.repositories.entities.get_agent("mei_lan")
         agent["inventory"] = {**(agent.get("inventory") or {}), "蓄水": 2}
-        platform.store.update_agent("mei_lan", agent)
-        pool = platform.store.get_entity("cistern_water")
+        platform.store.repositories.entities.update_agent("mei_lan", agent)
+        pool = platform.store.repositories.entities.get_entity("cistern_water")
         pool["initial_state"]["quantity"] = 0
-        platform.store.put_entity(pool["id"], pool["entity_type"], pool["name"], {key: value for key, value in pool.items() if key not in {"id", "entity_type", "name"}})
+        platform.store.repositories.entities.put_entity(pool["id"], pool["entity_type"], pool["name"], {key: value for key, value in pool.items() if key not in {"id", "entity_type", "name"}})
         result = platform.submit_definition_proposal(
             "god",
             {
@@ -360,13 +360,13 @@ def test_dynamic_resource_transfer_uses_configured_quantity(tmp_path: Path) -> N
             },
         )
         assert result["status"] == "accepted", result
-        behavior_id = next(item["id"] for item in platform.store.get_definitions("bt_def") if item.get("agent_label") == "Transfer Configured Water Behavior")
+        behavior_id = next(item["id"] for item in platform.store.repositories.entities.get_definitions("bt_def") if item.get("agent_label") == "Transfer Configured Water Behavior")
         started = platform.submit_behavior(BehaviorIntent("mei_lan", f"behavior:{behavior_id}", {}, {}, "Transfer two carried water units.", 0.9, "configured-transfer-quantity"))
         assert started["status"] == "accepted", started
         for _ in range(int(started["remaining_minutes"]) + 4):
             platform.step()
-        assert platform.store.get_entity("cistern_water")["initial_state"]["quantity"] == 2
-        assert platform.store.get_agent("mei_lan")["inventory"]["蓄水"] == 0
+        assert platform.store.repositories.entities.get_entity("cistern_water")["initial_state"]["quantity"] == 2
+        assert platform.store.repositories.entities.get_agent("mei_lan")["inventory"]["蓄水"] == 0
     finally:
         platform.close()
 
@@ -374,12 +374,12 @@ def test_dynamic_resource_transfer_uses_configured_quantity(tmp_path: Path) -> N
 def test_dynamic_resource_transfer_cannot_mint_more_than_reserved(tmp_path: Path) -> None:
     platform = Platform(create_instance(WORLD, "action-resource-transfer-conservation", tmp_path / "runtime"))
     try:
-        agent = platform.store.get_agent("mei_lan")
+        agent = platform.store.repositories.entities.get_agent("mei_lan")
         agent["inventory"] = {**(agent.get("inventory") or {}), "蓄水": 1}
-        platform.store.update_agent("mei_lan", agent)
-        pool = platform.store.get_entity("cistern_water")
+        platform.store.repositories.entities.update_agent("mei_lan", agent)
+        pool = platform.store.repositories.entities.get_entity("cistern_water")
         pool["initial_state"]["quantity"] = 0
-        platform.store.put_entity(
+        platform.store.repositories.entities.put_entity(
             pool["id"],
             pool["entity_type"],
             pool["name"],
@@ -414,8 +414,8 @@ def test_dynamic_resource_transfer_cannot_mint_more_than_reserved(tmp_path: Path
         )
         assert result["status"] == "rejected", result
         assert any("item_quantity_parameter" in error for error in result["errors"])
-        assert platform.store.get_entity("cistern_water")["initial_state"]["quantity"] == 0
-        assert platform.store.get_agent("mei_lan")["inventory"]["蓄水"] == 1
+        assert platform.store.repositories.entities.get_entity("cistern_water")["initial_state"]["quantity"] == 0
+        assert platform.store.repositories.entities.get_agent("mei_lan")["inventory"]["蓄水"] == 1
     finally:
         platform.close()
 

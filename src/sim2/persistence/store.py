@@ -304,10 +304,6 @@ class WorldStore:
             evolution=EvolutionRepository(self),
             llm=LlmRepository(self),
         )
-        # Temporary migration surface for callers that have not moved to the
-        # named repository yet. New runtime code must use
-        # ``store.repositories.<domain>`` or UnitOfWork.
-        self._repositories = list(vars(self.repositories).values())
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
@@ -393,26 +389,10 @@ class WorldStore:
         if include_agent_revisions:
             snapshot["agent_revisions"] = {
                 str(agent["id"]): int((agent.get("agent_revision", 0) or 0))
-                for agent in self.list_agents()
+                for agent in self.repositories.entities.list_agents()
             }
         return snapshot
 
-    def __getattr__(self, name: str) -> Any:
-        """Resolve domain persistence methods through explicit repositories."""
-
-        repositories = self.__dict__.get("_repositories", ())
-        for repository in repositories:
-            try:
-                return object.__getattribute__(repository, name)
-            except AttributeError:
-                continue
-        raise AttributeError(name)
-
-    def __dir__(self) -> list[str]:
-        names = set(object.__dir__(self))
-        for repository in self.__dict__.get("_repositories", ()):
-            names.update(name for name in dir(repository) if not name.startswith("__"))
-        return sorted(names)
 
 
 

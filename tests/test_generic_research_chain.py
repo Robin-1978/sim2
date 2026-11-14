@@ -39,7 +39,7 @@ def test_one_research_bt_can_research_a_god_created_source(tmp_path: Path):
             },
         )
         assert created["status"] == "accepted"
-        before_definitions = {item["id"] for item in platform.store.get_definitions("bt_def")}
+        before_definitions = {item["id"] for item in platform.store.repositories.entities.get_definitions("bt_def")}
         view = platform.view.build_decision_view("luo_shan", role="agent_decision")
         research = next(item for item in view["executable_behaviors"] if item["ref"] == "behavior:research_boundary_stone")
         assert research["choice"] == "Research Configured Source"
@@ -60,7 +60,7 @@ def test_one_research_bt_can_research_a_god_created_source(tmp_path: Path):
             assert started["status"] == "accepted"
             _step(platform, started["remaining_minutes"])
             outcomes = [
-                item for item in platform.store.recent_events(limit=100)
+                item for item in platform.store.repositories.events.recent_events(limit=100)
                 if item.get("event_type") == "behavior.completed" and item.get("actor_id") == "luo_shan"
             ]
             assert outcomes
@@ -69,12 +69,12 @@ def test_one_research_bt_can_research_a_god_created_source(tmp_path: Path):
                 assert any(
                     item.get("event_type") == "research.completed"
                     and item.get("actor_id") == "luo_shan"
-                    for item in platform.store.recent_events(limit=100)
+                    for item in platform.store.repositories.events.recent_events(limit=100)
                 )
 
-        facts = {item["fact_key"] for item in platform.store.list_knowledge_facts("luo_shan", limit=100)}
+        facts = {item["fact_key"] for item in platform.store.repositories.memory.list_knowledge_facts("luo_shan", limit=100)}
         assert {"fact:later_marker:one", "fact:later_marker:two"} <= facts
-        assert {item["id"] for item in platform.store.get_definitions("bt_def")} == before_definitions
+        assert {item["id"] for item in platform.store.repositories.entities.get_definitions("bt_def")} == before_definitions
     finally:
         platform.close()
 
@@ -83,7 +83,7 @@ def test_story_view_exposes_generic_research_followup(tmp_path: Path):
     platform = _town(tmp_path, "story-generic-research")
     try:
         with platform.store.transaction():
-            event_id = platform.store.append_event(
+            event_id = platform.store.repositories.events.append_event(
                 "institution.activated",
                 "luo_shan",
                 10,
@@ -116,7 +116,7 @@ def test_story_view_exposes_generic_research_followup(tmp_path: Path):
         assert result["status"] == "accepted"
         beat = next(item for item in platform.store.get_meta("story_state")["emergent_beats"] if item["id"] == platform.store.get_meta("story_state")["emergent_beats"][-1]["id"])
         assert "research_boundary_stone" in beat["unlock_behavior_ids"]
-        assert "boundary_stone" in platform.store.get_agent("luo_shan").get("research_targets", [])
+        assert "boundary_stone" in platform.store.repositories.entities.get_agent("luo_shan").get("research_targets", [])
     finally:
         platform.close()
 
@@ -125,7 +125,7 @@ def test_story_cannot_relabel_a_research_result_as_another_source(tmp_path: Path
     platform = _town(tmp_path, "story-source-causality")
     try:
         with platform.store.transaction():
-            event_id = platform.store.append_event(
+            event_id = platform.store.repositories.events.append_event(
                 "research.completed",
                 "luo_shan",
                 10,
@@ -153,7 +153,7 @@ def test_story_followup_must_be_executable_for_its_audience(tmp_path: Path):
     platform = _town(tmp_path, "story-followup-catalog-guard")
     try:
         with platform.store.transaction():
-            event_id = platform.store.append_event(
+            event_id = platform.store.repositories.events.append_event(
                 "cistern.reviewed",
                 "mei_lan",
                 10,
@@ -199,10 +199,10 @@ def test_failed_story_followup_is_blocked_and_story_is_woken(tmp_path: Path):
     platform = _town(tmp_path, "failed-story-followup")
     try:
         goal = "Gather the assigned source material."
-        agent = platform.store.get_agent("luo_shan")
+        agent = platform.store.repositories.entities.get_agent("luo_shan")
         agent["story_goals"] = [goal]
         with platform.store.transaction():
-            platform.store.update_agent("luo_shan", agent)
+            platform.store.repositories.entities.update_agent("luo_shan", agent)
             platform.store.set_meta(
                 "story_state",
                 {
@@ -225,7 +225,7 @@ def test_failed_story_followup_is_blocked_and_story_is_woken(tmp_path: Path):
         platform._block_story_beats_for_failed_followup("luo_shan", "gather_reeds", 10, source_event_id, "resource_empty")
         state = platform.store.get_meta("story_state")
         assert state["emergent:blocked-followup"]["status"] == "blocked"
-        assert goal not in platform.store.get_agent("luo_shan").get("story_goals", [])
+        assert goal not in platform.store.repositories.entities.get_agent("luo_shan").get("story_goals", [])
         task = platform.store.connection.execute(
             "SELECT role,task_type,status FROM evolution_task WHERE task_id=?",
             (f"story:event:{source_event_id}",),
@@ -239,13 +239,13 @@ def test_public_timeline_uses_world_language_for_story_events(tmp_path: Path):
     platform = _town(tmp_path, "public-timeline-language")
     try:
         with platform.store.transaction():
-            platform.store.append_event(
+            platform.store.repositories.events.append_event(
                 "story.beat.activated",
                 "story",
                 10,
                 {"summary": "配给底数需要决断。", "audience": ["梅岚"]},
             )
-            platform.store.append_event(
+            platform.store.repositories.events.append_event(
                 "behavior.started",
                 "mei_lan",
                 11,

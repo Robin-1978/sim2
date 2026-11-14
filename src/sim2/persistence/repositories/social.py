@@ -82,7 +82,7 @@ class SocialRepository:
         ids = [row["offer_id"] for row in self.store.connection.execute(query, params).fetchall()]
         offers = []
         for offer_id in ids:
-            offer = self.store.get_trade_offer(offer_id)
+            offer = self.get_trade_offer(offer_id)
             if offer is not None:
                 offers.append(offer)
         return offers

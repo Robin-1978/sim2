@@ -22,7 +22,7 @@ def _call(tool_name: str, **arguments):
 
 
 def _step_behavior(platform: Platform, actor_id: str) -> int:
-    remaining = int(platform.store.get_agent(actor_id)["initial_state"].get("remaining_minutes", 0))
+    remaining = int(platform.store.repositories.entities.get_agent(actor_id)["initial_state"].get("remaining_minutes", 0))
     for _ in range(remaining):
         platform.step()
     return remaining
@@ -56,7 +56,7 @@ def _base_behavior(platform: Platform) -> None:
 def _base_institution(platform: Platform) -> None:
     with platform.store.transaction():
         for minute in (1, 2, 3):
-            event_id = platform.store.append_event(
+            event_id = platform.store.repositories.events.append_event(
                 "cistern.reviewed", "mei_lan", minute,
                 {"behavior_id": "inspect_cistern", "fact": "Three public cistern reviews were persisted."},
             )
@@ -88,7 +88,7 @@ def test_npc_story_god_loop_returns_to_npc_for_ten_rounds(tmp_path: Path):
             "goal_hint": "Review the cistern and carry the verified result into the next public decision.",
             "audience": ["梅岚"],
             "unlock_choices": ["Review Public Cistern"],
-        }, source_event_ids=[platform.store.recent_events(limit=1)[0]["event_id"]])
+        }, source_event_ids=[platform.store.repositories.events.recent_events(limit=1)[0]["event_id"]])
         assert opening["status"] == "accepted", opening
 
         audit = []
@@ -105,7 +105,7 @@ def test_npc_story_god_loop_returns_to_npc_for_ten_rounds(tmp_path: Path):
             )]), max_iterations=1).run(role="agent_decision", actor_id="mei_lan", task_type="agent_plan_selection")
             assert npc.result["status"] == "accepted", npc.result
             minutes = _step_behavior(platform, "mei_lan")
-            assert platform.store.recent_outcomes_for_actor("mei_lan", limit=1)[0]["event_type"] == "behavior.completed"
+            assert platform.store.repositories.events.recent_outcomes_for_actor("mei_lan", limit=1)[0]["event_type"] == "behavior.completed"
 
             story_tasks = [item for item in platform.ready_evolution_tasks() if item["role"] == "story"]
             story_task = max(

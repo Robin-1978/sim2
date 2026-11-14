@@ -44,7 +44,7 @@ class MemoryRepository:
 
     def put_knowledge_fact(self, agent_id: str, fact_key: str, data: dict[str, Any]) -> int:
         data = dict(data)
-        tags = self.store._memory_tags(data)
+        tags = self._memory_tags(data)
         if tags:
             data["tags"] = tags
         cur = self.store.connection.execute(
@@ -55,7 +55,7 @@ class MemoryRepository:
 
     def merge_knowledge_fact(self, agent_id: str, fact_key: str, data: dict[str, Any]) -> int:
         data = dict(data)
-        tags = self.store._memory_tags(data)
+        tags = self._memory_tags(data)
         if tags:
             data["tags"] = tags
         # A later verified result may revise an earlier claim.  Keep both
@@ -87,7 +87,7 @@ class MemoryRepository:
         confidence = float(data.get("confidence", 0.5))
         row = self.store.connection.execute("SELECT id,data_json FROM knowledge_fact WHERE agent_id=? AND fact_key=? ORDER BY id DESC LIMIT 1", (agent_id, fact_key)).fetchone()
         if row is None:
-            return self.store.put_knowledge_fact(agent_id, fact_key, data)
+            return self.put_knowledge_fact(agent_id, fact_key, data)
         current = json.loads(row["data_json"])
         old_confidence = float(current.get("confidence", 0.5))
         merged = {**current, **data, "confidence": round((old_confidence + confidence) / 2, 4), "evidence_count": int(current.get("evidence_count", 1)) + 1}
@@ -104,7 +104,7 @@ class MemoryRepository:
         """
 
         try:
-            source = self.store.get_entity(str(source_id))
+            source = self.store.repositories.entities.get_entity(str(source_id))
         except KeyError:
             return []
         state = source.get("initial_state") if isinstance(source.get("initial_state"), dict) else {}
@@ -164,7 +164,7 @@ class MemoryRepository:
                 "name": str(row["name"]),
                 "location_id": state.get("location_id") or data.get("location_id"),
                 "research_required": data.get("research_required", state.get("research_required", state.get("required_research"))),
-                "discoveries": self.store.research_discoveries(str(row["id"])),
+                "discoveries": self.research_discoveries(str(row["id"])),
             })
         return result
 
@@ -177,7 +177,7 @@ class MemoryRepository:
         """
 
         result: list[dict[str, Any]] = []
-        for source in self.store.research_source_catalog():
+        for source in self.research_source_catalog():
             progress_prefix = f"research:{source['id']}"
             progress = self.store.connection.execute(
                 "SELECT progress_key,current_value,required_value,data_json,updated_minute FROM progress_state "
@@ -186,7 +186,7 @@ class MemoryRepository:
             ).fetchone()
             completed = bool(progress and float(progress["current_value"] or 0) >= float(progress["required_value"] or 1))
             try:
-                entity = self.store.get_entity(str(source["id"]))
+                entity = self.store.repositories.entities.get_entity(str(source["id"]))
             except KeyError:
                 entity = {}
             state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
@@ -319,7 +319,7 @@ class MemoryRepository:
             return []
         minute = int(self.store.get_meta("world_minute", 0) if world_minute is None else world_minute)
         discoveries = [
-            item for item in self.store.research_discoveries(source_key)
+            item for item in self.research_discoveries(source_key)
             if str(item.get("status", "active")).casefold() not in {"obsolete", "disabled"}
         ]
         expected = {str(item.get("id")) for item in discoveries if item.get("id")}
@@ -395,7 +395,7 @@ class MemoryRepository:
         # tags are storage metadata, not additional prompt text; hybrid FTS
         # and BGE ranking can use location, participants, behavior, object,
         # topic and goal without parsing a transcript.
-        tags = self.store._memory_tags(data)
+        tags = self._memory_tags(data)
         # IDs are useful for filtering but visible names make the envelope
         # readable in diagnostics and prompt previews.
         for tag in ("location", "participants", "object"):
@@ -406,7 +406,7 @@ class MemoryRepository:
             visible_values = []
             for candidate in values:
                 try:
-                    visible_values.append(self.store.get_entity(str(candidate)).get("name", candidate))
+                    visible_values.append(self.store.repositories.entities.get_entity(str(candidate)).get("name", candidate))
                 except KeyError:
                     visible_values.append(candidate)
             tags[tag] = visible_values if isinstance(value, list) else visible_values[0]

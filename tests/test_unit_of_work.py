@@ -28,13 +28,13 @@ def test_event_and_evolution_repositories_share_platform_transaction(tmp_path: P
                 status="ready",
                 data={"source_event_id": event_id},
             )
-        assert platform.store.events_by_ids([event_id])[0]["event_type"] == "test.committed"
-        assert platform.store.ready_evolution_tasks()[0]["task_id"] == "test-task"
+        assert platform.store.repositories.events.events_by_ids([event_id])[0]["event_type"] == "test.committed"
+        assert platform.store.repositories.evolution.ready_evolution_tasks()[0]["task_id"] == "test-task"
 
         with pytest.raises(RuntimeError):
             with platform.uow.transaction() as uow:
                 uow.events.append("test.rolled_back", "luo_shan", 0, {})
                 raise RuntimeError("rollback")
-        assert not any(item["event_type"] == "test.rolled_back" for item in platform.store.recent_events(limit=20))
+        assert not any(item["event_type"] == "test.rolled_back" for item in platform.store.repositories.events.recent_events(limit=20))
     finally:
         platform.close()
