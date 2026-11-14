@@ -49,7 +49,7 @@ def _result_line(result: Any) -> str:
     parts: list[str] = []
     # Canonical IDs are Platform/audit data.  The model receives the visible
     # choice or name instead of an implementation reference.
-    for key in ("status", "choice", "behavior_choice", "result", "reason", "event_type", "failed_check", "message", "available_choices"):
+    for key in ("status", "choice", "behavior_choice", "result", "reason", "event_type", "failed_check", "message", "errors", "retryable", "available_choices", "required_assign_to"):
         if result.get(key) not in (None, ""):
             parts.append(f"{key}={_plain(result[key])}")
     outcome = result.get("outcome")
@@ -156,10 +156,10 @@ def _remove_block(text: str, tag: str) -> tuple[str, bool]:
 
 
 # Background sections an over-long prompt gives up whole, in this order. The
-# character sections come first. The world-level ones follow: statistics, the
-# rule-field list and recent outcomes only matter to particular proposals, while
-# the evidence, the institutions and the task decide every session and are never
-# dropped.
+# character sections come first. The world-level ones follow: trends are
+# removable reference data, while outcomes, knowledge gaps and rule-field
+# details matter to particular proposals. A non-institutional God review may
+# move trends to the end when it is the only useful long-term projection.
 _BACKGROUND_SECTIONS = (
     "registered_actions", "knowledge_and_memory", "nearby_entities", "relationships", "recent_actions",
     "world_trends", "world_outcomes", "knowledge_gaps", "rule_condition_fields",
@@ -269,6 +269,18 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             lines.append("  - no other recent validated history" if triggering_evidence else "  - no recent validated history")
         lines.append("  Use query_history for an older or narrower causal slice before proposing a continuation.")
         lines.append("</world_history>")
+
+        threads = context.get("active_story_threads") or []
+        lines.append("<active_story_threads>")
+        lines.append("  These are active audience-facing continuations already grounded in validated events. Use them as world evidence; do not treat a narrative summary as a new state change.")
+        for thread in threads[:6]:
+            audience = ", ".join(str(item) for item in (thread.get("audience") or [])) or "unspecified audience"
+            source = f"; source={_line(thread.get('research_source'))}" if thread.get("research_source") else ""
+            goal = f"; next={_line(thread.get('goal_hint'))}" if thread.get("goal_hint") else ""
+            lines.append(f"  - audience={audience}; {_line(thread.get('summary'))}{source}{goal}")
+        if not threads:
+            lines.append("  - none active")
+        lines.append("</active_story_threads>")
 
         gaps = context.get("knowledge_gaps") or []
         lines.append("<knowledge_gaps>")
@@ -544,7 +556,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 for event_type in (source.get("event_types") or [])
             }
             if evidence_types & {"research.completed", "research.progressed"}:
-                lines.append("  For this research continuation, use propose_entity only for one genuinely new unanswered question. Include entity_type=document, a short name, a visible location, state.research_novelty_key, state.research_question, state.research_discoveries: [{fact: 'one new question or finding'}], research_required: a positive number, and research_assignees: [the exact visible name of a character whose own choices already include researching a configured source; Platform rejects unreachable or near-duplicate sources]. Do not create a page, draft, ledger, continuation or copy of an existing question; use revise_institution or a supply behavior for a resource problem. If every current source is exhausted, do not wait merely because the last topic shares words with the new evidence: derive a distinct causal dimension (effect, risk, intervention, provenance, or application) from the verified result, give it a new novelty key, and require a different fact or decision. A changed title for the same question is still a duplicate.")
+                lines.append("  Research continuation: propose one reachable source with a new novelty key, question and discovery. When sources are exhausted, shift to a distinct causal dimension (effect, risk, intervention, provenance or application) and key; never rename a duplicate or wait only on word overlap.")
             lines.append("  Use only the configured trigger tools. A rule signal or narrative acknowledgement is not a substitute for the required result.")
             lines.append("</evolution_trigger>")
         lines.append("<world_proposal_contract>")
@@ -562,6 +574,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("  - Action success/failure each need {condition?, result}; Travel To uses location_id. Copy parameter names from world_action_catalog. A dynamic parameter such as item_id is not an inventory key; omit the condition or use the literal visible item name.")
         lines.append("  - A new Action must have a real observable result: declare effects, information or capability/progress effects, or bind a Recipe with outputs. A success label or outcome_events field alone never changes resources or state; do not call a resource refill successful without a configured effect that performs it.")
         lines.append("  - To move carried material into an existing world resource, use costs.reserve:{item_parameter:<item parameter>, item_quantity_parameter:<quantity parameter>} and effect:{type:'resource_transfer', resource_id:<existing visible resource>, source_item_parameter:<same item parameter>, quantity_parameter:<same quantity parameter>}; omit item_quantity_parameter only for one item with quantity:1. The transfer must equal the reserved amount and cannot mint stock or target a missing resource.")
+        lines.append("  - A resource_transfer reserves the carried item before the success condition is checked. Its success condition must not inspect actor.inventory.<item>; use actor.alive or an observable destination/world result instead.")
         lines.append("  - Action parameters whose names end in _entity or _id must use exact visible entity names from the world view and parameter names from the Action catalog. A behavior is rejected unless its assigned character can execute the whole sequence now.")
         visible_names = ", ".join(str(item.get("name")) for item in (context.get("visible_entities") or [])[:48] if item.get("name"))
         lines.append(f"  - Exact visible entities (use these names): {visible_names or 'none'}.")
@@ -791,6 +804,12 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     if last:
         lines.append(f"    latest_platform_result: {_result_line(last)}")
     lines.append("</interaction_history>")
+    if isinstance(last, dict) and str(last.get("status") or "") == "rejected":
+        lines.append(
+            "<platform_correction>"
+            "  The previous request was rejected. Read the failed_check, message and errors above, correct the request, and do not repeat the same arguments."
+            "</platform_correction>"
+        )
     lines.extend(["<decision>", f"  {task}"])
     if role == "agent_decision" and context.get("decision_guidance"):
         lines.append(f"  Decision guidance: {context['decision_guidance']}")
@@ -822,16 +841,39 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     # evidence instead of a fixed token-order accident.
     outcomes_start = rendered.find("<world_outcomes>")
     outcomes_end = rendered.find("</world_outcomes>", outcomes_start)
+    outcomes = rendered[outcomes_start:outcomes_end] if outcomes_start >= 0 and outcomes_end > outcomes_start else ""
+    meaningful_outcomes = bool(outcomes) and not (
+        "Pending proposal evaluations: none." in outcomes
+        and "- no recent world proposal result" in outcomes
+    )
+    has_active_institution = "[terms:" in rendered
     if outcomes_start >= 0 and outcomes_end > outcomes_start:
-        outcomes = rendered[outcomes_start:outcomes_end]
-        has_active_institution = "[terms:" in rendered
-        if (
-            "Pending proposal evaluations: none." in outcomes
-            and "- no recent world proposal result" in outcomes
-            and not has_active_institution
-        ):
+        if meaningful_outcomes or has_active_institution:
+            # A committed world change or institution evaluation is the
+            # current causal evidence. Keep it until all less-specific
+            # reference sections have been compacted.
+            background_sections.remove("world_outcomes")
+            background_sections.append("world_outcomes")
+        else:
+            # An empty outcome scaffold is cheaper to drop than trends or
+            # configured resources, so remove it first when no causal result
+            # needs to be reviewed.
             background_sections.remove("world_outcomes")
             background_sections.insert(0, "world_outcomes")
+    # A non-institutional God review that contains a real trend should retain
+    # that trend when only a small amount must be compacted. World outcomes or
+    # another retrievable reference section can give way first. Institution
+    # reviews keep the historical order so their terms and causal evidence
+    # remain together and the established compaction contract is preserved.
+    trends_start = rendered.find("<world_trends>")
+    trends_end = rendered.find("</world_trends>", trends_start)
+    trends = rendered[trends_start:trends_end] if trends_start >= 0 and trends_end > trends_start else ""
+    # God needs the trend scaffold even when the current window contains no
+    # changes: it still carries configured regeneration and the empty baseline
+    # that distinguishes "no evidence" from a missing projection.
+    if trends and not meaningful_outcomes and not has_active_institution:
+        background_sections.remove("world_trends")
+        background_sections.append("world_trends")
     for tag in background_sections:
         rendered, removed = _remove_block(rendered, tag)
         if removed:

@@ -6,6 +6,13 @@ from typing import Any
 from .engine import AgentTurn
 
 
+_GENERIC_STOP_WORDS = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
+    "has", "have", "in", "is", "it", "of", "on", "or", "that", "the",
+    "this", "to", "was", "were", "with",
+})
+
+
 def _check(name: str, passed: bool, detail: str) -> dict[str, Any]:
     return {"name": name, "passed": bool(passed), "detail": detail}
 
@@ -22,9 +29,14 @@ def _outcome_evidence(item: dict[str, Any]) -> tuple[str, str]:
     """Return searchable evidence and a normalized kind for one outcome."""
 
     outcome = item.get("outcome") if isinstance(item.get("outcome"), dict) else {}
+    expected = outcome.get("expected") if isinstance(outcome.get("expected"), dict) else {}
+    labels = expected.get("goal_tags") or expected.get("drive_tags") or []
+    if isinstance(labels, str):
+        labels = [labels]
     evidence = " ".join([
         str(outcome.get("result", "")),
-        str((outcome.get("expected") or {}).get("summary", "")),
+        str(expected.get("summary", "")),
+        " ".join(str(value) for value in labels),
         str(outcome.get("delta", {})),
         str(outcome.get("actual", {})),
         str(item.get("event_type", "")),
@@ -35,6 +47,31 @@ def _outcome_evidence(item: dict[str, Any]) -> tuple[str, str]:
         item.get("event_type"), item.get("behavior_id"), outcome.get("result"), item.get("behavior_choice")
     ))
     return evidence, kind
+
+
+def _related_terms(left: set[str], right: set[str]) -> bool:
+    """Match exact or inflection-related terms without a world vocabulary.
+
+    The quality layer must not know that one world has food, patrols or
+    satiety.  Outcome projections already contain the configured behavior
+    label, result, summary and goal tags.  A small prefix relation handles
+    ordinary inflections (``inspect``/``inspection``) while keeping the check
+    bounded and deterministic.
+    """
+
+    left = {term for term in left if term not in _GENERIC_STOP_WORDS}
+    right = {term for term in right if term not in _GENERIC_STOP_WORDS}
+    if left & right:
+        return True
+    for first in left:
+        if len(first) < 4:
+            continue
+        for second in right:
+            if len(second) < 4:
+                continue
+            if first.startswith(second) or second.startswith(first):
+                return True
+    return False
 
 
 def _experience_matches_outcome(summary: str, item: dict[str, Any]) -> bool:
@@ -48,25 +85,12 @@ def _experience_matches_outcome(summary: str, item: dict[str, Any]) -> bool:
 
     evidence, event_kind = _outcome_evidence(item)
     summary_terms = _terms(summary)
-    if summary_terms & _terms(evidence):
+    if _related_terms(summary_terms, _terms(evidence)):
         return True
-    semantic_signals = {
-        "dialogue": ("dialogue", "conversation", "communicat", "exchange", "talk", "对话", "交谈", "交流", "沟通", "谈", "消息"),
-        "research": ("research", "study", "fact", "研究", "调查", "事实"),
-        "explor": ("explor", "survey", "route", "map", "探索", "勘察", "地图", "路线"),
-        "rest": ("rest", "recover", "energy", "休息", "恢复", "体力", "能量"),
-        "food": ("food", "ration", "satiety", "meal", "吃", "食物", "口粮", "饱食", "饱腹", "粮仓", "谷物", "配给"),
-        "patrol": ("patrol", "watch", "security", "巡逻", "警戒", "安全"),
-        "inspect": ("inspect", "check", "stock", "report", "检查", "巡查", "盘点", "库存", "报告"),
-        "craft": ("craft", "forge", "recipe", "制作", "锻造", "晨钟", "工具"),
-        "negotiate": ("negotiat", "agreement", "contract", "协商", "谈判", "协议"),
-        "gather": ("gather", "collect", "resource", "采集", "收集", "资源", "谷物"),
-        "travel": ("travel", "move", "arrive", "route", "移动", "到达", "路线"),
-    }
-    return any(
-        key in event_kind and any(term in summary.casefold() for term in terms)
-        for key, terms in semantic_signals.items()
-    )
+    # If direct evidence did not overlap, compare the configured behavior
+    # family with the event family.  This keeps the fallback generic: both
+    # sides come from the persisted outcome, never from a world vocabulary.
+    return _related_terms(_terms(event_kind), summary_terms)
 
 
 def _final_submission(turn: AgentTurn) -> tuple[str, dict[str, Any]]:

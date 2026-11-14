@@ -40,9 +40,12 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="sim2-evolution-chain-") as runtime:
         platform = Platform(create_instance(config, "real-evolution-chain", Path(runtime)))
         try:
+            entities = platform.store.repositories.entities
+            events = platform.store.repositories.events
+            social = platform.store.repositories.social
             with platform.store.transaction():
                 for minute in (1, 2, 3):
-                    platform.store.append_event(
+                    events.append_event(
                         "cistern.reviewed", "mei_lan", minute,
                         {"behavior_id": "inspect_cistern", "result": "record_inspected"},
                     )
@@ -86,9 +89,9 @@ def main() -> int:
                 raise RuntimeError(f"Story did not create a continuation: {story.result}")
             platform.complete_evolution_task(activated["task_id"])
 
-            active = platform.store.list_institutions(status="active")[0]
+            active = social.list_institutions(status="active")[0]
             for minute in (4, 5, 6):
-                event_id = platform.store.append_event(
+                event_id = events.append_event(
                     "cistern.reviewed", "mei_lan", minute,
                     {"behavior_id": "inspect_cistern", "result": "record_inspected"},
                 )
@@ -111,7 +114,7 @@ def main() -> int:
                 "story_continuation": _summary(story),
                 "god_settlement_behavior": _summary(god_behavior),
                 "registered_god_behaviors": [
-                    item.get("agent_label") for item in platform.store.get_definitions("bt_def")
+                    item.get("agent_label") for item in entities.get_definitions("bt_def")
                     if item.get("definition_source") == "god_proposal"
                 ],
                 "status": "passed",

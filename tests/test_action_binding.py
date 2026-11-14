@@ -130,6 +130,39 @@ def test_dynamic_item_parameter_cannot_be_used_as_inventory_condition(tmp_path: 
         platform.close()
 
 
+def test_resource_transfer_success_cannot_depend_on_reserved_inventory(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "action-resource-transfer-postcondition", tmp_path / "runtime"))
+    try:
+        result = platform.submit_definition_proposal(
+            "god",
+            {
+                "definition_type": "action",
+                "name": "Post Reservation Inventory Check",
+                "definition": {
+                    "parameters": {"item_id": "string"},
+                    "duration": {"minutes": 1},
+                    "costs": {"reserve": {"item_parameter": "item_id"}},
+                    "effects": [{"type": "resource_transfer", "resource_id": "蓄水", "quantity": 1}],
+                    "success": {"condition": "actor.inventory.energy_cell > 0", "result": "water transferred"},
+                    "failure": {"result": "water transfer failed"},
+                },
+                "followup_behavior": {
+                    "name": "Post Reservation Inventory Check Behavior",
+                    "assign_to": ["梅岚"],
+                    "definition": {
+                        "nodes": [{"type": "action", "action_id": "Post Reservation Inventory Check", "parameters": {"item_id": "蓄水"}}],
+                        "success_results": ["water transferred"],
+                        "failure_results": ["water transfer failed"],
+                    },
+                },
+            },
+        )
+        assert result["status"] == "rejected", result
+        assert any("after reservation" in error for error in result["errors"])
+    finally:
+        platform.close()
+
+
 def test_behavior_outcome_event_requires_a_real_event_type(tmp_path: Path) -> None:
     platform = Platform(create_instance(WORLD, "action-outcome-event-contract", tmp_path / "runtime"))
     try:

@@ -597,9 +597,8 @@ class BehaviorExecutionService(PlatformService):
                 source = next((item for item in sources if item.get("entity_type") in entity_types and not (item.get("initial_state") or {}).get(protected_key) and self._entity_quantity(item) > 0), None)
                 result[key] = source.get("id") if source else value
             elif isinstance(default, str) and default in configured_context:
-                # Declarative legacy aliases (for example ``first_food``)
-                # resolve through the package context projection rather than
-                # becoming a literal inventory key.
+                # A package may name a configured context value directly;
+                # it is resolved through the generic context projection.
                 result[key] = configured_context.get(default, value)
             elif value in (None, "") or (isinstance(value, str) and value.startswith("context.")):
                 result[key] = default

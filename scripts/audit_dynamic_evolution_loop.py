@@ -51,7 +51,7 @@ def _probe_template() -> dict[str, Any]:
             {"id": "storage_ring", "name": "Storage Ring", "public": True, "safe": True, "tags": ["resource"], "routes": ["relay_lab"]},
         ],
         "objects": [
-            {"id": "signal_archive", "type": "archive", "name": "Signal Archive", "initial_state": {"location_id": "relay_lab", "readable": True, "status": "partially_decoded"}, "research_required": 2, "research_discovery": {"id": "researched:signal_archive:route", "fact": "The archive encodes a route to an unregistered relay, but its second checksum is still unresolved."}},
+            {"id": "signal_archive", "type": "archive", "name": "Signal Archive", "initial_state": {"location_id": "relay_lab", "readable": True, "status": "partially_decoded"}, "research_required": 2, "research_discoveries": [{"id": "researched:signal_archive:route", "fact": "The archive encodes a route to an unregistered relay, but its second checksum is still unresolved."}]},
         ],
         "resources": [
             {"id": "energy_reserve", "type": "resource", "name": "Public Energy Reserve", "location_id": "relay_lab", "initial_state": {"location_id": "relay_lab", "quantity": 0}},
@@ -207,7 +207,15 @@ def main() -> int:
             before_behavior_ids = {str(item.get("id")) for item in platform.store.repositories.entities.get_definitions("bt_def")}
             god_turn = None
             story_turns: list[AgentTurn] = []
-            god_task = _ready(platform, role="god", task_prefix="event_group:resource_safety" if round_no == 1 else "event_group:research_synthesis")
+            # Select the oldest ready configured God task.  The probe must
+            # exercise the world's declared wake graph; selecting a named
+            # event group here would make a different configured continuation
+            # invisible and falsely report an absorbing state.
+            god_task = _ready(
+                platform,
+                role="god",
+                task_prefix="event_group:resource_safety" if round_no == 1 else None,
+            )
             if god_task:
                 god_turn = _run_task(platform, providers["god"], god_task)
                 if god_turn.result.get("status") == "rejected":
@@ -241,12 +249,9 @@ def main() -> int:
             if npc.get("status") in {"no_npc_behavior", "provider_failure"}:
                 break
             # Every subsequent round is driven by the actual previous result.
-            # If a source is exhausted without God creating a new one, the
-            # audit stops and leaves the exact absorbing state in SQLite.
-            if round_no < args.rounds:
-                research_tasks = [item for item in platform.ready_evolution_tasks() if item.get("role") == "god" and str(item.get("task_type", "")).startswith("event_group:research_synthesis")]
-                if research_tasks:
-                    continue
+            # Ready God work is selected from the configured wake graph on the
+            # next iteration; the harness never assumes which event family is
+            # responsible for the continuation.
         # A model-backed evolution probe is a quality gate, not a transport
         # smoke test. If the last three rounds repeat the same NPC behavior
         # without a new object, Action, BT, or Story beat, the world has

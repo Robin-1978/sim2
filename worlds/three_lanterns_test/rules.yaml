@@ -40,6 +40,9 @@ resource_regeneration:
   cap: 30
 resource_property_projections:
   cistern_water: cistern_reserve
+location_tag_groups:
+  safe: [safe]
+  resource_node: [resource, water]
 capability_progression:
   research: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
   gathering: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}

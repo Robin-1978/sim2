@@ -25,7 +25,7 @@ def _pages(platform: Platform) -> list[tuple[dict[str, Any], dict[str, Any]]]:
     result: list[tuple[dict[str, Any], dict[str, Any]]] = []
     after = 0
     while True:
-        raw = platform.store.timeline_events(after_event_id=after, limit=500, include_ticks=False)
+        raw = platform.store.repositories.events.timeline_events(after_event_id=after, limit=500, include_ticks=False)
         if not raw:
             break
         rendered = platform.timeline(limit=500, after_event_id=after, include_ticks=False).get("events", [])
@@ -61,7 +61,7 @@ def _agent_line(agent: dict[str, Any], platform: Platform) -> str:
     needs = agent.get("needs", {}) or {}
     location_id = state.get("location_id", "unknown")
     try:
-        location = platform.store.get_entity(str(location_id)).get("name", location_id)
+        location = platform.store.repositories.entities.get_entity(str(location_id)).get("name", location_id)
     except KeyError:
         location = location_id
     satiety = needs.get("satiety")
@@ -77,7 +77,7 @@ def _agent_line(agent: dict[str, Any], platform: Platform) -> str:
 def export_storylines(db_path: Path, output: Path) -> Path:
     platform = Platform(db_path)
     try:
-        agents = {str(agent["id"]): agent for agent in platform.store.list_agents()}
+        agents = {str(agent["id"]): agent for agent in platform.store.repositories.entities.list_agents()}
         events = [(raw, rendered) for raw, rendered in _pages(platform) if raw.get("event_type") in STORY_EVENTS]
         grouped: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = {agent_id: [] for agent_id in agents}
         world_events: list[tuple[dict[str, Any], dict[str, Any]]] = []

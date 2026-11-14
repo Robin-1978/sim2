@@ -691,6 +691,44 @@ class AgentViewCompiler:
             return self._humanize_fact(value) if field in {"fact", "summary", "message", "reason"} else self._visible_text(value)
         return value
 
+    def _active_story_threads(self, limit: int = 6) -> list[dict[str, Any]]:
+        """Project active Story threads for world-level consumers.
+
+        Character views receive only beats addressed to that character. God
+        needs the bounded global thread list as causal input so it can extend
+        an unresolved consequence instead of treating the Story output as
+        unrelated prose.
+        """
+
+        story_root = self.store.get_meta("story", {}) or {}
+        story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
+        story_state = self.store.get_meta("story_state", {}) or {}
+        story_defs = {
+            str(item.get("id")): item
+            for item in list(story_root.get("beats", []) or []) + list(story_state.get("emergent_beats", []) or [])
+            if isinstance(item, dict) and item.get("id")
+        }
+        threads: list[dict[str, Any]] = []
+        for beat_id, entry in story_state.items():
+            if beat_id == "emergent_beats" or not isinstance(entry, dict) or entry.get("status") != "active":
+                continue
+            definition = story_defs.get(str(beat_id), {})
+            audience: list[str] = []
+            for value in entry.get("audience", []) or []:
+                try:
+                    audience.append(str(self.entities_repo.get_entity(str(value)).get("name") or value))
+                except KeyError:
+                    audience.append(str(value))
+            threads.append({
+                "summary": str(definition.get("summary") or definition.get("fact") or entry.get("summary") or "validated story thread"),
+                "goal_hint": str(definition.get("goal_hint") or entry.get("goal_hint") or ""),
+                "audience": audience,
+                "research_source": str(definition.get("research_source") or entry.get("research_source_id") or ""),
+                "world_minute": int(entry.get("started_minute", 0) or 0),
+            })
+        threads.sort(key=lambda item: item["world_minute"], reverse=True)
+        return threads[: max(1, int(limit))]
+
     def build_decision_view(
         self,
         agent_id: str,
@@ -890,7 +928,7 @@ class AgentViewCompiler:
                     current_stage = next((item for item in discoveries if str(item.get("id")) not in known and str(item.get("status") or "active").casefold() not in {"obsolete", "disabled"}), None)
                     required = (current_stage or {}).get("required")
                     if required is None:
-                        required = research_source.get("research_required", source_state.get("research_required", source_state.get("required_research")))
+                        required = research_source.get("research_required", source_state.get("research_required"))
                     if required is None:
                         required = (self.store.get_meta("rules", {}) or {}).get("research_default_required")
                     if required is not None:
@@ -1246,6 +1284,7 @@ class AgentViewCompiler:
             })
         active_story_beats.sort(key=lambda item: item["world_minute"], reverse=True)
         active_story_beats = active_story_beats[:3]
+        active_story_threads = self._active_story_threads()
         result = {
             "context_version": "1", "role": role,
             "world_revision": int(self.store.get_meta("world_revision", 0) or 0),
@@ -1279,6 +1318,7 @@ class AgentViewCompiler:
             "story_goals": story_goals,
             "behavior_assignments": behavior_assignments,
             "active_story_beats": active_story_beats,
+            "active_story_threads": active_story_threads,
             "executable_behaviors": self._assign_choices(available) if role == "agent_decision" else [],
             "decision_constraints": decision_constraints if role == "agent_decision" else [],
             "last_platform_result": self._with_behavior_choice(
@@ -1845,6 +1885,7 @@ class AgentViewCompiler:
                 "amount": raw.get("amount", 0),
                 "cap": raw.get("cap"),
             })
+        active_story_threads = self._active_story_threads()
         prompt_protocol, platform_rules = self._prompt_sections(role)
         behavior_catalog = []
         for behavior in bt_defs.values():
@@ -1898,6 +1939,7 @@ class AgentViewCompiler:
             "known_facts": [],
             "recent_actions": recent_world_events,
             "recent_history": self._recent_history_view(20),
+            "active_story_threads": active_story_threads,
             "knowledge_gaps": self._knowledge_gap_view(status="active", limit=12),
             "memories": god_memories,
             "long_term_memories": god_memories,

@@ -52,7 +52,7 @@ def configured_evolution_group(platform: Platform, task_type: str) -> dict[str, 
     for policy in consumers.values() if isinstance(consumers, dict) else []:
         if not isinstance(policy, dict):
             continue
-        for group in policy.get("event_groups", policy.get("groups", [])) or []:
+        for group in policy.get("event_groups", []) or []:
             if isinstance(group, dict) and str(group.get("id") or "") == group_id:
                 contract = group.get("agent_contract")
                 return dict(contract) if isinstance(contract, dict) else None

@@ -179,7 +179,7 @@ class ConditionEngine:
             "inventory.available", "inventory.item_available", "actor.inventory_item_available",
             "route.known", "destination.reachable", "area.unknown", "area.not_fully_mapped",
             "object.available", "research.new_fact_available", "secret.source_available",
-            "target.available", "target.visible", "location.has_food", "location.resource_node",
+            "target.available", "target.visible", "location.resource_node",
             "location.health_service", "location.safe", "location.reachable", "station.available",
             "patient.available", "patient.in_clinic", "counterparty.available", "resource.available",
             "inputs.available", "recipe.available", "medicine.available", "communication.channel_open",
@@ -316,20 +316,16 @@ class ConditionEngine:
         if path.startswith("event.recent."):
             event_type = path.removeprefix("event.recent.")
             return event_type in {str(item) for item in (context.get("recent_event_types", []) or [])}
-        if path == "location.has_food":
-            location = context.get("current_location", {}) or {}
-            tags = self.location_tag_groups.get("food", {"food"})
-            return bool(set(location.get("tags", []) or []) & tags) or bool(context.get("food_available", False))
         if path == "location.resource_node":
             location = context.get("current_location", {}) or {}
-            tags = self.location_tag_groups.get("resource_node", {"food", "resource", "water", "mine", "forest"})
+            tags = self.location_tag_groups.get("resource_node", set())
             return bool(set(location.get("tags", []) or []) & tags)
         if path.startswith("location.tag."):
             location = context.get("current_location", {}) or {}
             return path.removeprefix("location.tag.") in set(location.get("tags", []) or [])
         if path == "location.health_service":
             location = context.get("current_location", {}) or {}
-            tags = self.location_tag_groups.get("health_service", {"health", "clinic"})
+            tags = self.location_tag_groups.get("health_service", set())
             return bool(set(location.get("tags", []) or []) & tags)
         if path == "station.available":
             required = set(context.get("station_tags", []) or [])
@@ -342,7 +338,7 @@ class ConditionEngine:
         if path in {"location.safe", "destination.safe_or_defensible", "target.available", "patient.in_clinic", "resource.available", "inputs.available", "recipe.available", "medicine.available", "communication.channel_open", "location.reachable"}:
             if path == "location.safe":
                 location = context.get("current_location", {})
-                safe_tags = self.location_tag_groups.get("safe", {"safe"})
+                safe_tags = self.location_tag_groups.get("safe", set())
                 return bool(location.get("safe", False) or (self.public_locations_are_safe and location.get("public", False) is True) or set(location.get("tags", []) or []) & safe_tags)
             return bool(context.get(path, True))
         return self._path_value(context, path)

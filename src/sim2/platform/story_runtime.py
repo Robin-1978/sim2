@@ -367,7 +367,18 @@ class StoryRuntimeMixin:
                     return {"status": "wait", "reason": "This validated result already has the same audience and continuation; wait for a different outcome, stage, or executable follow-up."}
         with self.store.transaction():
             self.store.repositories.evolution.create_intent(intent_id, actor_id, "propose_story_beat", proposal, minute)
-            state[beat_id] = {"status": "active", "started_minute": minute, "actor_id": actor_id, "audience": list(audience)}
+            state[beat_id] = {
+                "status": "active",
+                "started_minute": minute,
+                "actor_id": actor_id,
+                "audience": list(audience),
+                # Persist the Story Agent's public continuation so a later
+                # God review can consume the same grounded thread without
+                # reading private memory or reconstructing lost prose.
+                "summary": str(beat.get("summary") or ""),
+                "fact": str(beat.get("fact") or proposal.get("fact") or ""),
+                "goal_hint": str(beat.get("goal_hint") or proposal.get("goal_hint") or ""),
+            }
             if research_source_id:
                 state[beat_id]["research_source_id"] = research_source_id
             if emergent:
@@ -407,7 +418,16 @@ class StoryRuntimeMixin:
                 if fact:
                     self.store.repositories.memory.merge_knowledge_fact(target["id"], f"story:{beat_id}", {"fact": fact, "source_type": "story", "source_id": beat_id, "confidence": 0.9, "observed_at": minute})
                 self.store.repositories.entities.update_agent(target["id"], target)
-            event_id = self._context.services["events"].append("story.beat.activated", actor_id, minute, {"beat_id": beat_id, "summary": beat.get("summary", ""), "audience": audience, "research_source_id": research_source_id, "public_event": beat.get("public_event"), "reason": proposal.get("reason", "")})
+            event_id = self._context.services["events"].append("story.beat.activated", actor_id, minute, {
+                "beat_id": beat_id,
+                "summary": beat.get("summary", ""),
+                "fact": beat.get("fact") or proposal.get("fact") or "",
+                "goal_hint": beat.get("goal_hint") or proposal.get("goal_hint") or "",
+                "audience": audience,
+                "research_source_id": research_source_id,
+                "public_event": beat.get("public_event"),
+                "reason": proposal.get("reason", ""),
+            })
             remember_role(self.store, "story", "story_thread", {
                 "summary": str(beat.get("summary") or beat.get("fact") or ""),
                 "beat_id": beat_id,

@@ -48,6 +48,8 @@ def test_compact_evolution_rejects_ambiguous_fields_and_durations() -> None:
         normalize_evolution_config({"cadence": {"god": "soon"}})
     with pytest.raises(ValueError, match="unknown field"):
         normalize_evolution_config({"wakes": [{"on": "x", "for": "god", "threshold": 3}]})
+    with pytest.raises(ValueError, match="unknown field"):
+        normalize_evolution_config({"wakes": [{"on": "x", "for": "god", "evidence": [{"event_types": ["x"]}]}]})
 
 
 def test_compact_evolution_is_valid_and_stored_compiled(tmp_path: Path) -> None:

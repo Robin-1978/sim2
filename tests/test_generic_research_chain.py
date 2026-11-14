@@ -195,6 +195,27 @@ def test_research_source_proposal_requires_real_declarative_stages(tmp_path: Pat
         platform.close()
 
 
+def test_research_source_rejects_retired_singular_stage_shape(tmp_path: Path):
+    platform = _town(tmp_path, "research-source-canonical-schema")
+    try:
+        result = platform.submit_entity_proposal(
+            "god",
+            {
+                "entity_type": "research_source",
+                "name": "Retired Stage Shape",
+                "state": {
+                    "research_discovery": {"id": "retired:stage", "fact": "This shape is no longer accepted."},
+                    "research_assignees": ["罗杉"],
+                },
+            },
+        )
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "entity_schema"
+        assert any("research_discoveries" in error for error in result["errors"])
+    finally:
+        platform.close()
+
+
 def test_failed_story_followup_is_blocked_and_story_is_woken(tmp_path: Path):
     platform = _town(tmp_path, "failed-story-followup")
     try:

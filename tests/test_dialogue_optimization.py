@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 
 from sim2.agents.engine import AgentEngine, AgentTurn
-from sim2.agents.quality import evaluate_turn
+from sim2.agents.quality import _experience_matches_outcome, evaluate_turn
 from sim2.agents.tools import AgentToolExecutor, parse_tool_call, tool_schemas_for_role
 from sim2.bootstrap.service import create_instance
 from sim2.platform.runtime import Platform
@@ -63,6 +63,23 @@ def test_agent_sessions_reuse_platform_view_and_embedding_cache(tmp_path: Path):
 
 def _config() -> Path:
     return Path(__file__).parents[1] / "worlds" / "starter_village"
+
+
+def test_reflection_matching_uses_configured_outcome_terms_without_world_vocabulary():
+    outcome = {
+        "event_type": "relay.calibration.completed",
+        "behavior_id": "calibrate_relay",
+        "outcome": {
+            "result": "calibration_completed",
+            "expected": {
+                "summary": "Calibrate the relay coupling",
+                "goal_tags": ["stability", "measurement"],
+            },
+        },
+    }
+
+    assert _experience_matches_outcome("Calibration improved relay stability.", outcome)
+    assert not _experience_matches_outcome("The weather changed over the ridge.", outcome)
 
 
 def test_flattened_function_call_is_normalized():

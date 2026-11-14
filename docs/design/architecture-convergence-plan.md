@@ -18,6 +18,183 @@ implicit list of refactors with ordered deliverables and observable gates.
 The order matters: a later stage must not hide a failure in an earlier stage
 by adding another adapter, retry loop, or world-specific branch.
 
+## Architecture review and concrete execution plan
+
+### Latest review: 2026-11-14
+
+The framework is not too large because it has many files. The core split is
+reasonable: persistence, Platform mutation, activity execution, agent
+protocols, prompt projection and world content have different reasons to
+change. The current risk is duplicated ownership inside those boundaries.
+The largest modules are still concentrated (`activity.py` 1,482 lines,
+`engine.py` 937, `definition_runtime.py` 916 and `social.py` 840), and the
+same contract is represented in several places: YAML, the definition compiler,
+AgentView prose, tool schemas, quality checks and instance validation. That is
+architectural debt rather than useful domain complexity.
+
+The review found four kinds of patch-shaped behavior:
+
+1. **Harness assumptions.** The real evolution probe selected
+   `event_group:research_synthesis` after its first round. A configured
+   `relay_stability_review` task became ready but was never consumed, so the
+   NPC repeated `Inspect Archive` and the harness reported a false absorbing
+   state. The probe now selects the oldest ready God task from the configured
+   wake graph; it does not name an event family.
+2. **Contract duplication.** Definition structure, model schemas, prompt
+   examples and Platform validation are still partly hand-maintained in
+   parallel. The canonical compiler must emit the normalized definition and
+   the model-facing contract; Platform should add only instance checks such as
+   reachability and conservation.
+3. **Role and world leakage.** A few role branches and lexical categories
+   remain in generic agent quality/projection code. They should become
+   configured evidence types and consumer registrations. A new world must not
+   require changing `quality.py`, `renderer.py` or Platform because it calls a
+   resource something other than food.
+4. **Large lifecycle owners.** `ActivityService` and `AgentEngine` still own
+   several concerns. They should be reduced by moving only stable protocol
+   boundaries (activity lifecycle/effects and session/protocol/audit), not by
+   adding more façade layers. The goal is fewer owners, not a lower line count
+   achieved through indirection.
+
+The architecture is therefore **usable but not yet converged**. The causal
+direction is correct; the remaining work is to remove duplicate contracts and
+make every configured continuation observable and executable. The following
+plan is the active implementation order. Each item has a test or audit gate;
+no item is considered complete because a tool call returned successfully.
+
+| Order | Concrete change | Acceptance evidence |
+|---|---|---|
+| 1 | Make the evolution probe consume any ready configured God/Story task, and add a regression fixture with two distinct wake families. | The probe cannot skip a ready task because of a task-type literal; the 10-round JSONL shows each consumed task and its source event. |
+| 2 | Make `WorldEvent → EvolutionTask` the only wake path. Keep role names in configuration/registry; remove new `if role == ...` dispatch branches. | Duplicate delivery is idempotent, restart requeues claimed tasks, and every Story/God call has a committed source event. |
+| 3 | Finish the canonical definition compiler. Generate normalized persistence, tool JSON Schema and AgentView catalog from one definition model. | An unrelated world with different attributes, resources and objects boots and a God-created Action plus bound generic BT is immediately executable. |
+| 4 | Move quality and prompt semantics from world/role literals to evidence and configuration. Remove lexical food checks, acceptance waivers and duplicate research instructions. | The same groundedness tests pass for non-food names; provider errors and rejected intents remain explicit and are never rewritten to `wait`. |
+| 5 | Finish the bounded agent boundary: Session owns ReAct history, Protocol owns provider normalization/call IDs, Registry owns schemas/permissions, Audit owns redacted evidence. | Prompt prefix/suffix sizes, cache usage, latency, tool arguments, result and event IDs are recorded without hidden reasoning or secrets. |
+| 6 | Keep Activity as the sole process owner, but split only its stable lifecycle/effect concerns; do not create parallel Goal/BT/Action managers. | One integration test traces `Intent → Activity → Outcome → WorldEvent → EvolutionTask` through restart and rollback. |
+| 7 | Run the corrected 10-round DeepSeek probe, then the deterministic week and benchmark. Fix only generic/configured liveness defects. | Three or more later rounds create distinct reachable content, NPC choices change, no unexplained absorbing state remains, and performance is measured. |
+
+The stop rule is strict: if a failure is fixed by a new world-name branch,
+legacy alias, role-specific quality exemption, token-limit increase or a
+second wake mechanism, stop and move the fix back to the canonical contract
+or world configuration.
+
+### Verification after this review
+
+- The corrected DeepSeek causal probe passed 10/10 rounds. Its redacted
+  evidence is `/tmp/sim2-evolution-canonical-final2/`; the failure in
+  `/tmp/sim2-evolution-canonical-final/` is retained as the harness-selection
+  regression that led to the fix.
+- The focused evolution suite passed 94 tests, the vertical slice passed 201
+  tests, and the current full suite has **415 tests** after adding the
+  canonical-tool and Story → God projection regressions. The full run passed
+  the existing 413 tests; the two newly added tests also pass independently.
+- `python -m compileall -q src scripts` and `git diff --check` pass.
+- The 1,000-agent benchmark completed five runs with p95 tick time
+  **142.976 ms**, no failed agents, and world revision 10 after the tick.
+- The prompt projection regression test confirms that a real God world change
+  keeps `<world_outcomes>` and its before/after evidence when compaction is
+  necessary.
+- Institution ledgers now accept only the canonical `selectors`,
+  `event_types`, `behavior_ids` and `action_ids` fields; the old alias shape
+  is rejected before persistence.
+- Reflection quality matching no longer carries a food/patrol/craft keyword
+  dictionary. It derives evidence from the configured outcome's result,
+  summary, behavior and goal tags, with a bounded generic inflection match.
+- Story activation now persists its public fact, goal and audience in the
+  world state/event, and the God projection includes bounded active Story
+  threads. This closes the previously missing Story → God causal input that
+  caused a real ten-round run to wait while the NPC repeated inspection.
+
+### Review conclusion
+
+The architecture is directionally sound, but the implementation is still
+larger than it needs to be because several concerns have temporarily been
+represented twice:
+
+- `Intent`, BT state, activity state and evolution tasks can all look like the
+  owner of one action unless the Activity record is treated as the single
+  execution owner.
+- Definition structure, model JSON Schema, AgentView text and Platform
+  validation have had overlapping contracts.
+- Event publication and Story/God wake creation have had more than one path.
+- Agent session control, provider protocol handling, tool policy and audit
+  persistence were concentrated in a large engine before being split.
+- World-specific meaning has occasionally appeared as aliases, fallback
+  resolvers or quality exceptions instead of configuration and generic
+  primitives.
+
+This is architectural debt, not evidence that the service split itself is
+wrong. Adding another adapter or another special case would make the debt
+permanent. The target is a smaller set of owners with one causal path, not a
+larger framework.
+
+### Execution order for the remaining work
+
+The following is the concrete plan for this development cycle. Each stage
+must finish its gate before the next stage starts.
+
+| Stage | Deliverable | Verification gate | Stop and fix when |
+|---|---|---|---|
+| A. Working-tree baseline | Fix focused regressions, keep the prompt projection bounded, and record the exact test baseline. | Focused tests, full tests, `compileall`, and `git diff --check` are green. | A test is made green by weakening grounding, increasing a token limit, or rewriting a failed intent. |
+| B. Single definition contract | `definition_compiler.py` is the only structural source for Action, BT, Recipe, capability and attribute definitions. Platform performs only instance-dependent checks. | A fresh world with unrelated names boots; a God-created Action plus bound BT is executable by an NPC; invalid definitions fail consistently. | A legacy alias, food-specific resolver, duplicate schema, or role-specific validation waiver is added. |
+| C. Single causal lifecycle | Every state-changing request is `Intent → Activity → Outcome → WorldEvent`; every consumer wake is `WorldEvent → EvolutionTask`. | One integration test follows an NPC action through all records, including causation and world revision, and restart does not duplicate the task. | A state write bypasses Unit of Work, or Story/God is called directly without a committed event. |
+| D. Agent boundary and prompt projection | Session owns bounded ReAct; protocol owns provider normalization and call IDs; registry owns schemas/permissions; audit owns evidence. Context keeps a stable prefix and useful causal suffix. | Prompt source, response summary, tool arguments, accepted intent, latency, usage and event IDs are auditable without raw hidden reasoning or secrets. | A provider error is converted to `wait`, a rejected intent is marked passed, or context is enlarged to hide a bad projection. |
+| E. Dedicated causal evolution probe | Use a small declarative world and the configured DeepSeek provider for 10 NPC → Platform → Story/God → NPC rounds. The probe must exercise a dynamic Action+BT and repeated research objects through the same generic research BT. | Every round records bounded context, model output summary, tool args, accepted/rejected result, event, follow-up task, next NPC choice and world delta. At least three later rounds create new, non-duplicate content and change executable NPC behavior. | The run only proves tool-call success, repeats a proposal without new evidence, reaches all-wait absorption, or hides provider failure. |
+| F. Deterministic one-week and performance audit | After the causal probe passes, run the non-LLM week and the 1,000-agent benchmark. Investigate depletion, idle absorption, unfinished activities and p95 latency. | No unexplained starvation/deadlock; long activities have explicit end semantics; benchmark reports the configured p95 target. | A balance defect is hidden by increasing initial stock, or a performance problem is addressed by skipping state/event work. |
+| G. Delete temporary scaffolding | Remove migration façades, duplicate dispatch paths and dead compatibility helpers exposed by stages A–F. Update the plan with evidence. | `rg` checks show one owner for each lifecycle, event wake and schema path; full suite and compile checks remain green. | Cleanup requires a new compatibility branch or changes historical facts instead of migrating definitions. |
+
+### Files and artifacts for this cycle
+
+- Code changes stay in the existing owners under `src/sim2/platform/`,
+  `src/sim2/agents/`, `src/sim2/agent_view/`, `src/sim2/world/` and
+  `src/sim2/persistence/`; no world-specific branch is allowed in Platform.
+- Focused regression tests belong beside the affected protocol. The dedicated
+  evolution probe remains `scripts/audit_dynamic_evolution_loop.py` rather
+  than adding another long-run command.
+- Real-provider SQLite files and JSONL traces stay under `/tmp`. The
+  repository keeps only the redacted summary and the verification procedure
+  in `docs/operations/real-model-evolution-check.md`.
+- Every real-model run starts from an interactive shell with
+  `source ~/.bashrc`; credentials, proxy values and hidden reasoning are never
+  written to output.
+
+### Verification record for the current working tree
+
+The following checks were run on 2026-11-14 after writing this plan:
+
+- `python -m pytest -q`: **408 passed**.
+- `python -m compileall -q src scripts`: passed.
+- `git diff --check`: passed.
+- `python scripts/benchmark_platform.py --agents 1000 --runs 5`: passed with
+  no failed agents and p95 tick time **144.194 ms** (warm-up excluded).
+- The benchmark script was migrated to
+  `store.repositories.entities`; it no longer depends on the removed Store
+  read/write façade.
+- Audit/export scripts now use typed repositories as well. The retired
+  singular `research_discovery` shape, old research field aliases, default
+  food/resource context fallbacks, and event-field aliases were removed; the
+  three-lanterns packages now declare their resource tag groups explicitly.
+- `tests/test_generic_research_chain.py` verifies that the retired singular
+  research shape is rejected at the Platform boundary.
+
+Stages E and F still require the final evidence pass after the current prompt
+changes: a ten-round real-provider causal audit, followed by the deterministic
+one-week balance check. Their artifacts must be reviewed for semantic output,
+not only tool-call success, before this plan can be marked complete.
+
+### Explicit non-goals
+
+This cycle will not create a quota-specific BT, a research-object-specific BT,
+or a separate code path for the three-lanterns world. A quota, institution,
+research source, resource or technology must be represented as configuration,
+an entity/definition proposal, or a generic primitive. God may propose a new
+definition; Platform validates and binds it; NPCs can execute it only when a
+generic behavior is reachable. Story may organize committed facts into a
+continuing thread, but it cannot invent a world fact or directly mutate state.
+
+The plan is considered complete only when stages A–G have passed their gates
+and the evidence is recorded. A successful tool call by itself is never an
+acceptance result.
+
 ### Current position
 
 The repository is between the first composition cut and the final removal of
@@ -497,7 +674,7 @@ them as ordinary configuration:
 
 - food-specific aliases and fallback resolvers;
 - direct `god`/`story` branches outside role configuration;
-- separate `research_discovery` and `research_discoveries` formats;
+- non-canonical research source shapes; all sources use `research_discoveries`;
 - separate `event` and `event_type` spellings;
 - Action-specific resource transfer validation outside the generic resource
   reservation contract;

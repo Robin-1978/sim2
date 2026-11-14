@@ -854,7 +854,7 @@ class ActivityRuntimeMixin:
         # completed work units without creating another Action or BT.
         source_required = source.get("research_required")
         if source_required is None:
-            source_required = source_state.get("research_required", source_state.get("required_research"))
+            source_required = source_state.get("research_required")
         if source_required is None:
             source_required = (self.store.get_meta("rules", {}) or {}).get("research_default_required")
         try:
@@ -959,7 +959,7 @@ class ActivityRuntimeMixin:
                     discovery = candidates[0] if candidates else None
                 if discovery is not None or source_id not in self.store.repositories.memory.researched_sources(agent["id"]):
                     source = self.store.repositories.entities.get_entity(source_id) if source_id else {}
-                    discovery = discovery or ((source.get("research_discovery") or {}) if isinstance(source, dict) else {})
+                    discovery = discovery or {}
                     fact_key = str(discovery.get("id") or f"researched:{source_id}")
                     fact = str(discovery.get("fact") or f"Source {source_id} was researched.")
                     self.store.repositories.memory.merge_knowledge_fact(agent["id"], fact_key, {"fact": fact, "source_type": "research", "source_id": source_id, "behavior": action.get("id"), "confidence": 0.8, "observed_at": minute, "status": str(discovery.get("status") or "active"), "supersedes": discovery.get("supersedes", [])})
@@ -1016,7 +1016,7 @@ class ActivityRuntimeMixin:
                 self.store.repositories.entities.update_agent(listener["id"], listener)
             event_id = self._context.services["events"].append("dialogue.completed", agent["id"], minute, {"target_id": target_id, "topic": str(topic), "message": message, "dialogue_id": dialogue_id, **testimony})
             result = {"result": "dialogue_recorded", "event_id": event_id}
-        configured_event = information.get("event_type") or information.get("event")
+        configured_event = information.get("event_type")
         observed: dict[str, Any] = {}
         observed_id = parameters.get("object_id") or parameters.get("entity_id") or parameters.get("item_id") or parameters.get("source_id") or parameters.get("area_id")
         if observed_id:
@@ -1080,17 +1080,17 @@ class ActivityRuntimeMixin:
 
     @staticmethod
     def _institution_selector_matches(selector: dict[str, Any], event_type: str, payload: dict[str, Any]) -> bool:
-        event_types = selector.get("event_types", selector.get("events", []))
+        event_types = selector.get("event_types", [])
         if isinstance(event_types, str):
             event_types = [event_types]
         if event_types and str(event_type) not in {str(item) for item in event_types}:
             return False
-        behavior_ids = selector.get("behavior_ids", selector.get("behaviors", []))
+        behavior_ids = selector.get("behavior_ids", [])
         if isinstance(behavior_ids, str):
             behavior_ids = [behavior_ids]
         if behavior_ids and str(payload.get("behavior_id", "")) not in {str(item) for item in behavior_ids}:
             return False
-        action_ids = selector.get("action_ids", selector.get("actions", []))
+        action_ids = selector.get("action_ids", [])
         if isinstance(action_ids, str):
             action_ids = [action_ids]
         if action_ids and str(payload.get("action_id", "")) not in {str(item) for item in action_ids}:
@@ -1102,7 +1102,7 @@ class ActivityRuntimeMixin:
 
         for institution in self.store.repositories.social.list_institutions(status="active", limit=200):
             ledger = institution.get("ledger") if isinstance(institution.get("ledger"), dict) else {}
-            selectors = ledger.get("selectors", ledger.get("evidence", []))
+            selectors = ledger.get("selectors", [])
             if not isinstance(selectors, list):
                 continue
             # Multiple selectors often describe the same evidence in two
@@ -1213,7 +1213,7 @@ class ActivityRuntimeMixin:
             for configured in behavior_definition.get("outcome_events", []) or []:
                 if not isinstance(configured, dict):
                     continue
-                event_type = str(configured.get("event_type") or configured.get("event") or "").strip()
+                event_type = str(configured.get("event_type") or "").strip()
                 if not event_type:
                     continue
                 payload = dict(configured.get("data") or {})

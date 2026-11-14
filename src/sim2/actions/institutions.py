@@ -34,14 +34,14 @@ def describe_institution_terms(institution: dict[str, Any]) -> str:
             f"{float(allocation.get('contribution_share', 0) or 0):.0%} of the remainder by verified {category} contribution"
         )
     ledger = institution.get("ledger") if isinstance(institution.get("ledger"), dict) else {}
-    selectors = ledger.get("selectors", ledger.get("evidence", []))
+    selectors = ledger.get("selectors", [])
     counted: list[str] = []
     for selector in selectors if isinstance(selectors, list) else []:
         if not isinstance(selector, dict):
             continue
         sources: list[str] = []
-        for keys in (("event_types", "events"), ("behavior_ids", "behaviors"), ("action_ids", "actions")):
-            value = next((selector[key] for key in keys if key in selector), [])
+        for key in ("event_types", "behavior_ids", "action_ids"):
+            value = selector.get(key, [])
             sources.extend([str(value)] if isinstance(value, str) else [str(item) for item in value or []])
         points = float(selector.get("points", selector.get("amount", 1)) or 0)
         counted.append(f"{'/'.join(sources) or 'any event'} +{points:g} {selector.get('category') or 'general'}")

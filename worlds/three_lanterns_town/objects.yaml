@@ -7,9 +7,9 @@ objects:
     readable: true
     recovered: false
   research_required: 2
-  research_discovery:
-    id: researched:boundary_stone:markings
-    fact: 界碑北侧刻痕呈三层叠压，与旧商路废弃驿站门柱上的标记同源；褪色由外向内，最外层约在三年内磨灭。
+  research_discoveries:
+    - id: researched:boundary_stone:markings
+      fact: 界碑北侧刻痕呈三层叠压，与旧商路废弃驿站门柱上的标记同源；褪色由外向内，最外层约在三年内磨灭。
 - id: cistern_record
   type: public_record
   name: 蓄水记录册

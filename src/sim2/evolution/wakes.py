@@ -114,7 +114,7 @@ class EventWakeScheduler:
             return None
         task_actor = str(actor_id) if bool(policy.get("actor_scoped", False)) else consumer
         configured_groups = [
-            item for item in (policy.get("event_groups") or policy.get("groups") or [])
+            item for item in (policy.get("event_groups") or [])
             if isinstance(item, dict)
         ]
         groups = [

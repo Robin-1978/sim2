@@ -96,8 +96,8 @@ capability_modifiers:
 写入 `progress_state`；未完成时只保留进度，完成时写入知识事实并产生
 `research.completed`。
 
-研究来源不是一次性开关。一个来源可以在实体数据中声明一个
-`research_discovery`，也可以声明任意长度的 `research_discoveries` 阶段列表。
+研究来源不是一次性开关。一个来源在实体数据中声明任意长度的
+`research_discoveries` 阶段列表。
 每个阶段有自己的事实键、所需进度和可选 `supersedes` / `status`。完成一个阶段
 只关闭这个阶段；只要仍有可用阶段，通用 `research_source` Action 继续出现在
 执行目录中。阶段耗尽也不代表世界停止研究：God 可以根据已验证结果提出新的

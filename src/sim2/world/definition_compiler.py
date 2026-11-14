@@ -100,7 +100,7 @@ def _validate_outcome_events(definition: dict[str, Any], errors: list[str]) -> N
         errors.append("behavior.outcome_events must be a list")
         return
     for index, event in enumerate(outcome_events):
-        if not isinstance(event, dict) or not str(event.get("event_type") or event.get("event") or "").strip():
+        if not isinstance(event, dict) or not str(event.get("event_type") or "").strip():
             errors.append(f"behavior.outcome_events[{index}] must declare event_type and summary")
         elif not str(event.get("summary") or "").strip():
             errors.append(f"behavior.outcome_events[{index}] must declare event_type and summary")

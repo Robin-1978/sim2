@@ -19,6 +19,48 @@ from .proposal_errors import _UnreachableProposal
 class DefinitionRuntimeMixin:
     """Validate and register declarative world definitions."""
 
+    def _normalize_entity_conditions(self, definition: dict[str, Any]) -> dict[str, Any]:
+        """Canonicalize visible location names used in machine conditions.
+
+        God sees visible names, while persisted state stores entity keys.  A
+        condition such as ``actor.state.location_id == Storage Ring`` must
+        therefore be compiled to the configured location key before the
+        executable catalog and runtime evaluate it.  Only location operands
+        are normalized here; arbitrary condition text remains declarative
+        data and is never interpreted as code.
+        """
+
+        normalized = copy.deepcopy(definition)
+        fields = ("actor.state.location_id", "context.location_id", "context.destination_id", "target.location_id")
+        field_pattern = "|".join(re.escape(field) for field in fields)
+        pattern = re.compile(rf"(?P<lhs>{field_pattern})\s*(?P<op>==|!=)\s*(?P<rhs>[^&|]+)")
+
+        def condition(value: Any) -> Any:
+            if not isinstance(value, str):
+                return value
+
+            def replace(match: re.Match[str]) -> str:
+                rhs = match.group("rhs").strip()
+                if rhs.startswith("context.") or rhs.startswith("world["):
+                    return match.group(0)
+                visible = rhs.strip("\"'")
+                canonical = self.targets.canonical_id(visible)
+                if not canonical:
+                    return match.group(0)
+                return f"{match.group('lhs')} {match.group('op')} {canonical}"
+
+            return pattern.sub(replace, value)
+
+        if isinstance(normalized.get("preconditions"), list):
+            normalized["preconditions"] = [condition(item) for item in normalized["preconditions"]]
+        for field in ("success", "failure"):
+            result = normalized.get(field)
+            if isinstance(result, dict) and "condition" in result:
+                result["condition"] = condition(result.get("condition"))
+        if isinstance(normalized.get("entry_conditions"), list):
+            normalized["entry_conditions"] = [condition(item) for item in normalized["entry_conditions"]]
+        return normalized
+
     @staticmethod
     def _is_recipe_action(action: dict[str, Any]) -> bool:
         """Whether an Action definition can consume a recipe (same contract as the behavior compiler)."""
@@ -147,10 +189,10 @@ class DefinitionRuntimeMixin:
     @classmethod
     def _research_focus(cls, state: dict[str, Any], description: Any = "") -> tuple[str, set[str]]:
         values: list[str] = []
-        for key in ("research_novelty_key", "research_gap_key", "research_question", "open_question"):
+        for key in ("research_novelty_key", "research_question"):
             if state.get(key):
                 values.append(str(state[key]))
-        discoveries = state.get("research_discoveries") or state.get("research_discovery") or []
+        discoveries = state.get("research_discoveries") or []
         if isinstance(discoveries, dict):
             discoveries = [discoveries]
         for item in discoveries if isinstance(discoveries, list) else []:
@@ -167,7 +209,7 @@ class DefinitionRuntimeMixin:
         focus, tokens = self._research_focus(state, description)
         if not tokens:
             return None
-        explicit_key = str(state.get("research_novelty_key") or state.get("research_gap_key") or "").strip().casefold()
+        explicit_key = str(state.get("research_novelty_key") or "").strip().casefold()
         for source in self.store.repositories.memory.research_source_catalog():
             try:
                 entity = self.store.repositories.entities.get_entity(str(source["id"]))
@@ -175,7 +217,7 @@ class DefinitionRuntimeMixin:
                 continue
             existing_state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
             existing_focus, existing_tokens = self._research_focus(existing_state, entity.get("description"))
-            existing_key = str(existing_state.get("research_novelty_key") or existing_state.get("research_gap_key") or "").strip().casefold()
+            existing_key = str(existing_state.get("research_novelty_key") or "").strip().casefold()
             if explicit_key and existing_key and explicit_key == existing_key:
                 return {"name": source.get("name"), "reason": f"research novelty key already exists: {explicit_key}"}
             if explicit_key and existing_key:
@@ -245,6 +287,7 @@ class DefinitionRuntimeMixin:
         """Validate and normalize a God definition before SQLite registration."""
 
         kind = str(definition_type or "").strip().casefold()
+        raw = self._normalize_entity_conditions(raw or {})
         definition, errors = compile_definition_shape(kind, name, raw)
         if kind not in {"attribute", "world_property", "action", "behavior", "recipe", "capability"}:
             return definition, errors
@@ -302,6 +345,11 @@ class DefinitionRuntimeMixin:
             ]
             if resource_transfer_effects:
                 reserve = ((definition.get("costs") or {}).get("reserve") or {}) if isinstance(definition.get("costs"), dict) else {}
+                success_condition = str((definition.get("success") or {}).get("condition") or "") if isinstance(definition.get("success"), dict) else ""
+                if re.search(r"\bactor\.inventory\.[A-Za-z_][A-Za-z0-9_]*\b", success_condition):
+                    errors.append(
+                        "resource_transfer success condition cannot inspect actor.inventory after reservation; use actor.alive or an observable world/target result"
+                    )
                 item_parameter = reserve.get("item_parameter") if isinstance(reserve, dict) else None
                 if not item_parameter:
                     errors.append("resource_transfer requires costs.reserve.item_parameter so the transfer is conserved")

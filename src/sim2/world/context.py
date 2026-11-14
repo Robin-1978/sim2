@@ -30,8 +30,6 @@ def configured_context_values(
     if not include_resolvers:
         return result
     resolvers = rules.get("context_resolvers", {}) or {}
-    if not resolvers and "food" in groups:
-        resolvers = {"item_id": {"type": "first_inventory_item", "group": "food"}}
     for name, raw in resolvers.items():
         if not isinstance(raw, dict):
             continue

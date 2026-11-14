@@ -72,15 +72,17 @@ def main() -> int:
     instance_id = f"dynamic-evolution-check-{uuid4().hex[:8]}"
     platform = Platform(create_instance(world, instance_id, runtime_root))
     try:
-        agent = platform.store.get_agent("mei_lan")
+        entities = platform.store.repositories.entities
+        events = platform.store.repositories.events
+        agent = entities.get_agent("mei_lan")
         agent["inventory"] = {**(agent.get("inventory") or {}), "蓄水": 2}
-        platform.store.update_agent("mei_lan", agent)
-        pool = platform.store.get_entity("cistern_water")
+        entities.update_agent("mei_lan", agent)
+        pool = entities.get_entity("cistern_water")
         pool["initial_state"]["quantity"] = 0
-        platform.store.put_entity(pool["id"], pool["entity_type"], pool["name"], {key: value for key, value in pool.items() if key not in {"id", "entity_type", "name"}})
+        entities.put_entity(pool["id"], pool["entity_type"], pool["name"], {key: value for key, value in pool.items() if key not in {"id", "entity_type", "name"}})
 
         with platform.store.transaction():
-            safety_event_id = platform.store.append_event(
+            safety_event_id = events.append_event(
                 "resource.safety_low",
                 None,
                 1,
@@ -109,10 +111,10 @@ def main() -> int:
         if not behavior_id:
             behavior_id = next(
                 str(item["id"])
-                for item in platform.store.get_definitions("bt_def")
+                for item in entities.get_definitions("bt_def")
                 if item.get("definition_source") == "god_proposal" and item.get("agent_label")
             )
-        before_pool = float(platform.store.get_entity("cistern_water")["initial_state"]["quantity"])
+        before_pool = float(entities.get_entity("cistern_water")["initial_state"]["quantity"])
         started = platform.submit_behavior(BehaviorIntent(
             "mei_lan",
             f"behavior:{behavior_id}",
@@ -126,13 +128,13 @@ def main() -> int:
             raise RuntimeError(f"NPC could not execute God behavior: {started}")
         for _ in range(int(started.get("remaining_minutes", 1)) + 4):
             platform.step()
-        after_pool = float(platform.store.get_entity("cistern_water")["initial_state"]["quantity"])
-        remaining_water = float(platform.store.get_agent("mei_lan").get("inventory", {}).get("蓄水", 0))
+        after_pool = float(entities.get_entity("cistern_water")["initial_state"]["quantity"])
+        remaining_water = float(entities.get_agent("mei_lan").get("inventory", {}).get("蓄水", 0))
         if after_pool <= before_pool or remaining_water >= 2:
             raise RuntimeError(f"resource transfer did not close the world loop: pool={after_pool}, water={remaining_water}")
 
         story_events = [
-            event for event in platform.store.recent_events(limit=100)
+            event for event in events.recent_events(limit=100)
             if str(event.get("actor_id") or "") == "mei_lan" and event.get("story_source")
         ]
         if not story_events:

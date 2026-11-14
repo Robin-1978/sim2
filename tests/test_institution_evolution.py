@@ -44,6 +44,26 @@ def test_only_god_can_create_institution_and_npc_tools_do_not_expose_it(tmp_path
         platform.close()
 
 
+def test_retired_institution_selector_aliases_are_rejected(tmp_path: Path):
+    platform = _town(tmp_path, "institution-canonical-selector-schema")
+    try:
+        result = platform.submit_institution_proposal("god", {
+            "name": "Retired Selector Shape",
+            "purpose": "This proposal must use the canonical evidence selector fields.",
+            "evidence_sources": [{"event_types": ["cistern.reviewed"]}],
+            "minimum_evidence": 1,
+            "ledger": {
+                "period": "week",
+                "selectors": [{"events": ["cistern.reviewed"], "points": 1}],
+            },
+        })
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "institution_terms"
+        assert any("unknown field" in error for error in result["errors"])
+    finally:
+        platform.close()
+
+
 def test_god_behavior_proposal_must_be_assigned_to_an_existing_character(tmp_path: Path):
     platform = _town(tmp_path, "behavior-assignment")
     try:

@@ -263,7 +263,7 @@ class RuleCompiler:
         action_id = str(action.get("id") or "")
         action_candidates = {self._normal(action_id), self._normal(action.get("agent_label")), self._normal(action.get("agent_summary")), self._normal(action.get("description"))}
         action_names = {self._normal(item) for item in rule.get("action_names", [])}
-        configured_actions = effect.get("action_ids") or effect.get("actions") or []
+        configured_actions = effect.get("action_ids") or []
         if isinstance(configured_actions, str):
             configured_actions = [configured_actions]
         if configured_actions:

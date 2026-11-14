@@ -172,10 +172,8 @@ class EntityProposalRuntimeMixin:
                 errors.append("location_id does not exist")
         proposed_state = proposal.get("state") if isinstance(proposal.get("state"), dict) else {}
         research_values = proposed_state.get("research_discoveries")
-        if research_values is None:
-            research_values = proposed_state.get("research_discovery")
         if str(proposal.get("entity_type") or "") == "research_source" and research_values in (None, [], {}):
-            errors.append("a research_source must declare at least one research_discovery")
+            errors.append("a research_source must declare at least one research_discoveries entry")
         if research_values is not None:
             stages = [research_values] if isinstance(research_values, dict) else research_values if isinstance(research_values, list) else []
             if not stages:
@@ -191,7 +189,7 @@ class EntityProposalRuntimeMixin:
             or float(proposed_state.get("research_required", 0) or 0) < 1
         ):
             errors.append("research_required must be a positive number")
-        research_values_present = proposed_state.get("research_discoveries") is not None or proposed_state.get("research_discovery") is not None
+        research_values_present = proposed_state.get("research_discoveries") is not None
         if research_values_present and not proposed_state.get("research_assignees"):
             errors.append("a dynamic research source must declare at least one research_assignee")
         if research_values_present:
@@ -226,7 +224,7 @@ class EntityProposalRuntimeMixin:
         # navigable without adding a world-specific branch.
         proposed_state = dict(proposal.get("state") or {})
         entity_type = str(proposal.get("entity_type") or "")
-        if proposed_state.get("research_discoveries") is not None or proposed_state.get("research_discovery") is not None:
+        if proposed_state.get("research_discoveries") is not None:
             focus, _ = self._context.services["definitions"]._research_focus(proposed_state, proposal.get("description"))
             if focus:
                 proposed_state.setdefault("research_focus", focus)
@@ -263,8 +261,8 @@ class EntityProposalRuntimeMixin:
                     self.store.repositories.entities.put_entity(entity_id, entity_type, str(proposal["name"]), entity_data)
                     if research_values_present:
                         focus, _ = self._context.services["definitions"]._research_focus(proposed_state, proposal.get("description"))
-                        gap_key = str(proposed_state.get("research_novelty_key") or proposed_state.get("research_gap_key") or f"source:{entity_id}")
-                        question = str(proposed_state.get("research_question") or proposed_state.get("open_question") or focus or proposal.get("description") or proposal.get("name"))
+                        gap_key = str(proposed_state.get("research_novelty_key") or f"source:{entity_id}")
+                        question = str(proposed_state.get("research_question") or focus or proposal.get("description") or proposal.get("name"))
                         self.store.repositories.memory.upsert_knowledge_gap(
                             gap_key,
                             "active",

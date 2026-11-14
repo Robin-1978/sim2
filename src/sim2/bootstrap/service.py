@@ -780,7 +780,7 @@ def _validate_event_wake_references(
         roles = [str(item) for item in wake if str(item)]
         if not roles:
             return
-        event_type = str(definition.get("event_type") or definition.get("event") or default_event).strip()
+        event_type = str(definition.get("event_type") or default_event).strip()
         if not event_type:
             errors.append(f"{source} declares wake consumers but no result event_type")
             return
@@ -824,7 +824,7 @@ def _validate_event_wake_references(
             if not isinstance(policy, dict):
                 continue
             groups = [
-                item for item in (policy.get("event_groups") or policy.get("groups") or [])
+                item for item in (policy.get("event_groups") or [])
                 if isinstance(item, dict)
             ]
             if not groups:
@@ -853,7 +853,7 @@ def _validate_event_wake_references(
             continue
         external_events = {str(value) for value in (policy.get("external_event_types") or [])}
         produced_events = produced_events_all | external_events
-        for group in (policy.get("event_groups") or policy.get("groups") or []):
+        for group in (policy.get("event_groups") or []):
             if not isinstance(group, dict):
                 continue
             for event_type in {str(value) for value in (group.get("event_types") or [])}:
@@ -873,7 +873,7 @@ def _validate_event_wake_references(
             | {str(value) for value in (policy.get("manual_event_types") or [])}
             | {
                 str(value)
-                for group in (policy.get("event_groups") or policy.get("groups") or [])
+                for group in (policy.get("event_groups") or [])
                 if isinstance(group, dict)
                 for value in (group.get("event_types") or [])
             }
@@ -1065,10 +1065,10 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                 source_entity = store.repositories.entities.get_entity(str(source["id"]))
                 source_state = source_entity.get("initial_state") if isinstance(source_entity.get("initial_state"), dict) else {}
                 discoveries = source.get("discoveries") or []
-                question = str(source_state.get("research_question") or source_state.get("open_question") or "")
+                question = str(source_state.get("research_question") or "")
                 if not question:
                     question = str(next((item.get("fact") for item in discoveries if isinstance(item, dict) and item.get("fact")), source.get("name", "research source")))
-                gap_key = str(source_state.get("research_novelty_key") or source_state.get("research_gap_key") or f"source:{source['id']}")
+                gap_key = str(source_state.get("research_novelty_key") or f"source:{source['id']}")
                 store.repositories.memory.upsert_knowledge_gap(gap_key, "active", gap_key, question, source_id=str(source["id"]), data={"seeded": True})
             for faction in load_yaml(config_dir, "factions.yaml", {}).get("factions", []):
                 store.repositories.entities.put_entity(faction["id"], "faction", faction.get("name", faction["id"]), faction)

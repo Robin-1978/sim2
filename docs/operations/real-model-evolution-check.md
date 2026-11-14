@@ -228,6 +228,108 @@ The complete context/tool/result/world-delta records are in
 the causal evolution gate; the `remote_beam` transport check and a semantic Starter
 Village long run remain separate acceptance work.
 
+### Corrected DeepSeek run after generic wake selection
+
+The first post-change run at `/tmp/sim2-evolution-canonical-final` failed with
+`absorbing_state:three_rounds_without_structural_or_story_progress`. Inspection
+of its SQLite task table showed that a configured
+`event_group:relay_stability_review` task was ready, while the audit harness
+kept asking only for `event_group:research_synthesis`. The NPC's repeated
+`Inspect Archive` actions were therefore a harness selection bug, not evidence
+that the Runtime could not consume a configured continuation.
+
+The probe now selects the oldest ready God task from the configured wake graph
+after the initial resource task. It does not contain a research-specific task
+literal. The corrected interactive-shell run was:
+
+```bash
+bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py \
+  --provider remote --rounds 10 \
+  --runtime-dir /tmp/sim2-evolution-canonical-final2'
+```
+
+It completed ten rounds with:
+
+```json
+{"status":"passed","flags":[],"rounds":10,"requested_rounds":10}
+```
+
+Semantic review of `/tmp/sim2-evolution-canonical-final2/evolution-audit.jsonl`
+found this causal progression:
+
+- Round 1: God proposed a conserved resource-transfer Action and bound BT;
+  Mira executed it, reducing her carried stock from 2 to 1 and increasing the
+  public reserve from 0 to 1. Story received the committed supply event.
+- Rounds 2–3: Mira used the same generic research BT twice and completed the
+  configured Signal Archive stages. Story stated that the route remained
+  unverified instead of claiming a fact not present in the result.
+- Round 4: God created a new reachable `Unregistered Relay Checksum Fragment`;
+  Mira selected it through the existing research BT and Story recorded both
+  the new entity and the verified research result.
+- Round 6: after the checksum thread closed, God created a distinct
+  `Relay Storm Load Log`; Mira chose to replenish the public reserve and the
+  resulting event fed Story. Round 9 created a third distinct
+  `Reserve Coupling Load Test Rig`, which Mira began studying in round 10.
+- There were no provider errors, rejected intents, standalone Actions, or
+  research-object-specific BTs. The probe recorded 10 completed behaviors,
+  4 research completions, 3 new research entities, 2 registered Action/BT
+  pairs, and 21 Story calls/tasks. The largest recorded prompt projections
+  were 9,389 characters for NPC decisions, 8,881 for Story, and 15,851 for
+  God. SQLite usage totals were 109,805 prompt tokens, 6,447 completion
+  tokens, and 50,688 cached tokens across the run.
+
+This is a causal-loop pass, not a claim that every world is balanced. The
+probe itself now has a regression guard in the convergence plan: a configured
+wake family must be consumed by its event/task identity, never by a literal
+chosen by the harness.
+
+### Latest DeepSeek run with Story → God thread feedback
+
+The next real run exposed and fixed a genuine cross-agent context gap. Story
+had created a grounded continuation for Mira (“resolve the second checksum”),
+but the God world view showed only `no active knowledge gap` and did not show
+the active Story thread. God therefore had no structured evidence for the
+continuation and correctly returned `wait`; Mira then repeated archive
+inspection. Story activation now persists its `fact`, `goal_hint`, summary and
+audience in `story_state` and in `story.beat.activated`. The God view projects
+the bounded active thread list under `<active_story_threads>`.
+
+The corrected run was started from an interactive shell:
+
+```bash
+bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py \
+  --provider remote --rounds 10 \
+  --runtime-dir /tmp/sim2-evolution-canonical-final4'
+```
+
+It passed:
+
+```json
+{"status":"passed","flags":[],"rounds":10,"requested_rounds":10}
+```
+
+Semantic progression from the JSONL:
+
+- Round 1: conserved Energy Cell transfer; carried stock `2 → 1`, public
+  reserve `0 → 1`, Story thread persisted with its next checksum goal.
+- Round 4: God created `Checksum Ledger Fragment`; Mira used the existing
+  generic research/inspection choices and Story connected the new object to
+  the open checksum question.
+- Round 7: God created `Relay Route Registry Slate`; the NPC studied it with
+  the same generic research BT and Story explained how it corroborates the
+  earlier fragment.
+- Round 9: God created `Relay Route Filing Column Register`; Round 10 studied
+  it and Story produced a new decision about the renumbered filing column.
+- The run recorded 10 completed behaviors, 5 research completions, 3 new
+  research entities, 2 registered Action/BT definitions, 8 activated Story
+  beats and 0 LLM errors or rejected turns. The largest prompt projections
+  were NPC 9,596, God 15,906 and Story 9,539 characters.
+
+The result proves that Story output is now an input to subsequent God
+evolution through persisted world state, rather than an isolated narrative
+response. It still remains a bounded ten-round causal audit; long-run balance
+and provider transport checks are separate gates.
+
 ### Real DeepSeek Starter Village day audit
 
 The real-world audit was run from an interactive shell with the configured

@@ -40,9 +40,11 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="sim2-ten-round-audit-") as runtime:
         platform = Platform(create_instance(config, "ten-round-audit", Path(runtime)))
         try:
+            entities = platform.store.repositories.entities
+            events = platform.store.repositories.events
             with platform.store.transaction():
                 for minute in (1, 2, 3):
-                    platform.store.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
+                    events.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
             proposal = platform.submit_institution_proposal("god", {
                 "name": "Test Public Ledger",
                 "purpose": "Record verified public work before a shared reserve is allocated.",
@@ -70,7 +72,7 @@ def main() -> int:
                 platform.store.set_meta("god:event_wake_group_state", state)
                 base = 10 + cycle * 3
                 for minute in (base, base + 1, base + 2):
-                    event_id = platform.store.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
+                    event_id = events.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
                     platform._record_active_institution_entries(event_id, "cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
                 review = next(item for item in platform.ready_evolution_tasks() if item["task_type"] == "event_group:institution_ledger_review")
                 label = ("首期", "二期", "三期", "四期", "五期", "六期", "七期", "八期", "九期", "十期")[cycle]
@@ -91,12 +93,12 @@ def main() -> int:
                 god_review = AgentEngine(platform, SequenceProvider([tool("wait", {"reason": "The new settlement behavior is registered and ready for execution."})]), max_iterations=1).run(role="god", actor_id="god", task_type=definition_task["task_type"], source_events=definition_task.get("source_events") or [])
                 assert god_review.result["status"] == "wait"
                 platform.complete_evolution_task(definition_task["task_id"])
-                behavior = next(item for item in platform.store.get_definitions("bt_def") if item.get("agent_label") == f"Settle Public Ledger {cycle}")
-                before = platform.store.get_entity("cistern_water")["initial_state"]["quantity"]
+                behavior = next(item for item in entities.get_definitions("bt_def") if item.get("agent_label") == f"Settle Public Ledger {cycle}")
+                before = entities.get_entity("cistern_water")["initial_state"]["quantity"]
                 started = platform.submit_behavior(BehaviorIntent("mei_lan", f"behavior:{behavior['id']}", {}, {}, "Execute the newly registered settlement behavior.", 0.9, f"audit-settle-{cycle}"))
                 assert started["status"] == "accepted"
                 step_n(platform, int(started["remaining_minutes"]))
-                after = platform.store.get_entity("cistern_water")["initial_state"]["quantity"]
+                after = entities.get_entity("cistern_water")["initial_state"]["quantity"]
                 story_task = next(item for item in platform.ready_evolution_tasks() if item["task_type"] == "event:institution.allocation_completed")
                 story = AgentEngine(platform, SequenceProvider([tool("propose_story_beat", {
                     "beat": f"结算进展{label}", "audience": ["梅岚"],
@@ -107,8 +109,8 @@ def main() -> int:
                 })]), max_iterations=1).run(role="story", actor_id="story", task_type=story_task["task_type"], source_events=story_task.get("source_events") or [])
                 assert story.result["status"] == "accepted"
                 platform.complete_evolution_task(story_task["task_id"])
-                ledger = platform.store.institution_ledger_totals(platform.store.list_institutions(status="active")[0]["institution_id"])
-                allocation_events = [item for item in platform.store.recent_events(limit=500) if item["event_type"] == "institution.allocation_completed"]
+                ledger = platform.store.repositories.social.institution_ledger_totals(platform.store.repositories.social.list_institutions(status="active")[0]["institution_id"])
+                allocation_events = [item for item in platform.store.repositories.events.recent_events(limit=500) if item["event_type"] == "institution.allocation_completed"]
                 row = {
                     "round": cycle + 1,
                     "god_proposal": god.result.get("tool"),
@@ -117,7 +119,7 @@ def main() -> int:
                     "ledger_entries": sum(int(item.get("entries", 0) or 0) for item in ledger),
                     "reserve_before": before,
                     "reserve_after": after,
-                    "water_given_to_mei_lan": platform.store.get_agent("mei_lan").get("inventory", {}).get("water", 0),
+                    "water_given_to_mei_lan": entities.get_agent("mei_lan").get("inventory", {}).get("water", 0),
                     "allocation_events": len(allocation_events),
                 }
                 assert row["god_proposal"] == "propose_definition"

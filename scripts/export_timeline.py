@@ -90,11 +90,11 @@ def export_timeline(db_path: Path, output: Path, *, include_ticks: bool = True) 
         for row in platform.store.connection.execute("SELECT id,speaker_id,listener_id,topic,world_minute,data_json FROM dialogue_exchange"):
             exchanges[int(row["id"])] = {"speaker_id": row["speaker_id"], "listener_id": row["listener_id"], "topic": row["topic"], "world_minute": row["world_minute"], **json.loads(row["data_json"] or "{}")}
 
-        raw_events = platform.store.timeline_events(after_event_id=0, limit=500, include_ticks=include_ticks)
+        raw_events = platform.store.repositories.events.timeline_events(after_event_id=0, limit=500, include_ticks=include_ticks)
         all_events = list(raw_events)
         after = int(raw_events[-1]["event_id"]) if raw_events else 0
         while raw_events:
-            raw_events = platform.store.timeline_events(after_event_id=after, limit=500, include_ticks=include_ticks)
+            raw_events = platform.store.repositories.events.timeline_events(after_event_id=after, limit=500, include_ticks=include_ticks)
             if not raw_events:
                 break
             all_events.extend(raw_events)

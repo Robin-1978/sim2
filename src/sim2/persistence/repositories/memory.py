@@ -97,10 +97,9 @@ class MemoryRepository:
     def research_discoveries(self, source_id: str) -> list[dict[str, Any]]:
         """Return the declarative research stages exposed by one source.
 
-        A source may publish one legacy ``research_discovery`` object or an
-        open-ended ``research_discoveries`` list.  The latter is intentionally
-        stored as ordinary entity data so God can add a new source or a new
-        stage through the normal declarative entity proposal path.
+        A source publishes an open-ended ``research_discoveries`` list.  It is
+        ordinary entity data so God can add a new source or a new stage through
+        the normal declarative entity proposal path.
         """
 
         try:
@@ -111,8 +110,6 @@ class MemoryRepository:
         raw = source.get("research_discoveries")
         if raw is None:
             raw = state.get("research_discoveries")
-        if raw is None:
-            raw = source.get("research_discovery")
         if isinstance(raw, dict):
             raw = [raw]
         if not isinstance(raw, list):
@@ -155,15 +152,13 @@ class MemoryRepository:
             if raw is None:
                 raw = state.get("research_discoveries")
             if raw is None:
-                raw = data.get("research_discovery")
-            if raw is None:
                 continue
             result.append({
                 "id": str(row["id"]),
                 "entity_type": str(row["entity_type"]),
                 "name": str(row["name"]),
                 "location_id": state.get("location_id") or data.get("location_id"),
-                "research_required": data.get("research_required", state.get("research_required", state.get("required_research"))),
+                "research_required": data.get("research_required", state.get("research_required")),
                 "discoveries": self.research_discoveries(str(row["id"])),
             })
         return result
@@ -310,8 +305,8 @@ class MemoryRepository:
         small current-state projection so world agents can see which questions
         are still open without replaying every event.  A multi-stage source is
         resolved only after every active configured stage has a completed
-        ``research.completed`` event; a one-stage/legacy source resolves on its
-        first completed result.
+        ``research.completed`` event; a source with one configured stage
+        resolves on its first completed result.
         """
 
         source_key = str(source_id or "").strip()

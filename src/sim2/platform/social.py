@@ -9,8 +9,8 @@ from ..actions.institutions import describe_institution_terms, entity_quantity
 from ..evolution.memory import remember_role
 
 _ALLOCATION_FIELDS = frozenset({"minimum_per_subject", "contribution_share", "category"})
-_LEDGER_FIELDS = frozenset({"period", "selectors", "evidence"})
-_SELECTOR_SOURCE_FIELDS = ("event_types", "events", "behavior_ids", "behaviors", "action_ids", "actions")
+_LEDGER_FIELDS = frozenset({"period", "selectors"})
+_SELECTOR_SOURCE_FIELDS = ("event_types", "behavior_ids", "action_ids")
 _SELECTOR_FIELDS = frozenset({*_SELECTOR_SOURCE_FIELDS, "category", "points", "amount"})
 _SELECTOR_LIMIT = 16
 
@@ -63,7 +63,7 @@ def institution_term_errors(policy: Any = None, ledger: Any = None) -> list[str]
         period = ledger.get("period")
         if period is not None and not (_short_label(period) or (_finite_number(period) and float(period) > 0)):
             errors.append("ledger.period must be a calendar name such as day or week, or a positive number of minutes")
-        selectors = ledger.get("selectors", ledger.get("evidence"))
+        selectors = ledger.get("selectors")
         if selectors is not None:
             if not isinstance(selectors, list) or not selectors:
                 errors.append("ledger.selectors must be a non-empty list")
@@ -102,13 +102,13 @@ class SocialRuntimeMixin:
         for clause in selectors or []:
             if not isinstance(clause, dict):
                 continue
-            event_types = clause.get("event_types", clause.get("events", []))
+            event_types = clause.get("event_types", [])
             if isinstance(event_types, str):
                 event_types = [event_types]
-            behavior_ids = clause.get("behavior_ids", clause.get("behaviors", []))
+            behavior_ids = clause.get("behavior_ids", [])
             if isinstance(behavior_ids, str):
                 behavior_ids = [behavior_ids]
-            action_ids = clause.get("action_ids", clause.get("actions", []))
+            action_ids = clause.get("action_ids", [])
             if isinstance(action_ids, str):
                 action_ids = [action_ids]
             event_types = [str(item) for item in (event_types or [])]
@@ -179,8 +179,8 @@ class SocialRuntimeMixin:
         matched_evidence_ids: set[int] = set()
         if evidence_sources:
             for clause in evidence_sources:
-                event_types = [str(item) for item in (clause.get("event_types") or ([clause["event_type"]] if clause.get("event_type") else []))]
-                behavior_ids = [str(item) for item in (clause.get("behavior_ids") or ([clause["behavior_id"]] if clause.get("behavior_id") else []))]
+                event_types = [str(item) for item in (clause.get("event_types") or [])]
+                behavior_ids = [str(item) for item in (clause.get("behavior_ids") or [])]
                 if not event_types and not behavior_ids:
                     continue
                 if event_types:
@@ -417,7 +417,7 @@ class SocialRuntimeMixin:
         if new_policy != old_policy:
             changed_before["policy"], changed_after["policy"] = old_policy, new_policy
         if new_ledger != old_ledger:
-            changed_before["ledger"] = {"selectors": old_ledger.get("selectors", old_ledger.get("evidence", []))}
+            changed_before["ledger"] = {"selectors": old_ledger.get("selectors", [])}
             changed_after["ledger"] = {"selectors": new_ledger.get("selectors", [])}
         with self.store.transaction():
             terms = {key: value for key, value in selected.items() if key not in {"institution_id", "status", "created_minute", "activated_minute"}}

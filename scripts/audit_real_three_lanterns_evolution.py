@@ -104,15 +104,18 @@ def main() -> int:
     try:
         platform = Platform(create_instance(config_path, "real-audit", runtime_root))
         try:
+            entities = platform.store.repositories.entities
+            events_repo = platform.store.repositories.events
+            social = platform.store.repositories.social
             runner = SimulationRunner(platform, providers, turn_observer=observe)
             for round_no in range(1, max(1, args.rounds) + 1):
                 sessions.clear()
-                before = float(platform.store.get_entity("cistern_water")["initial_state"]["quantity"])
+                before = float(entities.get_entity("cistern_water")["initial_state"]["quantity"])
                 event_cursor = int(platform.store.connection.execute("SELECT COALESCE(MAX(event_id), 0) FROM event_log").fetchone()[0])
                 report = runner.run(args.minutes_per_round)
-                after = float(platform.store.get_entity("cistern_water")["initial_state"]["quantity"])
+                after = float(entities.get_entity("cistern_water")["initial_state"]["quantity"])
                 events = [
-                    event for event in platform.store.recent_events(limit=2000)
+                    event for event in events_repo.recent_events(limit=2000)
                     if int(event.get("event_id", 0) or 0) > event_cursor
                 ]
                 row = {
@@ -135,11 +138,11 @@ def main() -> int:
                     "allocations": len([e for e in events if e["event_type"] == "institution.allocation_completed"]),
                     "institutions": [
                         {"name": i.get("name"), "status": i.get("status")}
-                        for i in platform.store.list_institutions(limit=10)
+                        for i in social.list_institutions(limit=10)
                     ],
                     "registered_god_behaviors": [
                         {"id": d.get("id"), "label": d.get("agent_label")}
-                        for d in platform.store.get_definitions("bt_def")
+                        for d in entities.get_definitions("bt_def")
                         if d.get("definition_source") == "god_proposal"
                     ],
                     "world_properties": platform.store.get_meta("world_properties", {}),

@@ -142,7 +142,6 @@ parameters:
   location_id: string
 preconditions:
   - actor.can_gather
-  - location.has_food
 duration:
   minutes: 1000
 progress_effects:

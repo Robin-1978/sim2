@@ -171,10 +171,9 @@ configured selectors append verified ledger entries from real behavior events;
 allocation is a later declarative settlement and never grants resources at
 proposal time.
 
-Research follows the same open-ended event protocol. A source can expose one
-legacy `research_discovery` or a list of independently tracked
-`research_discoveries`; each completion emits the stage key and the exact
-source event. Completing a stage does not mark the whole source as exhausted
+Research follows the same open-ended event protocol. A source exposes a list
+of independently tracked `research_discoveries`; each completion emits the
+stage key and the exact source event. Completing a stage does not mark the whole source as exhausted
 while another active stage remains. God may later create a new source or
 research behavior through the normal declarative entity/BT proposal path, so
 the future research sequence is not a prewritten technology tree. A new fact

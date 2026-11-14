@@ -35,14 +35,15 @@ def main() -> None:
         db_path = create_instance(config, "benchmark", Path(directory))
         platform = Platform(db_path)
         try:
-            template = platform.store.get_agent("lu_xingzhou")
+            entities = platform.store.repositories.entities
+            template = entities.get_agent("lu_xingzhou")
             with platform.store.transaction():
                 for index in range(max(0, args.agents - 9)):
                     agent_id = f"benchmark_agent_{index:04d}"
                     value = copy.deepcopy(template)
                     value["id"] = agent_id
                     value["name"] = agent_id
-                    platform.store.put_agent(agent_id, value, agent_id)
+                    entities.put_agent(agent_id, value, agent_id)
             warmup_durations = []
             for _ in range(args.warmup):
                 started = time.perf_counter()

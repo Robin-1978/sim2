@@ -240,7 +240,7 @@ class WorldTickService(PlatformService):
         for index, item in enumerate(configured):
             if not isinstance(item, dict):
                 continue
-            event_type = str(item.get("event_type") or item.get("event") or "").strip()
+            event_type = str(item.get("event_type") or "").strip()
             condition = str(item.get("condition") or rule.get("condition") or "").strip()
             if not event_type or not condition:
                 continue

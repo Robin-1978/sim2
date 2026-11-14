@@ -2387,9 +2387,22 @@ def test_read_tool_respects_agent_visibility(tmp_path: Path):
     platform = Platform(db_path)
     try:
         executor = AgentToolExecutor(platform, role="agent_decision", actor_id="lu_xingzhou")
-        result = executor.execute("inspect_entity", {"entity_id": "old_pact_tablet"})
+        result = executor.execute("inspect_entity", {"entity": "old_pact_tablet"})
         assert result["status"] == "rejected"
         assert result["failed_check"] == "visibility"
+    finally:
+        platform.close()
+
+
+def test_tool_arguments_use_only_the_canonical_schema_names(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "canonical-tool-arguments", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        executor = AgentToolExecutor(platform, role="agent_decision", actor_id="lu_xingzhou")
+        result = executor.execute("inspect_entity", {"entity_id": "old_pact_tablet"})
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "tool_arguments"
     finally:
         platform.close()
 
@@ -2406,7 +2419,7 @@ def test_perception_channels_are_scoped_and_model_readable(tmp_path: Path):
         assert all(item["event_type"] != "behavior.started" for item in listened["events"])
         known = executor.execute("query_known_fact", {"query": "village"})
         assert known["status"] == "ok"
-        public = executor.execute("read_public_record", {"entity_id": "village_square"})
+        public = executor.execute("read_public_record", {"record": "village_square"})
         assert public["status"] == "ok"
     finally:
         platform.close()
@@ -3664,7 +3677,7 @@ def test_god_proposal_creates_entity_only_through_platform(tmp_path: Path):
     db_path = create_instance(config, "god-world", tmp_path / "runtime")
     platform = Platform(db_path)
     provider = SequenceProvider([
-        {"tool_call": {"name": "propose_entity", "arguments": {"entity_type": "resource_node", "name": "New Spring", "location_id": "river_bank", "description": "A newly revealed water source."}}}
+        {"tool_call": {"name": "propose_entity", "arguments": {"entity_type": "resource_node", "name": "New Spring", "location": "river_bank", "description": "A newly revealed water source."}}}
     ])
     try:
         turn = AgentEngine(platform, provider).run(role="god", actor_id="god")
@@ -4311,7 +4324,7 @@ def test_starter_village_end_to_end_scenario(tmp_path: Path):
         reflection_provider = SequenceProvider([{"intent_type": "record_experience", "event_ref": "exploration.completed", "summary": "The survey revealed a route boundary.", "confidence": 0.9}])
         reflection = AgentEngine(platform, reflection_provider).run(role="agent_reflection", actor_id="lu_xingzhou", task_type="daily_reflection")
         assert reflection.result["status"] == "accepted"
-        god_provider = SequenceProvider([{"tool_call": {"name": "propose_entity", "arguments": {"entity_type": "landmark", "name": "Survey Marker", "location_id": "greywood_edge"}}}])
+        god_provider = SequenceProvider([{"tool_call": {"name": "propose_entity", "arguments": {"entity_type": "landmark", "name": "Survey Marker", "location": "greywood_edge"}}}])
         god = AgentEngine(platform, god_provider).run(role="god", actor_id="god")
         assert god.result["status"] == "accepted"
         assert platform.metrics()["events"] > 0
@@ -4370,6 +4383,33 @@ def test_decision_view_exposes_story_directives_to_audience(tmp_path: Path):
         assert any("记录界碑研究结果" in str(item.get("summary", "")) for item in view["active_story_beats"])
         prompt = render_context(view, "Choose one behavior.")
         assert "记录界碑研究结果" in prompt
+    finally:
+        platform.close()
+
+
+def test_god_view_receives_active_story_threads_as_world_evidence(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+    platform = Platform(create_instance(config, "story-thread-god-view", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            source_event_id = platform.store.repositories.events.append_event(
+                "research.completed", "luo_shan", 10,
+                {"source_id": "boundary_stone", "fact": "The boundary stone research completed."},
+            )
+        result = platform.submit_story_beat("story", {
+            "beat": "记录界碑研究结果并决定下一步核验",
+            "summary": "记录界碑研究结果并决定下一步核验",
+            "fact": "罗杉完成了对褪色界碑的研究，研究结果已记录。",
+            "goal_hint": "与韩秋核对界碑研究结果，商定下一步核验方式。",
+            "reason": "配置节拍与已验证的研究事件匹配。",
+            "audience": ["罗杉", "韩秋"],
+        }, source_event_ids=[source_event_id])
+        assert result["status"] == "accepted"
+        view = platform.decision_view("god", role="god")
+        assert any("记录界碑研究结果" in str(item.get("summary", "")) for item in view["active_story_threads"])
+        prompt = render_context(view, "Review the world continuation.")
+        assert "<active_story_threads>" in prompt
+        assert "与韩秋核对界碑研究结果" in prompt
     finally:
         platform.close()
 

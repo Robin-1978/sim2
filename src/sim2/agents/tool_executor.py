@@ -52,27 +52,6 @@ class AgentToolExecutor:
         if name not in TOOL_DEFINITIONS:
             return {"status": "rejected", "tool": name, "message": "Unknown tool."}
         args = dict(arguments or {})
-        # Compatibility for older callers.  These aliases are intentionally
-        # absent from the model-facing JSON Schemas.
-        legacy_aliases = {
-            "inspect_entity": {"entity_id": "entity"},
-            "read_public_record": {"entity_id": "record"},
-            "send_message": {"target_id": "recipient"},
-            "create_trade_offer": {"recipient_id": "recipient"},
-            "accept_trade_offer": {"offer_id": "offer"},
-            "counter_trade_offer": {"offer_id": "offer"},
-            "reject_trade_offer": {"offer_id": "offer"},
-            "record_experience": {"event_ref": "event"},
-            "update_belief": {"belief_id": "belief"},
-            "update_goal": {"goal_id": "goal"},
-            "propose_behavior": {"behavior_id": "name", "action_ids": "actions"},
-            "propose_entity": {"entity_id": "name", "location_id": "location"},
-        }
-        for old, current in legacy_aliases.get(name, {}).items():
-            if old in args:
-                if current not in args:
-                    args[current] = args[old]
-                args.pop(old)
         validation_errors = validate_tool_arguments(name, args)
         if validation_errors:
             return {
