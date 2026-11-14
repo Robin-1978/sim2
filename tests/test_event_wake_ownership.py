@@ -14,6 +14,7 @@ def test_runtime_events_have_one_platform_owner(tmp_path: Path) -> None:
     try:
         service = platform._services["events"]
         assert platform._service_context.method_owners["append"] is service
+        assert platform._service_context.method_owners["queue_consumer"] is service
         event_id = service.append("audit.fact", "luo_shan", 3, {"summary": "A fact was committed."})
         event = platform.store.events_by_ids([event_id])[0]
         assert event["world_instance_id"] == platform.store.get_meta("world_id")

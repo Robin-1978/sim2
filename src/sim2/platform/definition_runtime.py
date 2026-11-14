@@ -955,7 +955,7 @@ class DefinitionRuntimeMixin:
                         })
                         assigned_agent["behavior_assignments"] = work[-8:]
                         self.store.update_agent(assigned_id, assigned_agent)
-                        self.wakes.queue(
+                        self._context.services["events"].queue_consumer(
                             "agent_decision",
                             assignment_event_id,
                             "definition.registered",

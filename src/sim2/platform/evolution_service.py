@@ -74,7 +74,7 @@ class EvolutionService(PlatformService):
                         role, actor_id = "agent_reflection", target
                     else:
                         role, actor_id = target, None
-                    self.wakes.queue(role, event_id, str(signal.get("event_type") or f"world.rule.{name}"), actor_id, minute, task_type=f"rule:{name}")
+                    self._context.services["events"].queue_consumer(role, event_id, str(signal.get("event_type") or f"world.rule.{name}"), actor_id, minute, task_type=f"rule:{name}")
         active_ids = {str(item.get("id")) for item in signals}
         for rule in self.rule_compiler.all_rules():
             state_key = str(rule.get("id") or rule.get("name") or "world_rule")

@@ -99,3 +99,29 @@ class EventService(PlatformService):
             return
         raise ValueError(f"unsupported wake publication: {wake!r}")
 
+    def queue_consumer(
+        self,
+        consumer: str,
+        event_id: int,
+        event_type: str,
+        actor_id: str | None,
+        minute: int,
+        *,
+        task_type: str | None = None,
+        explicit: bool = False,
+    ) -> str | None:
+        """Queue one configured consumer for an already recorded event."""
+
+        wakes = self._context.dependencies.get("wakes")
+        if wakes is None:
+            raise RuntimeError("WakeService is not bound to EventService")
+        return wakes.queue(
+            str(consumer),
+            int(event_id),
+            str(event_type),
+            actor_id,
+            int(minute),
+            task_type=task_type,
+            explicit=explicit,
+        )
+
