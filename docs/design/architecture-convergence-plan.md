@@ -219,11 +219,13 @@ Exit criteria:
 
 ## Phase 4: Unify AgentView, tools and validation
 
-**Status:** tool ownership is now split into `agents/tool_registry.py`,
-`agents/tool_executor.py`, and `agents/tool_protocol.py`; `agents/tools.py`
-is only the public import façade. The remaining work is to make the definition
-compiler the sole source for model schemas and Platform validation, then split
-the Agent session/audit policy from the engine.
+**Status:** tool ownership is split into `agents/tool_registry.py`,
+`agents/tool_executor.py`, and `agents/tool_protocol.py`; `agents/tools.py` is
+only the public import façade. `AgentTurn` and role/evolution routing policy
+now live in `agents/session.py` and `agents/runtime_policy.py`. The remaining
+work is to make the definition compiler the sole source for model schemas and
+Platform validation, then separate the bounded session/audit implementation
+from the orchestration engine.
 
 Create one definition compiler that emits:
 
