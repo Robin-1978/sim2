@@ -162,7 +162,7 @@ def smoke_test_world_template(template: dict[str, Any]) -> list[str]:
             db_path = create_instance(package, "smoke", root / "runtime")
             platform = Platform(db_path)
             try:
-                for agent in platform.store.list_agents():
+                for agent in platform.store.repositories.entities.list_agents():
                     actor_id = str(agent["id"])
                     view = platform.view.build_decision_view(actor_id, include_diagnostics=True)
                     candidates = [
@@ -199,7 +199,7 @@ def smoke_test_world_template(template: dict[str, Any]) -> list[str]:
                         continue
                     for _ in range(max(1, int(started.get("remaining_minutes", 1) or 1))):
                         platform.step()
-                    outcomes = platform.store.recent_outcomes_for_actor(actor_id, limit=1)
+                    outcomes = platform.store.repositories.events.recent_outcomes_for_actor(actor_id, limit=1)
                     if not outcomes or outcomes[0].get("event_type") != "behavior.completed":
                         result = outcomes[0].get("result") if outcomes else "no outcome was recorded"
                         errors.append(f"runtime smoke: agent {actor_id} behavior did not complete: {result}")

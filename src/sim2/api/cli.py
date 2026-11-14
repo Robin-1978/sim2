@@ -169,7 +169,7 @@ def main() -> None:
             observer = bool(args.observer or not args.player_id)
             if not observer:
                 try:
-                    platform.store.get_agent(args.player_id)
+                    platform.store.repositories.entities.get_agent(args.player_id)
                 except KeyError:
                     if not args.origin:
                         raise ValueError("--origin is required when creating a new player")
@@ -198,7 +198,7 @@ def main() -> None:
                 if not args.player_id:
                     raise ValueError("--player-id is required in player mode")
                 try:
-                    platform.store.get_agent(args.player_id)
+                    platform.store.repositories.entities.get_agent(args.player_id)
                 except KeyError:
                     if not args.origin:
                         raise ValueError("--origin is required when creating a new player")

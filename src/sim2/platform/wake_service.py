@@ -24,7 +24,7 @@ class WakeService:
     def _validate_event(self, event_id: int, event_type: str) -> None:
         """Reject wakes that do not point at a persisted source event."""
 
-        rows = self.store.events_by_ids([int(event_id)])
+        rows = self.store.repositories.events.events_by_ids([int(event_id)])
         if not rows:
             raise ValueError(f"cannot wake a consumer from unknown event {event_id}")
         actual = str(rows[0].get("event_type") or "")

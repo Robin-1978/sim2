@@ -45,7 +45,7 @@ class DefinitionRuntimeMixin:
             if not canonical:
                 return value
             try:
-                entity = self.store.get_entity(str(canonical))
+                entity = self.store.repositories.entities.get_entity(str(canonical))
             except KeyError:
                 return value
             if str(entity.get("entity_type") or "") in {"resource", "material", "object"}:
@@ -86,7 +86,7 @@ class DefinitionRuntimeMixin:
         for value in values:
             canonical = self.targets.canonical_id(value) if isinstance(value, str) else None
             try:
-                agent = self.store.get_agent(str(canonical or value))
+                agent = self.store.repositories.entities.get_agent(str(canonical or value))
             except KeyError:
                 errors.append(f"unknown character in research_assignees: {value}")
                 continue
@@ -102,7 +102,7 @@ class DefinitionRuntimeMixin:
         reachability are judged by the same code that later offers the choice.
         """
 
-        definitions = {str(item["id"]): item for item in self.store.get_definitions("bt_def")}
+        definitions = {str(item["id"]): item for item in self.store.repositories.entities.get_definitions("bt_def")}
         marker = "|source_id="
         problems: list[str] = []
         for agent_id, visible_name in assignees:
@@ -120,7 +120,7 @@ class DefinitionRuntimeMixin:
             assigned = {agent_id for agent_id, _ in assignees}
             able = [
                 str(agent.get("name") or agent["id"])
-                for agent in self.store.list_agents()
+                for agent in self.store.repositories.entities.list_agents()
                 if str(agent["id"]) not in assigned
                 and any(marker in option for option in self.view.option_snapshot(str(agent["id"]), bt_defs=definitions)["options"])
             ]
@@ -167,9 +167,9 @@ class DefinitionRuntimeMixin:
         if not tokens:
             return None
         explicit_key = str(state.get("research_novelty_key") or state.get("research_gap_key") or "").strip().casefold()
-        for source in self.store.research_source_catalog():
+        for source in self.store.repositories.memory.research_source_catalog():
             try:
-                entity = self.store.get_entity(str(source["id"]))
+                entity = self.store.repositories.entities.get_entity(str(source["id"]))
             except KeyError:
                 continue
             existing_state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
@@ -232,7 +232,7 @@ class DefinitionRuntimeMixin:
             candidates = [extra.get("id"), extra.get("name"), extra.get("label"), extra.get("description")]
             if any(key == self._definition_name_key(candidate) for candidate in candidates if candidate):
                 matches.append(str(extra.get("id")))
-        for item in self.store.get_definitions(table):
+        for item in self.store.repositories.entities.get_definitions(table):
             candidates = [item.get("id"), item.get("name"), item.get("label"), item.get("agent_label"), item.get("summary"), item.get("description")]
             if any(key == self._definition_name_key(candidate) for candidate in candidates if candidate):
                 matches.append(str(item["id"]))
@@ -324,9 +324,9 @@ class DefinitionRuntimeMixin:
         table = {"action": "action_def", "behavior": "bt_def", "recipe": "recipe_def", "capability": "capability_def"}[kind]
         explicit_id = str(definition.get("id") or "").strip()
         definition_id = explicit_id or self._definition_slug(name) or f"definition_{uuid4().hex[:10]}"
-        if any(str(item.get("id")) == definition_id for item in self.store.get_definitions(table)):
+        if any(str(item.get("id")) == definition_id for item in self.store.repositories.entities.get_definitions(table)):
             errors.append(f"definition already exists: {definition_id}")
-        if any(self._definition_name_key(name) in {self._definition_name_key(item.get(field)) for field in ("name", "label", "agent_label", "summary", "description") if item.get(field)} for item in self.store.get_definitions(table)):
+        if any(self._definition_name_key(name) in {self._definition_name_key(item.get(field)) for field in ("name", "label", "agent_label", "summary", "description") if item.get(field)} for item in self.store.repositories.entities.get_definitions(table)):
             errors.append(f"definition name already exists: {name}")
 
         if kind == "action":
@@ -468,7 +468,7 @@ class DefinitionRuntimeMixin:
                     canonical = self.targets.canonical_id(key)
                     if canonical:
                         try:
-                            entity = self.store.get_entity(str(canonical))
+                            entity = self.store.repositories.entities.get_entity(str(canonical))
                         except KeyError:
                             entity = {}
                         if str(entity.get("entity_type") or "") in {"resource", "material", "object"}:
@@ -517,7 +517,7 @@ class DefinitionRuntimeMixin:
                         action = (
                             extra_action
                             if extra_action and str(extra_action.get("id")) == str(resolved)
-                            else next((item for item in self.store.get_definitions("action_def") if str(item.get("id")) == resolved), {})
+                            else next((item for item in self.store.repositories.entities.get_definitions("action_def") if str(item.get("id")) == resolved), {})
                         )
                         parameters = node_copy.get("parameters") if isinstance(node_copy.get("parameters"), dict) else {}
                         # God sees visible entity names. Persist canonical IDs
@@ -542,7 +542,7 @@ class DefinitionRuntimeMixin:
                                 if canonical:
                                     parameter_spec = (action.get("parameters") or {}).get(key)
                                     expected_type = str(parameter_spec.get("entity_type") or "") if isinstance(parameter_spec, dict) else ""
-                                    actual_type = str(self.store.get_entity(canonical).get("entity_type") or "")
+                                    actual_type = str(self.store.repositories.entities.get_entity(canonical).get("entity_type") or "")
                                     if expected_type and actual_type != expected_type:
                                         errors.append(
                                             f"action {resolved} parameter {key} requires a visible {expected_type}; "
@@ -627,7 +627,7 @@ class DefinitionRuntimeMixin:
                     errors.append(f"recipe.{field} entries need item and positive quantity")
             # A recipe is only ever produced through an Action that consumes
             # recipes.  Without one the recipe can never be crafted by anybody.
-            if not any(self._is_recipe_action(item) for item in self.store.get_definitions("action_def")) and not self._is_recipe_action(extra_action or {}):
+            if not any(self._is_recipe_action(item) for item in self.store.repositories.entities.get_definitions("action_def")) and not self._is_recipe_action(extra_action or {}):
                 errors.append(
                     "no registered Action can craft a recipe (it must reserve recipe_inputs or use duration.mode recipe_duration); "
                     "register such an Action and a behavior that uses it before adding recipes"
@@ -657,7 +657,7 @@ class DefinitionRuntimeMixin:
         for name_or_id in assign_to:
             resolved = self.targets.canonical_id(name_or_id)
             try:
-                agent = self.store.get_agent(str(resolved or name_or_id))
+                agent = self.store.repositories.entities.get_agent(str(resolved or name_or_id))
             except KeyError:
                 errors.append(f"unknown character in assign_to: {name_or_id}")
                 continue
@@ -743,7 +743,7 @@ class DefinitionRuntimeMixin:
                 for name_or_id in followup_assign_to:
                     resolved = self.targets.canonical_id(name_or_id)
                     try:
-                        agent = self.store.get_agent(str(resolved or name_or_id))
+                        agent = self.store.repositories.entities.get_agent(str(resolved or name_or_id))
                     except KeyError:
                         errors.append(f"unknown character in followup_behavior.assign_to: {name_or_id}")
                         continue
@@ -785,7 +785,7 @@ class DefinitionRuntimeMixin:
         world_minute = int(self.store.get_meta("world_minute", 0))
         table = {"action": "action_def", "behavior": "bt_def", "recipe": "recipe_def", "capability": "capability_def"}.get(definition_type)
         with self.store.transaction():
-            self.store.create_intent(intent_id, actor_id, "propose_definition", data, world_minute)
+            self.store.repositories.evolution.create_intent(intent_id, actor_id, "propose_definition", data, world_minute)
             if definition_type == "attribute":
                 attributes = list(self.store.get_meta("attributes", []) or [])
                 attributes.append(definition)
@@ -805,7 +805,7 @@ class DefinitionRuntimeMixin:
                     rules["needs"] = needs
                     self.store.set_meta("rules", rules)
                     schema = AttributeSchema(attributes, rules)
-                for agent in self.store.list_agents():
+                for agent in self.store.repositories.entities.list_agents():
                     state = dict(agent.get("initial_state") or {})
                     needs = dict(agent.get("needs") or {})
                     if definition.get("kind") == "state" and definition["id"] not in state:
@@ -814,7 +814,7 @@ class DefinitionRuntimeMixin:
                         needs[definition["id"]] = schema.default(definition["id"], definition.get("target", 0))
                     agent["initial_state"] = state
                     agent["needs"] = needs
-                    self.store.update_agent(agent["id"], agent)
+                    self.store.repositories.entities.update_agent(agent["id"], agent)
             elif definition_type == "world_property":
                 properties = dict(self.store.get_meta("world_properties", {}) or {})
                 properties[str(definition["id"])] = definition.get("default")
@@ -823,21 +823,21 @@ class DefinitionRuntimeMixin:
                 labels[str(definition["id"])] = str(definition.get("label") or name)
                 self.store.set_meta("world_property_labels", labels)
             elif table:
-                self.store.put_definition(table, str(definition["id"]), definition)
+                self.store.repositories.entities.put_definition(table, str(definition["id"]), definition)
                 if definition_type == "action" and followup_recipe_definition:
-                    self.store.put_definition("recipe_def", str(followup_recipe_definition["id"]), followup_recipe_definition)
+                    self.store.repositories.entities.put_definition("recipe_def", str(followup_recipe_definition["id"]), followup_recipe_definition)
                 if definition_type == "action" and followup_definition:
                     # Action and its first executable BT are committed in the
                     # same transaction. A failed reachability check raises
                     # before either definition can become visible.
-                    self.store.put_definition("bt_def", str(followup_definition["id"]), followup_definition)
+                    self.store.repositories.entities.put_definition("bt_def", str(followup_definition["id"]), followup_definition)
                     for agent_id, _ in followup_agents:
-                        agent = self.store.get_agent(agent_id)
+                        agent = self.store.repositories.entities.get_agent(agent_id)
                         unlocked = list(agent.get("unlocked_bt_ids", []) or [])
                         if followup_definition["id"] not in unlocked:
                             unlocked.append(followup_definition["id"])
                             agent["unlocked_bt_ids"] = unlocked
-                            self.store.update_agent(agent_id, agent)
+                            self.store.repositories.entities.update_agent(agent_id, agent)
                     unavailable = []
                     for agent_id, visible_name in followup_agents:
                         candidate = self.view.build_decision_view(agent_id, role="agent_decision", include_diagnostics=True)
@@ -858,19 +858,19 @@ class DefinitionRuntimeMixin:
                             + "; correct its machine predicates, parameters, travel node or assignee"
                         )
                 if definition_type == "capability":
-                    for agent in self.store.list_agents():
+                    for agent in self.store.repositories.entities.list_agents():
                         capabilities = dict(agent.get("capabilities") or {})
                         capabilities.setdefault(definition["id"], definition.get("default", 0.0))
                         agent["capabilities"] = capabilities
-                        self.store.update_agent(agent["id"], agent)
+                        self.store.repositories.entities.update_agent(agent["id"], agent)
                 if definition_type == "behavior":
                     for agent_id, _ in resolved_agents:
-                        agent = self.store.get_agent(agent_id)
+                        agent = self.store.repositories.entities.get_agent(agent_id)
                         unlocked = list(agent.get("unlocked_bt_ids", []) or [])
                         if definition["id"] not in unlocked:
                             unlocked.append(definition["id"])
                             agent["unlocked_bt_ids"] = unlocked
-                            self.store.update_agent(agent_id, agent)
+                            self.store.repositories.entities.update_agent(agent_id, agent)
                     unavailable = []
                     for agent_id, visible_name in resolved_agents:
                         candidate = self.view.build_decision_view(agent_id, role="agent_decision", include_diagnostics=True)
@@ -944,7 +944,7 @@ class DefinitionRuntimeMixin:
                 behavior_id = str(assigned_definition.get("id") or "")
                 if behavior_id:
                     for assigned_id, _ in assigned_agents:
-                        assigned_agent = self.store.get_agent(assigned_id)
+                        assigned_agent = self.store.repositories.entities.get_agent(assigned_id)
                         work = list(assigned_agent.get("behavior_assignments", []) or [])
                         work.append({
                             "behavior_id": behavior_id,
@@ -954,7 +954,7 @@ class DefinitionRuntimeMixin:
                             "assigned_minute": world_minute,
                         })
                         assigned_agent["behavior_assignments"] = work[-8:]
-                        self.store.update_agent(assigned_id, assigned_agent)
+                        self.store.repositories.entities.update_agent(assigned_id, assigned_agent)
                         self._context.services["events"].queue_consumer(
                             "agent_decision",
                             assignment_event_id,
@@ -981,7 +981,7 @@ class DefinitionRuntimeMixin:
                 result["bound_recipe"] = str(followup_recipe.get("name") or followup_recipe_definition.get("name") or followup_recipe_definition.get("id"))
                 result["bound_recipe_id"] = followup_recipe_definition.get("id")
                 result["bound_recipe_event_id"] = followup_recipe_event_id
-            self.store.finish_intent(intent_id, "accepted", result)
+            self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         if definition_type == "attribute":
             attributes = self.store.get_meta("attributes", []) or []
             self.attribute_schema = AttributeSchema(attributes, self.store.get_meta("rules", {}) or {})

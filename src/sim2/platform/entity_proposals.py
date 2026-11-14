@@ -32,7 +32,7 @@ class EntityProposalRuntimeMixin:
             errors.append("agent.state.initial_state.location_id must name an existing location")
         else:
             try:
-                location = self.store.get_entity(location_id)
+                location = self.store.repositories.entities.get_entity(location_id)
                 if str(location.get("entity_type")) != "location":
                     errors.append(f"{raw_location} is not a location")
             except KeyError:
@@ -66,7 +66,7 @@ class EntityProposalRuntimeMixin:
         for need_id, value in list(needs.items()):
             needs[need_id] = schema.clamp(str(need_id), value)
 
-        capability_defs = {str(item["id"]): item for item in self.store.get_definitions("capability_def")}
+        capability_defs = {str(item["id"]): item for item in self.store.repositories.entities.get_definitions("capability_def")}
         capabilities = {
             capability_id: float(definition.get("default", 0) or 0)
             if isinstance(definition.get("default", 0), (int, float)) and not isinstance(definition.get("default", 0), bool)
@@ -101,7 +101,7 @@ class EntityProposalRuntimeMixin:
                 errors.append(f"unknown faction: {value}")
                 continue
             try:
-                faction = self.store.get_entity(faction_id)
+                faction = self.store.repositories.entities.get_entity(faction_id)
                 if str(faction.get("entity_type")) != "faction":
                     errors.append(f"{value} is not a faction")
                 else:
@@ -167,7 +167,7 @@ class EntityProposalRuntimeMixin:
                 errors.append("God cannot create a stocked resource directly; a behavior result must create or recover the supply")
         if proposal.get("location_id"):
             try:
-                self.store.get_entity(str(proposal["location_id"]))
+                self.store.repositories.entities.get_entity(str(proposal["location_id"]))
             except KeyError:
                 errors.append("location_id does not exist")
         proposed_state = proposal.get("state") if isinstance(proposal.get("state"), dict) else {}
@@ -204,7 +204,7 @@ class EntityProposalRuntimeMixin:
         research_assignees, assignee_errors = self._context.services["definitions"]._resolve_research_assignees(proposed_state)
         errors.extend(assignee_errors)
         try:
-            self.store.get_entity(entity_id)
+            self.store.repositories.entities.get_entity(entity_id)
             errors.append("entity_id already exists")
         except KeyError:
             pass
@@ -245,27 +245,27 @@ class EntityProposalRuntimeMixin:
             entity_data["initial_state"]["location_id"] = proposal["location_id"]
         try:
             with self.store.transaction():
-                self.store.create_intent(intent_id, actor_id, "propose_entity", data, world_minute)
+                self.store.repositories.evolution.create_intent(intent_id, actor_id, "propose_entity", data, world_minute)
                 if agent_state is not None:
-                    self.store.put_agent(entity_id, agent_state, str(proposal["name"]))
+                    self.store.repositories.entities.put_agent(entity_id, agent_state, str(proposal["name"]))
                     for knowledge in agent_state.get("knowledge_seed", []):
                         if not isinstance(knowledge, dict):
                             continue
                         fact_key = str(knowledge.get("id") or knowledge.get("fact_key") or "").strip()
                         if fact_key:
-                            self.store.put_knowledge_fact(entity_id, fact_key, {
+                            self.store.repositories.memory.put_knowledge_fact(entity_id, fact_key, {
                                 "fact": str(knowledge.get("fact") or knowledge.get("summary") or fact_key),
                                 "source_type": str(knowledge.get("source_type") or "god_created"),
                                 "confidence": float(knowledge.get("confidence", 1.0)),
                                 "claim_status": str(knowledge.get("claim_status") or "observed"),
                             })
                 else:
-                    self.store.put_entity(entity_id, entity_type, str(proposal["name"]), entity_data)
+                    self.store.repositories.entities.put_entity(entity_id, entity_type, str(proposal["name"]), entity_data)
                     if research_values_present:
                         focus, _ = self._context.services["definitions"]._research_focus(proposed_state, proposal.get("description"))
                         gap_key = str(proposed_state.get("research_novelty_key") or proposed_state.get("research_gap_key") or f"source:{entity_id}")
                         question = str(proposed_state.get("research_question") or proposed_state.get("open_question") or focus or proposal.get("description") or proposal.get("name"))
-                        self.store.upsert_knowledge_gap(
+                        self.store.repositories.memory.upsert_knowledge_gap(
                             gap_key,
                             "active",
                             gap_key,
@@ -289,7 +289,7 @@ class EntityProposalRuntimeMixin:
                         "status": "accepted",
                     }, memory_key=f"god:entity:{intent_id}", source_event_id=event_id)
                 result = {"status": "accepted", "intent_id": intent_id, "entity_id": entity_id, "event_id": event_id, "applied": True}
-                self.store.finish_intent(intent_id, "accepted", result)
+                self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         except _UnreachableProposal as exc:
             # The transaction has rolled back: nothing of the proposal exists.
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_entity", data, {

@@ -152,7 +152,7 @@ class WorldChangesRuntimeMixin:
         evaluation_window = max(1, min(int(proposal.get("evaluation_window_minutes", 1440) or 1440), 43200))
         evaluation_due_minute = world_minute + evaluation_window
         with self.store.transaction():
-            self.store.create_intent(intent_id, actor_id, "propose_world_change", proposal, world_minute)
+            self.store.repositories.evolution.create_intent(intent_id, actor_id, "propose_world_change", proposal, world_minute)
             effect: dict[str, Any] = {}
             if change_type == "world_property":
                 effect = self._context.services["tick"]._set_world_property(str(proposal["property"]), proposal.get("value"))
@@ -179,23 +179,23 @@ class WorldChangesRuntimeMixin:
                 target = self.targets.canonical_id(str(target)) if target else None
                 relation_type = str(relation.pop("type", "related"))
                 if not source or not target:
-                    self.store.finish_intent(intent_id, "rejected", {"status": "rejected", "message": "relationship from and to are required.", "failed_check": "relationship", "retryable": True})
+                    self.store.repositories.evolution.finish_intent(intent_id, "rejected", {"status": "rejected", "message": "relationship from and to are required.", "failed_check": "relationship", "retryable": True})
                     return {"status": "rejected", "message": "relationship from and to are required.", "failed_check": "relationship", "retryable": True}
-                self.store.put_relationship(str(source), str(target), relation_type, relation)
+                self.store.repositories.entities.put_relationship(str(source), str(target), relation_type, relation)
                 effect = {"relationship": {"from": str(source), "to": str(target), "type": relation_type, **relation}}
             elif change_type == "faction":
                 faction = dict(proposal["faction"])
                 faction_id = str(faction.pop("id", faction.pop("faction_id", "")))
                 if not faction_id:
-                    self.store.finish_intent(intent_id, "rejected", {"status": "rejected", "message": "faction id is required.", "failed_check": "faction.id", "retryable": True})
+                    self.store.repositories.evolution.finish_intent(intent_id, "rejected", {"status": "rejected", "message": "faction id is required.", "failed_check": "faction.id", "retryable": True})
                     return {"status": "rejected", "message": "faction id is required.", "failed_check": "faction.id", "retryable": True}
                 try:
-                    current = self.store.get_entity(faction_id)
+                    current = self.store.repositories.entities.get_entity(faction_id)
                 except KeyError:
-                    self.store.finish_intent(intent_id, "rejected", {"status": "rejected", "message": "faction does not exist.", "failed_check": "faction.id", "retryable": True})
+                    self.store.repositories.evolution.finish_intent(intent_id, "rejected", {"status": "rejected", "message": "faction does not exist.", "failed_check": "faction.id", "retryable": True})
                     return {"status": "rejected", "message": "faction does not exist.", "failed_check": "faction.id", "retryable": True}
                 current.update(faction)
-                self.store.put_entity(faction_id, "faction", current.get("name", faction_id), {key: value for key, value in current.items() if key not in {"id", "entity_type", "name"}})
+                self.store.repositories.entities.put_entity(faction_id, "faction", current.get("name", faction_id), {key: value for key, value in current.items() if key not in {"id", "entity_type", "name"}})
                 effect = {"faction_id": faction_id, "changed_fields": sorted(faction), "after": {key: current.get(key) for key in faction}}
             elif change_type == "event" and proposal.get("property"):
                 effect = self._context.services["tick"]._set_world_property(str(proposal["property"]), proposal.get("value"))
@@ -216,7 +216,7 @@ class WorldChangesRuntimeMixin:
             expected = self._world_proposal_expectation(change_type, proposal, effect)
             event_data["expected_state"] = expected
             event_id = self._context.services["events"].append(f"world.change.{change_type}", actor_id, world_minute, event_data)
-            self.store.put_world_proposal(intent_id, intent_id, actor_id, change_type, "pending_evaluation", world_minute, evaluation_due_minute, {"effects": event_data["expected_effects"], "summary": event_data["summary"], "state": expected}, {"event_id": event_id, "effect": effect})
+            self.store.repositories.evolution.put_world_proposal(intent_id, intent_id, actor_id, change_type, "pending_evaluation", world_minute, evaluation_due_minute, {"effects": event_data["expected_effects"], "summary": event_data["summary"], "state": expected}, {"event_id": event_id, "effect": effect})
             if actor_id == "god":
                 remember_role(self.store, "god", "world_proposal", {
                     "summary": str(proposal.get("summary", "")),
@@ -226,7 +226,7 @@ class WorldChangesRuntimeMixin:
                     "evaluation_due_minute": evaluation_due_minute,
                 }, memory_key=f"god:proposal:{intent_id}", source_event_id=event_id)
             result = {"status": "accepted", "intent_id": intent_id, "proposal_id": intent_id, "event_id": event_id, "evaluation_status": "pending_evaluation", "evaluation_due_minute": evaluation_due_minute, "applied": True, "applied_effects": bool(effect.get("state_changed", True)), "change_type": change_type, "effect": effect, "expected_effects": event_data["expected_effects"]}
-            self.store.finish_intent(intent_id, "accepted", result)
+            self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result
 
     def _world_proposal_expectation(self, change_type: str, proposal: dict[str, Any], effect: dict[str, Any]) -> dict[str, Any]:
@@ -276,7 +276,7 @@ class WorldChangesRuntimeMixin:
         """
 
         try:
-            entity = self.store.get_entity(property_id)
+            entity = self.store.repositories.entities.get_entity(property_id)
         except KeyError:
             entity = None
         if entity and entity.get("entity_type") == "resource":
@@ -306,10 +306,10 @@ class WorldChangesRuntimeMixin:
         intent_id = str(uuid4())
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
-            self.store.create_intent(intent_id, actor_id, "submit_world_template", {"template": template}, world_minute)
+            self.store.repositories.evolution.create_intent(intent_id, actor_id, "submit_world_template", {"template": template}, world_minute)
             self._context.services["events"].append("world.template.accepted", actor_id, world_minute, {"template_keys": sorted(template)})
             result = {"status": "accepted", "intent_id": intent_id, "template_valid": True, "message": "Template accepted for new-instance bootstrap."}
-            self.store.finish_intent(intent_id, "accepted", result)
+            self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result
 
     def bootstrap_world_from_template(self, template: dict[str, Any], instance_id: str, runtime_root: Path | None = None) -> dict[str, Any]:

@@ -34,10 +34,10 @@ def build_timeline(store: Any, *, limit: int = 100, after_event_id: int = 0, inc
             return "nothing"
         return ", ".join(f"{key}×{value:g}" if isinstance(value, (int, float)) else str(key) for key, value in bundle.items())
 
-    events = store.timeline_events(after_event_id=after_event_id, limit=limit, include_ticks=include_ticks)
+    events = store.repositories.events.timeline_events(after_event_id=after_event_id, limit=limit, include_ticks=include_ticks)
     behavior_labels = {
         str(item.get("id")): str(item.get("agent_label") or item.get("summary") or item.get("description") or item.get("id"))
-        for item in store.get_definitions("bt_def")
+        for item in store.repositories.entities.get_definitions("bt_def")
     }
     names: dict[str, str] = {}
     for event in events:
@@ -46,7 +46,7 @@ def build_timeline(store: Any, *, limit: int = 100, after_event_id: int = 0, inc
         for value in candidates:
             if value and str(value) not in names:
                 try:
-                    names[str(value)] = str(store.get_entity(str(value)).get("name", value))
+                    names[str(value)] = str(store.repositories.entities.get_entity(str(value)).get("name", value))
                 except KeyError:
                     names[str(value)] = str(value)
     rendered = []
@@ -73,7 +73,7 @@ def build_timeline(store: Any, *, limit: int = 100, after_event_id: int = 0, inc
             message = event.get("message")
             if not message and event.get("dialogue_id") is not None:
                 try:
-                    exchange = store.get_dialogue_exchange(event["dialogue_id"])
+                    exchange = store.repositories.social.get_dialogue_exchange(event["dialogue_id"])
                 except (TypeError, ValueError):
                     exchange = None
                 if exchange:

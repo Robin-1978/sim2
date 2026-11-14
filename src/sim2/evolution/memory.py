@@ -90,7 +90,7 @@ def remember_role(
     })
     if source_event_id is not None:
         payload["source_event_id"] = int(source_event_id)
-    return store.put_memory(role, memory_type, payload, tier="long_term")
+    return store.repositories.memory.put_memory(role, memory_type, payload, tier="long_term")
 
 
 def role_memory_query(store: Any, role: str, query: str, *, limit: int = 6) -> list[dict[str, Any]]:

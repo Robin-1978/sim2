@@ -14,7 +14,7 @@ class WorldProposalEvaluator:
         self.targets = targets
 
     def evaluate_due(self, minute: int) -> None:
-        for proposal in self.store.list_world_proposals(status="pending_evaluation", limit=100):
+        for proposal in self.store.repositories.evolution.list_world_proposals(status="pending_evaluation", limit=100):
             if int(proposal.get("evaluation_due_minute", 0) or 0) > int(minute):
                 continue
             created = int(proposal.get("created_minute", 0) or 0)
@@ -49,7 +49,7 @@ class WorldProposalEvaluator:
             elif mode == "faction_state":
                 faction_id = str(expected.get("faction_id") or "")
                 try:
-                    entity = self.store.get_entity(faction_id)
+                    entity = self.store.repositories.entities.get_entity(faction_id)
                 except KeyError:
                     entity = {}
                 current_value = {key: entity.get(key) for key in (expected.get("fields") or {})}
@@ -83,8 +83,8 @@ class WorldProposalEvaluator:
                 observed["current_value"] = current_value
             status = "observed" if matched else "no_observed_effect"
             result = {"status": status, "proposal_id": proposal["proposal_id"], "expected": proposal.get("expected", {}), "observed": observed}
-            self.store.update_world_proposal(proposal["proposal_id"], status, observed, result, int(minute))
-            event_id = self.store.append_event("world.proposal.evaluated", proposal.get("actor_id"), int(minute), result)
+            self.store.repositories.evolution.update_world_proposal(proposal["proposal_id"], status, observed, result, int(minute))
+            event_id = self.store.repositories.events.append_event("world.proposal.evaluated", proposal.get("actor_id"), int(minute), result)
             if str(proposal.get("actor_id") or "") == "god":
                 remember_role(self.store, "god", "proposal_review", {
                     "summary": f"Proposal {proposal['proposal_id']} evaluated as {status}: {match_reason}.",

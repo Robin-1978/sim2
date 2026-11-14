@@ -142,7 +142,7 @@ class AgentEngine:
             raise ValueError(f"unknown agent role: {role}")
         if role == "agent_decision" and not str(task_type).startswith("instant:"):
             try:
-                state = self.platform.store.get_agent(actor_id).get("initial_state", {})
+                state = self.platform.store.repositories.entities.get_agent(actor_id).get("initial_state", {})
             except KeyError:
                 state = {}
             if state.get("status") in {"executing", "paused"}:
@@ -173,7 +173,7 @@ class AgentEngine:
             if isinstance(item, dict) and int(item.get("event_id", 0) or 0) > 0
         ]
         if event_ids:
-            verified_events = self.platform.store.events_by_ids(event_ids)
+            verified_events = self.platform.store.repositories.events.events_by_ids(event_ids)
             context["triggering_evidence"] = []
             if "recent_history" in context:
                 # The validated trigger is shown once as evidence; repeating
@@ -435,7 +435,7 @@ class AgentEngine:
         if not actor_id:
             return "the world"
         try:
-            return str(self.platform.store.get_entity(str(actor_id)).get("name") or actor_id)
+            return str(self.platform.store.repositories.entities.get_entity(str(actor_id)).get("name") or actor_id)
         except KeyError:
             return str(actor_id)
 
@@ -443,7 +443,7 @@ class AgentEngine:
         if not entity_id:
             return None
         try:
-            return str(self.platform.store.get_entity(str(entity_id)).get("name") or entity_id)
+            return str(self.platform.store.repositories.entities.get_entity(str(entity_id)).get("name") or entity_id)
         except KeyError:
             return str(entity_id)
 
@@ -1008,7 +1008,7 @@ class AgentEngine:
         return {"send_message", "wait"}
 
     def _resolve_action_names(self, actions: Any) -> list[str]:
-        definitions = self.platform.store.get_definitions("action_def")
+        definitions = self.platform.store.repositories.entities.get_definitions("action_def")
         resolved: list[str] = []
         for value in list(actions or []):
             key = "".join(char for char in str(value).casefold() if char.isalnum())
@@ -1048,7 +1048,7 @@ class AgentEngine:
             static_prefix = context.split("<world_state>", 1)[0]
             dynamic_text = context[len(static_prefix):]
             prefix_hash = hashlib.sha256(static_prefix.encode("utf-8")).hexdigest()
-            self.platform.store.append_llm_call(
+            self.platform.store.repositories.llm.append_llm_call(
                 actor_id,
                 role,
                 task_type,

@@ -21,7 +21,7 @@ class ActivityRuntimeMixin:
     """
 
     def _start_action(self, agent: dict[str, Any], execution_id: str, action_info: dict[str, Any], minute: int) -> tuple[bool, str]:
-        action_defs = {item["id"]: item for item in self.store.get_definitions("action_def")}
+        action_defs = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
         action_id = action_info.get("action_id")
         action = action_defs.get(action_id)
         if not action:
@@ -45,7 +45,7 @@ class ActivityRuntimeMixin:
         location_id = state.get("location_id")
         if location_id:
             try:
-                current_location = self.store.get_entity(location_id)
+                current_location = self.store.repositories.entities.get_entity(location_id)
             except KeyError:
                 current_location = {}
         condition_context = {
@@ -60,12 +60,12 @@ class ActivityRuntimeMixin:
             "current_location": current_location,
             "current_object": self._context.services["execution"]._entity_for_context(parameters.get("object_id")),
             "source": self._context.services["execution"]._entity_for_context(parameters.get("source_id")),
-            "research_discoveries": self.store.research_discoveries(str(parameters.get("source_id"))) if parameters.get("source_id") else [],
-            "mapped_areas": self.store.explored_areas(agent["id"]),
-            "researched_sources": self.store.researched_sources(agent["id"]),
+            "research_discoveries": self.store.repositories.memory.research_discoveries(str(parameters.get("source_id"))) if parameters.get("source_id") else [],
+            "mapped_areas": self.store.repositories.memory.explored_areas(agent["id"]),
+            "researched_sources": self.store.repositories.memory.researched_sources(agent["id"]),
             "known_fact_keys": [
                 item.get("fact_key")
-                for item in self.store.list_knowledge_facts(agent["id"], limit=1000)
+                for item in self.store.repositories.memory.list_knowledge_facts(agent["id"], limit=1000)
                 if item.get("fact_key")
             ],
             "target": resolved_target or {},
@@ -81,7 +81,7 @@ class ActivityRuntimeMixin:
             action.get("duration", {}).get("mode") == "recipe_duration"
             or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
         ):
-            recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
+            recipe = next((item for item in self.store.repositories.entities.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
             condition_context["station_tags"] = list((recipe or {}).get("station_tags", []) or [])
         denial = self.rule_compiler.denial(
             action=action,
@@ -99,7 +99,7 @@ class ActivityRuntimeMixin:
         duration = self._context.services["execution"]._action_duration(agent, action, parameters, state.get("location_id"))
         if already_at_destination:
             behavior = next(
-                (item for item in self.store.get_definitions("bt_def") if str(item.get("id")) == str(state.get("active_behavior_id"))),
+                (item for item in self.store.repositories.entities.get_definitions("bt_def") if str(item.get("id")) == str(state.get("active_behavior_id"))),
                 {},
             )
             if "no_op_travel_minutes" in behavior:
@@ -131,12 +131,12 @@ class ActivityRuntimeMixin:
         state["active_action_definition_version"] = int(action.get("definition_version", action.get("version", 1)) or 1)
         state["active_action_definition"] = copy.deepcopy(action)
         agent["initial_state"] = state
-        self.store.put_action_instance(action_instance_id, execution_id, agent["id"], action_id, "running", 0, duration, {"parameters": parameters, "target": resolved_target, "reservation": reservation, "no_op": already_at_destination, "definition_version": int(action.get("definition_version", action.get("version", 1)) or 1), "definition_snapshot": copy.deepcopy(action)}, minute, minute)
+        self.store.repositories.activity.put_action_instance(action_instance_id, execution_id, agent["id"], action_id, "running", 0, duration, {"parameters": parameters, "target": resolved_target, "reservation": reservation, "no_op": already_at_destination, "definition_version": int(action.get("definition_version", action.get("version", 1)) or 1), "definition_snapshot": copy.deepcopy(action)}, minute, minute)
         self._context.services["events"].append("action.started", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "duration_minutes": duration, "no_op": already_at_destination})
         return True, ""
 
     def _prepare_parallel_action(self, agent: dict[str, Any], action_info: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
-        action_defs = {item["id"]: item for item in self.store.get_definitions("action_def")}
+        action_defs = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
         action = action_defs.get(action_info.get("action_id"))
         if not action:
             return None, f"action is not registered: {action_info.get('action_id')}"
@@ -158,7 +158,7 @@ class ActivityRuntimeMixin:
         current_location = {}
         if state.get("location_id"):
             try:
-                current_location = self.store.get_entity(state["location_id"])
+                current_location = self.store.repositories.entities.get_entity(state["location_id"])
             except KeyError:
                 pass
         context = {
@@ -173,11 +173,11 @@ class ActivityRuntimeMixin:
             "current_location": current_location,
             "current_object": self._context.services["execution"]._entity_for_context(parameters.get("object_id")),
             "source": self._context.services["execution"]._entity_for_context(parameters.get("source_id")),
-            "mapped_areas": self.store.explored_areas(agent["id"]),
-            "researched_sources": self.store.researched_sources(agent["id"]),
+            "mapped_areas": self.store.repositories.memory.explored_areas(agent["id"]),
+            "researched_sources": self.store.repositories.memory.researched_sources(agent["id"]),
             "known_fact_keys": [
                 item.get("fact_key")
-                for item in self.store.list_knowledge_facts(agent["id"], limit=1000)
+                for item in self.store.repositories.memory.list_knowledge_facts(agent["id"], limit=1000)
                 if item.get("fact_key")
             ],
             "target": target or {},
@@ -193,7 +193,7 @@ class ActivityRuntimeMixin:
             action.get("duration", {}).get("mode") == "recipe_duration"
             or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
         ):
-            recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
+            recipe = next((item for item in self.store.repositories.entities.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
             context["station_tags"] = list((recipe or {}).get("station_tags", []) or [])
         condition_target = {**parameters, **(target or {})}
         denial = self.rule_compiler.denial(
@@ -281,13 +281,13 @@ class ActivityRuntimeMixin:
                     "definition_version": int(action.get("definition_version", action.get("version", 1)) or 1),
                     "definition_snapshot": copy.deepcopy(action),
                 }
-                self.store.put_action_instance(action_instance_id, execution_id, agent["id"], action_id, "running", 0, info["duration"], {"parameters": info["parameters"], "target": info["target"], "reservation": info.get("reservation", []), "parallel_group": group, "definition_version": int(action.get("definition_version", action.get("version", 1)) or 1), "definition_snapshot": copy.deepcopy(action)}, minute, minute)
+                self.store.repositories.activity.put_action_instance(action_instance_id, execution_id, agent["id"], action_id, "running", 0, info["duration"], {"parameters": info["parameters"], "target": info["target"], "reservation": info.get("reservation", []), "parallel_group": group, "definition_version": int(action.get("definition_version", action.get("version", 1)) or 1), "definition_snapshot": copy.deepcopy(action)}, minute, minute)
                 self._context.services["events"].append("action.started", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "duration_minutes": info["duration"], "parallel_group": group})
             state["active_parallel_actions"] = active
             state["active_action"] = "parallel"
             state["active_action_index"] = index
             agent["initial_state"] = state
-        action_defs = {item["id"]: item for item in self.store.get_definitions("action_def")}
+        action_defs = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
         completed_count = 0
         for item_index, entry in list(active.items()):
             if int(entry["remaining"]) == 0:
@@ -301,7 +301,7 @@ class ActivityRuntimeMixin:
                 self._context.services["execution"]._apply_action_progress(agent, action)
             entry["remaining"] = max(0, int(entry["remaining"]) - 1)
             elapsed = int(entry["duration"]) - int(entry["remaining"])
-            self.store.update_action_instance(entry["action_instance_id"], status="succeeded" if entry["remaining"] == 0 else "running", elapsed_minutes=elapsed, remaining_minutes=entry["remaining"], data={"parameters": entry["parameters"], "target": entry["target"], "reservation": entry.get("reservation", []), "parallel_group": group, "no_op": bool(entry.get("no_op")), "definition_version": int(entry.get("definition_version", action.get("definition_version", action.get("version", 1))) or 1), "definition_snapshot": entry.get("definition_snapshot") or copy.deepcopy(action)}, updated_minute=minute)
+            self.store.repositories.activity.update_action_instance(entry["action_instance_id"], status="succeeded" if entry["remaining"] == 0 else "running", elapsed_minutes=elapsed, remaining_minutes=entry["remaining"], data={"parameters": entry["parameters"], "target": entry["target"], "reservation": entry.get("reservation", []), "parallel_group": group, "no_op": bool(entry.get("no_op")), "definition_version": int(entry.get("definition_version", action.get("definition_version", action.get("version", 1))) or 1), "definition_snapshot": entry.get("definition_snapshot") or copy.deepcopy(action)}, updated_minute=minute)
             if entry["remaining"] == 0:
                 failure = self._action_failure_reason(agent, action, entry["parameters"], entry.get("target"))
                 if failure:
@@ -337,14 +337,14 @@ class ActivityRuntimeMixin:
             state["action_progress"] = 1.0
             agent["initial_state"] = state
             bt_data = json.loads(self.store.connection.execute("SELECT data_json FROM bt_instance WHERE execution_id=?", (execution_id,)).fetchone()["data_json"])
-            self.store.update_bt_instance(execution_id, status="executing", current_node=index + len(group_items), data=bt_data, updated_minute=minute)
+            self.store.repositories.activity.update_bt_instance(execution_id, status="executing", current_node=index + len(group_items), data=bt_data, updated_minute=minute)
             if index + len(group_items) >= len(actions):
                 self._finish_behavior(agent, execution_id, behavior_id, "completed", "behavior_completed", minute)
             else:
-                self.store.update_agent(agent["id"], agent)
+                self.store.repositories.entities.update_agent(agent["id"], agent)
         else:
             agent["initial_state"] = state
-            self.store.update_agent(agent["id"], agent)
+            self.store.repositories.entities.update_agent(agent["id"], agent)
 
     def _progress_agent(self, agent: dict[str, Any], minute: int) -> None:
         state = dict(agent.get("initial_state") or {})
@@ -359,7 +359,7 @@ class ActivityRuntimeMixin:
             state["status"] = "failed"
             state["last_platform_result"] = {"status": "failed", "message": "BT instance is missing."}
             agent["initial_state"] = state
-            self.store.update_agent(agent["id"], agent)
+            self.store.repositories.entities.update_agent(agent["id"], agent)
             return
         bt_data = json.loads(bt_rows["data_json"])
         actions = bt_data.get("actions", [])
@@ -379,7 +379,7 @@ class ActivityRuntimeMixin:
         action_id = state.get("active_action")
         # Prefer the immutable definition snapshot captured by _start_action.
         # The registry may now contain a newer version proposed by God.
-        action = state.get("active_action_definition") or next((item for item in self.store.get_definitions("action_def") if item.get("id") == action_id), None)
+        action = state.get("active_action_definition") or next((item for item in self.store.repositories.entities.get_definitions("action_def") if item.get("id") == action_id), None)
         if not action:
             self._finish_behavior(agent, execution_id, behavior_id, "failed", "action_missing", minute)
             return
@@ -399,10 +399,10 @@ class ActivityRuntimeMixin:
         agent["initial_state"] = state
         action_instance_id = state.get("active_action_instance")
         if action_instance_id:
-            self.store.update_action_instance(action_instance_id, status="succeeded" if remaining == 0 else "running", elapsed_minutes=duration - remaining, remaining_minutes=remaining, data={"parameters": state.get("active_action_parameters", {}), "reservation": state.get("active_action_reservation", []), "no_op": bool(state.get("active_action_noop")), "definition_version": int(state.get("active_action_definition_version", action.get("definition_version", action.get("version", 1))) or 1), "definition_snapshot": copy.deepcopy(action)}, updated_minute=minute)
+            self.store.repositories.activity.update_action_instance(action_instance_id, status="succeeded" if remaining == 0 else "running", elapsed_minutes=duration - remaining, remaining_minutes=remaining, data={"parameters": state.get("active_action_parameters", {}), "reservation": state.get("active_action_reservation", []), "no_op": bool(state.get("active_action_noop")), "definition_version": int(state.get("active_action_definition_version", action.get("definition_version", action.get("version", 1))) or 1), "definition_snapshot": copy.deepcopy(action)}, updated_minute=minute)
         if remaining > 0:
-            self.store.update_bt_instance(execution_id, status="executing", current_node=index, data=bt_data, updated_minute=minute)
-            self.store.update_agent(agent["id"], agent)
+            self.store.repositories.activity.update_bt_instance(execution_id, status="executing", current_node=index, data=bt_data, updated_minute=minute)
+            self.store.repositories.entities.update_agent(agent["id"], agent)
             return
         action_parameters = state.get("active_action_parameters", {})
         completed_noop = bool(state.get("active_action_noop"))
@@ -443,7 +443,7 @@ class ActivityRuntimeMixin:
         state["active_action_definition"] = None
         state["action_progress"] = 1.0
         agent["initial_state"] = state
-        self.store.update_bt_instance(execution_id, status="executing", current_node=index + 1, data=bt_data, updated_minute=minute)
+        self.store.repositories.activity.update_bt_instance(execution_id, status="executing", current_node=index + 1, data=bt_data, updated_minute=minute)
         if index + 1 >= len(actions):
             self._finish_behavior(agent, execution_id, behavior_id, "completed", "behavior_completed", minute)
         elif completed_noop:
@@ -451,10 +451,10 @@ class ActivityRuntimeMixin:
             # current tick. Continue the sequence immediately so a
             # co-located generic research source does not add a phantom idle
             # minute before the actual work begins.
-            self.store.update_agent(agent["id"], agent)
+            self.store.repositories.entities.update_agent(agent["id"], agent)
             self._progress_agent(agent, minute)
         else:
-            self.store.update_agent(agent["id"], agent)
+            self.store.repositories.entities.update_agent(agent["id"], agent)
 
     def _record_declared_capability_evidence(
         self,
@@ -479,14 +479,14 @@ class ActivityRuntimeMixin:
                 explicit.add(str(effect["capability"]))
         recipe_id = parameters.get("recipe_id")
         if recipe_id:
-            recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == recipe_id), None)
+            recipe = next((item for item in self.store.repositories.entities.get_definitions("recipe_def") if item.get("id") == recipe_id), None)
             for effect in (recipe or {}).get("effects", []) or []:
                 if isinstance(effect, dict) and str(effect.get("type") or effect.get("op") or "") == "capability.add_xp" and effect.get("capability"):
                     explicit.add(str(effect["capability"]))
 
         owned = {str(item) for item in (agent.get("capabilities") or {})}
         action_id = str(action.get("id") or "")
-        for definition in self.store.get_definitions("capability_def"):
+        for definition in self.store.repositories.entities.get_definitions("capability_def"):
             capability = str(definition.get("id") or "")
             uses = {str(item) for item in (definition.get("uses") or [])}
             if not capability or capability not in owned or capability in explicit or action_id not in uses:
@@ -519,7 +519,7 @@ class ActivityRuntimeMixin:
             receiver = agent
             if effect.get("target") == "target" and target and target.get("id"):
                 try:
-                    receiver = self.store.get_agent(str(target["id"]))
+                    receiver = self.store.repositories.entities.get_agent(str(target["id"]))
                 except KeyError:
                     receiver = agent
             if effect.get("formula") and parameters.get("weapon_id"):
@@ -586,7 +586,7 @@ class ActivityRuntimeMixin:
                                 "resource_transfer quantity must equal the reserved carried item amount"
                             )
                     try:
-                        resource = self.store.get_entity(resource_id)
+                        resource = self.store.repositories.entities.get_entity(resource_id)
                     except KeyError:
                         resource = None
                     if errors:
@@ -600,7 +600,7 @@ class ActivityRuntimeMixin:
                 state_key = resolved_effect.get("state") or resolved_effect.get("property")
                 if entity_id and state_key:
                     try:
-                        entity = self.store.get_entity(str(entity_id))
+                        entity = self.store.repositories.entities.get_entity(str(entity_id))
                     except KeyError:
                         entity = None
                     if entity is not None:
@@ -608,7 +608,7 @@ class ActivityRuntimeMixin:
                         before_value = entity_state.get(str(state_key))
                         entity_state[str(state_key)] = resolved_effect.get("value")
                         entity["initial_state"] = entity_state
-                        self.store.put_entity(
+                        self.store.repositories.entities.put_entity(
                             entity["id"], entity["entity_type"], entity["name"],
                             {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}},
                         )
@@ -649,7 +649,7 @@ class ActivityRuntimeMixin:
             else:
                 self.effects.apply(receiver, resolved_effect, target=effect_target, formula_agent=agent)
             if receiver is not agent:
-                self.store.update_agent(receiver["id"], receiver)
+                self.store.repositories.entities.update_agent(receiver["id"], receiver)
             if effect.get("type") in {"capability_xp", "capability.add_xp"} or effect.get("op") == "capability.add_xp":
                 capability = effect.get("capability")
                 if capability:
@@ -661,7 +661,7 @@ class ActivityRuntimeMixin:
         recipe_id = parameters.get("recipe_id")
         if not recipe_id:
             return errors
-        recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == recipe_id), None)
+        recipe = next((item for item in self.store.repositories.entities.get_definitions("recipe_def") if item.get("id") == recipe_id), None)
         if not recipe:
             return errors
         for output in recipe.get("outputs", []) or []:
@@ -674,7 +674,7 @@ class ActivityRuntimeMixin:
                 state_key = effect.get("state") or effect.get("property")
                 if entity_id and state_key:
                     try:
-                        entity = self.store.get_entity(str(entity_id))
+                        entity = self.store.repositories.entities.get_entity(str(entity_id))
                     except KeyError:
                         entity = None
                     if entity is not None:
@@ -682,7 +682,7 @@ class ActivityRuntimeMixin:
                         before_value = entity_state.get(str(state_key))
                         entity_state[str(state_key)] = effect.get("value")
                         entity["initial_state"] = entity_state
-                        self.store.put_entity(
+                        self.store.repositories.entities.put_entity(
                             entity["id"], entity["entity_type"], entity["name"],
                             {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}},
                         )
@@ -702,14 +702,14 @@ class ActivityRuntimeMixin:
         location_id = state.get("location_id")
         if location_id:
             try:
-                location = self.store.get_entity(str(location_id))
+                location = self.store.repositories.entities.get_entity(str(location_id))
             except KeyError:
                 location = {}
         source = {}
         source_id = parameters.get("source_id")
         if source_id:
             try:
-                source = self.store.get_entity(str(source_id))
+                source = self.store.repositories.entities.get_entity(str(source_id))
             except KeyError:
                 source = {}
         return {
@@ -720,10 +720,10 @@ class ActivityRuntimeMixin:
             "current_location": location,
             "location": location,
             "source": source,
-            "research_discoveries": self.store.research_discoveries(str(source_id)) if source_id else [],
+            "research_discoveries": self.store.repositories.memory.research_discoveries(str(source_id)) if source_id else [],
             "known_fact_keys": [
                 item.get("fact_key")
-                for item in self.store.list_knowledge_facts(agent["id"], limit=1000)
+                for item in self.store.repositories.memory.list_knowledge_facts(agent["id"], limit=1000)
                 if item.get("fact_key")
             ],
             "station": location,
@@ -828,12 +828,12 @@ class ActivityRuntimeMixin:
             return
         relation_type = str(effect.get("relation") or "related")
         delta = float(effect.get("delta", effect.get("value", 0)) or 0)
-        current = next((item for item in self.store.list_relationships() if item.get("from") == agent["id"] and item.get("to") == target_id and item.get("type") == relation_type), None)
+        current = next((item for item in self.store.repositories.entities.list_relationships() if item.get("from") == agent["id"] and item.get("to") == target_id and item.get("type") == relation_type), None)
         data = dict(current or {})
         for key in ("from", "to", "type"):
             data.pop(key, None)
         data["relation_strength"] = max(-1.0, min(1.0, float(data.get("relation_strength", 0) or 0) + delta))
-        self.store.put_relationship(agent["id"], target_id, relation_type, data)
+        self.store.repositories.entities.put_relationship(agent["id"], target_id, relation_type, data)
         self._context.services["events"].append("relationship.changed", agent["id"], minute, {"target_id": target_id, "relation": relation_type, "delta": delta, "relation_strength": data["relation_strength"]})
 
     def _advance_information_progress(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> dict[str, Any] | None:
@@ -841,11 +841,11 @@ class ActivityRuntimeMixin:
         if not isinstance(definition, dict) or not definition.get("key"):
             return None
         source_id = str(parameters.get("source_id") or "")
-        discoveries = self.store.research_discoveries(source_id) if source_id else []
+        discoveries = self.store.repositories.memory.research_discoveries(source_id) if source_id else []
         source = {}
         if source_id:
             try:
-                source = self.store.get_entity(source_id)
+                source = self.store.repositories.entities.get_entity(source_id)
             except KeyError:
                 source = {}
         source_state = source.get("initial_state") if isinstance(source.get("initial_state"), dict) else {}
@@ -863,7 +863,7 @@ class ActivityRuntimeMixin:
             source_required = None
         known_fact_keys = {
             str(item.get("fact_key"))
-            for item in self.store.list_knowledge_facts(agent["id"], limit=1000)
+            for item in self.store.repositories.memory.list_knowledge_facts(agent["id"], limit=1000)
             if item.get("fact_key")
         }
         pending = [
@@ -891,11 +891,11 @@ class ActivityRuntimeMixin:
             required = max(1.0, float(required_value))
         except (TypeError, ValueError):
             required = 1.0
-        progress = self.store.advance_progress(owner, key, float(definition.get("amount", 1) or 1), required, minute, {"source_action": action.get("id"), "source_agent": agent["id"], "stage_id": (discovery or {}).get("id")})
+        progress = self.store.repositories.activity.advance_progress(owner, key, float(definition.get("amount", 1) or 1), required, minute, {"source_action": action.get("id"), "source_agent": agent["id"], "stage_id": (discovery or {}).get("id")})
         event_type = "research.completed" if progress["completed"] else "research.progressed"
         event_id = self._context.services["events"].append(event_type, agent["id"], minute, {"progress_key": key, "progress": progress, "source_action": action.get("id"), "parameters": parameters, "source_id": source_id, "stage_id": (discovery or {}).get("id"), "discovery_status": (discovery or {}).get("status", "active")})
         if progress["completed"]:
-            self.store.update_research_gap(
+            self.store.repositories.memory.update_research_gap(
                 source_id,
                 stage_id=(discovery or {}).get("id"),
                 completed=True,
@@ -925,21 +925,21 @@ class ActivityRuntimeMixin:
         message = str(parameters.get("message") or "").strip()
         if area_id:
             area_id = str(area_id)
-            if area_id not in self.store.explored_areas(agent["id"]):
-                result_id = self.store.put_exploration_result(agent["id"], area_id, minute, {"source": action.get("id"), "parameters": parameters})
-                area = self.store.get_entity(area_id) if area_id else {}
+            if area_id not in self.store.repositories.memory.explored_areas(agent["id"]):
+                result_id = self.store.repositories.activity.put_exploration_result(agent["id"], area_id, minute, {"source": action.get("id"), "parameters": parameters})
+                area = self.store.repositories.entities.get_entity(area_id) if area_id else {}
                 discoveries = list(area.get("discoveries", []) or []) if isinstance(area, dict) else []
                 discoveries = [{"id": f"explored:{area_id}", "fact": f"Area {area_id} was explored."}, *discoveries]
                 for discovery in discoveries:
                     discovery_id = str(discovery.get("id") or f"explored:{area_id}")
                     fact = str(discovery.get("fact") or f"Area {area_id} was explored.")
-                    self.store.merge_knowledge_fact(agent["id"], discovery_id, {"fact": fact, "source_type": "exploration", "source_id": result_id, "behavior": action.get("id"), "confidence": 0.8, "observed_at": minute})
+                    self.store.repositories.memory.merge_knowledge_fact(agent["id"], discovery_id, {"fact": fact, "source_type": "exploration", "source_id": result_id, "behavior": action.get("id"), "confidence": 0.8, "observed_at": minute})
                     unlocks = discovery.get("unlocks", []) if isinstance(discovery, dict) else []
                     for unlock in unlocks or []:
                         behavior_id = str(unlock.get("behavior_id") if isinstance(unlock, dict) else unlock)
                         if not behavior_id:
                             continue
-                        registered = any(item.get("id") == behavior_id for item in self.store.get_definitions("bt_def"))
+                        registered = any(item.get("id") == behavior_id for item in self.store.repositories.entities.get_definitions("bt_def"))
                         if not registered:
                             continue
                         unlocked = list(agent.get("unlocked_bt_ids", []) or [])
@@ -955,20 +955,20 @@ class ActivityRuntimeMixin:
             if progress is None or progress["completed"]:
                 discovery = (progress or {}).get("discovery") if isinstance(progress, dict) else None
                 if discovery is None:
-                    candidates = [item for item in self.store.research_discoveries(source_id) if str(item.get("id") or "") not in {str(row.get("fact_key")) for row in self.store.list_knowledge_facts(agent["id"], limit=1000)}]
+                    candidates = [item for item in self.store.repositories.memory.research_discoveries(source_id) if str(item.get("id") or "") not in {str(row.get("fact_key")) for row in self.store.repositories.memory.list_knowledge_facts(agent["id"], limit=1000)}]
                     discovery = candidates[0] if candidates else None
-                if discovery is not None or source_id not in self.store.researched_sources(agent["id"]):
-                    source = self.store.get_entity(source_id) if source_id else {}
+                if discovery is not None or source_id not in self.store.repositories.memory.researched_sources(agent["id"]):
+                    source = self.store.repositories.entities.get_entity(source_id) if source_id else {}
                     discovery = discovery or ((source.get("research_discovery") or {}) if isinstance(source, dict) else {})
                     fact_key = str(discovery.get("id") or f"researched:{source_id}")
                     fact = str(discovery.get("fact") or f"Source {source_id} was researched.")
-                    self.store.merge_knowledge_fact(agent["id"], fact_key, {"fact": fact, "source_type": "research", "source_id": source_id, "behavior": action.get("id"), "confidence": 0.8, "observed_at": minute, "status": str(discovery.get("status") or "active"), "supersedes": discovery.get("supersedes", [])})
+                    self.store.repositories.memory.merge_knowledge_fact(agent["id"], fact_key, {"fact": fact, "source_type": "research", "source_id": source_id, "behavior": action.get("id"), "confidence": 0.8, "observed_at": minute, "status": str(discovery.get("status") or "active"), "supersedes": discovery.get("supersedes", [])})
                     # A configured progress action already emitted the
                     # completion event; without progress keep the legacy
                     # single-attempt event contract.
                     if progress is None:
                         event_id = self._context.services["events"].publish("research.completed", agent["id"], minute, {"source_id": source_id, "fact": fact}, wake="story_source")
-                        self.store.update_research_gap(
+                        self.store.repositories.memory.update_research_gap(
                             source_id,
                             completed=True,
                             fact=fact,
@@ -989,13 +989,13 @@ class ActivityRuntimeMixin:
         if object_id and information.get("record_object_discovery", False):
             object_id = str(object_id)
             try:
-                discovered_object = self.store.get_entity(object_id)
+                discovered_object = self.store.repositories.entities.get_entity(object_id)
             except KeyError:
                 discovered_object = {}
             discovery = (discovered_object.get("recovery_discovery") or {}) if isinstance(discovered_object, dict) else {}
             fact_key = str(discovery.get("id") or f"recovered:{object_id}")
             fact = str(discovery.get("fact") or f"Object {object_id} was recovered.")
-            self.store.merge_knowledge_fact(
+            self.store.repositories.memory.merge_knowledge_fact(
                 agent["id"], fact_key,
                 {"fact": fact, "source_type": "recovery", "source_id": object_id, "object_id": object_id, "behavior": action.get("id"), "confidence": 0.9, "observed_at": minute},
             )
@@ -1004,16 +1004,16 @@ class ActivityRuntimeMixin:
         if target_id and topic:
             target_id = str(target_id)
             try:
-                listener = self.store.get_agent(target_id)
+                listener = self.store.repositories.entities.get_agent(target_id)
             except KeyError:
                 listener = None
             testimony = self._context.services["social"]._testimony_metadata(agent, listener) if listener else {}
-            dialogue_id = self.store.put_dialogue_exchange(agent["id"], target_id if listener else None, str(topic), minute, {"source": action.get("id"), "message": message, "parameters": parameters})
-            self.store.put_memory(agent["id"], "dialogue", {"topic": str(topic), "message": message, "target_id": target_id, "world_minute": minute, "dialogue_id": dialogue_id, "claim_status": "observed", "source_type": "own_statement"})
+            dialogue_id = self.store.repositories.social.put_dialogue_exchange(agent["id"], target_id if listener else None, str(topic), minute, {"source": action.get("id"), "message": message, "parameters": parameters})
+            self.store.repositories.memory.put_memory(agent["id"], "dialogue", {"topic": str(topic), "message": message, "target_id": target_id, "world_minute": minute, "dialogue_id": dialogue_id, "claim_status": "observed", "source_type": "own_statement"})
             if listener:
-                self.store.put_memory(target_id, "testimony", {"topic": str(topic), "message": message, "speaker_id": agent["id"], "world_minute": minute, "dialogue_id": dialogue_id, "claim_status": "reported", "source_type": "testimony", **testimony})
+                self.store.repositories.memory.put_memory(target_id, "testimony", {"topic": str(topic), "message": message, "speaker_id": agent["id"], "world_minute": minute, "dialogue_id": dialogue_id, "claim_status": "reported", "source_type": "testimony", **testimony})
                 self._context.services["social"]._apply_configured_relationship_effect(agent, listener, "dialogue.completed", minute)
-                self.store.update_agent(listener["id"], listener)
+                self.store.repositories.entities.update_agent(listener["id"], listener)
             event_id = self._context.services["events"].append("dialogue.completed", agent["id"], minute, {"target_id": target_id, "topic": str(topic), "message": message, "dialogue_id": dialogue_id, **testimony})
             result = {"result": "dialogue_recorded", "event_id": event_id}
         configured_event = information.get("event_type") or information.get("event")
@@ -1021,7 +1021,7 @@ class ActivityRuntimeMixin:
         observed_id = parameters.get("object_id") or parameters.get("entity_id") or parameters.get("item_id") or parameters.get("source_id") or parameters.get("area_id")
         if observed_id:
             try:
-                entity = self.store.get_entity(str(observed_id))
+                entity = self.store.repositories.entities.get_entity(str(observed_id))
             except KeyError:
                 entity = {}
             if entity:
@@ -1059,7 +1059,7 @@ class ActivityRuntimeMixin:
             fact = information.get("fact") or information.get("knowledge_fact")
         if fact:
             fact_key = str(information.get("fact_key") or f"{action.get('id', 'action')}:{parameters.get('object_id') or parameters.get('source_id') or parameters.get('area_id') or 'result'}")
-            self.store.merge_knowledge_fact(agent["id"], fact_key, {"fact": str(fact), "source_type": str(information.get("source_type") or "action"), "source_id": str(action.get("id", "action")), "behavior": str(action.get("id", "action")), "confidence": float(information.get("confidence", 0.8)), "observed_at": minute})
+            self.store.repositories.memory.merge_knowledge_fact(agent["id"], fact_key, {"fact": str(fact), "source_type": str(information.get("source_type") or "action"), "source_id": str(action.get("id", "action")), "behavior": str(action.get("id", "action")), "confidence": float(information.get("confidence", 0.8)), "observed_at": minute})
             result.setdefault("result", str(information.get("result") or "information_recorded"))
         return result
 
@@ -1100,7 +1100,7 @@ class ActivityRuntimeMixin:
     def _record_active_institution_entries(self, event_id: int, event_type: str, actor_id: str, minute: int, payload: dict[str, Any]) -> None:
         """Apply active, declarative ledger selectors to one verified event."""
 
-        for institution in self.store.list_institutions(status="active", limit=200):
+        for institution in self.store.repositories.social.list_institutions(status="active", limit=200):
             ledger = institution.get("ledger") if isinstance(institution.get("ledger"), dict) else {}
             selectors = ledger.get("selectors", ledger.get("evidence", []))
             if not isinstance(selectors, list):
@@ -1121,7 +1121,7 @@ class ActivityRuntimeMixin:
                     continue
                 matched_categories.add(category)
                 period = self._institution_period_key(ledger.get("period", "world"), minute)
-                entry_id = self.store.append_institution_ledger_entry(
+                entry_id = self.store.repositories.social.append_institution_ledger_entry(
                     str(institution["institution_id"]), actor_id, period, category, amount,
                     int(event_id), "verified", {"event_type": event_type, "source": payload.get("behavior_id") or payload.get("action_id") or event_type}, minute,
                 )
@@ -1141,7 +1141,7 @@ class ActivityRuntimeMixin:
         bt_row = self.store.connection.execute("SELECT data_json FROM bt_instance WHERE execution_id=?", (execution_id,)).fetchone()
         bt_data = json.loads(bt_row["data_json"]) if bt_row is not None else {}
         before = dict(bt_data.get("before") or {})
-        behavior_definition = next((item for item in self.store.get_definitions("bt_def") if item.get("id") == behavior_id), {})
+        behavior_definition = next((item for item in self.store.repositories.entities.get_definitions("bt_def") if item.get("id") == behavior_id), {})
         if status == "completed" and result == "behavior_completed":
             result = str(state.get("last_action_result") or result)
         if status != "completed":
@@ -1196,7 +1196,7 @@ class ActivityRuntimeMixin:
         if action_instance_id and status != "completed":
             action_row = self.store.connection.execute("SELECT elapsed_minutes,remaining_minutes,data_json FROM action_instance WHERE action_instance_id=?", (action_instance_id,)).fetchone()
             if action_row is not None:
-                self.store.update_action_instance(
+                self.store.repositories.activity.update_action_instance(
                     action_instance_id,
                     status="failed",
                     elapsed_minutes=action_row["elapsed_minutes"],
@@ -1208,7 +1208,7 @@ class ActivityRuntimeMixin:
             for entry in (state.get("active_parallel_actions") or {}).values():
                 action_row = self.store.connection.execute("SELECT elapsed_minutes,remaining_minutes,data_json FROM action_instance WHERE action_instance_id=?", (entry.get("action_instance_id"),)).fetchone()
                 if action_row is not None and action_row["remaining_minutes"] > 0:
-                    self.store.update_action_instance(entry["action_instance_id"], status="failed", elapsed_minutes=action_row["elapsed_minutes"], remaining_minutes=action_row["remaining_minutes"], data=json.loads(action_row["data_json"]), updated_minute=minute)
+                    self.store.repositories.activity.update_action_instance(entry["action_instance_id"], status="failed", elapsed_minutes=action_row["elapsed_minutes"], remaining_minutes=action_row["remaining_minutes"], data=json.loads(action_row["data_json"]), updated_minute=minute)
         if status == "completed":
             for configured in behavior_definition.get("outcome_events", []) or []:
                 if not isinstance(configured, dict):
@@ -1226,7 +1226,7 @@ class ActivityRuntimeMixin:
                     payload["story_source"] = True
                 payload.setdefault("execution_id", execution_id)
                 duplicate_event_id = None
-                for existing in self.store.recent_events(limit=32):
+                for existing in self.store.repositories.events.recent_events(limit=32):
                     if (
                         str(existing.get("event_type") or "") == event_type
                         and str(existing.get("actor_id") or "") == str(agent["id"])
@@ -1258,7 +1258,7 @@ class ActivityRuntimeMixin:
                 if not isinstance(configured, dict) or not configured.get("fact"):
                     continue
                 fact_key = str(configured.get("fact_key") or f"behavior:{behavior_id}:{configured.get('id', 'outcome')}")
-                self.store.merge_knowledge_fact(agent["id"], fact_key, {"fact": str(configured["fact"]), "source_type": str(configured.get("source_type") or "behavior"), "source_id": behavior_id, "behavior": behavior_id, "confidence": float(configured.get("confidence", 0.8)), "observed_at": minute})
+                self.store.repositories.memory.merge_knowledge_fact(agent["id"], fact_key, {"fact": str(configured["fact"]), "source_type": str(configured.get("source_type") or "behavior"), "source_id": behavior_id, "behavior": behavior_id, "confidence": float(configured.get("confidence", 0.8)), "observed_at": minute})
         state["status"] = "idle" if status == "completed" else "failed"
         blocked_behaviors = dict(state.get("blocked_behaviors") or {})
         if status == "completed":
@@ -1294,10 +1294,10 @@ class ActivityRuntimeMixin:
         state["last_platform_result"] = {"status": status, "behavior_ref": f"behavior:{behavior_id}", "result": result, "outcome": outcome}
         state["last_outcome"] = outcome
         agent["initial_state"] = state
-        self.store.update_agent(agent["id"], agent)
+        self.store.repositories.entities.update_agent(agent["id"], agent)
         bt_data["outcome"] = outcome
         bt_data["result"] = result
-        self.store.update_bt_instance(execution_id, status=status, current_node=int(state.get("active_action_index", 0)), data=bt_data, updated_minute=minute)
+        self.store.repositories.activity.update_bt_instance(execution_id, status=status, current_node=int(state.get("active_action_index", 0)), data=bt_data, updated_minute=minute)
         self._context.services["events"].append(
             "outcome.evaluated",
             agent["id"],
@@ -1340,12 +1340,12 @@ class ActivityRuntimeMixin:
 
         try:
             state = dict(self.store.get_meta("story_state", {}) or {})
-            agent = self.store.get_agent(actor_id)
+            agent = self.store.repositories.entities.get_agent(actor_id)
         except (KeyError, TypeError):
             return
         story_root = self.store.get_meta("story", {}) or {}
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
-        definitions = {str(item.get("id")): item for item in self.store.get_definitions("bt_def")}
+        definitions = {str(item.get("id")): item for item in self.store.repositories.entities.get_definitions("bt_def")}
         beats = {str(item.get("id")): item for item in (story_root.get("beats", []) or []) if isinstance(item, dict)}
         beats.update({str(item.get("id")): item for item in (state.get("emergent_beats", []) or []) if isinstance(item, dict) and item.get("id")})
 
@@ -1392,7 +1392,7 @@ class ActivityRuntimeMixin:
             return
         if cleared_goals:
             agent["story_goals"] = [item for item in (agent.get("story_goals", []) or []) if str(item) not in cleared_goals]
-            self.store.update_agent(actor_id, agent)
+            self.store.repositories.entities.update_agent(actor_id, agent)
         self.store.set_meta("story_state", state)
         self._context.services["events"].wake(source_event_id, "behavior.failed", actor_id, minute, wake="story_source")
 
@@ -1417,7 +1417,7 @@ class ActivityRuntimeMixin:
         for item in state.get("emergent_beats", []) or []:
             if isinstance(item, dict) and item.get("id"):
                 package_beats.setdefault(str(item["id"]), item)
-        definitions = {str(item.get("id")): item for item in self.store.get_definitions("bt_def")}
+        definitions = {str(item.get("id")): item for item in self.store.repositories.entities.get_definitions("bt_def")}
 
         def declared_followups(beat_id: str) -> list[str] | None:
             beat = package_beats.get(str(beat_id))
@@ -1452,7 +1452,7 @@ class ActivityRuntimeMixin:
                 continue
             audience = [str(item) for item in (entry.get("audience", []) or [])]
             try:
-                agent_name = str(self.store.get_agent(actor_id).get("name", actor_id))
+                agent_name = str(self.store.repositories.entities.get_agent(actor_id).get("name", actor_id))
             except KeyError:
                 agent_name = str(actor_id)
             if str(actor_id) not in audience and agent_name not in audience:

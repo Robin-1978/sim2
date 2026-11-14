@@ -184,8 +184,8 @@ class SimulationRunner:
             self._run_due_evolution(report)
             self._run_idle_decisions(report)
         report.end_minute = int(self.platform.store.get_meta("world_minute", 0))
-        report.event_types = self.platform.store.event_type_counts()
-        report.selected_behaviors = self.platform.store.behavior_start_counts()
+        report.event_types = self.platform.store.repositories.events.event_type_counts()
+        report.selected_behaviors = self.platform.store.repositories.events.behavior_start_counts()
         report.diversity = self._diversity(report)
         report.degeneration_flags = self._degeneration_flags(report)
         self._persist_scheduler_state()
@@ -199,7 +199,7 @@ class SimulationRunner:
 
         provider = self.providers.get("agent_decision")
         pending = [
-            event for event in reversed(self.platform.store.recent_events(limit=100))
+            event for event in reversed(self.platform.store.repositories.events.recent_events(limit=100))
             if int(event.get("event_id", 0)) not in self._interaction_events_seen
             and event.get("event_type") in {"dialogue.completed", "trade.offer_created", "trade.countered"}
         ]
@@ -227,7 +227,7 @@ class SimulationRunner:
             event_data = event.get("data") if isinstance(event.get("data"), dict) else event
             dialogue_id = event_data.get("dialogue_id") if isinstance(event_data, dict) else None
             if dialogue_id is not None:
-                dialogue = self.platform.store.get_dialogue_exchange(dialogue_id)
+                dialogue = self.platform.store.repositories.social.get_dialogue_exchange(dialogue_id)
             topic = str((dialogue or {}).get("topic") or event_data.get("topic") or "general")
             message = str((dialogue or {}).get("message") or "").strip()
             # The model may rephrase a topic on every reply.  A dialogue
@@ -289,7 +289,7 @@ class SimulationRunner:
         if not self._provider_cooling_down(provider) and any(
             int(event.get("event_id", 0)) not in self._interaction_events_seen
             and event.get("event_type") in {"dialogue.completed", "trade.offer_created", "trade.countered"}
-            for event in self.platform.store.recent_events(limit=100)
+            for event in self.platform.store.repositories.events.recent_events(limit=100)
         ):
             return self._run_instant_interactions(report)
         return not self._provider_cooling_down(provider)
@@ -324,7 +324,7 @@ class SimulationRunner:
 
     def _visible_name(self, actor_id: str) -> str:
         try:
-            return str(self.platform.store.get_entity(actor_id).get("name", actor_id))
+            return str(self.platform.store.repositories.entities.get_entity(actor_id).get("name", actor_id))
         except KeyError:
             return actor_id
 
@@ -334,14 +334,14 @@ class SimulationRunner:
             return
         minute = int(self.platform.store.get_meta("world_minute", 0))
         self._refresh_decision_wakes(minute)
-        for agent in self.platform.store.list_agents():
+        for agent in self.platform.store.repositories.entities.list_agents():
             if self._provider_cooling_down(provider):
                 return
             agent_id = agent["id"]
             state = agent.get("initial_state", {}) or {}
             if state.get("status") in {"executing", "paused"} or minute < max(self._decision_not_before.get(agent_id, 0), self._llm_not_before(agent_id), self._interaction_not_before.get(agent_id, 0)):
                 continue
-            outcomes = self.platform.store.recent_outcomes_for_actor(agent_id, limit=1)
+            outcomes = self.platform.store.repositories.events.recent_outcomes_for_actor(agent_id, limit=1)
             if outcomes and outcomes[0].get("event_type") == "behavior.failed":
                 event_id = int(outcomes[0].get("event_id", 0))
                 if self._failure_seen.get(agent_id) != event_id:
@@ -403,7 +403,7 @@ class SimulationRunner:
         ).fetchall()
         if not rows:
             return
-        known_agents = {str(item["id"]) for item in self.platform.store.list_agents()}
+        known_agents = {str(item["id"]) for item in self.platform.store.repositories.entities.list_agents()}
         for row in rows:
             self._decision_event_cursor = max(self._decision_event_cursor, int(row["event_id"]))
             if str(row["event_type"]) not in wake_events:
@@ -540,7 +540,7 @@ class SimulationRunner:
     def _diversity(self, report: SimulationReport) -> dict[str, Any]:
         behavior_count = len(report.selected_behaviors)
         event_count = len(report.event_types)
-        agents = self.platform.store.list_agents()
+        agents = self.platform.store.repositories.entities.list_agents()
         locations = {str((agent.get("initial_state") or {}).get("location_id")) for agent in agents}
         return {
             "unique_behaviors": behavior_count,
@@ -556,13 +556,13 @@ class SimulationRunner:
             flags.append("decisions_without_any_behavior_execution")
         if report.decisions >= 10 and len(report.selected_behaviors) == 1:
             flags.append("single_behavior_dominance")
-        if report.decisions > max(20, len(self.platform.store.list_agents()) * 20) and len(report.selected_behaviors) < max(2, len(self.platform.store.list_agents()) // 2):
+        if report.decisions > max(20, len(self.platform.store.repositories.entities.list_agents()) * 20) and len(report.selected_behaviors) < max(2, len(self.platform.store.repositories.entities.list_agents()) // 2):
             flags.append("excessive_replanning_or_low_execution")
         if report.event_types.get("trade.completed", 0) < 0:
             flags.append("invalid_trade_count")
         vital = (self.platform.store.get_meta("rules", {}) or {}).get("vital_attribute")
         if vital:
-            for agent in self.platform.store.list_agents():
+            for agent in self.platform.store.repositories.entities.list_agents():
                 state = agent.get("initial_state", {}) or {}
                 if float(state.get(str(vital), 0) or 0) <= 0:
                     flags.append(f"vital_depleted:{agent['id']}")

@@ -104,7 +104,7 @@ class TextWorldSession:
             return self._format_result(self.platform.create_trade_offer(self.player_id or "", args[0], _bundle(args[1]), _bundle(args[2])))
         if command == "offers":
             self._require_player()
-            offers = self.platform.store.list_trade_offers(self.player_id or "")
+            offers = self.platform.store.repositories.social.list_trade_offers(self.player_id or "")
             return "No open offers." if not offers else "\n".join(self._format_offer(item) for item in offers)
         if command == "accept":
             self._require_player()

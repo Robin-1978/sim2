@@ -1038,13 +1038,13 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
             store.set_meta("player_template", load_yaml(config_dir, "player_template.yaml", {}))
 
             for location in load_yaml(config_dir, "locations.yaml", {}).get("locations", []):
-                store.put_entity(location["id"], "location", location.get("name", location["id"]), location)
+                store.repositories.entities.put_entity(location["id"], "location", location.get("name", location["id"]), location)
             for obj in load_yaml(config_dir, "objects.yaml", {}).get("objects", []):
-                store.put_entity(obj["id"], obj.get("type", "object"), obj.get("name", obj["id"]), obj)
+                store.repositories.entities.put_entity(obj["id"], obj.get("type", "object"), obj.get("name", obj["id"]), obj)
             locations = load_yaml(config_dir, "locations.yaml", {})
             resource_baseline: dict[str, float] = {}
             for resource in locations.get("resources", []):
-                store.put_entity(
+                store.repositories.entities.put_entity(
                     resource["id"],
                     "resource",
                     resource.get("name", resource["id"]),
@@ -1056,22 +1056,22 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                     amount = state.get("quantity", state.get("amount"))
                 if isinstance(amount, (int, float)):
                     resource_baseline[str(resource["id"])] = float(amount)
-                    store.sync_world_property_from_resource(str(resource["id"]), amount)
+                    store.repositories.entities.sync_world_property_from_resource(str(resource["id"]), amount)
             store.set_meta("resource_baseline", resource_baseline)
             # Seed one canonical knowledge gap per configured research source.
             # God reviews and advances these gaps instead of inventing a new
             # document for every completion event.
-            for source in store.research_source_catalog():
-                source_entity = store.get_entity(str(source["id"]))
+            for source in store.repositories.memory.research_source_catalog():
+                source_entity = store.repositories.entities.get_entity(str(source["id"]))
                 source_state = source_entity.get("initial_state") if isinstance(source_entity.get("initial_state"), dict) else {}
                 discoveries = source.get("discoveries") or []
                 question = str(source_state.get("research_question") or source_state.get("open_question") or "")
                 if not question:
                     question = str(next((item.get("fact") for item in discoveries if isinstance(item, dict) and item.get("fact")), source.get("name", "research source")))
                 gap_key = str(source_state.get("research_novelty_key") or source_state.get("research_gap_key") or f"source:{source['id']}")
-                store.upsert_knowledge_gap(gap_key, "active", gap_key, question, source_id=str(source["id"]), data={"seeded": True})
+                store.repositories.memory.upsert_knowledge_gap(gap_key, "active", gap_key, question, source_id=str(source["id"]), data={"seeded": True})
             for faction in load_yaml(config_dir, "factions.yaml", {}).get("factions", []):
-                store.put_entity(faction["id"], "faction", faction.get("name", faction["id"]), faction)
+                store.repositories.entities.put_entity(faction["id"], "faction", faction.get("name", faction["id"]), faction)
             for agent in load_yaml(config_dir, "agents.yaml", {}).get("agents", []):
                 state = dict(agent)
                 needs = dict(state.get("needs") or {})
@@ -1082,7 +1082,7 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                 for attribute_id, value in attribute_schema.state_defaults().items():
                     initial_state.setdefault(attribute_id, value)
                 state["initial_state"] = initial_state
-                store.put_agent(agent["id"], state, agent.get("name", agent["id"]))
+                store.repositories.entities.put_agent(agent["id"], state, agent.get("name", agent["id"]))
                 for knowledge in agent.get("knowledge_seed", []):
                     if isinstance(knowledge, dict):
                         fact_key = str(knowledge.get("id") or knowledge.get("fact_key") or "").strip()
@@ -1097,29 +1097,29 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                     else:
                         fact_key = str(knowledge)
                         fact_data = {"fact": fact_key, "source_type": "config_seed", "confidence": 1.0, "claim_status": "observed"}
-                    store.put_knowledge_fact(agent["id"], fact_key, fact_data)
+                    store.repositories.memory.put_knowledge_fact(agent["id"], fact_key, fact_data)
             schedule = evolution.get("evolution", evolution).get("schedule", {}) if isinstance(evolution, dict) else {}
             for agent in load_yaml(config_dir, "agents.yaml", {}).get("agents", []):
                 agent_id = agent["id"]
                 reflection_cadence = int(schedule.get("agent_reflection_minutes", 0) or 0)
                 innovation_cadence = int(schedule.get("agent_innovation_minutes", 0) or 0)
                 if reflection_cadence > 0:
-                    store.put_evolution_task(f"reflection:{agent_id}", "agent_reflection", agent_id, "daily_reflection", reflection_cadence, reflection_cadence)
+                    store.repositories.evolution.put_evolution_task(f"reflection:{agent_id}", "agent_reflection", agent_id, "daily_reflection", reflection_cadence, reflection_cadence)
                 if innovation_cadence > 0:
-                    store.put_evolution_task(f"innovation:{agent_id}", "agent_reflection", agent_id, "weekly_innovation", innovation_cadence, innovation_cadence)
+                    store.repositories.evolution.put_evolution_task(f"innovation:{agent_id}", "agent_reflection", agent_id, "weekly_innovation", innovation_cadence, innovation_cadence)
             for task_type, role, key in [
                 ("god_local", "god", "god_local_minutes"),
                 ("god_structural", "god", "god_structural_minutes"),
             ]:
                 cadence = int(schedule.get(key, 0) or 0)
                 if cadence > 0:
-                    store.put_evolution_task(task_type, role, None, task_type, cadence, cadence)
+                    store.repositories.evolution.put_evolution_task(task_type, role, None, task_type, cadence, cadence)
             for relation in load_yaml(config_dir, "factions.yaml", {}).get("relationships", []):
                 relation_data = dict(relation)
                 from_id = str(relation_data.pop("from"))
                 to_id = str(relation_data.pop("to"))
                 relation_type = str(relation_data.pop("type", "related"))
-                store.put_relationship(from_id, to_id, relation_type, relation_data)
+                store.repositories.entities.put_relationship(from_id, to_id, relation_type, relation_data)
             for table, filename, key in [
                 ("action_def", "actions.yaml", "actions"),
                 ("bt_def", "behavior_trees.yaml", "behavior_trees"),
@@ -1130,14 +1130,14 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                 if filename == "behavior_trees.yaml":
                     definitions = list(load_yaml(config_dir, "core_behavior_trees.yaml", {}).get("behavior_trees", []) or []) + list(definitions)
                 for definition in definitions:
-                    store.put_definition(table, definition["id"], definition)
+                    store.repositories.entities.put_definition(table, definition["id"], definition)
             prompt_dir = config_dir / "prompts"
             if prompt_dir.is_dir():
                 for prompt_path in sorted(prompt_dir.glob("*.yaml")):
-                    store.put_prompt(prompt_path.stem, yaml.safe_load(prompt_path.read_text(encoding="utf-8")) or {})
+                    store.repositories.memory.put_prompt(prompt_path.stem, yaml.safe_load(prompt_path.read_text(encoding="utf-8")) or {})
             for event in load_yaml(config_dir, "opening_events.yaml", {}).get("opening_events", []):
                 minute = int(event.get("world_minute", event.get("minute", 0)))
-                store.append_event(event["type"], None, minute, event.get("payload", {}))
+                store.repositories.events.append_event(event["type"], None, minute, event.get("payload", {}))
             store.set_meta("bootstrap_report", {"status": "complete", "config_dir": str(config_dir), "validation_errors": []})
         return db_path
     except Exception:

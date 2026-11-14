@@ -26,7 +26,7 @@ class SnapshotService:
             "events": int(events),
             "intents": int(intents),
             "llm_calls": int(llm_calls),
-            "llm_cache": self.store.llm_cache_metrics(),
+            "llm_cache": self.store.repositories.llm.llm_cache_metrics(),
         }
 
     def export_audit(self) -> dict[str, Any]:

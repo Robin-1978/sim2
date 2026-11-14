@@ -67,14 +67,14 @@ def allocation_preflight(
     """
 
     candidates = [
-        item for item in store.list_institutions(status="active", limit=200)
+        item for item in store.repositories.social.list_institutions(status="active", limit=200)
         if str(item.get("name", "")).casefold() == str(institution).casefold()
         or str(item.get("institution_id", "")) == str(institution)
     ]
     if len(candidates) != 1:
         return {"possible": False, "reason": "institution_unavailable", "available": 0.0, "required": 0.0}
     try:
-        pool = store.get_entity(str(pool_entity))
+        pool = store.repositories.entities.get_entity(str(pool_entity))
     except KeyError:
         return {"possible": False, "reason": "pool_unavailable", "available": 0.0, "required": 0.0}
     policy = candidates[0].get("policy") if isinstance(candidates[0].get("policy"), dict) else {}
@@ -85,7 +85,7 @@ def allocation_preflight(
         minimum = 0.0
     subject_ids = [str(value) for value in (subjects or []) if str(value)]
     if not subject_ids or subject_ids == ["all_agents"]:
-        subject_ids = [str(agent["id"]) for agent in store.list_agents()]
+        subject_ids = [str(agent["id"]) for agent in store.repositories.entities.list_agents()]
     available = entity_quantity(pool)
     required = max(0.0, minimum) * len(subject_ids)
     return {

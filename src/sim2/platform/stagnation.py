@@ -104,7 +104,7 @@ class StagnationRuntimeMixin:
             return None
         window = config["window"]
         cap = max(1, config["max_interval"] // window)
-        roster = agents if agents is not None else self.store.list_agents()
+        roster = agents if agents is not None else self.store.repositories.entities.list_agents()
         active = sorted(
             (
                 agent for agent in roster
@@ -127,7 +127,7 @@ class StagnationRuntimeMixin:
         if progress_rows:
             progress_cursor = int(progress_rows[-1]["event_id"])
         frontier = {str(key): set(value) for key, value in (state.get("frontier") or {}).items()}
-        bt_defs = {str(item["id"]): item for item in self.store.get_definitions("bt_def")}
+        bt_defs = {str(item["id"]): item for item in self.store.repositories.entities.get_definitions("bt_def")}
         snapshots = {str(agent["id"]): self.view.option_snapshot(str(agent["id"]), bt_defs=bt_defs) for agent in cohort}
         grew = False
         for agent_id, snapshot in snapshots.items():

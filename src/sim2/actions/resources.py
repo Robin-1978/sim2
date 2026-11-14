@@ -20,7 +20,7 @@ class ResourceLedger:
         reserve = (action.get("costs", {}).get("reserve", {}) or {}) if isinstance(action.get("costs"), dict) else {}
         for key, value in reserve.items():
             if key == "recipe_inputs":
-                recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
+                recipe = next((item for item in self.store.repositories.entities.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
                 if recipe is None:
                     return False, "recipe is unavailable", []
                 limit_error = self._check_recipe_output_limits(recipe)
@@ -92,7 +92,7 @@ class ResourceLedger:
         if not limits:
             return None
         totals: dict[str, float] = {}
-        for agent in self.store.list_agents():
+        for agent in self.store.repositories.entities.list_agents():
             for item, quantity in (agent.get("inventory", {}) or {}).items():
                 totals[str(item)] = totals.get(str(item), 0.0) + float(quantity or 0)
         for limit in limits:
@@ -106,7 +106,7 @@ class ResourceLedger:
 
     def _world_resource(self, key: str) -> dict[str, Any] | None:
         try:
-            entity = self.store.get_entity(key)
+            entity = self.store.repositories.entities.get_entity(key)
         except KeyError:
             return None
         data = entity.get("initial_state", {}) if isinstance(entity.get("initial_state"), dict) else {}
@@ -118,21 +118,21 @@ class ResourceLedger:
         return {"entity_id": key, "amount": float(amount)}
 
     def _change_world_resource(self, entity_id: str, delta: float, *, actor_id: str | None = None) -> None:
-        entity = self.store.get_entity(entity_id)
+        entity = self.store.repositories.entities.get_entity(entity_id)
         before = self._world_resource(entity_id)
         if isinstance(entity.get("amount"), (int, float)):
             entity["amount"] = float(entity["amount"]) + delta
-            self.store.put_entity(entity_id, entity["entity_type"], entity["name"], {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}})
+            self.store.repositories.entities.put_entity(entity_id, entity["entity_type"], entity["name"], {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}})
         else:
             state = dict(entity.get("initial_state") or {})
             key = "quantity" if isinstance(state.get("quantity"), (int, float)) else "amount"
             state[key] = float(state.get(key, 0)) + delta
             entity["initial_state"] = state
-            self.store.put_entity(entity_id, entity["entity_type"], entity["name"], {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}})
+            self.store.repositories.entities.put_entity(entity_id, entity["entity_type"], entity["name"], {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}})
         after = self._world_resource(entity_id)
         if after is not None:
-            self.store.sync_world_property_from_resource(entity_id, after["amount"])
-        self.store.append_event(
+            self.store.repositories.entities.sync_world_property_from_resource(entity_id, after["amount"])
+        self.store.repositories.events.append_event(
             "resource.changed", actor_id, int(self.store.get_meta("world_minute", 0)),
             {"resource_id": entity_id, "delta": float(delta), "before": (before or {}).get("amount"), "after": (after or {}).get("amount"), "source": "reservation_or_release"},
         )

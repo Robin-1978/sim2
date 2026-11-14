@@ -28,14 +28,14 @@ class EvolutionService(PlatformService):
 
     def _world_trigger_context(self) -> dict[str, Any]:
         context = dict(self.store.get_meta("world_properties", {}) or {})
-        for resource in self.store.entities_of_type("resource"):
+        for resource in self.store.repositories.entities.entities_of_type("resource"):
             try:
-                entity = self.store.get_entity(resource["id"])
+                entity = self.store.repositories.entities.get_entity(resource["id"])
             except KeyError:
                 continue
             amount = entity.get("amount", (entity.get("initial_state") or {}).get("quantity"))
             if isinstance(amount, (int, float)):
-                self.store.sync_world_property_from_resource(resource["id"], amount)
+                self.store.repositories.entities.sync_world_property_from_resource(resource["id"], amount)
                 context[resource["id"]] = amount
         return context
 
@@ -70,7 +70,7 @@ class EvolutionService(PlatformService):
                 )
                 for index, target in enumerate(signal.get("wake") or []):
                     target = str(target)
-                    if target in (agent_ids if agent_ids is not None else {agent["id"] for agent in self.store.list_agents()}):
+                    if target in (agent_ids if agent_ids is not None else {agent["id"] for agent in self.store.repositories.entities.list_agents()}):
                         role, actor_id = "agent_reflection", target
                     else:
                         role, actor_id = target, None
@@ -87,7 +87,7 @@ class EvolutionService(PlatformService):
         triggers = config.get("triggers", []) if isinstance(config, dict) else []
         states = dict(self.store.get_meta("evolution_trigger_state", {}) or {})
         world = self._world_trigger_context()
-        known_agents = agent_ids if agent_ids is not None else {agent["id"] for agent in self.store.list_agents()}
+        known_agents = agent_ids if agent_ids is not None else {agent["id"] for agent in self.store.repositories.entities.list_agents()}
         for trigger in triggers:
             trigger_id = str(trigger.get("id", ""))
             if not trigger_id:

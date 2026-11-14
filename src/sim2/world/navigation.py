@@ -23,7 +23,7 @@ def nearest_safe_location(store: Any, origin_id: str | None) -> str | None:
     while queue:
         current_id = queue.popleft()
         try:
-            location = store.get_entity(current_id)
+            location = store.repositories.entities.get_entity(current_id)
         except KeyError:
             continue
         safe_tags = configured_location_tags(store, "safe", {"safe"})
@@ -35,7 +35,7 @@ def nearest_safe_location(store: Any, origin_id: str | None) -> str | None:
             if neighbor_id in visited:
                 continue
             try:
-                neighbor = store.get_entity(neighbor_id)
+                neighbor = store.repositories.entities.get_entity(neighbor_id)
             except KeyError:
                 continue
             if neighbor.get("entity_type") != "location":
@@ -57,7 +57,7 @@ def nearest_resource_node(store: Any, origin_id: str | None) -> dict[str, str] |
     visited = {str(origin_id)}
     while queue:
         current_id, _ = queue.popleft()
-        for entity in store.entities_at_location(current_id):
+        for entity in store.repositories.entities.entities_at_location(current_id):
             if entity.get("entity_type") not in entity_types:
                 continue
             state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
@@ -67,7 +67,7 @@ def nearest_resource_node(store: Any, origin_id: str | None) -> dict[str, str] |
             if isinstance(amount, (int, float)) and float(amount) > 0 and not state.get(protected_key):
                 return {"resource_tag": str(entity.get("id")), "location_id": current_id}
         try:
-            location = store.get_entity(current_id)
+            location = store.repositories.entities.get_entity(current_id)
         except KeyError:
             continue
         for neighbor_id in location.get("routes", []) or []:
@@ -89,7 +89,7 @@ def nearest_location_with_tag(store: Any, origin_id: str | None, tags: set[str])
     while queue:
         current_id = queue.popleft()
         try:
-            location = store.get_entity(current_id)
+            location = store.repositories.entities.get_entity(current_id)
         except KeyError:
             continue
         if set(location.get("tags", []) or []) & set(tags):
@@ -113,7 +113,7 @@ def reachable_locations(store: Any, origin_id: str | None) -> set[str]:
     while queue:
         current_id = queue.popleft()
         try:
-            location = store.get_entity(current_id)
+            location = store.repositories.entities.get_entity(current_id)
         except KeyError:
             continue
         for neighbor_id in location.get("routes", []) or []:

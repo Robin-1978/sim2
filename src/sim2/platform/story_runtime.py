@@ -46,8 +46,8 @@ class StoryRuntimeMixin:
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
         beats = list(story_root.get("beats", []) or []) if isinstance(story_root, dict) else []
         state = dict(self.store.get_meta("story_state", {}) or {})
-        recent = self.store.recent_events(limit=500)
-        bound_sources = self.store.events_by_ids([int(item) for item in (source_event_ids or []) if int(item) > 0])
+        recent = self.store.repositories.events.recent_events(limit=500)
+        bound_sources = self.store.repositories.events.events_by_ids([int(item) for item in (source_event_ids or []) if int(item) > 0])
         configured_source_types = {str(item) for item in (story_root.get("emergent_source_event_types") or [])}
         source_event = bound_sources[-1] if bound_sources else next(
             (
@@ -170,7 +170,7 @@ class StoryRuntimeMixin:
                 source_event_id = int(source_event.get("event_id", 0) or 0)
                 followup_event_types = {str(item) for item in (claim_guard.get("followup_event_types") or [])}
                 followup_behavior_tags = {str(item) for item in (claim_guard.get("followup_behavior_tags") or [])}
-                behaviors = {str(item.get("id")): item for item in self.store.get_definitions("bt_def")}
+                behaviors = {str(item.get("id")): item for item in self.store.repositories.entities.get_definitions("bt_def")}
 
                 def supports_claim(item: dict[str, Any]) -> bool:
                     if str(item.get("event_type", "")) in followup_event_types:
@@ -210,7 +210,7 @@ class StoryRuntimeMixin:
         requested_research_source = str(proposal.get("research_source") or "").strip()
         if requested_research_source and source_event:
             requested_source_id = str(self.targets.canonical_id(requested_research_source) or "")
-            if not requested_source_id or not self.store.research_discoveries(requested_source_id):
+            if not requested_source_id or not self.store.repositories.memory.research_discoveries(requested_source_id):
                 return self._context.services["intent"]._reject_intent(
                     intent_id,
                     actor_id,
@@ -265,7 +265,7 @@ class StoryRuntimeMixin:
         requested_source = str(proposal.get("research_source") or beat.get("research_source") or "").strip()
         if requested_source:
             research_source_id = str(self.targets.canonical_id(requested_source) or "")
-            if not research_source_id or not self.store.research_discoveries(research_source_id):
+            if not research_source_id or not self.store.repositories.memory.research_discoveries(research_source_id):
                 return self._context.services["intent"]._reject_intent(
                     intent_id,
                     actor_id,
@@ -279,10 +279,10 @@ class StoryRuntimeMixin:
                     },
                 )
             beat["research_source_id"] = research_source_id
-        registered = {item["id"] for item in self.store.get_definitions("bt_def")}
+        registered = {item["id"] for item in self.store.repositories.entities.get_definitions("bt_def")}
         labels = {
             "".join(char for char in str(item.get("agent_label") or item.get("summary") or item.get("id", "")).casefold() if char.isalnum()): str(item.get("id"))
-            for item in self.store.get_definitions("bt_def")
+            for item in self.store.repositories.entities.get_definitions("bt_def")
         }
         requested_unlocks = [str(value) for value in (beat.get("unlock_choices", []) or [])]
         unresolved_unlocks = [
@@ -366,7 +366,7 @@ class StoryRuntimeMixin:
                 ):
                     return {"status": "wait", "reason": "This validated result already has the same audience and continuation; wait for a different outcome, stage, or executable follow-up."}
         with self.store.transaction():
-            self.store.create_intent(intent_id, actor_id, "propose_story_beat", proposal, minute)
+            self.store.repositories.evolution.create_intent(intent_id, actor_id, "propose_story_beat", proposal, minute)
             state[beat_id] = {"status": "active", "started_minute": minute, "actor_id": actor_id, "audience": list(audience)}
             if research_source_id:
                 state[beat_id]["research_source_id"] = research_source_id
@@ -377,7 +377,7 @@ class StoryRuntimeMixin:
             self.store.set_meta("story_state", state)
             for audience_id in audience:
                 try:
-                    target = self.store.get_agent(audience_id)
+                    target = self.store.repositories.entities.get_agent(audience_id)
                 except KeyError:
                     continue
                 goal_hint = str(beat.get("goal_hint") or proposal.get("goal_hint") or "").strip()
@@ -405,8 +405,8 @@ class StoryRuntimeMixin:
                     # even when the model supplies no separate fact text.
                     fact = str(beat.get("summary") or beat.get("agent_label") or "").strip()
                 if fact:
-                    self.store.merge_knowledge_fact(target["id"], f"story:{beat_id}", {"fact": fact, "source_type": "story", "source_id": beat_id, "confidence": 0.9, "observed_at": minute})
-                self.store.update_agent(target["id"], target)
+                    self.store.repositories.memory.merge_knowledge_fact(target["id"], f"story:{beat_id}", {"fact": fact, "source_type": "story", "source_id": beat_id, "confidence": 0.9, "observed_at": minute})
+                self.store.repositories.entities.update_agent(target["id"], target)
             event_id = self._context.services["events"].append("story.beat.activated", actor_id, minute, {"beat_id": beat_id, "summary": beat.get("summary", ""), "audience": audience, "research_source_id": research_source_id, "public_event": beat.get("public_event"), "reason": proposal.get("reason", "")})
             remember_role(self.store, "story", "story_thread", {
                 "summary": str(beat.get("summary") or beat.get("fact") or ""),
@@ -416,5 +416,5 @@ class StoryRuntimeMixin:
                 "source_event_type": str((source_event or {}).get("event_type") or ""),
                 "status": "active",
             }, memory_key=f"story:beat:{beat_id}:{source_event.get('event_id') if isinstance(source_event, dict) else event_id}", source_event_id=int((source_event or {}).get("event_id") or event_id))
-            self.store.finish_intent(intent_id, "accepted", {"status": "accepted", "intent_id": intent_id, "beat": beat.get("agent_label") or beat_id, "event_id": event_id, "activated": True})
+            self.store.repositories.evolution.finish_intent(intent_id, "accepted", {"status": "accepted", "intent_id": intent_id, "beat": beat.get("agent_label") or beat_id, "event_id": event_id, "activated": True})
         return {"status": "accepted", "intent_id": intent_id, "beat": beat.get("agent_label") or beat_id, "event_id": event_id, "activated": True}

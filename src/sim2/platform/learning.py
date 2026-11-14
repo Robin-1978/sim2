@@ -23,11 +23,11 @@ class LearningRuntimeMixin:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "claim_status must be observed, confirmed, reported, promised, inferred, disputed, false, or failed.", "failed_check": "claim_status", "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
-            agent = self.store.get_agent(actor_id)
+            agent = self.store.repositories.entities.get_agent(actor_id)
             state = agent.get("initial_state", {}) or {}
             location_name = ""
             try:
-                location_name = str(self.store.get_entity(str(state.get("location_id"))).get("name", "")) if state.get("location_id") else ""
+                location_name = str(self.store.repositories.entities.get_entity(str(state.get("location_id"))).get("name", "")) if state.get("location_id") else ""
             except KeyError:
                 location_name = ""
             data.update({
@@ -50,8 +50,8 @@ class LearningRuntimeMixin:
                     "failed_check": "claim_evidence",
                     "retryable": True,
                 }
-                self.store.create_intent(intent_id, actor_id, "record_experience", data, world_minute)
-                self.store.finish_intent(intent_id, "rejected", result)
+                self.store.repositories.evolution.create_intent(intent_id, actor_id, "record_experience", data, world_minute)
+                self.store.repositories.evolution.finish_intent(intent_id, "rejected", result)
                 return result
             similarity = self.memory.experience_match(actor_id, summary)
             if similarity["duplicate"]:
@@ -62,8 +62,8 @@ class LearningRuntimeMixin:
                     "similarity": similarity,
                     "retryable": True,
                 }
-                self.store.create_intent(intent_id, actor_id, "record_experience", data, world_minute)
-                self.store.finish_intent(intent_id, "rejected", result)
+                self.store.repositories.evolution.create_intent(intent_id, actor_id, "record_experience", data, world_minute)
+                self.store.repositories.evolution.finish_intent(intent_id, "rejected", result)
                 return result
             duplicate = self.store.connection.execute(
                 "SELECT 1 FROM memory_item WHERE agent_id=? AND memory_type='experience' AND json_extract(data_json,'$.summary')=? LIMIT 1",
@@ -71,14 +71,14 @@ class LearningRuntimeMixin:
             ).fetchone()
             if duplicate is not None:
                 result = {"status": "rejected", "message": "This experience is already retained; return wait or submit a genuinely new lesson.", "failed_check": "duplicate_experience", "retryable": True}
-                self.store.create_intent(intent_id, actor_id, "record_experience", data, world_minute)
-                self.store.finish_intent(intent_id, "rejected", result)
+                self.store.repositories.evolution.create_intent(intent_id, actor_id, "record_experience", data, world_minute)
+                self.store.repositories.evolution.finish_intent(intent_id, "rejected", result)
                 return result
-            self.store.create_intent(intent_id, actor_id, "record_experience", data, world_minute)
-            memory_id = self.store.put_memory(actor_id, "experience", {**data, "world_minute": world_minute})
+            self.store.repositories.evolution.create_intent(intent_id, actor_id, "record_experience", data, world_minute)
+            memory_id = self.store.repositories.memory.put_memory(actor_id, "experience", {**data, "world_minute": world_minute})
             self._context.services["events"].append("memory.experience_recorded", actor_id, world_minute, {"memory_id": memory_id, **data})
             result = {"status": "accepted", "intent_id": intent_id, "memory_id": memory_id}
-            self.store.finish_intent(intent_id, "accepted", result)
+            self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result
 
     def _resolve_experience_source(self, actor_id: str, event_ref: str) -> dict[str, Any] | None:
@@ -87,7 +87,7 @@ class LearningRuntimeMixin:
         reference = str(event_ref or "").strip().casefold()
         if not reference:
             return None
-        rows = self.store.recent_events(limit=500)
+        rows = self.store.repositories.events.recent_events(limit=500)
         for event in rows:
             if str(event.get("actor_id") or "") != str(actor_id) and str(event.get("target_id") or "") != str(actor_id):
                 # Public world events may have no actor; keep them eligible.
@@ -107,7 +107,7 @@ class LearningRuntimeMixin:
         capability = str(capability).strip()
         evidence = str(evidence).strip()
         data = {"capability": capability, "delta": delta, "evidence": evidence}
-        definitions = {str(item.get("id")): item for item in self.store.get_definitions("capability_def")}
+        definitions = {str(item.get("id")): item for item in self.store.repositories.entities.get_definitions("capability_def")}
         if capability not in definitions:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability is not configured.", "failed_check": "capability", "retryable": True})
         if not 0 < float(delta) <= 0.2 or len(evidence) < 12:
@@ -121,14 +121,14 @@ class LearningRuntimeMixin:
         if float(delta) > maximum_delta:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability delta exceeds the configured review bound.", "failed_check": "delta_limit", "retryable": True})
         try:
-            agent = self.store.get_agent(actor_id)
+            agent = self.store.repositories.entities.get_agent(actor_id)
         except KeyError:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability updates require an individual Agent.", "failed_check": "actor", "retryable": False})
         if capability not in (agent.get("capabilities") or {}) and not bool(definitions[capability].get("acquirable", False)):
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "The character has no configured path to this capability.", "failed_check": "capability_ownership", "retryable": False})
         last = self.store.connection.execute("SELECT MAX(world_minute) AS minute FROM capability_progress WHERE agent_id=? AND capability=?", (actor_id, capability)).fetchone()["minute"]
         start = int(last) if last is not None else -1
-        evidence_events = self.store.capability_evidence(actor_id, capability, after_minute=start)
+        evidence_events = self.store.repositories.activity.capability_evidence(actor_id, capability, after_minute=start)
         completed = len(evidence_events)
         if completed < minimum:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": f"More matching capability evidence is required before updating {capability}.", "failed_check": "insufficient_evidence", "completed_outcomes": completed, "required_outcomes": minimum, "retryable": True})
@@ -141,13 +141,13 @@ class LearningRuntimeMixin:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability is already at its configured maximum.", "failed_check": "capability_max", "retryable": False})
         with self.store.transaction():
             agent.setdefault("capabilities", {})[capability] = after
-            self.store.create_intent(intent_id, actor_id, "update_capability", data, world_minute)
-            self.store.update_agent(actor_id, agent)
+            self.store.repositories.evolution.create_intent(intent_id, actor_id, "update_capability", data, world_minute)
+            self.store.repositories.entities.update_agent(actor_id, agent)
             source_event_ids = [int(item["event_id"]) for item in evidence_events]
-            self.store.put_capability_progress(actor_id, capability, applied_delta, "agent_review", world_minute, {"evidence": evidence, "completed_outcomes": completed, "source_event_ids": source_event_ids})
+            self.store.repositories.activity.put_capability_progress(actor_id, capability, applied_delta, "agent_review", world_minute, {"evidence": evidence, "completed_outcomes": completed, "source_event_ids": source_event_ids})
             event_id = self._context.services["events"].append("capability.updated", actor_id, world_minute, {"capability": capability, "before": current, "after": after, "delta": applied_delta, "evidence": evidence, "completed_outcomes": completed, "source_event_ids": source_event_ids})
             result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "capability": capability, "before": current, "after": after, "delta": applied_delta}
-            self.store.finish_intent(intent_id, "accepted", result)
+            self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result
 
     def submit_world_progress(
@@ -176,9 +176,9 @@ class LearningRuntimeMixin:
         if delta is not None and abs(float(delta) - contribution) > 1e-9:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "record_world_progress", {**data, "requested_delta": delta}, {"status": "rejected", "message": "Platform derives progress from the configured evidence value; do not choose a delta.", "failed_check": "progress_delta", "retryable": True})
         source_events = (
-            self.store.events_by_ids(list(source_event_ids or []))
+            self.store.repositories.events.events_by_ids(list(source_event_ids or []))
             if source_event_ids
-            else self.store.recent_events(limit=200)
+            else self.store.repositories.events.recent_events(limit=200)
         )
         if not source_events:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "record_world_progress", data, {"status": "rejected", "message": "A public progress update needs a recent behavior outcome.", "failed_check": "insufficient_evidence", "retryable": True})
@@ -245,8 +245,8 @@ class LearningRuntimeMixin:
         world_id = str(self.store.get_meta("world_id", "world"))
         required = float(definition.get("required", 1) or 1)
         with self.store.transaction():
-            self.store.create_intent(intent_id, actor_id, "record_world_progress", data, world_minute)
-            progress = self.store.advance_progress(world_id, progress_key, contribution, required, world_minute, {
+            self.store.repositories.evolution.create_intent(intent_id, actor_id, "record_world_progress", data, world_minute)
+            progress = self.store.repositories.activity.advance_progress(world_id, progress_key, contribution, required, world_minute, {
                 "evidence": evidence,
                 "source_agent": actor_id,
                 "source_event_id": data["source_event_id"],
@@ -269,8 +269,8 @@ class LearningRuntimeMixin:
                 wake = list(definition.get("wake") or [])
                 self._context.services["events"].wake(event_id, event_type, actor_id, world_minute, wake={"wake": wake})
                 for role in wake:
-                    self.store.mark_evolution_task_ready(f"{role}:event:{event_id}")
-            self.store.finish_intent(intent_id, "accepted", result)
+                    self.store.repositories.evolution.mark_evolution_task_ready(f"{role}:event:{event_id}")
+            self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result
 
 
@@ -283,7 +283,7 @@ class LearningRuntimeMixin:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_belief", data, {"status": "rejected", "message": "Confidence must be between 0 and 1.", "failed_check": "confidence", "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
-            agent = self.store.get_agent(actor_id)
+            agent = self.store.repositories.entities.get_agent(actor_id)
             beliefs = list(agent.get("beliefs", []))
             match = next((belief for belief in beliefs if belief.get("id") == belief_id), None)
             if match is None:
@@ -294,11 +294,11 @@ class LearningRuntimeMixin:
             match["confidence"] = confidence
             match["updated_world_minute"] = world_minute
             agent["beliefs"] = beliefs
-            self.store.create_intent(intent_id, actor_id, "update_belief", data, world_minute)
-            self.store.update_agent(actor_id, agent)
+            self.store.repositories.evolution.create_intent(intent_id, actor_id, "update_belief", data, world_minute)
+            self.store.repositories.entities.update_agent(actor_id, agent)
             self._context.services["events"].append("belief.updated", actor_id, world_minute, data)
             result = {"status": "accepted", "intent_id": intent_id, "belief_id": match["id"], "confidence": confidence}
-            self.store.finish_intent(intent_id, "accepted", result)
+            self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result
 
     def submit_goal_update(self, actor_id: str, goal_id: str, statement: str, status: str, priority: float) -> dict[str, Any]:
@@ -310,7 +310,7 @@ class LearningRuntimeMixin:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_goal", data, {"status": "rejected", "message": "Goal priority must be between 0 and 1.", "failed_check": "priority", "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
-            agent = self.store.get_agent(actor_id)
+            agent = self.store.repositories.entities.get_agent(actor_id)
             if goal_id in {"", "ultimate_goal"}:
                 agent["ultimate_goal"] = statement
             else:
@@ -321,17 +321,17 @@ class LearningRuntimeMixin:
                     goals.append(match)
                 match.update({"statement": statement, "status": status, "priority": priority, "updated_world_minute": world_minute})
                 agent["goals"] = goals
-            self.store.create_intent(intent_id, actor_id, "update_goal", data, world_minute)
-            self.store.update_agent(actor_id, agent)
+            self.store.repositories.evolution.create_intent(intent_id, actor_id, "update_goal", data, world_minute)
+            self.store.repositories.entities.update_agent(actor_id, agent)
             self._context.services["events"].append("goal.updated", actor_id, world_minute, data)
             result = {"status": "accepted", "intent_id": intent_id, "goal_id": goal_id or "ultimate_goal"}
-            self.store.finish_intent(intent_id, "accepted", result)
+            self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result
 
     def submit_behavior_proposal(self, actor_id: str, proposal: dict[str, Any]) -> dict[str, Any]:
         intent_id = str(uuid4())
         action_ids = list(proposal.get("action_ids") or [])
-        action_defs = {x["id"]: x for x in self.store.get_definitions("action_def")}
+        action_defs = {x["id"]: x for x in self.store.repositories.entities.get_definitions("action_def")}
         errors: list[str] = []
         if not proposal.get("goal"):
             errors.append("goal is required")
@@ -341,11 +341,11 @@ class LearningRuntimeMixin:
             errors.append("a behavior may contain at most 16 actions")
         errors.extend(f"unknown action: {action_id}" for action_id in action_ids if action_id not in action_defs)
         behavior_id = str(proposal.get("behavior_id") or f"proposed_{uuid4().hex[:10]}")
-        if any(x["id"] == behavior_id for x in self.store.get_definitions("bt_def")):
+        if any(x["id"] == behavior_id for x in self.store.repositories.entities.get_definitions("bt_def")):
             errors.append(f"behavior already exists: {behavior_id}")
         proposed_label = str(proposal.get("agent_label") or proposal.get("summary") or proposal.get("goal") or "").casefold()
         proposed_actions = list(action_ids)
-        for existing in self.store.get_definitions("bt_def"):
+        for existing in self.store.repositories.entities.get_definitions("bt_def"):
             existing_label = str(existing.get("agent_label") or existing.get("summary") or existing.get("id", "").replace("_", " ")).casefold()
             existing_actions = [node.get("action_id") for node in existing.get("nodes", []) if node.get("type") == "action"]
             if proposed_label and existing_label == proposed_label and existing_actions == proposed_actions:
@@ -373,15 +373,15 @@ class LearningRuntimeMixin:
         }
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
-            agent = self.store.get_agent(actor_id)
-            self.store.create_intent(intent_id, actor_id, "propose_behavior", data, world_minute)
-            self.store.put_definition("bt_def", behavior_id, definition)
+            agent = self.store.repositories.entities.get_agent(actor_id)
+            self.store.repositories.evolution.create_intent(intent_id, actor_id, "propose_behavior", data, world_minute)
+            self.store.repositories.entities.put_definition("bt_def", behavior_id, definition)
             ids = list(agent.get("initial_bt_ids", []))
             if behavior_id not in ids:
                 ids.append(behavior_id)
             agent["initial_bt_ids"] = ids
-            self.store.update_agent(actor_id, agent)
+            self.store.repositories.entities.update_agent(actor_id, agent)
             self._context.services["events"].append("behavior.registered", actor_id, world_minute, {"behavior_id": behavior_id, "source": "agent_proposal"})
             result = {"status": "accepted", "intent_id": intent_id, "behavior_ref": f"behavior:{behavior_id}", "registered": True}
-            self.store.finish_intent(intent_id, "accepted", result)
+            self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result

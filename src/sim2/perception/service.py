@@ -71,7 +71,7 @@ class PerceptionService:
             location_id = state.get("location_id")
             if "location_id" in policy["state_fields"] and location_id:
                 try:
-                    visible_state["location"] = self.store.get_entity(str(location_id)).get("name", location_id)
+                    visible_state["location"] = self.store.repositories.entities.get_entity(str(location_id)).get("name", location_id)
                 except KeyError:
                     visible_state["location"] = "known location"
             if visible_state:
@@ -89,9 +89,9 @@ class PerceptionService:
 
     def observe_nearby(self, agent_id: str, question: str = "") -> dict[str, Any]:
         try:
-            agent = self.store.get_agent(agent_id)
+            agent = self.store.repositories.entities.get_agent(agent_id)
             location_id = agent.get("initial_state", {}).get("location_id")
-            raw_entities = [item for item in self.store.entities_at_location(location_id) if item["id"] != agent_id]
+            raw_entities = [item for item in self.store.repositories.entities.entities_at_location(location_id) if item["id"] != agent_id]
             entities = [self._project_entity(item, include_state=True) for item in raw_entities[:8]]
         except KeyError:
             location_id = "world"
@@ -99,10 +99,10 @@ class PerceptionService:
             for entity_type in ("location", "faction"):
                 entities.extend(
                     self._project_entity(item, include_state=False, global_scope=True)
-                    for item in self.store.entities_of_type(entity_type)[:8]
+                    for item in self.store.repositories.entities.entities_of_type(entity_type)[:8]
                 )
         try:
-            location = self.store.get_entity(str(location_id)).get("name", location_id)
+            location = self.store.repositories.entities.get_entity(str(location_id)).get("name", location_id)
         except KeyError:
             location = location_id
         return {
@@ -115,13 +115,13 @@ class PerceptionService:
         }
 
     def inspect_entity(self, agent_id: str, entity_id: str, question: str = "", *, global_scope: bool = False) -> dict[str, Any]:
-        entity = self.store.get_entity(entity_id)
+        entity = self.store.repositories.entities.get_entity(entity_id)
         visibility = "global" if global_scope else "known"
         include_state = bool(global_scope)
         if not global_scope:
-            agent = self.store.get_agent(agent_id)
+            agent = self.store.repositories.entities.get_agent(agent_id)
             state = agent.get("initial_state", {})
-            nearby_ids = {item["id"] for item in self.store.entities_at_location(state.get("location_id"))}
+            nearby_ids = {item["id"] for item in self.store.repositories.entities.entities_at_location(state.get("location_id"))}
             seeded = {
                 str(value.get("entity") or value.get("id") or value.get("fact_key") or "").split(":", 1)[-1]
                 if isinstance(value, dict) else str(value).split(":", 1)[-1]
@@ -137,7 +137,7 @@ class PerceptionService:
 
     def listen(self, agent_id: str, question: str = "", limit: int = 5) -> dict[str, Any]:
         try:
-            location_id = self.store.get_agent(agent_id).get("initial_state", {}).get("location_id")
+            location_id = self.store.repositories.entities.get_agent(agent_id).get("initial_state", {}).get("location_id")
         except KeyError:
             location_id = None
         rules = self.store.get_meta("rules", {}) or {}
@@ -145,7 +145,7 @@ class PerceptionService:
         audible_types = {str(item) for item in (policy.get("audible_event_types", []) or [])}
         audible_prefixes = tuple(str(item) for item in (policy.get("audible_event_prefixes", []) or []))
         events = []
-        for event in self.store.recent_events(limit=max(1, min(int(limit) * 4, 40))):
+        for event in self.store.repositories.events.recent_events(limit=max(1, min(int(limit) * 4, 40))):
             event_type = str(event.get("event_type", ""))
             if (audible_types or audible_prefixes) and event_type not in audible_types and not event_type.startswith(audible_prefixes):
                 continue
@@ -164,7 +164,7 @@ class PerceptionService:
         }
 
     def read_public_record(self, agent_id: str, entity_id: str, question: str = "", *, global_scope: bool = False) -> dict[str, Any]:
-        entity = self.store.get_entity(entity_id)
+        entity = self.store.repositories.entities.get_entity(entity_id)
         if not global_scope and not entity.get("public", False):
             return {"status": "rejected", "failed_check": "publicity", "retryable": True, "message": "This record is not public."}
         record = self._project_entity(entity, include_state=True, global_scope=global_scope)
@@ -176,7 +176,7 @@ class PerceptionService:
         }
 
     def query_known_fact(self, agent_id: str, query: str = "", limit: int = 8) -> dict[str, Any]:
-        facts = self.store.list_knowledge_facts(agent_id, limit=50)
+        facts = self.store.repositories.memory.list_knowledge_facts(agent_id, limit=50)
         if query.strip():
             query_lower = query.lower()
             facts = [fact for fact in facts if query_lower in str(fact).lower()]
@@ -246,7 +246,7 @@ class PerceptionService:
         ).fetchall()
         actor_names: dict[str, str] = {}
         for entity_type in ("agent", "location", "object", "faction", "resource", "material"):
-            for entity in self.store.entities_of_type(entity_type):
+            for entity in self.store.repositories.entities.entities_of_type(entity_type):
                 actor_names[str(entity.get("id"))] = str(entity.get("name") or entity.get("id"))
         actor_key = "".join(actor_filter.casefold().split())
 
@@ -330,10 +330,10 @@ class PerceptionService:
                 "retryable": True,
                 "message": "status must be active, resolved or all.",
             }
-        rows = self.store.list_knowledge_gaps(limit=200)
+        rows = self.store.repositories.memory.list_knowledge_gaps(limit=200)
         needle = str(contains or "").strip().casefold()
         source_names: dict[str, str] = {}
-        for source in self.store.research_source_catalog():
+        for source in self.store.repositories.memory.research_source_catalog():
             source_names[str(source["id"])] = str(source.get("name") or source["id"])
         gaps: list[dict[str, Any]] = []
         for row in rows:

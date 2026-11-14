@@ -25,7 +25,7 @@ class TargetResolver:
         if not text:
             return None
         try:
-            return str(self.store.get_entity(text)["id"])
+            return str(self.store.repositories.entities.get_entity(text)["id"])
         except KeyError:
             pass
         rows = self.store.connection.execute("SELECT id,name FROM entity WHERE name IS NOT NULL").fetchall()
@@ -39,7 +39,7 @@ class TargetResolver:
         if not location_id:
             return []
         return [
-            item for item in self.store.entities_at_location(location_id)
+            item for item in self.store.repositories.entities.entities_at_location(location_id)
             if item.get("entity_type") == "agent" and item.get("id") != agent.get("id")
         ]
 
@@ -57,7 +57,7 @@ class TargetResolver:
         if canonical_id is None:
             return None, f"target does not exist or is ambiguous: {target_id}"
         try:
-            entity = self.store.get_entity(canonical_id)
+            entity = self.store.repositories.entities.get_entity(canonical_id)
         except KeyError:
             return None, f"target does not exist: {target_id}"
         state = agent.get("initial_state", {})

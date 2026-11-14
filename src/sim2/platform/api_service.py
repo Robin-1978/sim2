@@ -33,7 +33,7 @@ class RuntimeApiService(PlatformService):
             aliases[str(key)] = str(key)
             aliases[str(key).replace("_", " ")] = str(key)
         for entity_type in ("resource", "material", "location", "object", "faction", "agent"):
-            for item in self.store.entities_of_type(entity_type):
+            for item in self.store.repositories.entities.entities_of_type(entity_type):
                 identifier, visible = str(item.get("id") or ""), str(item.get("name") or "")
                 if identifier and visible:
                     aliases[visible] = identifier
@@ -42,8 +42,8 @@ class RuntimeApiService(PlatformService):
             rules,
             self.conditions,
             aliases,
-            known_behaviors=list(self.store.get_definitions("bt_def")),
-            known_actions=list(self.store.get_definitions("action_def")),
+            known_behaviors=list(self.store.repositories.entities.get_definitions("bt_def")),
+            known_actions=list(self.store.repositories.entities.get_definitions("action_def")),
             world_keys=set((self.store.get_meta("world_properties", {}) or {}).keys()),
         )
 
@@ -66,7 +66,7 @@ class RuntimeApiService(PlatformService):
         canonical = self.targets.canonical_id(value)
         if canonical:
             try:
-                entity = self.store.get_entity(canonical)
+                entity = self.store.repositories.entities.get_entity(canonical)
             except KeyError:
                 entity = None
             if entity and str(entity.get("entity_type")) == "agent":
@@ -173,7 +173,7 @@ class RuntimeApiService(PlatformService):
         if not player_id.strip() or not origin_id.strip():
             raise ValueError("player_id and origin_id are required")
         try:
-            self.store.get_entity(player_id)
+            self.store.repositories.entities.get_entity(player_id)
             return {"status": "rejected", "message": "The player id already exists.", "failed_check": "player_id"}
         except KeyError:
             pass
@@ -183,7 +183,7 @@ class RuntimeApiService(PlatformService):
             return {"status": "rejected", "message": "The selected origin is not configured.", "failed_check": "origin_id", "retryable": True}
         location_id = template.get("entry_location_id")
         try:
-            self.store.get_entity(location_id)
+            self.store.repositories.entities.get_entity(location_id)
         except KeyError:
             return {"status": "rejected", "message": "The configured player entry location does not exist.", "failed_check": "entry_location_id", "retryable": False}
         state_defaults = self.attribute_schema.state_defaults()
@@ -208,9 +208,9 @@ class RuntimeApiService(PlatformService):
         }
         minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
-            self.store.put_agent(player_id, agent, agent["name"])
+            self.store.repositories.entities.put_agent(player_id, agent, agent["name"])
             for fact in agent["knowledge_seed"]:
-                self.store.put_knowledge_fact(player_id, str(fact), {"fact": str(fact), "source_type": "player_template", "confidence": 1.0})
+                self.store.repositories.memory.put_knowledge_fact(player_id, str(fact), {"fact": str(fact), "source_type": "player_template", "confidence": 1.0})
             self._context.services["events"].append("player.entered", player_id, minute, {"origin_id": origin_id, "location_id": location_id})
         return {"status": "accepted", "player_id": player_id, "origin_id": origin_id, "location_id": location_id}
 
@@ -221,14 +221,14 @@ class RuntimeApiService(PlatformService):
         """Return public whole-world telemetry without private memories."""
 
         behavior_defs = {
-            str(item.get("id")): item for item in self.store.get_definitions("bt_def")
+            str(item.get("id")): item for item in self.store.repositories.entities.get_definitions("bt_def")
         }
         agents = []
-        for agent in self.store.list_agents():
+        for agent in self.store.repositories.entities.list_agents():
             state = agent.get("initial_state", {}) or {}
             location_id = str(state.get("location_id") or "")
             try:
-                location_name = str(self.store.get_entity(location_id).get("name") or location_id)
+                location_name = str(self.store.repositories.entities.get_entity(location_id).get("name") or location_id)
             except KeyError:
                 location_name = location_id or "unknown"
             behavior_id = str(state.get("active_behavior_id") or "")
@@ -252,7 +252,7 @@ class RuntimeApiService(PlatformService):
                 "remaining_minutes": state.get("remaining_minutes", 0),
             })
         public_events = []
-        for event in self.store.recent_events(limit=max(1, min(int(event_limit), 100))):
+        for event in self.store.repositories.events.recent_events(limit=max(1, min(int(event_limit), 100))):
             public = {key: event.get(key) for key in ("event_id", "event_type", "actor_id", "world_minute")}
             for key in ("summary", "behavior_id", "action_id", "result", "change_type", "effect", "activation"):
                 if event.get(key) is not None:
@@ -265,7 +265,7 @@ class RuntimeApiService(PlatformService):
             "world_id": self.store.get_meta("world_id"),
             "world_properties": self.store.get_meta("world_properties", {}) or {},
             "agents": agents,
-            "entity_counts": {entity_type: len(self.store.entities_of_type(entity_type)) for entity_type in ("location", "agent", "faction", "resource", "object")},
+            "entity_counts": {entity_type: len(self.store.repositories.entities.entities_of_type(entity_type)) for entity_type in ("location", "agent", "faction", "resource", "object")},
             "recent_events": public_events,
             "private_data": "excluded",
         }

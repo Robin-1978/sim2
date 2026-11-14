@@ -111,13 +111,13 @@ class AgentToolExecutor:
         return value
 
     def _agent(self) -> dict[str, Any]:
-        return self.platform.store.get_agent(self.actor_id)
+        return self.platform.store.repositories.entities.get_agent(self.actor_id)
 
     def _contract_visible_name(self, value: Any) -> str:
         canonical = self.platform.targets.canonical_id(str(value))
         if canonical:
             try:
-                return str(self.platform.store.get_agent(str(canonical)).get("name") or canonical)
+                return str(self.platform.store.repositories.entities.get_agent(str(canonical)).get("name") or canonical)
             except KeyError:
                 pass
         return str(value)
@@ -280,11 +280,11 @@ class AgentToolExecutor:
                 "trade.countered", "exploration.completed", "research.completed",
                 "object.recovered", "relationship.changed", "world.change.world_property",
             }
-            has_outcome = bool(self.platform.store.recent_outcomes_for_actor(self.actor_id, limit=1))
-            has_memory = bool(self.platform.store.list_memories(self.actor_id, limit=1))
+            has_outcome = bool(self.platform.store.repositories.events.recent_outcomes_for_actor(self.actor_id, limit=1))
+            has_memory = bool(self.platform.store.repositories.memory.list_memories(self.actor_id, limit=1))
             has_event = any(
                 str(item.get("event_type", "")) in meaningful_events
-                for item in self.platform.store.recent_events_for_actor(self.actor_id, limit=20)
+                for item in self.platform.store.repositories.events.recent_events_for_actor(self.actor_id, limit=20)
             )
             if not (has_outcome or has_memory or has_event):
                 return {
@@ -359,7 +359,7 @@ class AgentToolExecutor:
         success_results: list[str] | None = None,
         failure_results: list[str] | None = None,
     ) -> dict[str, Any]:
-        action_defs = self.platform.store.get_definitions("action_def")
+        action_defs = self.platform.store.repositories.entities.get_definitions("action_def")
         resolved_actions: list[str] = []
         unknown_actions: list[str] = []
         for action in actions:

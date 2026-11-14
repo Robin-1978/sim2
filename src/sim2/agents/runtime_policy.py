@@ -10,14 +10,14 @@ ROLE_NAMES = {"agent_decision", "agent_reflection", "god", "story", "world_build
 
 
 def role_policy(platform: Platform, role: str) -> str:
-    prompt = platform.store.get_prompt("agent", {}) or {}
+    prompt = platform.store.repositories.memory.get_prompt("agent", {}) or {}
     prompt = prompt.get("agent_prompt", prompt) if isinstance(prompt, dict) else {}
     policies = prompt.get("role_policies", {}) if isinstance(prompt, dict) else {}
     return str(policies.get(role) or default_role_policy(role))
 
 
 def configured_role_tools(platform: Platform, role: str) -> list[str] | None:
-    prompt = platform.store.get_prompt("agent", {}) or {}
+    prompt = platform.store.repositories.memory.get_prompt("agent", {}) or {}
     prompt = prompt.get("agent_prompt", prompt) if isinstance(prompt, dict) else {}
     policy = prompt.get("tool_policy", {}) if isinstance(prompt, dict) else {}
     names = policy.get(role) if isinstance(policy, dict) else None

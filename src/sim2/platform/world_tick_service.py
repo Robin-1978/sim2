@@ -37,7 +37,7 @@ class WorldTickService(PlatformService):
             if minute % every != 0:
                 continue
             try:
-                entity = self.store.get_entity(str(regeneration["resource_id"]))
+                entity = self.store.repositories.entities.get_entity(str(regeneration["resource_id"]))
             except KeyError:
                 continue
             state = dict(entity.get("initial_state") or {})
@@ -53,8 +53,8 @@ class WorldTickService(PlatformService):
                 state[key] = after
                 entity["initial_state"] = state
             payload = {name: value for name, value in entity.items() if name not in {"id", "entity_type", "name"}}
-            self.store.put_entity(entity["id"], entity["entity_type"], entity["name"], payload)
-            self.store.sync_world_property_from_resource(entity["id"], after)
+            self.store.repositories.entities.put_entity(entity["id"], entity["entity_type"], entity["name"], payload)
+            self.store.repositories.entities.sync_world_property_from_resource(entity["id"], after)
             self._context.services["events"].append("resource.regenerated", None, minute, {"resource_id": entity["id"], "amount": after - before, "total": after})
         due_effects = [
             effect
@@ -66,7 +66,7 @@ class WorldTickService(PlatformService):
             changed_agents: list[dict[str, Any]] = []
             vital = self.attribute_schema.vital_attribute()
             vital_minimum = self.attribute_schema.minimum(vital) if vital else 0
-            for agent in agents if agents is not None else self.store.list_agents():
+            for agent in agents if agents is not None else self.store.repositories.entities.list_agents():
                 agent_changed = False
                 for effect in agent_effects:
                     state = dict(agent.get("initial_state") or {})
@@ -112,7 +112,7 @@ class WorldTickService(PlatformService):
                         self._context.services["events"].append("agent.incapacitated", agent["id"], minute, {"reason": effect.get("id", "minute_effect")})
                 if agent_changed:
                     changed_agents.append(agent)
-            self.store.update_agents_bulk(changed_agents)
+            self.store.repositories.entities.update_agents_bulk(changed_agents)
 
         for effect in due_effects:
             scope = effect.get("scope")
@@ -131,10 +131,10 @@ class WorldTickService(PlatformService):
                         self._set_world_property(str(key), after)
             elif scope == "relationship":
                 relation_delta = float(definition.get("relation_strength", definition.get("delta", 0)))
-                for relation in self.store.list_relationships():
+                for relation in self.store.repositories.entities.list_relationships():
                     data = {key: value for key, value in relation.items() if key not in {"from", "to", "type"}}
                     data["relation_strength"] = float(data.get("relation_strength", data.get("value", 0))) + relation_delta
-                    self.store.put_relationship(relation["from"], relation["to"], relation["type"], data)
+                    self.store.repositories.entities.put_relationship(relation["from"], relation["to"], relation["type"], data)
         if minute_event_state_changed:
             # Threshold state belongs to the whole minute. Persisting the
             # growing map after every agent/effect made a 1,000-agent tick
@@ -161,7 +161,7 @@ class WorldTickService(PlatformService):
                 continue
             resource_id = str(raw["resource_id"])
             try:
-                entity = self.store.get_entity(resource_id)
+                entity = self.store.repositories.entities.get_entity(resource_id)
             except KeyError:
                 continue
             quantity = self._context.services["execution"]._entity_quantity(entity)
@@ -303,7 +303,7 @@ class WorldTickService(PlatformService):
         if not isinstance(value, (int, float)) or isinstance(value, bool):
             return None
         try:
-            entity = self.store.get_entity(str(key))
+            entity = self.store.repositories.entities.get_entity(str(key))
         except KeyError:
             return None
         if entity.get("entity_type") != "resource":
@@ -318,7 +318,7 @@ class WorldTickService(PlatformService):
             state_key = "quantity" if "quantity" in state else "amount"
             state[state_key] = value
             entity["initial_state"] = state
-        self.store.put_entity(
+        self.store.repositories.entities.put_entity(
             entity["id"],
             entity["entity_type"],
             entity["name"],
@@ -335,7 +335,7 @@ class WorldTickService(PlatformService):
         completed: list[str] = []
         failed: list[str] = []
         with self.store.transaction():
-            agents = self.store.list_agents()
+            agents = self.store.repositories.entities.list_agents()
             agent_ids = {str(agent["id"]) for agent in agents}
             self._apply_minute_effects(minute, agents=agents)
             for agent in agents:
@@ -343,7 +343,7 @@ class WorldTickService(PlatformService):
                 if not before:
                     continue
                 self._context.services["activity"]._progress_agent(agent, minute)
-                after = self.store.get_agent(agent["id"]).get("initial_state", {})
+                after = self.store.repositories.entities.get_agent(agent["id"]).get("initial_state", {})
                 result = after.get("last_platform_result") or {}
                 if result.get("status") == "completed" and result.get("behavior_ref"):
                     completed.append(agent["id"])

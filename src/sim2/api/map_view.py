@@ -13,8 +13,8 @@ def build_map_view(store: Any, *, viewer_id: str | None = None, observer: bool =
     """
 
     locations: list[dict[str, Any]] = []
-    for row in store.entities_of_type("location"):
-        location = store.get_entity(str(row["id"]))
+    for row in store.repositories.entities.entities_of_type("location"):
+        location = store.repositories.entities.get_entity(str(row["id"]))
         visibility = location.get("public", True)
         if visibility == "hidden":
             continue
@@ -34,7 +34,7 @@ def build_map_view(store: Any, *, viewer_id: str | None = None, observer: bool =
 
     visible_ids = {item["id"] for item in locations}
     nodes = {item["id"]: item for item in locations}
-    for agent in store.list_agents():
+    for agent in store.repositories.entities.list_agents():
         state = agent.get("initial_state") if isinstance(agent.get("initial_state"), dict) else {}
         location_id = str(state.get("location_id") or "")
         if location_id in nodes:
@@ -72,7 +72,7 @@ def _player_can_see_location(store: Any, viewer_id: str, location: dict[str, Any
 
     location_id = str(location.get("id") or "")
     try:
-        agent = store.get_agent(str(viewer_id))
+        agent = store.repositories.entities.get_agent(str(viewer_id))
     except KeyError:
         return False
     state = agent.get("initial_state") if isinstance(agent.get("initial_state"), dict) else {}
@@ -80,7 +80,7 @@ def _player_can_see_location(store: Any, viewer_id: str, location: dict[str, Any
         return True
     if location.get("public") is True:
         return True
-    for fact in store.list_knowledge_facts(str(viewer_id), limit=1000):
+    for fact in store.repositories.memory.list_knowledge_facts(str(viewer_id), limit=1000):
         key = str(fact.get("fact_key") or "")
         if location_id and location_id in key.split(":"):
             return True

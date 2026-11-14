@@ -212,7 +212,7 @@ class SocialRuntimeMixin:
                 "required_evidence": minimum_evidence,
                 "observed_evidence": evidence_count,
             })
-        existing = self.store.list_institutions(limit=200)
+        existing = self.store.repositories.social.list_institutions(limit=200)
         if any(str(item.get("name", "")).casefold() == name.casefold() and item.get("status") in {"proposed", "active"} for item in existing):
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "An institution with this name is already proposed or active.", "failed_check": "duplicate_institution", "retryable": False})
         institution_id = f"institution:{uuid4().hex[:16]}"
@@ -230,7 +230,7 @@ class SocialRuntimeMixin:
             "proposed_by": actor_id,
         }
         with self.store.transaction():
-            self.store.put_institution(institution_id, "proposed", data, minute)
+            self.store.repositories.social.put_institution(institution_id, "proposed", data, minute)
             event_id = self._context.services["events"].publish("institution.proposed", actor_id, minute, {"institution": {"name": name, "purpose": purpose, "scope": data["scope"]}, "status": "proposed"}, wake="configured")
             if actor_id == "god":
                 remember_role(self.store, "god", "institution_decision", {
@@ -238,9 +238,9 @@ class SocialRuntimeMixin:
                     "institution": name,
                     "status": "proposed",
                 }, memory_key=f"god:institution-proposed:{institution_id}", source_event_id=event_id)
-            self.store.create_intent(intent_id, actor_id, "propose_institution", {**data, "institution_name": name}, minute)
+            self.store.repositories.evolution.create_intent(intent_id, actor_id, "propose_institution", {**data, "institution_name": name}, minute)
             result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "institution": {"name": name, "status": "proposed"}}
-            self.store.finish_intent(intent_id, "accepted", result)
+            self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result
 
     def activate_institution(self, actor_id: str, institution: str, reason: str = "") -> dict[str, Any]:
@@ -261,14 +261,14 @@ class SocialRuntimeMixin:
                 },
             )
         choice = str(institution or "").strip()
-        candidates = [item for item in self.store.list_institutions(status="proposed", limit=200) if str(item.get("name", "")).casefold() == choice.casefold() or str(item.get("institution_id", "")) == choice]
+        candidates = [item for item in self.store.repositories.social.list_institutions(status="proposed", limit=200) if str(item.get("name", "")).casefold() == choice.casefold() or str(item.get("institution_id", "")) == choice]
         if len(candidates) != 1:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "activate_institution", {"institution": choice, "reason": reason}, {"status": "rejected", "message": "Choose one exact pending institution name.", "failed_check": "institution_choice", "retryable": True, "available_choices": [str(item.get("name", "")) for item in self.store.list_institutions(status="proposed", limit=20)]})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "activate_institution", {"institution": choice, "reason": reason}, {"status": "rejected", "message": "Choose one exact pending institution name.", "failed_check": "institution_choice", "retryable": True, "available_choices": [str(item.get("name", "")) for item in self.store.repositories.social.list_institutions(status="proposed", limit=20)]})
         selected = candidates[0]
         minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             institution_data = {key: value for key, value in selected.items() if key not in {"institution_id", "status", "created_minute", "activated_minute"}}
-            self.store.put_institution(str(selected["institution_id"]), "active", institution_data, int(selected.get("created_minute", minute)), minute)
+            self.store.repositories.social.put_institution(str(selected["institution_id"]), "active", institution_data, int(selected.get("created_minute", minute)), minute)
             event_id = self._context.services["events"].publish("institution.activated", actor_id, minute, {"institution": {"name": selected.get("name"), "purpose": selected.get("purpose")}, "reason": reason, "status": "active"}, wake="configured")
             if actor_id == "god":
                 remember_role(self.store, "god", "institution_decision", {
@@ -277,9 +277,9 @@ class SocialRuntimeMixin:
                     "status": "active",
                     "reason": reason,
                 }, memory_key=f"god:institution-activated:{selected.get('institution_id')}", source_event_id=event_id)
-            self.store.create_intent(intent_id, actor_id, "activate_institution", {"institution": choice, "reason": reason}, minute)
+            self.store.repositories.evolution.create_intent(intent_id, actor_id, "activate_institution", {"institution": choice, "reason": reason}, minute)
             result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "institution": {"name": selected.get("name"), "status": "active"}}
-            self.store.finish_intent(intent_id, "accepted", result)
+            self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result
 
     def _institution_operations_since_revision(self, selected: dict[str, Any]) -> int:
@@ -339,7 +339,7 @@ class SocialRuntimeMixin:
                 "failed_check": "institution_authority",
                 "retryable": False,
             })
-        active = self.store.list_institutions(status="active", limit=200)
+        active = self.store.repositories.social.list_institutions(status="active", limit=200)
         candidates = [
             item for item in active
             if str(item.get("name", "")).casefold() == choice.casefold() or str(item.get("institution_id", "")) == choice
@@ -431,7 +431,7 @@ class SocialRuntimeMixin:
                 "summary": f"{selected.get('name')} was revised: {describe_institution_terms({**terms})}.",
             })
             terms["last_revision_event_id"] = event_id
-            self.store.put_institution(
+            self.store.repositories.social.put_institution(
                 str(selected["institution_id"]), "active", terms,
                 int(selected.get("created_minute", minute)), int(selected["activated_minute"]) if selected.get("activated_minute") is not None else minute,
             )
@@ -442,7 +442,7 @@ class SocialRuntimeMixin:
                 "status": "active",
                 "reason": reason_text,
             }, memory_key=f"god:institution-revised:{selected.get('institution_id')}:{revision}", source_event_id=event_id)
-            self.store.create_intent(intent_id, actor_id, "revise_institution", data, minute)
+            self.store.repositories.evolution.create_intent(intent_id, actor_id, "revise_institution", data, minute)
             result = {
                 "status": "accepted",
                 "intent_id": intent_id,
@@ -450,17 +450,17 @@ class SocialRuntimeMixin:
                 "institution": {"name": selected.get("name"), "status": "active", "revision": revision},
                 "terms": describe_institution_terms(terms),
             }
-            self.store.finish_intent(intent_id, "accepted", result)
+            self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result
 
     def institution_ledger(self, institution: str, period: str | None = None) -> dict[str, Any]:
         """Return a public aggregate for an active institution."""
 
-        candidates = [item for item in self.store.list_institutions(status="active", limit=200) if str(item.get("name", "")).casefold() == str(institution).casefold() or str(item.get("institution_id", "")) == str(institution)]
+        candidates = [item for item in self.store.repositories.social.list_institutions(status="active", limit=200) if str(item.get("name", "")).casefold() == str(institution).casefold() or str(item.get("institution_id", "")) == str(institution)]
         if len(candidates) != 1:
             return {"status": "rejected", "message": "Choose one exact active institution name.", "failed_check": "institution_choice", "retryable": True}
         selected = candidates[0]
-        return {"status": "ok", "institution": {"name": selected.get("name"), "status": selected.get("status")}, "entries": self.store.institution_ledger_totals(str(selected["institution_id"]), period)}
+        return {"status": "ok", "institution": {"name": selected.get("name"), "status": selected.get("status")}, "entries": self.store.repositories.social.institution_ledger_totals(str(selected["institution_id"]), period)}
 
     def calculate_institution_allocation(
         self,
@@ -477,7 +477,7 @@ class SocialRuntimeMixin:
         settlement Action is configured.
         """
 
-        candidates = [item for item in self.store.list_institutions(status="active", limit=200) if str(item.get("name", "")).casefold() == str(institution).casefold() or str(item.get("institution_id", "")) == str(institution)]
+        candidates = [item for item in self.store.repositories.social.list_institutions(status="active", limit=200) if str(item.get("name", "")).casefold() == str(institution).casefold() or str(item.get("institution_id", "")) == str(institution)]
         if len(candidates) != 1:
             return {"status": "rejected", "message": "Choose one exact active institution name.", "failed_check": "institution_choice", "retryable": True}
         selected = candidates[0]
@@ -496,7 +496,7 @@ class SocialRuntimeMixin:
             return {"status": "rejected", "message": "The available pool cannot satisfy the configured minimum allocation.", "failed_check": "minimum_allocation", "retryable": True, "required": base_total, "available": pool}
         remaining = pool - base_total
         bonus_pool = remaining * contribution_share
-        totals = self.store.institution_ledger_totals(str(selected["institution_id"]), period)
+        totals = self.store.repositories.social.institution_ledger_totals(str(selected["institution_id"]), period)
         category = allocation.get("category")
         weights = {
             subject: sum(
@@ -531,14 +531,14 @@ class SocialRuntimeMixin:
         """
 
         try:
-            pool = self.store.get_entity(str(pool_entity))
+            pool = self.store.repositories.entities.get_entity(str(pool_entity))
         except KeyError:
             return {"status": "rejected", "failed_check": "pool_entity", "message": "The configured allocation pool does not exist."}
         state = dict(pool.get("initial_state") or {})
         available = entity_quantity(pool)
         subject_ids = [str(value) for value in (subjects or []) if str(value)]
         if not subject_ids or subject_ids == ["all_agents"]:
-            subject_ids = [str(agent["id"]) for agent in self.store.list_agents()]
+            subject_ids = [str(agent["id"]) for agent in self.store.repositories.entities.list_agents()]
         result = self.calculate_institution_allocation(institution, subject_ids, available, period)
         if result.get("status") != "accepted":
             return result
@@ -553,7 +553,7 @@ class SocialRuntimeMixin:
             else:
                 state["quantity"] = new_amount
                 pool["initial_state"] = state
-            self.store.put_entity(
+            self.store.repositories.entities.put_entity(
                 pool["id"], pool["entity_type"], pool["name"],
                 {key: value for key, value in pool.items() if key not in {"id", "entity_type", "name"}},
             )
@@ -564,14 +564,14 @@ class SocialRuntimeMixin:
             for row in allocations:
                 subject_id = str(row.get("subject"))
                 try:
-                    recipient = self.store.get_agent(subject_id)
+                    recipient = self.store.repositories.entities.get_agent(subject_id)
                 except KeyError:
                     continue
                 inventory = dict(recipient.get("inventory") or {})
                 quantity = float(row.get("total", 0) or 0)
                 inventory[str(item)] = float(inventory.get(str(item), 0) or 0) + quantity
                 recipient["inventory"] = inventory
-                self.store.update_agent(subject_id, recipient)
+                self.store.repositories.entities.update_agent(subject_id, recipient)
                 self._context.services["events"].append(
                     "institution.allocation_applied", actor_id, minute,
                     {"institution": institution, "subject_id": subject_id, "item": str(item), "amount": quantity, "period": period or "world", "verified_weight": row.get("verified_weight", 0)},
@@ -604,11 +604,11 @@ class SocialRuntimeMixin:
         action_id = state.get("active_action")
         if action_id == "parallel":
             action_ids = [item.get("action_id") for item in (state.get("active_parallel_actions") or {}).values()]
-            definitions = {item["id"]: item for item in self.store.get_definitions("action_def")}
+            definitions = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
             return bool(action_ids) and all(definitions.get(item, {}).get("interaction_policy") == "allow" for item in action_ids)
         if not action_id:
             return False
-        action = next((item for item in self.store.get_definitions("action_def") if item.get("id") == action_id), None)
+        action = next((item for item in self.store.repositories.entities.get_definitions("action_def") if item.get("id") == action_id), None)
         return bool(action and action.get("interaction_policy") == "allow")
 
     def _testimony_metadata(self, speaker: dict[str, Any], listener: dict[str, Any]) -> dict[str, Any]:
@@ -622,7 +622,7 @@ class SocialRuntimeMixin:
         trust_relations = {str(item) for item in (policy.get("trust_relations", ["trust"]) or [])}
         trust_values = [
             float(item.get("relation_strength", item.get("value", 0)) or 0)
-            for item in self.store.get_relationships(str(listener.get("id")))
+            for item in self.store.repositories.entities.get_relationships(str(listener.get("id")))
             if str(item.get("relation")) in trust_relations
         ]
         trust = max(-1.0, min(1.0, trust_values[0] if trust_values else 0.0))
@@ -670,8 +670,8 @@ class SocialRuntimeMixin:
         if len(message) > 1000:
             return {"status": "rejected", "message": "message must be at most 1000 characters.", "failed_check": "message_length", "retryable": True}
         try:
-            speaker = self.store.get_agent(speaker_id)
-            listener = self.store.get_agent(listener_id)
+            speaker = self.store.repositories.entities.get_agent(speaker_id)
+            listener = self.store.repositories.entities.get_agent(listener_id)
         except KeyError:
             return {"status": "rejected", "message": "Both participants must exist.", "failed_check": "participant", "retryable": False}
         if not self._same_public_location(speaker, listener):
@@ -681,18 +681,18 @@ class SocialRuntimeMixin:
         minute = int(self.store.get_meta("world_minute", 0))
         testimony = self._testimony_metadata(speaker, listener)
         with self.store.transaction():
-            self.store.create_intent(intent_id, speaker_id, "send_message", {"target_id": listener_id, "topic": topic, "message": message}, minute)
-            exchange_id = self.store.put_dialogue_exchange(speaker_id, listener_id, topic, minute, {"message": message, "source": "direct_text"})
-            self.store.put_memory(speaker_id, "dialogue", {"topic": topic, "message": message, "target_id": listener_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.35, "claim_status": "observed", "source_type": "own_statement"})
-            self.store.put_memory(listener_id, "testimony", {"topic": topic, "message": message, "speaker_id": speaker_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.45, "pending_decision": True, "claim_status": "reported", "source_type": "testimony", **testimony})
+            self.store.repositories.evolution.create_intent(intent_id, speaker_id, "send_message", {"target_id": listener_id, "topic": topic, "message": message}, minute)
+            exchange_id = self.store.repositories.social.put_dialogue_exchange(speaker_id, listener_id, topic, minute, {"message": message, "source": "direct_text"})
+            self.store.repositories.memory.put_memory(speaker_id, "dialogue", {"topic": topic, "message": message, "target_id": listener_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.35, "claim_status": "observed", "source_type": "own_statement"})
+            self.store.repositories.memory.put_memory(listener_id, "testimony", {"topic": topic, "message": message, "speaker_id": speaker_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.45, "pending_decision": True, "claim_status": "reported", "source_type": "testimony", **testimony})
             self._apply_configured_need_effect(speaker, "dialogue.completed")
             self._apply_configured_need_effect(listener, "dialogue.completed")
             self._apply_configured_relationship_effect(speaker, listener, "dialogue.completed", minute)
-            self.store.update_agent(speaker_id, speaker)
-            self.store.update_agent(listener_id, listener)
+            self.store.repositories.entities.update_agent(speaker_id, speaker)
+            self.store.repositories.entities.update_agent(listener_id, listener)
             event_id = self._context.services["events"].append("dialogue.completed", speaker_id, minute, {"dialogue_id": exchange_id, "target_id": listener_id, "topic": topic, "summary": "A direct exchange was recorded as unverified testimony.", "activation": "recipient_next_decision_or_reflection", "duration_minutes": 0, "priority": "normal", **testimony})
             result = {"status": "accepted", "intent_id": intent_id, "dialogue_id": exchange_id, "event_id": event_id, "topic": topic}
-            self.store.finish_intent(intent_id, "accepted", result)
+            self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result
 
     def _apply_configured_need_effect(self, agent: dict[str, Any], event_type: str) -> None:
@@ -724,8 +724,8 @@ class SocialRuntimeMixin:
         if not recipient_id or recipient_id == offerer_id or not self._valid_transfer(give) or not self._valid_transfer(want):
             return {"status": "rejected", "message": "A trade needs two participants and positive give/want quantities.", "failed_check": "trade_schema", "retryable": True}
         try:
-            offerer = self.store.get_agent(offerer_id)
-            recipient = self.store.get_agent(recipient_id)
+            offerer = self.store.repositories.entities.get_agent(offerer_id)
+            recipient = self.store.repositories.entities.get_agent(recipient_id)
         except KeyError:
             return {"status": "rejected", "message": "Both traders must exist.", "failed_check": "participant", "retryable": False}
         if not self._same_public_location(offerer, recipient):
@@ -738,18 +738,18 @@ class SocialRuntimeMixin:
         offer_id = str(uuid4())
         intent_id = str(uuid4())
         with self.store.transaction():
-            self.store.create_intent(intent_id, offerer_id, "create_trade_offer", {"recipient_id": recipient_id, "give": give, "want": want}, minute)
-            self.store.put_trade_offer(offer_id, offerer_id, recipient_id, give, want, minute)
-            self.store.put_memory(recipient_id, "trade_offer", {"offer_id": offer_id, "offerer_id": offerer_id, "give": give, "want": want, "world_minute": minute, "pending_decision": True, "importance": 0.6})
-            self.store.put_memory(offerer_id, "trade_offer", {"offer_id": offer_id, "recipient_id": recipient_id, "give": give, "want": want, "world_minute": minute, "pending_decision": True, "importance": 0.45})
+            self.store.repositories.evolution.create_intent(intent_id, offerer_id, "create_trade_offer", {"recipient_id": recipient_id, "give": give, "want": want}, minute)
+            self.store.repositories.social.put_trade_offer(offer_id, offerer_id, recipient_id, give, want, minute)
+            self.store.repositories.memory.put_memory(recipient_id, "trade_offer", {"offer_id": offer_id, "offerer_id": offerer_id, "give": give, "want": want, "world_minute": minute, "pending_decision": True, "importance": 0.6})
+            self.store.repositories.memory.put_memory(offerer_id, "trade_offer", {"offer_id": offer_id, "recipient_id": recipient_id, "give": give, "want": want, "world_minute": minute, "pending_decision": True, "importance": 0.45})
             event_id = self._context.services["events"].append("trade.offer_created", offerer_id, minute, {"offer_id": offer_id, "recipient_id": recipient_id, "give": give, "want": want, "activation": "recipient_next_decision", "duration_minutes": 0, "priority": "normal"})
             result = {"status": "accepted", "intent_id": intent_id, "offer_id": offer_id, "event_id": event_id, "trade_status": "open"}
-            self.store.finish_intent(intent_id, "accepted", result)
+            self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result
 
     def accept_trade_offer(self, recipient_id: str, offer_id: str) -> dict[str, Any]:
         recipient_id = self.targets.canonical_id(recipient_id) or str(recipient_id)
-        offer = self.store.get_trade_offer(offer_id)
+        offer = self.store.repositories.social.get_trade_offer(offer_id)
         if offer is None:
             return {"status": "rejected", "message": "Trade offer does not exist.", "failed_check": "offer_id", "retryable": False}
         if offer["status"] != "open":
@@ -757,8 +757,8 @@ class SocialRuntimeMixin:
         if offer["recipient_id"] != recipient_id:
             return {"status": "rejected", "message": "Only the named recipient can accept this offer.", "failed_check": "recipient", "retryable": False}
         try:
-            offerer = self.store.get_agent(offer["offerer_id"])
-            recipient = self.store.get_agent(recipient_id)
+            offerer = self.store.repositories.entities.get_agent(offer["offerer_id"])
+            recipient = self.store.repositories.entities.get_agent(recipient_id)
         except KeyError:
             return {"status": "rejected", "message": "Both traders must still exist.", "failed_check": "participant", "retryable": False}
         if not self._same_public_location(offerer, recipient):
@@ -772,7 +772,7 @@ class SocialRuntimeMixin:
         minute = int(self.store.get_meta("world_minute", 0))
         intent_id = str(uuid4())
         with self.store.transaction():
-            self.store.create_intent(intent_id, recipient_id, "accept_trade_offer", {"offer_id": offer_id}, minute)
+            self.store.repositories.evolution.create_intent(intent_id, recipient_id, "accept_trade_offer", {"offer_id": offer_id}, minute)
             for item, quantity in offer["give"].items():
                 offerer.setdefault("inventory", {})[item] = offerer["inventory"].get(item, 0) - quantity
                 recipient.setdefault("inventory", {})[item] = recipient["inventory"].get(item, 0) + quantity
@@ -782,23 +782,23 @@ class SocialRuntimeMixin:
             self._apply_configured_need_effect(offerer, "trade.completed")
             self._apply_configured_need_effect(recipient, "trade.completed")
             self._apply_configured_relationship_effect(offerer, recipient, "trade.completed", minute)
-            self.store.update_agent(offerer_id := offer["offerer_id"], offerer)
-            self.store.update_agent(recipient_id, recipient)
+            self.store.repositories.entities.update_agent(offerer_id := offer["offerer_id"], offerer)
+            self.store.repositories.entities.update_agent(recipient_id, recipient)
             result = {"status": "accepted", "offer_id": offer_id, "trade_status": "completed", "give": offer["give"], "want": offer["want"]}
-            self.store.finish_trade_offer(offer_id, "completed", minute, result)
-            self.store.put_memory(offerer_id, "trade_result", {"offer_id": offer_id, "trade_status": "completed", "world_minute": minute, "importance": 0.55})
-            self.store.put_memory(recipient_id, "trade_result", {"offer_id": offer_id, "trade_status": "completed", "world_minute": minute, "importance": 0.55})
+            self.store.repositories.social.finish_trade_offer(offer_id, "completed", minute, result)
+            self.store.repositories.memory.put_memory(offerer_id, "trade_result", {"offer_id": offer_id, "trade_status": "completed", "world_minute": minute, "importance": 0.55})
+            self.store.repositories.memory.put_memory(recipient_id, "trade_result", {"offer_id": offer_id, "trade_status": "completed", "world_minute": minute, "importance": 0.55})
             event_id = self._context.services["events"].append("trade.completed", recipient_id, minute, {"offer_id": offer_id, "offerer_id": offerer_id, "recipient_id": recipient_id, "give": offer["give"], "want": offer["want"], "activation": "both_next_reflection", "duration_minutes": 0, "priority": "normal"})
             result["intent_id"] = intent_id
             result["event_id"] = event_id
-            self.store.finish_intent(intent_id, "accepted", result)
+            self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result
 
     def counter_trade_offer(self, counterparty_id: str, offer_id: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
         """Close an offer and create the counterparty's next-round offer."""
 
         counterparty_id = self.targets.canonical_id(counterparty_id) or str(counterparty_id)
-        offer = self.store.get_trade_offer(offer_id)
+        offer = self.store.repositories.social.get_trade_offer(offer_id)
         if offer is None or offer["status"] != "open" or offer["recipient_id"] != counterparty_id:
             return {"status": "rejected", "message": "Only the open offer recipient can counter it.", "failed_check": "offer", "retryable": False}
         if int(offer.get("round", 1)) >= 8:
@@ -808,8 +808,8 @@ class SocialRuntimeMixin:
         if not self._valid_transfer(give) or not self._valid_transfer(want):
             return {"status": "rejected", "message": "A counteroffer needs positive give/want quantities.", "failed_check": "trade_schema", "retryable": True}
         try:
-            counterparty = self.store.get_agent(counterparty_id)
-            original_offerer = self.store.get_agent(offer["offerer_id"])
+            counterparty = self.store.repositories.entities.get_agent(counterparty_id)
+            original_offerer = self.store.repositories.entities.get_agent(offer["offerer_id"])
         except KeyError:
             return {"status": "rejected", "message": "Both traders must still exist.", "failed_check": "participant", "retryable": False}
         if not self._same_public_location(counterparty, original_offerer):
@@ -821,20 +821,20 @@ class SocialRuntimeMixin:
         minute = int(self.store.get_meta("world_minute", 0))
         counter_id = str(uuid4())
         with self.store.transaction():
-            self.store.finish_trade_offer(offer_id, "countered", minute, {"status": "accepted", "trade_status": "countered", "counter_offer_id": counter_id})
-            self.store.put_trade_offer(counter_id, counterparty_id, offer["offerer_id"], give, want, minute, parent_offer_id=offer_id, round_number=int(offer.get("round", 1)) + 1)
-            self.store.put_memory(offer["offerer_id"], "trade_offer", {"offer_id": counter_id, "parent_offer_id": offer_id, "offerer_id": counterparty_id, "give": give, "want": want, "world_minute": minute, "pending_decision": True, "importance": 0.6})
+            self.store.repositories.social.finish_trade_offer(offer_id, "countered", minute, {"status": "accepted", "trade_status": "countered", "counter_offer_id": counter_id})
+            self.store.repositories.social.put_trade_offer(counter_id, counterparty_id, offer["offerer_id"], give, want, minute, parent_offer_id=offer_id, round_number=int(offer.get("round", 1)) + 1)
+            self.store.repositories.memory.put_memory(offer["offerer_id"], "trade_offer", {"offer_id": counter_id, "parent_offer_id": offer_id, "offerer_id": counterparty_id, "give": give, "want": want, "world_minute": minute, "pending_decision": True, "importance": 0.6})
             event_id = self._context.services["events"].append("trade.countered", counterparty_id, minute, {"offer_id": counter_id, "parent_offer_id": offer_id, "recipient_id": offer["offerer_id"], "give": give, "want": want, "activation": "recipient_next_decision", "duration_minutes": 0, "priority": "normal"})
         return {"status": "accepted", "offer_id": counter_id, "parent_offer_id": offer_id, "trade_status": "open", "event_id": event_id}
 
     def reject_trade_offer(self, recipient_id: str, offer_id: str) -> dict[str, Any]:
         recipient_id = self.targets.canonical_id(recipient_id) or str(recipient_id)
-        offer = self.store.get_trade_offer(offer_id)
+        offer = self.store.repositories.social.get_trade_offer(offer_id)
         if offer is None or offer["recipient_id"] != recipient_id or offer["status"] != "open":
             return {"status": "rejected", "message": "The trade offer cannot be rejected by this participant.", "failed_check": "offer", "retryable": False}
         minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             result = {"status": "accepted", "offer_id": offer_id, "trade_status": "rejected"}
-            self.store.finish_trade_offer(offer_id, "rejected", minute, result)
+            self.store.repositories.social.finish_trade_offer(offer_id, "rejected", minute, result)
             self._context.services["events"].append("trade.rejected", recipient_id, minute, {"offer_id": offer_id, "offerer_id": offer["offerer_id"], "recipient_id": recipient_id, "activation": "offerer_next_decision_or_reflection", "duration_minutes": 0, "priority": "normal"})
         return result

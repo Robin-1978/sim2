@@ -174,7 +174,7 @@ class EventWakeScheduler:
                 }
                 self.store.set_meta(state_key, states)
                 task_id = f"{consumer}:event_group:{group_id}:{int(rows[-1]['event_id'])}"
-                self.store.put_evolution_task(
+                self.store.repositories.evolution.put_evolution_task(
                     task_id,
                     consumer,
                     task_actor,
@@ -211,7 +211,7 @@ class EventWakeScheduler:
         batch_minutes = int(policy.get("batch_minutes", 0) or 0)
         if batch_minutes <= 0:
             task_id = f"{consumer}:event:{int(event_id)}"
-            self.store.put_evolution_task(
+            self.store.repositories.evolution.put_evolution_task(
                 task_id,
                 consumer,
                 task_actor,
@@ -241,7 +241,7 @@ class EventWakeScheduler:
                 (json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":")), task_id),
             )
             return task_id
-        self.store.put_evolution_task(
+        self.store.repositories.evolution.put_evolution_task(
             task_id,
             consumer,
             task_actor,
