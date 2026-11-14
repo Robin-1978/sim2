@@ -186,3 +186,44 @@ regression in AgentView: repeated visible-name and definition scans decoded
 about 696k JSON values and took 21.6s. Revision-scoped caches reduced it to
 about 171k decodes and 10.3s. The cache change is covered by AgentView and
 action-binding tests and does not bypass SQLite or definition revisioning.
+
+### Latest DeepSeek run after compiler and AgentView changes
+
+The final post-cache real-provider run was started from an interactive shell
+with `source ~/.bashrc`:
+
+```bash
+bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py \
+  --provider remote --rounds 10 \
+  --runtime-dir /tmp/sim2-evolution-final-post-cache'
+```
+
+`evolution-audit-summary.json` reports:
+
+```json
+{"status": "passed", "flags": [], "rounds": 10}
+```
+
+Per-round semantic review found the following causal chain:
+
+- Round 1: God created a conserved supply Action and bound BT; Mira executed
+  it, the carried inventory decreased by one, the public reserve became one,
+  and Story received `resource.supply_deposited`.
+- Round 3: the configured research stage completed and Story described the
+  remaining checksum gap instead of claiming the route was verified.
+- Rounds 4, 6, 8 and 10: God created four distinct research documents from
+  accumulated evidence; Mira selected the same generic research behavior for
+  each object. No renamed duplicate BT was registered.
+- Rounds 8 and 10: Story returned `wait` when the proposed continuation
+  duplicated an existing audience and open question. It did not invent a
+  second narrative event.
+- Every NPC proposal used a visible source and an executable behavior. There
+  were no LLM errors, rejected Intents, false recovery events or standalone
+  Actions. NPC prompt sizes rose from 6,952 to 9,722 characters as the
+  grounded history grew; the bounded audit retained only projected context
+  and did not store hidden reasoning.
+
+The complete context/tool/result/world-delta records are in
+`/tmp/sim2-evolution-final-post-cache/evolution-audit.jsonl`. This run passes
+the causal evolution gate; the Beam transport check and a semantic Starter
+Village long run remain separate acceptance work.
