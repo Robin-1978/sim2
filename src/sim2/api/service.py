@@ -4,13 +4,15 @@ from pathlib import Path
 from typing import Any
 
 from ..platform.runtime import Platform
+from .authoring import AuthoringService
 
 
 class ControlService:
     """Small transport-neutral control API for CLI, HTTP or a future UI."""
 
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, *, authoring_root: Path | None = None):
         self.platform = Platform(db_path)
+        self.authoring = AuthoringService(authoring_root)
 
     def close(self) -> None:
         self.platform.close()
@@ -76,3 +78,41 @@ class ControlService:
 
     def restore(self, source: Path) -> dict[str, Any]:
         return self.platform.restore_snapshot(source)
+
+    def authoring_schema(self) -> dict[str, Any]:
+        return self.authoring.schema()
+
+    def authoring_compile(self, body: dict[str, Any]) -> dict[str, Any]:
+        return self.authoring.compile(body.get("template"), source=body.get("source"), source_path=body.get("source_path"), draft_revision=body.get("draft_revision", 0))
+
+    def authoring_smoke(self, body: dict[str, Any]) -> dict[str, Any]:
+        return self.authoring.smoke(
+            body.get("template"),
+            source=body.get("source"),
+            source_path=body.get("source_path"),
+            draft_revision=body.get("draft_revision", 0),
+            minutes=int(body.get("minutes", 1)),
+        )
+
+    def authoring_export(self, body: dict[str, Any]) -> dict[str, Any]:
+        return self.authoring.export(body.get("template"), source=body.get("source"), source_path=body.get("source_path"), draft_revision=body.get("draft_revision", 0))
+
+    def authoring_open(self, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        body = body or {}
+        requested = body.get("path")
+        if requested:
+            try:
+                return self.authoring.open_package(Path(str(requested)))
+            except (TypeError, ValueError, OSError) as exc:
+                return {"status": "rejected", "errors": [str(exc)], "diagnostics": self.authoring.diagnostics([str(exc)])}
+        report = self.platform.store.repositories.metadata.get("bootstrap_report", {}) or {}
+        source = report.get("config_dir") if isinstance(report, dict) else None
+        if not source:
+            return {"status": "rejected", "errors": ["this instance has no readable source package"]}
+        try:
+            return self.authoring.open_package(Path(str(source)), trusted=True)
+        except (TypeError, ValueError, OSError) as exc:
+            return {"status": "rejected", "errors": [str(exc)], "diagnostics": self.authoring.diagnostics([str(exc)])}
+
+    def authoring_build(self, body: dict[str, Any]) -> dict[str, Any]:
+        return self.authoring.build_from_brief(str(body.get("brief") or ""), provider_name=body.get("provider"))

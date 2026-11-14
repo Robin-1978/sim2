@@ -7,6 +7,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .service import ControlService
+from .web import web_asset
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -23,6 +24,14 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _write_bytes(self, status: int, body: bytes, content_type: str) -> None:
+        self.send_response(status)
+        self.send_header("content-type", content_type)
+        self.send_header("content-length", str(len(body)))
+        self.send_header("cache-control", "no-cache")
+        self.end_headers()
+        self.wfile.write(body)
+
     def _read_json(self) -> dict[str, Any]:
         length = int(self.headers.get("content-length", "0"))
         value = json.loads(self.rfile.read(length) or b"{}")
@@ -33,6 +42,9 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
         path = urlparse(self.path).path
         try:
+            asset = web_asset(path)
+            if asset is not None:
+                return self._write_bytes(200, *asset)
             if path == "/status":
                 return self._write(200, self.server.control.status())
             if path == "/health":
@@ -59,6 +71,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._write(200, self.server.control.audit())
             if path == "/evolution/tasks":
                 return self._write(200, {"tasks": self.server.control.evolution_tasks()})
+            if path == "/authoring/schema":
+                return self._write(200, self.server.control.authoring_schema())
             return self._write(404, {"status": "not_found"})
         except Exception as exc:
             return self._write(500, {"status": "error", "message": str(exc)})
@@ -67,6 +81,16 @@ class _Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         try:
             body = self._read_json()
+            if path == "/authoring/open":
+                return self._write(200, self.server.control.authoring_open(body))
+            if path == "/authoring/build":
+                return self._write(200, self.server.control.authoring_build(body))
+            if path == "/authoring/compile":
+                return self._write(200, self.server.control.authoring_compile(body))
+            if path == "/authoring/smoke":
+                return self._write(200, self.server.control.authoring_smoke(body))
+            if path == "/authoring/export":
+                return self._write(200, self.server.control.authoring_export(body))
             if path == "/pause":
                 return self._write(200, self.server.control.pause(str(body.get("reason", "http"))))
             if path == "/resume":
@@ -93,8 +117,8 @@ class _Handler(BaseHTTPRequestHandler):
 class ControlHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
-    def __init__(self, address: tuple[str, int], db_path: Path):
-        self.control = ControlService(db_path)
+    def __init__(self, address: tuple[str, int], db_path: Path, *, authoring_root: Path | None = None):
+        self.control = ControlService(db_path, authoring_root=authoring_root)
         super().__init__(address, _Handler)
 
     def close(self) -> None:

@@ -1,7 +1,7 @@
 # sim2 网页客户端设计
 
-> 状态：设计冻结，前端实现分阶段交付。当前仓库已经提供本地 HTTP 控制
-> API，但还没有把静态网页打包进 Python 服务。
+> 状态：Runtime Web Client 与 Authoring Workbench MVP 已实现，后续增强按分阶段
+> 清单推进。当前网页由本地 HTTP 服务提供，远程认证和 SSE 仍未实现。
 
 网页是 Platform 的观察与输入层，不是第二个运行时。浏览器永远不直接读
 SQLite、YAML、Agent prompt 或 LLM provider；所有数据都来自经过视角过滤的
@@ -14,8 +14,8 @@ SQLite、YAML、Agent prompt 或 LLM provider；所有数据都来自经过视�
 
 | 产品面 | 面向用户 | 读取 | 写入 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| Runtime Web Client | 旁观者、玩家、运行维护者 | 世界投影、地图、公开时间线、角色公开状态 | 玩家对话/交易；维护者暂停、单步和受控事件 | HTTP 投影和控制接口已有，网页待实现 |
-| World Authoring Workbench | 世界作者、审查者 | 草稿、Schema、规范 IR、编译诊断、smoke 结果 | 草稿、编译任务、导出世界包 | 服务契约已设计，HTTP 路由和网页待实现 |
+| Runtime Web Client | 旁观者、玩家、运行维护者 | 世界投影、地图、公开时间线、角色公开状态 | 玩家对话/交易；维护者暂停、单步和受控事件 | 已实现本地静态网页 MVP |
+| World Authoring Workbench | 世界作者、审查者 | 草稿、Schema、规范 IR、编译诊断、smoke 结果 | 草稿编译、smoke、YAML 文件包导出 | 已实现本地静态网页 MVP 与 `/authoring/*` |
 
 Runtime Client 观察的是已经初始化的 SQLite 实例；Authoring Workbench 编辑
 的是独立草稿目录。工作台不能修改正在运行的实例，也不能把草稿直接发布成
@@ -122,11 +122,17 @@ Runtime Client 有三个视角：
 | GET | `/map?viewer_id=<id>&observer=0` | 视角过滤后的地图 |
 | GET | `/audit` | 维护者审计导出 |
 | GET | `/evolution/tasks` | 当前就绪的演化任务 |
+| GET | `/authoring/schema` | Canonical World Template Schema |
 | POST | `/pause`、`/resume`、`/step` | 本地维护控制 |
 | POST | `/dialogue` | 发送对话 |
 | POST | `/trade/offers`、`/trade/accept` | 交易交互 |
 | POST | `/players` | 创建/进入玩家 |
 | POST | `/events` | 维护模式的事件注入 |
+| POST | `/authoring/compile` | 编译内存草稿并返回诊断 |
+| POST | `/authoring/smoke` | 在临时 SQLite 实例推进短 smoke |
+| POST | `/authoring/export` | 返回已验证的 YAML 文件映射 |
+| POST | `/authoring/open` | 打开当前实例来源包或受限目录中的已有包 |
+| POST | `/authoring/build` | 显式调用服务端 WorldBuilder Agent 起草模板 |
 
 事件游标使用整数 `event_id`。响应中的 `next_after_event_id` 是下一次请求
 应使用的 `after`；同一事件可能因重连重复返回，前端必须按 `event_id` 去重。
@@ -239,28 +245,25 @@ API key 或隐藏推理。`export_timeline.py` 生成的完整文件和网页公
 `world-schema`、Definition Compiler 和 Bootstrap 服务；表单只是这些协议的
 客户端，不得复制条件解析、效果结算或执行资格判断。
 
+“打开当前包”读取实例的 `bootstrap_report.config_dir`；“打开路径”只有在
+`sim2 serve --authoring-root <目录>` 下才允许，并且服务端拒绝目录之外的
+路径。WorldBuilder 通过服务端配置的 `world_builder` provider 运行，浏览器
+只发送世界简述和接收已验证模板/使用量摘要，永远不接触密钥。这个按钮是
+显式的模型调用，不会因为打开编辑器或轮询页面而消耗 tokens。
+
 ## 前端实现约束
 
-首版采用轻量静态 TypeScript/HTML，不把新的领域模型带进 Runtime：
+首版采用轻量静态 JavaScript/HTML，不把新的领域模型带进 Runtime：
 
 ```text
 web/
   index.html
-  app.ts                 # 路由和启动
-  api.ts                 # typed HTTP client、超时、重试、幂等键
-  state.ts               # snapshot、revision、event cursor
-  projection.ts          # 投影到 UI model，不改 Platform 语义
-  components/
-    header.ts
-    map.ts
-    timeline.ts
-    characters.ts
-    interaction-drawer.ts
-    evolution.ts
-    diagnostics.ts
+  app.js                 # 路由、投影和启动
+  app.css                # 无外部依赖的响应式视觉层
 ```
 
-组件只消费 JSON 投影，不导入 `Platform`、SQLite、YAML 或 Agent 工具代码。
+MVP 的组件仍集中在 `app.js`，后续拆分时每个组件只消费 JSON 投影，不导入
+`Platform`、SQLite、YAML 或 Agent 工具代码。
 在 Python 服务端托管静态资源是后续部署选项；开发阶段也可以用独立静态
 服务器代理到 `sim2 serve`。API 地址、数据库路径、provider 和密钥不能写入
 页面源码或浏览器 localStorage。
@@ -269,14 +272,14 @@ web/
 
 1. **协议层**：为现有投影补充 JSON Schema/契约测试、错误字段、游标边界和
    只读视角测试；修正 HTTP handler 的统一异常映射。
-2. **Runtime MVP**：静态页面实现 header、地图、时间线、角色详情和观察模式；
-   用轮询和游标完成断线重连。
-3. **玩家/维护交互**：接入对话、交易、暂停、单步和结构化拒绝；所有写请求
-   使用幂等键和 revision 冲突提示。
-4. **演化审查**：加入因果检查器、Story/God 任务、提案结果和审计链接；默认
-   隐藏 provider 输入/输出，维护者才可查看脱敏审计。
-5. **Authoring MVP**：Schema 驱动表单、表达式编辑器、BT 图、编译诊断、
-   smoke run、diff 和导出。
+2. **Runtime MVP（已实现）**：静态页面实现 header、地图、时间线、角色详情、
+   演化队列和观察模式；使用轮询和事件游标。
+3. **玩家/维护交互（基础已实现）**：接入暂停、单步、结构化请求结果；对话、
+   交易和角色命令沿用现有 HTTP 接口，幂等键和远程授权仍是后续工作。
+4. **演化审查（基础已实现）**：显示 Story/God 任务、事实与提议的边界；审计
+   因果检查器和脱敏 provider 详情留在维护模式增强；默认隐藏 provider 输入/输出。
+5. **Authoring MVP（基础已实现）**：Schema 驱动分区表单、原始 JSON 高级模式、
+   编译诊断、smoke run、打开已有包、WorldBuilder 起草和导出。
 6. **增强**：只读 SSE、地图区域折叠、版本历史、浏览器可访问性和视觉回归。
 
 ## 验收矩阵

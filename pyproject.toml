@@ -31,7 +31,7 @@ include = ["sim2*", "worlds", "worlds.*"]
 exclude = ["artifacts*", "docs*", "examples*", "scripts*", "tests*"]
 
 [tool.setuptools.package-data]
-sim2 = ["world_builder/*.yaml"]
+sim2 = ["world_builder/*.yaml", "web/*.html", "web/*.css", "web/*.js"]
 "worlds.starter_village" = ["*.yaml", "prompts/*.yaml"]
 "worlds.three_lanterns_town" = ["*.yaml"]
 

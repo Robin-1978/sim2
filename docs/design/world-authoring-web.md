@@ -6,7 +6,10 @@
 和 `describe-world` 生成、检查和初始化，但直接维护多份 YAML 仍然要求
 作者理解较多的字段关系。网页工作台应降低配置门槛，同时保持一个事实：
 它是现有 Definition Compiler 的用户界面，不是另一套 DSL，也不直接修改
-运行中的世界。
+运行中的世界。当前仓库已经提供一个无外部前端依赖的 MVP：`sim2 serve`
+根路径打开工作台，调用 `/authoring/schema`、`/authoring/open`、
+`/authoring/compile`、`/authoring/smoke`、`/authoring/export` 和显式的
+`/authoring/build`。
 
 ## 单一契约
 
@@ -34,14 +37,16 @@ Action、Recipe、BT、Attribute、Capability、Entity、Rule 和 Evolution 的
 
 首版只需要五个工作区：
 
-1. **World**：世界元数据、时钟、属性、地点、路线和地图位置。
+1. **World**：世界元数据、时钟、属性、地点、路线和地图位置；可以打开当前
+   实例来源包或受限目录中的已有包。
 2. **Entities**：资源、物体、人物、势力、关系、库存和初始知识。
 3. **Definitions**：Action、Recipe、Capability 和 BT；BT 使用节点图，
    节点仍只能引用已注册的 Action 或子 BT。
 4. **Evolution**：Story/God 的事件唤醒、证据计数、冷却、工具契约和
    研究阶段。页面显示“谁被什么已提交事件唤醒”，不允许用日历时间
    隐式创建任务。
-5. **Compile & Test**：显示结构错误、AST 错误、引用错误、未绑定 Action、
+5. **Build / Compile & Test**：可以显式提交世界简述给服务端 WorldBuilder Agent；
+   显示结构错误、AST 错误、引用错误、未绑定 Action、
    无法执行的 BT、资源守恒错误和 smoke run 的第一条失败结果，并支持
    导出 YAML、JSON Schema 校验报告和临时 SQLite 预览。
 
@@ -131,16 +136,14 @@ SQLite。只有作者明确调用 CLI `sim2 init`（或后续受控的初始化�
 
 ## 实现顺序
 
-先做无界面的可复用服务，再做网页：
+基础服务和网页 MVP 已落地；后续按以下顺序增强：
 
-1. 将 `validate-world` 的结构化错误和 smoke 结果收敛为
-   `WorldAuthoringService` 返回值；
-2. 暴露只读 Schema、编译、diff 和 smoke HTTP 路由；
-3. 用少量原生 HTML/TypeScript 页面生成表单和 BT 图，不引入新的运行时
+1. 将当前编译/导出响应继续收敛成带字段路径的结构化诊断，并增加 diff；
+2. 用少量原生 HTML/JavaScript 页面扩展表单和 BT 图，不引入新的运行时
    领域模型；
-4. 添加 unrelated world、动态 God 定义、非法条件和未绑定 Action 的
+3. 添加 unrelated world、动态 God 定义、非法条件和未绑定 Action 的
    端到端测试；
-5. 再增加地图画布、版本历史和多人协作等功能。
+4. 再增加地图画布、版本历史和多人协作等功能。
 
 首版不做任意代码编辑器、在线修改运行中 SQLite、自动发布或让网页绕过
 Platform。世界演化产生的运行时定义仍通过 God Intent → Definition

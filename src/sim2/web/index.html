@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="sim2 adaptive world runtime and authoring workbench">
+  <title>sim2 · Adaptive World Runtime</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="sim2 home">
+        <span class="brand-mark">s2</span>
+        <span><strong>sim2</strong><small>adaptive world runtime</small></span>
+      </a>
+      <nav class="mode-tabs" aria-label="主视图">
+        <button class="mode-tab active" data-view="runtime-view">运行世界</button>
+        <button class="mode-tab" data-view="authoring-view">设计世界</button>
+      </nav>
+      <div class="top-status">
+        <span id="connection-dot" class="status-dot offline"></span>
+        <span id="connection-label">正在连接</span>
+        <span id="world-clock" class="clock">—</span>
+      </div>
+    </header>
+
+    <main>
+      <section id="runtime-view" class="view active-view" aria-labelledby="runtime-title">
+        <div class="view-heading">
+          <div>
+            <p class="eyebrow">PUBLIC WORLD OBSERVER</p>
+            <h1 id="runtime-title">世界脉搏</h1>
+            <p class="muted">从已提交的事实、行为结果和世界变化中观察因果链。</p>
+          </div>
+          <div class="runtime-actions">
+            <button id="pause-button" class="button ghost">暂停</button>
+            <button id="step-button" class="button ghost">单步推进</button>
+            <button id="refresh-button" class="button primary">刷新</button>
+          </div>
+        </div>
+
+        <div id="runtime-notice" class="notice hidden" role="status"></div>
+        <div class="metric-strip" id="world-metrics" aria-live="polite">
+          <div class="metric"><span>世界状态</span><strong id="metric-status">—</strong></div>
+          <div class="metric"><span>公开角色</span><strong id="metric-agents">—</strong></div>
+          <div class="metric"><span>地点</span><strong id="metric-locations">—</strong></div>
+          <div class="metric"><span>事件游标</span><strong id="metric-cursor">—</strong></div>
+        </div>
+
+        <div class="runtime-grid">
+          <article class="panel map-panel">
+            <div class="panel-heading"><div><span class="panel-kicker">01 / MAP</span><h2>世界地图</h2></div><span id="map-summary" class="badge">—</span></div>
+            <div id="map-canvas" class="map-canvas" aria-label="世界地图"></div>
+            <div id="map-routes" class="route-list"></div>
+          </article>
+          <article class="panel timeline-panel">
+            <div class="panel-heading"><div><span class="panel-kicker">02 / CAUSAL STREAM</span><h2>公共时间线</h2></div><button id="toggle-ticks" class="text-button">显示 tick</button></div>
+            <div id="timeline-list" class="timeline-list" aria-live="polite"><div class="empty-state">等待世界事件…</div></div>
+          </article>
+          <article class="panel characters-panel">
+            <div class="panel-heading"><div><span class="panel-kicker">03 / ACTORS</span><h2>角色</h2></div><span class="badge">公开视角</span></div>
+            <div id="character-list" class="character-list"><div class="empty-state">暂无角色投影</div></div>
+          </article>
+          <article class="panel evolution-panel">
+            <div class="panel-heading"><div><span class="panel-kicker">04 / EVOLUTION</span><h2>演化队列</h2></div><span class="badge accent">事实优先</span></div>
+            <div id="evolution-list" class="evolution-list"><div class="empty-state">暂无待处理任务</div></div>
+          </article>
+          <article class="panel interaction-panel">
+            <div class="panel-heading"><div><span class="panel-kicker">05 / PARTICIPATE</span><h2>参与世界</h2></div><span class="badge">Platform 校验</span></div>
+            <div class="interaction-form">
+              <div class="interaction-row three"><label>玩家 ID<input id="player-id" placeholder="player_one"></label><label>起点 ID<input id="player-origin" placeholder="public_square"></label><label>名称<input id="player-name" placeholder="你的名字"></label></div>
+              <button id="enter-player" class="button ghost">进入世界</button>
+              <div class="interaction-row three"><label>说话者<select id="dialogue-speaker"></select></label><label>听者<select id="dialogue-listener"></select></label><label>主题<input id="dialogue-topic" value="general"></label></div>
+              <label>消息<textarea id="dialogue-message" placeholder="把一句话交给 Platform，结果会出现在公共时间线…"></textarea></label>
+              <button id="send-dialogue" class="button primary">发送对话</button>
+              <div id="interaction-result" class="interaction-result" role="status"></div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="authoring-view" class="view" aria-labelledby="authoring-title">
+        <div class="view-heading">
+          <div>
+            <p class="eyebrow">WORLD AUTHORING WORKBENCH</p>
+            <h1 id="authoring-title">设计一个世界</h1>
+            <p class="muted">Schema 驱动的草稿、编译、smoke 和导出。草稿不会触碰运行中的 SQLite。</p>
+          </div>
+          <div class="draft-state"><span id="draft-dot" class="status-dot"></span><span id="draft-status">新建草稿</span></div>
+        </div>
+        <div class="authoring-grid">
+          <aside class="panel schema-panel">
+            <div class="panel-heading"><div><span class="panel-kicker">SCHEMA</span><h2>世界结构</h2></div></div>
+            <div id="schema-list" class="schema-list"><div class="empty-state">加载 Schema…</div></div>
+            <div class="builder-box">
+              <span class="panel-kicker">WORLD BUILDER</span>
+              <p>用一句话让已配置的 WorldBuilder Agent 起草模板。点击才会调用模型。</p>
+              <textarea id="builder-brief" placeholder="例如：一座漂浮在盐海上的小型气象站，三名角色依靠风帆和潮汐协作…"></textarea>
+              <button id="build-world" class="button wide">AI 起草世界</button>
+            </div>
+            <div class="schema-note">字段来自 <code>world-schema</code>。网页不维护世界专用词汇。</div>
+          </aside>
+          <section class="panel editor-panel">
+            <div class="editor-toolbar">
+              <div><span class="panel-kicker">DRAFT JSON</span><h2>模板编辑器</h2></div>
+              <div class="toolbar-actions">
+                <button id="new-draft" class="button ghost">新建</button>
+                <button id="open-current" class="button ghost">打开当前包</button>
+                <button id="format-draft" class="button ghost">格式化</button>
+                <button id="compile-draft" class="button primary">编译检查</button>
+              </div>
+            </div>
+            <div class="open-path-row">
+              <label>打开受限目录中的包<input id="authoring-path" placeholder="例如 worlds/my_world"></label>
+              <button id="open-path" class="button ghost">打开路径</button>
+            </div>
+            <div class="quick-fields" aria-label="世界基本信息">
+              <label>World ID<input id="quick-world-id" autocomplete="off"></label>
+              <label>标题<input id="quick-world-title" autocomplete="off"></label>
+              <label>Locale<input id="quick-world-locale" autocomplete="off"></label>
+              <button id="apply-quick-fields" class="button ghost">同步到模板</button>
+            </div>
+            <div class="editor-mode-tabs" aria-label="编辑模式">
+              <button id="guided-mode" class="text-button active">表单视图</button>
+              <button id="raw-mode" class="text-button">原始 JSON</button>
+            </div>
+            <div id="guided-editor" class="guided-editor"></div>
+            <textarea id="template-editor" class="code-editor" spellcheck="false" aria-label="世界模板编辑器"></textarea>
+            <div class="editor-footer"><span id="draft-revision">revision 1</span><span>JSON 输入，服务端导出 YAML 世界包</span></div>
+          </section>
+          <aside class="panel diagnostics-panel">
+            <div class="panel-heading"><div><span class="panel-kicker">CHECK & TEST</span><h2>诊断</h2></div></div>
+            <div class="diagnostic-actions">
+              <button id="smoke-draft" class="button wide">运行短 smoke</button>
+              <button id="export-draft" class="button wide ghost">导出 YAML 包</button>
+            </div>
+            <div id="diagnostics" class="diagnostics" aria-live="polite"><div class="empty-state">编译后显示结构、引用和执行性结果。</div></div>
+          </aside>
+        </div>
+      </section>
+    </main>
+    <footer class="footer"><span>sim2 · Platform is the source of truth</span><span id="last-update">—</span></footer>
+  </div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
+

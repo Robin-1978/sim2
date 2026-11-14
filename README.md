@@ -66,13 +66,12 @@ export SIM2_BGE_MODEL=/path/to/bge-small-zh-v1.5
 
 The text interface supports movement, messages, offers, counteroffers, acceptance/rejection, waiting, and public world telemetry. HTTP exposes the same Platform operations for another client.
 
-The browser surfaces are designed separately from the TUI: the Runtime Web Client
-observes a running instance through the local HTTP projections, while the World
-Authoring Workbench edits and compiles a draft package before initialization. The
-current release provides the HTTP transport and the design contract; it does not
-yet ship a browser bundle. See [Web Client Design](docs/design/web-client.md) and
-[World Authoring Web](docs/design/world-authoring-web.md) before adding frontend
-code.
+The browser surfaces are separate from the TUI: the Runtime Web Client observes a
+running instance through local HTTP projections, while the World Authoring
+Workbench edits and compiles a draft package before initialization. The repository
+ships a dependency-free browser MVP at `sim2 serve` `/`; see [Web Client Design](docs/design/web-client.md) and
+[World Authoring Web](docs/design/world-authoring-web.md) for the protocol and
+extension points.
 
 ## Worlds and extension
 

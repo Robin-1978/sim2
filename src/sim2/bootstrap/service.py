@@ -101,7 +101,6 @@ def world_template_schema() -> dict[str, Any]:
             },
             "effects": {
                 "type": "array",
-                "minItems": 1,
                 "items": {
                     "type": "object",
                     "properties": {
@@ -134,7 +133,7 @@ def world_template_schema() -> dict[str, Any]:
                 "additionalProperties": True,
             },
         },
-        "required": ["id", "description", "parameters", "preconditions", "duration", "costs", "effects", "success", "failure"],
+        "required": ["id", "description", "parameters", "preconditions", "duration", "costs", "success", "failure"],
         "additionalProperties": True,
     }
     behavior = {
@@ -163,7 +162,7 @@ def world_template_schema() -> dict[str, Any]:
                 },
             },
         },
-        "required": ["id", "agent_label", "summary", "nodes"],
+        "required": ["id", "summary", "nodes"],
         "additionalProperties": True,
     }
     recipe_item = {
@@ -474,7 +473,7 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
             errors.append(f"action {action.get('id')} requires a duration object")
         elif not (
             isinstance(duration.get("minutes"), (int, float)) and float(duration.get("minutes")) >= 1
-        ) and str(duration.get("mode") or "") not in {"route_distance", "recipe"}:
+        ) and str(duration.get("mode") or "") not in {"route_distance", "recipe", "recipe_duration"}:
             errors.append(f"action {action.get('id')} duration needs positive minutes or a supported mode")
         for condition in action.get("preconditions", []) or []:
             validate_expression(condition, f"action {action.get('id')} precondition")
@@ -498,7 +497,7 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(effects, list):
             errors.append(f"action {action.get('id')}.effects must be a list")
             effects = []
-        if not effects:
+        if not effects and not str(action.get("executor") or "").strip():
             errors.append(f"action {action.get('id')} requires at least one typed effect")
         for effect in effects:
             if not isinstance(effect, dict) or str(effect.get("type") or "") not in allowed_effects:
@@ -551,8 +550,8 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
             validate_node(node, f"nodes[{index}]")
         for condition in behavior.get("entry_conditions", []) or []:
             validate_expression(condition, f"behavior {behavior.get('id')} entry condition")
-        if not str(behavior.get("agent_label") or "").strip():
-            errors.append(f"behavior {behavior.get('id')} requires a human-readable agent_label")
+        if not str(behavior.get("agent_label") or behavior.get("summary") or behavior.get("description") or "").strip():
+            errors.append(f"behavior {behavior.get('id')} requires a human-readable summary or agent_label")
     assigned_behaviors: set[str] = set()
     for agent in collections["agents"]:
         state = agent.get("initial_state") if isinstance(agent.get("initial_state"), dict) else {}
@@ -726,6 +725,70 @@ def describe_config(config_dir: Path) -> dict[str, Any]:
         "time_unit": manifest.get("time_unit", "minute"),
         "counts": counts,
         "files": manifest.get("files", []),
+    }
+
+
+def world_package_template(config_dir: Path) -> dict[str, Any]:
+    """Read a reviewed package back into the unified authoring template.
+
+    This is the inverse of ``write_world_package_from_template`` for the
+    browser workbench.  It intentionally reads only declarative YAML files and
+    never opens a running SQLite instance.
+    """
+
+    config_dir = Path(config_dir).resolve()
+    manifest = load_yaml(config_dir, "manifest.yaml", {}) or {}
+    setting = load_yaml(config_dir, "setting.yaml", {}) or {}
+    world_state = load_yaml(config_dir, "world_state.yaml", {}).get("world_state", {}) or {}
+    locations_file = load_yaml(config_dir, "locations.yaml", {}) or {}
+    factions_file = load_yaml(config_dir, "factions.yaml", {}) or {}
+    initial_events = load_yaml(config_dir, "opening_events.yaml", {}).get("opening_events", []) or []
+    world = {
+        "id": manifest.get("world_id") or manifest.get("name") or config_dir.name,
+        "title": setting.get("name") or manifest.get("name") or config_dir.name,
+        "premise": setting.get("premise", ""),
+        "genre": setting.get("genre", ""),
+        "locale": setting.get("locale", "en"),
+        "time_unit": manifest.get("time_unit", "minute"),
+        "start_world_minute": manifest.get("start_world_minute", 0),
+        "random_seed": manifest.get("random_seed"),
+        "properties": dict(world_state.get("properties", {}) or {}),
+    }
+    for key in ("public_history", "secrets", "calendar", "world_clock"):
+        if key in setting:
+            world[key] = setting[key]
+
+    def collection(filename: str, key: str) -> list[dict[str, Any]]:
+        value = load_yaml(config_dir, filename, {}).get(key, [])
+        return [dict(item) for item in value] if isinstance(value, list) else []
+
+    prompts: dict[str, Any] = {}
+    prompt_dir = config_dir / "prompts"
+    if prompt_dir.is_dir():
+        for prompt_path in sorted(prompt_dir.glob("*.yaml")):
+            prompts[prompt_path.stem] = load_yaml(prompt_dir, prompt_path.name, {})
+    behavior_trees = collection("behavior_trees.yaml", "behavior_trees")
+    behavior_trees = collection("core_behavior_trees.yaml", "behavior_trees") + behavior_trees
+    return {
+        "template_version": str(manifest.get("config_version", "draft-1")),
+        "world": world,
+        "attributes": collection("attributes.yaml", "attributes"),
+        "locations": collection("locations.yaml", "locations"),
+        "resources": [dict(item) for item in (locations_file.get("resources", []) or []) if isinstance(item, dict)],
+        "objects": collection("objects.yaml", "objects"),
+        "factions": collection("factions.yaml", "factions"),
+        "agents": collection("agents.yaml", "agents"),
+        "capabilities": collection("capabilities.yaml", "capabilities"),
+        "actions": collection("actions.yaml", "actions"),
+        "behavior_trees": behavior_trees,
+        "recipes": collection("recipes.yaml", "recipes"),
+        "relationships": [dict(item) for item in (factions_file.get("relationships", []) or []) if isinstance(item, dict)],
+        "rules": load_yaml(config_dir, "rules.yaml", {}) or {},
+        "evolution": load_yaml(config_dir, "evolution.yaml", {}) or {},
+        "story": load_yaml(config_dir, "story.yaml", {}) or {},
+        "player_template": load_yaml(config_dir, "player_template.yaml", {}) or {},
+        "initial_events": [dict(item) for item in initial_events if isinstance(item, dict)],
+        "prompts": prompts,
     }
 
 
@@ -1156,12 +1219,14 @@ def write_world_package_from_template(
     output_dir: Path,
     *,
     overwrite: bool = False,
+    validate_template: bool = True,
 ) -> Path:
     """Compile a WorldBuilder template into an editable YAML content package."""
 
-    validation = validate_world_template(template)
-    if not validation["valid"]:
-        raise ValueError("Invalid world template: " + "; ".join(validation["errors"]))
+    if validate_template:
+        validation = validate_world_template(template)
+        if not validation["valid"]:
+            raise ValueError("Invalid world template: " + "; ".join(validation["errors"]))
     output_dir = Path(output_dir).resolve()
     if output_dir.exists() and any(output_dir.iterdir()) and not overwrite:
         raise FileExistsError(f"world package directory is not empty: {output_dir}")

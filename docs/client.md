@@ -57,14 +57,33 @@ The MUD-style `sim2 mud` interface remains useful for scripts and recovery.
 Web or desktop client. Both go through Platform and share the same visibility,
 validation and transaction rules as the TUI.
 
-The repository does not yet ship a browser bundle. The local HTTP service is the
-transport for the planned Runtime Web Client, not a finished public web server:
+The repository now ships a dependency-free browser bundle for the local Runtime
+Web Client and Authoring Workbench. The local HTTP service is still a development
+server, not a finished public web server:
 
 ```bash
 sim2 serve --db "$DB" --host 127.0.0.1 --port 8080
 curl 'http://127.0.0.1:8080/status'
 curl 'http://127.0.0.1:8080/timeline?limit=50&after=0'
 ```
+
+Open `http://127.0.0.1:8080/` in a browser. **运行世界** shows the map, public
+timeline, characters and evolution queue. **设计世界** edits a JSON world draft,
+loads the canonical Schema, runs compile checks and a disposable SQLite smoke test,
+opens the current source package, can invoke the configured WorldBuilder Agent on
+an explicit button click, and downloads the generated YAML files as a package
+manifest. The workbench never changes the database passed to `sim2 serve`.
+
+To open other reviewed packages, constrain the server to their parent directory:
+
+```bash
+sim2 serve --db "$DB" --authoring-root /home/robin/ws/sim2/worlds --port 8080
+```
+
+The editor defaults to a guided form view with per-section entries; **原始 JSON**
+is an advanced view for nested Action, BT and rule structures. This keeps the
+authoring value in Schema-driven validation, executable smoke checks and package
+generation rather than making the browser a second YAML parser.
 
 The browser design, projection boundaries, cursor/reconnect rules, map behavior,
 player/operator permissions, and the separate World Authoring Workbench are
