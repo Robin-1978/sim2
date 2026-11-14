@@ -12,6 +12,7 @@ from ..evolution import WorldProposalEvaluator
 from ..memory.service import MemoryService
 from ..perception.service import PerceptionService
 from ..persistence.store import WorldStore
+from ..persistence.uow import UnitOfWork
 from ..world.schema import AttributeSchema
 from .behavior_service import BehaviorExecutionService
 from .services import PlatformContext, build_platform_services
@@ -29,6 +30,7 @@ class Platform:
 
     def __init__(self, db_path: Path):
         self.store = WorldStore(db_path)
+        self.uow = UnitOfWork(self.store)
         self.view = AgentViewCompiler(self.store)
         self.perception = PerceptionService(self.store)
         self.memory = MemoryService(self.store)
@@ -40,6 +42,7 @@ class Platform:
         self.resources = ResourceLedger(self.store)
         self._service_context = PlatformContext(self, {
             "store": self.store,
+            "uow": self.uow,
             "view": self.view,
             "perception": self.perception,
             "memory": self.memory,
@@ -56,7 +59,7 @@ class Platform:
         self._services = build_platform_services(self._service_context)
         self.rule_compiler = self._new_rule_compiler()
         self._service_context.set_dependency("rule_compiler", self.rule_compiler)
-        self.wakes = WakeService(self.store, self._resolve_evolution_consumer)
+        self.wakes = WakeService(self.uow, self._resolve_evolution_consumer)
         self._service_context.set_dependency("wakes", self.wakes)
         self.snapshots = SnapshotService(self.store)
         self._service_context.set_dependency("snapshots", self.snapshots)

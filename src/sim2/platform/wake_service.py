@@ -15,10 +15,11 @@ class WakeService:
     publish wakes here instead of writing evolution tasks directly.
     """
 
-    def __init__(self, store: Any, resolve_consumer: Callable[[str, str | None], tuple[str, str | None]]):
-        self.store = store
+    def __init__(self, uow: Any, resolve_consumer: Callable[[str, str | None], tuple[str, str | None]]):
+        self.uow = uow
+        self.store = uow.store
         self._resolve_consumer = resolve_consumer
-        self.scheduler = EventWakeScheduler(store)
+        self.scheduler = EventWakeScheduler(self.store)
 
     def queue(
         self,
@@ -43,7 +44,7 @@ class WakeService:
             return None
         if role in {"agent_decision", "agent_reflection"} and resolved_actor:
             task_id = f"{role}:event:{int(event_id)}:{resolved_actor}"
-            self.store.put_evolution_task(
+            self.uow.evolution.put_task(
                 task_id,
                 role,
                 resolved_actor,
@@ -100,7 +101,7 @@ class WakeService:
         """Create the Story barrier for a validated narrative source event."""
 
         task_id = f"story:event:{int(event_id)}"
-        self.store.put_evolution_task(
+        self.uow.evolution.put_task(
             task_id,
             "story",
             "story",

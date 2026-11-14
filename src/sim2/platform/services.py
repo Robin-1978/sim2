@@ -24,6 +24,7 @@ class PlatformContext:
 
     _DEPENDENCY_NAMES = frozenset({
         "store",
+        "uow",
         "view",
         "perception",
         "memory",
