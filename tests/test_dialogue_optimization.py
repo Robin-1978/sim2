@@ -187,6 +187,47 @@ def test_beam_adapter_strips_whitespace_padded_json_keys():
     assert normalized == {"intent_type": "propose_definition", "definition": {"nodes": []}}
 
 
+def test_beam_adapter_rebuilds_dotted_definition_shape_without_relaxing_schema():
+    adapter = resolve_adapter("openai_compatible", "https://example.test", "beam-free")
+    normalized = adapter.normalize_response(
+        {
+            "intent_type": "propose_definition",
+            "definition_type": "action",
+            "definition": {
+                "parameters.item_id": "string",
+                "duration_minutes": 5,
+                "effects.0": {"type": "resource_transfer"},
+                "success.0": {"condition": "actor.alive", "result": "done"},
+                "failure.0": {"result": "failed"},
+                "entry_conditions.0": None,
+            },
+        }
+    )
+    assert normalized["definition"]["parameters"] == {"item_id": "string"}
+    assert normalized["definition"]["duration"] == {"minutes": 5}
+    assert normalized["definition"]["effects"] == [{"type": "resource_transfer"}]
+    assert normalized["definition"]["success"] == [{"condition": "actor.alive", "result": "done"}]
+    assert normalized["definition"].get("entry_conditions", []) == []
+
+
+def test_beam_adapter_normalizes_native_tool_argument_json():
+    adapter = resolve_adapter("openai_compatible", "https://example.test", "beam-free")
+    normalized = adapter.normalize_response(
+        {
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "propose_definition",
+                        "arguments": '{"definition_type":"action","definition":{"effects.0.type":"resource_transfer"}}',
+                    }
+                }
+            ]
+        }
+    )
+    arguments = normalized["tool_calls"][0]["function"]["arguments"]
+    assert arguments["definition"]["effects"] == [{"type": "resource_transfer"}]
+
+
 def test_bare_wait_is_the_only_plain_text_intent_normalized():
     assert _json_from_text("wait") == {"intent_type": "wait", "reason": "No world change is needed now."}
 

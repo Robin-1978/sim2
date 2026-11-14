@@ -55,7 +55,53 @@ class DeterministicProvider:
                 choices.append(match.group(1))
         if not choices:
             return {"intent_type": "wait", "reason": "No executable behavior without user-facing parameters."}
-        choice = choices[(self.calls - 1) % len(choices)]
+        # The smoke provider is deliberately deterministic, but it still
+        # needs to respect the configured motivation signal.  Cycling through
+        # every offered BT made a merchant buy food at high satiety, exhaust
+        # its coins, and then starve even though the market still had stock.
+        # Read the rendered drive urgencies and each configured BT's ordered
+        # drive tags; no world attribute or behavior name is special-cased.
+        drive_block = context.split("<drives>", 1)[-1].split("</drives>", 1)[0]
+        drive_urgencies = {
+            str(name).strip(): float(value)
+            for name, value in re.findall(r"^\s*-\s*([^:]+): urgency=([0-9.]+)", drive_block, flags=re.MULTILINE)
+        }
+        scored: list[tuple[float, str]] = []
+        allowed_choices = set(choices)
+        for block in blocks:
+            match = re.search(r"^\s+choice: (.+)$", block, flags=re.MULTILINE)
+            if not match:
+                continue
+            if match.group(1) not in allowed_choices:
+                # The first pass intentionally removed behaviors that need
+                # user-facing parameters. Keep the same executable surface
+                # when scoring drive urgency; otherwise the smoke provider
+                # can reintroduce a parameterized behavior and get rejected.
+                continue
+            drive_match = re.search(r"^\s+drive_tags: (.+)$", block, flags=re.MULTILINE)
+            drive_tags = []
+            if drive_match:
+                drive_tags = [item.strip() for item in re.split(r"[,;]", drive_match.group(1)) if item.strip()]
+            # The first matching tag is the behavior's primary drive.  The
+            # order is declarative content, so a food behavior can prioritize
+            # the configured satiety need over a general safety tag.
+            score = next((drive_urgencies[tag] for tag in drive_tags if tag in drive_urgencies), 0.0)
+            scored.append((score, match.group(1)))
+        urgent = [choice for score, choice in scored if score >= 0.05]
+        if not drive_urgencies:
+            # Small unit fixtures and custom worlds may omit the optional
+            # drive projection. Preserve the old deterministic fallback for
+            # that contract; when drives are present, the urgency policy
+            # below remains authoritative.
+            choice = choices[(self.calls - 1) % len(choices)]
+        elif urgent:
+            choice = urgent[(self.calls - 1) % len(urgent)]
+        else:
+            # When no configured drive is urgent, do not spend a scarce
+            # resource merely because the corresponding behavior is visible.
+            # If every option is non-urgent, waiting is the deterministic
+            # provider's truthful result.
+            return {"intent_type": "wait", "reason": "No configured drive is urgent enough to justify a state-changing behavior."}
         return {"choice": choice, "reason": "Choose an offered behavior for the current state.", "confidence": 0.7}
 
 

@@ -185,9 +185,9 @@ class OpenAICompatibleProvider:
                 # Native tool calls are normalized to the same compact envelope used
                 # by local llama.cpp models that return a JSON object in content.
                 if message.get("tool_calls"):
-                    result = {"tool_calls": message["tool_calls"]}
+                    result = self.adapter.normalize_response({"tool_calls": message["tool_calls"]})
                 elif message.get("function_call"):
-                    result = {"function_call": message["function_call"]}
+                    result = self.adapter.normalize_response({"function_call": message["function_call"]})
                 else:
                     content = message.get("content") or ""
                     if not isinstance(content, str) or not content.strip():

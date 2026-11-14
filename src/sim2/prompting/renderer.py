@@ -779,7 +779,7 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         for behavior in behaviors:
             lines.append("    <behavior>")
             previous_values: dict[str, str] = {}
-            for label in ("name", "summary", "purpose", "when", "requires", "target", "parameters", "parameter_options", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "cooldown_minutes", "tags"):
+            for label in ("name", "summary", "purpose", "when", "requires", "target", "parameters", "parameter_options", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "cooldown_minutes", "tags", "goal_tags", "drive_tags"):
                 value = behavior.get(label)
                 if value:
                     if isinstance(value, list):

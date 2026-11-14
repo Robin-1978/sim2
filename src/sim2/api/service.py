@@ -16,10 +16,12 @@ class ControlService:
         self.platform.close()
 
     def status(self) -> dict[str, Any]:
-        return self.platform.status()
+        with self.platform.store.read_transaction():
+            return self.platform.status()
 
     def health(self) -> dict[str, Any]:
-        return self.platform.health()
+        with self.platform.store.read_transaction():
+            return self.platform.health()
 
     def pause(self, reason: str = "operator") -> dict[str, Any]:
         return self.platform.pause(reason)
@@ -37,16 +39,20 @@ class ControlService:
         return self.platform.enter_player(player_id, origin_id, name=name)
 
     def metrics(self) -> dict[str, Any]:
-        return self.platform.metrics()
+        with self.platform.store.read_transaction():
+            return self.platform.metrics()
 
     def observer(self, event_limit: int = 20) -> dict[str, Any]:
-        return self.platform.observer_view(event_limit=event_limit)
+        with self.platform.store.read_transaction():
+            return self.platform.observer_view(event_limit=event_limit)
 
     def map(self, *, viewer_id: str | None = None, observer: bool = False) -> dict[str, Any]:
-        return self.platform.map_view(viewer_id=viewer_id, observer=observer)
+        with self.platform.store.read_transaction():
+            return self.platform.map_view(viewer_id=viewer_id, observer=observer)
 
     def timeline(self, event_limit: int = 100, after_event_id: int = 0, include_ticks: bool = False) -> dict[str, Any]:
-        return self.platform.timeline(limit=event_limit, after_event_id=after_event_id, include_ticks=include_ticks)
+        with self.platform.store.read_transaction():
+            return self.platform.timeline(limit=event_limit, after_event_id=after_event_id, include_ticks=include_ticks)
 
     def dialogue(self, speaker_id: str, listener_id: str, topic: str, message: str) -> dict[str, Any]:
         return self.platform.submit_dialogue(speaker_id, listener_id, topic, message)
@@ -58,7 +64,12 @@ class ControlService:
         return self.platform.accept_trade_offer(recipient_id, offer_id)
 
     def audit(self) -> dict[str, Any]:
-        return self.platform.export_audit()
+        with self.platform.store.read_transaction():
+            return self.platform.export_audit()
+
+    def evolution_tasks(self) -> list[dict[str, Any]]:
+        with self.platform.store.read_transaction():
+            return self.platform.ready_evolution_tasks()
 
     def snapshot(self, destination: Path) -> str:
         return str(self.platform.snapshot(destination))

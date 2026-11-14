@@ -436,3 +436,50 @@ bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py \
 The redacted audit ended with `10/10`, no provider errors or rejected intents,
 three distinct research objects, changed NPC choices, and
 `{"status":"passed","flags":[]}`. The generated files remain under `/tmp`.
+
+### Final deterministic one-week balance check
+
+The initial deterministic week exposed a harness defect rather than a missing
+resource: the cyclic smoke provider bought food while satiety was high, spent a
+merchant's coins, and later produced starvation damage despite market stock
+remaining. The provider now reads the rendered drive urgencies and the ordered
+configured `drive_tags`; food behaviors in the Starter Village pack identify
+`satiety` as their primary drive. It also scores only the same candidates that
+pass the semantic-parameter filter, so required-message behaviors cannot be
+reintroduced by the scoring pass.
+
+The final run was:
+
+```bash
+python scripts/run_long_simulation.py --minutes 10080
+```
+
+Its report reached minute `10080` with 1,387 decisions, 72 reflections, zero
+provider errors, zero rejected turns, zero starvation damage, zero
+incapacitations and no degeneration flags. All nine characters retained health
+100. The run selected 11 behavior types, including food consumption and
+withdrawal, resource gathering, recovery, production and installation. The
+redacted JSON output is `/tmp/sim2-deterministic-week-final.json`.
+
+The accompanying 1000-agent benchmark completed five measured runs with p95
+tick time **136.188 ms**, no failed agents, and world revision 10.
+
+### Concurrency and Beam provider review
+
+The runtime review found that a concurrent `/step` request could previously
+read the same `world_minute` before either request entered `BEGIN IMMEDIATE`.
+The clock read now occurs inside the transaction, and the regression test
+forces the old interleaving; two concurrent calls commit minutes `1` and `2`
+exactly once. HTTP read projections also use the Store read lock because the
+control server shares one SQLite connection across worker threads.
+
+Beam was checked from an interactive shell with the configured provider. Its
+first 512-token run returned `finish_reason=length` with no content or tool
+call. A 4096-token run exposed malformed native tool arguments: trailing-space
+keys, dotted paths such as `effects.0`, and occasionally list-shaped Action
+parameters. The provider adapter now normalizes only these wire-shape errors;
+Platform still validates the canonical schema, and malformed proposals return
+`definition_schema` instead of crashing. Beam still does not count as a world
+quality pass when it exhausts its bounded ReAct session without a valid final
+Intent; the failure artifacts remain under `/tmp/sim2-evolution-beam-final/`
+and `/tmp/sim2-evolution-beam-native-adapter/`.

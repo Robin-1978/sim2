@@ -58,7 +58,7 @@ class _Handler(BaseHTTPRequestHandler):
             if path == "/audit":
                 return self._write(200, self.server.control.audit())
             if path == "/evolution/tasks":
-                return self._write(200, {"tasks": self.server.control.platform.ready_evolution_tasks()})
+                return self._write(200, {"tasks": self.server.control.evolution_tasks()})
             return self._write(404, {"status": "not_found"})
         except Exception as exc:
             return self._write(500, {"status": "error", "message": str(exc)})

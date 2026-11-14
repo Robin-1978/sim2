@@ -336,6 +336,20 @@ class WorldStore:
                 self.connection.rollback()
                 raise
 
+    @contextmanager
+    def read_transaction(self) -> Iterator[sqlite3.Connection]:
+        """Serialize a read projection with the single SQLite writer.
+
+        The HTTP control surface uses a shared connection from a threaded
+        server. Without this boundary, a GET could observe another thread's
+        uncommitted rows because SQLite connections are intentionally shared
+        for the instance. WAL protects separate connections, but it cannot
+        make one shared connection provide independent read snapshots.
+        """
+
+        with self._write_lock:
+            yield self.connection
+
     def close(self) -> None:
         self.wait_for_checkpoint()
         if not self.connection.in_transaction:
@@ -370,8 +384,9 @@ class WorldStore:
         )
 
     def get_meta(self, key: str, default: Any = None) -> Any:
-        row = self.connection.execute("SELECT value FROM instance_meta WHERE key=?", (key,)).fetchone()
-        return default if row is None else json.loads(row["value"])
+        with self._write_lock:
+            row = self.connection.execute("SELECT value FROM instance_meta WHERE key=?", (key,)).fetchone()
+            return default if row is None else json.loads(row["value"])
 
     def world_snapshot(self, *, include_agent_revisions: bool = True) -> dict[str, Any]:
         """Return the read-only boundary used by a decision or tick.
@@ -381,17 +396,18 @@ class WorldStore:
         commit code compares the revision again before accepting a write.
         """
 
-        snapshot = {
-            "world_id": self.get_meta("world_id", self.get_meta("instance_id", "")),
-            "world_minute": int(self.get_meta("world_minute", 0) or 0),
-            "world_revision": int(self.get_meta("world_revision", 0) or 0),
-        }
-        if include_agent_revisions:
-            snapshot["agent_revisions"] = {
-                str(agent["id"]): int((agent.get("agent_revision", 0) or 0))
-                for agent in self.repositories.entities.list_agents()
+        with self._write_lock:
+            snapshot = {
+                "world_id": self.get_meta("world_id", self.get_meta("instance_id", "")),
+                "world_minute": int(self.get_meta("world_minute", 0) or 0),
+                "world_revision": int(self.get_meta("world_revision", 0) or 0),
             }
-        return snapshot
+            if include_agent_revisions:
+                snapshot["agent_revisions"] = {
+                    str(agent["id"]): int((agent.get("agent_revision", 0) or 0))
+                    for agent in self.repositories.entities.list_agents()
+                }
+            return snapshot
 
 
 

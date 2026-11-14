@@ -77,6 +77,36 @@ def test_deterministic_long_run_provider_skips_choices_requiring_semantic_input(
     assert response["choice"] == "Recover at a safe location."
 
 
+def test_deterministic_long_run_provider_follows_configured_drive_urgency():
+    script = Path(__file__).parents[1] / "scripts" / "run_long_simulation.py"
+    spec = importlib.util.spec_from_file_location("sim2_run_long_simulation_drive", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    provider = module.DeterministicProvider()
+    context = """<drives>
+  - satiety: urgency=0.01; no immediate pressure
+  - safety: urgency=0.70; safety needs attention
+</drives>
+<executable_behaviors>
+  <behavior>
+    drive_tags: satiety; safety
+    choice: Buy one ration.
+  </behavior>
+  <behavior>
+    drive_tags: safety
+    choice: Recover at a safe location.
+  </behavior>
+</executable_behaviors>"""
+
+    response = provider.complete_json(system="Decision Agent", context=context)
+    assert response["choice"] == "Recover at a safe location."
+
+    urgent_food_context = context.replace("urgency=0.01", "urgency=0.90").replace("urgency=0.70", "urgency=0.01")
+    response = provider.complete_json(system="Decision Agent", context=urgent_food_context)
+    assert response["choice"] == "Buy one ration."
+
+
 def test_remote_fixed_object_is_not_offered_or_executed(tmp_path: Path):
     platform = Platform(create_instance(WORLD, "object-location", tmp_path / "runtime"))
     try:

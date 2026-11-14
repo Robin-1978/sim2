@@ -34,6 +34,39 @@ def test_action_without_followup_behavior_is_rejected(tmp_path: Path) -> None:
         platform.close()
 
 
+def test_malformed_action_parameter_shape_is_rejected_without_runtime_error(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "malformed-action-shape", tmp_path / "runtime"))
+    try:
+        result = platform.submit_definition_proposal(
+            "god",
+            {
+                "definition_type": "action",
+                "name": "Malformed Parameters Action",
+                "definition": {
+                    "parameters": ["item_id"],
+                    "duration": {"minutes": 1},
+                    "effects": [{"type": "public_event"}],
+                    "success": {"result": "completed"},
+                    "failure": {"result": "failed"},
+                },
+                "followup_behavior": {
+                    "name": "Malformed Parameters Behavior",
+                    "assign_to": ["梅岚"],
+                    "definition": {
+                        "nodes": [{"type": "action", "action_id": "Malformed Parameters Action", "parameters": {}}],
+                        "success_results": ["completed"],
+                        "failure_results": ["failed"],
+                    },
+                },
+            },
+        )
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "definition_schema"
+        assert any("parameters" in error for error in result["errors"])
+    finally:
+        platform.close()
+
+
 def test_unobservable_dynamic_action_is_rejected(tmp_path: Path) -> None:
     platform = Platform(create_instance(WORLD, "action-needs-observable-result", tmp_path / "runtime"))
     try:

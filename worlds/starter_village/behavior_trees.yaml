@@ -726,7 +726,7 @@ behavior_trees:
   estimated_minutes: 1
   requirements: ["Carry one food item: rations, ration, or cooked_meal."]
   goal_tags: [food, recovery, readiness]
-  drive_tags: [physiological_homeostasis, safety]
+  drive_tags: [satiety, safety]
   interrupt_policy: cancel
   success_results: [ate_food]
   failure_results: [eating_failed]
@@ -748,7 +748,7 @@ behavior_trees:
   - route.known
   requirements: ["A known route to the granary and permission to withdraw food."]
   goal_tags: [food, reserve, survival]
-  drive_tags: [physiological_homeostasis, safety]
+  drive_tags: [satiety, safety]
   interrupt_policy: cancel
   success_results: [ration_received]
   failure_results: [ration_unavailable]
@@ -772,7 +772,7 @@ behavior_trees:
   - actor.inventory.coin >= 1
   requirements: ["You are at the market and carry at least one coin; market stock must remain." ]
   goal_tags: [food, survival, trade]
-  drive_tags: [physiological_homeostasis, autonomy]
+  drive_tags: [satiety, autonomy]
   interrupt_policy: cancel
   success_results: [ration_purchased]
   failure_results: [ration_unavailable]

@@ -499,14 +499,23 @@ class DefinitionRuntimeMixin:
                             normalized_parameters[key] = value
                         parameters = normalized_parameters
                         node_copy["parameters"] = parameters
-                        allowed_parameters = set((action.get("parameters") or {}).keys())
+                        action_parameters = action.get("parameters")
+                        if action_parameters is None:
+                            action_parameters = {}
+                        elif not isinstance(action_parameters, dict):
+                            errors.append(f"action {resolved} parameters must be an object")
+                            action_parameters = {}
+                        allowed_parameters = set(action_parameters.keys())
                         unknown_parameters = sorted(set(parameters) - allowed_parameters)
                         if unknown_parameters:
                             errors.append(
                                 f"action {resolved} in node {path} has unknown parameter(s): {', '.join(unknown_parameters)}; "
                                 f"allowed parameters: {', '.join(sorted(allowed_parameters)) or 'none'}"
                             )
-                        parameter_defaults = set((action.get("parameter_defaults") or {}).keys())
+                        raw_defaults = action.get("parameter_defaults")
+                        if not isinstance(raw_defaults, dict):
+                            raw_defaults = {}
+                        parameter_defaults = set(raw_defaults.keys())
                         missing_parameters = sorted(allowed_parameters - set(parameters) - parameter_defaults)
                         if missing_parameters:
                             errors.append(

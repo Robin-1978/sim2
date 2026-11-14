@@ -967,18 +967,16 @@ explicit terminal consequence; repeated work changes evidence, progress or
 has a declared maintenance reason; a long action has explicit completion,
 interruption and simulation-end semantics.
 
-**Current evidence:** the one-week deterministic run before the food rule
-showed the actual supply defect: `village_food` had no replenishment path,
-354 meals were consumed, and 359 starvation-damage events followed. The
-world now declares a generic daily `resource_regeneration` entry for that
-shared stock and the resource-cycle regression verifies the configured amount.
-The rerun still shows one death because the intentionally non-semantic smoke
-provider buys all of one merchant's 20 market rations while satiety is high,
-then has no coins or permission left. This is explained provider behavior,
-not a Platform mutation; the real-model gate must still verify that the
-context's explicit high-satiety constraint leads a semantic Agent to preserve
-food for actual need. Do not raise the stock again to hide this provider
-artifact.
+**Current evidence:** the one-week deterministic run first exposed the smoke
+provider's actual defect: it cycled through every offered behavior and bought
+food at high satiety, exhausting one merchant's coins while market stock still
+existed. The deterministic provider now follows the configured ordered
+`drive_tags` and current drive urgency, and the food behaviors declare
+`satiety` directly as their primary drive. The final 10080-minute rerun reached
+the end with zero starvation damage, zero incapacitations, zero rejected turns,
+zero provider errors and no degeneration flags. This is a generic test-harness
+policy over the rendered configuration, not a Starter Village branch; resource
+and need effects remain Platform/configuration driven.
 
 **Performance evidence:** caching the revision-stable visible-entity map and
 definition projections reduced the same 120-minute cProfile sample from
@@ -999,6 +997,26 @@ absorbing-state flag.
 and no starvation damage. Two quality failures were traced to a protocol
 sentence splitter treating decimal points as sentence boundaries; the parser
 fix passed its regression tests and a real 1440→1450 resume session passed.
+
+The final 1000-agent benchmark completed five measured runs with p95 tick time
+**136.188 ms**, no failed agents, and world revision 10.
+
+The static concurrency review identified a real tick race: `step()` used to
+read `world_minute` before acquiring `BEGIN IMMEDIATE`, so two threaded control
+requests could both schedule the same next minute. `WorldTickService.step()` now
+reads the clock inside the transaction, and `tests/test_tick_concurrency.py`
+forces the old interleaving and verifies that committed ticks are exactly
+minutes 1 and 2. The HTTP read projections now use the same Store read lock,
+and `world_snapshot()`/`get_meta()` are serialized with the writer on the
+shared SQLite connection.
+
+The Beam review also exposed a provider-boundary issue rather than a world
+causal defect. Beam's native tool calls sometimes returned whitespace-padded
+keys, dotted nested paths and malformed Action parameter shapes. The Beam
+adapter now repairs only that wire representation, while Platform still
+rejects invalid canonical definitions; malformed definitions no longer crash
+the Runtime. A real Beam run remains recorded as a provider-quality failure
+when it exhausts its output budget without a valid final Intent.
 
 ### 4. Run the final model-backed acceptance gate
 

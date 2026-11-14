@@ -329,12 +329,20 @@ class WorldTickService(PlatformService):
     def step(self) -> dict[str, Any]:
         """Commit exactly one world-minute tick."""
 
-        snapshot = self.store.world_snapshot(include_agent_revisions=False)
-        start = int(snapshot["world_minute"])
-        minute = start + 1
         completed: list[str] = []
         failed: list[str] = []
         with self.store.transaction():
+            # Read the clock only after BEGIN IMMEDIATE has acquired the
+            # single-writer lock. Reading it before the transaction lets two
+            # concurrent HTTP / control requests both compute the same next
+            # minute and apply minute effects twice.
+            snapshot = self.store.world_snapshot(include_agent_revisions=False)
+            # ``transaction()`` reserves the commit revision before yielding
+            # to the tick body. Report the revision observed immediately
+            # before this tick; events still carry the reserved new revision.
+            snapshot["world_revision"] = max(0, int(snapshot["world_revision"]) - 1)
+            start = int(snapshot["world_minute"])
+            minute = start + 1
             agents = self.store.repositories.entities.list_agents()
             agent_ids = {str(agent["id"]) for agent in agents}
             self._apply_minute_effects(minute, agents=agents)

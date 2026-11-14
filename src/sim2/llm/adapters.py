@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -126,20 +127,84 @@ class LongCatAdapter(ModelAdapter):
 
 @dataclass(frozen=True)
 class BeamAdapter(ModelAdapter):
-    """Normalize Beam's occasional whitespace-padded JSON object keys."""
+    """Normalize Beam's occasional non-canonical JSON object shape.
+
+    Beam sometimes returns keys with trailing whitespace and serializes nested
+    objects/lists as dotted paths such as ``parameters.item_id`` or
+    ``effects.0``.  This adapter only repairs that wire representation; it
+    does not invent missing values or relax the canonical definition schema.
+    Platform validation still decides whether the repaired proposal is valid.
+    """
 
     name: str = "beam"
 
     @classmethod
     def _clean(cls, value: Any) -> Any:
         if isinstance(value, dict):
-            return {str(key).strip(): cls._clean(item) for key, item in value.items()}
+            cleaned = {str(key).strip(): cls._clean(item) for key, item in value.items()}
+            return cls._expand_dotted(cleaned)
         if isinstance(value, list):
-            return [cls._clean(item) for item in value]
+            return [cls._clean(item) for item in value if item is not None]
         return value
 
+    @classmethod
+    def _expand_dotted(cls, value: dict[str, Any]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+
+        def assign(container: Any, parts: list[str], item: Any) -> None:
+            head = parts[0]
+            if isinstance(container, list):
+                index = int(head)
+                while len(container) <= index:
+                    container.append(None)
+                if len(parts) == 1:
+                    container[index] = item
+                    return
+                child = container[index]
+                if not isinstance(child, (dict, list)):
+                    child = [] if parts[1].isdigit() else {}
+                    container[index] = child
+                assign(child, parts[1:], item)
+                return
+            if len(parts) == 1:
+                container[head] = item
+                return
+            child = container.get(head)
+            if not isinstance(child, (dict, list)):
+                child = [] if parts[1].isdigit() else {}
+                container[head] = child
+            assign(child, parts[1:], item)
+
+        for key, item in value.items():
+            if item is None:
+                continue
+            assign(result, key.split("."), item) if "." in key else result.__setitem__(key, item)
+        return result
+
     def normalize_response(self, response: dict[str, Any]) -> dict[str, Any]:
-        return self._clean(response)
+        normalized = self._clean(response)
+        for call in normalized.get("tool_calls", []) if isinstance(normalized, dict) else []:
+            function = call.get("function") if isinstance(call, dict) and isinstance(call.get("function"), dict) else call
+            if not isinstance(function, dict) or not isinstance(function.get("arguments"), str):
+                continue
+            try:
+                arguments = json.loads(function["arguments"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            function["arguments"] = self._clean(arguments)
+        # Beam occasionally uses the recipe field name for an Action's fixed
+        # duration. Convert it only inside an Action definition; recipes keep
+        # their canonical duration_minutes field.
+        definition = normalized.get("definition") if isinstance(normalized, dict) else None
+        if (
+            isinstance(normalized, dict)
+            and str(normalized.get("definition_type") or "").casefold() == "action"
+            and isinstance(definition, dict)
+            and "duration_minutes" in definition
+            and "duration" not in definition
+        ):
+            definition["duration"] = {"minutes": definition.pop("duration_minutes")}
+        return normalized
 
 
 def resolve_adapter(provider_type: str, base_url: str, model: str, hint: str | None = None) -> ModelAdapter:
