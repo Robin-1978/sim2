@@ -1184,6 +1184,10 @@ class AgentViewCompiler:
                 "entries": self.store.institution_ledger_totals(str(item.get("institution_id")), None)[:12],
             })
         story_goals = list(agent.get("story_goals", []) or [])[-3:]
+        behavior_assignments = [
+            item for item in (agent.get("behavior_assignments", []) or [])
+            if isinstance(item, dict) and str(item.get("status") or "assigned") == "assigned"
+        ][-4:]
         agent_name = str(agent.get("name", agent_id))
         story_root = self.store.get_meta("story", {}) or {}
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
@@ -1239,6 +1243,7 @@ class AgentViewCompiler:
             "active_institutions": active_institutions,
             "institution_ledgers": institution_ledgers,
             "story_goals": story_goals,
+            "behavior_assignments": behavior_assignments,
             "active_story_beats": active_story_beats,
             "executable_behaviors": self._assign_choices(available) if role == "agent_decision" else [],
             "decision_constraints": decision_constraints if role == "agent_decision" else [],

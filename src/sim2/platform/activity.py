@@ -1271,6 +1271,21 @@ class ActivityRuntimeMixin:
                 "failed_world_revision": int(self.store.get_meta("world_revision", 0) or 0),
             }
         state["blocked_behaviors"] = blocked_behaviors
+        assignments = list(agent.get("behavior_assignments", []) or [])
+        assignment_changed = False
+        for assignment in assignments:
+            if not isinstance(assignment, dict) or str(assignment.get("behavior_id")) != str(behavior_id):
+                continue
+            if str(assignment.get("status") or "assigned") != "assigned":
+                continue
+            assignment.update({
+                "status": "completed" if status == "completed" else "failed",
+                "completed_minute": int(minute),
+                "result": str(result),
+            })
+            assignment_changed = True
+        if assignment_changed:
+            agent["behavior_assignments"] = assignments[-8:]
         state["active_bt_instance"] = None
         state["active_behavior_id"] = None
         state["active_action"] = None

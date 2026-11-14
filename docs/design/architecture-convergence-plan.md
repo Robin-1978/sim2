@@ -11,7 +11,7 @@ This plan applies to the current development branch. Compatibility with
 retired schemas is not a goal. A definition or protocol is either migrated to
 the new form or rejected during development.
 
-## Baseline
+## Baseline before convergence
 
 The current core contains approximately 21,000 lines of Python. The largest
 modules are:
@@ -39,6 +39,23 @@ Memory / knowledge result
 
 The most important duplicate wake paths are the generic event scheduler and
 direct calls such as `_queue_story_task` from the activity runtime.
+
+## Current implementation snapshot
+
+The first convergence stages have now landed:
+
+| Area | Current owner | State |
+|---|---|---|
+| Platform facade | `platform/runtime.py` | 81-line facade; no Runtime Mixin inheritance |
+| Runtime API | `platform/api_service.py` | explicit service |
+| Behavior admission/execution | `platform/behavior_service.py` | explicit services |
+| World minute | `platform/world_tick_service.py` | explicit service |
+| Evolution tasks | `platform/evolution_service.py` | explicit service and UoW task repository |
+| Definitions/entities/Story/world changes | `platform/definition_runtime.py`, `entity_proposals.py`, `story_runtime.py`, `world_changes.py` | separate owners |
+| Persistence boundary | `persistence/uow.py` | event and evolution repositories migrated; Store façade remains for the next phase |
+
+The table above is the authoritative starting point for the remaining work;
+the baseline table below records why the split was needed.
 
 ## Target architecture
 
@@ -118,8 +135,8 @@ Exit criteria:
   task creation.
 - Move `_queue_story_task`, `_queue_event_consumer_task` and configured
   followup dispatch behind one public `WakeService.publish(event)` method.
-- Remove direct Story queue calls from `activity.py`, `social.py` and
-  `world_evolution.py`.
+- Remove direct Story queue calls from `activity.py`, `social.py` and the
+  proposal services.
 - Keep `evolution/wakes.py` as the pure evidence-group calculator; it must not
   write tasks directly.
 
@@ -156,7 +173,7 @@ another service's private method.
 
 ### File moves
 
-- Split `platform/world_evolution.py` into `definitions.py`,
+- Keep the completed proposal split in `definition_runtime.py`,
   `entity_proposals.py`, `story_runtime.py` and `world_changes.py`.
 - Move activity-specific research and information progress into
   `ActivityService`; keep research catalog reads in `perception`/Repository.
@@ -281,31 +298,27 @@ green test that depends on a compatibility branch does not count.
 
 ### Stage A — finish definition ownership
 
-**Current state:** the definition validation and registration methods have been
-extracted from `platform/world_evolution.py` into
-`platform/definition_runtime.py`. The extraction is still an uncommitted
-working-tree change.
+**Current state:** complete in commit `f20598e`. Definition validation and
+registration live in `platform/definition_runtime.py` and are owned by the
+composed `DefinitionService`.
 
 1. Run `git diff --check` and compile the two modules.
 2. Run the focused definition, action binding, institution and liveness tests.
-3. Confirm that `Platform` resolves each extracted method through the mixin
-   without a second implementation in `world_evolution.py`.
-4. Commit this extraction as one change. Do not combine it with persistence or
-   activity changes.
+3. Confirm that `Platform` resolves each extracted method through the
+   `DefinitionService` without a second implementation.
+4. Keep later persistence or activity changes in separate commits.
 
 **Acceptance:** dynamic Action + follow-up BT registration, research-source
 reachability validation, recipe normalization, and proposal rollback retain
-their existing behavior; `world_evolution.py` contains no definition registry
-or definition-effect validator.
+their existing behavior; no proposal service contains a duplicate definition
+registry or definition-effect validator.
 
 ### Stage B — split world-evolution responsibilities
 
-**Status:** the first split is complete in the working tree. The old
+**Status:** complete in commit `f20598e`. The old
 `world_evolution.py` owner has been removed; Platform now imports the four
 focused modules `definition_runtime.py`, `entity_proposals.py`,
-`story_runtime.py`, and `world_changes.py`. The remaining work in this stage
-is to finish the focused service boundary and commit the split after the
-vertical-slice checks below.
+`story_runtime.py`, and `world_changes.py`.
 
 Split the remaining `WorldEvolutionRuntimeMixin` in this order:
 
@@ -315,8 +328,7 @@ Split the remaining `WorldEvolutionRuntimeMixin` in this order:
    chapter progress and narrative follow-up registration.
 3. `platform/world_changes.py`: generic world-property, relationship, rule,
    capability-evidence and progress changes.
-4. Keep only a thin facade while callers migrate; delete the facade once no
-   caller imports its private methods.
+4. Keep the four modules as the direct owners; there is no old facade.
 
 For every move, use this loop: move code without behavior changes, run the
 focused tests, search for the old method owner, then remove the old copy. Do

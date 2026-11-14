@@ -89,6 +89,14 @@ stocked resources. Story continues to consume validated facts and organize
 them into goals and chapters; it does not silently create the structural
 content that God owns.
 
+When God creates a behavior and assigns it to an existing actor, registration
+also creates an actor-facing `behavior_assignments` record and a ready
+`behavior_assigned:<definition_id>` decision task. The assignment carries the
+declarative purpose and source event, so the actor can prefer the new work in
+its next decision view. Completion or failure closes that assignment through
+the ordinary Activity outcome; registration alone never changes resources or
+claims that the work was performed.
+
 Liveness is a platform property, not a content promise. A world may enable a
 derived `world.stagnation` event (`stagnation.window` in `evolution.yaml`);
 Platform compares each character's cumulative executable-option frontier from

@@ -923,6 +923,48 @@ class DefinitionRuntimeMixin:
                     },
                 )
                 self.wakes.configured(followup_event_id, "definition.registered", actor_id, world_minute)
+            # A newly assigned behavior is both a definition event and an
+            # actor-facing commitment. Merely adding it to the executable
+            # catalog leaves the NPC free to overlook the verified problem
+            # that caused God to create it. Persist the declarative purpose
+            # and wake the assigned actor through the same task gateway; no
+            # resource, institution, or story name is special-cased here.
+            assignments: tuple[dict[str, Any], list[tuple[str, str]], int | None] | None = None
+            if definition_type == "behavior" and resolved_agents:
+                assignments = (definition, resolved_agents, int(event_id))
+            elif definition_type == "action" and followup_definition and followup_agents:
+                assignments = (followup_definition, followup_agents, int(followup_event_id or event_id))
+            if assignments:
+                assigned_definition, assigned_agents, assignment_event_id = assignments
+                assignment_goal = str(
+                    assigned_definition.get("goal")
+                    or assigned_definition.get("purpose")
+                    or assigned_definition.get("summary")
+                    or name
+                ).strip()
+                behavior_id = str(assigned_definition.get("id") or "")
+                if behavior_id:
+                    for assigned_id, _ in assigned_agents:
+                        assigned_agent = self.store.get_agent(assigned_id)
+                        work = list(assigned_agent.get("behavior_assignments", []) or [])
+                        work.append({
+                            "behavior_id": behavior_id,
+                            "goal": assignment_goal,
+                            "source_event_id": assignment_event_id,
+                            "status": "assigned",
+                            "assigned_minute": world_minute,
+                        })
+                        assigned_agent["behavior_assignments"] = work[-8:]
+                        self.store.update_agent(assigned_id, assigned_agent)
+                        self.wakes.queue(
+                            "agent_decision",
+                            assignment_event_id,
+                            "definition.registered",
+                            assigned_id,
+                            world_minute,
+                            task_type=f"behavior_assigned:{behavior_id}",
+                            explicit=True,
+                        )
             if actor_id == "god":
                 remember_role(self.store, "god", "world_definition", {
                     "summary": f"Registered {definition_type}: {name}.",

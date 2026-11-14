@@ -391,10 +391,17 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             location = f" at {track.get('location')}" if track.get('location') else ""
             lines.append(f"    - {track.get('source')}{location}: {stages or 'no stage metadata'}")
         lines.append("  </research_tracks>")
+    assignments = context.get("behavior_assignments") or []
     story_goals = context.get("story_goals") or []
     active_beats = context.get("active_story_beats") or []
-    if story_goals or active_beats:
+    if assignments or story_goals or active_beats:
         lines.append("  <story_directives>")
+        for assignment in assignments[:4]:
+            if isinstance(assignment, dict):
+                lines.append(
+                    f"    assigned_work: {_line(assignment.get('goal'))}; "
+                    f"choose {_line(assignment.get('behavior_id'))} when it is executable"
+                )
         for goal in story_goals[:3]:
             lines.append(f"    goal: {_line(goal)}")
         for beat in active_beats[:3]:
