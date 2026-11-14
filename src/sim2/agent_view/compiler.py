@@ -183,6 +183,10 @@ class AgentViewCompiler:
         self.social_repo = store.repositories.social
         self.conditions = ConditionEngine((self.store.get_meta("rules", {}) or {}))
         self.rule_compiler = self._new_rule_compiler()
+        self._rule_compiler_revision = int(self.store.get_meta("world_revision", 0) or 0)
+        self._visible_entity_revision: int | None = None
+        self._visible_entity_replacements: list[tuple[str, str]] = []
+        self._definition_cache: dict[tuple[int, str], list[dict[str, Any]]] = {}
         self.resources = ResourceLedger(store)
         self.targets = TargetResolver(store)
         self.memory = MemoryService(store)
@@ -201,13 +205,29 @@ class AgentViewCompiler:
         aliases.update({str(key): str(value) for key, value in (rules.get("condition_aliases", {}) or {}).items()})
         return RuleCompiler(rules, self.conditions, aliases)
 
+    def _definitions(self, table: str) -> list[dict[str, Any]]:
+        """Read definitions once per committed world revision and table."""
+
+        revision = int(self.store.get_meta("world_revision", 0) or 0)
+        key = (revision, str(table))
+        cached = self._definition_cache.get(key)
+        if cached is None:
+            cached = self.entities_repo.get_definitions(str(table))
+            self._definition_cache = {
+                cache_key: value
+                for cache_key, value in self._definition_cache.items()
+                if cache_key[0] == revision
+            }
+            self._definition_cache[key] = cached
+        return cached
+
     def _recent_history_view(self, limit: int = 16) -> list[dict[str, Any]]:
         """Return a compact, visible-name projection of recent world facts."""
 
         events = self.events_repo.recent_events(limit=max(1, min(int(limit), 32)), exclude_types=_TICK_EVENT_TYPES)
         bt_labels = {
             str(item.get("id")): str(item.get("agent_label") or item.get("summary") or item.get("id"))
-            for item in self.entities_repo.get_definitions("bt_def")
+            for item in self._definitions("bt_def")
         }
         result: list[dict[str, Any]] = []
         for event in events:
@@ -313,7 +333,7 @@ class AgentViewCompiler:
         if behavior_id in seen:
             return
         seen.add(behavior_id)
-        definitions = {item["id"]: item for item in self.entities_repo.get_definitions("bt_def")}
+        definitions = {item["id"]: item for item in self._definitions("bt_def")}
         behavior = definitions.get(behavior_id) or {}
 
         def visit(nodes: list[Any], branch_seen: set[str]):
@@ -444,7 +464,7 @@ class AgentViewCompiler:
         """
 
         view = self.build_decision_view(agent_id, role="agent_decision", include_diagnostics=True)
-        definitions = bt_defs if bt_defs is not None else {str(item["id"]): item for item in self.entities_repo.get_definitions("bt_def")}
+        definitions = bt_defs if bt_defs is not None else {str(item["id"]): item for item in self._definitions("bt_def")}
         options: set[str] = set()
         choices: list[str] = []
         for item in view.get("executable_behaviors", []) or []:
@@ -631,22 +651,27 @@ class AgentViewCompiler:
         """
 
         text = str(value)
-        entities: list[tuple[str, str]] = []
-        for entity in self.entities_repo.entities_of_type("location") + self.entities_repo.entities_of_type("agent") + self.entities_repo.entities_of_type("object"):
-            key = str(entity.get("id") or "")
-            name = str(entity.get("name") or key)
-            if key and name:
-                entities.append((key, name if name != key else key.replace("_", " ")))
-        # Include resource/material/artifact/document keys without assuming a
-        # particular world vocabulary; ``entities_of_type`` is cheap for the
-        # bounded Agent projection and keeps new worlds generic.
-        for entity_type in ("resource", "material", "artifact", "document", "tool", "consumable", "shared_stock", "market_stock"):
-            for entity in self.entities_repo.entities_of_type(entity_type):
+        revision = int(self.store.get_meta("world_revision", 0) or 0)
+        if revision != self._visible_entity_revision:
+            entities: list[tuple[str, str]] = []
+            for entity in self.entities_repo.entities_of_type("location") + self.entities_repo.entities_of_type("agent") + self.entities_repo.entities_of_type("object"):
                 key = str(entity.get("id") or "")
                 name = str(entity.get("name") or key)
                 if key and name:
                     entities.append((key, name if name != key else key.replace("_", " ")))
-        for key, name in sorted(set(entities), key=lambda item: len(item[0]), reverse=True):
+            # Include resource/material/artifact/document keys without assuming
+            # a particular world vocabulary. The table is rebuilt only after a
+            # committed world revision changes, instead of once per field in
+            # every AgentView record.
+            for entity_type in ("resource", "material", "artifact", "document", "tool", "consumable", "shared_stock", "market_stock"):
+                for entity in self.entities_repo.entities_of_type(entity_type):
+                    key = str(entity.get("id") or "")
+                    name = str(entity.get("name") or key)
+                    if key and name:
+                        entities.append((key, name if name != key else key.replace("_", " ")))
+            self._visible_entity_replacements = sorted(set(entities), key=lambda item: len(item[0]), reverse=True)
+            self._visible_entity_revision = revision
+        for key, name in self._visible_entity_replacements:
             # Entity identifiers are snake_case tokens.  Treat underscore as
             # part of a token so ``village_food`` cannot rewrite the prefix
             # of a different configured identifier such as
@@ -675,8 +700,11 @@ class AgentViewCompiler:
         include_diagnostics: bool = False,
     ) -> dict[str, Any]:
         rules = self.store.get_meta("rules", {}) or {}
-        self.conditions = ConditionEngine(rules)
-        self.rule_compiler = self._new_rule_compiler()
+        revision = int(self.store.get_meta("world_revision", 0) or 0)
+        if revision != self._rule_compiler_revision:
+            self.conditions = ConditionEngine(rules)
+            self.rule_compiler = self._new_rule_compiler()
+            self._rule_compiler_revision = revision
         try:
             agent = self.entities_repo.get_agent(agent_id)
         except KeyError:
@@ -686,9 +714,9 @@ class AgentViewCompiler:
                 return self._build_world_view(agent_id, role)
             raise
         configured_context = configured_context_values(rules, agent)
-        bt_defs = {x["id"]: x for x in self.entities_repo.get_definitions("bt_def")}
-        action_defs = {x["id"]: x for x in self.entities_repo.get_definitions("action_def")}
-        recipe_defs = {x["id"]: x for x in self.entities_repo.get_definitions("recipe_def")}
+        bt_defs = {x["id"]: x for x in self._definitions("bt_def")}
+        action_defs = {x["id"]: x for x in self._definitions("action_def")}
+        recipe_defs = {x["id"]: x for x in self._definitions("recipe_def")}
         estimator = BehaviorDurationEstimator(
             action_defs,
             bt_defs,
@@ -1162,7 +1190,7 @@ class AgentViewCompiler:
             decision_constraints.append("No BT is executable in this state; return wait.")
         capability_update_candidates = []
         progression_rules = rules.get("capability_progression", {}) or {}
-        capability_defs = {str(item.get("id")): item for item in self.entities_repo.get_definitions("capability_def")}
+        capability_defs = {str(item.get("id")): item for item in self._definitions("capability_def")}
         owned_capabilities = agent.get("capabilities") or {}
         for capability, definition in progression_rules.items():
             capability = str(capability)
@@ -1403,7 +1431,7 @@ class AgentViewCompiler:
             action.get("duration", {}).get("mode") == "recipe_duration"
             or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
         ):
-            recipe = next((item for item in self.entities_repo.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
+            recipe = next((item for item in self._definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
             if recipe is None:
                 return "the recipe is not registered"
             context["station_tags"] = list(recipe.get("station_tags", []) or [])
@@ -1781,7 +1809,7 @@ class AgentViewCompiler:
             str(item.get("event_type") or "") for item in recent_world_changes[:4]
         )
         god_memories = [self._humanize_record(item) for item in role_memory_query(self.store, "god", god_memory_query, limit=6)]
-        bt_defs = {item["id"]: item for item in self.entities_repo.get_definitions("bt_def")}
+        bt_defs = {item["id"]: item for item in self._definitions("bt_def")}
         for outcome in recent_agent_outcomes:
             behavior = bt_defs.get(str(outcome.get("behavior_id", "")), {})
             outcome["behavior_choice"] = behavior.get("agent_label") or behavior.get("summary") or behavior.get("description") or "a behavior"
@@ -1826,7 +1854,7 @@ class AgentViewCompiler:
                 "success": [str(item).replace("_", " ") for item in (behavior.get("success_results") or [])[:3]],
             })
         action_catalog = []
-        for action in self.entities_repo.get_definitions("action_def"):
+        for action in self._definitions("action_def"):
             action_catalog.append({
                 "name": action.get("agent_label") or _label(str(action.get("id", "action"))),
                 "purpose": action.get("agent_summary") or action.get("description") or "configured action",

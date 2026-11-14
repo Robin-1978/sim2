@@ -2730,10 +2730,12 @@ def test_finite_resource_depletion_hides_gather_until_regeneration(tmp_path: Pat
         grain["initial_state"]["quantity"] = 0
         platform.store.repositories.entities.put_entity("grain", "material", "谷物", {key: value for key, value in grain.items() if key not in {"id", "entity_type", "name"}})
         platform.store.connection.commit()
+        food_before = platform.store.repositories.entities.get_entity("village_food")["amount"]
         assert not any(item["ref"] == "behavior:gather_resource" for item in platform.decision_view("liang_he")["executable_behaviors"])
         for _ in range(1440):
             platform.step()
         assert platform.store.repositories.entities.get_entity("grain")["initial_state"]["quantity"] == 20.0
+        assert platform.store.repositories.entities.get_entity("village_food")["amount"] == food_before + 24.0
         assert any(item["ref"] == "behavior:gather_resource" for item in platform.decision_view("liang_he")["executable_behaviors"])
     finally:
         platform.close()

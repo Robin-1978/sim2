@@ -101,6 +101,10 @@ location_tag_groups:
 resource_entity_types: [resource, material]
 resource_protected_state: protected
 resource_regeneration:
+- resource_id: village_food
+  every_minutes: 1440
+  amount: 24
+  cap: 480
 - resource_id: grain
   every_minutes: 1440
   amount: 20
