@@ -773,6 +773,25 @@ explicit terminal consequence; repeated work changes evidence, progress or
 has a declared maintenance reason; a long action has explicit completion,
 interruption and simulation-end semantics.
 
+**Current evidence:** the one-week deterministic run before the food rule
+showed the actual supply defect: `village_food` had no replenishment path,
+354 meals were consumed, and 359 starvation-damage events followed. The
+world now declares a generic daily `resource_regeneration` entry for that
+shared stock and the resource-cycle regression verifies the configured amount.
+The rerun still shows one death because the intentionally non-semantic smoke
+provider buys all of one merchant's 20 market rations while satiety is high,
+then has no coins or permission left. This is explained provider behavior,
+not a Platform mutation; the real-model gate must still verify that the
+context's explicit high-satiety constraint leads a semantic Agent to preserve
+food for actual need. Do not raise the stock again to hide this provider
+artifact.
+
+**Performance evidence:** caching the revision-stable visible-entity map and
+definition projections reduced the same 120-minute cProfile sample from
+21.6s to 10.3s and cut JSON decodes from about 696k to 171k. The cache is
+invalidated by committed world revisions, so dynamic God definitions remain
+visible without a world-specific branch.
+
 ### 4. Run the final model-backed acceptance gate
 
 Use an interactive shell for every provider run:

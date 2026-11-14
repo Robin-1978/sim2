@@ -161,3 +161,28 @@ The probe script now reads typed repositories directly. Its migration is kept
 in the working branch until the focused checks and the documentation update
 are committed together. Credentials, proxy settings and hidden reasoning are
 not written to the artifact.
+
+### Deterministic one-week balance and performance audit
+
+The report script was migrated to typed repositories in commit `7e99d08`.
+The baseline one-week run then completed at minute `10080` with 1,541
+decisions, 1,608 deterministic calls, 72 reflections, 5 God sessions, 4 Story
+sessions, no provider errors and no rejected turns. It exposed a real content
+defect: the public `village_food` stock had no configured replenishment path.
+
+Starter Village now declares a generic daily regeneration entry for that
+shared stock. The resource-cycle test verifies the amount and projection.
+The follow-up run had a nonzero public reserve and 472 withdrawals, but the
+deterministic smoke provider still produced one `vital_depleted:fei_lan` flag:
+it selected `buy_food` repeatedly while the prompt said satiety was above its
+alert level, spent all 20 coins on the first day, and then had no alternative
+food source. This is recorded as a limitation of the intentionally
+non-semantic baseline provider. It is not treated as a world-quality pass;
+the DeepSeek real-model run must show that the explicit drive and constraint
+context prevents this loop.
+
+The same 120-minute cProfile sample also showed a Platform performance
+regression in AgentView: repeated visible-name and definition scans decoded
+about 696k JSON values and took 21.6s. Revision-scoped caches reduced it to
+about 171k decodes and 10.3s. The cache change is covered by AgentView and
+action-binding tests and does not bypass SQLite or definition revisioning.
