@@ -129,3 +129,35 @@ settings were written to the log.
 The post-fix verification also passed `397` tests and `compileall`. The
 1,000-agent platform benchmark completed five runs with p95 tick time
 `143.422 ms` (warm-up excluded), with no failed agents.
+
+### Latest post-architecture probe
+
+On 2026-11-14 the same ten-round probe was rerun after the typed repository
+migration from an interactive shell:
+
+```bash
+bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py \
+  --provider remote --rounds 10 \
+  --runtime-dir /tmp/sim2-evolution-loop-post-architecture'
+```
+
+The audit ended with:
+
+```json
+{"status": "passed", "flags": [], "rounds": 10}
+```
+
+The artifact is `/tmp/sim2-evolution-loop-post-architecture/` and contains
+the SQLite instance, `evolution-audit.jsonl`, and the summary. The probe
+showed one conserved supply transfer, then three newly created research
+objects reached through the same generic research behavior. Story followed
+committed research and supply events; God rejected duplicate research by
+waiting; no LLM error, rejected intent, false recovery event or standalone
+Action was observed. The last round correctly waited because the remaining
+question duplicated an existing novelty key. This is a causal-loop pass, not
+a substitute for the one-week liveness and balance gate.
+
+The probe script now reads typed repositories directly. Its migration is kept
+in the working branch until the focused checks and the documentation update
+are committed together. Credentials, proxy settings and hidden reasoning are
+not written to the artifact.

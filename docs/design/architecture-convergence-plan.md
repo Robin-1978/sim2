@@ -693,3 +693,104 @@ The refactor is complete when all of the following hold:
 - The targeted evolution suite passes without running the full slow suite on
   every edit.
 - The full suite, compile check and benchmark pass once at the merge boundary.
+
+## Immediate execution plan after the 10-round causal probe
+
+The 10-round DeepSeek probe has passed the causal loop gate, but it does not
+close the architecture work. The next work is deliberately limited to the
+four items below. They are ordered by dependency; do not start a later item
+by adding a compatibility shim for an earlier failure.
+
+### 1. Finish the canonical definition compiler
+
+**Files:** `src/sim2/world/definition_schema.py`,
+`src/sim2/platform/definition_runtime.py`,
+`src/sim2/agent_view/compiler.py`,
+`tests/test_definition_schema.py`, `tests/test_action_binding.py`.
+
+Move normalization and semantic validation into the same canonical compiler
+that already produces the model JSON Schema. The compiler must emit one
+normalized Action/BT/recipe/capability/attribute definition for persistence,
+Platform validation and AgentView. Remove the remaining duplicate aliases and
+special-case food/research forms while migrating the development fixtures.
+
+**Required checks:** an unrelated world pack boots without Python changes;
+an invalid definition is rejected identically at schema and Platform
+boundaries; a God-created Action is immediately selectable through its bound
+generic BT; no standalone Action remains executable.
+
+**Stop condition:** any fix that adds a world-name, visible-name, or legacy
+schema branch stops this item and is replaced by a compiler or configuration
+fix.
+
+### 2. Finish AgentEngine protocol boundaries
+
+**Files:** `src/sim2/agents/engine.py`, `src/sim2/agents/session.py`,
+`src/sim2/agents/protocol.py`, `src/sim2/agents/tool_executor.py`,
+`src/sim2/agents/audit.py`, `tests/test_agent_engine.py`.
+
+Extract provider calls, response normalization, tool-call identity,
+conversation trimming and ReAct iteration ownership. The Platform generates
+the persisted call identity; the model may only supply function name and
+arguments. Keep a bounded stable prefix and a bounded suffix, and record the
+truncation reason, prompt size, completion size, cache usage, latency and
+accepted event IDs.
+
+**Required checks:** provider errors become explicit failed turns; a tool
+schema error is not rewritten into `wait`; reflection, Story and God outputs
+retain their original reason; audits never contain keys, proxy values or raw
+hidden reasoning.
+
+### 3. Close generic liveness and balance defects
+
+**Files:** world configuration under `worlds/`, generic demand/regeneration
+primitives under `src/sim2/platform/` or `src/sim2/simulation/`,
+`tests/test_evolution_liveness.py`, and the deterministic-run report.
+
+Investigate every depleted vital, repeated proposal and unfinished activity
+from the one-week run. Express regeneration, consumption, recovery and
+maintenance as configuration or generic primitives. Do not increase a single
+starter value as a patch and do not add a Starter Village branch.
+
+**Required checks:** a depleted vital has a configured recovery path or an
+explicit terminal consequence; repeated work changes evidence, progress or
+has a declared maintenance reason; a long action has explicit completion,
+interruption and simulation-end semantics.
+
+### 4. Run the final model-backed acceptance gate
+
+Use an interactive shell for every provider run:
+
+```bash
+bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py \
+  --provider remote --rounds 10 --runtime-dir /tmp/sim2-evolution-final'
+bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py \
+  --provider beam --rounds 10 --runtime-dir /tmp/sim2-evolution-beam'
+python scripts/run_long_simulation.py --minutes 10080
+```
+
+For each round, review the bounded context, tool arguments, output reason,
+accepted intent, committed event, wake task, next NPC choice and world delta.
+The remote run must show at least ten causal rounds with changed NPC behavior
+and changed world state. A Beam transport failure is recorded as a provider
+failure and cannot be counted as a world-quality pass. The deterministic run
+must report every starvation, deadlock, duplicate proposal and unfinished
+activity; unexplained cases block completion.
+
+### Evidence and commit order
+
+1. Commit the typed-repository probe migration and its focused test/docs
+   evidence.
+2. Commit the canonical compiler and its regression tests.
+3. Commit AgentEngine protocol extraction and audit tests.
+4. Commit generic liveness/configuration fixes and the updated one-week
+   report.
+5. Run the full suite, compile check and benchmark once, then record the
+   acceptance evidence in `docs/operations/real-model-evolution-check.md`.
+
+The current probe evidence is `/tmp/sim2-evolution-loop-post-architecture/`.
+It completed ten rounds with `status=passed`, no rejected turns or LLM errors,
+one conserved supply transfer, repeated generic research on newly created
+objects, and grounded Story/God continuation. This evidence is a progress
+record; it does not waive the remaining compiler, AgentEngine or one-week
+liveness gates.

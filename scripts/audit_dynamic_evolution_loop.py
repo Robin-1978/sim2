@@ -160,7 +160,7 @@ def _complete_behavior(platform: Platform, behavior_id: str, provider: Any, roun
     started = decision.result
     for _ in range(int(started.get("remaining_minutes", 1)) + 3):
         platform.step()
-    return {"decision": _summary(decision), "status": "completed", "behavior": behavior_id, "remaining_minutes": started.get("remaining_minutes"), "last_outcome": platform.store.get_agent("mira").get("initial_state", {}).get("last_outcome")}
+    return {"decision": _summary(decision), "status": "completed", "behavior": behavior_id, "remaining_minutes": started.get("remaining_minutes"), "last_outcome": platform.store.repositories.entities.get_agent("mira").get("initial_state", {}).get("last_outcome")}
 
 
 def main() -> int:
@@ -198,8 +198,8 @@ def main() -> int:
                 str(row["id"])
                 for row in platform.store.connection.execute("SELECT id FROM entity").fetchall()
             }
-            before_action_ids = {str(item.get("id")) for item in platform.store.get_definitions("action_def")}
-            before_behavior_ids = {str(item.get("id")) for item in platform.store.get_definitions("bt_def")}
+            before_action_ids = {str(item.get("id")) for item in platform.store.repositories.entities.get_definitions("action_def")}
+            before_behavior_ids = {str(item.get("id")) for item in platform.store.repositories.entities.get_definitions("bt_def")}
             god_turn = None
             story_turns: list[AgentTurn] = []
             god_task = _ready(platform, role="god", task_prefix="event_group:resource_safety" if round_no == 1 else "event_group:research_synthesis")
@@ -218,9 +218,9 @@ def main() -> int:
                 }
                 - before_entity_ids
             ):
-                entity = platform.store.get_entity(entity_id)
+                entity = platform.store.repositories.entities.get_entity(entity_id)
                 new_entities.append({"id": entity_id, "name": entity.get("name"), "type": entity.get("entity_type"), "state": entity.get("initial_state", {})})
-            row = {"round": round_no, "world_minute": int(platform.store.get_meta("world_minute", 0)), "god": _summary(god_turn), "npc": npc, "story": [_summary(turn) for turn in story_turns], "new_objects": new_entities, "registered_actions": [item.get("name") for item in platform.store.get_definitions("action_def") if str(item.get("id")) not in before_action_ids], "registered_behaviors": [item.get("agent_label") for item in platform.store.get_definitions("bt_def") if str(item.get("id")) not in before_behavior_ids], "energy_reserve": platform.store.get_entity("energy_reserve").get("initial_state", {}).get("quantity"), "inventory": platform.store.get_agent("mira").get("inventory", {}), "story_state": platform.store.get_meta("story_state", {})}
+            row = {"round": round_no, "world_minute": int(platform.store.get_meta("world_minute", 0)), "god": _summary(god_turn), "npc": npc, "story": [_summary(turn) for turn in story_turns], "new_objects": new_entities, "registered_actions": [item.get("name") for item in platform.store.repositories.entities.get_definitions("action_def") if str(item.get("id")) not in before_action_ids], "registered_behaviors": [item.get("agent_label") for item in platform.store.repositories.entities.get_definitions("bt_def") if str(item.get("id")) not in before_behavior_ids], "energy_reserve": platform.store.repositories.entities.get_entity("energy_reserve").get("initial_state", {}).get("quantity"), "inventory": platform.store.repositories.entities.get_agent("mira").get("inventory", {}), "story_state": platform.store.get_meta("story_state", {})}
             rows.append(row)
             with log_path.open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
