@@ -1093,7 +1093,7 @@ continuations.
 
 The latest convergence evidence after removing the metadata façade and adding
 the Runtime Web/Authoring MVP is recorded in
-`docs/operations/real-model-evolution-check.md`: **432 tests passed**, the
+`docs/operations/real-model-evolution-check.md`: **433 tests passed**, the
 deterministic week reached minute `10080` with no degeneration flags, the
 1000-agent benchmark p95 was **165.524 ms**, and the final remote 10-round
 causal probe at `/tmp/sim2-web-final-causal/` passed with four distinct

@@ -513,9 +513,11 @@ Beam was checked from an interactive shell with the configured provider. Its
 first 512-token run returned `finish_reason=length` with no content or tool
 call. A 4096-token run exposed malformed native tool arguments: trailing-space
 keys, dotted paths such as `effects.0`, and occasionally list-shaped Action
-parameters. The provider adapter now normalizes only these wire-shape errors;
-Platform still validates the canonical schema, and malformed proposals return
-`definition_schema` instead of crashing. Beam still does not count as a world
+parameters, `duration_minutes` and `entry_conditions` aliases. The provider
+adapter now normalizes these wire-shape aliases without inventing missing
+effects or outcomes; Platform still validates the canonical schema, and
+malformed proposals return `definition_schema` instead of crashing. Beam still
+does not count as a world
 quality pass when it exhausts its bounded ReAct session without a valid final
 Intent; the failure artifacts remain under `/tmp/sim2-evolution-beam-final/`
 and `/tmp/sim2-evolution-beam-native-adapter/`.
@@ -526,7 +528,7 @@ After the restricted expression AST, explicit Platform service dependencies,
 the metadata repository migration, and the Runtime Web/Authoring boundaries
 were committed, the repository checks were rerun:
 
-- `python -m pytest -q`: **432 passed**;
+- `python -m pytest -q`: **433 passed**;
 - `python -m compileall -q src scripts`: passed;
 - `git diff --check`: passed;
 - `node --check src/sim2/web/app.js`: passed;
