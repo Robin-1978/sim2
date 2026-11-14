@@ -80,3 +80,48 @@ On 2026-11-14, after the Platform service and Unit-of-Work refactor:
   `vital_depleted:fei_lan`; this is a content/balance signal from the
   deterministic provider and remains a separate world-tuning item, not a
   convergence pass criterion.
+
+### Final 10-round causal audit after the observation fixes
+
+The following runs were kept as evidence while fixing the first failure, not
+silently discarded:
+
+1. `/tmp/sim2-evolution-loop-after-event` reached the first supply and
+   research chain, then entered a false loop. `inspect_archive` emitted
+   `object.recovered` because an information Action with `object_id` defaulted
+   to recovery. The generic default is now observation; recovery requires
+   `record_object_discovery: true`.
+2. `/tmp/sim2-evolution-loop-after-observation-fix` removed that false event,
+   but correctly exposed a second gap: after the model exhausted the only
+   research question, repeated inspections changed `relay_stability` without a
+   configured world signal, so God waited and the NPC repeated inspection.
+3. `/tmp/sim2-evolution-loop-rule-audit` uses a declarative
+   `relay_stability_review` world rule in the probe. The rule is a generic
+   threshold signal, not Platform code. It converts the verified stability
+   change into a God task and lets the next research source be created through
+   the normal proposal path.
+
+The final run completed all ten rounds and wrote
+`evolution-audit-summary.json` with `{"status": "passed", "flags": []}`.
+The causal observations were:
+
+- Round 1: God created a conserved supply Action and bound BT; Mira executed
+  it and the public reserve changed from `0` to `1`.
+- Round 3: the generic research BT completed the configured archive stage;
+  the behavior outcome and `research.completed` event both reported
+  completion.
+- Rounds 4, 6 and 8: God created new, non-duplicate research entities from
+  accumulated evidence; Mira selected the same generic research BT for each.
+- Story accepted new beats for the new source facts. When a new event did not
+  justify a distinct continuation, Story returned `wait` rather than adding a
+  duplicate beat.
+- No LLM error, rejected intent, false recovery event or standalone Action was
+  observed. The last round had a valid God `wait` because the next proposed
+  research key would duplicate an existing source, while the world still had
+  a completed Story thread and no unsupported mutation.
+
+The complete per-round context summary, tool arguments, NPC outcome, Story
+result, new objects and story state are in
+`/tmp/sim2-evolution-loop-rule-audit/evolution-audit.jsonl`. The run was
+started with `bash -ic 'source ~/.bashrc && ...'`; no credentials or proxy
+settings were written to the log.

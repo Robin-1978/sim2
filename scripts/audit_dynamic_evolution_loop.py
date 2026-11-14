@@ -68,7 +68,7 @@ def _probe_template() -> dict[str, Any]:
                 "id": "research_source", "version": 1, "description": "Study one configured archive source.", "parameters": {"source_id": "string"}, "preconditions": ["actor.can_research", "research.new_fact_available"], "duration": {"minutes": 60}, "costs": {"reserve": {}, "per_minute": {"charge": 0.15}, "on_success": {}, "on_failure": {}, "refund": {}}, "effects": [{"type": "need_delta", "need": "focus", "delta": 0.5}], "progress": {"key": "research:{source_id}", "scope": "world", "amount": 1, "wake": ["story", "god"]}, "success": {"condition": "research.new_fact_found", "result": "research_completed"}, "failure": {"condition": "source.destroyed", "result": "failed"}, "kind": "atomic", "executor": "effect_pipeline",
             },
             {
-                "id": "inspect_archive", "version": 1, "description": "Inspect the public reserve and archive console.", "parameters": {"object_id": "string"}, "preconditions": ["actor.can_stewardship"], "duration": {"minutes": 15}, "costs": {"reserve": {}, "per_minute": {"charge": 0.1}, "on_success": {}, "on_failure": {}, "refund": {}}, "effects": [{"type": "world_property_delta", "property": "relay_stability", "delta": 0.02, "maximum": 1.0}], "success": {"condition": "actor.alive", "result": "archive_inspected"}, "failure": {"condition": "actor.incapacitated", "result": "failed"}, "information": {"event_type": "archive.inspected", "summary": "The relay archive and public reserve were inspected.", "source_type": "inspection", "confidence": 0.85, "result": "archive_inspected"}, "kind": "atomic", "executor": "effect_pipeline",
+                "id": "inspect_archive", "version": 1, "description": "Inspect the public reserve and archive console.", "parameters": {"object_id": "string"}, "preconditions": ["actor.can_stewardship"], "duration": {"minutes": 15}, "costs": {"reserve": {}, "per_minute": {"charge": 0.1}, "on_success": {}, "on_failure": {}, "refund": {}}, "effects": [{"type": "world_property_delta", "property": "relay_stability", "delta": 0.02, "maximum": 1.0}], "success": {"condition": "actor.alive", "result": "archive_inspected"}, "failure": {"condition": "actor.incapacitated", "result": "failed"}, "information": {"event_type": "archive.inspected", "summary": "The relay archive and public reserve were inspected.", "source_type": "inspection", "confidence": 0.85, "result": "archive_inspected", "record_object_discovery": False}, "kind": "atomic", "executor": "effect_pipeline",
             },
         ],
         "behavior_trees": [
@@ -85,6 +85,16 @@ def _probe_template() -> dict[str, Any]:
             "minute_effects": [{"id": "charge_recovery", "scope": "agent", "every_minutes": 1, "effect": {"type": "attribute_delta", "attribute": "charge", "delta": 0.05, "maximum": 100}}],
             "resource_entity_types": ["resource", "material"],
             "resource_property_projections": {"energy_reserve": "energy_reserve"},
+            "world_rules": [
+                {
+                    "id": "relay_stability_review",
+                    "condition": "world.relay_stability >= 0.55",
+                    "effect": "relay.stability_review",
+                    "event_type": "relay.stability_review",
+                    "wake": ["god"],
+                    "description": "Repeated archive inspections have raised relay stability enough to justify a new world-level review.",
+                },
+            ],
             "context_values": {},
             "decision_policy": {"wait_backoff_minutes": [5, 10, 20], "empty_catalog_retry_minutes": 15, "wake_events": ["definition.registered", "story.beat.activated"]},
             "capability_progression": {"research": {"minimum_completed_outcomes": 2, "max_delta": 0.08, "max_value": 1.0}, "stewardship": {"minimum_completed_outcomes": 2, "max_delta": 0.08, "max_value": 1.0}},
@@ -93,6 +103,7 @@ def _probe_template() -> dict[str, Any]:
             "wakes": [
                 {"id": "research_synthesis", "on": ["research.progressed", "research.completed"], "for": "god", "count": 2, "every": 1, "external": True, "tools": ["propose_entity", "propose_definition", "wait"], "purpose": "Two verified research work outcomes justify one new unanswered relay question or a concrete structure that lets the next study happen.", "result": "Create at most one genuinely new source or executable continuation when the accumulated evidence leaves a distinct unanswered question; otherwise wait."},
                 {"id": "resource_safety", "on": "resource.safety_low", "for": "god", "count": 1, "every": 1, "external": True, "require_story_outcome": True, "tools": ["propose_definition", "wait"], "purpose": "The public energy reserve is below its floor and Mira carries a real source item.", "result": "Create one conserved supply Action and bound behavior when a real carried source exists; the behavior must wake Story after execution. Never mint public stock."},
+                {"id": "relay_stability_review", "on": "relay.stability_review", "for": "god", "count": 1, "every": 1, "external": True, "tools": ["propose_entity", "wait"], "purpose": "Repeated verified archive inspections have raised relay stability enough for a new world-level research question.", "result": "Create one genuinely new research source only if the stability evidence supports a distinct unanswered question; otherwise wait."},
                 {"on": "research.completed", "for": "story"},
                 {"on": "resource.replenished", "for": "story"},
                 {"on": "entity.created", "for": "story"},
@@ -174,8 +185,13 @@ def main() -> int:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with platform.store.transaction():
-            event_id = platform.store.append_event("resource.safety_low", None, 1, {"resource_id": "energy_reserve", "quantity": 0, "minimum_reserve": 1, "summary": "公共能源储备为零，Mira 携带的 energy_cell 可作为真实补给来源。"})
-        platform.wakes.configured(event_id, "resource.safety_low", None, 1)
+            platform._services["events"].publish(
+                "resource.safety_low",
+                None,
+                1,
+                {"resource_id": "energy_reserve", "quantity": 0, "minimum_reserve": 1, "summary": "公共能源储备为零，Mira 携带的 energy_cell 可作为真实补给来源。"},
+                wake="configured",
+            )
         rows: list[dict[str, Any]] = []
         for round_no in range(1, max(1, args.rounds) + 1):
             before_entity_ids = {
@@ -218,6 +234,37 @@ def main() -> int:
                 research_tasks = [item for item in platform.ready_evolution_tasks() if item.get("role") == "god" and str(item.get("task_type", "")).startswith("event_group:research_synthesis")]
                 if research_tasks:
                     continue
+        # A model-backed evolution probe is a quality gate, not a transport
+        # smoke test. If the last three rounds repeat the same NPC behavior
+        # without a new object, Action, BT, or Story beat, the world has
+        # reached an unexplained absorbing state and the probe must fail.
+        quality_flags: list[str] = []
+        if len(rows) >= 3:
+            tail = rows[-3:]
+            structural_changes = sum(
+                len(row.get("new_objects") or [])
+                + len(row.get("registered_actions") or [])
+                + len(row.get("registered_behaviors") or [])
+                for row in tail
+            )
+            choices = [
+                str((((row.get("npc") or {}).get("decision") or {}).get("calls") or [{}])[0].get("arguments", {}).get("choice", ""))
+                for row in tail
+            ]
+            accepted_story = sum(
+                1
+                for row in tail
+                for story in (row.get("story") or [])
+                if isinstance(story, dict) and story.get("status") == "accepted"
+            )
+            if structural_changes == 0 and accepted_story == 0 and len(set(choices)) <= 1:
+                quality_flags.append("absorbing_state:three_rounds_without_structural_or_story_progress")
+        summary = {"status": "passed" if not quality_flags else "failed", "flags": quality_flags, "rounds": len(rows)}
+        with (runtime_root / "evolution-audit-summary.json").open("w", encoding="utf-8") as stream:
+            json.dump(summary, stream, ensure_ascii=False, indent=2)
+        print(json.dumps({"audit": summary}, ensure_ascii=False), flush=True)
+        if quality_flags:
+            return 2
         return 0
     finally:
         platform.close()

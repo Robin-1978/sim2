@@ -26,9 +26,9 @@ migration façades:
 1. The Platform facade and the world-evolution split are in place.
 2. Unit of Work and typed repositories are in place for state-changing paths.
 3. Agent tool registry, executor, session and runtime policy have been split.
-4. The current uncommitted change replaces implicit cross-service method
-   discovery with explicit service owners. It must be tested and committed
-   before the next structural change.
+4. The explicit cross-service owner conversion is now tested and committed;
+   the Platform facade no longer relies on implicit service-method scanning for
+   the migrated paths.
 5. The remaining architectural debt is the Store read façade, the duplicate
    definition compiler/validation paths, and the still-large AgentEngine.
 6. A one-week deterministic run has already exposed a content-level liveness
@@ -56,6 +56,9 @@ migration façades:
 **Gate:** no service reaches an undeclared service; one tick still commits
 minute effects, activity progress, outcomes, events and wake tasks in one
 transaction; the focused suite is green.
+
+**Completed:** committed as `d995b06` after 94 focused tests and compile
+checks. A follow-up regression also fixed the facade-to-runner host boundary.
 
 #### Package 2 — make event and wake ownership singular
 

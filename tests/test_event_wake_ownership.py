@@ -39,3 +39,30 @@ def test_event_service_preserves_explicit_causal_metadata(tmp_path: Path) -> Non
     finally:
         platform.close()
 
+
+def test_information_observation_does_not_become_recovery_without_explicit_flag(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "observation-is-not-recovery", tmp_path / "runtime"))
+    try:
+        agent = platform.store.get_agent("luo_shan")
+        action = {
+            "id": "inspect_without_recovery_flag",
+            "information": {
+                "event_type": "observation.object_inspected",
+                "summary": "The object was inspected.",
+                "fact": "The object is present.",
+                "result": "object_inspected",
+            },
+        }
+        with platform.store.transaction():
+            platform._services["activity"]._record_information_result(
+                agent,
+                action,
+                {"object_id": "caravan_ledger"},
+                0,
+            )
+        event_types = [item["event_type"] for item in platform.store.recent_events(limit=10)]
+        assert "observation.object_inspected" in event_types
+        assert "object.recovered" not in event_types
+    finally:
+        platform.close()
+

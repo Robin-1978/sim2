@@ -977,9 +977,16 @@ class ActivityRuntimeMixin:
                         )
                         result = {"result": "research_completed", "event_id": event_id, "progress": progress}
                     elif progress is not None:
-                        result = {"result": "research_progressed", "progress": progress}
+                        result = {
+                            "result": "research_completed" if progress["completed"] else "research_progressed",
+                            "progress": progress,
+                        }
         object_id = parameters.get("object_id") or information.get("object_parameter") and parameters.get(information["object_parameter"])
-        if object_id and information.get("record_object_discovery", True):
+        # An information channel is an observation by default. Recovery is a
+        # stronger world fact and must be explicitly declared by the Action;
+        # otherwise an inspection would emit ``object.recovered`` on every
+        # repeat and falsely wake Story with the same evidence.
+        if object_id and information.get("record_object_discovery", False):
             object_id = str(object_id)
             try:
                 discovered_object = self.store.get_entity(object_id)

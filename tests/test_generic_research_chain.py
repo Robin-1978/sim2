@@ -59,6 +59,18 @@ def test_one_research_bt_can_research_a_god_created_source(tmp_path: Path):
             )
             assert started["status"] == "accepted"
             _step(platform, started["remaining_minutes"])
+            outcomes = [
+                item for item in platform.store.recent_events(limit=100)
+                if item.get("event_type") == "behavior.completed" and item.get("actor_id") == "luo_shan"
+            ]
+            assert outcomes
+            if index == 1:
+                assert outcomes[0]["result"] == "research_completed"
+                assert any(
+                    item.get("event_type") == "research.completed"
+                    and item.get("actor_id") == "luo_shan"
+                    for item in platform.store.recent_events(limit=100)
+                )
 
         facts = {item["fact_key"] for item in platform.store.list_knowledge_facts("luo_shan", limit=100)}
         assert {"fact:later_marker:one", "fact:later_marker:two"} <= facts
