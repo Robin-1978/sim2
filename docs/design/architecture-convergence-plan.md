@@ -1018,6 +1018,12 @@ rejects invalid canonical definitions; malformed definitions no longer crash
 the Runtime. A real Beam run remains recorded as a provider-quality failure
 when it exhausts its output budget without a valid final Intent.
 
+After these changes the full suite is **422 passed**; compileall and diff
+checks pass. The supported DeepSeek causal audit, deterministic week and
+benchmark remain the authoritative world-quality evidence. Beam remains an
+external provider compatibility failure until it can emit a bounded valid
+Intent consistently.
+
 ### 4. Run the final model-backed acceptance gate
 
 Use an interactive shell for every provider run:
