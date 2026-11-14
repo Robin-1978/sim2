@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import inspect
 import json
 from typing import Any
 
@@ -14,8 +13,9 @@ from .runtime_policy import (
     configured_role_tools, role_policy,
 )
 from .audit import AgentAudit
-from .session import AgentTurn
-from .tools import AgentToolExecutor, TOOL_DEFINITIONS, parse_tool_call, tool_schemas_for_role
+from .protocol import ProviderProtocol, normalize_provider_intent, readable_model_response
+from .session import AgentTurn, trim_conversation_messages
+from .tools import AgentToolExecutor, TOOL_DEFINITIONS, parse_tool_call
 
 
 class AgentEngine:
@@ -43,6 +43,7 @@ class AgentEngine:
         self.view = platform.view
         self._last_usage: dict[str, Any] = {}
         self.audit = AgentAudit(platform)
+        self.protocol = ProviderProtocol(provider)
 
     def _complete(
         self,
@@ -55,21 +56,15 @@ class AgentEngine:
     ) -> dict[str, Any]:
         """Call old test providers and native tool-capable providers alike."""
 
-        method = self.provider.complete_json
-        kwargs: dict[str, Any] = {"system": system, "context": context}
-        try:
-            parameters = inspect.signature(method).parameters
-        except (TypeError, ValueError):
-            parameters = {}
-        if "tools" in parameters:
-            kwargs["tools"] = tool_schemas_for_role(role, allowed_tools)
-        if "role" in parameters:
-            kwargs["role"] = role
-        if "messages" in parameters:
-            kwargs["messages"] = messages
-        response = method(**kwargs)
-        self._last_usage = dict(response.pop("_usage", {}) or {}) if isinstance(response, dict) else {}
-        return response
+        reply = self.protocol.complete(
+            role=role,
+            system=system,
+            context=context,
+            messages=messages,
+            allowed_tools=allowed_tools,
+        )
+        self._last_usage = dict(reply.usage)
+        return reply.payload
 
     @staticmethod
     def _reflection_has_evidence(context: dict[str, Any]) -> bool:
@@ -397,7 +392,7 @@ class AgentEngine:
                 # cap every read result is resent on every iteration, so a
                 # short choice can accumulate a large prompt and latency.
                 if len(conversation_messages) > 8:
-                    conversation_messages = self._trim_conversation_messages(conversation_messages, max_tail=6)
+                    conversation_messages = trim_conversation_messages(conversation_messages, max_tail=6)
                 if accepted_result is not None:
                     return AgentTurn(role, task_type, last_response, accepted_result, iteration, transcript, initial_context, prompt_history)
                 continue
@@ -458,25 +453,7 @@ class AgentEngine:
         request invalid.  Remove whole assistant/tool groups instead.
         """
 
-        if len(messages) <= 2 + max(1, int(max_tail)):
-            return list(messages)
-        prefix = list(messages[:2])
-        tail = list(messages[2:])
-        limit = max(1, int(max_tail))
-        while len(tail) > limit:
-            removed = tail.pop(0)
-            if removed.get("role") == "assistant" and removed.get("tool_calls"):
-                while tail and tail[0].get("role") == "tool":
-                    tail.pop(0)
-            while tail and tail[0].get("role") == "tool":
-                tail.pop(0)
-        # A very large single tool group must remain intact even if it exceeds
-        # the nominal cap; protocol validity is more important than one turn's
-        # soft message budget.
-        if tail and tail[0].get("role") == "tool":
-            while tail and tail[0].get("role") == "tool":
-                tail.pop(0)
-        return prefix + tail
+        return trim_conversation_messages(messages, max_tail=max_tail)
 
     @staticmethod
     def _interaction_tools(task_type: str) -> list[str] | None:
@@ -583,30 +560,7 @@ class AgentEngine:
         AgentTurn/audit copy is made human-readable.
         """
 
-        readable = copy.deepcopy(response)
-        candidates: list[Any] = []
-        for key in ("tool_calls", "tool_uses"):
-            value = readable.get(key)
-            if isinstance(value, list):
-                candidates.extend(value)
-        for key in ("tool_call", "function_call"):
-            value = readable.get(key)
-            if isinstance(value, dict):
-                candidates.append(value)
-        for call in candidates:
-            if not isinstance(call, dict):
-                continue
-            function = call.get("function") if isinstance(call.get("function"), dict) else call
-            arguments = function.get("arguments") if isinstance(function, dict) else None
-            if not isinstance(arguments, str):
-                continue
-            try:
-                parsed = json.loads(arguments)
-            except (TypeError, ValueError, json.JSONDecodeError):
-                continue
-            if isinstance(parsed, dict):
-                function["arguments"] = parsed
-        return readable
+        return readable_model_response(response)
 
     @classmethod
     def _model_tool_result(cls, tool_name: str, result: dict[str, Any]) -> dict[str, Any]:
@@ -951,50 +905,7 @@ class AgentEngine:
         exact Platform choice resolution.
         """
 
-        normalized = dict(data)
-        if role != "agent_decision":
-            return normalized
-        nested = normalized.get("parameters")
-        nested_choice = nested.get("choice") if isinstance(nested, dict) else None
-        choice_detail = normalized.get("choice_detail") if isinstance(normalized.get("choice_detail"), dict) else {}
-        choice = normalized.get("choice")
-        intent_names = {"request_behavior", "select_behavior"}
-        if isinstance(choice, str) and choice.casefold() in intent_names:
-            candidate = (
-                nested_choice
-                or choice_detail.get("behavior_name")
-                or choice_detail.get("choice")
-                or normalized.get("behavior")
-                or normalized.get("behavior_name")
-            )
-            if isinstance(candidate, str) and candidate.strip():
-                normalized["choice"] = candidate
-                if isinstance(nested, dict):
-                    for key in ("target", "reason", "confidence"):
-                        if normalized.get(key) in (None, "") and nested.get(key) not in (None, ""):
-                            normalized[key] = nested.get(key)
-                    # The wrapper's choice is a selector, not an execution
-                    # parameter. Preserve only actual user-facing parameters.
-                    normalized["parameters"] = {
-                        key: value for key, value in nested.items()
-                        if key not in {"choice", "target", "reason", "confidence"}
-                    }
-        elif not isinstance(choice, str) or not choice.strip():
-            candidate = normalized.get("behavior") or normalized.get("behavior_name")
-            if isinstance(candidate, str) and candidate.strip():
-                normalized["choice"] = candidate
-        target = normalized.get("target")
-        if isinstance(target, str) and target.strip():
-            normalized["target"] = {"name": target.strip()}
-        elif isinstance(target, dict):
-            target_copy = dict(target)
-            if not target_copy.get("name"):
-                for key, value in target_copy.items():
-                    if str(key).casefold() in {"participant", "entity", "target"} and isinstance(value, str) and value.strip():
-                        target_copy["name"] = value.strip()
-                        break
-            normalized["target"] = target_copy
-        return normalized
+        return normalize_provider_intent(role, data)
 
     @staticmethod
     def _interaction_intents(task_type: str) -> set[str] | None:
