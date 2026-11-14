@@ -93,6 +93,6 @@ wakes:
   external: true
   tools: [revise_institution, propose_entity, propose_definition, wait]
   purpose: A configured reserve crossed its safety floor; review the institution and supply path against the observed runway before another allocation.
-  result: Revise the active institution when its minimum or cadence cannot preserve the configured reserve floor; otherwise propose one executable supply or recovery path. Do not create a new research document for a stock shortage.
+  result: Revise the active institution when its minimum or cadence cannot preserve the configured reserve floor. Propose a supply or recovery path only when the current world already has a real source entity and a registered Action that can consume or recover it; otherwise wait for evidence. Never invent an Action whose only effect is changing a resource quantity, and do not create a new research document for a stock shortage.
 - {"on": institution.activated, for: story}
 - {"on": institution.allocation_completed, for: story, manual_only: true}
