@@ -110,13 +110,13 @@ class EvolutionService(PlatformService):
                         role, task_type, actor_id = "agent_reflection", f"trigger:{trigger_id}", target
                     else:
                         role, task_type, actor_id = "agent_reflection", target, None
-                    self.store.put_evolution_task(f"trigger:{trigger_id}:{minute}:{index}", role, actor_id, task_type, minute, 0, data={"trigger_id": trigger_id})
+                    self.uow.evolution.put_task(f"trigger:{trigger_id}:{minute}:{index}", role, actor_id, task_type, minute, 0, data={"trigger_id": trigger_id})
             states[trigger_id] = active
         self.store.set_meta("evolution_trigger_state", states)
 
     def _emit_due_evolution_tasks(self, minute: int) -> None:
-        for task in self.store.due_evolution_tasks(minute):
-            self.store.mark_evolution_task_ready(task["task_id"])
+        for task in self.uow.evolution.due_tasks(minute):
+            self.uow.evolution.mark_ready(task["task_id"])
             self.store.append_event(
                 "evolution.task_due",
                 task.get("actor_id"),
@@ -127,19 +127,19 @@ class EvolutionService(PlatformService):
     def ready_evolution_tasks(self) -> list[dict[str, Any]]:
         """Return low-frequency Agent tasks without invoking an LLM."""
 
-        return self.store.ready_evolution_tasks()
+        return self.uow.evolution.ready_tasks()
 
     def claim_evolution_task(self, task_id: str) -> dict[str, Any] | None:
         minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
-            return self.store.claim_evolution_task(task_id, minute)
+            return self.uow.evolution.claim(task_id, minute)
 
     def recover_claimed_evolution_tasks(self) -> list[str]:
         """Requeue due evolution work left behind by an interrupted process."""
 
         minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
-            task_ids = self.store.recover_claimed_evolution_tasks(minute)
+            task_ids = self.uow.evolution.recover_claimed(minute)
             if task_ids:
                 self.store.append_event(
                     "evolution.tasks_recovered",
@@ -152,7 +152,7 @@ class EvolutionService(PlatformService):
     def complete_evolution_task(self, task_id: str) -> None:
         minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
-            self.store.complete_evolution_task(task_id, minute)
+            self.uow.evolution.complete(task_id, minute)
 
     def retry_evolution_task(self, task_id: str, retry_minute: int, reason: str) -> None:
         """Return a failed low-frequency task to the scheduler with an audit event."""
@@ -178,12 +178,12 @@ class EvolutionService(PlatformService):
                     data = {}
             data["retry_count"] = int(data.get("retry_count", 0) or 0) + 1
             data["last_retry_reason"] = str(reason)
-            self.store.reschedule_evolution_task(task_id, scheduled_minute, data)
+            self.uow.evolution.reschedule(task_id, scheduled_minute, data)
             if scheduled_minute == minute:
                 # ``step()`` normally promotes due tasks to ready. A provider
                 # retry intentionally does not step, so promote this one now
                 # and let the resumed runner claim it before time advances.
-                self.store.mark_evolution_task_ready(task_id)
+                self.uow.evolution.mark_ready(task_id)
             self.store.append_event(
                 "evolution.task_retry",
                 None,
