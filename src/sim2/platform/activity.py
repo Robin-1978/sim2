@@ -75,7 +75,7 @@ class ActivityRuntimeMixin:
             "recent_event_types": self._context.services["evolution"]._recent_event_types(),
             "day_phase": world_time_view(self.store).get("day_phase"),
         }
-        condition_context.update(configured_context_values(self.store.get_meta("rules", {}) or {}, agent))
+        condition_context.update(configured_context_values(self.store.repositories.metadata.get("rules", {}) or {}, agent))
         condition_context.update(self._institution_action_context(action, parameters))
         if (
             action.get("duration", {}).get("mode") == "recipe_duration"
@@ -88,13 +88,13 @@ class ActivityRuntimeMixin:
             agent=agent,
             target={**parameters, **(resolved_target or {})},
             context=condition_context,
-            world=self.store.get_meta("world_properties", {}) or {},
+            world=self.store.repositories.metadata.get("world_properties", {}) or {},
         )
         if denial:
             return False, denial["message"]
         for predicate in action.get("preconditions", []) or []:
             condition_target = {**parameters, **(resolved_target or {})}
-            if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=condition_context, world=self.store.get_meta("world_properties", {}) or {}):
+            if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=condition_context, world=self.store.repositories.metadata.get("world_properties", {}) or {}):
                 return False, f"precondition failed: {predicate}"
         duration = self._context.services["execution"]._action_duration(agent, action, parameters, state.get("location_id"))
         if already_at_destination:
@@ -187,7 +187,7 @@ class ActivityRuntimeMixin:
             "recent_event_types": self._context.services["evolution"]._recent_event_types(),
             "day_phase": world_time_view(self.store).get("day_phase"),
         }
-        context.update(configured_context_values(self.store.get_meta("rules", {}) or {}, agent))
+        context.update(configured_context_values(self.store.repositories.metadata.get("rules", {}) or {}, agent))
         context.update(self._institution_action_context(action, parameters))
         if (
             action.get("duration", {}).get("mode") == "recipe_duration"
@@ -201,12 +201,12 @@ class ActivityRuntimeMixin:
             agent=agent,
             target=condition_target,
             context=context,
-            world=self.store.get_meta("world_properties", {}) or {},
+            world=self.store.repositories.metadata.get("world_properties", {}) or {},
         )
         if denial:
             return None, denial["message"]
         for predicate in action.get("preconditions", []) or []:
-            if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=context, world=self.store.get_meta("world_properties", {}) or {}):
+            if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=context, world=self.store.repositories.metadata.get("world_properties", {}) or {}):
                 return None, f"precondition failed: {predicate}"
         duration = self._context.services["execution"]._action_duration(agent, action, parameters, state.get("location_id"))
         if already_at_destination:
@@ -535,7 +535,7 @@ class ActivityRuntimeMixin:
             elif effect_type == "world_property_delta":
                 property_id = str(effect.get("property") or effect.get("world_property") or "")
                 if property_id:
-                    properties = dict(self.store.get_meta("world_properties", {}) or {})
+                    properties = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
                     before_value = properties.get(property_id)
                     value = float(before_value or 0) + float(effect.get("delta", effect.get("value", 0)) or 0)
                     if isinstance(effect.get("minimum"), (int, float)):
@@ -739,7 +739,7 @@ class ActivityRuntimeMixin:
         if not condition:
             return None
         context = self._action_condition_context(agent, parameters, target)
-        if self.conditions.evaluate(condition, agent=agent, target=target or {}, context=context, world=self.store.get_meta("world_properties", {}) or {}):
+        if self.conditions.evaluate(condition, agent=agent, target=target or {}, context=context, world=self.store.repositories.metadata.get("world_properties", {}) or {}):
             return str((action.get("failure") or {}).get("result") or condition)
         return None
 
@@ -762,7 +762,7 @@ class ActivityRuntimeMixin:
             agent=agent,
             target=target or {},
             context=context,
-            world=self.store.get_meta("world_properties", {}) or {},
+            world=self.store.repositories.metadata.get("world_properties", {}) or {},
         )
         if verdict is False:
             return str(success.get("failure_result") or f"success condition failed: {condition}")
@@ -856,7 +856,7 @@ class ActivityRuntimeMixin:
         if source_required is None:
             source_required = source_state.get("research_required")
         if source_required is None:
-            source_required = (self.store.get_meta("rules", {}) or {}).get("research_default_required")
+            source_required = (self.store.repositories.metadata.get("rules", {}) or {}).get("research_default_required")
         try:
             source_required = max(1.0, float(source_required)) if source_required is not None else None
         except (TypeError, ValueError):
@@ -881,7 +881,7 @@ class ActivityRuntimeMixin:
         if discovery and len(discoveries) > 1:
             key = f"{key}:{discovery['id']}"
         scope = str(definition.get("scope", "agent"))
-        owner = str(self.store.get_meta("world_id", "world")) if scope == "world" else str(agent["id"])
+        owner = str(self.store.repositories.metadata.get("world_id", "world")) if scope == "world" else str(agent["id"])
         required_value = (discovery or {}).get("required")
         if required_value is None:
             required_value = source_required
@@ -1067,7 +1067,7 @@ class ActivityRuntimeMixin:
         if isinstance(period, (int, float)) and not isinstance(period, bool) and float(period) > 0:
             size = max(1, int(period))
             return f"block:{int(minute) // size}"
-        calendar = (self.store.get_meta("setting", {}) or {}).get("calendar", {}) or {}
+        calendar = (self.store.repositories.metadata.get("setting", {}) or {}).get("calendar", {}) or {}
         key = str(period or "world").casefold()
         sizes = {
             "day": int(calendar.get("minutes_per_day", 1440) or 1440),
@@ -1267,7 +1267,7 @@ class ActivityRuntimeMixin:
             blocked_behaviors[str(behavior_id)] = {
                 "result": str(result),
                 "failed_at": int(minute),
-                "failed_world_revision": int(self.store.get_meta("world_revision", 0) or 0),
+                "failed_world_revision": int(self.store.repositories.metadata.get("world_revision", 0) or 0),
             }
         state["blocked_behaviors"] = blocked_behaviors
         assignments = list(agent.get("behavior_assignments", []) or [])
@@ -1339,11 +1339,11 @@ class ActivityRuntimeMixin:
         """
 
         try:
-            state = dict(self.store.get_meta("story_state", {}) or {})
+            state = dict(self.store.repositories.metadata.get("story_state", {}) or {})
             agent = self.store.repositories.entities.get_agent(actor_id)
         except (KeyError, TypeError):
             return
-        story_root = self.store.get_meta("story", {}) or {}
+        story_root = self.store.repositories.metadata.get("story", {}) or {}
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
         definitions = {str(item.get("id")): item for item in self.store.repositories.entities.get_definitions("bt_def")}
         beats = {str(item.get("id")): item for item in (story_root.get("beats", []) or []) if isinstance(item, dict)}
@@ -1393,7 +1393,7 @@ class ActivityRuntimeMixin:
         if cleared_goals:
             agent["story_goals"] = [item for item in (agent.get("story_goals", []) or []) if str(item) not in cleared_goals]
             self.store.repositories.entities.update_agent(actor_id, agent)
-        self.store.set_meta("story_state", state)
+        self.store.repositories.metadata.set("story_state", state)
         self._context.services["events"].wake(source_event_id, "behavior.failed", actor_id, minute, wake="story_source")
 
     def _complete_story_beats_for_actor(self, actor_id: str, behavior_id: str, minute: int) -> None:
@@ -1408,10 +1408,10 @@ class ActivityRuntimeMixin:
         """
 
         try:
-            state = dict(self.store.get_meta("story_state", {}) or {})
+            state = dict(self.store.repositories.metadata.get("story_state", {}) or {})
         except Exception:
             return
-        story_root = self.store.get_meta("story", {}) or {}
+        story_root = self.store.repositories.metadata.get("story", {}) or {}
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
         package_beats = {str(item.get("id")): item for item in (story_root.get("beats", []) or []) if isinstance(item, dict)}
         for item in state.get("emergent_beats", []) or []:
@@ -1478,5 +1478,5 @@ class ActivityRuntimeMixin:
             changed = True
             self._context.services["events"].append("story.beat.completed", actor_id, minute, {"beat_id": beat_id, "behavior_id": behavior_id})
         if changed:
-            self.store.set_meta("story_state", state)
+            self.store.repositories.metadata.set("story_state", state)
 

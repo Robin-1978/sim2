@@ -241,7 +241,7 @@ def test_resource_property_projection_follows_configured_alias(tmp_path: Path):
         with platform.store.transaction():
             result = platform.store.repositories.entities.sync_world_property_from_resource("cistern_water", 17)
         assert result == {"world_property": "cistern_reserve", "before": 48, "after": 17}
-        assert platform.store.get_meta("world_properties")["cistern_reserve"] == 17
+        assert platform.store.repositories.metadata.get("world_properties")["cistern_reserve"] == 17
     finally:
         platform.close()
 
@@ -252,13 +252,13 @@ def test_configured_cistern_regeneration_updates_resource_and_world_view(tmp_pat
         resource = platform.store.repositories.entities.get_entity("cistern_water")
         resource["initial_state"]["quantity"] = 20
         platform.store.repositories.entities.put_entity("cistern_water", "resource", resource["name"], {key: value for key, value in resource.items() if key not in {"id", "entity_type", "name"}})
-        properties = dict(platform.store.get_meta("world_properties") or {})
+        properties = dict(platform.store.repositories.metadata.get("world_properties") or {})
         properties["cistern_reserve"] = 20
-        platform.store.set_meta("world_properties", properties)
+        platform.store.repositories.metadata.set("world_properties", properties)
         platform.store.connection.commit()
         step_n(platform, 1440)
         assert platform.store.repositories.entities.get_entity("cistern_water")["initial_state"]["quantity"] == 32.0
-        assert platform.store.get_meta("world_properties")["cistern_reserve"] == 32.0
+        assert platform.store.repositories.metadata.get("world_properties")["cistern_reserve"] == 32.0
     finally:
         platform.close()
 
@@ -364,10 +364,10 @@ def test_story_npc_evidence_and_god_institution_chain_uses_llm_tools(tmp_path: P
         execution = platform.store.repositories.entities.get_agent("mei_lan")["initial_state"].get("remaining_minutes", 0)
         for _ in range(int(execution) + 1):
             platform.step()
-        props = dict(platform.store.get_meta("world_properties", {}) or {})
+        props = dict(platform.store.repositories.metadata.get("world_properties", {}) or {})
         props["cistern_reviews"] = 3
         with platform.store.transaction():
-            platform.store.set_meta("world_properties", props)
+            platform.store.repositories.metadata.set("world_properties", props)
         platform.step()
         god_tasks = [item for item in platform.ready_evolution_tasks() if str(item["task_id"]).startswith("trigger:cistern_review_threshold")]
         assert god_tasks and god_tasks[0]["role"] == "god"
@@ -650,11 +650,11 @@ def test_ten_round_story_god_chain_keeps_creating_followups(tmp_path: Path):
             # Each cycle represents a later evidence window. Reset only the
             # configured cooldown in this test; the runtime still requires
             # three new persisted ledger events before God is woken.
-            state = dict(platform.store.get_meta("god:event_wake_group_state", {}) or {})
+            state = dict(platform.store.repositories.metadata.get("god:event_wake_group_state", {}) or {})
             state.setdefault("institution_ledger_review", {})["last_wake_minute"] = -100000
             if (cycle + 1) % 3 == 0:
                 state.setdefault("institution_outcome_review", {})["last_wake_minute"] = -100000
-            platform.store.set_meta("god:event_wake_group_state", state)
+            platform.store.repositories.metadata.set("god:event_wake_group_state", state)
             base = 10 + cycle * 3
             for minute in (base, base + 1, base + 2):
                 event_id = platform.store.repositories.events.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})

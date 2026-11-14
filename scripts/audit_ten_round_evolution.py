@@ -67,9 +67,9 @@ def main() -> int:
             platform.complete_evolution_task(activation_task["task_id"])
 
             for cycle in range(10):
-                state = dict(platform.store.get_meta("god:event_wake_group_state", {}) or {})
+                state = dict(platform.store.repositories.metadata.get("god:event_wake_group_state", {}) or {})
                 state.setdefault("institution_ledger_review", {})["last_wake_minute"] = -100000
-                platform.store.set_meta("god:event_wake_group_state", state)
+                platform.store.repositories.metadata.set("god:event_wake_group_state", state)
                 base = 10 + cycle * 3
                 for minute in (base, base + 1, base + 2):
                     event_id = events.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})

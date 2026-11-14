@@ -28,7 +28,7 @@ class WorldProposalEvaluator:
             match_reason = ""
             current_value: Any = None
             if mode == "property_value":
-                properties = self.store.get_meta("world_properties", {}) or {}
+                properties = self.store.repositories.metadata.get("world_properties", {}) or {}
                 property_name = str(expected.get("property") or "")
                 current_value = properties.get(property_name)
                 matched = current_value == expected.get("target_value")

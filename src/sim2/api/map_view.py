@@ -59,8 +59,8 @@ def build_map_view(store: Any, *, viewer_id: str | None = None, observer: bool =
 
     return {
         "status": "ok",
-        "world_id": store.get_meta("world_id"),
-        "world_minute": int(store.get_meta("world_minute", 0)),
+        "world_id": store.repositories.metadata.get("world_id"),
+        "world_minute": int(store.repositories.metadata.get("world_minute", 0)),
         "nodes": sorted(locations, key=lambda item: item["id"]),
         "edges": sorted(edges, key=lambda item: (item["from"], item["to"])),
         "viewer": "observer" if observer else viewer_id,

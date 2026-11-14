@@ -181,9 +181,9 @@ class AgentViewCompiler:
         self.events_repo = store.repositories.events
         self.evolution_repo = store.repositories.evolution
         self.social_repo = store.repositories.social
-        self.conditions = ConditionEngine((self.store.get_meta("rules", {}) or {}))
+        self.conditions = ConditionEngine((self.store.repositories.metadata.get("rules", {}) or {}))
         self.rule_compiler = self._new_rule_compiler()
-        self._rule_compiler_revision = int(self.store.get_meta("world_revision", 0) or 0)
+        self._rule_compiler_revision = int(self.store.repositories.metadata.get("world_revision", 0) or 0)
         self._visible_entity_revision: int | None = None
         self._visible_entity_replacements: list[tuple[str, str]] = []
         self._definition_cache: dict[tuple[int, str], list[dict[str, Any]]] = {}
@@ -192,9 +192,9 @@ class AgentViewCompiler:
         self.memory = MemoryService(store)
 
     def _new_rule_compiler(self) -> RuleCompiler:
-        rules = self.store.get_meta("rules", {}) or {}
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
         aliases = {}
-        for key in (self.store.get_meta("world_properties", {}) or {}):
+        for key in (self.store.repositories.metadata.get("world_properties", {}) or {}):
             aliases[str(key)] = str(key)
             aliases[str(key).replace("_", " ")] = str(key)
         for entity_type in ("resource", "material", "location", "object", "faction", "agent"):
@@ -208,7 +208,7 @@ class AgentViewCompiler:
     def _definitions(self, table: str) -> list[dict[str, Any]]:
         """Read definitions once per committed world revision and table."""
 
-        revision = int(self.store.get_meta("world_revision", 0) or 0)
+        revision = int(self.store.repositories.metadata.get("world_revision", 0) or 0)
         key = (revision, str(table))
         cached = self._definition_cache.get(key)
         if cached is None:
@@ -330,7 +330,7 @@ class AgentViewCompiler:
     def _interaction_context(self, agent: dict[str, Any], participants: list[dict[str, Any]]) -> dict[str, Any]:
         """Expose configured relationship signals without naming story entities."""
 
-        rules = self.store.get_meta("rules", {}) or {}
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
         conflict_types = {str(item) for item in (rules.get("conflict_relation_types", ["conflict"]) or [])}
         participant_ids = {str(item.get("id")) for item in participants}
         available = False
@@ -424,7 +424,7 @@ class AgentViewCompiler:
         rules = list((role_rules.get(role) if isinstance(role_rules, dict) else None) or prompt.get("platform_rules", []) or []) if isinstance(prompt, dict) else []
         if not rules:
             rules = default_platform_rules(role)
-        attributes = self.store.get_meta("attributes", []) or []
+        attributes = self.store.repositories.metadata.get("attributes", []) or []
         attribute_rules = [
             f"{item.get('label', item.get('id'))}: {item.get('prompt')}"
             for item in attributes
@@ -445,7 +445,7 @@ class AgentViewCompiler:
         """Map package storage keys to visible names for model-facing policy text."""
 
         labels: dict[str, str] = {}
-        for key in (self.store.get_meta("world_properties", {}) or {}):
+        for key in (self.store.repositories.metadata.get("world_properties", {}) or {}):
             labels[str(key)] = str(key).replace("_", " ")
         for entity_type in ("resource", "material", "location", "object", "faction", "agent"):
             for item in self.entities_repo.entities_of_type(entity_type):
@@ -458,7 +458,7 @@ class AgentViewCompiler:
     def _attribute_values(self, agent: dict[str, Any], state: dict[str, Any]) -> list[dict[str, Any]]:
         values: list[dict[str, Any]] = []
         inventory = agent.get("inventory", {}) or {}
-        for definition in self.store.get_meta("attributes", []) or []:
+        for definition in self.store.repositories.metadata.get("attributes", []) or []:
             if not isinstance(definition, dict) or not definition.get("id"):
                 continue
             kind = definition.get("kind")
@@ -474,7 +474,7 @@ class AgentViewCompiler:
         return values
 
     def _attribute_schema(self) -> AttributeSchema:
-        return AttributeSchema(self.store.get_meta("attributes", []) or [], self.store.get_meta("rules", {}) or {})
+        return AttributeSchema(self.store.repositories.metadata.get("attributes", []) or [], self.store.repositories.metadata.get("rules", {}) or {})
 
     @staticmethod
     def _assign_choices(behaviors: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -701,7 +701,7 @@ class AgentViewCompiler:
         """
 
         text = str(value)
-        revision = int(self.store.get_meta("world_revision", 0) or 0)
+        revision = int(self.store.repositories.metadata.get("world_revision", 0) or 0)
         if revision != self._visible_entity_revision:
             entities: list[tuple[str, str]] = []
             for entity in self.entities_repo.entities_of_type("location") + self.entities_repo.entities_of_type("agent") + self.entities_repo.entities_of_type("object"):
@@ -750,9 +750,9 @@ class AgentViewCompiler:
         unrelated prose.
         """
 
-        story_root = self.store.get_meta("story", {}) or {}
+        story_root = self.store.repositories.metadata.get("story", {}) or {}
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
-        story_state = self.store.get_meta("story_state", {}) or {}
+        story_state = self.store.repositories.metadata.get("story_state", {}) or {}
         story_defs = {
             str(item.get("id")): item
             for item in list(story_root.get("beats", []) or []) + list(story_state.get("emergent_beats", []) or [])
@@ -787,8 +787,8 @@ class AgentViewCompiler:
         source_event_id: int | None = None,
         include_diagnostics: bool = False,
     ) -> dict[str, Any]:
-        rules = self.store.get_meta("rules", {}) or {}
-        revision = int(self.store.get_meta("world_revision", 0) or 0)
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
+        revision = int(self.store.repositories.metadata.get("world_revision", 0) or 0)
         if revision != self._rule_compiler_revision:
             self.conditions = ConditionEngine(rules)
             self.rule_compiler = self._new_rule_compiler()
@@ -810,11 +810,11 @@ class AgentViewCompiler:
             bt_defs,
             recipe_defs,
             self._route_distance,
-            capability_modifiers=(self.store.get_meta("rules", {}) or {}).get("capability_modifiers", {}),
+            capability_modifiers=(self.store.repositories.metadata.get("rules", {}) or {}).get("capability_modifiers", {}),
         )
         available = []
         diagnostics: list[dict[str, Any]] = []
-        fallback_ids = (self.store.get_meta("rules", {}) or {}).get("fallback_behavior_ids", [])
+        fallback_ids = (self.store.repositories.metadata.get("rules", {}) or {}).get("fallback_behavior_ids", [])
         catalog_ids = list(dict.fromkeys(
             list(agent.get("initial_bt_ids", []))
             + list(agent.get("unlocked_bt_ids", []))
@@ -869,7 +869,7 @@ class AgentViewCompiler:
                     "failed": [f"blocked after the last failed result ({blocked.get('result', 'failed')}); wait for a configured recovery event"],
                 })
                 continue
-            rules = self.store.get_meta("rules", {}) or {}
+            rules = self.store.repositories.metadata.get("rules", {}) or {}
             behavior_context = dict(configured_context)
             uses_source_parameter = any(
                 value == "context.source_id"
@@ -906,7 +906,7 @@ class AgentViewCompiler:
                 if not self.conditions.evaluate(
                     str(predicate), agent=agent, target=condition_context["target"],
                     context=condition_context,
-                    world=self.store.get_meta("world_properties", {}) or {},
+                    world=self.store.repositories.metadata.get("world_properties", {}) or {},
                 )
             ]
             if failed_conditions:
@@ -916,7 +916,7 @@ class AgentViewCompiler:
                 behavior=bt,
                 agent=agent,
                 context=condition_context,
-                world=self.store.get_meta("world_properties", {}) or {},
+                world=self.store.repositories.metadata.get("world_properties", {}) or {},
             )
             if denial:
                 diagnostics.append({"behavior_id": bt_id, "failed": [str(denial.get("message") or "denied by an active rule")]})
@@ -924,7 +924,7 @@ class AgentViewCompiler:
             cooldown_minutes = max(0, int(bt.get("cooldown_minutes", 0) or 0))
             if cooldown_minutes:
                 last_minute = self.activity_repo.last_behavior_minute(agent_id, bt_id)
-                current_minute = int(self.store.get_meta("world_minute", 0))
+                current_minute = int(self.store.repositories.metadata.get("world_minute", 0))
                 if last_minute is not None and current_minute - last_minute < cooldown_minutes:
                     diagnostics.append({"behavior_id": bt_id, "failed": [f"cooldown until world minute {last_minute + cooldown_minutes}"]})
                     continue
@@ -980,7 +980,7 @@ class AgentViewCompiler:
                     if required is None:
                         required = research_source.get("research_required", source_state.get("research_required"))
                     if required is None:
-                        required = (self.store.get_meta("rules", {}) or {}).get("research_default_required")
+                        required = (self.store.repositories.metadata.get("rules", {}) or {}).get("research_default_required")
                     if required is not None:
                         action_for_view = copy.deepcopy(action)
                         action_for_view.setdefault("progress", {})["required"] = required
@@ -1134,8 +1134,8 @@ class AgentViewCompiler:
             for action in action_defs.values()
         ]
         needs = agent.get("needs", {})
-        drives = DriveCalculator(self.store.get_meta("rules", {})).calculate(agent)
-        drive_model = (self.store.get_meta("rules", {}) or {}).get("motivation_model", {})
+        drives = DriveCalculator(self.store.repositories.metadata.get("rules", {})).calculate(agent)
+        drive_model = (self.store.repositories.metadata.get("rules", {}) or {}).get("motivation_model", {})
         memory_query_parts = [str(agent.get("ultimate_goal", ""))]
         if current_location:
             memory_query_parts.append(str(current_location.get("name", location_id)))
@@ -1179,7 +1179,7 @@ class AgentViewCompiler:
                         "fact_key": str(item.get("id")),
                         "status": str(item.get("status") or "active"),
                         "available": str(item.get("id")) not in known_fact_set and str(item.get("status") or "active").casefold() not in {"obsolete", "disabled"},
-                        "required": item.get("required") or source.get("research_required") or (self.store.get_meta("rules", {}) or {}).get("research_default_required", 1),
+                        "required": item.get("required") or source.get("research_required") or (self.store.repositories.metadata.get("rules", {}) or {}).get("research_default_required", 1),
                     }
                     for item in (source.get("discoveries") or [])
                 ],
@@ -1211,7 +1211,7 @@ class AgentViewCompiler:
                             "fact_key": str(item.get("id")),
                             "status": str(item.get("status") or "active"),
                             "available": str(item.get("id")) not in known_fact_set and str(item.get("status") or "active").casefold() not in {"obsolete", "disabled"},
-                            "required": item.get("required") or source_entity.get("research_required") or ((source_entity.get("initial_state") or {}).get("research_required") if isinstance(source_entity.get("initial_state"), dict) else None) or (self.store.get_meta("rules", {}) or {}).get("research_default_required", 1),
+                            "required": item.get("required") or source_entity.get("research_required") or ((source_entity.get("initial_state") or {}).get("research_required") if isinstance(source_entity.get("initial_state"), dict) else None) or (self.store.repositories.metadata.get("rules", {}) or {}).get("research_default_required", 1),
                         }
                         for item in discoveries
                     ],
@@ -1249,7 +1249,7 @@ class AgentViewCompiler:
         )
         prompt_protocol, platform_rules = self._prompt_sections(role)
         decision_constraints: list[str] = []
-        labels = {str(item.get("id")): str(item.get("label") or item.get("id")) for item in (self.store.get_meta("attributes", []) or []) if isinstance(item, dict) and item.get("id")}
+        labels = {str(item.get("id")): str(item.get("label") or item.get("id")) for item in (self.store.repositories.metadata.get("attributes", []) or []) if isinstance(item, dict) and item.get("id")}
         for signal in rules.get("decision_signals", []) or []:
             if not isinstance(signal, dict) or not signal.get("need"):
                 continue
@@ -1311,15 +1311,15 @@ class AgentViewCompiler:
             if isinstance(item, dict) and str(item.get("status") or "assigned") == "assigned"
         ][-4:]
         agent_name = str(agent.get("name", agent_id))
-        story_root = self.store.get_meta("story", {}) or {}
+        story_root = self.store.repositories.metadata.get("story", {}) or {}
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
         story_defs = {
             str(item.get("id")): item
-            for item in list(story_root.get("beats", []) or []) + list((self.store.get_meta("story_state", {}) or {}).get("emergent_beats", []) or [])
+            for item in list(story_root.get("beats", []) or []) + list((self.store.repositories.metadata.get("story_state", {}) or {}).get("emergent_beats", []) or [])
             if isinstance(item, dict) and item.get("id")
         }
         active_story_beats: list[dict[str, Any]] = []
-        story_state = self.store.get_meta("story_state", {}) or {}
+        story_state = self.store.repositories.metadata.get("story_state", {}) or {}
         for beat_id, entry in story_state.items():
             if beat_id == "emergent_beats" or not isinstance(entry, dict) or entry.get("status") != "active":
                 continue
@@ -1337,7 +1337,7 @@ class AgentViewCompiler:
         active_story_threads = self._active_story_threads()
         result = {
             "context_version": "1", "role": role,
-            "world_revision": int(self.store.get_meta("world_revision", 0) or 0),
+            "world_revision": int(self.store.repositories.metadata.get("world_revision", 0) or 0),
             "agent_revision": int(agent.get("agent_revision", 0) or 0),
             "prompt_protocol": prompt_protocol,
             "platform_rules": platform_rules,
@@ -1360,7 +1360,7 @@ class AgentViewCompiler:
                     "current_location": current_location,
                     "recent_event_types": self._recent_event_types(),
                 },
-                world=self.store.get_meta("world_properties", {}) or {},
+                world=self.store.repositories.metadata.get("world_properties", {}) or {},
             ),
             "pending_institutions": pending_institutions,
             "active_institutions": active_institutions,
@@ -1405,7 +1405,7 @@ class AgentViewCompiler:
     def _route_distance(self, origin: str | None, destination: str | None) -> int:
         if not origin or not destination or origin == destination:
             return 0
-        hop_minutes = max(1, int((self.store.get_meta("rules", {}) or {}).get("route_minutes_per_hop", 1)))
+        hop_minutes = max(1, int((self.store.repositories.metadata.get("rules", {}) or {}).get("route_minutes_per_hop", 1)))
         queue: list[tuple[str, int]] = [(str(origin), 0)]
         visited = {str(origin)}
         while queue:
@@ -1427,7 +1427,7 @@ class AgentViewCompiler:
     def _recent_event_types(self, limit: int = 120) -> list[str]:
         rows = self.store.connection.execute(
             "SELECT DISTINCT event_type FROM event_log WHERE world_minute<=? ORDER BY event_id DESC LIMIT ?",
-            (int(self.store.get_meta("world_minute", 0)), max(1, min(int(limit), 500))),
+            (int(self.store.repositories.metadata.get("world_minute", 0)), max(1, min(int(limit), 500))),
         ).fetchall()
         return [str(row["event_type"]) for row in rows]
 
@@ -1445,7 +1445,7 @@ class AgentViewCompiler:
         resource_parameters = (action.get("parameter_defaults", {}) or {})
         resource_key = next((key for key, value in resource_parameters.items() if value == "first_available_resource"), None)
         if resource_key and parameters.get(resource_key) in {None, "", "context.resource_tag"}:
-            rules = self.store.get_meta("rules", {}) or {}
+            rules = self.store.repositories.metadata.get("rules", {}) or {}
             entity_types = {str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])}
             protected_key = str(rules.get("resource_protected_state", "protected"))
             source = next((item for item in self.entities_repo.entities_at_location((agent.get("initial_state") or {}).get("location_id")) if item.get("entity_type") in entity_types and not (item.get("initial_state") or {}).get(protected_key) and self._entity_quantity(item) > 0), None)
@@ -1473,7 +1473,7 @@ class AgentViewCompiler:
             ],
             "recent_event_types": self._recent_event_types(),
         }
-        context.update(configured_context_values(self.store.get_meta("rules", {}) or {}, agent))
+        context.update(configured_context_values(self.store.repositories.metadata.get("rules", {}) or {}, agent))
         for effect in action.get("effects", []) or []:
             if not isinstance(effect, dict) or str(effect.get("type") or effect.get("op") or "") != "institution_allocation":
                 continue
@@ -1537,17 +1537,17 @@ class AgentViewCompiler:
             agent=agent,
             target={**parameters, **(resolved_target or {})},
             context=context,
-            world=self.store.get_meta("world_properties", {}) or {},
+            world=self.store.repositories.metadata.get("world_properties", {}) or {},
         ):
             return "an active rule denies it"
         for predicate in action.get("preconditions", []) or []:
-            if not self.conditions.evaluate(str(predicate), agent=agent, target=target, context=context, world=self.store.get_meta("world_properties", {}) or {}):
+            if not self.conditions.evaluate(str(predicate), agent=agent, target=target, context=context, world=self.store.repositories.metadata.get("world_properties", {}) or {}):
                 return f"precondition not met: {predicate}"
         capacity_ok, capacity_detail = check_action_capacity(
             agent,
             action,
             max(1, int(duration_minutes or 1)),
-            self.store.get_meta("attributes", []) or [],
+            self.store.repositories.metadata.get("attributes", []) or [],
         )
         if not capacity_ok:
             return str(capacity_detail or "the actor lacks the capacity for its duration")
@@ -1629,10 +1629,10 @@ class AgentViewCompiler:
         return result
 
     def _build_story_view(self, actor_id: str, role: str, *, source_event_id: int | None = None) -> dict[str, Any]:
-        minute = int(self.store.get_meta("world_minute", 0))
-        story_root = self.store.get_meta("story", {}) or {}
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
+        story_root = self.store.repositories.metadata.get("story", {}) or {}
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
-        story_state = self.store.get_meta("story_state", {}) or {}
+        story_state = self.store.repositories.metadata.get("story_state", {}) or {}
         recent_events = self.events_repo.recent_events(limit=80)
         # Prefer the validated information event over the later wrapper
         # ``behavior.completed`` row.  The wrapper often says only
@@ -1820,13 +1820,13 @@ class AgentViewCompiler:
                     "evidence_behaviors": [str(item) for item in ((value or {}).get("evidence_behaviors") or [])],
                     "evidence_sources": list((value or {}).get("evidence_sources") or []),
                 }
-                for key, value in ((self.store.get_meta("rules", {}) or {}).get("civilization_progress", {}) or {}).items()
+                for key, value in ((self.store.repositories.metadata.get("rules", {}) or {}).get("civilization_progress", {}) or {}).items()
                 if isinstance(value, dict)
             ],
             "active_world_rules": self.rule_compiler.model_view(
                 self._world_rule_labels(),
                 context={"recent_event_types": self._recent_event_types()},
-                world=self.store.get_meta("world_properties", {}) or {},
+                world=self.store.repositories.metadata.get("world_properties", {}) or {},
             ),
             "last_platform_result": recent_events[0] if recent_events else None,
             "tools": self._role_tools(role),
@@ -1890,7 +1890,7 @@ class AgentViewCompiler:
         return result
 
     def _build_world_view(self, actor_id: str, role: str) -> dict[str, Any]:
-        minute = self.store.get_meta("world_minute", 0)
+        minute = self.store.repositories.metadata.get("world_minute", 0)
         all_events = self.events_repo.recent_events(limit=20)
         recent_world_changes = self.events_repo.recent_world_change_events(limit=6)
         world_proposals = self.evolution_repo.list_world_proposals(limit=8)
@@ -1915,14 +1915,14 @@ class AgentViewCompiler:
             1 for agent in self.entities_repo.list_agents()
             if (agent.get("initial_state") or {}).get("status") in {"executing", "paused"}
         )
-        world_properties = self.store.get_meta("world_properties", {}) or {}
+        world_properties = self.store.repositories.metadata.get("world_properties", {}) or {}
         world_summary = "; ".join(
             f"{str(key).replace('_', ' ')}={_display_number(value)}"
             for key, value in world_properties.items()
         ) or "none"
-        world_id = str(self.store.get_meta("world_id", "world"))
+        world_id = str(self.store.repositories.metadata.get("world_id", "world"))
         configured_regeneration = []
-        for raw in (self.store.get_meta("rules", {}) or {}).get("resource_regeneration", []) or []:
+        for raw in (self.store.repositories.metadata.get("rules", {}) or {}).get("resource_regeneration", []) or []:
             if not isinstance(raw, dict) or not raw.get("resource_id"):
                 continue
             resource_id = str(raw.get("resource_id"))
@@ -1960,7 +1960,7 @@ class AgentViewCompiler:
             })
         condition_fields = [
             {"condition": f'world["{str(key)}"]', "meaning": str(key).replace("_", " ")}
-            for key in (self.store.get_meta("world_properties", {}) or {})
+            for key in (self.store.repositories.metadata.get("world_properties", {}) or {})
         ]
         condition_fields.extend(
             {"condition": f"event.recent.{event_type}", "meaning": "a recent validated public event"}
@@ -2012,7 +2012,7 @@ class AgentViewCompiler:
                     "evidence_behaviors": [str(item) for item in ((value or {}).get("evidence_behaviors") or [])],
                     "evidence_sources": list((value or {}).get("evidence_sources") or []),
                 }
-                for key, value in ((self.store.get_meta("rules", {}) or {}).get("civilization_progress", {}) or {}).items()
+                for key, value in ((self.store.repositories.metadata.get("rules", {}) or {}).get("civilization_progress", {}) or {}).items()
                 if isinstance(value, dict)
             ],
             "pending_institutions": [

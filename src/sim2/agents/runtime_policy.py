@@ -31,7 +31,7 @@ def configured_evolution_trigger(platform: Platform, task_type: str) -> dict[str
     if not str(task_type).startswith(prefix):
         return None
     trigger_id = str(task_type)[len(prefix):]
-    root = platform.store.get_meta("evolution", {}) or {}
+    root = platform.store.repositories.metadata.get("evolution", {}) or {}
     root = root.get("evolution", root) if isinstance(root, dict) else {}
     for trigger in (root.get("triggers", []) or []) if isinstance(root, dict) else []:
         if isinstance(trigger, dict) and str(trigger.get("id") or "") == trigger_id:
@@ -46,7 +46,7 @@ def configured_evolution_group(platform: Platform, task_type: str) -> dict[str, 
     if not str(task_type).startswith(prefix):
         return None
     group_id = str(task_type)[len(prefix):]
-    root = platform.store.get_meta("evolution", {}) or {}
+    root = platform.store.repositories.metadata.get("evolution", {}) or {}
     root = root.get("evolution", root) if isinstance(root, dict) else {}
     consumers = ((root.get("event_wake_policy", {}) or {}).get("consumers", {}) or {}) if isinstance(root, dict) else {}
     for policy in consumers.values() if isinstance(consumers, dict) else []:

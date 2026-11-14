@@ -166,7 +166,7 @@ def test_completely_different_world_builds_and_runs_without_platform_changes(tmp
             platform.step()
         updated = platform.store.repositories.entities.get_agent("unit_seven")
         assert updated["initial_state"]["charge"] == 92
-        assert platform.store.get_meta("world_properties")["reactor_stability"] == 0.5
+        assert platform.store.repositories.metadata.get("world_properties")["reactor_stability"] == 0.5
         assert updated["needs"]["signal_clarity"] < 55
         assert any(event["event_type"] == "behavior.completed" for event in platform.store.repositories.events.recent_events(limit=50))
     finally:

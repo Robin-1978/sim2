@@ -19,8 +19,8 @@ class EntitiesRepository:
 
         if not isinstance(amount, (int, float)) or isinstance(amount, bool):
             return None
-        properties = dict(self.store.get_meta("world_properties", {}) or {})
-        rules = self.store.get_meta("rules", {}) or {}
+        properties = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
         mappings = rules.get("resource_property_projections", {}) if isinstance(rules, dict) else {}
         keys = [str(entity_id)]
         if isinstance(mappings, dict):
@@ -38,7 +38,7 @@ class EntitiesRepository:
             changes.append({"world_property": key, "before": before, "after": amount})
         if not changes:
             return None
-        self.store.set_meta("world_properties", properties)
+        self.store.repositories.metadata.set("world_properties", properties)
         return changes[0] if len(changes) == 1 else {"projections": changes}
 
     def put_entity(self, entity_id: str, entity_type: str, name: str, data: dict[str, Any]) -> None:
@@ -63,7 +63,7 @@ class EntitiesRepository:
         definition_version = int(data.get("definition_version", data.get("version", 1)) or 1)
         data.setdefault("definition_version", definition_version)
         data.setdefault("status", "active")
-        data.setdefault("created_revision", int(self.store.get_meta("world_revision", 0) or 0))
+        data.setdefault("created_revision", int(self.store.repositories.metadata.get("world_revision", 0) or 0))
         self.store.connection.execute(
             f"INSERT OR REPLACE INTO {table}(id,data_json) VALUES (?,?)",
             (definition_id, json_dumps(data)),

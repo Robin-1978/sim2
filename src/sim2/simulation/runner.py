@@ -57,7 +57,7 @@ class SimulationRunner:
     def __init__(self, platform: Platform, providers: dict[str, Any], *, wait_cooldown_minutes: int = 30, llm_error_cooldown_minutes: int = 60, max_interaction_rounds: int | None = None, interaction_cooldown_minutes: int | None = None, interaction_thread_window_minutes: int | None = None, turn_observer: Callable[[AgentTurn, str], None] | None = None):
         self.platform = platform
         self.providers = providers
-        interaction_policy = (self.platform.store.get_meta("rules", {}) or {}).get("interaction_policy", {}) or {}
+        interaction_policy = (self.platform.store.repositories.metadata.get("rules", {}) or {}).get("interaction_policy", {}) or {}
         self.wait_cooldown_minutes = max(1, int(wait_cooldown_minutes))
         self.llm_error_cooldown_minutes = max(1, int(llm_error_cooldown_minutes))
         self.max_interaction_rounds = max(1, int(interaction_policy.get("max_rounds", 3) if max_interaction_rounds is None else max_interaction_rounds))
@@ -81,7 +81,7 @@ class SimulationRunner:
         self.platform.recover_claimed_evolution_tasks()
 
     def _load_scheduler_state(self) -> None:
-        state = self.platform.store.get_meta("runtime_scheduler_state", {}) or {}
+        state = self.platform.store.repositories.metadata.get("runtime_scheduler_state", {}) or {}
         self._decision_not_before = {str(key): int(value) for key, value in (state.get("decision_not_before") or {}).items()}
         self._llm_error_count = {str(key): int(value) for key, value in (state.get("llm_error_count") or {}).items()}
         self._llm_retry_until = {str(key): int(value) for key, value in (state.get("llm_retry_until") or {}).items()}
@@ -121,7 +121,7 @@ class SimulationRunner:
             ],
         }
         with self.platform.store.transaction():
-            self.platform.store.set_meta("runtime_scheduler_state", state)
+            self.platform.store.repositories.metadata.set("runtime_scheduler_state", state)
 
     def _observe_turn(self, turn: AgentTurn, actor_id: str) -> None:
         if self.turn_observer is not None:
@@ -131,7 +131,7 @@ class SimulationRunner:
         minutes = int(minutes)
         if minutes < 1:
             raise ValueError("minutes must be at least 1")
-        start = int(self.platform.store.get_meta("world_minute", 0))
+        start = int(self.platform.store.repositories.metadata.get("world_minute", 0))
         report = SimulationReport(start, start + minutes)
         for _ in range(minutes):
             if self.platform.status().get("status") != "running":
@@ -183,7 +183,7 @@ class SimulationRunner:
                 break
             self._run_due_evolution(report)
             self._run_idle_decisions(report)
-        report.end_minute = int(self.platform.store.get_meta("world_minute", 0))
+        report.end_minute = int(self.platform.store.repositories.metadata.get("world_minute", 0))
         report.event_types = self.platform.store.repositories.events.event_type_counts()
         report.selected_behaviors = self.platform.store.repositories.events.behavior_start_counts()
         report.diversity = self._diversity(report)
@@ -217,7 +217,7 @@ class SimulationRunner:
                 continue
             self._interaction_events_seen.add(event_id)
             self._persist_scheduler_state()
-            minute = int(self.platform.store.get_meta("world_minute", 0))
+            minute = int(self.platform.store.repositories.metadata.get("world_minute", 0))
             actor_id = str(event.get("actor_id") or "")
             recipient_id = str(event.get("target_id") or event.get("recipient_id") or "")
             if not actor_id or not recipient_id or actor_id == recipient_id:
@@ -332,7 +332,7 @@ class SimulationRunner:
         provider = self.providers.get("agent_decision")
         if provider is None or self._provider_cooling_down(provider):
             return
-        minute = int(self.platform.store.get_meta("world_minute", 0))
+        minute = int(self.platform.store.repositories.metadata.get("world_minute", 0))
         self._refresh_decision_wakes(minute)
         for agent in self.platform.store.repositories.entities.list_agents():
             if self._provider_cooling_down(provider):
@@ -377,7 +377,7 @@ class SimulationRunner:
             self._persist_scheduler_state()
 
     def _wait_delay(self, streak: int) -> int:
-        policy = (self.platform.store.get_meta("rules", {}) or {}).get("decision_policy", {}) or {}
+        policy = (self.platform.store.repositories.metadata.get("rules", {}) or {}).get("decision_policy", {}) or {}
         values = policy.get("wait_backoff_minutes") or [self.wait_cooldown_minutes]
         delays = [max(1, int(value)) for value in values if isinstance(value, (int, float)) and int(value) > 0]
         if not delays:
@@ -387,7 +387,7 @@ class SimulationRunner:
     def _empty_catalog_delay(self, minute: int) -> int:
         """Retry at the next likely catalog change without another empty LLM call."""
 
-        policy = (self.platform.store.get_meta("rules", {}) or {}).get("decision_policy", {}) or {}
+        policy = (self.platform.store.repositories.metadata.get("rules", {}) or {}).get("decision_policy", {}) or {}
         maximum = max(1, int(policy.get("empty_catalog_retry_minutes", 360) or 360))
         phase_change = minutes_until_next_day_phase(self.platform.store, minute)
         return min(maximum, phase_change) if phase_change is not None else maximum
@@ -395,7 +395,7 @@ class SimulationRunner:
     def _refresh_decision_wakes(self, minute: int) -> None:
         """Clear wait backoff for configured events without semantic branches."""
 
-        policy = (self.platform.store.get_meta("rules", {}) or {}).get("decision_policy", {}) or {}
+        policy = (self.platform.store.repositories.metadata.get("rules", {}) or {}).get("decision_policy", {}) or {}
         wake_events = {str(value) for value in (policy.get("wake_events") or []) if str(value)}
         rows = self.platform.store.connection.execute(
             "SELECT event_id,event_type,actor_id,data_json FROM event_log WHERE event_id>? ORDER BY event_id LIMIT 2000",
@@ -499,7 +499,7 @@ class SimulationRunner:
                     retry_delay = min(10080, base_delay * (2 ** min(retry_count, 6)))
                 self.platform.retry_evolution_task(
                     task["task_id"],
-                    int(self.platform.store.get_meta("world_minute", 0)) + retry_delay,
+                    int(self.platform.store.repositories.metadata.get("world_minute", 0)) + retry_delay,
                     str(turn.result.get("message") or turn.result.get("failed_check") or "evolution session rejected"),
                 )
             if self._provider_cooling_down(provider):
@@ -529,7 +529,7 @@ class SimulationRunner:
         if self._cooling_provider_roles():
             self._provider_retry_pending = True
             return
-        self._record_llm_failure(actor_id, int(self.platform.store.get_meta("world_minute", 0)))
+        self._record_llm_failure(actor_id, int(self.platform.store.repositories.metadata.get("world_minute", 0)))
 
     def _record_llm_failure(self, actor_id: str, minute: int) -> None:
         count = self._llm_error_count.get(actor_id, 0) + 1
@@ -560,7 +560,7 @@ class SimulationRunner:
             flags.append("excessive_replanning_or_low_execution")
         if report.event_types.get("trade.completed", 0) < 0:
             flags.append("invalid_trade_count")
-        vital = (self.platform.store.get_meta("rules", {}) or {}).get("vital_attribute")
+        vital = (self.platform.store.repositories.metadata.get("rules", {}) or {}).get("vital_attribute")
         if vital:
             for agent in self.platform.store.repositories.entities.list_agents():
                 state = agent.get("initial_state", {}) or {}

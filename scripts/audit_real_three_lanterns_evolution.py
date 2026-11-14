@@ -120,7 +120,7 @@ def main() -> int:
                 ]
                 row = {
                     "round": round_no,
-                    "world_minute": int(platform.store.get_meta("world_minute", 0)),
+                    "world_minute": int(platform.store.repositories.metadata.get("world_minute", 0)),
                     "stop_reason": report.stop_reason,
                     "decisions": report.decisions,
                     "waits": report.waits,
@@ -145,7 +145,7 @@ def main() -> int:
                         for d in entities.get_definitions("bt_def")
                         if d.get("definition_source") == "god_proposal"
                     ],
-                    "world_properties": platform.store.get_meta("world_properties", {}),
+                    "world_properties": platform.store.repositories.metadata.get("world_properties", {}),
                 }
                 print(json.dumps(row, ensure_ascii=False), flush=True)
         finally:

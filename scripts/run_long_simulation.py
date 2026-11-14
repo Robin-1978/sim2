@@ -131,7 +131,7 @@ def main() -> int:
                     "inventory": agent.get("inventory", {}),
                 })
             resources = []
-            rules = platform.store.get_meta("rules", {}) or {}
+            rules = platform.store.repositories.metadata.get("rules", {}) or {}
             for entity_type in rules.get("resource_entity_types", ["resource", "material"]):
                 for row in platform.store.repositories.entities.entities_of_type(str(entity_type)):
                     item = platform.store.repositories.entities.get_entity(str(row["id"]))
@@ -145,7 +145,7 @@ def main() -> int:
                 "provider_calls": provider.calls,
                 "report": report.as_dict(),
                 "metrics": platform.metrics(),
-                "world_properties": platform.store.get_meta("world_properties", {}),
+                "world_properties": platform.store.repositories.metadata.get("world_properties", {}),
                 "agents": agents,
                 "resources": resources,
                 "evolution_tasks": {

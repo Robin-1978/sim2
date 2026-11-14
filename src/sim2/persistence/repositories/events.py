@@ -16,8 +16,8 @@ class EventsRepository:
 
     def append_event(self, event_type: str, actor_id: str | None, world_minute: int, data: dict[str, Any]) -> int:
         data = dict(data)
-        data.setdefault("world_instance_id", self.store.get_meta("world_id", self.store.get_meta("instance_id", "")))
-        data.setdefault("world_revision", int(self.store.get_meta("world_revision", 0) or 0))
+        data.setdefault("world_instance_id", self.store.repositories.metadata.get("world_id", self.store.repositories.metadata.get("instance_id", "")))
+        data.setdefault("world_revision", int(self.store.repositories.metadata.get("world_revision", 0) or 0))
         if data.get("intent_id") and not data.get("causation_id"):
             data["causation_id"] = str(data["intent_id"])
         if data.get("execution_id") and not data.get("correlation_id"):
@@ -128,8 +128,8 @@ class EventsRepository:
         projections; no time-decay score is applied to character memory.
         """
 
-        end = int(self.store.get_meta("world_minute", 0) if current_minute is None else current_minute)
-        baseline = self.store.get_meta("resource_baseline", {}) or {}
+        end = int(self.store.repositories.metadata.get("world_minute", 0) if current_minute is None else current_minute)
+        baseline = self.store.repositories.metadata.get("resource_baseline", {}) or {}
         resources: list[dict[str, Any]] = []
         resource_labels: dict[str, str] = {}
         for item in self.store.repositories.entities.entities_of_type("resource"):
@@ -227,7 +227,7 @@ class EventsRepository:
                 "world_property_deltas": {key: round(value, 4) for key, value in sorted(world_property_deltas.items())},
             }
 
-        calendar = (self.store.get_meta("setting", {}) or {}).get("calendar", {}) if isinstance(self.store.get_meta("setting", {}), dict) else {}
+        calendar = (self.store.repositories.metadata.get("setting", {}) or {}).get("calendar", {}) if isinstance(self.store.repositories.metadata.get("setting", {}), dict) else {}
         week_minutes = max(1, int(calendar.get("minutes_per_week", calendar.get("minutes_per_day", 1440) * 7) or 10080))
         month_minutes = max(week_minutes, int(calendar.get("minutes_per_month", calendar.get("minutes_per_day", 1440) * 30) or 43200))
         agents = self.store.repositories.entities.list_agents()
@@ -236,7 +236,7 @@ class EventsRepository:
         monthly = aggregate(month_minutes)
         pending_proposals = len(self.store.repositories.evolution.list_world_proposals(status="pending_evaluation", limit=100))
         active_story_threads = sum(
-            1 for key, value in (self.store.get_meta("story_state", {}) or {}).items()
+            1 for key, value in (self.store.repositories.metadata.get("story_state", {}) or {}).items()
             if key != "emergent_beats" and isinstance(value, dict) and value.get("status") == "active"
         )
         completed = float(weekly["goal_trends"]["completed_behaviors"] or 0)

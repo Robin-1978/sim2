@@ -32,7 +32,7 @@ def test_concurrent_ticks_commit_one_next_minute(tmp_path: Path) -> None:
             results = list(pool.map(lambda _item: platform.step(), range(2)))
 
         assert all(item["status"] == "advanced" for item in results)
-        assert platform.store.get_meta("world_minute") == 2
+        assert platform.store.repositories.metadata.get("world_minute") == 2
         ticks = [
             item
             for item in platform.store.repositories.events.recent_events(limit=20)

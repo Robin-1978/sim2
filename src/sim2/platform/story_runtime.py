@@ -42,10 +42,10 @@ class StoryRuntimeMixin:
             proposal["audience"] = [visible_label(item) for item in proposal["audience"]]
         if isinstance(proposal.get("unlock_choices"), list):
             proposal["unlock_choices"] = [visible_label(item) for item in proposal["unlock_choices"]]
-        story_root = self.store.get_meta("story", {}) or {}
+        story_root = self.store.repositories.metadata.get("story", {}) or {}
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
         beats = list(story_root.get("beats", []) or []) if isinstance(story_root, dict) else []
-        state = dict(self.store.get_meta("story_state", {}) or {})
+        state = dict(self.store.repositories.metadata.get("story_state", {}) or {})
         recent = self.store.repositories.events.recent_events(limit=500)
         bound_sources = self.store.repositories.events.events_by_ids([int(item) for item in (source_event_ids or []) if int(item) > 0])
         configured_source_types = {str(item) for item in (story_root.get("emergent_source_event_types") or [])}
@@ -255,7 +255,7 @@ class StoryRuntimeMixin:
         if required_facts:
             if not required_facts <= observed_facts:
                 return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "The configured story beat is missing one or more required facts.", "failed_check": "story_facts", "retryable": True, "missing_facts": sorted(required_facts - observed_facts)})
-        minute = int(self.store.get_meta("world_minute", 0))
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
         raw_audience = [str(item) for item in (beat.get("audience", []) or [])]
         resolved_audience: list[str] = []
         for value in raw_audience[:8]:
@@ -402,7 +402,7 @@ class StoryRuntimeMixin:
                 emergent_beats = list(state.get("emergent_beats", []) or [])
                 emergent_beats.append({key: value for key, value in beat.items() if key != "unlock_choices"})
                 state["emergent_beats"] = emergent_beats[-64:]
-            self.store.set_meta("story_state", state)
+            self.store.repositories.metadata.set("story_state", state)
             for audience_id in audience:
                 try:
                     target = self.store.repositories.entities.get_agent(audience_id)

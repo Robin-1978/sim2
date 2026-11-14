@@ -92,8 +92,8 @@ def export_storylines(db_path: Path, output: Path) -> Path:
         lines = [
             "# Character Storylines",
             "",
-            f"World instance: `{platform.store.get_meta('instance_id', 'unknown')}`  ",
-            f"World minute: {platform.store.get_meta('world_minute', 0)}  ",
+            f"World instance: `{platform.store.repositories.metadata.get('instance_id', 'unknown')}`  ",
+            f"World minute: {platform.store.repositories.metadata.get('world_minute', 0)}  ",
             "Source: public event timeline; private memories and internal identifiers are omitted.",
             "",
             "## World milestones",

@@ -135,4 +135,4 @@ def build_timeline(store: Any, *, limit: int = 100, after_event_id: int = 0, inc
             summary = str(event.get("summary") or event.get("result") or event_type.replace(".", " ").replace("_", " ")).rstrip(".")
             sentence = f"{actor}: {summary}."
         rendered.append({"event_id": event["event_id"], "world_minute": event["world_minute"], "event_type": event_type, "narrative": sentence, "public": {key: value for key, value in event.items() if key not in {"actor_id", "target_id", "recipient_id", "offerer_id", "speaker_id", "listener_id", "location_id", "decision"}}})
-    return {"status": "ok", "world_id": store.get_meta("world_id"), "world_minute": int(store.get_meta("world_minute", 0)), "events": rendered, "next_after_event_id": events[-1]["event_id"] if events else after_event_id}
+    return {"status": "ok", "world_id": store.repositories.metadata.get("world_id"), "world_minute": int(store.repositories.metadata.get("world_minute", 0)), "events": rendered, "next_after_event_id": events[-1]["event_id"] if events else after_event_id}

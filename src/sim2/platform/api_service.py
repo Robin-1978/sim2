@@ -27,9 +27,9 @@ class RuntimeApiService(PlatformService):
     """Public runtime API and shared rule/consumer resolution."""
 
     def _new_rule_compiler(self) -> RuleCompiler:
-        rules = self.store.get_meta("rules", {}) or {}
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
         aliases = {}
-        for key in (self.store.get_meta("world_properties", {}) or {}):
+        for key in (self.store.repositories.metadata.get("world_properties", {}) or {}):
             aliases[str(key)] = str(key)
             aliases[str(key).replace("_", " ")] = str(key)
         for entity_type in ("resource", "material", "location", "object", "faction", "agent"):
@@ -44,7 +44,7 @@ class RuntimeApiService(PlatformService):
             aliases,
             known_behaviors=list(self.store.repositories.entities.get_definitions("bt_def")),
             known_actions=list(self.store.repositories.entities.get_definitions("action_def")),
-            world_keys=set((self.store.get_meta("world_properties", {}) or {}).keys()),
+            world_keys=set((self.store.repositories.metadata.get("world_properties", {}) or {}).keys()),
         )
 
     def _resolve_evolution_consumer(self, consumer: str, actor_id: str | None = None) -> tuple[str, str | None]:
@@ -127,9 +127,9 @@ class RuntimeApiService(PlatformService):
 
     def status(self) -> dict[str, Any]:
         return {
-            "status": self.store.get_meta("runtime_status", "running"),
-            "world_minute": int(self.store.get_meta("world_minute", 0)),
-            "instance_id": self.store.get_meta("instance_id"),
+            "status": self.store.repositories.metadata.get("runtime_status", "running"),
+            "world_minute": int(self.store.repositories.metadata.get("world_minute", 0)),
+            "instance_id": self.store.repositories.metadata.get("instance_id"),
         }
 
     def health(self) -> dict[str, Any]:
@@ -139,30 +139,30 @@ class RuntimeApiService(PlatformService):
         return {
             "status": "ok" if database == "ok" else "degraded",
             "database": database,
-            "runtime": self.store.get_meta("runtime_status", "running"),
-            "world_minute": int(self.store.get_meta("world_minute", 0)),
-            "instance_id": self.store.get_meta("instance_id"),
+            "runtime": self.store.repositories.metadata.get("runtime_status", "running"),
+            "world_minute": int(self.store.repositories.metadata.get("world_minute", 0)),
+            "instance_id": self.store.repositories.metadata.get("instance_id"),
             "memory_retrieval": self.memory.status(),
         }
 
     def pause(self, reason: str = "operator") -> dict[str, Any]:
         with self.store.transaction():
-            self.store.set_meta("runtime_status", "paused")
-            minute = int(self.store.get_meta("world_minute", 0))
+            self.store.repositories.metadata.set("runtime_status", "paused")
+            minute = int(self.store.repositories.metadata.get("world_minute", 0))
             self._context.services["events"].append("runtime.paused", None, minute, {"reason": reason})
         return self.status()
 
     def resume(self, reason: str = "operator") -> dict[str, Any]:
         with self.store.transaction():
-            self.store.set_meta("runtime_status", "running")
-            minute = int(self.store.get_meta("world_minute", 0))
+            self.store.repositories.metadata.set("runtime_status", "running")
+            minute = int(self.store.repositories.metadata.get("world_minute", 0))
             self._context.services["events"].append("runtime.resumed", None, minute, {"reason": reason})
         return self.status()
 
     def inject_event(self, event_type: str, payload: dict[str, Any], actor_id: str | None = None) -> dict[str, Any]:
         if not event_type.strip():
             raise ValueError("event_type is required")
-        minute = int(self.store.get_meta("world_minute", 0))
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
             event_id = self._context.services["events"].append(event_type, actor_id, minute, payload)
         return {"status": "accepted", "event_id": event_id, "world_minute": minute}
@@ -177,7 +177,7 @@ class RuntimeApiService(PlatformService):
             return {"status": "rejected", "message": "The player id already exists.", "failed_check": "player_id"}
         except KeyError:
             pass
-        template = self.store.get_meta("player_template", {}).get("player", {})
+        template = self.store.repositories.metadata.get("player_template", {}).get("player", {})
         origin = next((item for item in template.get("origin_choices", []) if item.get("id") == origin_id), None)
         if origin is None:
             return {"status": "rejected", "message": "The selected origin is not configured.", "failed_check": "origin_id", "retryable": True}
@@ -189,7 +189,7 @@ class RuntimeApiService(PlatformService):
         state_defaults = self.attribute_schema.state_defaults()
         state_defaults.update({"location_id": location_id, "status": "idle", "injuries": [], "conditions": [], "active_bt_instance": None, "active_action": None, "remaining_minutes": 0})
         needs = self.attribute_schema.need_defaults()
-        for item in ((self.store.get_meta("rules", {}) or {}).get("needs", []) or []):
+        for item in ((self.store.repositories.metadata.get("rules", {}) or {}).get("needs", []) or []):
             if isinstance(item, dict) and item.get("id"):
                 needs.setdefault(str(item["id"]), float(item.get("target", 100)))
         agent = {
@@ -206,7 +206,7 @@ class RuntimeApiService(PlatformService):
             "initial_state": state_defaults,
             "inventory": {},
         }
-        minute = int(self.store.get_meta("world_minute", 0))
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
             self.store.repositories.entities.put_agent(player_id, agent, agent["name"])
             for fact in agent["knowledge_seed"]:
@@ -260,10 +260,10 @@ class RuntimeApiService(PlatformService):
             public_events.append(public)
         return {
             "status": "ok",
-            "world_time": int(self.store.get_meta("world_minute", 0)),
+            "world_time": int(self.store.repositories.metadata.get("world_minute", 0)),
             "world_clock": world_time_view(self.store),
-            "world_id": self.store.get_meta("world_id"),
-            "world_properties": self.store.get_meta("world_properties", {}) or {},
+            "world_id": self.store.repositories.metadata.get("world_id"),
+            "world_properties": self.store.repositories.metadata.get("world_properties", {}) or {},
             "agents": agents,
             "entity_counts": {entity_type: len(self.store.repositories.entities.entities_of_type(entity_type)) for entity_type in ("location", "agent", "faction", "resource", "object")},
             "recent_events": public_events,

@@ -27,7 +27,7 @@ class EvolutionService(PlatformService):
     """World signals and persisted evolution task lifecycle."""
 
     def _world_trigger_context(self) -> dict[str, Any]:
-        context = dict(self.store.get_meta("world_properties", {}) or {})
+        context = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
         for resource in self.store.repositories.entities.entities_of_type("resource"):
             try:
                 entity = self.store.repositories.entities.get_entity(resource["id"])
@@ -42,7 +42,7 @@ class EvolutionService(PlatformService):
     def _recent_event_types(self, limit: int = 120) -> list[str]:
         rows = self.store.connection.execute(
             "SELECT DISTINCT event_type FROM event_log WHERE world_minute<=? ORDER BY event_id DESC LIMIT ?",
-            (int(self.store.get_meta("world_minute", 0)), max(1, min(int(limit), 500))),
+            (int(self.store.repositories.metadata.get("world_minute", 0)), max(1, min(int(limit), 500))),
         ).fetchall()
         return [str(row["event_type"]) for row in rows]
 
@@ -51,7 +51,7 @@ class EvolutionService(PlatformService):
 
         world = self._world_trigger_context()
         signals = self.rule_compiler.signal_specs(agent={}, context={"recent_event_types": self._recent_event_types()}, world=world)
-        state = dict(self.store.get_meta("world_rule_signal_state", {}) or {})
+        state = dict(self.store.repositories.metadata.get("world_rule_signal_state", {}) or {})
         for signal in signals:
             name = str(signal.get("name") or "world_rule")
             state_key = str(signal.get("id") or name)
@@ -79,13 +79,13 @@ class EvolutionService(PlatformService):
         for rule in self.rule_compiler.all_rules():
             state_key = str(rule.get("id") or rule.get("name") or "world_rule")
             state[state_key] = state_key in active_ids
-        self.store.set_meta("world_rule_signal_state", state)
+        self.store.repositories.metadata.set("world_rule_signal_state", state)
 
     def _emit_evolution_triggers(self, minute: int, *, agent_ids: set[str] | None = None) -> None:
-        evolution = self.store.get_meta("evolution", {}) or {}
+        evolution = self.store.repositories.metadata.get("evolution", {}) or {}
         config = evolution.get("evolution", evolution) if isinstance(evolution, dict) else {}
         triggers = config.get("triggers", []) if isinstance(config, dict) else []
-        states = dict(self.store.get_meta("evolution_trigger_state", {}) or {})
+        states = dict(self.store.repositories.metadata.get("evolution_trigger_state", {}) or {})
         world = self._world_trigger_context()
         known_agents = agent_ids if agent_ids is not None else {agent["id"] for agent in self.store.repositories.entities.list_agents()}
         for trigger in triggers:
@@ -112,7 +112,7 @@ class EvolutionService(PlatformService):
                         role, task_type, actor_id = "agent_reflection", target, None
                     self.uow.evolution.put_task(f"trigger:{trigger_id}:{minute}:{index}", role, actor_id, task_type, minute, 0, data={"trigger_id": trigger_id})
             states[trigger_id] = active
-        self.store.set_meta("evolution_trigger_state", states)
+        self.store.repositories.metadata.set("evolution_trigger_state", states)
 
     def _emit_due_evolution_tasks(self, minute: int) -> None:
         for task in self.uow.evolution.due_tasks(minute):
@@ -130,14 +130,14 @@ class EvolutionService(PlatformService):
         return self.uow.evolution.ready_tasks()
 
     def claim_evolution_task(self, task_id: str) -> dict[str, Any] | None:
-        minute = int(self.store.get_meta("world_minute", 0))
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
             return self.uow.evolution.claim(task_id, minute)
 
     def recover_claimed_evolution_tasks(self) -> list[str]:
         """Requeue due evolution work left behind by an interrupted process."""
 
-        minute = int(self.store.get_meta("world_minute", 0))
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
             task_ids = self.uow.evolution.recover_claimed(minute)
             if task_ids:
@@ -150,14 +150,14 @@ class EvolutionService(PlatformService):
             return task_ids
 
     def complete_evolution_task(self, task_id: str) -> None:
-        minute = int(self.store.get_meta("world_minute", 0))
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
             self.uow.evolution.complete(task_id, minute)
 
     def retry_evolution_task(self, task_id: str, retry_minute: int, reason: str) -> None:
         """Return a failed low-frequency task to the scheduler with an audit event."""
 
-        minute = int(self.store.get_meta("world_minute", 0))
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
         # A provider circuit breaker stops the runner before another request
         # can be issued, so a retry at the current minute cannot spin.  Keep
         # that boundary intact: advancing one world minute would make the

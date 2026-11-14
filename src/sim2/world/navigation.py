@@ -7,7 +7,7 @@ from typing import Any
 def configured_location_tags(store: Any, group: str, default: set[str] | list[str] | tuple[str, ...]) -> set[str]:
     """Read semantic location tag groups from the instance package."""
 
-    rules = store.get_meta("rules", {}) or {}
+    rules = store.repositories.metadata.get("rules", {}) or {}
     configured = (rules.get("location_tag_groups", {}) or {}).get(group, default)
     values = configured if isinstance(configured, (list, tuple, set)) else [configured]
     return {str(item) for item in values}
@@ -27,7 +27,7 @@ def nearest_safe_location(store: Any, origin_id: str | None) -> str | None:
         except KeyError:
             continue
         safe_tags = configured_location_tags(store, "safe", {"safe"})
-        public_safe = bool((store.get_meta("rules", {}) or {}).get("public_locations_are_safe", True))
+        public_safe = bool((store.repositories.metadata.get("rules", {}) or {}).get("public_locations_are_safe", True))
         if bool(location.get("safe", False)) or (public_safe and location.get("public", False) is True) or set(location.get("tags", []) or []) & safe_tags:
             return current_id
         for neighbor_id in location.get("routes", []) or []:
@@ -50,7 +50,7 @@ def nearest_resource_node(store: Any, origin_id: str | None) -> dict[str, str] |
 
     if not origin_id:
         return None
-    rules = store.get_meta("rules", {}) or {}
+    rules = store.repositories.metadata.get("rules", {}) or {}
     entity_types = {str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])}
     protected_key = str(rules.get("resource_protected_state", "protected"))
     queue: deque[tuple[str, int]] = deque([(str(origin_id), 0)])

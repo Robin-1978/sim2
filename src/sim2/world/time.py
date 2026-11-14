@@ -6,13 +6,13 @@ from typing import Any
 def world_time_view(store: Any, minute: int | None = None) -> dict[str, Any]:
     """Compile configured calendar time into one model/runtime projection."""
 
-    setting = store.get_meta("setting", {}) or {}
+    setting = store.repositories.metadata.get("setting", {}) or {}
     calendar = setting.get("calendar", {}) if isinstance(setting, dict) else {}
     day_minutes = max(1, int(calendar.get("minutes_per_day", 1440) or 1440))
     week_minutes = max(day_minutes, int(calendar.get("minutes_per_week", day_minutes * 7) or day_minutes * 7))
     month_minutes = max(week_minutes, int(calendar.get("minutes_per_month", week_minutes * 4) or week_minutes * 4))
     clock = setting.get("world_clock", {}) if isinstance(setting, dict) else {}
-    current = int(store.get_meta("world_minute", 0) if minute is None else minute)
+    current = int(store.repositories.metadata.get("world_minute", 0) if minute is None else minute)
     start_day = int(clock.get("start_day", 1) or 1)
     start_minute = int(clock.get("start_minute", 0) or 0)
     absolute = max(0, start_minute + current)
@@ -54,7 +54,7 @@ def configured_day_phase(setting: dict[str, Any], minute_of_day: int, *, day_min
 def minutes_until_next_day_phase(store: Any, minute: int | None = None) -> int | None:
     """Return the next configured phase boundary in world minutes."""
 
-    setting = store.get_meta("setting", {}) or {}
+    setting = store.repositories.metadata.get("setting", {}) or {}
     calendar = setting.get("calendar", {}) if isinstance(setting, dict) else {}
     phases = [item for item in (calendar.get("day_phases", []) or []) if isinstance(item, dict) and item.get("id")]
     if not phases:

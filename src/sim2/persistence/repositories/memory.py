@@ -177,7 +177,7 @@ class MemoryRepository:
             progress = self.store.connection.execute(
                 "SELECT progress_key,current_value,required_value,data_json,updated_minute FROM progress_state "
                 "WHERE owner_id=? AND (progress_key=? OR progress_key LIKE ?) ORDER BY progress_key",
-                (str(self.store.get_meta("world_id", "world")), progress_prefix, progress_prefix + ":%"),
+                (str(self.store.repositories.metadata.get("world_id", "world")), progress_prefix, progress_prefix + ":%"),
             ).fetchone()
             completed = bool(progress and float(progress["current_value"] or 0) >= float(progress["required_value"] or 1))
             try:
@@ -264,7 +264,7 @@ class MemoryRepository:
         return default if row is None else json.loads(row["data_json"])
 
     def upsert_knowledge_gap(self, gap_id: str, status: str, topic_key: str, question: str, *, source_id: str | None = None, data: dict[str, Any] | None = None, world_minute: int | None = None) -> dict[str, Any]:
-        minute = int(self.store.get_meta("world_minute", 0) if world_minute is None else world_minute)
+        minute = int(self.store.repositories.metadata.get("world_minute", 0) if world_minute is None else world_minute)
         current = self.store.connection.execute("SELECT created_minute FROM knowledge_gap WHERE gap_id=?", (str(gap_id),)).fetchone()
         created = int(current["created_minute"]) if current else minute
         payload = dict(data or {})
@@ -312,7 +312,7 @@ class MemoryRepository:
         source_key = str(source_id or "").strip()
         if not source_key:
             return []
-        minute = int(self.store.get_meta("world_minute", 0) if world_minute is None else world_minute)
+        minute = int(self.store.repositories.metadata.get("world_minute", 0) if world_minute is None else world_minute)
         discoveries = [
             item for item in self.research_discoveries(source_key)
             if str(item.get("status", "active")).casefold() not in {"obsolete", "disabled"}
@@ -410,7 +410,7 @@ class MemoryRepository:
         encoded = json_dumps(data)
         importance = max(0.0, min(1.0, float(data.get("importance", 0.5))))
         salience = max(0.0, min(1.0, float(data.get("salience", 0.5))))
-        world_minute = int(self.store.get_meta("world_minute", 0))
+        world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         cur = self.store.connection.execute(
             "INSERT INTO memory_item(agent_id,memory_type,memory_tier,data_json,importance,salience,access_count,last_access_minute) VALUES (?,?,?,?,?,?,?,?)",
             (agent_id, memory_type, tier, encoded, importance, salience, 1, world_minute),
@@ -462,7 +462,7 @@ class MemoryRepository:
             was_in_transaction = self.store.connection.in_transaction
             self.store.connection.executemany(
                 "UPDATE memory_item SET access_count=access_count+1,last_access_minute=? WHERE id=?",
-                [(int(self.store.get_meta("world_minute", 0)), int(item["id"])) for item in result],
+                [(int(self.store.repositories.metadata.get("world_minute", 0)), int(item["id"])) for item in result],
             )
             if not was_in_transaction:
                 self.store.connection.commit()
@@ -485,7 +485,7 @@ class MemoryRepository:
         was_in_transaction = self.store.connection.in_transaction
         self.store.connection.executemany(
             "UPDATE memory_item SET access_count=access_count+1,last_access_minute=? WHERE id=?",
-            [(int(self.store.get_meta("world_minute", 0)), item) for item in ids],
+            [(int(self.store.repositories.metadata.get("world_minute", 0)), item) for item in ids],
         )
         if not was_in_transaction:
             self.store.connection.commit()

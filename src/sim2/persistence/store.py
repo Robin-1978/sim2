@@ -295,7 +295,9 @@ class WorldStore:
         from .repositories.events import EventsRepository
         from .repositories.evolution import EvolutionRepository
         from .repositories.llm import LlmRepository
+        from .repositories.metadata import MetadataRepository
         self.repositories = SimpleNamespace(
+            metadata=MetadataRepository(self),
             entities=EntitiesRepository(self),
             memory=MemoryRepository(self),
             activity=ActivityRepository(self),
@@ -318,8 +320,8 @@ class WorldStore:
                 return
             try:
                 self.connection.execute("BEGIN IMMEDIATE")
-                next_revision = int(self.get_meta("world_revision", 0) or 0) + 1
-                self.set_meta("world_revision", next_revision)
+                next_revision = self.repositories.metadata.world_revision() + 1
+                self.repositories.metadata.set("world_revision", next_revision)
                 yield self.connection
                 self.connection.commit()
                 self._commits_since_checkpoint += 1
@@ -376,18 +378,6 @@ class WorldStore:
         finally:
             connection.close()
 
-    def set_meta(self, key: str, value: Any) -> None:
-        self.connection.execute(
-            "INSERT INTO instance_meta(key,value) VALUES (?,?) "
-            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            (key, json_dumps(value)),
-        )
-
-    def get_meta(self, key: str, default: Any = None) -> Any:
-        with self._write_lock:
-            row = self.connection.execute("SELECT value FROM instance_meta WHERE key=?", (key,)).fetchone()
-            return default if row is None else json.loads(row["value"])
-
     def world_snapshot(self, *, include_agent_revisions: bool = True) -> dict[str, Any]:
         """Return the read-only boundary used by a decision or tick.
 
@@ -398,9 +388,9 @@ class WorldStore:
 
         with self._write_lock:
             snapshot = {
-                "world_id": self.get_meta("world_id", self.get_meta("instance_id", "")),
-                "world_minute": int(self.get_meta("world_minute", 0) or 0),
-                "world_revision": int(self.get_meta("world_revision", 0) or 0),
+                "world_id": self.repositories.metadata.world_id(),
+                "world_minute": self.repositories.metadata.world_minute(),
+                "world_revision": self.repositories.metadata.world_revision(),
             }
             if include_agent_revisions:
                 snapshot["agent_revisions"] = {

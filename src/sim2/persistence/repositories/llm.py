@@ -47,7 +47,7 @@ class LlmRepository:
                     context_hash,
                     json_dumps(response),
                     status,
-                    int(self.store.get_meta("world_minute", 0)),
+                    int(self.store.repositories.metadata.get("world_minute", 0)),
                     int(prompt_tokens) if isinstance(prompt_tokens, (int, float)) else None,
                     int(cached_tokens) if isinstance(cached_tokens, (int, float)) else None,
                     int(completion_tokens) if isinstance(completion_tokens, (int, float)) else None,

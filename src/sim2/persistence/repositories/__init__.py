@@ -6,6 +6,7 @@ from .events import EventsRepository
 from .evolution import EvolutionRepository
 from .llm import LlmRepository
 from .memory import MemoryRepository
+from .metadata import MetadataRepository
 from .social import SocialRepository
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "EvolutionRepository",
     "LlmRepository",
     "MemoryRepository",
+    "MetadataRepository",
     "SocialRepository",
 ]

@@ -133,7 +133,7 @@ class ResourceLedger:
         if after is not None:
             self.store.repositories.entities.sync_world_property_from_resource(entity_id, after["amount"])
         self.store.repositories.events.append_event(
-            "resource.changed", actor_id, int(self.store.get_meta("world_minute", 0)),
+            "resource.changed", actor_id, int(self.store.repositories.metadata.get("world_minute", 0)),
             {"resource_id": entity_id, "delta": float(delta), "before": (before or {}).get("amount"), "after": (after or {}).get("amount"), "source": "reservation_or_release"},
         )
 

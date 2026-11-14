@@ -107,8 +107,8 @@ def export_timeline(db_path: Path, output: Path, *, include_ticks: bool = True) 
         lines = [
             "# Full World Timeline",
             "",
-            f"World instance: `{platform.store.get_meta('instance_id', 'unknown')}`  ",
-            f"World time: minute 0–{platform.store.get_meta('world_minute', 0)}  ",
+            f"World instance: `{platform.store.repositories.metadata.get('instance_id', 'unknown')}`  ",
+            f"World time: minute 0–{platform.store.repositories.metadata.get('world_minute', 0)}  ",
             "Agent call details, prompts, internal IDs, and private reasoning are omitted. Every recorded world event is included.",
             "",
             "## Timeline",

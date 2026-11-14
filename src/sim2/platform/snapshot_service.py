@@ -21,7 +21,7 @@ class SnapshotService:
         intents = self.store.connection.execute("SELECT COUNT(*) AS n FROM intent").fetchone()["n"]
         llm_calls = self.store.connection.execute("SELECT COUNT(*) AS n FROM llm_call").fetchone()["n"]
         return {
-            "world_minute": int(self.store.get_meta("world_minute", 0)),
+            "world_minute": int(self.store.repositories.metadata.get("world_minute", 0)),
             "active_behaviors": int(active),
             "events": int(events),
             "intents": int(intents),
@@ -42,7 +42,7 @@ class SnapshotService:
 
         return {
             "status": "ok",
-            "world_minute": int(self.store.get_meta("world_minute", 0)),
+            "world_minute": int(self.store.repositories.metadata.get("world_minute", 0)),
             "events": rows("SELECT * FROM event_log ORDER BY event_id"),
             "intents": rows("SELECT * FROM intent ORDER BY created_minute,intent_id"),
             "llm_calls": rows("SELECT * FROM llm_call ORDER BY call_id"),

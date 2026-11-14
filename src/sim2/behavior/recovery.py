@@ -18,7 +18,7 @@ DEFAULT_RECOVERY_EVENTS = {
 
 
 def failure_recovery_events(store: Any) -> set[str]:
-    rules = store.get_meta("rules", {}) or {}
+    rules = store.repositories.metadata.get("rules", {}) or {}
     configured = rules.get("failure_recovery_events")
     if isinstance(configured, str):
         configured = [configured]

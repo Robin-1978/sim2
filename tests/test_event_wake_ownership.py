@@ -20,8 +20,8 @@ def test_runtime_events_have_one_platform_owner(tmp_path: Path) -> None:
         assert service.queue_consumer.__self__ is service
         event_id = service.append("audit.fact", "luo_shan", 3, {"summary": "A fact was committed."})
         event = platform.store.repositories.events.events_by_ids([event_id])[0]
-        assert event["world_instance_id"] == platform.store.get_meta("world_id")
-        assert event["world_revision"] == int(platform.store.get_meta("world_revision", 0) or 0)
+        assert event["world_instance_id"] == platform.store.repositories.metadata.get("world_id")
+        assert event["world_revision"] == int(platform.store.repositories.metadata.get("world_revision", 0) or 0)
     finally:
         platform.close()
 

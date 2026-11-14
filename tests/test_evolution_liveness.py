@@ -103,7 +103,7 @@ def test_distinct_by_compiles_into_an_evidence_group() -> None:
 
 
 def _distinct_god_policy(platform: Platform, **extra: object) -> None:
-    platform.store.set_meta("evolution", normalize_evolution_config({
+    platform.store.repositories.metadata.set("evolution", normalize_evolution_config({
         "wakes": [{
             "id": "research_synthesis", "on": "research.completed", "for": "god",
             "distinct_by": ["source_id", "stage_id"], "tools": ["wait"], **extra,
@@ -191,7 +191,7 @@ def _stagnation_world(platform: Platform, window: str = "1h", max_interval: str 
         **({"max_interval": max_interval} if max_interval else {}),
         **({"max_characters": max_characters} if max_characters else {}),
     }
-    platform.store.set_meta("evolution", normalize_evolution_config({
+    platform.store.repositories.metadata.set("evolution", normalize_evolution_config({
         "stagnation": spec,
         "wakes": [{
             "id": "option_stagnation", "on": "world.stagnation", "for": "god",
@@ -220,7 +220,7 @@ def test_stagnation_signal_has_a_baseline_then_repeats_at_doubling_spacing(tmp_p
         _step(platform, 240)
         # Windows of stagnation 1, 2 and 4 publish; windows 3 does not.
         assert _stagnation_minutes(platform) == [120, 180, 300]
-        state = platform.store.get_meta("stagnation_state")
+        state = platform.store.repositories.metadata.get("stagnation_state")
         assert state["stagnant_windows"] == 4 and state["last_novel_minute"] == 60
     finally:
         platform.close()
@@ -235,7 +235,7 @@ def test_meaningful_progress_resets_option_stagnation(tmp_path: Path) -> None:
             platform.store.repositories.events.append_event("research.progressed", "luo_shan", 90, {"source_id": "boundary_stone", "stage_id": "stage_1"})
         _step(platform, 60)
         assert _stagnation_minutes(platform) == []
-        assert platform.store.get_meta("stagnation_state")["progressed_last_window"] is True
+        assert platform.store.repositories.metadata.get("stagnation_state")["progressed_last_window"] is True
     finally:
         platform.close()
 
@@ -275,7 +275,7 @@ def test_new_parameter_option_counts_as_growth_and_restarts_the_spacing(tmp_path
         assert created["status"] == "accepted"
         _step(platform, 60)
         assert _stagnation_minutes(platform) == [120]  # growth at minute 180: no event
-        state = platform.store.get_meta("stagnation_state")
+        state = platform.store.repositories.metadata.get("stagnation_state")
         assert state["stagnant_windows"] == 0 and state["last_novel_minute"] == 180
         assert "behavior:research_boundary_stone|source_id=后续标记记录" in state["frontier"]["luo_shan"]
 
@@ -345,12 +345,12 @@ def test_a_large_roster_is_evaluated_through_a_rotating_cohort(tmp_path: Path) -
     try:
         _stagnation_world(platform, max_characters=2)
         _step(platform, 60)  # window 1 starts at index 2 and wraps: mei_lan, han_qiu
-        state = platform.store.get_meta("stagnation_state")
+        state = platform.store.repositories.metadata.get("stagnation_state")
         assert sorted(state["frontier"]) == ["han_qiu", "mei_lan"]
         assert _stagnation_minutes(platform) == []
 
         _step(platform, 60)  # window 2: luo_shan, mei_lan; luo_shan's first sight is a baseline, not growth
-        state = platform.store.get_meta("stagnation_state")
+        state = platform.store.repositories.metadata.get("stagnation_state")
         assert sorted(state["frontier"]) == ["han_qiu", "luo_shan", "mei_lan"]
         assert state["stagnant_windows"] == 1 and state["last_novel_minute"] == 60
         assert _stagnation_minutes(platform) == [120]
@@ -383,7 +383,7 @@ def test_growth_in_a_sampled_character_resets_the_stagnation_counter(tmp_path: P
         })
         assert created["status"] == "accepted"
         _step(platform, 60)  # window 3: han_qiu, luo_shan; luo_shan gained an option
-        state = platform.store.get_meta("stagnation_state")
+        state = platform.store.repositories.metadata.get("stagnation_state")
         assert state["stagnant_windows"] == 0 and state["last_novel_minute"] == 180
         assert "behavior:research_boundary_stone|source_id=抽样标记记录" in state["frontier"]["luo_shan"]
     finally:
@@ -393,10 +393,10 @@ def test_growth_in_a_sampled_character_resets_the_stagnation_counter(tmp_path: P
 def test_stagnation_is_silent_without_configuration(tmp_path: Path) -> None:
     platform = _town(tmp_path, "stagnation-off")
     try:
-        platform.store.set_meta("evolution", normalize_evolution_config({"cadence": {"god": "1d"}}))
+        platform.store.repositories.metadata.set("evolution", normalize_evolution_config({"cadence": {"god": "1d"}}))
         _step(platform, 240)
         assert _stagnation_minutes(platform) == []
-        assert platform.store.get_meta("stagnation_state") is None
+        assert platform.store.repositories.metadata.get("stagnation_state") is None
     finally:
         platform.close()
 
@@ -404,9 +404,9 @@ def test_stagnation_is_silent_without_configuration(tmp_path: Path) -> None:
 def test_configured_resource_safety_publishes_one_crossing_event(tmp_path: Path) -> None:
     platform = _town(tmp_path, "resource-safety")
     try:
-        rules = dict(platform.store.get_meta("rules", {}) or {})
+        rules = dict(platform.store.repositories.metadata.get("rules", {}) or {})
         rules["resource_safety"] = [{"resource_id": "cistern_water", "minimum_reserve": 12, "event_type": "resource.safety_low"}]
-        platform.store.set_meta("rules", rules)
+        platform.store.repositories.metadata.set("rules", rules)
         _set_quantity(platform, "cistern_water", 11)
         platform.step()
         platform.step()
@@ -419,14 +419,14 @@ def test_configured_resource_safety_publishes_one_crossing_event(tmp_path: Path)
 def test_resource_safety_repeat_signal_reopens_a_persistent_shortage(tmp_path: Path) -> None:
     platform = _town(tmp_path, "resource-safety-repeat")
     try:
-        rules = dict(platform.store.get_meta("rules", {}) or {})
+        rules = dict(platform.store.repositories.metadata.get("rules", {}) or {})
         rules["resource_safety"] = [{
             "resource_id": "cistern_water",
             "minimum_reserve": 12,
             "repeat_every_minutes": 2,
             "event_type": "resource.safety_low",
         }]
-        platform.store.set_meta("rules", rules)
+        platform.store.repositories.metadata.set("rules", rules)
         _set_quantity(platform, "cistern_water", 11)
         platform.step()  # crossing at minute 1
         platform.step()  # repeat interval not reached
@@ -479,7 +479,7 @@ def test_milestone_session_activates_configured_beat_and_unlocks_its_followup(tm
         # The model names only the configured beat; it supplies no fact text.
         result = platform.submit_story_beat("story", {"beat": BOUNDARY_BEAT}, source_event_ids=[milestone_id])
         assert result["status"] == "accepted", result
-        assert platform.store.get_meta("story_state")["boundary_stone_research"]["status"] == "active"
+        assert platform.store.repositories.metadata.get("story_state")["boundary_stone_research"]["status"] == "active"
 
         keys = {item["fact_key"] for item in platform.store.repositories.memory.list_knowledge_facts("han_qiu", limit=100)}
         assert "story:boundary_stone_research" in keys
@@ -956,7 +956,7 @@ def test_drinking_is_offered_only_when_the_configured_threshold_is_reached(tmp_p
             snapshot = platform.view.option_snapshot("mei_lan")
             return "behavior:drink_water" in snapshot["options"]
 
-        threshold = platform.store.get_meta("rules")["context_values"]["hydration_alert_threshold"]
+        threshold = platform.store.repositories.metadata.get("rules")["context_values"]["hydration_alert_threshold"]
         assert offered(threshold) is True
         assert offered(threshold + 1) is False
         assert offered(100) is False

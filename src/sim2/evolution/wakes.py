@@ -17,7 +17,7 @@ class EventWakeScheduler:
         self.store = store
 
     def _policy(self, consumer: str) -> dict[str, Any]:
-        root = self.store.get_meta("evolution", {}) or {}
+        root = self.store.repositories.metadata.get("evolution", {}) or {}
         if isinstance(root, dict):
             root = root.get("evolution", root)
         policy = root.get("event_wake_policy", {}) if isinstance(root, dict) else {}
@@ -125,7 +125,7 @@ class EventWakeScheduler:
         source = {"event_id": int(event_id), "event_type": str(event_type), "actor_id": actor_id}
         if groups:
             state_key = f"{consumer}:event_wake_group_state"
-            states = dict(self.store.get_meta(state_key, {}) or {})
+            states = dict(self.store.repositories.metadata.get(state_key, {}) or {})
             for group in groups:
                 group_id = str(group.get("id") or "group")
                 group_state = states.get(group_id) or {}
@@ -146,7 +146,7 @@ class EventWakeScheduler:
                         # Keep the scan position and the novel evidence seen so
                         # far, so repeated events never re-enter the count.
                         states[group_id] = {**group_state, **new_state}
-                        self.store.set_meta(state_key, states)
+                        self.store.repositories.metadata.set(state_key, states)
                         continue
                     # The pending evidence wakes the consumer now; its keys
                     # are spent and must not count toward a later wake.
@@ -172,7 +172,7 @@ class EventWakeScheduler:
                     "last_wake_minute": int(minute),
                     "updated_minute": int(minute),
                 }
-                self.store.set_meta(state_key, states)
+                self.store.repositories.metadata.set(state_key, states)
                 task_id = f"{consumer}:event_group:{group_id}:{int(rows[-1]['event_id'])}"
                 self.store.repositories.evolution.put_evolution_task(
                     task_id,

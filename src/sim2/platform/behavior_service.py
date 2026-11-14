@@ -27,7 +27,7 @@ class BehaviorIntentService(PlatformService):
     """Behavior intent validation and activity admission."""
 
     def _reject_intent(self, intent_id: str, actor_id: str, intent_type: str, data: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
-        world_minute = int(self.store.get_meta("world_minute", 0))
+        world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
             self.store.repositories.evolution.create_intent(intent_id, actor_id, intent_type, data, world_minute)
             self.store.repositories.evolution.finish_intent(intent_id, "rejected", result)
@@ -128,7 +128,7 @@ class BehaviorIntentService(PlatformService):
         allowed = (
             set(agent.get("initial_bt_ids", []))
             | set(agent.get("unlocked_bt_ids", []))
-            | set((self.store.get_meta("rules", {}) or {}).get("fallback_behavior_ids", []))
+            | set((self.store.repositories.metadata.get("rules", {}) or {}).get("fallback_behavior_ids", []))
         )
         if behavior_id not in allowed:
             return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
@@ -225,7 +225,7 @@ class BehaviorIntentService(PlatformService):
                 agent=agent,
                 target=entry_target,
                 context=entry_context,
-                world=self.store.get_meta("world_properties", {}) or {},
+                world=self.store.repositories.metadata.get("world_properties", {}) or {},
             ):
                 return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                     "status": "rejected",
@@ -235,7 +235,7 @@ class BehaviorIntentService(PlatformService):
                     "retryable": True,
                 })
         cooldown_minutes = max(0, int(bt.get("cooldown_minutes", 0) or 0))
-        world_minute = int(self.store.get_meta("world_minute", 0))
+        world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         if cooldown_minutes:
             last_minute = self.store.repositories.activity.last_behavior_minute(intent.actor_id, behavior_id)
             if last_minute is not None and world_minute - last_minute < cooldown_minutes:
@@ -269,10 +269,10 @@ class BehaviorIntentService(PlatformService):
             {item["id"]: item for item in self.store.repositories.entities.get_definitions("recipe_def")},
             self._context.services["execution"]._route_distance,
             capabilities=agent.get("capabilities", {}),
-            capability_modifiers=(self.store.get_meta("rules", {}) or {}).get("capability_modifiers", {}),
+            capability_modifiers=(self.store.repositories.metadata.get("rules", {}) or {}).get("capability_modifiers", {}),
         )
         remaining_minutes = estimator.behavior_minutes(behavior_id, {**runtime_parameters, **intent.target}, state.get("location_id"))
-        current_world_revision = int(self.store.get_meta("world_revision", 0) or 0)
+        current_world_revision = int(self.store.repositories.metadata.get("world_revision", 0) or 0)
         current_agent_revision = int(agent.get("agent_revision", 0) or 0)
         stale_observation = (
             intent.observed_world_revision is not None and int(intent.observed_world_revision) != current_world_revision
@@ -370,7 +370,7 @@ class BehaviorExecutionService(PlatformService):
                 location = {}
         resolved_target, _ = self.targets.resolve(agent, {**parameters, **(target or {})})
         participants = self.targets.visible_agents(agent)
-        rules = self.store.get_meta("rules", {}) or {}
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
         conflict_types = {str(item) for item in (rules.get("conflict_relation_types", ["conflict"]) or [])}
         participant_ids = {str(item.get("id")) for item in participants}
         conflict_available = False
@@ -404,7 +404,7 @@ class BehaviorExecutionService(PlatformService):
             "day_phase": world_time_view(self.store).get("day_phase"),
             "conflict": {"available": conflict_available},
         }
-        result.update(configured_context_values(self.store.get_meta("rules", {}) or {}, agent))
+        result.update(configured_context_values(self.store.repositories.metadata.get("rules", {}) or {}, agent))
         return result
 
     def _entity_for_context(self, entity_id: Any) -> dict[str, Any]:
@@ -547,7 +547,7 @@ class BehaviorExecutionService(PlatformService):
 
         if not origin or not destination or origin == destination:
             return 0
-        hop_minutes = max(1, int((self.store.get_meta("rules", {}) or {}).get("route_minutes_per_hop", 1)))
+        hop_minutes = max(1, int((self.store.repositories.metadata.get("rules", {}) or {}).get("route_minutes_per_hop", 1)))
         queue: list[tuple[str, int]] = [(str(origin), 0)]
         visited = {str(origin)}
         while queue:
@@ -573,7 +573,7 @@ class BehaviorExecutionService(PlatformService):
             {item["id"]: item for item in self.store.repositories.entities.get_definitions("recipe_def")},
             self._route_distance,
             capabilities=agent.get("capabilities", {}),
-            capability_modifiers=(self.store.get_meta("rules", {}) or {}).get("capability_modifiers", {}),
+            capability_modifiers=(self.store.repositories.metadata.get("rules", {}) or {}).get("capability_modifiers", {}),
         )
         return estimator._action_minutes(action, parameters, origin_location)
 
@@ -581,7 +581,7 @@ class BehaviorExecutionService(PlatformService):
         """Resolve declarative defaults without making the LLM fill hidden plumbing."""
 
         result = dict(parameters)
-        configured_context = configured_context_values(self.store.get_meta("rules", {}) or {}, agent)
+        configured_context = configured_context_values(self.store.repositories.metadata.get("rules", {}) or {}, agent)
         for key, default in (action.get("parameter_defaults", {}) or {}).items():
             value = result.get(key)
             if value not in (None, "") and not (isinstance(value, str) and value.startswith("context.")):
@@ -591,7 +591,7 @@ class BehaviorExecutionService(PlatformService):
             elif default == "first_available_resource":
                 location_id = (agent.get("initial_state") or {}).get("location_id")
                 sources = self.store.repositories.entities.entities_at_location(location_id) if location_id else []
-                rules = self.store.get_meta("rules", {}) or {}
+                rules = self.store.repositories.metadata.get("rules", {}) or {}
                 entity_types = {str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])}
                 protected_key = str(rules.get("resource_protected_state", "protected"))
                 source = next((item for item in sources if item.get("entity_type") in entity_types and not (item.get("initial_state") or {}).get(protected_key) and self._entity_quantity(item) > 0), None)
@@ -616,7 +616,7 @@ class BehaviorExecutionService(PlatformService):
         return self.resources.reserve(agent, action, parameters, commit=commit)
 
     def _check_action_capacity(self, agent: dict[str, Any], action: dict[str, Any], duration: int) -> tuple[bool, str]:
-        return check_action_capacity(agent, action, duration, self.store.get_meta("attributes", []) or [])
+        return check_action_capacity(agent, action, duration, self.store.repositories.metadata.get("attributes", []) or [])
 
     def _apply_action_progress(self, agent: dict[str, Any], action: dict[str, Any]) -> None:
         state = dict(agent.get("initial_state") or {})
@@ -649,7 +649,7 @@ class BehaviorExecutionService(PlatformService):
         execution_id = state.get("active_bt_instance")
         if not execution_id:
             return {"status": "ignored", "message": "The actor has no active behavior."}
-        minute = int(self.store.get_meta("world_minute", 0))
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
         status = "cancelled" if hard else "paused"
         with self.store.transaction():
             bt_row = self.store.connection.execute("SELECT behavior_id,data_json FROM bt_instance WHERE execution_id=?", (execution_id,)).fetchone()
@@ -708,7 +708,7 @@ class BehaviorExecutionService(PlatformService):
         execution_id = state.get("active_bt_instance")
         if not execution_id or state.get("status") != "paused":
             return {"status": "ignored", "message": "The actor has no paused behavior."}
-        minute = int(self.store.get_meta("world_minute", 0))
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
             state["status"] = "executing"
             agent["initial_state"] = state

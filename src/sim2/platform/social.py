@@ -216,7 +216,7 @@ class SocialRuntimeMixin:
         if any(str(item.get("name", "")).casefold() == name.casefold() and item.get("status") in {"proposed", "active"} for item in existing):
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "An institution with this name is already proposed or active.", "failed_check": "duplicate_institution", "retryable": False})
         institution_id = f"institution:{uuid4().hex[:16]}"
-        minute = int(self.store.get_meta("world_minute", 0))
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
         data = {
             "name": name,
             "purpose": purpose,
@@ -265,7 +265,7 @@ class SocialRuntimeMixin:
         if len(candidates) != 1:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "activate_institution", {"institution": choice, "reason": reason}, {"status": "rejected", "message": "Choose one exact pending institution name.", "failed_check": "institution_choice", "retryable": True, "available_choices": [str(item.get("name", "")) for item in self.store.repositories.social.list_institutions(status="proposed", limit=20)]})
         selected = candidates[0]
-        minute = int(self.store.get_meta("world_minute", 0))
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
             institution_data = {key: value for key, value in selected.items() if key not in {"institution_id", "status", "created_minute", "activated_minute"}}
             self.store.repositories.social.put_institution(str(selected["institution_id"]), "active", institution_data, int(selected.get("created_minute", minute)), minute)
@@ -410,7 +410,7 @@ class SocialRuntimeMixin:
                 "retryable": True,
                 "observed_operations": operations,
             })
-        minute = int(self.store.get_meta("world_minute", 0))
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
         revision = int(selected.get("revision", 0) or 0) + 1
         changed_before: dict[str, Any] = {}
         changed_after: dict[str, Any] = {}
@@ -614,7 +614,7 @@ class SocialRuntimeMixin:
     def _testimony_metadata(self, speaker: dict[str, Any], listener: dict[str, Any]) -> dict[str, Any]:
         """Attach a configured credibility prior without deciding truth."""
 
-        rules = self.store.get_meta("rules", {}) or {}
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
         policy = rules.get("social_credibility", {}) or {}
         base = float(policy.get("base", 0.5) or 0.5)
         trust_weight = float(policy.get("trust_weight", 0.35) or 0.0)
@@ -678,7 +678,7 @@ class SocialRuntimeMixin:
             return {"status": "rejected", "message": "Both participants must be at the same location.", "failed_check": "location", "retryable": True}
         if not self._available_for_instant_interaction(speaker) or not self._available_for_instant_interaction(listener):
             return {"status": "rejected", "message": "A participant is busy with an action that does not allow instant interaction.", "failed_check": "participant_busy", "retryable": True}
-        minute = int(self.store.get_meta("world_minute", 0))
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
         testimony = self._testimony_metadata(speaker, listener)
         with self.store.transaction():
             self.store.repositories.evolution.create_intent(intent_id, speaker_id, "send_message", {"target_id": listener_id, "topic": topic, "message": message}, minute)
@@ -698,7 +698,7 @@ class SocialRuntimeMixin:
     def _apply_configured_need_effect(self, agent: dict[str, Any], event_type: str) -> None:
         """Apply package-declared social/interaction need outcomes."""
 
-        rules = self.store.get_meta("rules", {}) or {}
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
         effects = (rules.get("need_effects", {}) or {}).get(event_type, [])
         if isinstance(effects, dict):
             effects = [{"type": "need_delta", "need": key, "delta": value} for key, value in effects.items()]
@@ -708,7 +708,7 @@ class SocialRuntimeMixin:
     def _apply_configured_relationship_effect(self, source: dict[str, Any], target: dict[str, Any], event_type: str, minute: int) -> None:
         """Apply package-declared relationship changes for completed interactions."""
 
-        rules = self.store.get_meta("rules", {}) or {}
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
         effects = (rules.get("relationship_effects", {}) or {}).get(event_type, [])
         if isinstance(effects, dict):
             effects = [effects]
@@ -734,7 +734,7 @@ class SocialRuntimeMixin:
             return {"status": "rejected", "message": "A participant is busy with an action that does not allow instant trade.", "failed_check": "participant_busy", "retryable": True}
         if not self._has_inventory(offerer, give):
             return {"status": "rejected", "message": "The offerer lacks an offered item.", "failed_check": "offer_inventory", "retryable": True}
-        minute = int(self.store.get_meta("world_minute", 0))
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
         offer_id = str(uuid4())
         intent_id = str(uuid4())
         with self.store.transaction():
@@ -769,7 +769,7 @@ class SocialRuntimeMixin:
             return {"status": "rejected", "message": "The offered items are no longer available.", "failed_check": "offer_inventory", "retryable": False}
         if not self._has_inventory(recipient, offer["want"]):
             return {"status": "rejected", "message": "The requested items are no longer available.", "failed_check": "request_inventory", "retryable": True}
-        minute = int(self.store.get_meta("world_minute", 0))
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
         intent_id = str(uuid4())
         with self.store.transaction():
             self.store.repositories.evolution.create_intent(intent_id, recipient_id, "accept_trade_offer", {"offer_id": offer_id}, minute)
@@ -818,7 +818,7 @@ class SocialRuntimeMixin:
             return {"status": "rejected", "message": "A participant is busy with an action that does not allow instant trade.", "failed_check": "participant_busy", "retryable": True}
         if not self._has_inventory(counterparty, give):
             return {"status": "rejected", "message": "The counterparty lacks the counteroffer items.", "failed_check": "offer_inventory", "retryable": True}
-        minute = int(self.store.get_meta("world_minute", 0))
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
         counter_id = str(uuid4())
         with self.store.transaction():
             self.store.repositories.social.finish_trade_offer(offer_id, "countered", minute, {"status": "accepted", "trade_status": "countered", "counter_offer_id": counter_id})
@@ -832,7 +832,7 @@ class SocialRuntimeMixin:
         offer = self.store.repositories.social.get_trade_offer(offer_id)
         if offer is None or offer["recipient_id"] != recipient_id or offer["status"] != "open":
             return {"status": "rejected", "message": "The trade offer cannot be rejected by this participant.", "failed_check": "offer", "retryable": False}
-        minute = int(self.store.get_meta("world_minute", 0))
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
             result = {"status": "accepted", "offer_id": offer_id, "trade_status": "rejected"}
             self.store.repositories.social.finish_trade_offer(offer_id, "rejected", minute, result)

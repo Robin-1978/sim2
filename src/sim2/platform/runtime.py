@@ -34,10 +34,10 @@ class Platform:
         self.view = AgentViewCompiler(self.store)
         self.perception = PerceptionService(self.store)
         self.memory = MemoryService(self.store)
-        rules = self.store.get_meta("rules", {}) or {}
-        self.attribute_schema = AttributeSchema(self.store.get_meta("attributes", []) or [], rules)
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
+        self.attribute_schema = AttributeSchema(self.store.repositories.metadata.get("attributes", []) or [], rules)
         self.conditions = ConditionEngine(rules)
-        self.effects = EffectPipeline(self.store.get_meta("attributes", []) or [])
+        self.effects = EffectPipeline(self.store.repositories.metadata.get("attributes", []) or [])
         self.targets = TargetResolver(self.store)
         self.resources = ResourceLedger(self.store)
         self._service_context = PlatformContext(self, {

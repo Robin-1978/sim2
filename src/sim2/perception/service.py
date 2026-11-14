@@ -23,7 +23,7 @@ class PerceptionService:
         private by default.
         """
 
-        rules = self.store.get_meta("rules", {}) or {}
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
         root = rules.get("perception", {}) if isinstance(rules, dict) else {}
         root = root if isinstance(root, dict) else {}
         policy: dict[str, Any] = {
@@ -80,7 +80,7 @@ class PerceptionService:
 
     def _observation_meta(self, *, visibility: str) -> dict[str, Any]:
         return {
-            "observed_at": int(self.store.get_meta("world_minute", 0) or 0),
+            "observed_at": int(self.store.repositories.metadata.get("world_minute", 0) or 0),
             "source": "platform_perception",
             "visibility": visibility,
             "confidence": 1.0,
@@ -140,7 +140,7 @@ class PerceptionService:
             location_id = self.store.repositories.entities.get_agent(agent_id).get("initial_state", {}).get("location_id")
         except KeyError:
             location_id = None
-        rules = self.store.get_meta("rules", {}) or {}
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
         policy = (rules.get("perception", {}) or {}) if isinstance(rules, dict) else {}
         audible_types = {str(item) for item in (policy.get("audible_event_types", []) or [])}
         audible_prefixes = tuple(str(item) for item in (policy.get("audible_event_prefixes", []) or []))

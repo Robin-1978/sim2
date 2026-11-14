@@ -53,7 +53,7 @@ class StagnationRuntimeMixin:
     """Publish ``world.stagnation`` when the world stops creating options."""
 
     def _stagnation_config(self) -> dict[str, Any] | None:
-        root = self.store.get_meta("evolution", {}) or {}
+        root = self.store.repositories.metadata.get("evolution", {}) or {}
         config = root.get("evolution", root) if isinstance(root, dict) else {}
         raw = config.get("stagnation") if isinstance(config, dict) else None
         if not isinstance(raw, dict):
@@ -114,7 +114,7 @@ class StagnationRuntimeMixin:
         )
         sampled = len(active) > config["max_characters"]
         cohort = self._stagnation_cohort(active, minute // window, config["max_characters"])
-        state = dict(self.store.get_meta(STAGNATION_STATE_KEY, {}) or {})
+        state = dict(self.store.repositories.metadata.get(STAGNATION_STATE_KEY, {}) or {})
         baseline = "frontier" not in state
         progress_cursor = int(state.get("progress_event_id", 0) or 0)
         progress_types = list(config.get("progress_event_types") or DEFAULT_PROGRESS_EVENTS)
@@ -155,7 +155,7 @@ class StagnationRuntimeMixin:
                 event_id = self._publish_stagnation(minute, windows, window, last_novel, active, snapshots)
                 next_emit_at = windows + gap
                 gap = min(gap * 2, cap)
-        self.store.set_meta(STAGNATION_STATE_KEY, {
+        self.store.repositories.metadata.set(STAGNATION_STATE_KEY, {
             "frontier": {key: sorted(value) for key, value in frontier.items()},
             "stagnant_windows": windows,
             "next_emit_at": next_emit_at,

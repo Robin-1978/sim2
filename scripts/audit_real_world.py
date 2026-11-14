@@ -352,10 +352,10 @@ def main() -> int:
             except (OSError, TypeError, ValueError, json.JSONDecodeError):
                 pass
     if args.resume_db and resume_after_provider_cooldown:
-        scheduler_state = dict(platform.store.get_meta("runtime_scheduler_state", {}) or {})
+        scheduler_state = dict(platform.store.repositories.metadata.get("runtime_scheduler_state", {}) or {})
         scheduler_state["provider_retry_pending"] = True
         with platform.store.transaction():
-            platform.store.set_meta("runtime_scheduler_state", scheduler_state)
+            platform.store.repositories.metadata.set("runtime_scheduler_state", scheduler_state)
 
     def observe(turn: Any, actor_id: str) -> None:
         context = turn.initial_context or {}

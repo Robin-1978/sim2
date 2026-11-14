@@ -21,7 +21,7 @@ class LearningRuntimeMixin:
         allowed_claims = {"observed", "confirmed", "reported", "promised", "inferred", "disputed", "false", "failed"}
         if claim_status not in allowed_claims:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "claim_status must be observed, confirmed, reported, promised, inferred, disputed, false, or failed.", "failed_check": "claim_status", "retryable": True})
-        world_minute = int(self.store.get_meta("world_minute", 0))
+        world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
             agent = self.store.repositories.entities.get_agent(actor_id)
             state = agent.get("initial_state", {}) or {}
@@ -112,7 +112,7 @@ class LearningRuntimeMixin:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability is not configured.", "failed_check": "capability", "retryable": True})
         if not 0 < float(delta) <= 0.2 or len(evidence) < 12:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability delta or evidence is invalid.", "failed_check": "evidence", "retryable": True})
-        rules = self.store.get_meta("rules", {}) or {}
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
         progression = (rules.get("capability_progression", {}) or {}).get(capability)
         if not isinstance(progression, dict):
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "This capability has no configured progression rule.", "failed_check": "capability_progression", "retryable": False})
@@ -132,7 +132,7 @@ class LearningRuntimeMixin:
         completed = len(evidence_events)
         if completed < minimum:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": f"More matching capability evidence is required before updating {capability}.", "failed_check": "insufficient_evidence", "completed_outcomes": completed, "required_outcomes": minimum, "retryable": True})
-        world_minute = int(self.store.get_meta("world_minute", 0))
+        world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         current = float((agent.get("capabilities") or {}).get(capability, 0) or 0)
         maximum = float(progression.get("max_value", 1.0) or 1.0)
         after = min(maximum, current + float(delta))
@@ -165,7 +165,7 @@ class LearningRuntimeMixin:
         progress_key = str(progress_key).strip()
         evidence = str(evidence).strip()
         data = {"progress_key": progress_key, "evidence": evidence}
-        rules = self.store.get_meta("rules", {}) or {}
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
         definitions = rules.get("civilization_progress", {}) or {}
         definition = definitions.get(progress_key) if isinstance(definitions, dict) else None
         if not isinstance(definition, dict):
@@ -241,8 +241,8 @@ class LearningRuntimeMixin:
         ).fetchone()
         if duplicate is not None:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "record_world_progress", data, {"status": "rejected", "message": "This source event has already contributed to that progress category.", "failed_check": "duplicate_progress_evidence", "retryable": False})
-        world_minute = int(self.store.get_meta("world_minute", 0))
-        world_id = str(self.store.get_meta("world_id", "world"))
+        world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
+        world_id = str(self.store.repositories.metadata.get("world_id", "world"))
         required = float(definition.get("required", 1) or 1)
         with self.store.transaction():
             self.store.repositories.evolution.create_intent(intent_id, actor_id, "record_world_progress", data, world_minute)
@@ -281,7 +281,7 @@ class LearningRuntimeMixin:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_belief", data, {"status": "rejected", "message": "A belief id or statement is required.", "failed_check": "belief", "retryable": True})
         if not 0 <= confidence <= 1:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_belief", data, {"status": "rejected", "message": "Confidence must be between 0 and 1.", "failed_check": "confidence", "retryable": True})
-        world_minute = int(self.store.get_meta("world_minute", 0))
+        world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
             agent = self.store.repositories.entities.get_agent(actor_id)
             beliefs = list(agent.get("beliefs", []))
@@ -308,7 +308,7 @@ class LearningRuntimeMixin:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_goal", data, {"status": "rejected", "message": "Goal statement is required.", "failed_check": "statement", "retryable": True})
         if not 0 <= priority <= 1:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_goal", data, {"status": "rejected", "message": "Goal priority must be between 0 and 1.", "failed_check": "priority", "retryable": True})
-        world_minute = int(self.store.get_meta("world_minute", 0))
+        world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
             agent = self.store.repositories.entities.get_agent(actor_id)
             if goal_id in {"", "ultimate_goal"}:
@@ -371,7 +371,7 @@ class LearningRuntimeMixin:
             "success_results": proposal.get("success_results", []), "failure_results": proposal.get("failure_results", []),
             "nodes": nodes, "definition_source": "agent_proposal", "kind": "proposed", "validation_status": "validated",
         }
-        world_minute = int(self.store.get_meta("world_minute", 0))
+        world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
             agent = self.store.repositories.entities.get_agent(actor_id)
             self.store.repositories.evolution.create_intent(intent_id, actor_id, "propose_behavior", data, world_minute)

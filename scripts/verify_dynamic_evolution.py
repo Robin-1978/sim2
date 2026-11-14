@@ -196,7 +196,7 @@ def main() -> int:
             "status": "passed",
             "instance_id": instance_id,
             "database": str(runtime_root / "instances" / instance_id / "world.sqlite3"),
-            "world_minute": int(platform.store.get_meta("world_minute", 0)),
+            "world_minute": int(platform.store.repositories.metadata.get("world_minute", 0)),
             "god": _summary(god_turn),
             "npc_behavior": started,
             "pool_before": before_pool,

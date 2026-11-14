@@ -40,8 +40,8 @@ class EntityProposalRuntimeMixin:
         if location_id:
             initial_state["location_id"] = location_id
 
-        rules = self.store.get_meta("rules", {}) or {}
-        schema = AttributeSchema(self.store.get_meta("attributes", []) or [], rules)
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
+        schema = AttributeSchema(self.store.repositories.metadata.get("attributes", []) or [], rules)
         for attribute_id, value in schema.state_defaults().items():
             initial_state.setdefault(attribute_id, value)
         initial_state.setdefault("status", "idle")
@@ -158,7 +158,7 @@ class EntityProposalRuntimeMixin:
                     f"({existing['entity_type']}:{existing['id']}); use it instead of creating a duplicate"
                 )
         if actor_id == "god":
-            rules = self.store.get_meta("rules", {}) or {}
+            rules = self.store.repositories.metadata.get("rules", {}) or {}
             resource_types = {str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])}
             entity_type = str(proposal.get("entity_type", ""))
             state = proposal.get("state") if isinstance(proposal.get("state"), dict) else {}
@@ -214,7 +214,7 @@ class EntityProposalRuntimeMixin:
             else:
                 failed_check = "god_resource_creation" if any("stocked resource" in error for error in errors) else "entity_schema"
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_entity", data, {"status": "rejected", "message": "Entity proposal failed validation.", "failed_check": failed_check, "errors": errors, "retryable": True})
-        world_minute = int(self.store.get_meta("world_minute", 0))
+        world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         # Entity proposals use one compact ``state`` object at the Agent
         # boundary.  Location topology is the one structural exception: the
         # navigation engine reads routes/tags/public/safe from the location

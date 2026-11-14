@@ -114,7 +114,7 @@ def test_story_view_exposes_generic_research_followup(tmp_path: Path):
             source_event_ids=[event_id],
         )
         assert result["status"] == "accepted"
-        beat = next(item for item in platform.store.get_meta("story_state")["emergent_beats"] if item["id"] == platform.store.get_meta("story_state")["emergent_beats"][-1]["id"])
+        beat = next(item for item in platform.store.repositories.metadata.get("story_state")["emergent_beats"] if item["id"] == platform.store.repositories.metadata.get("story_state")["emergent_beats"][-1]["id"])
         assert "research_boundary_stone" in beat["unlock_behavior_ids"]
         assert "boundary_stone" in platform.store.repositories.entities.get_agent("luo_shan").get("research_targets", [])
     finally:
@@ -224,7 +224,7 @@ def test_failed_story_followup_is_blocked_and_story_is_woken(tmp_path: Path):
         agent["story_goals"] = [goal]
         with platform.store.transaction():
             platform.store.repositories.entities.update_agent("luo_shan", agent)
-            platform.store.set_meta(
+            platform.store.repositories.metadata.set(
                 "story_state",
                 {
                     "emergent_beats": [
@@ -244,7 +244,7 @@ def test_failed_story_followup_is_blocked_and_story_is_woken(tmp_path: Path):
                 "behavior.failed", "luo_shan", 10, {"behavior_id": "gather_reeds", "result": "resource_empty"},
             )
         platform._services["activity"]._block_story_beats_for_failed_followup("luo_shan", "gather_reeds", 10, source_event_id, "resource_empty")
-        state = platform.store.get_meta("story_state")
+        state = platform.store.repositories.metadata.get("story_state")
         assert state["emergent:blocked-followup"]["status"] == "blocked"
         assert goal not in platform.store.repositories.entities.get_agent("luo_shan").get("story_goals", [])
         task = platform.store.connection.execute(

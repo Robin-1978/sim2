@@ -49,10 +49,10 @@ def main() -> int:
                         "cistern.reviewed", "mei_lan", minute,
                         {"behavior_id": "inspect_cistern", "result": "record_inspected"},
                     )
-            properties = dict(platform.store.get_meta("world_properties", {}) or {})
+            properties = dict(platform.store.repositories.metadata.get("world_properties", {}) or {})
             properties["cistern_reviews"] = 3
             with platform.store.transaction():
-                platform.store.set_meta("world_properties", properties)
+                platform.store.repositories.metadata.set("world_properties", properties)
             platform.step()
             god_provider = router.new_provider_for_name(args.provider, role="god")
             story_provider = router.new_provider_for_name(args.provider, role="story")

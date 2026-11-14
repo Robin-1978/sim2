@@ -223,8 +223,9 @@ migration façades:
 4. The explicit cross-service owner conversion is now tested and committed;
    the Platform facade no longer relies on implicit service-method scanning for
    the migrated paths.
-5. The remaining architectural debt is the Store read façade, the duplicate
-   definition compiler/validation paths, and the still-large AgentEngine.
+5. Metadata ownership is now explicit through `MetadataRepository`; the
+   remaining architectural debt is the duplicate definition compiler/
+   validation paths and the still-large AgentEngine.
 6. A one-week deterministic run has already exposed a content-level liveness
    issue (`vital_depleted:fei_lan`). This is tracked after the ownership
    refactor; it must be fixed in world configuration or generic demand and
@@ -299,14 +300,16 @@ wake can be traced to a committed event.
   unclassified access.
 
 **Current state:** `WorldStore.repositories` exposes one named repository per
-persistence domain. UnitOfWork, Platform services, AgentView, perception,
-memory, simulation, Actions and API projections use those typed objects.
-Repository-internal cross-domain calls also use named repositories. The
-dynamic Store method façade has been removed.
+persistence domain, including `MetadataRepository`. UnitOfWork, Platform
+services, AgentView, perception, memory, simulation, Actions and API
+projections use those typed objects. Repository-internal cross-domain calls
+also use named repositories. The dynamic Store metadata method façade has
+been removed.
 
-**Completed:** the façade removal and test migration are ready to commit after
-the full suite passed. Store remains responsible only for SQLite connection,
-transaction, metadata, snapshots and lifecycle primitives.
+**Completed:** the façade removal and test migration pass the full suite and
+are ready to commit. Store remains responsible only for SQLite connection,
+transaction, repositories, snapshots and lifecycle primitives; metadata rows
+are owned by `MetadataRepository`.
 
 **Gate:** no repository commits independently; event and projection writes are
 atomic; claimed evolution tasks are recovered after restart; replay preserves
@@ -447,7 +450,7 @@ modules are:
 | `platform/runtime.py` | 98 lines | Public facade still exposes the migration dispatch surface; lifecycle ownership now lives in services |
 | `platform/activity.py` | 1,500 lines | Action/BT execution, research, Story completion, institutions and event wakeups are mixed |
 | `platform/definition_runtime.py`, `entity_proposals.py`, `story_runtime.py`, `world_changes.py` | split modules | Definition validation, entity proposals, Story beats and world changes now have separate owners |
-| `persistence/store.py` | 419 lines | Typed repositories exist, but read-heavy callers still use the migration façade |
+| `persistence/store.py` | 407 lines | SQLite connection, transaction and repository composition; metadata is owned by `MetadataRepository` |
 | `agent_view/compiler.py` | 1,900 lines | Decision, Story and God views share availability, parameter and rendering logic |
 | `agents/tools.py` | 1,200 lines | Schemas, dispatch, role policy, compatibility normalization and proposal rules are mixed |
 | `agents/engine.py` | 1,067 lines | Session, provider protocol, intent normalization and audit still need a final boundary |

@@ -1009,33 +1009,33 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
     try:
         manifest = validation["manifest"]
         with store.transaction():
-            store.set_meta("world_id", manifest.get("world_id", instance_id))
-            store.set_meta("instance_id", instance_id)
-            store.set_meta("config_version", manifest.get("config_version", "unknown"))
-            store.set_meta("config_hash", config_hash(config_dir))
-            store.set_meta("world_minute", manifest.get("start_world_minute", 0))
-            store.set_meta("time_unit", manifest.get("time_unit", "minute"))
-            store.set_meta("runtime_status", "running")
-            store.set_meta("random_seed", manifest.get("random_seed"))
+            store.repositories.metadata.set("world_id", manifest.get("world_id", instance_id))
+            store.repositories.metadata.set("instance_id", instance_id)
+            store.repositories.metadata.set("config_version", manifest.get("config_version", "unknown"))
+            store.repositories.metadata.set("config_hash", config_hash(config_dir))
+            store.repositories.metadata.set("world_minute", manifest.get("start_world_minute", 0))
+            store.repositories.metadata.set("time_unit", manifest.get("time_unit", "minute"))
+            store.repositories.metadata.set("runtime_status", "running")
+            store.repositories.metadata.set("random_seed", manifest.get("random_seed"))
 
             setting = load_yaml(config_dir, "setting.yaml", {})
-            store.set_meta("setting", setting)
+            store.repositories.metadata.set("setting", setting)
             world_state = load_yaml(config_dir, "world_state.yaml", {}).get("world_state", {})
-            store.set_meta("world_properties", world_state.get("properties", {}))
+            store.repositories.metadata.set("world_properties", world_state.get("properties", {}))
             rules = load_yaml(config_dir, "rules.yaml", {})
-            store.set_meta("rules", rules)
-            store.set_meta("attributes", load_yaml(config_dir, "attributes.yaml", {}).get("attributes", []))
-            attribute_schema = AttributeSchema(store.get_meta("attributes", []) or [], rules)
+            store.repositories.metadata.set("rules", rules)
+            store.repositories.metadata.set("attributes", load_yaml(config_dir, "attributes.yaml", {}).get("attributes", []))
+            attribute_schema = AttributeSchema(store.repositories.metadata.get("attributes", []) or [], rules)
             default_needs = attribute_schema.need_defaults()
             for item in (rules.get("needs", []) or []):
                 if isinstance(item, dict) and item.get("id"):
                     default_needs.setdefault(str(item["id"]), float(item.get("target", 100)))
             evolution = normalize_evolution_config(load_yaml(config_dir, "evolution.yaml", {}) or {})
-            store.set_meta("evolution", evolution)
+            store.repositories.metadata.set("evolution", evolution)
             story = load_yaml(config_dir, "story.yaml", {})
-            store.set_meta("story", story)
-            store.set_meta("story_state", {})
-            store.set_meta("player_template", load_yaml(config_dir, "player_template.yaml", {}))
+            store.repositories.metadata.set("story", story)
+            store.repositories.metadata.set("story_state", {})
+            store.repositories.metadata.set("player_template", load_yaml(config_dir, "player_template.yaml", {}))
 
             for location in load_yaml(config_dir, "locations.yaml", {}).get("locations", []):
                 store.repositories.entities.put_entity(location["id"], "location", location.get("name", location["id"]), location)
@@ -1057,7 +1057,7 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                 if isinstance(amount, (int, float)):
                     resource_baseline[str(resource["id"])] = float(amount)
                     store.repositories.entities.sync_world_property_from_resource(str(resource["id"]), amount)
-            store.set_meta("resource_baseline", resource_baseline)
+            store.repositories.metadata.set("resource_baseline", resource_baseline)
             # Seed one canonical knowledge gap per configured research source.
             # God reviews and advances these gaps instead of inventing a new
             # document for every completion event.
@@ -1138,7 +1138,7 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
             for event in load_yaml(config_dir, "opening_events.yaml", {}).get("opening_events", []):
                 minute = int(event.get("world_minute", event.get("minute", 0)))
                 store.repositories.events.append_event(event["type"], None, minute, event.get("payload", {}))
-            store.set_meta("bootstrap_report", {"status": "complete", "config_dir": str(config_dir), "validation_errors": []})
+            store.repositories.metadata.set("bootstrap_report", {"status": "complete", "config_dir": str(config_dir), "validation_errors": []})
         return db_path
     except Exception:
         store.close()

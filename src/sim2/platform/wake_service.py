@@ -46,7 +46,7 @@ class WakeService:
     ) -> str | None:
         self._validate_event(event_id, event_type)
         role, resolved_actor = self._resolve_consumer(str(consumer), actor_id)
-        evolution = self.store.get_meta("evolution", {}) or {}
+        evolution = self.store.repositories.metadata.get("evolution", {}) or {}
         evolution = evolution.get("evolution", evolution) if isinstance(evolution, dict) else {}
         consumers = ((evolution.get("event_wake_policy", {}) or {}).get("consumers", {}) or {}) if isinstance(evolution, dict) else {}
         manual_events = {
@@ -86,7 +86,7 @@ class WakeService:
     def configured(self, event_id: int, event_type: str, actor_id: str | None, minute: int) -> None:
         """Publish one event to all consumers declared by the world package."""
 
-        root = self.store.get_meta("evolution", {}) or {}
+        root = self.store.repositories.metadata.get("evolution", {}) or {}
         config = root.get("evolution", root) if isinstance(root, dict) else {}
         policy = config.get("event_wake_policy", {}) if isinstance(config, dict) else {}
         consumers = policy.get("consumers", {}) if isinstance(policy, dict) else {}

@@ -78,7 +78,7 @@ def test_compact_evolution_is_valid_and_stored_compiled(tmp_path: Path) -> None:
     db_path = create_instance(package, "compact-town", tmp_path / "runtime")
     store = WorldStore(db_path)
     try:
-        evolution = store.get_meta("evolution")
+        evolution = store.repositories.metadata.get("evolution")
         assert "wakes" not in evolution
         assert evolution["schedule"]["god_local_minutes"] == 10080
         assert evolution["event_wake_policy"]["consumers"]["god"]["event_groups"]

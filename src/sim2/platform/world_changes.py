@@ -20,7 +20,7 @@ class WorldChangesRuntimeMixin:
         if change_type not in {"world_property", "rule", "relationship", "faction", "event"}:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "Unsupported world change type.", "failed_check": "change_type", "retryable": True})
         if change_type in {"world_property", "event"} and proposal.get("property"):
-            current_properties = self.store.get_meta("world_properties", {}) or {}
+            current_properties = self.store.repositories.metadata.get("world_properties", {}) or {}
             proposal = {**proposal, "property": self._canonical_world_property(str(proposal["property"]), current_properties)}
             property_id = str(proposal["property"])
             if actor_id == "god" and not self._god_property_change_allowed(property_id):
@@ -71,7 +71,7 @@ class WorldChangesRuntimeMixin:
                         "retryable": True,
                     },
                 )
-            existing_rules = (self.store.get_meta("rules", {}) or {}).get("world_rules", []) or []
+            existing_rules = (self.store.repositories.metadata.get("rules", {}) or {}).get("world_rules", []) or []
             signal_conflict = self.rule_compiler.signal_conflict(dict(proposal["rule"]), existing_rules)
             if signal_conflict:
                 conflict_type, conflict_name = signal_conflict
@@ -106,7 +106,7 @@ class WorldChangesRuntimeMixin:
                 )
         if change_type in {"world_property", "event"} and proposal.get("property"):
             property_name = str(proposal["property"])
-            current_properties = self.store.get_meta("world_properties", {}) or {}
+            current_properties = self.store.repositories.metadata.get("world_properties", {}) or {}
             before_value = current_properties.get(property_name)
             value = proposal.get("value")
             if isinstance(before_value, bool):
@@ -148,7 +148,7 @@ class WorldChangesRuntimeMixin:
                         "retryable": True,
                     },
                 )
-        world_minute = int(self.store.get_meta("world_minute", 0))
+        world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         evaluation_window = max(1, min(int(proposal.get("evaluation_window_minutes", 1440) or 1440), 43200))
         evaluation_due_minute = world_minute + evaluation_window
         with self.store.transaction():
@@ -157,11 +157,11 @@ class WorldChangesRuntimeMixin:
             if change_type == "world_property":
                 effect = self._context.services["tick"]._set_world_property(str(proposal["property"]), proposal.get("value"))
             elif change_type == "rule":
-                rules = dict(self.store.get_meta("rules", {}) or {})
+                rules = dict(self.store.repositories.metadata.get("rules", {}) or {})
                 world_rules = list(rules.get("world_rules", []))
                 world_rules.append(dict(proposal["rule"]))
                 rules["world_rules"] = world_rules
-                self.store.set_meta("rules", rules)
+                self.store.repositories.metadata.set("rules", rules)
                 self._context.set_dependency("conditions", ConditionEngine(rules))
                 self._context.set_dependency("rule_compiler", self._context.services["api"]._new_rule_compiler())
                 effect = {"rule_added": dict(proposal["rule"]), "rule_count": len(world_rules)}
@@ -281,7 +281,7 @@ class WorldChangesRuntimeMixin:
             entity = None
         if entity and entity.get("entity_type") == "resource":
             return False
-        policy = self.store.get_meta("rules", {}).get("world_change_policy", {}) or {}
+        policy = self.store.repositories.metadata.get("rules", {}).get("world_change_policy", {}) or {}
         allowed = policy.get("god_direct_properties", []) if isinstance(policy, dict) else []
         return property_id in {str(item) for item in (allowed or [])}
 
@@ -304,7 +304,7 @@ class WorldChangesRuntimeMixin:
         if not validation["valid"]:
             return {"status": "rejected", "message": "World template failed validation.", "errors": validation["errors"], "retryable": True}
         intent_id = str(uuid4())
-        world_minute = int(self.store.get_meta("world_minute", 0))
+        world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
             self.store.repositories.evolution.create_intent(intent_id, actor_id, "submit_world_template", {"template": template}, world_minute)
             self._context.services["events"].append("world.template.accepted", actor_id, world_minute, {"template_keys": sorted(template)})

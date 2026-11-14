@@ -90,7 +90,7 @@ class TextWorldSession:
                 parameters={"location_id": args[0]},
                 reason="Move through the text interface.",
                 confidence=1.0,
-                intent_id=f"text-move:{self.player_id}:{self.platform.store.get_meta('world_minute', 0)}:{args[0]}",
+                intent_id=f"text-move:{self.player_id}:{self.platform.store.repositories.metadata.get('world_minute', 0)}:{args[0]}",
             )))
         if command == "say":
             self._require_player()

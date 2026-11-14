@@ -272,7 +272,7 @@ def test_dynamic_signal_cannot_wake_its_proposer_role(tmp_path: Path):
         )
         assert result["status"] == "rejected"
         assert result["failed_check"] == "rule_self_wake"
-        assert not any(item.get("id") == "self-review" for item in platform.store.get_meta("rules", {}).get("world_rules", []))
+        assert not any(item.get("id") == "self-review" for item in platform.store.repositories.metadata.get("rules", {}).get("world_rules", []))
     finally:
         platform.close()
 
@@ -534,7 +534,7 @@ def test_world_calendar_effects_advance_fog_and_winter_countdown(tmp_path: Path)
     try:
         for _ in range(1440):
             platform.step()
-        properties = platform.store.get_meta("world_properties")
+        properties = platform.store.repositories.metadata.get("world_properties")
         assert properties["winter_days_remaining"] == 29
         assert round(properties["fog_level"], 2) == 0.6
     finally:
@@ -552,14 +552,14 @@ def test_starter_bell_enables_alarm_only_when_threat_is_configured(tmp_path: Pat
         assert install["status"] == "accepted"
         for _ in range(install["remaining_minutes"]):
             platform.step()
-        assert platform.store.get_meta("world_properties")["north_gate_alarm_ready"] == 1
+        assert platform.store.repositories.metadata.get("world_properties")["north_gate_alarm_ready"] == 1
         assert not any(task["role"] == "story" for task in platform.ready_evolution_tasks())
         assert not any(item["ref"] == "behavior:sound_alarm" for item in platform.decision_view("he_yan")["executable_behaviors"])
 
         with platform.store.transaction():
-            properties = dict(platform.store.get_meta("world_properties"))
+            properties = dict(platform.store.repositories.metadata.get("world_properties"))
             properties["north_gate_threat_level"] = 0.8
-            platform.store.set_meta("world_properties", properties)
+            platform.store.repositories.metadata.set("world_properties", properties)
         assert any(item["ref"] == "behavior:sound_alarm" for item in platform.decision_view("he_yan")["executable_behaviors"])
         alarm = platform.submit_behavior(BehaviorIntent("he_yan", "behavior:sound_alarm", {}, {}, "Raise the installed north gate alarm for the detected threat.", 0.9, "bell-alarm-raise"))
         assert alarm["status"] == "accepted"
@@ -572,7 +572,7 @@ def test_starter_bell_enables_alarm_only_when_threat_is_configured(tmp_path: Pat
         response_choices = {item["ref"] for item in platform.decision_view("he_yan")["executable_behaviors"]}
         assert "behavior:sound_alarm" not in response_choices
         assert "behavior:defend_village" in response_choices
-        before = platform.store.get_meta("world_properties")["north_gate_threat_level"]
+        before = platform.store.repositories.metadata.get("world_properties")["north_gate_threat_level"]
         defense = platform.submit_behavior(BehaviorIntent(
             "he_yan", "behavior:defend_village", {}, {},
             "Respond to the verified alarm and secure the northern boundary.", 0.95, "bell-alarm-response",
@@ -580,7 +580,7 @@ def test_starter_bell_enables_alarm_only_when_threat_is_configured(tmp_path: Pat
         assert defense["status"] == "accepted"
         for _ in range(defense["remaining_minutes"]):
             platform.step()
-        after = platform.store.get_meta("world_properties")["north_gate_threat_level"]
+        after = platform.store.repositories.metadata.get("world_properties")["north_gate_threat_level"]
         assert after < before
         assert after < 0.7
         assert any(item["event_type"] == "defense.village_response" for item in platform.store.repositories.events.timeline_events(limit=200))
@@ -705,7 +705,7 @@ def test_starter_water_pact_and_mark_followups_change_world_or_knowledge(tmp_pat
             for _ in range(260):
                 platform.step()
             if property_name:
-                assert platform.store.get_meta("world_properties")[property_name] >= expected_value - 1e-6
+                assert platform.store.repositories.metadata.get("world_properties")[property_name] >= expected_value - 1e-6
             assert any(item["event_type"] == event_type for item in platform.store.repositories.events.timeline_events(limit=300))
         assert any(item["fact_key"] == "security:north_gate_marks" for item in platform.store.repositories.memory.list_knowledge_facts("he_yan", limit=20))
     finally:
@@ -907,7 +907,7 @@ def test_dialogue_round_limit_uses_pair_chain_not_model_topic_text(tmp_path: Pat
         assert len(provider.calls) == 3
         assert report.interaction_replies_suppressed == 1
         assert report.interaction_threads_closed == 1
-        state = platform.store.get_meta("runtime_scheduler_state")
+        state = platform.store.repositories.metadata.get("runtime_scheduler_state")
         pair_thread = next(item for item in state["interaction_rounds"] if item["key"][0] == "dialogue")
         assert pair_thread["rounds"] == 3
         assert len(pair_thread["key"]) == 3
@@ -930,7 +930,7 @@ def test_dialogue_reply_chain_is_drained_without_advancing_world_time(tmp_path: 
         runner._run_instant_interactions(report)
 
         assert len(provider.calls) == 3
-        assert platform.store.get_meta("world_minute") == 0
+        assert platform.store.repositories.metadata.get("world_minute") == 0
         rows = platform.store.connection.execute(
             "SELECT world_minute,topic FROM dialogue_exchange ORDER BY id"
         ).fetchall()
@@ -953,15 +953,15 @@ def test_pending_interaction_blocks_tick_and_resumes_from_persisted_event(tmp_pa
 
         blocked = SimulationRunner(platform, {}).run(1)
         assert blocked.stop_reason == "interaction_pending"
-        assert platform.store.get_meta("world_minute") == 0
+        assert platform.store.repositories.metadata.get("world_minute") == 0
 
         provider = WaitProvider()
         resumed = SimulationRunner(platform, {"agent_decision": provider}).run(1)
         assert resumed.stop_reason is None
         assert provider.calls
         assert "<incoming_interaction>" in provider.calls[0]["context"]
-        assert platform.store.get_meta("world_minute") == 1
-        state = platform.store.get_meta("runtime_scheduler_state")
+        assert platform.store.repositories.metadata.get("world_minute") == 1
+        state = platform.store.repositories.metadata.get("runtime_scheduler_state")
         assert sent["event_id"] in state["interaction_events_seen"]
     finally:
         platform.close()
@@ -980,7 +980,7 @@ def test_interaction_dispatch_cursor_survives_runner_restart(tmp_path: Path):
         resumed = SimulationRunner(platform, {"agent_decision": provider})
         resumed._run_instant_interactions(SimulationReport(0, 0))
         assert len(provider.calls) == 1
-        state = platform.store.get_meta("runtime_scheduler_state")
+        state = platform.store.repositories.metadata.get("runtime_scheduler_state")
         assert sent["event_id"] in state["interaction_events_seen"]
     finally:
         platform.close()
@@ -990,10 +990,10 @@ def test_wait_decisions_back_off_and_configured_event_wakes_one_agent(tmp_path: 
     platform = Platform(create_instance(_config(), "decision-backoff", tmp_path / "runtime"))
     provider = WaitProvider()
     try:
-        rules = dict(platform.store.get_meta("rules") or {})
+        rules = dict(platform.store.repositories.metadata.get("rules") or {})
         rules["decision_policy"] = {"wait_backoff_minutes": [5, 10, 20], "wake_events": ["test.wake"]}
         with platform.store.transaction():
-            platform.store.set_meta("rules", rules)
+            platform.store.repositories.metadata.set("rules", rules)
         runner = SimulationRunner(platform, {"agent_decision": provider})
         runner.run(1)
         initial_calls = len(provider.calls)
@@ -1017,12 +1017,12 @@ def test_assigned_definition_event_wakes_character_by_visible_name(tmp_path: Pat
     config = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
     platform = Platform(create_instance(config, "definition-assignee-wake", tmp_path / "runtime"))
     try:
-        rules = dict(platform.store.get_meta("rules") or {})
+        rules = dict(platform.store.repositories.metadata.get("rules") or {})
         rules["decision_policy"] = {"wake_events": ["definition.registered"]}
         with platform.store.transaction():
-            platform.store.set_meta("rules", rules)
+            platform.store.repositories.metadata.set("rules", rules)
         runner = SimulationRunner(platform, {"agent_decision": WaitProvider()})
-        minute = int(platform.store.get_meta("world_minute", 0))
+        minute = int(platform.store.repositories.metadata.get("world_minute", 0))
         runner._decision_not_before["mei_lan"] = minute + 360
         runner._wait_streak["mei_lan"] = 3
         with platform.store.transaction():

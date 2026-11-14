@@ -83,7 +83,7 @@ def test_failed_allocation_is_hidden_until_stock_recovers(tmp_path: Path):
         pool = platform.store.repositories.entities.get_entity("cistern_water")
         pool["initial_state"]["quantity"] = 48
         platform.store.repositories.entities.put_entity(pool["id"], pool["entity_type"], pool["name"], {key: value for key, value in pool.items() if key not in {"id", "entity_type", "name"}})
-        platform.store.repositories.events.append_event("resource.regenerated", None, int(platform.store.get_meta("world_minute")) + 1, {"resource_id": "cistern_water", "amount": 48})
+        platform.store.repositories.events.append_event("resource.regenerated", None, int(platform.store.repositories.metadata.get("world_minute")) + 1, {"resource_id": "cistern_water", "amount": 48})
         assert any(item["ref"] == f"behavior:{behavior_id}" for item in platform.decision_view("mei_lan")["executable_behaviors"])
     finally:
         platform.close()

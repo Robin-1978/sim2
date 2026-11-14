@@ -27,10 +27,10 @@ class WorldTickService(PlatformService):
     """One-minute effects, signals and activity progression."""
 
     def _apply_minute_effects(self, minute: int, *, agents: list[dict[str, Any]] | None = None) -> None:
-        rules = self.store.get_meta("rules", {}) or {}
-        minute_event_state = dict(self.store.get_meta("minute_effect_event_state", {}) or {})
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
+        minute_event_state = dict(self.store.repositories.metadata.get("minute_effect_event_state", {}) or {})
         minute_event_state_changed = False
-        world_properties = self.store.get_meta("world_properties", {}) or {}
+        world_properties = self.store.repositories.metadata.get("world_properties", {}) or {}
         static_context_values = configured_context_values(rules, include_resolvers=False)
         for regeneration in rules.get("resource_regeneration", []) or []:
             every = max(1, int(regeneration.get("every_minutes", 1)))
@@ -120,7 +120,7 @@ class WorldTickService(PlatformService):
             if scope == "world":
                 key = definition.get("world_property") or definition.get("property") or definition.get("need")
                 if key:
-                    properties = dict(self.store.get_meta("world_properties", {}) or {})
+                    properties = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
                     before = float(properties.get(key, 0) or 0)
                     after = before + float(definition.get("delta", 0) or 0)
                     if definition.get("minimum") is not None:
@@ -139,7 +139,7 @@ class WorldTickService(PlatformService):
             # Threshold state belongs to the whole minute. Persisting the
             # growing map after every agent/effect made a 1,000-agent tick
             # encode and decode the same JSON thousands of times.
-            self.store.set_meta("minute_effect_event_state", minute_event_state)
+            self.store.repositories.metadata.set("minute_effect_event_state", minute_event_state)
 
     def _emit_resource_safety_signals(self, minute: int) -> None:
         """Publish configured stock-safety signals at a crossing or repeat interval.
@@ -150,11 +150,11 @@ class WorldTickService(PlatformService):
         declarative and the consumer's own cooldown still applies.
         """
 
-        rules = self.store.get_meta("rules", {}) or {}
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
         configured = rules.get("resource_safety", []) or []
         if not isinstance(configured, list):
             return
-        state = dict(self.store.get_meta("resource_safety_signal_state", {}) or {})
+        state = dict(self.store.repositories.metadata.get("resource_safety_signal_state", {}) or {})
         changed = False
         for raw in configured:
             if not isinstance(raw, dict) or not raw.get("resource_id"):
@@ -195,7 +195,7 @@ class WorldTickService(PlatformService):
                 state[resource_id] = {"active": active, "last_emitted_minute": last_emitted}
                 changed = True
         if changed:
-            self.store.set_meta("resource_safety_signal_state", state)
+            self.store.repositories.metadata.set("resource_safety_signal_state", state)
 
     def _apply_simple_effect(self, agent: dict[str, Any], effect: dict[str, Any]) -> None:
         self.effects.apply(agent, effect)
@@ -287,10 +287,10 @@ class WorldTickService(PlatformService):
         makes triggers, Agent context and God proposals disagree.
         """
 
-        properties = dict(self.store.get_meta("world_properties", {}) or {})
+        properties = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
         before = properties.get(str(key))
         properties[str(key)] = value
-        self.store.set_meta("world_properties", properties)
+        self.store.repositories.metadata.set("world_properties", properties)
         projection = self._sync_world_resource_projection(str(key), value)
         effect = {"world_property": str(key), "before": before, "after": value}
         if projection:
@@ -357,7 +357,7 @@ class WorldTickService(PlatformService):
                     completed.append(agent["id"])
                 if result.get("status") == "failed" and result.get("behavior_ref"):
                     failed.append(agent["id"])
-            self.store.set_meta("world_minute", minute)
+            self.store.repositories.metadata.set("world_minute", minute)
             self._context.services["events"].append("world_minute.advanced", None, minute, {"minute": minute})
             self._context.services["evolution"]._emit_world_rule_signals(minute, agent_ids=agent_ids)
             self._emit_resource_safety_signals(minute)
@@ -370,7 +370,7 @@ class WorldTickService(PlatformService):
             "from_minute": start,
             "to_minute": minute,
             "snapshot_revision": int(snapshot["world_revision"]),
-            "world_revision": int(self.store.get_meta("world_revision", 0) or 0),
+            "world_revision": int(self.store.repositories.metadata.get("world_revision", 0) or 0),
             "completed_agents": sorted(set(completed)),
             "failed_agents": sorted(set(failed)),
         }

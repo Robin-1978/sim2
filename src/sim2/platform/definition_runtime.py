@@ -294,7 +294,7 @@ class DefinitionRuntimeMixin:
 
         if kind == "attribute":
             definition.update({"id": str(definition.get("id") or definition_slug(name) or f"attribute_{uuid4().hex[:10]}"), "label": definition.get("label") or name, "prompt": definition.get("prompt") or str(name)})
-            existing = self.store.get_meta("attributes", []) or []
+            existing = self.store.repositories.metadata.get("attributes", []) or []
             if any(str(item.get("id")) == definition["id"] for item in existing if isinstance(item, dict)):
                 errors.append(f"attribute already exists: {definition['id']}")
             if any(self._definition_name_key(name) == self._definition_name_key(item.get("label") or item.get("id")) for item in existing if isinstance(item, dict)):
@@ -307,9 +307,9 @@ class DefinitionRuntimeMixin:
 
         if kind == "world_property":
             property_id = str(definition.get("id") or definition_slug(name) or f"property_{uuid4().hex[:10]}")
-            if property_id in {str(key) for key in (self.store.get_meta("world_properties", {}) or {})}:
+            if property_id in {str(key) for key in (self.store.repositories.metadata.get("world_properties", {}) or {})}:
                 errors.append(f"world property already exists: {property_id}")
-            if property_id not in {str(key) for key in (self.store.get_meta("world_properties", {}) or {})} and any(self._definition_name_key(name) == self._definition_name_key(item) for item in (self.store.get_meta("world_property_labels", {}) or {}).values()):
+            if property_id not in {str(key) for key in (self.store.repositories.metadata.get("world_properties", {}) or {})} and any(self._definition_name_key(name) == self._definition_name_key(item) for item in (self.store.repositories.metadata.get("world_property_labels", {}) or {}).values()):
                 errors.append(f"world property name already exists: {name}")
             definition.update({"id": property_id, "label": definition.get("label") or name, "prompt": definition.get("prompt") or str(name)})
             return definition, errors
@@ -715,17 +715,17 @@ class DefinitionRuntimeMixin:
         data = {**proposal, "actor_id": actor_id, "definition": definition}
         if errors:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_definition", data, {"status": "rejected", "message": "Definition proposal failed validation.", "failed_check": "definition_schema", "errors": errors, "retryable": True})
-        world_minute = int(self.store.get_meta("world_minute", 0))
+        world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         table = {"action": "action_def", "behavior": "bt_def", "recipe": "recipe_def", "capability": "capability_def"}.get(definition_type)
         with self.store.transaction():
             self.store.repositories.evolution.create_intent(intent_id, actor_id, "propose_definition", data, world_minute)
             if definition_type == "attribute":
-                attributes = list(self.store.get_meta("attributes", []) or [])
+                attributes = list(self.store.repositories.metadata.get("attributes", []) or [])
                 attributes.append(definition)
-                self.store.set_meta("attributes", attributes)
-                schema = AttributeSchema(attributes, self.store.get_meta("rules", {}) or {})
+                self.store.repositories.metadata.set("attributes", attributes)
+                schema = AttributeSchema(attributes, self.store.repositories.metadata.get("rules", {}) or {})
                 if definition.get("kind") == "need":
-                    rules = dict(self.store.get_meta("rules", {}) or {})
+                    rules = dict(self.store.repositories.metadata.get("rules", {}) or {})
                     needs = list(rules.get("needs", []) or [])
                     needs.append({
                         "id": definition["id"],
@@ -736,7 +736,7 @@ class DefinitionRuntimeMixin:
                         "critical_gain": definition.get("critical_gain", 1.0),
                     })
                     rules["needs"] = needs
-                    self.store.set_meta("rules", rules)
+                    self.store.repositories.metadata.set("rules", rules)
                     schema = AttributeSchema(attributes, rules)
                 for agent in self.store.repositories.entities.list_agents():
                     state = dict(agent.get("initial_state") or {})
@@ -749,12 +749,12 @@ class DefinitionRuntimeMixin:
                     agent["needs"] = needs
                     self.store.repositories.entities.update_agent(agent["id"], agent)
             elif definition_type == "world_property":
-                properties = dict(self.store.get_meta("world_properties", {}) or {})
+                properties = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
                 properties[str(definition["id"])] = definition.get("default")
-                self.store.set_meta("world_properties", properties)
-                labels = dict(self.store.get_meta("world_property_labels", {}) or {})
+                self.store.repositories.metadata.set("world_properties", properties)
+                labels = dict(self.store.repositories.metadata.get("world_property_labels", {}) or {})
                 labels[str(definition["id"])] = str(definition.get("label") or name)
-                self.store.set_meta("world_property_labels", labels)
+                self.store.repositories.metadata.set("world_property_labels", labels)
             elif table:
                 self.store.repositories.entities.put_definition(table, str(definition["id"]), definition)
                 if definition_type == "action" and followup_recipe_definition:
@@ -916,8 +916,8 @@ class DefinitionRuntimeMixin:
                 result["bound_recipe_event_id"] = followup_recipe_event_id
             self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         if definition_type == "attribute":
-            attributes = self.store.get_meta("attributes", []) or []
-            rules = self.store.get_meta("rules", {}) or {}
+            attributes = self.store.repositories.metadata.get("attributes", []) or []
+            rules = self.store.repositories.metadata.get("rules", {}) or {}
             self._context.set_dependency("attribute_schema", AttributeSchema(attributes, rules))
             self._context.set_dependency("effects", EffectPipeline(attributes))
             self._context.set_dependency("conditions", ConditionEngine(rules))
