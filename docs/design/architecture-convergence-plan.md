@@ -103,6 +103,8 @@ or world configuration.
   world state/event, and the God projection includes bounded active Story
   threads. This closes the previously missing Story → God causal input that
   caused a real ten-round run to wait while the NPC repeated inspection.
+- Agent task wording now lives with role policies (`policies.py`); the bounded
+  session engine schedules and executes it without owning role semantics.
 
 ### Review conclusion
 

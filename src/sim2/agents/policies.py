@@ -115,3 +115,36 @@ def default_protocol(role: str) -> list[str]:
 
 def default_platform_rules(role: str) -> list[str]:
     return list(PLATFORM_RULES.get(str(role), []))
+
+
+def task_text(role: str, task_type: str) -> str:
+    """Return the concise task instruction for one configured role.
+
+    Task wording belongs with role policy.  The session engine should only
+    schedule the task and run the bounded protocol; it must not own role
+    semantics or world-specific continuation prose.
+    """
+
+    role = str(role)
+    task_type = str(task_type)
+    if role == "agent_decision":
+        if task_type.startswith("instant:"):
+            if task_type == "instant:dialogue.completed":
+                return (
+                    f"Task type: {task_type}. Reply to the incoming message only when it adds new information, "
+                    "asks a clear question, or requires a decision. Send one short reply of at most two sentences; "
+                    "if it repeats known information or needs no response, return wait. Do not start a behavior or advance world time."
+                )
+            return f"Task type: {task_type}. Resolve the incoming trade interaction with one accept, counter, reject, or wait. Do not start a behavior or advance world time."
+        return f"Task type: {task_type}. Select the best available behavior for the current goal, or wait if none is appropriate."
+    if role == "agent_reflection":
+        return f"Task type: {task_type}. Review the latest behavior outcome and existing memories. Submit one new durable lesson or evolution proposal only if it improves a future decision; otherwise wait."
+    if role == "god":
+        if task_type.startswith("trigger:"):
+            return f"Task type: {task_type}. A world trigger is active. Submit one validated direct state-changing proposal that resolves the trigger; a narrative-only event does not resolve it. State the short observable expected_effects."
+        return f"Task type: {task_type}. Review the already-recorded world signal. Submit one validated typed proposal only if it changes a configured rule, progress key, entity, relationship, or faction; otherwise return wait. If the task is event:civilization.milestone, first check whether the configured progress is already complete or whether the milestone itself is not a matching evidence event; in either case do not call record_world_progress again and return wait or propose a grounded next structure. If the task is event:entity.created, the entity already exists; return wait unless a verified missing capability is needed and its exact Action sequence is executable for the assigned character now. If the task is event:definition.registered, the definition already exists; return wait unless new evidence justifies a distinct definition, never create a duplicate follow-up by default. For a completed research stage, an unanswered question may justify one new declarative research source or behavior, but do not claim its result before a character performs it. Do not create a narrative acknowledgement event. State the short observable expected_effects."
+    if role == "story":
+        if task_type.startswith("milestone:"):
+            return f"Task type: {task_type}. Review the validated civilization milestone. Record configured public progress only when the evidence supports it. Choose one listed story beat when available; if none is listed, submit one short evidence-grounded emergent beat only when it gives the milestone a useful continuation, otherwise wait. Platform owns every state change."
+        return f"Task type: {task_type}. Review the validated source event. Choose one listed story beat when available; if none is listed, submit one short evidence-grounded emergent beat only when it gives the result a useful continuation, otherwise wait. Platform applies only validated beat consequences."
+    return f"Task type: {task_type}. Produce or refine one declarative world template."
