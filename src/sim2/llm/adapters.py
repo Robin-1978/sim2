@@ -181,6 +181,40 @@ class BeamAdapter(ModelAdapter):
             assign(result, key.split("."), item) if "." in key else result.__setitem__(key, item)
         return result
 
+    @staticmethod
+    def _normalize_definition_payload(value: dict[str, Any]) -> dict[str, Any]:
+        """Repair Beam's common list/alias spelling at the provider boundary.
+
+        These are wire-shape repairs only: the adapter does not create missing
+        effects, names, resources or outcomes.  The canonical compiler still
+        decides whether the resulting declarative definition is valid.
+        """
+
+        payload = dict(value)
+        definition = payload.get("definition")
+        if not isinstance(definition, dict) or str(payload.get("definition_type") or "").casefold() != "action":
+            return payload
+        definition = dict(definition)
+        parameters = definition.get("parameters")
+        if isinstance(parameters, list):
+            flattened: dict[str, Any] = {}
+            for item in parameters:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("name") and item.get("type"):
+                    flattened[str(item["name"])] = item["type"]
+                else:
+                    for key, item_value in item.items():
+                        if key not in {"name", "type", "description", "required"}:
+                            flattened[str(key)] = item_value
+            definition["parameters"] = flattened
+        if "duration_minutes" in definition and "duration" not in definition:
+            definition["duration"] = {"minutes": definition.pop("duration_minutes")}
+        if "entry_conditions" in definition and "preconditions" not in definition:
+            definition["preconditions"] = definition.pop("entry_conditions")
+        payload["definition"] = definition
+        return payload
+
     def normalize_response(self, response: dict[str, Any]) -> dict[str, Any]:
         normalized = self._clean(response)
         for call in normalized.get("tool_calls", []) if isinstance(normalized, dict) else []:
@@ -191,7 +225,10 @@ class BeamAdapter(ModelAdapter):
                 arguments = json.loads(function["arguments"])
             except (TypeError, ValueError, json.JSONDecodeError):
                 continue
-            function["arguments"] = self._clean(arguments)
+            arguments = self._clean(arguments)
+            if isinstance(arguments, dict) and str(function.get("name") or "") == "propose_definition":
+                arguments = self._normalize_definition_payload(arguments)
+            function["arguments"] = arguments
         # Beam occasionally uses the recipe field name for an Action's fixed
         # duration. Convert it only inside an Action definition; recipes keep
         # their canonical duration_minutes field.
@@ -204,7 +241,7 @@ class BeamAdapter(ModelAdapter):
             and "duration" not in definition
         ):
             definition["duration"] = {"minutes": definition.pop("duration_minutes")}
-        return normalized
+        return self._normalize_definition_payload(normalized)
 
 
 def resolve_adapter(provider_type: str, base_url: str, model: str, hint: str | None = None) -> ModelAdapter:

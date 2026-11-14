@@ -228,6 +228,27 @@ def test_beam_adapter_normalizes_native_tool_argument_json():
     assert arguments["definition"]["effects"] == [{"type": "resource_transfer"}]
 
 
+def test_beam_adapter_normalizes_list_parameters_and_action_aliases():
+    adapter = resolve_adapter("openai_compatible", "https://example.test", "beam-free")
+    normalized = adapter.normalize_response({
+        "intent_type": "propose_definition",
+        "definition_type": "action",
+        "definition": {
+            "parameters": [{"item_id": "string"}],
+            "duration_minutes": 5,
+            "entry_conditions": ["actor.alive"],
+            "success": [{"condition": "actor.alive", "result": "done"}],
+            "failure": [{"result": "failed"}],
+        },
+    })
+    definition = normalized["definition"]
+    assert definition["parameters"] == {"item_id": "string"}
+    assert definition["duration"] == {"minutes": 5}
+    assert definition["preconditions"] == ["actor.alive"]
+    assert definition["success"] == [{"condition": "actor.alive", "result": "done"}]
+    assert definition["failure"] == [{"result": "failed"}]
+
+
 def test_bare_wait_is_the_only_plain_text_intent_normalized():
     assert _json_from_text("wait") == {"intent_type": "wait", "reason": "No world change is needed now."}
 
