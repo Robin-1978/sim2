@@ -13,6 +13,7 @@ from ..memory.service import MemoryService
 from ..perception.service import PerceptionService
 from ..persistence.store import WorldStore
 from ..world.schema import AttributeSchema
+from .behavior_service import BehaviorExecutionService
 from .services import PlatformContext, build_platform_services
 from .snapshot_service import SnapshotService
 from .wake_service import WakeService
@@ -69,6 +70,26 @@ class Platform:
         if context is None:
             raise AttributeError(name)
         return context.resolve(name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Keep explicit test/instrumentation overrides on their owner service."""
+
+        context = self.__dict__.get("_service_context")
+        if context is not None and name not in context._DEPENDENCY_NAMES:
+            for service in context.services.values():
+                try:
+                    object.__getattribute__(service, name)
+                except AttributeError:
+                    continue
+                object.__setattr__(service, name, value)
+                return
+        object.__setattr__(self, name, value)
+
+    @staticmethod
+    def _resolve_parameters(parameters: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
+        """Resolve declarative ``context.*`` values without requiring a Platform instance."""
+
+        return BehaviorExecutionService._resolve_parameters(parameters, state)
 
     def close(self) -> None:
         self.store.close()

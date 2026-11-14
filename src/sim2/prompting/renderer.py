@@ -162,7 +162,7 @@ def _remove_block(text: str, tag: str) -> tuple[str, bool]:
 # dropped.
 _BACKGROUND_SECTIONS = (
     "registered_actions", "knowledge_and_memory", "nearby_entities", "relationships", "recent_actions",
-    "world_trends", "knowledge_gaps", "rule_condition_fields", "world_outcomes",
+    "world_outcomes", "world_trends", "knowledge_gaps", "rule_condition_fields",
 )
 
 
