@@ -66,6 +66,14 @@ export SIM2_BGE_MODEL=/path/to/bge-small-zh-v1.5
 
 The text interface supports movement, messages, offers, counteroffers, acceptance/rejection, waiting, and public world telemetry. HTTP exposes the same Platform operations for another client.
 
+The browser surfaces are designed separately from the TUI: the Runtime Web Client
+observes a running instance through the local HTTP projections, while the World
+Authoring Workbench edits and compiles a draft package before initialization. The
+current release provides the HTTP transport and the design contract; it does not
+yet ship a browser bundle. See [Web Client Design](docs/design/web-client.md) and
+[World Authoring Web](docs/design/world-authoring-web.md) before adding frontend
+code.
+
 ## Worlds and extension
 
 The first validation world is [Starter Village](docs/worlds/starter-village.md), with its importable package in [`worlds/starter_village`](worlds/starter_village/). It is a small settlement around a failing pact, with food, water, health, patrol, exploration, trade, relationships, hidden locations, scheduled reflection, and God-led world change.

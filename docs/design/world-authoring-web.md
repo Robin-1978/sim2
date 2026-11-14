@@ -49,6 +49,36 @@ Action、Recipe、BT、Attribute、Capability、Entity、Rule 和 Evolution 的
 test → 查看 diff → 导出世界包。只有显式执行 `sim2 init` 才创建正式
 SQLite 实例；工作台不能直接修改正在运行的实例。
 
+### 网页工作台的交互状态
+
+工作台的每个页面都显示同一个草稿版本和编译状态，避免作者把旧诊断误认为
+当前结果：
+
+```text
+draft → compiling → diagnostics
+                 ├── errors → edit draft → compiling
+                 └── valid → smoke running → smoke result
+                                      ├── failed → inspect event → edit draft
+                                      └── passed → review diff → export
+```
+
+浏览器保存的是草稿和 `draft_revision`，不是运行时 SQLite。编译或 smoke
+返回时必须带回该 revision；如果用户在任务完成前继续编辑，旧结果标记为
+`stale`，不能覆盖新的错误列表或绿色状态。导出按钮只对当前 revision 的
+完整编译和 smoke 结果开放。
+
+页面布局采用左侧 Schema 导航、中间表单/BT 图、右侧诊断和底部运行日志：
+
+- 字段、标签、单位、枚举和默认值由 `/authoring/schema` 产生；前端不维护
+  世界专用的属性名或 Action 名。
+- 条件和公式编辑器只提供受限 Expression AST 的节点选择与文本预览，编译
+  错误落到字段路径和字符位置。
+- BT 图节点只能从已编译的 Action/子 BT 目录中选择；节点旁显示参数 Schema、
+  资源锁和可执行角色，未绑定或不可达节点直接标红。
+- “运行 smoke”显示临时世界的分钟、第一条失败事件、资源变化和行为闭环；
+  它不显示或保存真实实例路径。
+- “导出”同时下载世界包、规范化 IR 摘要和校验报告，方便提交审查。
+
 ## 校验层次
 
 每次保存都可以执行便宜的增量检查；发布前执行完整检查：
@@ -81,6 +111,23 @@ SQLite 实例；工作台不能直接修改正在运行的实例。
 这些接口应调用现有 bootstrap、Definition Compiler 和 Platform 服务，
 不能在 HTTP handler 中复制校验或直接写数据库。草稿文件由工作区管理；
 运行中世界仍只能通过 Platform 的状态变更入口操作。
+
+接口返回的任务 ID 和草稿版本必须可轮询。建议的最小任务响应为：
+
+```json
+{
+  "status": "running",
+  "job_id": "compile-123",
+  "draft_revision": 7,
+  "phase": "references",
+  "errors": [],
+  "warnings": []
+}
+```
+
+`status=passed` 只表示当前 revision 已完成相应检查；它不代表已经创建
+SQLite。只有作者明确调用 CLI `sim2 init`（或后续受控的初始化接口）才会
+实例化世界。
 
 ## 实现顺序
 

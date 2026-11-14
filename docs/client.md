@@ -57,6 +57,23 @@ The MUD-style `sim2 mud` interface remains useful for scripts and recovery.
 Web or desktop client. Both go through Platform and share the same visibility,
 validation and transaction rules as the TUI.
 
+The repository does not yet ship a browser bundle. The local HTTP service is the
+transport for the planned Runtime Web Client, not a finished public web server:
+
+```bash
+sim2 serve --db "$DB" --host 127.0.0.1 --port 8080
+curl 'http://127.0.0.1:8080/status'
+curl 'http://127.0.0.1:8080/timeline?limit=50&after=0'
+```
+
+The browser design, projection boundaries, cursor/reconnect rules, map behavior,
+player/operator permissions, and the separate World Authoring Workbench are
+specified in [`docs/design/web-client.md`](design/web-client.md). The workbench
+uses the same Schema and Definition Compiler as `world-schema` and
+`validate-world`; it does not edit a running SQLite instance. Do not expose the
+development HTTP service outside localhost until authentication, CORS policy and
+operator authorization are implemented.
+
 The runtime observer UI and the World Authoring Web 工作台 are separate
 surfaces. The observer UI reads an existing SQLite instance; the authoring
 workbench edits a draft package and calls compile/smoke validation before a
