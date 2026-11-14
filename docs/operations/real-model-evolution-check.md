@@ -228,6 +228,34 @@ The complete context/tool/result/world-delta records are in
 the causal evolution gate; the `remote_beam` transport check and a semantic Starter
 Village long run remain separate acceptance work.
 
+### Real DeepSeek Starter Village day audit
+
+The real-world audit was run from an interactive shell with the configured
+`remote` provider (`deepseek-v4.1-flash`) for 1,440 world minutes. The run
+record and checkpoint are under `/tmp/sim2-starter-real-day.*`; the persisted
+SQLite instance is referenced by the checkpoint. It produced 194 sessions,
+192 quality passes, zero provider errors and no unresolved provider failures.
+
+The world reached minute 1440 with all nine NPCs alive at health 100 and
+satiety between 51.2 and 81.2. The causal event stream contained 23 selected
+behavior types and 45 event types, including two research completions, three
+water-mitigation outcomes, three pact-stability outcomes, ration review,
+governance, trade-ledger recovery, warning-bell production and installation,
+capability updates, dialogue and relationship changes. There were no
+starvation-damage events or degeneration flags.
+
+Two sessions were rejected by the old instant-message sentence splitter: a
+decimal such as `319.0` was split at its period, and a concise Chinese reply
+was counted as three sentences. The parser now recognizes decimal points and
+Chinese sentence boundaries correctly. The existing SQLite world was resumed
+for minutes 1440–1450 after the fix; the new DeepSeek decision passed quality
+checks with zero rejection and zero provider errors.
+
+The audit script itself was also migrated to typed repositories during this
+run (`event_type_counts`, agent listing, progress listing and definition
+lookup). Its finalization now works against a completed checkpoint without
+calling the provider again.
+
 ### Beam transport result and audit safeguard
 
 The configured Beam provider name is `remote_beam` (the local configuration

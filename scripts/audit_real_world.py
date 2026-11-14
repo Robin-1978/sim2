@@ -170,7 +170,7 @@ def _causality(platform: Platform, sessions: list[dict[str, Any]]) -> dict[str, 
     for change in rule_changes:
         names = {norm(item) for item in change["rule_names"]}
         expected_behaviors = {norm(item) for item in change["behavior_names"]}
-        matches = [item for item in rule_followups if item["event_id"] > change["event_id"] and norm(item.get("rule")) in names and (not expected_behaviors or norm(item.get("behavior_id")) in expected_behaviors or any(norm(item.get("behavior_id")) == norm(known.get("id")) for known in platform.store.get_definitions("bt_def") if norm(known.get("agent_label")) in expected_behaviors))]
+        matches = [item for item in rule_followups if item["event_id"] > change["event_id"] and norm(item.get("rule")) in names and (not expected_behaviors or norm(item.get("behavior_id")) in expected_behaviors or any(norm(item.get("behavior_id")) == norm(known.get("id")) for known in platform.store.repositories.entities.get_definitions("bt_def") if norm(known.get("agent_label")) in expected_behaviors))]
         change["followup_count"] = len(matches)
         if matches:
             change["status"] = "verified"
@@ -199,7 +199,7 @@ def _causality(platform: Platform, sessions: list[dict[str, Any]]) -> dict[str, 
         "world_rule_changes": rule_changes,
         "world_rule_followups": rule_followups,
         "god_direct_property_changes": god_direct_property_changes,
-        "event_types": platform.store.event_type_counts(),
+        "event_types": platform.store.repositories.events.event_type_counts(),
     }
 
 
@@ -295,8 +295,8 @@ def main() -> int:
             world["health"] = platform.health()
             world["metrics"] = platform.metrics()
             world["observer"] = platform.observer_view(event_limit=100)
-            world["agents"] = platform.store.list_agents()
-            world["progress"] = platform.store.list_progress("world", limit=100)
+            world["agents"] = platform.store.repositories.entities.list_agents()
+            world["progress"] = platform.store.repositories.activity.list_progress("world", limit=100)
             world["causality"] = causality
             world["quality_counts"] = quality_counts
             world["unresolved_provider_errors"] = len(unresolved_provider_errors)
@@ -423,8 +423,8 @@ def main() -> int:
                 "report": report,
                 "metrics": platform.metrics(),
                 "observer": platform.observer_view(event_limit=100),
-                "agents": platform.store.list_agents(),
-                "progress": platform.store.list_progress("world", limit=100),
+                "agents": platform.store.repositories.entities.list_agents(),
+                "progress": platform.store.repositories.activity.list_progress("world", limit=100),
                 "causality": causality,
                 "quality_counts": quality_counts,
                 "unresolved_provider_errors": len(unresolved_provider_errors),

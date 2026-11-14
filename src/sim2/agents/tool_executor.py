@@ -13,6 +13,16 @@ if TYPE_CHECKING:  # pragma: no cover
     from ..platform.runtime import Platform
 
 
+def _message_sentences(text: str) -> list[str]:
+    """Split short messages without treating a decimal point as a sentence."""
+
+    return [
+        part
+        for part in re.split(r"(?<=[。！？])|(?<=[.!?])(?=\s|$)", str(text or ""))
+        if part.strip()
+    ]
+
+
 class AgentToolExecutor:
     """Execute role-allowed tools and route every mutation to Platform."""
 
@@ -144,7 +154,7 @@ class AgentToolExecutor:
         # the evidence-grounding rule; this boundary only enforces the length
         # contract advertised to every instant interaction.
         text = str(message or "")
-        sentences = [part for part in re.split(r"(?<=[.!?。！？])", text) if part.strip()]
+        sentences = _message_sentences(text)
         if len(sentences) > 2 or len(text) > 240:
             return {
                 "status": "rejected",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sim2.agents.protocol import ProviderProtocol, normalize_provider_intent, readable_model_response
+from sim2.agents.tool_executor import _message_sentences
 
 
 class Provider:
@@ -52,3 +53,8 @@ def test_provider_intent_normalization_keeps_visible_choice() -> None:
     )
     assert result["choice"] == "去安全区域休息"
     assert result["confidence"] == 0.8
+
+
+def test_message_sentence_split_does_not_reject_decimal_or_chinese_two_sentence_reply() -> None:
+    assert len(_message_sentences("Inspection shows village food at 319.0. Ration changes await your review.")) == 2
+    assert len(_message_sentences("库存是319.0。配给调整等你确认。")) == 2

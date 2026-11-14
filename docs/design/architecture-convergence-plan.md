@@ -800,6 +800,12 @@ exhausted, while retaining the platform duplicate guard. The next 10-round
 run created provenance, calibration and sign-off sources and passed with no
 absorbing-state flag.
 
+**Real Starter Village evidence:** a one-day DeepSeek audit reached minute
+1440 with 194 sessions, zero provider errors, all nine NPCs at health 100,
+and no starvation damage. Two quality failures were traced to a protocol
+sentence splitter treating decimal points as sentence boundaries; the parser
+fix passed its regression tests and a real 1440→1450 resume session passed.
+
 ### 4. Run the final model-backed acceptance gate
 
 Use an interactive shell for every provider run:
