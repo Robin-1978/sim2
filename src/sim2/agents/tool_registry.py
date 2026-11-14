@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from ..intents.models import BehaviorIntent
 from ..bootstrap.service import world_template_schema
+from ..world.definition_schema import propose_definition_schema
 
 if TYPE_CHECKING:  # pragma: no cover - imports are only for type checkers
     from ..platform.runtime import Platform
@@ -357,86 +358,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
     "propose_definition": {
         "purpose": "Submit declarative world mechanics: an attribute, world property, capability, Action, behavior tree, or recipe. A new Action must include followup_behavior so one assigned NPC can execute it immediately; Platform validates and registers the bound pair atomically.",
         "kind": "intent",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "definition_type": {"type": "string", "enum": ["attribute", "world_property", "action", "behavior", "recipe", "capability"]},
-                "name": {"type": "string", "description": "A short visible name. Platform derives the internal registry key."},
-                "definition": {
-                    "type": "object",
-                    "description": "Declarative fields for the selected type. Use exact visible entity names; no free-form steps, code, handlers, SQL, or internal IDs.",
-                    "properties": {
-                        "nodes": {
-                            "type": "array",
-                            "description": "For a behavior, ordered executable nodes. Use an Action node with the exact registered Action name; include Travel before a destination Action when needed.",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "type": {"type": "string", "enum": ["action", "behavior", "sequence", "selector", "parallel", "condition", "wait"]},
-                                    "action_id": {"type": "string", "description": "Exact visible Action name from world_action_catalog."},
-                                    "behavior_id": {"type": "string", "description": "Exact visible BT name when using a behavior node."},
-                                    "parameters": {"type": "object", "description": "Action parameter names and exact visible entity values."},
-                                    "children": {"type": "array", "items": {"type": "object"}},
-                                },
-                                "additionalProperties": True,
-                            },
-                        },
-                        "parameters": {
-                            "type": "object",
-                            "description": "For an Action: parameter_name -> one of string, number, integer, boolean, object, array. Do not use human-language placeholder values.",
-                        },
-                        "duration": {
-                            "type": "object",
-                            "description": "For an Action, use {minutes: positive number} or {mode: route_distance|recipe_duration}.",
-                        },
-                        "costs": {
-                            "type": "object",
-                            "description": "For an Action, reserve carried inputs under costs.reserve. Use item_parameter and optionally item_quantity_parameter for a variable amount.",
-                        },
-                        "preconditions": {"type": "array", "items": {"type": "string"}, "description": "Optional machine predicates for an Action."},
-                        "effects": {"type": "array", "items": {"type": "object"}, "description": "Observable Action effects. resource_transfer must bind its source and reserved quantity."},
-                        "success": {"type": "object", "description": "One Action success object: {condition?: machine predicate, result: short label}."},
-                        "failure": {"type": "object", "description": "One Action failure object: {condition?: machine predicate, result: short label}."},
-                        "entry_conditions": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Optional durable machine predicates only, such as actor.alive, actor.can_research, actor.inventory.item > 0, actor.state.location_id == <visible location name>, or world[\"<property>\"] >= <number>. A bare world property is not a condition; compare it with a number or true/false. Do not write prose, goals, or claims like 'actor can reach the records'; use [] when Action preconditions and a Travel node are sufficient.",
-                        },
-                        "success_results": {"type": "array", "items": {"type": "string"}, "description": "Short observable result labels."},
-                        "failure_results": {"type": "array", "items": {"type": "string"}, "description": "Short observable failure labels."},
-                        "summary": {"type": "string"},
-                        "goal": {"type": "string"},
-                        "outcome_events": {"type": "array", "items": {"type": "object", "description": "Each event must use {event_type: new event name, summary: fact-based text, wake?: [story|god]}."}},
-                    },
-                    "additionalProperties": True,
-                },
-                "assign_to": {"type": "array", "items": {"type": "string"}, "description": "For a behavior, required visible character names that can execute it; other definition types must leave this empty."},
-                "followup_behavior": {
-                    "type": "object",
-                    "description": "Required for a new Action. Bind the Action to one immediately executable behavior in the same transaction.",
-                    "properties": {
-                        "name": {"type": "string", "description": "Visible BT name."},
-                        "assign_to": {"type": "array", "items": {"type": "string"}, "description": "Visible character names that can execute the BT now."},
-                        "definition": {"type": "object", "description": "Behavior definition whose nodes include the new Action by its exact visible name."},
-                    },
-                    "required": ["name", "assign_to", "definition"],
-                    "additionalProperties": False,
-                },
-                "followup_recipe": {
-                    "type": "object",
-                    "description": "Required when the new Action consumes a recipe. Register the recipe atomically with the Action and followup BT.",
-                    "properties": {
-                        "name": {"type": "string", "description": "Visible recipe name."},
-                        "definition": {"type": "object", "description": "Recipe definition with duration_minutes, inputs and outputs."},
-                    },
-                    "required": ["name", "definition"],
-                    "additionalProperties": False,
-                },
-                "evidence": {"type": "string", "description": "The observed result that justifies this new definition."},
-            },
-            "required": ["definition_type", "name", "definition"],
-            "additionalProperties": False,
-        },
+        "parameters": propose_definition_schema(),
     },
     "propose_world_change": {
         "purpose": "Propose an evidence-backed rule, relationship, existing-faction change, or narrative event. Behavior outcomes own resources and personal/social value changes.",

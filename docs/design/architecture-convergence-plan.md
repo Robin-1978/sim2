@@ -135,6 +135,13 @@ existing schema owner rather than adding another parallel schema source.
 - Ensure a God-created Action plus BT is immediately reachable by the generic
   NPC behavior selector and is covered by an end-to-end test.
 
+**Progress:** `world/definition_schema.py` is now the canonical model-facing
+JSON Schema for `propose_definition`; the God tool registry imports it instead
+of carrying a second hand-written copy. Fresh schema instances and the
+God-created Action+BT path are covered by tests. Semantic normalization and
+Platform validation still need to consume this same module before this
+package is complete.
+
 **Gate:** a world with unrelated names, attributes, objects and entities boots
 without Python changes; the same invalid proposal is rejected consistently by
 the model-facing schema and Platform.
