@@ -322,8 +322,16 @@ private method.
 
 ### Stage C — make Platform a composed coordinator
 
-Replace the remaining runtime mixin inheritance with explicit service objects.
-The constructor creates services in dependency order:
+**Status:** the first composition cut is complete. `Platform` now has no
+Runtime Mixin base classes and is a 63-line facade. Explicit services own the
+API, intent admission, action execution, minute ticks, evolution tasks,
+definitions, entities, Story, social work and liveness signals. The shared
+`PlatformContext` proxy is a temporary migration seam; the remaining Stage C
+work is to replace its cross-service name lookup with narrow typed callbacks
+as each service is cleaned up.
+
+Harden the explicit service composition and remove its migration proxy. The
+constructor creates services in dependency order:
 
 ```text
 Store/UnitOfWork
