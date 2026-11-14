@@ -1090,3 +1090,15 @@ Story/God task as pending continuation rather than absorbing state. The
 corrected DeepSeek run at `/tmp/sim2-evolution-after-stability-gate/` passed
 10/10 with a God-created source, changed NPC choices and grounded Story
 continuations.
+
+The latest convergence evidence after removing the metadata façade and adding
+the Runtime Web/Authoring MVP is recorded in
+`docs/operations/real-model-evolution-check.md`: **432 tests passed**, the
+deterministic week reached minute `10080` with no degeneration flags, the
+1000-agent benchmark p95 was **165.524 ms**, and the final remote 10-round
+causal probe at `/tmp/sim2-web-final-causal/` passed with four distinct
+God-created research objects plus one conserved Action/BT. The browser test
+also covers opening an existing package, guided editing, compile, smoke, export,
+path confinement and the explicit WorldBuilder route. The remaining items in
+this plan are historical cleanup and provider-specific operational checks, not
+an unverified web design claim.

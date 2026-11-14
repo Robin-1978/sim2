@@ -520,21 +520,41 @@ quality pass when it exhausts its bounded ReAct session without a valid final
 Intent; the failure artifacts remain under `/tmp/sim2-evolution-beam-final/`
 and `/tmp/sim2-evolution-beam-native-adapter/`.
 
-### Current convergence verification
+### Final convergence verification after metadata and web boundaries
 
 After the restricted expression AST, explicit Platform service dependencies,
-and the stability-threshold liveness gate were committed, the repository
-checks were rerun:
+the metadata repository migration, and the Runtime Web/Authoring boundaries
+were committed, the repository checks were rerun:
 
-- `python -m pytest -q`: **428 passed**;
+- `python -m pytest -q`: **432 passed**;
 - `python -m compileall -q src scripts`: passed;
 - `git diff --check`: passed;
+- `node --check src/sim2/web/app.js`: passed;
 - `python scripts/benchmark_platform.py --agents 1000 --runs 5`: p95 tick
-  time **168.399 ms**, no failed agents.
+  time **165.524 ms**, no failed agents;
+- `python scripts/run_long_simulation.py --minutes 10080`: minute `10080`,
+  1,463 deterministic provider calls, zero LLM errors, zero rejected turns,
+  zero degeneration flags and nine agents.
 
-The dedicated real-model 10-round audit is recorded at
-`/tmp/sim2-evolution-after-stability-gate/`. It passed with no provider errors
-or rejected turns, distinct God-created research content, changed NPC choices,
-grounded Story continuations, and one ready God task at the requested window
-boundary. The one-week run was intentionally not repeated in this convergence
-turn; its previous deterministic evidence remains separate from this gate.
+The final DeepSeek/`remote` 10-round causal audit is recorded at
+`/tmp/sim2-web-final-causal/`. It passed `10/10` with no provider errors,
+rejected intents or pending structural tasks. The redacted round summary shows:
+
+| Round | God result | NPC result | Story result | New content |
+| ---: | --- | --- | --- | --- |
+| 1 | conserved Action + BT | resupply executed | resource continuation | `Deposit Energy Cell` |
+| 2–3 | no proposal | research completed | grounded follow-up | existing source advances |
+| 4 | new research object | new source studied | two grounded beats | `Relay Checksum Ledger` |
+| 5 | no proposal | source advances | grounded continuation | no duplicate |
+| 6 | new research object | new source studied | two grounded beats | `Provenance Key Register` |
+| 7 | no proposal | source advances | grounded continuation | no duplicate |
+| 8 | new research object | source advances | two grounded beats | `Checksum Closure Sheet` |
+| 9 | no proposal | source advances | grounded continuation | no duplicate |
+| 10 | new research object | source advances | two grounded beats | `Second Key Column Fragment` |
+
+The probe therefore verifies the requested NPC → Platform → God/Story → NPC
+loop with changed executable context and world state; it is not a tool-call-only
+success check. The browser bundle and authoring endpoints are covered by
+`tests/test_web_client.py`, including opening an existing package, root
+confinement, compile, smoke, export and the explicit WorldBuilder rejection
+path. No server process is left running by these checks.
