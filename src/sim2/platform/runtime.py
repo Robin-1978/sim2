@@ -13,13 +13,6 @@ from ..memory.service import MemoryService
 from ..perception.service import PerceptionService
 from ..persistence.store import WorldStore
 from ..world.schema import AttributeSchema
-from .runtime_services import (
-    BehaviorExecutionService,
-    BehaviorIntentService,
-    EvolutionService,
-    RuntimeApiService,
-    WorldTickService,
-)
 from .services import PlatformContext, build_platform_services
 from .snapshot_service import SnapshotService
 from .wake_service import WakeService

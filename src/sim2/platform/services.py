@@ -132,16 +132,13 @@ class WorldChangesService(PlatformService, WorldChangesRuntimeMixin):
 def build_platform_services(context: PlatformContext) -> dict[str, PlatformService]:
     """Construct all extracted services in one deterministic order."""
 
-    # Imported lazily because runtime_services uses PlatformService as its
-    # base class.  Keeping the factory import local avoids a module cycle while
-    # preserving one construction point for the Platform facade.
-    from .runtime_services import (
-        BehaviorExecutionService,
-        BehaviorIntentService,
-        EvolutionService,
-        RuntimeApiService,
-        WorldTickService,
-    )
+    # Imported lazily because the concrete service modules use
+    # PlatformService as their base class. Keeping the factory import local
+    # avoids a module cycle while preserving one construction point.
+    from .api_service import RuntimeApiService
+    from .behavior_service import BehaviorExecutionService, BehaviorIntentService
+    from .evolution_service import EvolutionService
+    from .world_tick_service import WorldTickService
 
     services: dict[str, PlatformService] = {
         "api": RuntimeApiService(context),
