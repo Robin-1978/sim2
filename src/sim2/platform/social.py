@@ -231,8 +231,7 @@ class SocialRuntimeMixin:
         }
         with self.store.transaction():
             self.store.put_institution(institution_id, "proposed", data, minute)
-            event_id = self._context.services["events"].append("institution.proposed", actor_id, minute, {"institution": {"name": name, "purpose": purpose, "scope": data["scope"]}, "status": "proposed"})
-            self.wakes.configured(event_id, "institution.proposed", actor_id, minute)
+            event_id = self._context.services["events"].publish("institution.proposed", actor_id, minute, {"institution": {"name": name, "purpose": purpose, "scope": data["scope"]}, "status": "proposed"}, wake="configured")
             if actor_id == "god":
                 remember_role(self.store, "god", "institution_decision", {
                     "summary": f"Proposed institution {name}: {purpose}.",
@@ -270,8 +269,7 @@ class SocialRuntimeMixin:
         with self.store.transaction():
             institution_data = {key: value for key, value in selected.items() if key not in {"institution_id", "status", "created_minute", "activated_minute"}}
             self.store.put_institution(str(selected["institution_id"]), "active", institution_data, int(selected.get("created_minute", minute)), minute)
-            event_id = self._context.services["events"].append("institution.activated", actor_id, minute, {"institution": {"name": selected.get("name"), "purpose": selected.get("purpose")}, "reason": reason, "status": "active"})
-            self.wakes.configured(event_id, "institution.activated", actor_id, minute)
+            event_id = self._context.services["events"].publish("institution.activated", actor_id, minute, {"institution": {"name": selected.get("name"), "purpose": selected.get("purpose")}, "reason": reason, "status": "active"}, wake="configured")
             if actor_id == "god":
                 remember_role(self.store, "god", "institution_decision", {
                     "summary": f"Activated institution {selected.get('name')}: {selected.get('purpose') or ''}.",
@@ -437,7 +435,7 @@ class SocialRuntimeMixin:
                 str(selected["institution_id"]), "active", terms,
                 int(selected.get("created_minute", minute)), int(selected["activated_minute"]) if selected.get("activated_minute") is not None else minute,
             )
-            self.wakes.configured(event_id, "institution.revised", actor_id, minute)
+            self._context.services["events"].wake(event_id, "institution.revised", actor_id, minute, wake="configured")
             remember_role(self.store, "god", "institution_decision", {
                 "summary": f"Revised institution {selected.get('name')}: {reason_text}",
                 "institution": selected.get("name"),

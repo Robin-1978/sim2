@@ -890,11 +890,10 @@ class DefinitionRuntimeMixin:
                             + repr(unavailable)
                             + "; use machine predicates only in entry_conditions (for example actor.alive or actor.can_research), include a Travel node before a destination Action, and correct the Action parameters"
                         )
-            event_id = self._context.services["events"].append("definition.registered", actor_id, world_minute, {"definition_type": definition_type, "name": name, "definition_id": definition.get("id"), "assigned_to": [visible for _, visible in resolved_agents], "evidence": str(proposal.get("evidence") or "")})
-            self.wakes.configured(event_id, "definition.registered", actor_id, world_minute)
+            event_id = self._context.services["events"].publish("definition.registered", actor_id, world_minute, {"definition_type": definition_type, "name": name, "definition_id": definition.get("id"), "assigned_to": [visible for _, visible in resolved_agents], "evidence": str(proposal.get("evidence") or "")}, wake="configured")
             followup_recipe_event_id = None
             if definition_type == "action" and followup_recipe_definition:
-                followup_recipe_event_id = self._context.services["events"].append(
+                followup_recipe_event_id = self._context.services["events"].publish(
                     "definition.registered",
                     actor_id,
                     world_minute,
@@ -905,11 +904,11 @@ class DefinitionRuntimeMixin:
                         "bound_action_id": definition.get("id"),
                         "evidence": str(proposal.get("evidence") or ""),
                     },
+                    wake="configured",
                 )
-                self.wakes.configured(followup_recipe_event_id, "definition.registered", actor_id, world_minute)
             followup_event_id = None
             if definition_type == "action" and followup_definition:
-                followup_event_id = self._context.services["events"].append(
+                followup_event_id = self._context.services["events"].publish(
                     "definition.registered",
                     actor_id,
                     world_minute,
@@ -921,8 +920,8 @@ class DefinitionRuntimeMixin:
                         "bound_action_id": definition.get("id"),
                         "evidence": str(proposal.get("evidence") or ""),
                     },
+                    wake="configured",
                 )
-                self.wakes.configured(followup_event_id, "definition.registered", actor_id, world_minute)
             # A newly assigned behavior is both a definition event and an
             # actor-facing commitment. Merely adding it to the executable
             # catalog leaves the NPC free to overlook the verified problem

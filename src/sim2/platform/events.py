@@ -31,3 +31,71 @@ class EventService(PlatformService):
             data["correlation_id"] = str(correlation_id)
         return self.uow.events.append(str(event_type), actor_id, int(minute), data)
 
+    def publish(
+        self,
+        event_type: str,
+        actor_id: str | None,
+        minute: int,
+        payload: dict[str, Any] | None = None,
+        *,
+        wake: str | dict[str, Any] | list[str] | tuple[Any, ...] | None = None,
+        causation_id: str | None = None,
+        correlation_id: str | None = None,
+    ) -> int:
+        """Append one fact and dispatch its declared wake in the same UoW.
+
+        ``wake`` is deliberately a small publication vocabulary.  It carries
+        no world meaning: ``configured`` uses the world wake policy,
+        ``story_source`` creates the Story evidence barrier, and a mapping
+        with ``wake`` delegates to explicitly declared follow-up consumers.
+        """
+
+        event_id = self.append(
+            event_type,
+            actor_id,
+            minute,
+            payload,
+            causation_id=causation_id,
+            correlation_id=correlation_id,
+        )
+        if wake is not None:
+            self.wake(event_id, event_type, actor_id, minute, wake=wake)
+        return event_id
+
+    def wake(
+        self,
+        event_id: int,
+        event_type: str,
+        actor_id: str | None,
+        minute: int,
+        *,
+        wake: str | dict[str, Any] | list[str] | tuple[Any, ...],
+    ) -> None:
+        """Dispatch wake instructions for an already committed event."""
+
+        wakes = self._context.dependencies.get("wakes")
+        if wakes is None:
+            raise RuntimeError("WakeService is not bound to EventService")
+        if wake == "configured":
+            wakes.configured(event_id, event_type, actor_id, int(minute))
+            return
+        if wake == "story_source":
+            wakes.story_source(event_id, event_type, actor_id, int(minute))
+            return
+        if isinstance(wake, dict) and wake.get("configured"):
+            wakes.configured(event_id, event_type, actor_id, int(minute))
+        if isinstance(wake, dict) and wake.get("followups") is not None:
+            followups = wake["followups"]
+            if isinstance(followups, dict):
+                wakes.followups(followups, event_id, event_type, actor_id, int(minute))
+            else:
+                wakes.followups({"wake": followups}, event_id, event_type, actor_id, int(minute))
+            return
+        if isinstance(wake, dict):
+            wakes.followups(wake, event_id, event_type, actor_id, int(minute))
+            return
+        if isinstance(wake, (list, tuple)):
+            wakes.followups({"wake": list(wake)}, event_id, event_type, actor_id, int(minute))
+            return
+        raise ValueError(f"unsupported wake publication: {wake!r}")
+

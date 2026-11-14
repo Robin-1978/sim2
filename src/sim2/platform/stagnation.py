@@ -209,6 +209,4 @@ class StagnationRuntimeMixin:
             "characters": characters,
             "omitted_characters": omitted,
         }
-        event_id = self._context.services["events"].append("world.stagnation", None, int(minute), payload)
-        self.wakes.configured(event_id, "world.stagnation", None, int(minute))
-        return event_id
+        return self._context.services["events"].publish("world.stagnation", None, int(minute), payload, wake="configured")

@@ -181,15 +181,14 @@ class WorldTickService(PlatformService):
             )
             if should_emit:
                 event_type = str(raw.get("event_type") or "resource.safety_low")
-                event_id = self._context.services["events"].append(event_type, None, minute, {
+                self._context.services["events"].publish(event_type, None, minute, {
                     "resource_id": resource_id,
                     "resource_name": entity.get("name", resource_id),
                     "quantity": quantity,
                     "minimum_reserve": floor,
                     "summary": f"{entity.get('name', resource_id)} is at or below its configured reserve floor.",
                     "signal_kind": "crossing" if not previous else "repeat",
-                })
-                self.wakes.configured(event_id, event_type, None, minute)
+                }, wake="configured")
                 state[resource_id] = {"active": active, "last_emitted_minute": int(minute)}
                 changed = True
             elif active != previous:

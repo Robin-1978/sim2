@@ -639,9 +639,9 @@ class ActivityRuntimeMixin:
                         "execution_id": str(agent.get("initial_state", {}).get("active_bt_instance") or ""),
                         "action_id": str(action.get("id") or ""),
                     })
-                    allocation_event_id = self._context.services["events"].append("institution.allocation_completed", agent["id"], minute, allocation_event)
-                    self.wakes.configured(
-                        allocation_event_id, "institution.allocation_completed", agent["id"], minute,
+                    allocation_event_id = self._context.services["events"].publish(
+                        "institution.allocation_completed", agent["id"], minute, allocation_event,
+                        wake="configured",
                     )
                 else:
                     self._context.services["events"].append("institution.allocation_failed", agent["id"], minute, allocation)
@@ -909,10 +909,8 @@ class ActivityRuntimeMixin:
         # pause the world or wake the Story Agent without a new fact.
         if progress["completed"]:
             wake = definition.get("wake")
-            if wake is None:
-                self.wakes.story_source(event_id, event_type, agent["id"], minute)
-            else:
-                self.wakes.followups({"wake": wake}, event_id, event_type, agent["id"], minute)
+            wake_spec: str | dict[str, Any] = "story_source" if wake is None else {"wake": wake}
+            self._context.services["events"].wake(event_id, event_type, agent["id"], minute, wake=wake_spec)
         return {**progress, "discovery": discovery, "stage_id": (discovery or {}).get("id"), "progress_key": key}
 
     def _record_information_result(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> dict[str, Any]:
@@ -949,8 +947,7 @@ class ActivityRuntimeMixin:
                             unlocked.append(behavior_id)
                             agent["unlocked_bt_ids"] = unlocked
                             self._context.services["events"].append("behavior.unlocked", agent["id"], minute, {"behavior_id": behavior_id, "discovery_id": discovery_id, "source": "exploration"})
-                event_id = self._context.services["events"].append("exploration.completed", agent["id"], minute, {"area_id": area_id, "result_id": result_id, "discoveries": [str(item.get("id")) for item in discoveries]})
-                self.wakes.story_source(event_id, "exploration.completed", agent["id"], minute)
+                event_id = self._context.services["events"].publish("exploration.completed", agent["id"], minute, {"area_id": area_id, "result_id": result_id, "discoveries": [str(item.get("id")) for item in discoveries]}, wake="story_source")
                 result = {"result": "exploration_completed", "event_id": event_id}
         if source_id:
             source_id = str(source_id)
@@ -970,7 +967,7 @@ class ActivityRuntimeMixin:
                     # completion event; without progress keep the legacy
                     # single-attempt event contract.
                     if progress is None:
-                        event_id = self._context.services["events"].append("research.completed", agent["id"], minute, {"source_id": source_id, "fact": fact})
+                        event_id = self._context.services["events"].publish("research.completed", agent["id"], minute, {"source_id": source_id, "fact": fact}, wake="story_source")
                         self.store.update_research_gap(
                             source_id,
                             completed=True,
@@ -978,7 +975,6 @@ class ActivityRuntimeMixin:
                             event_id=event_id,
                             world_minute=minute,
                         )
-                        self.wakes.story_source(event_id, "research.completed", agent["id"], minute)
                         result = {"result": "research_completed", "event_id": event_id, "progress": progress}
                     elif progress is not None:
                         result = {"result": "research_progressed", "progress": progress}
@@ -996,8 +992,7 @@ class ActivityRuntimeMixin:
                 agent["id"], fact_key,
                 {"fact": fact, "source_type": "recovery", "source_id": object_id, "object_id": object_id, "behavior": action.get("id"), "confidence": 0.9, "observed_at": minute},
             )
-            event_id = self._context.services["events"].append("object.recovered", agent["id"], minute, {"object_id": object_id, "fact": fact})
-            self.wakes.story_source(event_id, "object.recovered", agent["id"], minute)
+            event_id = self._context.services["events"].publish("object.recovered", agent["id"], minute, {"object_id": object_id, "fact": fact}, wake="story_source")
             result = {"result": "object_recovered", "event_id": event_id}
         if target_id and topic:
             target_id = str(target_id)
@@ -1043,8 +1038,7 @@ class ActivityRuntimeMixin:
                 event_data["trend"] = True
             if "story" in {str(item) for item in (information.get("wake") or [])}:
                 event_data["story_source"] = True
-            event_id = self._context.services["events"].append(str(configured_event), agent["id"], minute, event_data)
-            self.wakes.followups(information, event_id, str(configured_event), agent["id"], minute)
+            event_id = self._context.services["events"].publish(str(configured_event), agent["id"], minute, event_data, wake=information)
             result.setdefault("event_id", event_id)
             result.setdefault("result", str(information.get("result") or "information_recorded"))
         fact_template = information.get("fact_template")
@@ -1133,9 +1127,7 @@ class ActivityRuntimeMixin:
                     # enough to wake God or Story. Event groups apply their
                     # own evidence count and cooldown; this call does not
                     # hard-code any institution or quota semantics.
-                    self.wakes.configured(
-                        ledger_event_id, "institution.ledger_entry", actor_id, minute,
-                    )
+                    self._context.services["events"].wake(ledger_event_id, "institution.ledger_entry", actor_id, minute, wake="configured")
 
     def _finish_behavior(self, agent: dict[str, Any], execution_id: str, behavior_id: str, status: str, result: str, minute: int) -> None:
         state = dict(agent.get("initial_state") or {})
@@ -1242,10 +1234,10 @@ class ActivityRuntimeMixin:
                 # policies. The event itself remains the source of truth;
                 # event groups decide whether Story/God receive it directly,
                 # after a threshold, or not at all.
-                self.wakes.configured(
+                self._context.services["events"].wake(
                     event_id, event_type, agent["id"], minute,
+                    wake={"configured": True, "followups": configured},
                 )
-                self.wakes.followups(configured, event_id, event_type, agent["id"], minute)
                 # An institution may account for the verified outcome event
                 # emitted by a behavior (for example, a research or public
                 # inspection result) instead of the generic behavior.completed
@@ -1395,7 +1387,7 @@ class ActivityRuntimeMixin:
             agent["story_goals"] = [item for item in (agent.get("story_goals", []) or []) if str(item) not in cleared_goals]
             self.store.update_agent(actor_id, agent)
         self.store.set_meta("story_state", state)
-        self.wakes.story_source(source_event_id, "behavior.failed", actor_id, minute)
+        self._context.services["events"].wake(source_event_id, "behavior.failed", actor_id, minute, wake="story_source")
 
     def _complete_story_beats_for_actor(self, actor_id: str, behavior_id: str, minute: int) -> None:
         """Close active audience beats after a matching follow-up behavior.

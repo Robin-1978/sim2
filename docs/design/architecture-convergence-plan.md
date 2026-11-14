@@ -73,6 +73,13 @@ transaction; the focused suite is green.
 - Test duplicate delivery, restart, cooldown, uncommitted-event rejection and
   one task per consumer/event group.
 
+**Current state:** `platform/events.py` is now the single Platform service
+entry for event creation. Platform services no longer call
+`uow.events.append` directly; publication can atomically dispatch configured,
+Story-source and declared follow-up wakes. The remaining work in this package
+is to move the last dynamic `WakeService.queue` call sites behind a typed
+publication operation and add restart/uncommitted-event coverage.
+
 **Gate:** `rg "_queue_story_task|_queue_event_consumer_task" src/sim2`
 returns only the WakeService implementation and its tests. Every Story/God
 wake can be traced to a committed event.

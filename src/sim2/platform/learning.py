@@ -267,7 +267,7 @@ class LearningRuntimeMixin:
             }
             if progress["completed"]:
                 wake = list(definition.get("wake") or [])
-                self.wakes.followups({"wake": wake}, event_id, event_type, actor_id, world_minute)
+                self._context.services["events"].wake(event_id, event_type, actor_id, world_minute, wake={"wake": wake})
                 for role in wake:
                     self.store.mark_evolution_task_ready(f"{role}:event:{event_id}")
             self.store.finish_intent(intent_id, "accepted", result)
