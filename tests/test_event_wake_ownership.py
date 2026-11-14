@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from sim2.bootstrap.service import create_instance
 from sim2.platform.runtime import Platform
 
@@ -64,6 +66,22 @@ def test_information_observation_does_not_become_recovery_without_explicit_flag(
         event_types = [item["event_type"] for item in platform.store.recent_events(limit=10)]
         assert "observation.object_inspected" in event_types
         assert "object.recovered" not in event_types
+    finally:
+        platform.close()
+
+
+def test_wake_rejects_an_unpersisted_or_mismatched_source_event(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "wake-source-validation", tmp_path / "runtime"))
+    try:
+        with pytest.raises(ValueError, match="unknown event"):
+            platform._services["events"].queue_consumer(
+                "story", 999999, "audit.fact", "luo_shan", 0,
+            )
+        event_id = platform._services["events"].append("audit.fact", "luo_shan", 0, {})
+        with pytest.raises(ValueError, match="type mismatch"):
+            platform._services["events"].queue_consumer(
+                "story", event_id, "audit.other", "luo_shan", 0,
+            )
     finally:
         platform.close()
 

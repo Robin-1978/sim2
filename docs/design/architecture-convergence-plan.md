@@ -79,9 +79,13 @@ checks. A follow-up regression also fixed the facade-to-runner host boundary.
 **Current state:** `platform/events.py` is now the single Platform service
 entry for event creation. Platform services no longer call
 `uow.events.append` directly; publication can atomically dispatch configured,
-Story-source and declared follow-up wakes. The remaining work in this package
-is to move the last dynamic `WakeService.queue` call sites behind a typed
-publication operation and add restart/uncommitted-event coverage.
+Story-source and declared follow-up wakes. Dynamic consumer queueing also
+passes through the EventService boundary, and WakeService rejects unknown or
+type-mismatched source events. Restart recovery coverage already exists in the
+vertical suite.
+
+**Completed:** event publication and dynamic wake ownership are committed as
+`9857e7c` and `74f2c5f`; the focused event/evolution suite passes.
 
 **Gate:** `rg "_queue_story_task|_queue_event_consumer_task" src/sim2`
 returns only the WakeService implementation and its tests. Every Story/God

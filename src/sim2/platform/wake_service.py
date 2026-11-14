@@ -21,6 +21,18 @@ class WakeService:
         self._resolve_consumer = resolve_consumer
         self.scheduler = EventWakeScheduler(self.store)
 
+    def _validate_event(self, event_id: int, event_type: str) -> None:
+        """Reject wakes that do not point at a persisted source event."""
+
+        rows = self.store.events_by_ids([int(event_id)])
+        if not rows:
+            raise ValueError(f"cannot wake a consumer from unknown event {event_id}")
+        actual = str(rows[0].get("event_type") or "")
+        if actual != str(event_type):
+            raise ValueError(
+                f"wake event type mismatch for {event_id}: expected {actual}, got {event_type}"
+            )
+
     def queue(
         self,
         consumer: str,
@@ -32,6 +44,7 @@ class WakeService:
         task_type: str | None = None,
         explicit: bool = False,
     ) -> str | None:
+        self._validate_event(event_id, event_type)
         role, resolved_actor = self._resolve_consumer(str(consumer), actor_id)
         evolution = self.store.get_meta("evolution", {}) or {}
         evolution = evolution.get("evolution", evolution) if isinstance(evolution, dict) else {}
@@ -100,6 +113,7 @@ class WakeService:
     def story_source(self, event_id: int, event_type: str, actor_id: str | None, minute: int) -> str:
         """Create the Story barrier for a validated narrative source event."""
 
+        self._validate_event(event_id, event_type)
         task_id = f"story:event:{int(event_id)}"
         self.uow.evolution.put_task(
             task_id,
