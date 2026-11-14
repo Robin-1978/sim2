@@ -11,6 +11,7 @@ from ..actions.conditions import ConditionEngine
 from ..actions.effects import EffectPipeline
 from ..evolution.story import eligible_story_beats, story_evidence_event_types
 from ..evolution.memory import remember_role
+from ..world.definition_compiler import compile_definition_shape, definition_slug
 from ..world.schema import AttributeSchema
 from .proposal_errors import _UnreachableProposal
 
@@ -213,11 +214,6 @@ class DefinitionRuntimeMixin:
         return None
 
     @staticmethod
-    def _definition_slug(value: Any) -> str:
-        text = re.sub(r"[^a-z0-9]+", "_", str(value or "").casefold()).strip("_")
-        return text[:80]
-
-    @staticmethod
     def _definition_name_key(value: Any) -> str:
         return "".join(char for char in str(value or "").casefold() if char.isalnum())
 
@@ -238,30 +234,6 @@ class DefinitionRuntimeMixin:
                 matches.append(str(item["id"]))
         return (matches[0] if len(matches) == 1 else None), matches
 
-    def _validate_definition_effects(self, definition: dict[str, Any]) -> list[str]:
-        allowed = {
-            "need_delta", "state_delta", "attribute_delta", "attribute_set",
-            "inventory_add", "inventory_remove", "inventory.consume_item",
-            "relationship_delta", "public_event", "world_property_delta",
-            "entity_state_set", "status_add", "status_remove", "location_set",
-            "resource_transfer",
-            "capability_xp", "capability.add_xp",
-        }
-        errors: list[str] = []
-        for field in ("effects", "progress_effects"):
-            values = definition.get(field, []) or []
-            if not isinstance(values, list):
-                errors.append(f"{field} must be a list")
-                continue
-            for index, effect in enumerate(values):
-                if not isinstance(effect, dict):
-                    errors.append(f"{field}[{index}] must be an object")
-                    continue
-                effect_type = str(effect.get("type") or effect.get("op") or "")
-                if effect_type not in allowed:
-                    errors.append(f"unsupported effect type: {effect_type or '<missing>'}")
-        return errors
-
     def _validate_definition_proposal(
         self,
         definition_type: str,
@@ -273,32 +245,12 @@ class DefinitionRuntimeMixin:
         """Validate and normalize a God definition before SQLite registration."""
 
         kind = str(definition_type or "").strip().casefold()
-        definition = copy.deepcopy(raw if isinstance(raw, dict) else {})
-        errors: list[str] = []
+        definition, errors = compile_definition_shape(kind, name, raw)
         if kind not in {"attribute", "world_property", "action", "behavior", "recipe", "capability"}:
-            return definition, [f"unsupported definition_type: {kind}"]
-        if not str(name or "").strip():
-            errors.append("name is required")
-        forbidden = {"handler", "python", "script", "sql", "executor_code", "code"}
-        errors.extend(f"field is not declarative: {field}" for field in forbidden if field in definition)
+            return definition, errors
 
         if kind == "attribute":
-            attr_kind = str(definition.get("kind") or "").casefold()
-            if attr_kind not in {"state", "need"}:
-                errors.append("attribute.kind must be state or need")
-            for field in ("min", "max", "default"):
-                if not isinstance(definition.get(field), (int, float)) or isinstance(definition.get(field), bool):
-                    errors.append(f"attribute.{field} must be numeric")
-            if all(isinstance(definition.get(field), (int, float)) for field in ("min", "max", "default")):
-                if float(definition["min"]) > float(definition["max"]):
-                    errors.append("attribute.min must not exceed attribute.max")
-                if not float(definition["min"]) <= float(definition["default"]) <= float(definition["max"]):
-                    errors.append("attribute.default must be within min and max")
-            if attr_kind == "state" and definition.get("cost_mode") not in {"increase", "decrease"}:
-                errors.append("state attributes must declare cost_mode")
-            if not str(definition.get("label") or name).strip():
-                errors.append("attribute.label is required")
-            definition.update({"id": str(definition.get("id") or self._definition_slug(name) or f"attribute_{uuid4().hex[:10]}"), "label": definition.get("label") or name, "prompt": definition.get("prompt") or str(name)})
+            definition.update({"id": str(definition.get("id") or definition_slug(name) or f"attribute_{uuid4().hex[:10]}"), "label": definition.get("label") or name, "prompt": definition.get("prompt") or str(name)})
             existing = self.store.get_meta("attributes", []) or []
             if any(str(item.get("id")) == definition["id"] for item in existing if isinstance(item, dict)):
                 errors.append(f"attribute already exists: {definition['id']}")
@@ -311,10 +263,7 @@ class DefinitionRuntimeMixin:
             return definition, errors
 
         if kind == "world_property":
-            property_id = str(definition.get("id") or self._definition_slug(name) or f"property_{uuid4().hex[:10]}")
-            default = definition.get("default")
-            if not isinstance(default, (int, float, str, bool)) or isinstance(default, bool):
-                errors.append("world_property.default must be a number or string")
+            property_id = str(definition.get("id") or definition_slug(name) or f"property_{uuid4().hex[:10]}")
             if property_id in {str(key) for key in (self.store.get_meta("world_properties", {}) or {})}:
                 errors.append(f"world property already exists: {property_id}")
             if property_id not in {str(key) for key in (self.store.get_meta("world_properties", {}) or {})} and any(self._definition_name_key(name) == self._definition_name_key(item) for item in (self.store.get_meta("world_property_labels", {}) or {}).values()):
@@ -323,50 +272,15 @@ class DefinitionRuntimeMixin:
             return definition, errors
         table = {"action": "action_def", "behavior": "bt_def", "recipe": "recipe_def", "capability": "capability_def"}[kind]
         explicit_id = str(definition.get("id") or "").strip()
-        definition_id = explicit_id or self._definition_slug(name) or f"definition_{uuid4().hex[:10]}"
+        definition_id = explicit_id or definition_slug(name) or f"definition_{uuid4().hex[:10]}"
         if any(str(item.get("id")) == definition_id for item in self.store.repositories.entities.get_definitions(table)):
             errors.append(f"definition already exists: {definition_id}")
         if any(self._definition_name_key(name) in {self._definition_name_key(item.get(field)) for field in ("name", "label", "agent_label", "summary", "description") if item.get(field)} for item in self.store.repositories.entities.get_definitions(table)):
             errors.append(f"definition name already exists: {name}")
 
         if kind == "action":
-            # Models naturally shorten ``costs.reserve`` to ``reserve`` when
-            # proposing a new recipe action.  Accept that generic shorthand
-            # and normalize it before validation; the persisted contract is
-            # still the same one used by configured Actions.
-            shorthand_reserve = definition.pop("reserve", None)
-            if shorthand_reserve is not None:
-                costs = definition.setdefault("costs", {})
-                if not isinstance(costs, dict):
-                    errors.append("action.costs must be an object")
-                else:
-                    reserve = costs.setdefault("reserve", {})
-                    if not isinstance(reserve, dict):
-                        errors.append("action.costs.reserve must be an object")
-                    elif isinstance(shorthand_reserve, dict):
-                        for key, value in shorthand_reserve.items():
-                            reserve.setdefault(str(key), 1 if value is True else value)
             parameters = definition.get("parameters")
-            if parameters is not None and not isinstance(parameters, dict):
-                errors.append("action.parameters must be an object")
-            elif isinstance(parameters, dict):
-                scalar_types = {"string", "number", "integer", "boolean", "object", "array"}
-                for parameter_name, parameter_spec in parameters.items():
-                    if isinstance(parameter_spec, str):
-                        if parameter_spec not in scalar_types:
-                            errors.append(
-                                f"action.parameters.{parameter_name} must use a type name (string, number, integer, boolean, object, array), not a placeholder"
-                            )
-                    elif isinstance(parameter_spec, dict):
-                        if parameter_spec.get("type") not in scalar_types:
-                            errors.append(f"action.parameters.{parameter_name}.type must be a supported type name")
-                    else:
-                        errors.append(f"action.parameters.{parameter_name} must declare a supported type")
             for field in ("success", "failure"):
-                if isinstance(definition.get(field), list) and len(definition[field]) == 1 and isinstance(definition[field][0], dict):
-                    # Some compatible models wrap the single Action result
-                    # in an array even though the contract is one object.
-                    definition[field] = definition[field][0]
                 result_contract = definition.get(field)
                 condition = result_contract.get("condition") if isinstance(result_contract, dict) else None
                 if condition and isinstance(parameters, dict):
@@ -379,15 +293,6 @@ class DefinitionRuntimeMixin:
                         errors.append(
                             f"action.{field}.condition treats dynamic parameter(s) {', '.join(sorted(dynamic_inventory_keys))} as inventory keys; use a literal visible item or omit the condition"
                         )
-            duration = definition.get("duration") if isinstance(definition.get("duration"), dict) else {}
-            if not duration or not (isinstance(duration.get("minutes"), (int, float)) or duration.get("mode") in {"route_distance", "recipe_duration"}):
-                errors.append("action.duration must declare minutes or a supported mode")
-            if isinstance(duration.get("minutes"), (int, float)) and float(duration["minutes"]) <= 0:
-                errors.append("action.duration.minutes must be positive")
-            for field in ("preconditions", "effects", "progress_effects"):
-                if field in definition and not isinstance(definition[field], list):
-                    errors.append(f"action.{field} must be a list")
-            errors.extend(self._validate_definition_effects(definition))
             resource_transfer_effects = [
                 effect
                 for field in ("effects", "progress_effects")
@@ -436,25 +341,12 @@ class DefinitionRuntimeMixin:
                             errors.append(
                                 "resource_transfer needs quantity 1 by default, or declare item_quantity_parameter for a variable amount"
                             )
-            for field in ("success", "failure"):
-                if not isinstance(definition.get(field), dict) or not str((definition.get(field) or {}).get("result") or "").strip():
-                    errors.append(f"action.{field} must declare an object with result")
             # Keep the visible proposal name in the persisted definition.  The
             # registry id is intentionally machine-oriented, while audits,
             # AgentView and later definition references must be able to show
             # the exact human-facing label that God submitted.
             definition.update({"id": definition_id, "version": 1, "definition_version": 1, "name": definition.get("name") or name, "description": definition.get("description") or str(name), "definition_source": "god_proposal", "kind": "atomic", "executor": "effect_pipeline", "validation_status": "validated"})
         elif kind == "behavior":
-            outcome_events = definition.get("outcome_events")
-            if outcome_events is not None:
-                if not isinstance(outcome_events, list):
-                    errors.append("behavior.outcome_events must be a list")
-                else:
-                    for index, event in enumerate(outcome_events):
-                        if not isinstance(event, dict) or not str(event.get("event_type") or event.get("event") or "").strip():
-                            errors.append(f"behavior.outcome_events[{index}] must declare event_type and summary")
-                        elif not str(event.get("summary") or "").strip():
-                            errors.append(f"behavior.outcome_events[{index}] must declare event_type and summary")
             normalized_conditions: list[str] = []
             for condition in definition.get("entry_conditions", []) or []:
                 condition_text = str(condition)
@@ -485,14 +377,9 @@ class DefinitionRuntimeMixin:
                         "use durable actor, capability, location, inventory, relationship, or world state"
                     )
             nodes = definition.get("nodes")
-            if nodes is None and isinstance(definition.get("actions"), list):
-                nodes = [{"type": "action", "action": item} for item in definition["actions"]]
             if not isinstance(nodes, list) or not nodes:
-                errors.append("behavior.nodes or behavior.actions must contain at least one step")
                 nodes = []
             normalized_nodes: list[dict[str, Any]] = []
-            if len(nodes) > 32:
-                errors.append("a behavior may contain at most 32 nodes")
             node_count = 0
 
             def normalize_node(node: Any, path: str, depth: int = 0) -> dict[str, Any] | None:
@@ -616,15 +503,6 @@ class DefinitionRuntimeMixin:
             definition.update({"id": definition_id, "version": 1, "definition_version": 1, "summary": definition.get("summary") or definition.get("description") or str(name), "agent_label": definition.get("agent_label") or name, "definition_source": "god_proposal", "kind": "proposed", "validation_status": "validated"})
         elif kind == "recipe":
             definition = self._normalize_recipe_items(definition)
-            duration = definition.get("duration_minutes")
-            if not isinstance(duration, (int, float)) or isinstance(duration, bool) or float(duration) <= 0:
-                errors.append("recipe.duration_minutes must be positive")
-            for field in ("inputs", "outputs"):
-                values = definition.get(field)
-                if not isinstance(values, list) or not values:
-                    errors.append(f"recipe.{field} must be a non-empty list")
-                elif any(not isinstance(item, dict) or not item.get("item") or not isinstance(item.get("quantity"), (int, float)) or float(item.get("quantity", 0)) <= 0 for item in values):
-                    errors.append(f"recipe.{field} entries need item and positive quantity")
             # A recipe is only ever produced through an Action that consumes
             # recipes.  Without one the recipe can never be crafted by anybody.
             if not any(self._is_recipe_action(item) for item in self.store.repositories.entities.get_definitions("action_def")) and not self._is_recipe_action(extra_action or {}):
@@ -635,8 +513,6 @@ class DefinitionRuntimeMixin:
             definition.update({"id": definition_id, "version": 1, "definition_version": 1, "name": definition.get("name") or name, "definition_source": "god_proposal", "validation_status": "validated"})
         elif kind == "capability":
             default = definition.get("default", definition.get("initial", 0))
-            if not isinstance(default, (int, float)) or isinstance(default, bool) or not 0 <= float(default) <= 1:
-                errors.append("capability.default must be between 0 and 1")
             definition.update({"id": definition_id, "version": 1, "definition_version": 1, "name": definition.get("name") or name, "default": float(default) if isinstance(default, (int, float)) else 0.0, "value_path": definition.get("value_path") or f"agent.capabilities.{definition_id}", "definition_source": "god_proposal", "validation_status": "validated"})
         return definition, errors
 

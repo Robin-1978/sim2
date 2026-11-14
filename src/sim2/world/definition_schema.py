@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .definition_compiler import DEFINITION_TYPES, EFFECT_TYPES, SCALAR_PARAMETER_TYPES
+
 
 def propose_definition_schema() -> dict[str, Any]:
     """Return a fresh JSON Schema for the declarative definition proposal."""
@@ -31,7 +33,13 @@ def propose_definition_schema() -> dict[str, Any]:
         },
         "parameters": {
             "type": "object",
-            "description": "For an Action: parameter_name -> one of string, number, integer, boolean, object, array. Do not use human-language placeholder values.",
+            "description": "For an Action: parameter_name -> one of the configured scalar type names. Do not use human-language placeholder values.",
+            "additionalProperties": {
+                "oneOf": [
+                    {"type": "string", "enum": sorted(SCALAR_PARAMETER_TYPES)},
+                    {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(SCALAR_PARAMETER_TYPES)}}, "required": ["type"]},
+                ],
+            },
         },
         "duration": {
             "type": "object",
@@ -42,7 +50,8 @@ def propose_definition_schema() -> dict[str, Any]:
             "description": "For an Action, reserve carried inputs under costs.reserve. Use item_parameter and optionally item_quantity_parameter for a variable amount.",
         },
         "preconditions": {"type": "array", "items": {"type": "string"}, "description": "Optional machine predicates for an Action."},
-        "effects": {"type": "array", "items": {"type": "object"}, "description": "Observable Action effects. resource_transfer must bind its source and reserved quantity."},
+        "effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}, "op": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Observable Action effects. resource_transfer must bind its source and reserved quantity."},
+        "progress_effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}, "op": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Observable effects applied while a long Action progresses."},
         "success": {"type": "object", "description": "One Action success object: {condition?: machine predicate, result: short label}."},
         "failure": {"type": "object", "description": "One Action failure object: {condition?: machine predicate, result: short label}."},
         "entry_conditions": {
@@ -59,7 +68,7 @@ def propose_definition_schema() -> dict[str, Any]:
     return {
         "type": "object",
         "properties": {
-            "definition_type": {"type": "string", "enum": ["attribute", "world_property", "action", "behavior", "recipe", "capability"]},
+            "definition_type": {"type": "string", "enum": list(DEFINITION_TYPES)},
             "name": {"type": "string", "description": "A short visible name. Platform derives the internal registry key."},
             "definition": {
                 "type": "object",
