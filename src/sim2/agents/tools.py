@@ -406,7 +406,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                         "failure_results": {"type": "array", "items": {"type": "string"}, "description": "Short observable failure labels."},
                         "summary": {"type": "string"},
                         "goal": {"type": "string"},
-                        "outcome_events": {"type": "array", "items": {"type": "object"}},
+                        "outcome_events": {"type": "array", "items": {"type": "object", "description": "Each event must use {event_type: new event name, summary: fact-based text, wake?: [story|god]}."}},
                     },
                     "additionalProperties": True,
                 },

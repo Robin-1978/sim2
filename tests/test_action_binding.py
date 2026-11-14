@@ -130,6 +130,38 @@ def test_dynamic_item_parameter_cannot_be_used_as_inventory_condition(tmp_path: 
         platform.close()
 
 
+def test_behavior_outcome_event_requires_a_real_event_type(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "action-outcome-event-contract", tmp_path / "runtime"))
+    try:
+        result = platform.submit_definition_proposal(
+            "god",
+            {
+                "definition_type": "action",
+                "name": "Publish Probe Result",
+                "definition": {
+                    "duration": {"minutes": 1},
+                    "effects": [{"type": "public_event", "event": "probe.result"}],
+                    "success": {"result": "probe published"},
+                    "failure": {"result": "probe failed"},
+                },
+                "followup_behavior": {
+                    "name": "Publish Probe Result Behavior",
+                    "assign_to": ["梅岚"],
+                    "definition": {
+                        "nodes": [{"type": "action", "action_id": "Publish Probe Result", "parameters": {}}],
+                        "success_results": ["probe published"],
+                        "failure_results": ["probe failed"],
+                        "outcome_events": [{"type": "probe.completed", "summary": "The probe result was published."}],
+                    },
+                },
+            },
+        )
+        assert result["status"] == "rejected", result
+        assert any("outcome_events[0]" in error for error in result["errors"])
+    finally:
+        platform.close()
+
+
 def test_recipe_action_recipe_and_behavior_bind_atomically(tmp_path: Path) -> None:
     platform = Platform(create_instance(WORLD, "action-recipe-binding", tmp_path / "runtime"))
     try:

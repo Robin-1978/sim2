@@ -456,6 +456,16 @@ class WorldEvolutionRuntimeMixin:
             # the exact human-facing label that God submitted.
             definition.update({"id": definition_id, "version": 1, "definition_version": 1, "name": definition.get("name") or name, "description": definition.get("description") or str(name), "definition_source": "god_proposal", "kind": "atomic", "executor": "effect_pipeline", "validation_status": "validated"})
         elif kind == "behavior":
+            outcome_events = definition.get("outcome_events")
+            if outcome_events is not None:
+                if not isinstance(outcome_events, list):
+                    errors.append("behavior.outcome_events must be a list")
+                else:
+                    for index, event in enumerate(outcome_events):
+                        if not isinstance(event, dict) or not str(event.get("event_type") or event.get("event") or "").strip():
+                            errors.append(f"behavior.outcome_events[{index}] must declare event_type and summary")
+                        elif not str(event.get("summary") or "").strip():
+                            errors.append(f"behavior.outcome_events[{index}] must declare event_type and summary")
             normalized_conditions: list[str] = []
             for condition in definition.get("entry_conditions", []) or []:
                 condition_text = str(condition)
