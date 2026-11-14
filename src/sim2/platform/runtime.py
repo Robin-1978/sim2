@@ -44,12 +44,30 @@ class Platform:
         self.effects = EffectPipeline(self.store.get_meta("attributes", []) or [])
         self.targets = TargetResolver(self.store)
         self.resources = ResourceLedger(self.store)
-        self._service_context = PlatformContext(self)
+        self._service_context = PlatformContext(self, {
+            "store": self.store,
+            "view": self.view,
+            "perception": self.perception,
+            "memory": self.memory,
+            "attribute_schema": self.attribute_schema,
+            "conditions": self.conditions,
+            "effects": self.effects,
+            "targets": self.targets,
+            "resources": self.resources,
+            "rule_compiler": None,
+            "wakes": None,
+            "snapshots": None,
+            "proposal_evaluator": None,
+        })
         self._services = build_platform_services(self._service_context)
         self.rule_compiler = self._new_rule_compiler()
+        self._service_context.set_dependency("rule_compiler", self.rule_compiler)
         self.wakes = WakeService(self.store, self._resolve_evolution_consumer)
+        self._service_context.set_dependency("wakes", self.wakes)
         self.snapshots = SnapshotService(self.store)
+        self._service_context.set_dependency("snapshots", self.snapshots)
         self.proposal_evaluator = WorldProposalEvaluator(self.store, self.targets)
+        self._service_context.set_dependency("proposal_evaluator", self.proposal_evaluator)
 
     def __getattr__(self, name: str) -> Any:
         """Expose service-owned operations through the stable Platform facade."""

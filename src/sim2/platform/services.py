@@ -22,17 +22,35 @@ class PlatformContext:
     migrated incrementally.
     """
 
-    def __init__(self, host: Any) -> None:
+    _DEPENDENCY_NAMES = frozenset({
+        "store",
+        "view",
+        "perception",
+        "memory",
+        "attribute_schema",
+        "conditions",
+        "effects",
+        "targets",
+        "resources",
+        "rule_compiler",
+        "wakes",
+        "snapshots",
+        "proposal_evaluator",
+    })
+
+    def __init__(self, host: Any, dependencies: dict[str, Any]) -> None:
         self.host = host
+        unknown = set(dependencies) - self._DEPENDENCY_NAMES
+        if unknown:
+            raise ValueError(f"unknown PlatformContext dependencies: {sorted(unknown)}")
+        self.dependencies = dict(dependencies)
         self.services: dict[str, PlatformService] = {}
 
     def resolve(self, name: str, requester: PlatformService | None = None) -> Any:
-        """Resolve a shared capability without recursing through a proxy."""
+        """Resolve a declared dependency or another registered service method."""
 
-        try:
-            return object.__getattribute__(self.host, name)
-        except AttributeError:
-            pass
+        if name in self.dependencies:
+            return self.dependencies[name]
         for service in self.services.values():
             if service is requester:
                 continue
@@ -41,6 +59,16 @@ class PlatformContext:
             except AttributeError:
                 continue
         raise AttributeError(name)
+
+    def set_dependency(self, name: str, value: Any) -> None:
+        if name not in self._DEPENDENCY_NAMES:
+            raise ValueError(f"unknown PlatformContext dependency: {name}")
+        self.dependencies[name] = value
+        # Platform keeps the public read-only fields for API callers.  The
+        # service never reads arbitrary host attributes; this assignment only
+        # mirrors a declared dependency after a transactional replacement such
+        # as rebuilding the rule compiler.
+        object.__setattr__(self.host, name, value)
 
 
 class PlatformService:
@@ -62,7 +90,10 @@ class PlatformService:
         if name == "_context":
             object.__setattr__(self, name, value)
             return
-        setattr(self._context.host, name, value)
+        if name in self._context._DEPENDENCY_NAMES:
+            self._context.set_dependency(name, value)
+            return
+        object.__setattr__(self, name, value)
 
 
 class ActivityService(PlatformService, ActivityRuntimeMixin):
