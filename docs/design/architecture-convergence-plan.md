@@ -52,7 +52,7 @@ The first convergence stages have now landed:
 | World minute | `platform/world_tick_service.py` | explicit service |
 | Evolution tasks | `platform/evolution_service.py` | explicit service and UoW task repository |
 | Definitions/entities/Story/world changes | `platform/definition_runtime.py`, `entity_proposals.py`, `story_runtime.py`, `world_changes.py` | separate owners |
-| Persistence boundary | `persistence/uow.py` | event and evolution repositories migrated; Store façade remains for the next phase |
+| Persistence boundary | `persistence/uow.py`, `persistence/repositories/` | all SQL domains now have repository owners; the Store façade remains only as the migration surface |
 
 The table above is the authoritative starting point for the remaining work;
 the baseline table below records why the split was needed.
@@ -189,12 +189,12 @@ another service's private method.
 
 ## Phase 3: Split persistence and projections
 
-**Status:** the first persistence boundary is in place: `UnitOfWork` owns the
-SQLite transaction and exposes typed `EventRepository` and
-`EvolutionRepository` entry points. All Platform event writes and evolution
-task operations now use these repositories, and rollback coverage is present.
-The remaining repositories must be migrated one domain at a time before the
-broad Store facade is removed.
+**Status:** repository ownership is now split into entities, memory, activity,
+social, events, evolution and LLM modules. `UnitOfWork` owns the SQLite
+transaction, all Platform event writes and evolution task operations use its
+typed repositories, and rollback coverage is present. The remaining work is
+to replace the Store method-name façade with typed repository calls in the
+read-heavy projections, then remove the façade.
 
 Replace the broad `WorldStore` API with repositories behind one Unit of Work:
 
@@ -218,6 +218,12 @@ Exit criteria:
 - Crash recovery and deterministic replay tests pass.
 
 ## Phase 4: Unify AgentView, tools and validation
+
+**Status:** tool ownership is now split into `agents/tool_registry.py`,
+`agents/tool_executor.py`, and `agents/tool_protocol.py`; `agents/tools.py`
+is only the public import façade. The remaining work is to make the definition
+compiler the sole source for model schemas and Platform validation, then split
+the Agent session/audit policy from the engine.
 
 Create one definition compiler that emits:
 
