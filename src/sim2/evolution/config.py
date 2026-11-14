@@ -135,6 +135,8 @@ def _contract(spec: dict[str, Any], event_types: list[str], minimum: int) -> dic
                 if source == "assign_to" and isinstance(spec[source], list)
                 else str(spec[source])
             )
+    if spec.get("require_story_outcome") is not None:
+        result["require_story_outcome"] = bool(spec.get("require_story_outcome"))
     evidence = spec.get("evidence", spec.get("evidence_sources"))
     if evidence is None:
         # An event in a compact wake is already a persisted fact.  The
@@ -211,12 +213,12 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
         for index, raw_spec in enumerate(wakes):
             if not isinstance(raw_spec, dict):
                 continue
-            known_wake = {"id", "on", "for", "count", "every", "tools", "purpose", "result", "evidence", "external", "definition_type", "assign_to", "manual_only", "distinct_by"}
+            known_wake = {"id", "on", "for", "count", "every", "tools", "purpose", "result", "evidence", "external", "definition_type", "assign_to", "manual_only", "distinct_by", "require_story_outcome"}
             unknown_wake = sorted(str(key) for key in raw_spec if key not in known_wake)
             if unknown_wake:
                 raise ValueError(
                     f"wake {index + 1} has unknown field(s): " + ", ".join(unknown_wake)
-                    + "; use id, on, for, count, every, distinct_by, tools, purpose, result, evidence, manual_only"
+                    + "; use id, on, for, count, every, distinct_by, tools, purpose, result, evidence, manual_only, require_story_outcome"
                 )
             role = str(raw_spec.get("for", "") or "").strip()
             # YAML 1.1 parsers (including PyYAML's safe loader) treat an
@@ -235,7 +237,7 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
             manual_events = list(consumer.get("manual_event_types") or [])
             count = max(1, int(raw_spec.get("count", 1) or 1))
             cooldown = duration_minutes(raw_spec["every"]) if raw_spec.get("every") is not None else 0
-            contract_fields = {"tools", "purpose", "result", "evidence", "definition_type", "assign_to"}
+            contract_fields = {"tools", "purpose", "result", "evidence", "definition_type", "assign_to", "require_story_outcome"}
             prefixes = [item[:-1] for item in event_types if item.endswith("*")]
             exact_events = [item for item in event_types if not item.endswith("*")]
             if prefixes:

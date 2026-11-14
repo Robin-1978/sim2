@@ -65,6 +65,71 @@ def test_unobservable_dynamic_action_is_rejected(tmp_path: Path) -> None:
         platform.close()
 
 
+def test_resource_transfer_without_carried_reservation_is_rejected(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "action-resource-transfer-contract", tmp_path / "runtime"))
+    try:
+        result = platform.submit_definition_proposal(
+            "god",
+            {
+                "definition_type": "action",
+                "name": "Unreserved Water Transfer",
+                "definition": {
+                    "parameters": {"item_id": "string"},
+                    "duration": {"minutes": 1},
+                    "effects": [{"type": "resource_transfer", "resource_id": "蓄水", "quantity": 1}],
+                    "success": {"result": "water transferred"},
+                    "failure": {"result": "water transfer failed"},
+                },
+                "followup_behavior": {
+                    "name": "Unreserved Water Transfer Behavior",
+                    "assign_to": ["梅岚"],
+                    "definition": {
+                        "nodes": [{"type": "action", "action_id": "Unreserved Water Transfer", "parameters": {"item_id": "蓄水"}}],
+                        "success_results": ["water transferred"],
+                        "failure_results": ["water transfer failed"],
+                    },
+                },
+            },
+        )
+        assert result["status"] == "rejected", result
+        assert any("costs.reserve.item_parameter" in error for error in result["errors"])
+    finally:
+        platform.close()
+
+
+def test_dynamic_item_parameter_cannot_be_used_as_inventory_condition(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "action-resource-transfer-condition", tmp_path / "runtime"))
+    try:
+        result = platform.submit_definition_proposal(
+            "god",
+            {
+                "definition_type": "action",
+                "name": "Parameter Condition Transfer",
+                "definition": {
+                    "parameters": {"item_id": "string"},
+                    "duration": {"minutes": 1},
+                    "costs": {"reserve": {"item_parameter": "item_id"}},
+                    "effects": [{"type": "resource_transfer", "resource_id": "蓄水", "quantity": 1}],
+                    "success": {"condition": "actor.inventory.item_id > 0", "result": "water transferred"},
+                    "failure": {"result": "water transfer failed"},
+                },
+                "followup_behavior": {
+                    "name": "Parameter Condition Transfer Behavior",
+                    "assign_to": ["梅岚"],
+                    "definition": {
+                        "nodes": [{"type": "action", "action_id": "Parameter Condition Transfer", "parameters": {"item_id": "蓄水"}}],
+                        "success_results": ["water transferred"],
+                        "failure_results": ["water transfer failed"],
+                    },
+                },
+            },
+        )
+        assert result["status"] == "rejected", result
+        assert any("dynamic parameter" in error for error in result["errors"])
+    finally:
+        platform.close()
+
+
 def test_recipe_action_recipe_and_behavior_bind_atomically(tmp_path: Path) -> None:
     platform = Platform(create_instance(WORLD, "action-recipe-binding", tmp_path / "runtime"))
     try:
@@ -174,6 +239,151 @@ def test_recipe_action_normalizes_model_shorthand_and_visible_resource(tmp_path:
         assert state["status"] == "idle", state
         assert platform.store.get_agent("luo_shan")["inventory"].get("测试芦苇席", 0) == 1
         assert platform.store.get_agent("luo_shan")["inventory"].get("reed_bundle", 0) == 0
+    finally:
+        platform.close()
+
+
+def test_dynamic_action_can_transfer_carried_resource_into_world_stock(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "action-resource-transfer", tmp_path / "runtime"))
+    try:
+        agent = platform.store.get_agent("mei_lan")
+        agent["inventory"] = {**(agent.get("inventory") or {}), "蓄水": 2}
+        platform.store.update_agent("mei_lan", agent)
+        pool = platform.store.get_entity("cistern_water")
+        pool["initial_state"]["quantity"] = 0
+        platform.store.put_entity(pool["id"], pool["entity_type"], pool["name"], {key: value for key, value in pool.items() if key not in {"id", "entity_type", "name"}})
+        result = platform.submit_definition_proposal(
+            "god",
+            {
+                "definition_type": "action",
+                "name": "Transfer Carried Water",
+                "definition": {
+                    "parameters": {"item_id": "string"},
+                    "duration": {"minutes": 1},
+                    "costs": {"reserve": {"item_parameter": "item_id"}},
+                    "effects": [{"type": "resource_transfer", "resource_id": "蓄水", "quantity": 1}],
+                    "success": {"result": "water transferred"},
+                    "failure": {"result": "water transfer failed"},
+                },
+                "followup_behavior": {
+                    "name": "Transfer Carried Water Behavior",
+                    "assign_to": ["梅岚"],
+                    "definition": {
+                        "nodes": [
+                            {"type": "action", "action_id": "Travel To", "parameters": {"location_id": "蓄水屋"}},
+                            {"type": "action", "action_id": "Transfer Carried Water", "parameters": {"item_id": "蓄水"}},
+                        ],
+                        "success_results": ["water transferred"],
+                        "failure_results": ["water transfer failed"],
+                    },
+                },
+            },
+        )
+        assert result["status"] == "accepted", result
+        behavior_id = next(item["id"] for item in platform.store.get_definitions("bt_def") if item.get("agent_label") == "Transfer Carried Water Behavior")
+        started = platform.submit_behavior(BehaviorIntent("mei_lan", f"behavior:{behavior_id}", {}, {}, "Transfer carried water to the public pool.", 0.9, "transfer-carried-water"))
+        assert started["status"] == "accepted", started
+        for _ in range(int(started["remaining_minutes"]) + 4):
+            platform.step()
+        assert platform.store.get_entity("cistern_water")["initial_state"]["quantity"] == 1
+        assert platform.store.get_agent("mei_lan")["inventory"]["蓄水"] == 1
+    finally:
+        platform.close()
+
+
+def test_dynamic_resource_transfer_uses_configured_quantity(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "action-resource-transfer-quantity", tmp_path / "runtime"))
+    try:
+        agent = platform.store.get_agent("mei_lan")
+        agent["inventory"] = {**(agent.get("inventory") or {}), "蓄水": 2}
+        platform.store.update_agent("mei_lan", agent)
+        pool = platform.store.get_entity("cistern_water")
+        pool["initial_state"]["quantity"] = 0
+        platform.store.put_entity(pool["id"], pool["entity_type"], pool["name"], {key: value for key, value in pool.items() if key not in {"id", "entity_type", "name"}})
+        result = platform.submit_definition_proposal(
+            "god",
+            {
+                "definition_type": "action",
+                "name": "Transfer Configured Water",
+                "definition": {
+                    "parameters": {"item_id": "string", "quantity": "number"},
+                    "duration": {"minutes": 1},
+                    "costs": {"reserve": {"item_parameter": "item_id", "item_quantity_parameter": "quantity"}},
+                    "effects": [{"type": "resource_transfer", "resource_id": "蓄水", "source_item_parameter": "item_id", "quantity_parameter": "quantity"}],
+                    "success": {"result": "water transferred"},
+                    "failure": {"result": "water transfer failed"},
+                },
+                "followup_behavior": {
+                    "name": "Transfer Configured Water Behavior",
+                    "assign_to": ["梅岚"],
+                    "definition": {
+                        "nodes": [
+                            {"type": "action", "action_id": "Travel To", "parameters": {"location_id": "蓄水屋"}},
+                            {"type": "action", "action_id": "Transfer Configured Water", "parameters": {"item_id": "蓄水", "quantity": 2}},
+                        ],
+                        "success_results": ["water transferred"],
+                        "failure_results": ["water transfer failed"],
+                    },
+                },
+            },
+        )
+        assert result["status"] == "accepted", result
+        behavior_id = next(item["id"] for item in platform.store.get_definitions("bt_def") if item.get("agent_label") == "Transfer Configured Water Behavior")
+        started = platform.submit_behavior(BehaviorIntent("mei_lan", f"behavior:{behavior_id}", {}, {}, "Transfer two carried water units.", 0.9, "configured-transfer-quantity"))
+        assert started["status"] == "accepted", started
+        for _ in range(int(started["remaining_minutes"]) + 4):
+            platform.step()
+        assert platform.store.get_entity("cistern_water")["initial_state"]["quantity"] == 2
+        assert platform.store.get_agent("mei_lan")["inventory"]["蓄水"] == 0
+    finally:
+        platform.close()
+
+
+def test_dynamic_resource_transfer_cannot_mint_more_than_reserved(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "action-resource-transfer-conservation", tmp_path / "runtime"))
+    try:
+        agent = platform.store.get_agent("mei_lan")
+        agent["inventory"] = {**(agent.get("inventory") or {}), "蓄水": 1}
+        platform.store.update_agent("mei_lan", agent)
+        pool = platform.store.get_entity("cistern_water")
+        pool["initial_state"]["quantity"] = 0
+        platform.store.put_entity(
+            pool["id"],
+            pool["entity_type"],
+            pool["name"],
+            {key: value for key, value in pool.items() if key not in {"id", "entity_type", "name"}},
+        )
+        result = platform.submit_definition_proposal(
+            "god",
+            {
+                "definition_type": "action",
+                "name": "Overfill Carried Water",
+                "definition": {
+                    "parameters": {"item_id": "string"},
+                    "duration": {"minutes": 1},
+                    "costs": {"reserve": {"item_parameter": "item_id"}},
+                    "effects": [{"type": "resource_transfer", "resource_id": "蓄水", "quantity": 2}],
+                    "success": {"result": "water transferred"},
+                    "failure": {"result": "water transfer failed"},
+                },
+                "followup_behavior": {
+                    "name": "Overfill Carried Water Behavior",
+                    "assign_to": ["梅岚"],
+                    "definition": {
+                        "nodes": [
+                            {"type": "action", "action_id": "Travel To", "parameters": {"location_id": "蓄水屋"}},
+                            {"type": "action", "action_id": "Overfill Carried Water", "parameters": {"item_id": "蓄水"}},
+                        ],
+                        "success_results": ["water transferred"],
+                        "failure_results": ["water transfer failed"],
+                    },
+                },
+            },
+        )
+        assert result["status"] == "rejected", result
+        assert any("item_quantity_parameter" in error for error in result["errors"])
+        assert platform.store.get_entity("cistern_water")["initial_state"]["quantity"] == 0
+        assert platform.store.get_agent("mei_lan")["inventory"]["蓄水"] == 1
     finally:
         platform.close()
 

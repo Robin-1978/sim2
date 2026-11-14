@@ -17,7 +17,8 @@ class ResourceLedger:
         # world node only, and ``auto`` preserves the explicit shared-resource
         # convention used by keys such as currency + market stock.
         required: list[tuple[str, float, str]] = []
-        for key, value in (action.get("costs", {}).get("reserve", {}) or {}).items():
+        reserve = (action.get("costs", {}).get("reserve", {}) or {}) if isinstance(action.get("costs"), dict) else {}
+        for key, value in reserve.items():
             if key == "recipe_inputs":
                 recipe = next((item for item in self.store.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
                 if recipe is None:
@@ -38,13 +39,22 @@ class ResourceLedger:
             elif key == "item_parameter":
                 item_id = parameters.get(str(value))
                 if item_id:
-                    required.append((str(item_id), 1.0, "agent"))
+                    quantity_parameter = reserve.get("item_quantity_parameter")
+                    amount = 1.0
+                    if quantity_parameter:
+                        raw_amount = parameters.get(str(quantity_parameter))
+                        if isinstance(raw_amount, bool) or not isinstance(raw_amount, (int, float)) or float(raw_amount) <= 0:
+                            return False, f"carried item quantity parameter {quantity_parameter} must be positive", []
+                        amount = float(raw_amount)
+                    required.append((str(item_id), amount, "agent"))
             elif key == "resource_parameter":
                 resource_id = parameters.get(str(value))
                 amount = float((action.get("costs", {}).get("reserve", {}) or {}).get("resource_amount", 1) or 1)
                 if resource_id:
                     required.append((str(resource_id), amount, "world"))
             elif key == "resource_amount":
+                continue
+            elif key == "item_quantity_parameter":
                 continue
             elif isinstance(value, (int, float)):
                 required.append((str(key), float(value), "auto"))

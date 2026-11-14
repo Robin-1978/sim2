@@ -308,7 +308,12 @@ class ActivityRuntimeMixin:
                     self._finish_behavior(agent, execution_id, behavior_id, "failed", failure, minute)
                     return
                 success_failure, information_result = self._complete_action_effects(
-                    agent, action, entry["parameters"], minute, target=entry.get("target")
+                    agent,
+                    action,
+                    entry["parameters"],
+                    minute,
+                    target=entry.get("target"),
+                    reservations=entry.get("reservation") or [],
                 )
                 if success_failure:
                     self._finish_behavior(agent, execution_id, behavior_id, "failed", success_failure, minute)
@@ -407,7 +412,12 @@ class ActivityRuntimeMixin:
             return
         resolved_target = self.targets.resolve(agent, action_parameters)[0]
         success_failure, information_result = self._complete_action_effects(
-            agent, action, action_parameters, minute, target=resolved_target
+            agent,
+            action,
+            action_parameters,
+            minute,
+            target=resolved_target,
+            reservations=state.get("active_action_reservation") or [],
         )
         if success_failure:
             self._finish_behavior(agent, execution_id, behavior_id, "failed", success_failure, minute)
@@ -488,7 +498,16 @@ class ActivityRuntimeMixin:
                 {"capability": capability, "source": action_id, "xp_rule": definition.get("xp_rule"), "requires_agent_review": True},
             )
 
-    def _apply_success_effects(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int, *, target: dict[str, Any] | None = None) -> list[str]:
+    def _apply_success_effects(
+        self,
+        agent: dict[str, Any],
+        action: dict[str, Any],
+        parameters: dict[str, Any],
+        minute: int,
+        *,
+        target: dict[str, Any] | None = None,
+        reservations: list[dict[str, Any]] | None = None,
+    ) -> list[str]:
         errors: list[str] = []
         effects = list(action.get("effects", []) or [])
         for effect in effects:
@@ -528,6 +547,54 @@ class ActivityRuntimeMixin:
                         "world.property_changed", agent["id"], minute,
                         {"property": property_id, "before": before_value, "after": value, "delta": value - float(before_value or 0), "source": action.get("id")},
                     )
+            elif effect_type == "resource_transfer":
+                # ResourceLedger has already reserved/removed any carried
+                # source item before success effects run.  This primitive
+                # transfers that conserved amount into an existing world
+                # resource entity; it cannot mint a new stock.
+                resource_ref = resolved_effect.get("resource_id") or resolved_effect.get("resource")
+                resource_id = str(self.targets.canonical_id(str(resource_ref or "")) or resource_ref or "")
+                quantity_parameter = resolved_effect.get("quantity_parameter")
+                quantity_value = parameters.get(str(quantity_parameter)) if quantity_parameter else resolved_effect.get("quantity", resolved_effect.get("amount", 0))
+                quantity = float(quantity_value or 0)
+                if quantity <= 0:
+                    errors.append("resource_transfer quantity must be positive")
+                else:
+                    carried_reservations = [
+                        item for item in (reservations or [])
+                        if str(item.get("scope") or "") == "agent" and float(item.get("amount", 0) or 0) > 0
+                    ]
+                    source_hint = resolved_effect.get("source_item")
+                    source_parameter = resolved_effect.get("source_item_parameter")
+                    if source_parameter:
+                        source_hint = parameters.get(str(source_parameter))
+                    if isinstance(source_hint, str) and source_hint.startswith("context."):
+                        source_hint = parameters.get(source_hint.removeprefix("context."), source_hint)
+                    source_keys = {str(item.get("key")) for item in carried_reservations}
+                    if source_hint:
+                        source_keys &= {str(source_hint)}
+                    if len(source_keys) != 1:
+                        errors.append("resource_transfer must identify exactly one reserved carried item")
+                    else:
+                        reserved_quantity = sum(
+                            float(item.get("amount", 0) or 0)
+                            for item in carried_reservations
+                            if str(item.get("key")) in source_keys
+                        )
+                        if abs(quantity - reserved_quantity) > 1e-9:
+                            errors.append(
+                                "resource_transfer quantity must equal the reserved carried item amount"
+                            )
+                    try:
+                        resource = self.store.get_entity(resource_id)
+                    except KeyError:
+                        resource = None
+                    if errors:
+                        continue
+                    if not resource or str(resource.get("entity_type") or "") not in {"resource", "material"}:
+                        errors.append("resource_transfer target must be an existing resource or material")
+                    else:
+                        self.resources._change_world_resource(resource_id, quantity, actor_id=agent.get("id"))
             elif effect_type == "entity_state_set":
                 entity_id = resolved_effect.get("entity_id") or resolved_effect.get("target_entity")
                 state_key = resolved_effect.get("state") or resolved_effect.get("property")
@@ -709,6 +776,7 @@ class ActivityRuntimeMixin:
         minute: int,
         *,
         target: dict[str, Any] | None = None,
+        reservations: list[dict[str, Any]] | None = None,
     ) -> tuple[str | None, dict[str, Any] | None]:
         """Apply one Action's effects atomically with its postcondition.
 
@@ -723,7 +791,14 @@ class ActivityRuntimeMixin:
         savepoint = f"action_effects_{uuid4().hex}"
         self.store.connection.execute(f"SAVEPOINT {savepoint}")
         try:
-            effect_errors = self._apply_success_effects(agent, action, parameters, minute, target=target)
+            effect_errors = self._apply_success_effects(
+                agent,
+                action,
+                parameters,
+                minute,
+                target=target,
+                reservations=reservations,
+            )
             if effect_errors:
                 self.store.connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
                 self.store.connection.execute(f"RELEASE SAVEPOINT {savepoint}")

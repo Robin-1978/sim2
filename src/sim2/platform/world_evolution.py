@@ -255,6 +255,7 @@ class WorldEvolutionRuntimeMixin:
             "inventory_add", "inventory_remove", "inventory.consume_item",
             "relationship_delta", "public_event", "world_property_delta",
             "entity_state_set", "status_add", "status_remove", "location_set",
+            "resource_transfer",
             "capability_xp", "capability.add_xp",
         }
         errors: list[str] = []
@@ -356,6 +357,39 @@ class WorldEvolutionRuntimeMixin:
                     elif isinstance(shorthand_reserve, dict):
                         for key, value in shorthand_reserve.items():
                             reserve.setdefault(str(key), 1 if value is True else value)
+            parameters = definition.get("parameters")
+            if parameters is not None and not isinstance(parameters, dict):
+                errors.append("action.parameters must be an object")
+            elif isinstance(parameters, dict):
+                scalar_types = {"string", "number", "integer", "boolean", "object", "array"}
+                for parameter_name, parameter_spec in parameters.items():
+                    if isinstance(parameter_spec, str):
+                        if parameter_spec not in scalar_types:
+                            errors.append(
+                                f"action.parameters.{parameter_name} must use a type name (string, number, integer, boolean, object, array), not a placeholder"
+                            )
+                    elif isinstance(parameter_spec, dict):
+                        if parameter_spec.get("type") not in scalar_types:
+                            errors.append(f"action.parameters.{parameter_name}.type must be a supported type name")
+                    else:
+                        errors.append(f"action.parameters.{parameter_name} must declare a supported type")
+            for field in ("success", "failure"):
+                if isinstance(definition.get(field), list) and len(definition[field]) == 1 and isinstance(definition[field][0], dict):
+                    # Some compatible models wrap the single Action result
+                    # in an array even though the contract is one object.
+                    definition[field] = definition[field][0]
+                result_contract = definition.get(field)
+                condition = result_contract.get("condition") if isinstance(result_contract, dict) else None
+                if condition and isinstance(parameters, dict):
+                    dynamic_inventory_keys = {
+                        str(match.group(1))
+                        for match in re.finditer(r"actor\.inventory\.([A-Za-z_][A-Za-z0-9_]*)", str(condition))
+                        if str(match.group(1)) in {str(key) for key in parameters}
+                    }
+                    if dynamic_inventory_keys:
+                        errors.append(
+                            f"action.{field}.condition treats dynamic parameter(s) {', '.join(sorted(dynamic_inventory_keys))} as inventory keys; use a literal visible item or omit the condition"
+                        )
             duration = definition.get("duration") if isinstance(definition.get("duration"), dict) else {}
             if not duration or not (isinstance(duration.get("minutes"), (int, float)) or duration.get("mode") in {"route_distance", "recipe_duration"}):
                 errors.append("action.duration must declare minutes or a supported mode")
@@ -365,6 +399,54 @@ class WorldEvolutionRuntimeMixin:
                 if field in definition and not isinstance(definition[field], list):
                     errors.append(f"action.{field} must be a list")
             errors.extend(self._validate_definition_effects(definition))
+            resource_transfer_effects = [
+                effect
+                for field in ("effects", "progress_effects")
+                for effect in (definition.get(field, []) or [])
+                if isinstance(effect, dict)
+                and str(effect.get("type") or effect.get("op") or "") == "resource_transfer"
+            ]
+            if resource_transfer_effects:
+                reserve = ((definition.get("costs") or {}).get("reserve") or {}) if isinstance(definition.get("costs"), dict) else {}
+                item_parameter = reserve.get("item_parameter") if isinstance(reserve, dict) else None
+                if not item_parameter:
+                    errors.append("resource_transfer requires costs.reserve.item_parameter so the transfer is conserved")
+                elif not isinstance(definition.get("parameters"), dict) or str(item_parameter) not in definition["parameters"]:
+                    errors.append(f"resource_transfer item_parameter {item_parameter!r} must be declared in action.parameters")
+                for effect in resource_transfer_effects:
+                    source_parameter = effect.get("source_item_parameter")
+                    if source_parameter and str(source_parameter) != str(item_parameter):
+                        errors.append("resource_transfer.source_item_parameter must match costs.reserve.item_parameter")
+                    if source_parameter and (
+                        not isinstance(definition.get("parameters"), dict)
+                        or str(source_parameter) not in definition["parameters"]
+                    ):
+                        errors.append(f"resource_transfer source parameter {source_parameter!r} is not declared in action.parameters")
+                    reserve_quantity_parameter = reserve.get("item_quantity_parameter")
+                    effect_quantity_parameter = effect.get("quantity_parameter")
+                    if reserve_quantity_parameter:
+                        if not isinstance(definition.get("parameters"), dict) or str(reserve_quantity_parameter) not in definition["parameters"]:
+                            errors.append(f"resource_transfer quantity parameter {reserve_quantity_parameter!r} is not declared in action.parameters")
+                        if effect_quantity_parameter and str(effect_quantity_parameter) != str(reserve_quantity_parameter):
+                            errors.append("resource_transfer.quantity_parameter must match costs.reserve.item_quantity_parameter")
+                        elif not effect_quantity_parameter:
+                            quantity = effect.get("quantity", effect.get("amount"))
+                            if quantity != f"context.{reserve_quantity_parameter}":
+                                errors.append(
+                                    "resource_transfer must bind quantity_parameter to costs.reserve.item_quantity_parameter"
+                                )
+                    else:
+                        if effect_quantity_parameter:
+                            errors.append(
+                                "resource_transfer.quantity_parameter requires costs.reserve.item_quantity_parameter"
+                            )
+                        quantity = effect.get("quantity", effect.get("amount"))
+                        if quantity is None:
+                            quantity = 1
+                        if isinstance(quantity, bool) or not isinstance(quantity, (int, float)) or float(quantity) != 1:
+                            errors.append(
+                                "resource_transfer needs quantity 1 by default, or declare item_quantity_parameter for a variable amount"
+                            )
             for field in ("success", "failure"):
                 if not isinstance(definition.get(field), dict) or not str((definition.get(field) or {}).get("result") or "").strip():
                     errors.append(f"action.{field} must declare an object with result")

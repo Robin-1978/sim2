@@ -381,6 +381,22 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                                 "additionalProperties": True,
                             },
                         },
+                        "parameters": {
+                            "type": "object",
+                            "description": "For an Action: parameter_name -> one of string, number, integer, boolean, object, array. Do not use human-language placeholder values.",
+                        },
+                        "duration": {
+                            "type": "object",
+                            "description": "For an Action, use {minutes: positive number} or {mode: route_distance|recipe_duration}.",
+                        },
+                        "costs": {
+                            "type": "object",
+                            "description": "For an Action, reserve carried inputs under costs.reserve. Use item_parameter and optionally item_quantity_parameter for a variable amount.",
+                        },
+                        "preconditions": {"type": "array", "items": {"type": "string"}, "description": "Optional machine predicates for an Action."},
+                        "effects": {"type": "array", "items": {"type": "object"}, "description": "Observable Action effects. resource_transfer must bind its source and reserved quantity."},
+                        "success": {"type": "object", "description": "One Action success object: {condition?: machine predicate, result: short label}."},
+                        "failure": {"type": "object", "description": "One Action failure object: {condition?: machine predicate, result: short label}."},
                         "entry_conditions": {
                             "type": "array",
                             "items": {"type": "string"},
@@ -1046,6 +1062,19 @@ class AgentToolExecutor:
                     "retryable": True,
                     "message": "Assign the behavior to the configured audience so it enters the next NPC catalog.",
                     "required_assign_to": [self._contract_visible_name(item) for item in required_assignees],
+                }
+        if self.evolution_contract.get("require_story_outcome") and str(definition_type).strip().casefold() == "action":
+            followup_definition = (followup_behavior or {}).get("definition") if isinstance(followup_behavior, dict) else None
+            outcome_events = followup_definition.get("outcome_events") if isinstance(followup_definition, dict) else None
+            if not any(
+                isinstance(event, dict) and "story" in {str(role) for role in (event.get("wake") or [])}
+                for event in (outcome_events or [])
+            ):
+                return {
+                    "status": "rejected",
+                    "failed_check": "evolution_contract",
+                    "retryable": True,
+                    "message": "This evolution task requires the bound behavior to declare one outcome_events entry with wake ['story'] so Story receives the executed result.",
                 }
         return self.platform.submit_definition_proposal(
             self.actor_id,

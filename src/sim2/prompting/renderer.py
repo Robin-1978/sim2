@@ -525,6 +525,8 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 lines.append(f"  evidence selectors: {_plain(trigger.get('evidence_sources'))}")
             if trigger.get("minimum_evidence") is not None:
                 lines.append(f"  minimum matching events: {trigger.get('minimum_evidence')}; observed: {trigger.get('observed_evidence', 'unknown')}")
+            if trigger.get("require_story_outcome"):
+                lines.append("  required handoff: an Action followup_behavior must include one outcome_events entry with wake ['story'] so Story receives the real completed result.")
             # The submission format of a research source is shown to wakes that
             # review research evidence. Matching the wording of the required
             # result instead pulled every wake that merely listed a research
@@ -550,8 +552,9 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("  - A behavior proposal must use definition.nodes: [{type: action, action_id: exact registered Action name, parameters: {...}}], plus entry_conditions, success_results and failure_results. Do not invent steps, trigger, outcomes, action_names or free-form action objects.")
         lines.append("  - A new Action cannot be submitted alone: include followup_behavior {name, assign_to, definition} in the same propose_definition call. If its duration is recipe_duration or its reserve uses recipe_inputs, include followup_recipe {name, definition} in that same call. The BT must reference the new Action by visible name and be executable for the assigned NPC immediately.")
         lines.append("  - Recipe Action shape: parameters:{recipe_id:'string'}, duration:{mode:'recipe_duration'}, costs:{reserve:{recipe_inputs:1}}; put recipe_inputs under costs.reserve. Include followup_recipe with positive duration_minutes, inputs and outputs; existing resource names are resolved to registry keys.")
-        lines.append("  - Action success/failure each need {condition, result}; Travel To uses location_id. Copy parameter names from world_action_catalog.")
+        lines.append("  - Action success/failure each need {condition?, result}; Travel To uses location_id. Copy parameter names from world_action_catalog. A dynamic parameter such as item_id is not an inventory key; omit the condition or use the literal visible item name.")
         lines.append("  - A new Action must have a real observable result: declare effects, information or capability/progress effects, or bind a Recipe with outputs. A success label or outcome_events field alone never changes resources or state; do not call a resource refill successful without a configured effect that performs it.")
+        lines.append("  - To move carried material into an existing world resource, use costs.reserve:{item_parameter:<item parameter>, item_quantity_parameter:<quantity parameter>} and effect:{type:'resource_transfer', resource_id:<existing visible resource>, source_item_parameter:<same item parameter>, quantity_parameter:<same quantity parameter>}; omit item_quantity_parameter only for one item with quantity:1. The transfer must equal the reserved amount and cannot mint stock or target a missing resource.")
         lines.append("  - Action parameters whose names end in _entity or _id must use exact visible entity names from the world view and parameter names from the Action catalog. A behavior is rejected unless its assigned character can execute the whole sequence now.")
         visible_names = ", ".join(str(item.get("name")) for item in (context.get("visible_entities") or [])[:48] if item.get("name"))
         lines.append(f"  - Exact visible entities (use these names): {visible_names or 'none'}.")

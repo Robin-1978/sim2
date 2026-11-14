@@ -92,7 +92,8 @@ wakes:
   every: 1d
   external: true
   tools: [revise_institution, propose_entity, propose_definition, wait]
+  require_story_outcome: true
   purpose: A configured reserve crossed its safety floor; review the institution and supply path against the observed runway before another allocation.
-  result: Revise the active institution when its minimum or cadence cannot preserve the configured reserve floor. Propose a supply or recovery path only when the current world already has a real source entity and a registered Action that can consume or recover it; otherwise wait for evidence. Never invent an Action whose only effect is changing a resource quantity, and do not create a new research document for a stock shortage.
+  result: Revise the active institution when its minimum or cadence cannot preserve the configured reserve floor. Propose a supply or recovery path when the current world has a real source entity or a character carrying the source item; a conserved transfer may use resource_transfer with costs.reserve.item_parameter. When the supply behavior changes a public reserve, include one outcome_events entry with a new event_type, wake [story], and a fact-based summary so Story receives the executed result. Otherwise wait for evidence. Never invent an Action whose only effect mints a resource, and do not create a new research document for a stock shortage.
 - {"on": institution.activated, for: story}
 - {"on": institution.allocation_completed, for: story, manual_only: true}

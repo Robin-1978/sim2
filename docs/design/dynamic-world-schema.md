@@ -99,3 +99,14 @@ information, capability or progress evidence, or Recipe outputs. A success
 label alone cannot claim a resource refill or other state change. If no
 registered primitive can perform a supply operation, God must wait or create a
 declarative mechanism with a real effect path.
+
+The generic `resource_transfer` effect is one such path: an Action reserves a
+carried item with `costs.reserve.item_parameter`. It may bind a variable amount
+with `costs.reserve.item_quantity_parameter` and the matching effect
+`quantity_parameter`; the default without that binding is one item. The effect
+names the same item parameter as `source_item_parameter` and transfers exactly
+the reserved quantity into an existing resource or material entity. The
+Platform rejects a missing source, an amount mismatch, a missing target, and
+any attempt to mint stock.
+`scripts/verify_dynamic_evolution.py` exercises this God → Platform → NPC →
+Story chain in seconds with a real provider.
