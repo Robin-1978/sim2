@@ -162,7 +162,7 @@ def _remove_block(text: str, tag: str) -> tuple[str, bool]:
 # move trends to the end when it is the only useful long-term projection.
 _BACKGROUND_SECTIONS = (
     "registered_actions", "knowledge_and_memory", "nearby_entities", "relationships", "recent_actions",
-    "world_trends", "world_outcomes", "knowledge_gaps", "rule_condition_fields",
+    "research_sources", "world_trends", "world_outcomes", "knowledge_gaps", "rule_condition_fields",
 )
 
 
@@ -294,6 +294,20 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             lines.append("  - no active knowledge gap is recorded")
         lines.append("  Use query_knowledge_gaps for the bounded current projection; use query_history for the event evidence behind it.")
         lines.append("</knowledge_gaps>")
+
+        sources = context.get("research_sources") or []
+        lines.append("<research_sources>")
+        lines.append("  This is the current status of every configured research source. A resolved source has no pending stage; an old historical sentence does not reopen it.")
+        for source in sources[:16]:
+            question = f"; next={_line(source.get('next_question'))}" if source.get("next_question") else ""
+            finding = f"; last={_line(source.get('last_finding'))}" if source.get("last_finding") else ""
+            lines.append(
+                f"  - {_line(source.get('name'))}; status={_line(source.get('status'))}; "
+                f"stages={_line(source.get('stages'))}; remaining={_line(source.get('remaining_stages'))}{question}{finding}"
+            )
+        if not sources:
+            lines.append("  - no configured research source")
+        lines.append("</research_sources>")
 
     world_rules = context.get("active_world_rules") or []
     if world_rules:
@@ -847,6 +861,12 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         and "- no recent world proposal result" in outcomes
     )
     has_active_institution = "[terms:" in rendered
+    if has_active_institution and "research_sources" in background_sections:
+        # Institution review must keep its terms and the established trend
+        # compaction contract. Research status remains available through the
+        # query tool if this lower-priority reference block is trimmed.
+        background_sections.remove("research_sources")
+        background_sections.append("research_sources")
     if outcomes_start >= 0 and outcomes_end > outcomes_start:
         if meaningful_outcomes or has_active_institution:
             # A committed world change or institution evaluation is the

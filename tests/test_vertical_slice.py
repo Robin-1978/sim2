@@ -3148,6 +3148,52 @@ def test_emergent_story_beat_deduplicates_same_fact_across_events(tmp_path: Path
         platform.close()
 
 
+def test_emergent_story_beats_distinguish_different_created_entities(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+    platform = Platform(create_instance(config, "story-entity-source-dedup-world", tmp_path / "runtime"))
+    try:
+        with platform.store.transaction():
+            first_event = platform.store.repositories.events.append_event(
+                "entity.created",
+                "god",
+                10,
+                {"entity_id": "new_object_a", "summary": "A first instrument was created.", "story_source": True},
+            )
+            second_event = platform.store.repositories.events.append_event(
+                "entity.created",
+                "god",
+                11,
+                {"entity_id": "new_object_b", "summary": "A second instrument was created.", "story_source": True},
+            )
+        first = platform.submit_story_beat(
+            "story",
+            {
+                "summary": "The first instrument opens a practical question.",
+                "fact": "A first instrument was created.",
+                "goal_hint": "Determine how the first instrument can be used.",
+                "audience": ["梅岚"],
+            },
+            source_event_ids=[first_event],
+        )
+        second = platform.submit_story_beat(
+            "story",
+            {
+                "summary": "The second instrument opens a separate practical question.",
+                "fact": "A second instrument was created.",
+                "goal_hint": "Determine how the second instrument can be used.",
+                "audience": ["梅岚"],
+            },
+            source_event_ids=[second_event],
+        )
+        assert first["status"] == "accepted"
+        assert second["status"] == "accepted"
+        saved = platform.store.get_meta("story_state")["emergent_beats"]
+        assert saved[-2]["source_event_source_id"] == "new_object_a"
+        assert saved[-1]["source_event_source_id"] == "new_object_b"
+    finally:
+        platform.close()
+
+
 def test_emergent_story_chapter_survives_unrelated_npc_behavior(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
     platform = Platform(create_instance(config, "story-open-chapter-world", tmp_path / "runtime"))

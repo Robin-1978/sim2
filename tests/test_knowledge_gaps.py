@@ -65,6 +65,40 @@ def test_completed_research_resolves_its_current_gap(tmp_path: Path) -> None:
         platform.close()
 
 
+def test_world_view_marks_resolved_sources_separately_from_history(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "research-source-status-view")
+    try:
+        with platform.store.transaction():
+            event_id = platform.store.repositories.events.append_event(
+                "research.completed",
+                "luo_shan",
+                12,
+                {
+                    "source_id": "boundary_stone",
+                    "stage_id": "researched:boundary_stone:markings",
+                    "fact": "The boundary markings were verified.",
+                },
+            )
+            platform.store.repositories.memory.update_research_gap(
+                "boundary_stone",
+                stage_id="researched:boundary_stone:markings",
+                completed=True,
+                fact="The boundary markings were verified.",
+                event_id=event_id,
+                world_minute=12,
+            )
+        view = platform.view.build_decision_view("god", role="god")
+        source = next(item for item in view["research_sources"] if item["name"] == "褪色界碑")
+        assert source["status"] == "resolved"
+        assert source["remaining_stages"] == 0
+        prompt = render_context(view, "Review the next world continuation.")
+        assert "<research_sources>" in prompt
+        assert "status=resolved" in prompt
+        assert "old historical sentence does not reopen it" in prompt
+    finally:
+        platform.close()
+
+
 def test_multi_stage_research_gap_stays_active_until_all_stages_finish(tmp_path: Path) -> None:
     platform = _town(tmp_path, "knowledge-gap-stages")
     try:

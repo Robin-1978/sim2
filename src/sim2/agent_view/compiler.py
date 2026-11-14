@@ -277,6 +277,56 @@ class AgentViewCompiler:
             result.append(item)
         return result
 
+    def _research_source_view(self, *, limit: int = 16) -> list[dict[str, Any]]:
+        """Expose the current status of every declarative research source.
+
+        Event history may contain an old sentence such as "the second checksum
+        is unresolved" even after a later stage has verified it.  World agents
+        need a small current-state projection beside that history so they do
+        not reopen a resolved question.  The projection is derived from the
+        generic source catalog and the knowledge-gap table; it does not know
+        any world-specific source names or research meanings.
+        """
+
+        gaps = {
+            str(row.get("current_source_id")): row
+            for row in self.memory_repo.list_knowledge_gaps(status=None, limit=200)
+            if row.get("current_source_id")
+        }
+        result: list[dict[str, Any]] = []
+        for source in self.memory_repo.research_source_catalog():
+            source_id = str(source.get("id") or "")
+            if not source_id:
+                continue
+            discoveries = [
+                item for item in (source.get("discoveries") or [])
+                if isinstance(item, dict)
+                and str(item.get("status") or "active").casefold() not in {"obsolete", "disabled"}
+            ]
+            gap = gaps.get(source_id) or {}
+            completed = {str(item) for item in (gap.get("completed_stages") or [])}
+            remaining = [
+                item for item in discoveries
+                if str(item.get("id") or "") not in completed
+            ]
+            status = str(gap.get("status") or ("resolved" if not remaining else "active"))
+            row: dict[str, Any] = {
+                "name": str(source.get("name") or source_id),
+                "status": status,
+                "stages": f"{len(discoveries) - len(remaining)}/{len(discoveries)} completed",
+                "remaining_stages": len(remaining),
+            }
+            if remaining:
+                question = remaining[0].get("question") or remaining[0].get("fact")
+                if question:
+                    row["next_question"] = str(question)[:300]
+            elif gap.get("last_fact"):
+                row["last_finding"] = str(gap["last_fact"])[:300]
+            result.append(row)
+            if len(result) >= max(1, int(limit)):
+                break
+        return result
+
     def _interaction_context(self, agent: dict[str, Any], participants: list[dict[str, Any]]) -> dict[str, Any]:
         """Expose configured relationship signals without naming story entities."""
 
@@ -1753,6 +1803,7 @@ class AgentViewCompiler:
             "recent_actions": recent_events[:8], "recent_story_events": [item for item in recent_events if str(item.get("event_type", "")).startswith("story.")][:8],
             "recent_history": self._recent_history_view(16),
             "knowledge_gaps": self._knowledge_gap_view(status="active", limit=8),
+            "research_sources": self._research_source_view(limit=12),
             "memories": story_memories,
             "long_term_memories": story_memories,
             "short_term_memories": [],
@@ -1941,6 +1992,7 @@ class AgentViewCompiler:
             "recent_history": self._recent_history_view(20),
             "active_story_threads": active_story_threads,
             "knowledge_gaps": self._knowledge_gap_view(status="active", limit=12),
+            "research_sources": self._research_source_view(limit=16),
             "memories": god_memories,
             "long_term_memories": god_memories,
             "short_term_memories": [],

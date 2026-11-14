@@ -408,3 +408,31 @@ God created new provenance, calibration and sign-off sources in later rounds;
 Mira continued using the generic research behavior, and Story connected each
 verified result to the next executable choice. No repeated three-round
 absorbing state remained.
+
+### Research-source status and entity-scoped Story deduplication
+
+The next audit found a separate context issue: event history still contained
+an old unresolved sentence after the source had been completed. The God view
+now includes `<research_sources>` with the current `active`/`resolved` status,
+completed and remaining stages, and the latest finding. God is instructed to
+use this current projection instead of reopening historical wording.
+
+The same audit found that Story's generic `entity.created` deduplication used
+an empty source identity. Distinct objects created by God could therefore
+share one Story continuation. The signature now uses `entity_id` (and the
+generic object/area keys) when a research source id is absent, preserving
+idempotence for retries while allowing separate objects to produce separate
+grounded beats.
+
+Focused regressions pass, and the DeepSeek run was repeated from an
+interactive shell:
+
+```bash
+bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py \
+  --provider remote --rounds 10 \
+  --runtime-dir /tmp/sim2-evolution-research-status'
+```
+
+The redacted audit ended with `10/10`, no provider errors or rejected intents,
+three distinct research objects, changed NPC choices, and
+`{"status":"passed","flags":[]}`. The generated files remain under `/tmp`.

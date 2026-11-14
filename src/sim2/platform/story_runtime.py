@@ -122,7 +122,13 @@ class StoryRuntimeMixin:
                 return {"status": "wait", "reason": "This validated result already has an active emergent story beat; wait for a new discovery or relationship result."}
             beat["source_event_id"] = int(source_event.get("event_id"))
             beat["source_event_type"] = str(source_event.get("event_type") or "validated.result")
-            beat["source_event_source_id"] = str(source_event.get("source_id") or "")
+            beat["source_event_source_id"] = str(
+                source_event.get("source_id")
+                or source_event.get("entity_id")
+                or source_event.get("object_id")
+                or source_event.get("area_id")
+                or ""
+            )
             beat["source_event_stage_id"] = str(source_event.get("stage_id") or "")
             # A new event does not automatically make a new story beat useful.
             # Repeated water-safety or pact-stability outcomes often arrive as
@@ -350,7 +356,18 @@ class StoryRuntimeMixin:
                 " ".join(str(beat.get(key) or "") for key in ("summary", "fact", "goal_hint"))
             )
             source_type = str(source_event.get("event_type") or "")
-            source_id = str(source_event.get("source_id") or "")
+            # Research results use source_id, while generic creation events
+            # identify their distinct object with entity_id. Keep that
+            # identity in the signature so separate creations can each carry
+            # a grounded Story continuation without allowing a retry to
+            # create a duplicate.
+            source_id = str(
+                source_event.get("source_id")
+                or source_event.get("entity_id")
+                or source_event.get("object_id")
+                or source_event.get("area_id")
+                or ""
+            )
             stage_id = str(source_event.get("stage_id") or "")
             audience_key = tuple(sorted(str(item) for item in audience))
             for prior in state.get("emergent_beats", []) or []:

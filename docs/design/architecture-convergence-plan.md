@@ -188,6 +188,16 @@ changes: a ten-round real-provider causal audit, followed by the deterministic
 one-week balance check. Their artifacts must be reviewed for semantic output,
 not only tool-call success, before this plan can be marked complete.
 
+The latest ten-round DeepSeek audit after the research-status projection passed
+the semantic gate: `10/10` rounds, no provider errors or rejected intents,
+three distinct God-created research objects, changing NPC choices, and
+continued Story/God handoffs. The audit is `/tmp/sim2-evolution-research-status/`.
+The same run showed why the status projection matters: an old unresolved
+sentence remained in history, but the current `<research_sources>` view marked
+the completed source `resolved`, so later God proposals moved to new causal
+questions instead of reopening it. The remaining deterministic one-week and
+Beam/provider checks are separate gates.
+
 ### Explicit non-goals
 
 This cycle will not create a quota-specific BT, a research-object-specific BT,
