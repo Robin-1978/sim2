@@ -64,6 +64,15 @@ must first call `validate_world_template` and then submit the exact validated
 object. Platform rejects changed or invalid submissions. The command writes
 human-editable YAML before any optional `--instance-id` bootstrap.
 
+For authors who do not want to maintain the YAML by hand, the planned World
+Authoring Web 工作台 is described in
+[`docs/design/world-authoring-web.md`](design/world-authoring-web.md). It will
+generate forms and BT graphs from the same `world-schema` and Definition
+Compiler used by these commands, then run the same expression, reference,
+execution and temporary SQLite smoke checks. It will export a reviewed package;
+it will not edit a running instance or introduce a second configuration
+language.
+
 Validation checks executable condition paths, declared attributes and world
 properties, required effect fields such as `delta`, entity types, Action/BT
 references, and generic context resolvers. It then creates a disposable SQLite

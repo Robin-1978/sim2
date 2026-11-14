@@ -56,3 +56,15 @@ The MUD-style `sim2 mud` interface remains useful for scripts and recovery.
 `sim2 serve` exposes the same projections and controls over HTTP for a later
 Web or desktop client. Both go through Platform and share the same visibility,
 validation and transaction rules as the TUI.
+
+The runtime observer UI and the World Authoring Web 工作台 are separate
+surfaces. The observer UI reads an existing SQLite instance; the authoring
+workbench edits a draft package and calls compile/smoke validation before a
+reviewed package is initialized. The authoring design and planned endpoints
+are documented in [`docs/design/world-authoring-web.md`](design/world-authoring-web.md).
+
+The Runtime Web Client design is documented in
+[`docs/design/web-client.md`](design/web-client.md). It uses the existing
+visibility-safe map, observer and timeline projections, then adds incremental
+event cursors and typed interaction responses. The two web surfaces share the
+transport layer but never share direct SQLite or configuration editing access.

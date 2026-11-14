@@ -1061,3 +1061,19 @@ one conserved supply transfer, repeated generic research on newly created
 objects, and grounded Story/God continuation. This evidence is a progress
 record; it does not waive the remaining compiler, AgentEngine or one-week
 liveness gates.
+
+### Post-core web surfaces
+
+Configuration authoring is a product layer after the runtime convergence gate,
+not another mutation path. The planned World Authoring Web workbench is
+specified in `docs/design/world-authoring-web.md`. It must generate forms and
+BT graphs from the same World Template Schema, Definition IR and expression
+AST used by bootstrap and God proposals. Its compile, reference, semantic and
+temporary SQLite smoke checks must call the existing authoring/Platform
+services; the browser must not duplicate validation or write a running
+instance. The existing TUI/HTTP observer surface remains separate from this
+draft-package editor. The Runtime Web Client is specified separately in
+`docs/design/web-client.md`: it consumes visibility-safe map, observer and
+timeline projections with incremental event cursors, while player commands
+still go through `ControlService` and Platform. Neither browser surface gets
+direct SQLite or LLM/provider access.
