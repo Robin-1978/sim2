@@ -4,6 +4,8 @@
 
 `M0`–`M8` 的计划内容已经落地并分阶段提交：统一 ReAct、JSON Schema 工具调用、原生 assistant/tool/result 消息、通用配置创世、SQLite BT/Action 执行、条件/目标/资源/效果、探索与沟通知识、低频演化、God/WorldBuilder、玩家入口、控制/回放和规模基准均有代码与测试。当前 ReAct 会话默认最多 6 次模型调用，长时 BT 不在会话内推进；每个 Agent 唤醒都重新构建 AgentView，只有当前会话保留互动消息。Tick/Commit、Activity、Outcome/Reflection、World Evolution 四份协议已固化在 [runtime-protocols.md](design/runtime-protocols.md)，并有修订冲突、定义快照、提案匹配和记忆来源回归测试。
 
+下一阶段不再横向增加功能，进入架构收敛阶段。具体拆分顺序、删除的旁路和验收条件见 [架构收敛计划](design/architecture-convergence-plan.md)。
+
 ## 开发目标
 
 首版交付一个以 LLM Agent 为演化核心的沙盘 Platform。Agent 负责目标、选择、探索、沟通、学习、BT 生成和世界创新；Platform 负责把 Intent 安全地转换成状态变化。系统从配置包创建新世界，使用单实例 SQLite 运行，按世界分钟推进长时 BT，并持久化探索和知识。第一验收世界为 `worlds/starter_village/`。
