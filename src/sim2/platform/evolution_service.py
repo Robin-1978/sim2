@@ -57,7 +57,7 @@ class EvolutionService(PlatformService):
             state_key = str(signal.get("id") or name)
             was_active = bool(state.get(state_key, False))
             if not was_active:
-                event_id = self.store.append_event(
+                event_id = self.uow.events.append(
                     str(signal.get("event_type") or f"world.rule.{name}"),
                     None,
                     minute,
@@ -96,7 +96,7 @@ class EvolutionService(PlatformService):
             active = self.conditions.evaluate(expression, agent={}, target={}, world=world, context={}) if expression else False
             previous = bool(states.get(trigger_id, False))
             if active and not previous:
-                self.store.append_event("evolution.triggered", None, minute, {"trigger_id": trigger_id, "condition": expression, "invoke": trigger.get("invoke", [])})
+                self.uow.events.append("evolution.triggered", None, minute, {"trigger_id": trigger_id, "condition": expression, "invoke": trigger.get("invoke", [])})
                 for index, target in enumerate(trigger.get("invoke", []) or []):
                     target = str(target)
                     role_target, resolved_actor = self._resolve_evolution_consumer(target)
@@ -117,7 +117,7 @@ class EvolutionService(PlatformService):
     def _emit_due_evolution_tasks(self, minute: int) -> None:
         for task in self.uow.evolution.due_tasks(minute):
             self.uow.evolution.mark_ready(task["task_id"])
-            self.store.append_event(
+            self.uow.events.append(
                 "evolution.task_due",
                 task.get("actor_id"),
                 minute,
@@ -141,7 +141,7 @@ class EvolutionService(PlatformService):
         with self.store.transaction():
             task_ids = self.uow.evolution.recover_claimed(minute)
             if task_ids:
-                self.store.append_event(
+                self.uow.events.append(
                     "evolution.tasks_recovered",
                     None,
                     minute,
@@ -184,7 +184,7 @@ class EvolutionService(PlatformService):
                 # retry intentionally does not step, so promote this one now
                 # and let the resumed runner claim it before time advances.
                 self.uow.evolution.mark_ready(task_id)
-            self.store.append_event(
+            self.uow.events.append(
                 "evolution.task_retry",
                 None,
                 minute,

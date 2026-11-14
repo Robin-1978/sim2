@@ -132,7 +132,7 @@ class ActivityRuntimeMixin:
         state["active_action_definition"] = copy.deepcopy(action)
         agent["initial_state"] = state
         self.store.put_action_instance(action_instance_id, execution_id, agent["id"], action_id, "running", 0, duration, {"parameters": parameters, "target": resolved_target, "reservation": reservation, "no_op": already_at_destination, "definition_version": int(action.get("definition_version", action.get("version", 1)) or 1), "definition_snapshot": copy.deepcopy(action)}, minute, minute)
-        self.store.append_event("action.started", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "duration_minutes": duration, "no_op": already_at_destination})
+        self.uow.events.append("action.started", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "duration_minutes": duration, "no_op": already_at_destination})
         return True, ""
 
     def _prepare_parallel_action(self, agent: dict[str, Any], action_info: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
@@ -282,7 +282,7 @@ class ActivityRuntimeMixin:
                     "definition_snapshot": copy.deepcopy(action),
                 }
                 self.store.put_action_instance(action_instance_id, execution_id, agent["id"], action_id, "running", 0, info["duration"], {"parameters": info["parameters"], "target": info["target"], "reservation": info.get("reservation", []), "parallel_group": group, "definition_version": int(action.get("definition_version", action.get("version", 1)) or 1), "definition_snapshot": copy.deepcopy(action)}, minute, minute)
-                self.store.append_event("action.started", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "duration_minutes": info["duration"], "parallel_group": group})
+                self.uow.events.append("action.started", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "duration_minutes": info["duration"], "parallel_group": group})
             state["active_parallel_actions"] = active
             state["active_action"] = "parallel"
             state["active_action_index"] = index
@@ -322,7 +322,7 @@ class ActivityRuntimeMixin:
                 state = dict(agent.get("initial_state") or {})
                 state["last_action_result"] = action_result
                 agent["initial_state"] = state
-                self.store.append_event("action.completed", agent["id"], minute, {"execution_id": execution_id, "action_id": entry["action_id"], "parallel_group": group, "result": action_result})
+                self.uow.events.append("action.completed", agent["id"], minute, {"execution_id": execution_id, "action_id": entry["action_id"], "parallel_group": group, "result": action_result})
                 completed_count += 1
         remaining_values = [int(entry["remaining"]) for entry in active.values()]
         state = dict(agent.get("initial_state") or {})
@@ -427,7 +427,7 @@ class ActivityRuntimeMixin:
         state = dict(agent.get("initial_state") or {})
         state["last_action_result"] = action_result
         agent["initial_state"] = state
-        self.store.append_event("action.completed", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "result": action_result})
+        self.uow.events.append("action.completed", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "result": action_result})
         # Effects may update location, health, inventory or needs; retain that
         # projection before clearing the completed action fields.
         state = dict(agent.get("initial_state") or {})
@@ -491,7 +491,7 @@ class ActivityRuntimeMixin:
             uses = {str(item) for item in (definition.get("uses") or [])}
             if not capability or capability not in owned or capability in explicit or action_id not in uses:
                 continue
-            self.store.append_event(
+            self.uow.events.append(
                 "capability.evidence",
                 agent["id"],
                 minute,
@@ -531,7 +531,7 @@ class ActivityRuntimeMixin:
                 self._apply_relationship_effect(agent, target or effect_target, effect, minute)
             elif effect_type == "public_event":
                 event_type = str(effect.get("event") or "public.event")
-                self.store.append_event(event_type, agent["id"], minute, {"action_id": action.get("id"), "parameters": parameters})
+                self.uow.events.append(event_type, agent["id"], minute, {"action_id": action.get("id"), "parameters": parameters})
             elif effect_type == "world_property_delta":
                 property_id = str(effect.get("property") or effect.get("world_property") or "")
                 if property_id:
@@ -543,7 +543,7 @@ class ActivityRuntimeMixin:
                     if isinstance(effect.get("maximum"), (int, float)):
                         value = min(float(effect["maximum"]), value)
                     self._set_world_property(property_id, value)
-                    self.store.append_event(
+                    self.uow.events.append(
                         "world.property_changed", agent["id"], minute,
                         {"property": property_id, "before": before_value, "after": value, "delta": value - float(before_value or 0), "source": action.get("id")},
                     )
@@ -612,7 +612,7 @@ class ActivityRuntimeMixin:
                             entity["id"], entity["entity_type"], entity["name"],
                             {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}},
                         )
-                        self.store.append_event(
+                        self.uow.events.append(
                             "entity.state_changed", agent["id"], minute,
                             {"entity_id": entity["id"], "state": str(state_key), "before": before_value, "after": entity_state[str(state_key)], "action_id": action.get("id")},
                         )
@@ -639,12 +639,12 @@ class ActivityRuntimeMixin:
                         "execution_id": str(agent.get("initial_state", {}).get("active_bt_instance") or ""),
                         "action_id": str(action.get("id") or ""),
                     })
-                    allocation_event_id = self.store.append_event("institution.allocation_completed", agent["id"], minute, allocation_event)
+                    allocation_event_id = self.uow.events.append("institution.allocation_completed", agent["id"], minute, allocation_event)
                     self.wakes.configured(
                         allocation_event_id, "institution.allocation_completed", agent["id"], minute,
                     )
                 else:
-                    self.store.append_event("institution.allocation_failed", agent["id"], minute, allocation)
+                    self.uow.events.append("institution.allocation_failed", agent["id"], minute, allocation)
                     errors.append(str(allocation.get("message") or allocation.get("failed_check") or "institution allocation failed"))
             else:
                 self.effects.apply(receiver, resolved_effect, target=effect_target, formula_agent=agent)
@@ -653,11 +653,11 @@ class ActivityRuntimeMixin:
             if effect.get("type") in {"capability_xp", "capability.add_xp"} or effect.get("op") == "capability.add_xp":
                 capability = effect.get("capability")
                 if capability:
-                    self.store.append_event("capability.evidence", agent["id"], minute, {"capability": str(capability), "source": str(action.get("id", "action")), "configured_delta": float(effect.get("value", effect.get("delta", 0)) or 0), "requires_agent_review": True})
+                    self.uow.events.append("capability.evidence", agent["id"], minute, {"capability": str(capability), "source": str(action.get("id", "action")), "configured_delta": float(effect.get("value", effect.get("delta", 0)) or 0), "requires_agent_review": True})
         for effect in action.get("capability_effects", []) or []:
             capability = effect.get("capability")
             if capability:
-                self.store.append_event("capability.evidence", agent["id"], minute, {"capability": str(capability), "source": str(action.get("id", "action")), "configured_delta": float(effect.get("value", 0) or 0), "requires_agent_review": True})
+                self.uow.events.append("capability.evidence", agent["id"], minute, {"capability": str(capability), "source": str(action.get("id", "action")), "configured_delta": float(effect.get("value", 0) or 0), "requires_agent_review": True})
         recipe_id = parameters.get("recipe_id")
         if not recipe_id:
             return errors
@@ -686,14 +686,14 @@ class ActivityRuntimeMixin:
                             entity["id"], entity["entity_type"], entity["name"],
                             {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}},
                         )
-                        self.store.append_event(
+                        self.uow.events.append(
                             "entity.state_changed", agent["id"], minute,
                             {"entity_id": entity["id"], "state": str(state_key), "before": before_value, "after": entity_state[str(state_key)], "action_id": f"recipe:{recipe_id}"},
                         )
             elif effect_type == "capability.add_xp":
                 capability = effect.get("capability")
                 if capability:
-                    self.store.append_event("capability.evidence", agent["id"], minute, {"capability": str(capability), "source": f"recipe:{recipe_id}", "configured_delta": float(effect.get("value", 0) or 0), "requires_agent_review": True})
+                    self.uow.events.append("capability.evidence", agent["id"], minute, {"capability": str(capability), "source": f"recipe:{recipe_id}", "configured_delta": float(effect.get("value", 0) or 0), "requires_agent_review": True})
         return errors
 
     def _action_condition_context(self, agent: dict[str, Any], parameters: dict[str, Any], target: dict[str, Any] | None) -> dict[str, Any]:
@@ -834,7 +834,7 @@ class ActivityRuntimeMixin:
             data.pop(key, None)
         data["relation_strength"] = max(-1.0, min(1.0, float(data.get("relation_strength", 0) or 0) + delta))
         self.store.put_relationship(agent["id"], target_id, relation_type, data)
-        self.store.append_event("relationship.changed", agent["id"], minute, {"target_id": target_id, "relation": relation_type, "delta": delta, "relation_strength": data["relation_strength"]})
+        self.uow.events.append("relationship.changed", agent["id"], minute, {"target_id": target_id, "relation": relation_type, "delta": delta, "relation_strength": data["relation_strength"]})
 
     def _advance_information_progress(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> dict[str, Any] | None:
         definition = action.get("progress") or {}
@@ -893,7 +893,7 @@ class ActivityRuntimeMixin:
             required = 1.0
         progress = self.store.advance_progress(owner, key, float(definition.get("amount", 1) or 1), required, minute, {"source_action": action.get("id"), "source_agent": agent["id"], "stage_id": (discovery or {}).get("id")})
         event_type = "research.completed" if progress["completed"] else "research.progressed"
-        event_id = self.store.append_event(event_type, agent["id"], minute, {"progress_key": key, "progress": progress, "source_action": action.get("id"), "parameters": parameters, "source_id": source_id, "stage_id": (discovery or {}).get("id"), "discovery_status": (discovery or {}).get("status", "active")})
+        event_id = self.uow.events.append(event_type, agent["id"], minute, {"progress_key": key, "progress": progress, "source_action": action.get("id"), "parameters": parameters, "source_id": source_id, "stage_id": (discovery or {}).get("id"), "discovery_status": (discovery or {}).get("status", "active")})
         if progress["completed"]:
             self.store.update_research_gap(
                 source_id,
@@ -948,8 +948,8 @@ class ActivityRuntimeMixin:
                         if behavior_id not in unlocked:
                             unlocked.append(behavior_id)
                             agent["unlocked_bt_ids"] = unlocked
-                            self.store.append_event("behavior.unlocked", agent["id"], minute, {"behavior_id": behavior_id, "discovery_id": discovery_id, "source": "exploration"})
-                event_id = self.store.append_event("exploration.completed", agent["id"], minute, {"area_id": area_id, "result_id": result_id, "discoveries": [str(item.get("id")) for item in discoveries]})
+                            self.uow.events.append("behavior.unlocked", agent["id"], minute, {"behavior_id": behavior_id, "discovery_id": discovery_id, "source": "exploration"})
+                event_id = self.uow.events.append("exploration.completed", agent["id"], minute, {"area_id": area_id, "result_id": result_id, "discoveries": [str(item.get("id")) for item in discoveries]})
                 self.wakes.story_source(event_id, "exploration.completed", agent["id"], minute)
                 result = {"result": "exploration_completed", "event_id": event_id}
         if source_id:
@@ -970,7 +970,7 @@ class ActivityRuntimeMixin:
                     # completion event; without progress keep the legacy
                     # single-attempt event contract.
                     if progress is None:
-                        event_id = self.store.append_event("research.completed", agent["id"], minute, {"source_id": source_id, "fact": fact})
+                        event_id = self.uow.events.append("research.completed", agent["id"], minute, {"source_id": source_id, "fact": fact})
                         self.store.update_research_gap(
                             source_id,
                             completed=True,
@@ -996,7 +996,7 @@ class ActivityRuntimeMixin:
                 agent["id"], fact_key,
                 {"fact": fact, "source_type": "recovery", "source_id": object_id, "object_id": object_id, "behavior": action.get("id"), "confidence": 0.9, "observed_at": minute},
             )
-            event_id = self.store.append_event("object.recovered", agent["id"], minute, {"object_id": object_id, "fact": fact})
+            event_id = self.uow.events.append("object.recovered", agent["id"], minute, {"object_id": object_id, "fact": fact})
             self.wakes.story_source(event_id, "object.recovered", agent["id"], minute)
             result = {"result": "object_recovered", "event_id": event_id}
         if target_id and topic:
@@ -1012,7 +1012,7 @@ class ActivityRuntimeMixin:
                 self.store.put_memory(target_id, "testimony", {"topic": str(topic), "message": message, "speaker_id": agent["id"], "world_minute": minute, "dialogue_id": dialogue_id, "claim_status": "reported", "source_type": "testimony", **testimony})
                 self._apply_configured_relationship_effect(agent, listener, "dialogue.completed", minute)
                 self.store.update_agent(listener["id"], listener)
-            event_id = self.store.append_event("dialogue.completed", agent["id"], minute, {"target_id": target_id, "topic": str(topic), "message": message, "dialogue_id": dialogue_id, **testimony})
+            event_id = self.uow.events.append("dialogue.completed", agent["id"], minute, {"target_id": target_id, "topic": str(topic), "message": message, "dialogue_id": dialogue_id, **testimony})
             result = {"result": "dialogue_recorded", "event_id": event_id}
         configured_event = information.get("event_type") or information.get("event")
         observed: dict[str, Any] = {}
@@ -1043,7 +1043,7 @@ class ActivityRuntimeMixin:
                 event_data["trend"] = True
             if "story" in {str(item) for item in (information.get("wake") or [])}:
                 event_data["story_source"] = True
-            event_id = self.store.append_event(str(configured_event), agent["id"], minute, event_data)
+            event_id = self.uow.events.append(str(configured_event), agent["id"], minute, event_data)
             self.wakes.followups(information, event_id, str(configured_event), agent["id"], minute)
             result.setdefault("event_id", event_id)
             result.setdefault("result", str(information.get("result") or "information_recorded"))
@@ -1125,7 +1125,7 @@ class ActivityRuntimeMixin:
                     int(event_id), "verified", {"event_type": event_type, "source": payload.get("behavior_id") or payload.get("action_id") or event_type}, minute,
                 )
                 if entry_id is not None:
-                    ledger_event_id = self.store.append_event(
+                    ledger_event_id = self.uow.events.append(
                         "institution.ledger_entry", actor_id, minute,
                         {"institution": {"name": institution.get("name"), "category": category}, "period": period, "amount": amount, "source_event_id": int(event_id), "status": "verified"},
                     )
@@ -1190,7 +1190,7 @@ class ActivityRuntimeMixin:
                     "observed_delta": outcome.get("delta") or {},
                 }
                 rule_followups.append(followup)
-                self.store.append_event("world.rule.followed", agent["id"], minute, followup)
+                self.uow.events.append("world.rule.followed", agent["id"], minute, followup)
         if rule_followups:
             outcome["rule_followups"] = rule_followups
         action_instance_id = state.get("active_action_instance")
@@ -1237,7 +1237,7 @@ class ActivityRuntimeMixin:
                     ):
                         duplicate_event_id = int(existing["event_id"])
                         break
-                event_id = duplicate_event_id or self.store.append_event(event_type, agent["id"], minute, payload)
+                event_id = duplicate_event_id or self.uow.events.append(event_type, agent["id"], minute, payload)
                 # Publish every validated outcome to configured consumer
                 # policies. The event itself remains the source of truth;
                 # event groups decide whether Story/God receive it directly,
@@ -1284,7 +1284,7 @@ class ActivityRuntimeMixin:
         bt_data["outcome"] = outcome
         bt_data["result"] = result
         self.store.update_bt_instance(execution_id, status=status, current_node=int(state.get("active_action_index", 0)), data=bt_data, updated_minute=minute)
-        self.store.append_event(
+        self.uow.events.append(
             "outcome.evaluated",
             agent["id"],
             minute,
@@ -1300,7 +1300,7 @@ class ActivityRuntimeMixin:
                 "correlation_id": execution_id,
             },
         )
-        behavior_event_id = self.store.append_event(f"behavior.{status}", agent["id"], minute, {"execution_id": execution_id, "behavior_id": behavior_id, "result": result, "outcome": outcome})
+        behavior_event_id = self.uow.events.append(f"behavior.{status}", agent["id"], minute, {"execution_id": execution_id, "behavior_id": behavior_id, "result": result, "outcome": outcome})
         if status == "completed":
             self._record_active_institution_entries(behavior_event_id, "behavior.completed", agent["id"], minute, {"execution_id": execution_id, "behavior_id": behavior_id, "result": result, "outcome": outcome})
             self._complete_story_beats_for_actor(agent["id"], behavior_id, minute)
@@ -1373,7 +1373,7 @@ class ActivityRuntimeMixin:
             goal_hint = str(beat.get("goal_hint") or "").strip()
             if goal_hint:
                 cleared_goals.add(goal_hint)
-            self.store.append_event("story.beat.blocked", actor_id, minute, {"beat_id": beat_id, "behavior_id": behavior_id, "result": result})
+            self.uow.events.append("story.beat.blocked", actor_id, minute, {"beat_id": beat_id, "behavior_id": behavior_id, "result": result})
         if not changed:
             return
         if cleared_goals:
@@ -1462,7 +1462,7 @@ class ActivityRuntimeMixin:
                 behavior_id=behavior_id,
             )
             changed = True
-            self.store.append_event("story.beat.completed", actor_id, minute, {"beat_id": beat_id, "behavior_id": behavior_id})
+            self.uow.events.append("story.beat.completed", actor_id, minute, {"beat_id": beat_id, "behavior_id": behavior_id})
         if changed:
             self.store.set_meta("story_state", state)
 

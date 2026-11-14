@@ -215,7 +215,7 @@ class WorldChangesRuntimeMixin:
             }
             expected = self._world_proposal_expectation(change_type, proposal, effect)
             event_data["expected_state"] = expected
-            event_id = self.store.append_event(f"world.change.{change_type}", actor_id, world_minute, event_data)
+            event_id = self.uow.events.append(f"world.change.{change_type}", actor_id, world_minute, event_data)
             self.store.put_world_proposal(intent_id, intent_id, actor_id, change_type, "pending_evaluation", world_minute, evaluation_due_minute, {"effects": event_data["expected_effects"], "summary": event_data["summary"], "state": expected}, {"event_id": event_id, "effect": effect})
             if actor_id == "god":
                 remember_role(self.store, "god", "world_proposal", {
@@ -307,7 +307,7 @@ class WorldChangesRuntimeMixin:
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             self.store.create_intent(intent_id, actor_id, "submit_world_template", {"template": template}, world_minute)
-            self.store.append_event("world.template.accepted", actor_id, world_minute, {"template_keys": sorted(template)})
+            self.uow.events.append("world.template.accepted", actor_id, world_minute, {"template_keys": sorted(template)})
             result = {"status": "accepted", "intent_id": intent_id, "template_valid": True, "message": "Template accepted for new-instance bootstrap."}
             self.store.finish_intent(intent_id, "accepted", result)
         return result

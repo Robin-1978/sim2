@@ -146,14 +146,14 @@ class RuntimeApiService(PlatformService):
         with self.store.transaction():
             self.store.set_meta("runtime_status", "paused")
             minute = int(self.store.get_meta("world_minute", 0))
-            self.store.append_event("runtime.paused", None, minute, {"reason": reason})
+            self.uow.events.append("runtime.paused", None, minute, {"reason": reason})
         return self.status()
 
     def resume(self, reason: str = "operator") -> dict[str, Any]:
         with self.store.transaction():
             self.store.set_meta("runtime_status", "running")
             minute = int(self.store.get_meta("world_minute", 0))
-            self.store.append_event("runtime.resumed", None, minute, {"reason": reason})
+            self.uow.events.append("runtime.resumed", None, minute, {"reason": reason})
         return self.status()
 
     def inject_event(self, event_type: str, payload: dict[str, Any], actor_id: str | None = None) -> dict[str, Any]:
@@ -161,7 +161,7 @@ class RuntimeApiService(PlatformService):
             raise ValueError("event_type is required")
         minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
-            event_id = self.store.append_event(event_type, actor_id, minute, payload)
+            event_id = self.uow.events.append(event_type, actor_id, minute, payload)
         return {"status": "accepted", "event_id": event_id, "world_minute": minute}
 
     def enter_player(self, player_id: str, origin_id: str, *, name: str | None = None) -> dict[str, Any]:
@@ -208,7 +208,7 @@ class RuntimeApiService(PlatformService):
             self.store.put_agent(player_id, agent, agent["name"])
             for fact in agent["knowledge_seed"]:
                 self.store.put_knowledge_fact(player_id, str(fact), {"fact": str(fact), "source_type": "player_template", "confidence": 1.0})
-            self.store.append_event("player.entered", player_id, minute, {"origin_id": origin_id, "location_id": location_id})
+            self.uow.events.append("player.entered", player_id, minute, {"origin_id": origin_id, "location_id": location_id})
         return {"status": "accepted", "player_id": player_id, "origin_id": origin_id, "location_id": location_id}
 
     def decision_view(self, agent_id: str, role: str = "agent_decision") -> dict[str, Any]:

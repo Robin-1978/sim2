@@ -209,6 +209,6 @@ class StagnationRuntimeMixin:
             "characters": characters,
             "omitted_characters": omitted,
         }
-        event_id = self.store.append_event("world.stagnation", None, int(minute), payload)
+        event_id = self.uow.events.append("world.stagnation", None, int(minute), payload)
         self.wakes.configured(event_id, "world.stagnation", None, int(minute))
         return event_id

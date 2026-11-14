@@ -55,7 +55,7 @@ class WorldTickService(PlatformService):
             payload = {name: value for name, value in entity.items() if name not in {"id", "entity_type", "name"}}
             self.store.put_entity(entity["id"], entity["entity_type"], entity["name"], payload)
             self.store.sync_world_property_from_resource(entity["id"], after)
-            self.store.append_event("resource.regenerated", None, minute, {"resource_id": entity["id"], "amount": after - before, "total": after})
+            self.uow.events.append("resource.regenerated", None, minute, {"resource_id": entity["id"], "amount": after - before, "total": after})
         due_effects = [
             effect
             for effect in (rules.get("minute_effects", []) or [])
@@ -109,7 +109,7 @@ class WorldTickService(PlatformService):
                             conditions.append("incapacitated")
                         state["conditions"] = conditions
                         agent["initial_state"] = state
-                        self.store.append_event("agent.incapacitated", agent["id"], minute, {"reason": effect.get("id", "minute_effect")})
+                        self.uow.events.append("agent.incapacitated", agent["id"], minute, {"reason": effect.get("id", "minute_effect")})
                 if agent_changed:
                     changed_agents.append(agent)
             self.store.update_agents_bulk(changed_agents)
@@ -181,7 +181,7 @@ class WorldTickService(PlatformService):
             )
             if should_emit:
                 event_type = str(raw.get("event_type") or "resource.safety_low")
-                event_id = self.store.append_event(event_type, None, minute, {
+                event_id = self.uow.events.append(event_type, None, minute, {
                     "resource_id": resource_id,
                     "resource_name": entity.get("name", resource_id),
                     "quantity": quantity,
@@ -273,7 +273,7 @@ class WorldTickService(PlatformService):
                     payload["summary"] = str(item["summary"])
                 if item.get("trend") is True:
                     payload["trend"] = True
-                self.store.append_event(event_type, agent["id"], minute, payload)
+                self.uow.events.append(event_type, agent["id"], minute, payload)
             if previous != active or state_key not in event_state:
                 event_state[state_key] = active
                 changed_state = True
@@ -351,7 +351,7 @@ class WorldTickService(PlatformService):
                 if result.get("status") == "failed" and result.get("behavior_ref"):
                     failed.append(agent["id"])
             self.store.set_meta("world_minute", minute)
-            self.store.append_event("world_minute.advanced", None, minute, {"minute": minute})
+            self.uow.events.append("world_minute.advanced", None, minute, {"minute": minute})
             self._emit_world_rule_signals(minute, agent_ids=agent_ids)
             self._emit_resource_safety_signals(minute)
             self.proposal_evaluator.evaluate_due(minute)
