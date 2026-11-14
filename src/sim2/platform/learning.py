@@ -76,7 +76,7 @@ class LearningRuntimeMixin:
                 return result
             self.store.create_intent(intent_id, actor_id, "record_experience", data, world_minute)
             memory_id = self.store.put_memory(actor_id, "experience", {**data, "world_minute": world_minute})
-            self.uow.events.append("memory.experience_recorded", actor_id, world_minute, {"memory_id": memory_id, **data})
+            self._context.services["events"].append("memory.experience_recorded", actor_id, world_minute, {"memory_id": memory_id, **data})
             result = {"status": "accepted", "intent_id": intent_id, "memory_id": memory_id}
             self.store.finish_intent(intent_id, "accepted", result)
         return result
@@ -145,7 +145,7 @@ class LearningRuntimeMixin:
             self.store.update_agent(actor_id, agent)
             source_event_ids = [int(item["event_id"]) for item in evidence_events]
             self.store.put_capability_progress(actor_id, capability, applied_delta, "agent_review", world_minute, {"evidence": evidence, "completed_outcomes": completed, "source_event_ids": source_event_ids})
-            event_id = self.uow.events.append("capability.updated", actor_id, world_minute, {"capability": capability, "before": current, "after": after, "delta": applied_delta, "evidence": evidence, "completed_outcomes": completed, "source_event_ids": source_event_ids})
+            event_id = self._context.services["events"].append("capability.updated", actor_id, world_minute, {"capability": capability, "before": current, "after": after, "delta": applied_delta, "evidence": evidence, "completed_outcomes": completed, "source_event_ids": source_event_ids})
             result = {"status": "accepted", "intent_id": intent_id, "event_id": event_id, "capability": capability, "before": current, "after": after, "delta": applied_delta}
             self.store.finish_intent(intent_id, "accepted", result)
         return result
@@ -254,7 +254,7 @@ class LearningRuntimeMixin:
                 "source_behavior_id": data["source_behavior_id"],
             })
             event_type = "civilization.milestone" if progress["completed"] else "civilization.progressed"
-            event_id = self.uow.events.append(event_type, actor_id, world_minute, {"progress": progress, **data, "source_agent": actor_id})
+            event_id = self._context.services["events"].append(event_type, actor_id, world_minute, {"progress": progress, **data, "source_agent": actor_id})
             result = {
                 "status": "accepted",
                 "intent_id": intent_id,
@@ -296,7 +296,7 @@ class LearningRuntimeMixin:
             agent["beliefs"] = beliefs
             self.store.create_intent(intent_id, actor_id, "update_belief", data, world_minute)
             self.store.update_agent(actor_id, agent)
-            self.uow.events.append("belief.updated", actor_id, world_minute, data)
+            self._context.services["events"].append("belief.updated", actor_id, world_minute, data)
             result = {"status": "accepted", "intent_id": intent_id, "belief_id": match["id"], "confidence": confidence}
             self.store.finish_intent(intent_id, "accepted", result)
         return result
@@ -323,7 +323,7 @@ class LearningRuntimeMixin:
                 agent["goals"] = goals
             self.store.create_intent(intent_id, actor_id, "update_goal", data, world_minute)
             self.store.update_agent(actor_id, agent)
-            self.uow.events.append("goal.updated", actor_id, world_minute, data)
+            self._context.services["events"].append("goal.updated", actor_id, world_minute, data)
             result = {"status": "accepted", "intent_id": intent_id, "goal_id": goal_id or "ultimate_goal"}
             self.store.finish_intent(intent_id, "accepted", result)
         return result
@@ -381,7 +381,7 @@ class LearningRuntimeMixin:
                 ids.append(behavior_id)
             agent["initial_bt_ids"] = ids
             self.store.update_agent(actor_id, agent)
-            self.uow.events.append("behavior.registered", actor_id, world_minute, {"behavior_id": behavior_id, "source": "agent_proposal"})
+            self._context.services["events"].append("behavior.registered", actor_id, world_minute, {"behavior_id": behavior_id, "source": "agent_proposal"})
             result = {"status": "accepted", "intent_id": intent_id, "behavior_ref": f"behavior:{behavior_id}", "registered": True}
             self.store.finish_intent(intent_id, "accepted", result)
         return result

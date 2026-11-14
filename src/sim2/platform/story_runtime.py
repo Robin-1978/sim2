@@ -407,7 +407,7 @@ class StoryRuntimeMixin:
                 if fact:
                     self.store.merge_knowledge_fact(target["id"], f"story:{beat_id}", {"fact": fact, "source_type": "story", "source_id": beat_id, "confidence": 0.9, "observed_at": minute})
                 self.store.update_agent(target["id"], target)
-            event_id = self.uow.events.append("story.beat.activated", actor_id, minute, {"beat_id": beat_id, "summary": beat.get("summary", ""), "audience": audience, "research_source_id": research_source_id, "public_event": beat.get("public_event"), "reason": proposal.get("reason", "")})
+            event_id = self._context.services["events"].append("story.beat.activated", actor_id, minute, {"beat_id": beat_id, "summary": beat.get("summary", ""), "audience": audience, "research_source_id": research_source_id, "public_event": beat.get("public_event"), "reason": proposal.get("reason", "")})
             remember_role(self.store, "story", "story_thread", {
                 "summary": str(beat.get("summary") or beat.get("fact") or ""),
                 "beat_id": beat_id,

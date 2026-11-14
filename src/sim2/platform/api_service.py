@@ -115,7 +115,10 @@ class RuntimeApiService(PlatformService):
                     "story": router.provider_for_role("story"),
                 }
         return SimulationRunner(
-            self,
+            # ``run`` is exposed through the Platform facade but is owned by
+            # this service.  The runner needs the facade so it can resolve
+            # all public operations, not the service instance itself.
+            self._context.host,
             providers,
             wait_cooldown_minutes=wait_cooldown_minutes,
             llm_error_cooldown_minutes=llm_error_cooldown_minutes,
@@ -146,14 +149,14 @@ class RuntimeApiService(PlatformService):
         with self.store.transaction():
             self.store.set_meta("runtime_status", "paused")
             minute = int(self.store.get_meta("world_minute", 0))
-            self.uow.events.append("runtime.paused", None, minute, {"reason": reason})
+            self._context.services["events"].append("runtime.paused", None, minute, {"reason": reason})
         return self.status()
 
     def resume(self, reason: str = "operator") -> dict[str, Any]:
         with self.store.transaction():
             self.store.set_meta("runtime_status", "running")
             minute = int(self.store.get_meta("world_minute", 0))
-            self.uow.events.append("runtime.resumed", None, minute, {"reason": reason})
+            self._context.services["events"].append("runtime.resumed", None, minute, {"reason": reason})
         return self.status()
 
     def inject_event(self, event_type: str, payload: dict[str, Any], actor_id: str | None = None) -> dict[str, Any]:
@@ -161,7 +164,7 @@ class RuntimeApiService(PlatformService):
             raise ValueError("event_type is required")
         minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
-            event_id = self.uow.events.append(event_type, actor_id, minute, payload)
+            event_id = self._context.services["events"].append(event_type, actor_id, minute, payload)
         return {"status": "accepted", "event_id": event_id, "world_minute": minute}
 
     def enter_player(self, player_id: str, origin_id: str, *, name: str | None = None) -> dict[str, Any]:
@@ -208,7 +211,7 @@ class RuntimeApiService(PlatformService):
             self.store.put_agent(player_id, agent, agent["name"])
             for fact in agent["knowledge_seed"]:
                 self.store.put_knowledge_fact(player_id, str(fact), {"fact": str(fact), "source_type": "player_template", "confidence": 1.0})
-            self.uow.events.append("player.entered", player_id, minute, {"origin_id": origin_id, "location_id": location_id})
+            self._context.services["events"].append("player.entered", player_id, minute, {"origin_id": origin_id, "location_id": location_id})
         return {"status": "accepted", "player_id": player_id, "origin_id": origin_id, "location_id": location_id}
 
     def decision_view(self, agent_id: str, role: str = "agent_decision") -> dict[str, Any]:

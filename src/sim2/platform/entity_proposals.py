@@ -280,7 +280,7 @@ class EntityProposalRuntimeMixin:
                         problems = self._context.services["definitions"]._unreachable_research_assignees(proposed_name, research_assignees)
                         if problems:
                             raise _UnreachableProposal(problems)
-                event_id = self.uow.events.append("entity.created", actor_id, world_minute, {"intent_id": intent_id, "entity_id": entity_id, "entity_type": entity_type, "summary": proposal.get("description", "")})
+                event_id = self._context.services["events"].append("entity.created", actor_id, world_minute, {"intent_id": intent_id, "entity_id": entity_id, "entity_type": entity_type, "summary": proposal.get("description", "")})
                 self.wakes.configured(event_id, "entity.created", actor_id, world_minute)
                 if actor_id == "god":
                     remember_role(self.store, "god", "world_entity", {

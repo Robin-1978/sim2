@@ -231,7 +231,7 @@ class SocialRuntimeMixin:
         }
         with self.store.transaction():
             self.store.put_institution(institution_id, "proposed", data, minute)
-            event_id = self.uow.events.append("institution.proposed", actor_id, minute, {"institution": {"name": name, "purpose": purpose, "scope": data["scope"]}, "status": "proposed"})
+            event_id = self._context.services["events"].append("institution.proposed", actor_id, minute, {"institution": {"name": name, "purpose": purpose, "scope": data["scope"]}, "status": "proposed"})
             self.wakes.configured(event_id, "institution.proposed", actor_id, minute)
             if actor_id == "god":
                 remember_role(self.store, "god", "institution_decision", {
@@ -270,7 +270,7 @@ class SocialRuntimeMixin:
         with self.store.transaction():
             institution_data = {key: value for key, value in selected.items() if key not in {"institution_id", "status", "created_minute", "activated_minute"}}
             self.store.put_institution(str(selected["institution_id"]), "active", institution_data, int(selected.get("created_minute", minute)), minute)
-            event_id = self.uow.events.append("institution.activated", actor_id, minute, {"institution": {"name": selected.get("name"), "purpose": selected.get("purpose")}, "reason": reason, "status": "active"})
+            event_id = self._context.services["events"].append("institution.activated", actor_id, minute, {"institution": {"name": selected.get("name"), "purpose": selected.get("purpose")}, "reason": reason, "status": "active"})
             self.wakes.configured(event_id, "institution.activated", actor_id, minute)
             if actor_id == "god":
                 remember_role(self.store, "god", "institution_decision", {
@@ -424,7 +424,7 @@ class SocialRuntimeMixin:
         with self.store.transaction():
             terms = {key: value for key, value in selected.items() if key not in {"institution_id", "status", "created_minute", "activated_minute"}}
             terms.update({"policy": new_policy, "ledger": new_ledger, "revision": revision, "last_revised_minute": minute})
-            event_id = self.uow.events.append("institution.revised", actor_id, minute, {
+            event_id = self._context.services["events"].append("institution.revised", actor_id, minute, {
                 "institution": {"name": selected.get("name"), "purpose": selected.get("purpose")},
                 "before": changed_before,
                 "after": changed_after,
@@ -559,7 +559,7 @@ class SocialRuntimeMixin:
                 pool["id"], pool["entity_type"], pool["name"],
                 {key: value for key, value in pool.items() if key not in {"id", "entity_type", "name"}},
             )
-            self.uow.events.append(
+            self._context.services["events"].append(
                 "resource.changed", actor_id, minute,
                 {"resource_id": pool["id"], "before": available, "after": new_amount, "delta": -consumed, "source": "institution_allocation"},
             )
@@ -574,7 +574,7 @@ class SocialRuntimeMixin:
                 inventory[str(item)] = float(inventory.get(str(item), 0) or 0) + quantity
                 recipient["inventory"] = inventory
                 self.store.update_agent(subject_id, recipient)
-                self.uow.events.append(
+                self._context.services["events"].append(
                     "institution.allocation_applied", actor_id, minute,
                     {"institution": institution, "subject_id": subject_id, "item": str(item), "amount": quantity, "period": period or "world", "verified_weight": row.get("verified_weight", 0)},
                 )
@@ -692,7 +692,7 @@ class SocialRuntimeMixin:
             self._apply_configured_relationship_effect(speaker, listener, "dialogue.completed", minute)
             self.store.update_agent(speaker_id, speaker)
             self.store.update_agent(listener_id, listener)
-            event_id = self.uow.events.append("dialogue.completed", speaker_id, minute, {"dialogue_id": exchange_id, "target_id": listener_id, "topic": topic, "summary": "A direct exchange was recorded as unverified testimony.", "activation": "recipient_next_decision_or_reflection", "duration_minutes": 0, "priority": "normal", **testimony})
+            event_id = self._context.services["events"].append("dialogue.completed", speaker_id, minute, {"dialogue_id": exchange_id, "target_id": listener_id, "topic": topic, "summary": "A direct exchange was recorded as unverified testimony.", "activation": "recipient_next_decision_or_reflection", "duration_minutes": 0, "priority": "normal", **testimony})
             result = {"status": "accepted", "intent_id": intent_id, "dialogue_id": exchange_id, "event_id": event_id, "topic": topic}
             self.store.finish_intent(intent_id, "accepted", result)
         return result
@@ -744,7 +744,7 @@ class SocialRuntimeMixin:
             self.store.put_trade_offer(offer_id, offerer_id, recipient_id, give, want, minute)
             self.store.put_memory(recipient_id, "trade_offer", {"offer_id": offer_id, "offerer_id": offerer_id, "give": give, "want": want, "world_minute": minute, "pending_decision": True, "importance": 0.6})
             self.store.put_memory(offerer_id, "trade_offer", {"offer_id": offer_id, "recipient_id": recipient_id, "give": give, "want": want, "world_minute": minute, "pending_decision": True, "importance": 0.45})
-            event_id = self.uow.events.append("trade.offer_created", offerer_id, minute, {"offer_id": offer_id, "recipient_id": recipient_id, "give": give, "want": want, "activation": "recipient_next_decision", "duration_minutes": 0, "priority": "normal"})
+            event_id = self._context.services["events"].append("trade.offer_created", offerer_id, minute, {"offer_id": offer_id, "recipient_id": recipient_id, "give": give, "want": want, "activation": "recipient_next_decision", "duration_minutes": 0, "priority": "normal"})
             result = {"status": "accepted", "intent_id": intent_id, "offer_id": offer_id, "event_id": event_id, "trade_status": "open"}
             self.store.finish_intent(intent_id, "accepted", result)
         return result
@@ -790,7 +790,7 @@ class SocialRuntimeMixin:
             self.store.finish_trade_offer(offer_id, "completed", minute, result)
             self.store.put_memory(offerer_id, "trade_result", {"offer_id": offer_id, "trade_status": "completed", "world_minute": minute, "importance": 0.55})
             self.store.put_memory(recipient_id, "trade_result", {"offer_id": offer_id, "trade_status": "completed", "world_minute": minute, "importance": 0.55})
-            event_id = self.uow.events.append("trade.completed", recipient_id, minute, {"offer_id": offer_id, "offerer_id": offerer_id, "recipient_id": recipient_id, "give": offer["give"], "want": offer["want"], "activation": "both_next_reflection", "duration_minutes": 0, "priority": "normal"})
+            event_id = self._context.services["events"].append("trade.completed", recipient_id, minute, {"offer_id": offer_id, "offerer_id": offerer_id, "recipient_id": recipient_id, "give": offer["give"], "want": offer["want"], "activation": "both_next_reflection", "duration_minutes": 0, "priority": "normal"})
             result["intent_id"] = intent_id
             result["event_id"] = event_id
             self.store.finish_intent(intent_id, "accepted", result)
@@ -826,7 +826,7 @@ class SocialRuntimeMixin:
             self.store.finish_trade_offer(offer_id, "countered", minute, {"status": "accepted", "trade_status": "countered", "counter_offer_id": counter_id})
             self.store.put_trade_offer(counter_id, counterparty_id, offer["offerer_id"], give, want, minute, parent_offer_id=offer_id, round_number=int(offer.get("round", 1)) + 1)
             self.store.put_memory(offer["offerer_id"], "trade_offer", {"offer_id": counter_id, "parent_offer_id": offer_id, "offerer_id": counterparty_id, "give": give, "want": want, "world_minute": minute, "pending_decision": True, "importance": 0.6})
-            event_id = self.uow.events.append("trade.countered", counterparty_id, minute, {"offer_id": counter_id, "parent_offer_id": offer_id, "recipient_id": offer["offerer_id"], "give": give, "want": want, "activation": "recipient_next_decision", "duration_minutes": 0, "priority": "normal"})
+            event_id = self._context.services["events"].append("trade.countered", counterparty_id, minute, {"offer_id": counter_id, "parent_offer_id": offer_id, "recipient_id": offer["offerer_id"], "give": give, "want": want, "activation": "recipient_next_decision", "duration_minutes": 0, "priority": "normal"})
         return {"status": "accepted", "offer_id": counter_id, "parent_offer_id": offer_id, "trade_status": "open", "event_id": event_id}
 
     def reject_trade_offer(self, recipient_id: str, offer_id: str) -> dict[str, Any]:
@@ -838,5 +838,5 @@ class SocialRuntimeMixin:
         with self.store.transaction():
             result = {"status": "accepted", "offer_id": offer_id, "trade_status": "rejected"}
             self.store.finish_trade_offer(offer_id, "rejected", minute, result)
-            self.uow.events.append("trade.rejected", recipient_id, minute, {"offer_id": offer_id, "offerer_id": offer["offerer_id"], "recipient_id": recipient_id, "activation": "offerer_next_decision_or_reflection", "duration_minutes": 0, "priority": "normal"})
+            self._context.services["events"].append("trade.rejected", recipient_id, minute, {"offer_id": offer_id, "offerer_id": offer["offerer_id"], "recipient_id": recipient_id, "activation": "offerer_next_decision_or_reflection", "duration_minutes": 0, "priority": "normal"})
         return result

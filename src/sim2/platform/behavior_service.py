@@ -338,7 +338,7 @@ class BehaviorIntentService(PlatformService):
                 world_minute,
                 world_minute,
             )
-            self.uow.events.append(
+            self._context.services["events"].append(
                 "behavior.started", intent.actor_id, world_minute,
                 {"intent_id": intent.intent_id, "behavior_id": behavior_id, "target": intent.target, "expected": expected, "decision": {"reason": intent.reason, "confidence": intent.confidence}},
             )
@@ -700,7 +700,7 @@ class BehaviorExecutionService(PlatformService):
             bt_data["outcome"] = outcome
             bt_data["result"] = reason
             self.store.update_bt_instance(execution_id, status=status, current_node=int(state.get("active_action_index", 0)), data=bt_data, updated_minute=minute)
-            self.uow.events.append("behavior.interrupted", actor_id, minute, {"execution_id": execution_id, "reason": reason, "hard": hard, "outcome": outcome})
+            self._context.services["events"].append("behavior.interrupted", actor_id, minute, {"execution_id": execution_id, "reason": reason, "hard": hard, "outcome": outcome})
         return {"status": status, "execution_id": execution_id, "reason": reason}
 
     def resume_behavior(self, actor_id: str) -> dict[str, Any]:
@@ -716,5 +716,5 @@ class BehaviorExecutionService(PlatformService):
             self.store.update_agent(actor_id, agent)
             self.store.connection.execute("UPDATE action_instance SET status='running' WHERE execution_id=? AND status='paused'", (execution_id,))
             self.store.connection.execute("UPDATE bt_instance SET status='executing',updated_minute=? WHERE execution_id=?", (minute, execution_id))
-            self.uow.events.append("behavior.resumed", actor_id, minute, {"execution_id": execution_id})
+            self._context.services["events"].append("behavior.resumed", actor_id, minute, {"execution_id": execution_id})
         return {"status": "resumed", "execution_id": execution_id}

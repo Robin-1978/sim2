@@ -161,10 +161,12 @@ def build_platform_services(context: PlatformContext) -> dict[str, PlatformServi
     # avoids a module cycle while preserving one construction point.
     from .api_service import RuntimeApiService
     from .behavior_service import BehaviorExecutionService, BehaviorIntentService
+    from .events import EventService
     from .evolution_service import EvolutionService
     from .world_tick_service import WorldTickService
 
     services: dict[str, PlatformService] = {
+        "events": EventService(context),
         "api": RuntimeApiService(context),
         "intent": BehaviorIntentService(context),
         "execution": BehaviorExecutionService(context),
