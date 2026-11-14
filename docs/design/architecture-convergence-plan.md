@@ -215,7 +215,7 @@ python -m pytest -q tests/test_platform_composition.py \
   tests/test_evolution_liveness.py
 python -m compileall -q src scripts
 bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py --provider deepseek'
-bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py --provider beam'
+bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py --provider remote_beam'
 python scripts/run_long_simulation.py --minutes 10080
 python -m pytest -q
 python scripts/benchmark_platform.py --agents 1000 --runs 5
@@ -656,7 +656,7 @@ Before declaring convergence complete, run these in order:
 ```bash
 python -m pytest -q <focused suites>
 python -m compileall -q src scripts
-bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py --provider beam'
+bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py --provider remote_beam'
 python scripts/run_long_simulation.py --minutes 10080
 python -m pytest -q
 python scripts/benchmark_platform.py --agents 1000 --runs 5
@@ -800,7 +800,7 @@ Use an interactive shell for every provider run:
 bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py \
   --provider remote --rounds 10 --runtime-dir /tmp/sim2-evolution-final'
 bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py \
-  --provider beam --rounds 10 --runtime-dir /tmp/sim2-evolution-beam'
+  --provider remote_beam --rounds 10 --runtime-dir /tmp/sim2-evolution-beam'
 python scripts/run_long_simulation.py --minutes 10080
 ```
 

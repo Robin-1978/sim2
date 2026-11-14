@@ -225,5 +225,28 @@ Per-round semantic review found the following causal chain:
 
 The complete context/tool/result/world-delta records are in
 `/tmp/sim2-evolution-final-post-cache/evolution-audit.jsonl`. This run passes
-the causal evolution gate; the Beam transport check and a semantic Starter
+the causal evolution gate; the `remote_beam` transport check and a semantic Starter
 Village long run remain separate acceptance work.
+
+### Beam transport result and audit safeguard
+
+The configured Beam provider name is `remote_beam` (the local configuration
+also contains `remote`, `remote_iceman` and `remote_longcat`). The correct
+interactive check was:
+
+```bash
+bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py \
+  --provider remote_beam --rounds 10 \
+  --runtime-dir /tmp/sim2-evolution-beam-final-audit2'
+```
+
+Beam returned a provider response failure on the first God and NPC calls. The
+probe now correctly stops and exits nonzero with:
+
+```json
+{"status":"failed","flags":["incomplete_rounds:1/10","god:llm_response","agent_decision:llm_response"],"rounds":1,"requested_rounds":10}
+```
+
+The audit change is deliberate: any provider/Agent rejection or incomplete
+requested round count blocks a quality pass. Provider failures are not
+absorbing-world evidence and are not hidden by the structural-progress check.

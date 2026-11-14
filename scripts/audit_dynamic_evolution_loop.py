@@ -151,7 +151,11 @@ def _run_task(platform: Platform, provider: Any, task: dict[str, Any]) -> AgentT
 def _complete_behavior(platform: Platform, behavior_id: str, provider: Any, rounds: list[dict[str, Any]]) -> dict[str, Any]:
     decision = AgentEngine(platform, provider).run(role="agent_decision", actor_id="mira", task_type="agent_plan_selection")
     if decision.result.get("status") != "accepted":
-        return {"decision": _summary(decision), "status": "no_npc_behavior"}
+        return {
+            "decision": _summary(decision),
+            "status": "provider_failure" if decision.result.get("failed_check") == "llm_response" else "no_npc_behavior",
+            "failed_check": decision.result.get("failed_check"),
+        }
     behavior_ref = str(decision.result.get("behavior_ref") or "")
     if behavior_id and behavior_ref and behavior_ref.casefold() != f"behavior:{behavior_id}".casefold():
         # The decision is authoritative; the expected source is recorded only
@@ -193,6 +197,7 @@ def main() -> int:
                 wake="configured",
             )
         rows: list[dict[str, Any]] = []
+        turn_failures: list[str] = []
         for round_no in range(1, max(1, args.rounds) + 1):
             before_entity_ids = {
                 str(row["id"])
@@ -205,11 +210,19 @@ def main() -> int:
             god_task = _ready(platform, role="god", task_prefix="event_group:resource_safety" if round_no == 1 else "event_group:research_synthesis")
             if god_task:
                 god_turn = _run_task(platform, providers["god"], god_task)
+                if god_turn.result.get("status") == "rejected":
+                    turn_failures.append(f"god:{god_turn.result.get('failed_check') or 'rejected'}")
             behavior_id = str((god_turn.result if god_turn else {}).get("bound_behavior_id") or "")
             npc = _complete_behavior(platform, behavior_id, providers["agent_decision"], rows)
+            npc_decision = (npc.get("decision") or {}) if isinstance(npc, dict) else {}
+            if npc.get("status") == "provider_failure" or npc_decision.get("status") == "rejected":
+                turn_failures.append(f"agent_decision:{npc_decision.get('failed_check') or 'rejected'}")
             story_tasks = [item for item in platform.ready_evolution_tasks() if item.get("role") == "story"]
             for task in story_tasks[:3]:
-                story_turns.append(_run_task(platform, providers["story"], task))
+                story_turn = _run_task(platform, providers["story"], task)
+                story_turns.append(story_turn)
+                if story_turn.result.get("status") == "rejected":
+                    turn_failures.append(f"story:{story_turn.result.get('failed_check') or 'rejected'}")
             new_entities = []
             for entity_id in sorted(
                 {
@@ -225,7 +238,7 @@ def main() -> int:
             with log_path.open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
             print(json.dumps(row, ensure_ascii=False, default=str), flush=True)
-            if npc.get("status") == "no_npc_behavior":
+            if npc.get("status") in {"no_npc_behavior", "provider_failure"}:
                 break
             # Every subsequent round is driven by the actual previous result.
             # If a source is exhausted without God creating a new one, the
@@ -239,7 +252,7 @@ def main() -> int:
         # without a new object, Action, BT, or Story beat, the world has
         # reached an unexplained absorbing state and the probe must fail.
         quality_flags: list[str] = []
-        if len(rows) >= 3:
+        if len(rows) >= 3 and not turn_failures:
             tail = rows[-3:]
             structural_changes = sum(
                 len(row.get("new_objects") or [])
@@ -259,7 +272,11 @@ def main() -> int:
             )
             if structural_changes == 0 and accepted_story == 0 and len(set(choices)) <= 1:
                 quality_flags.append("absorbing_state:three_rounds_without_structural_or_story_progress")
-        summary = {"status": "passed" if not quality_flags else "failed", "flags": quality_flags, "rounds": len(rows)}
+        requested_rounds = max(1, int(args.rounds))
+        if len(rows) != requested_rounds:
+            quality_flags.append(f"incomplete_rounds:{len(rows)}/{requested_rounds}")
+        quality_flags.extend(dict.fromkeys(turn_failures))
+        summary = {"status": "passed" if not quality_flags else "failed", "flags": quality_flags, "rounds": len(rows), "requested_rounds": requested_rounds}
         with (runtime_root / "evolution-audit-summary.json").open("w", encoding="utf-8") as stream:
             json.dump(summary, stream, ensure_ascii=False, indent=2)
         print(json.dumps({"audit": summary}, ensure_ascii=False), flush=True)
