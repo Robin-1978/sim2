@@ -63,15 +63,13 @@ projection only when a global trigger genuinely needs one.
 
 ## Module boundary
 
-`src/sim2/platform/world_evolution.py` remains under `platform` on purpose. It
-is the execution barrier for validated proposals: it checks definitions,
-creates entities, applies declarative changes, and writes SQLite events in the
-same transaction as state. The `src/sim2/evolution/` package owns wake
-selection, Story eligibility, and proposal evaluation policy. Moving the
-executor into `evolution/` would mix “which Agent should wake?” with “what
-state mutation is legal?”, and would make the Platform boundary less clear.
-
-If the executor grows further, split it into focused Platform mixins or
-services (definition registration, structural entities, and proposal
-evaluation) while keeping the import under `platform`; do not move it merely
-because the filename contains `evolution`.
+The validated proposal executor remains under `platform` on purpose. Its
+responsibilities are now split into focused modules:
+`definition_runtime.py` validates and registers declarative definitions,
+`entity_proposals.py` creates structural entities,
+`story_runtime.py` commits Story beats, and `world_changes.py` applies generic
+world changes and templates. They share the Platform transaction boundary and
+write SQLite events together with state. The `src/sim2/evolution/` package
+owns wake selection, Story eligibility, and proposal evaluation policy. Keeping
+those concerns separate prevents “which Agent should wake?” from being mixed
+with “what state mutation is legal?”.

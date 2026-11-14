@@ -27,7 +27,10 @@ from .activity import ActivityRuntimeMixin
 from .learning import LearningRuntimeMixin
 from .social import SocialRuntimeMixin
 from .stagnation import StagnationRuntimeMixin
-from .world_evolution import WorldEvolutionRuntimeMixin
+from .entity_proposals import EntityProposalRuntimeMixin
+from .story_runtime import StoryRuntimeMixin
+from .world_changes import WorldChangesRuntimeMixin
+from .definition_runtime import DefinitionRuntimeMixin
 from .wake_service import WakeService
 from .snapshot_service import SnapshotService
 
@@ -37,7 +40,10 @@ class Platform(
     LearningRuntimeMixin,
     SocialRuntimeMixin,
     StagnationRuntimeMixin,
-    WorldEvolutionRuntimeMixin,
+    DefinitionRuntimeMixin,
+    EntityProposalRuntimeMixin,
+    StoryRuntimeMixin,
+    WorldChangesRuntimeMixin,
 ):
     """The only component allowed to commit world state changes.
 

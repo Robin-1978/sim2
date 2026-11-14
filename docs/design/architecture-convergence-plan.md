@@ -265,6 +265,157 @@ must state whether it is deterministic, model-backed, or a replay.
 - No new Story/God wake mechanism.
 - No new UI or provider adapter until the lifecycle and schema phases pass.
 
+## Concrete execution plan
+
+This is the implementation checklist for the current development branch. Work
+is intentionally staged so each structural change can be tested before the
+next owner is moved. A stage is complete only when its exit checks pass; a
+green test that depends on a compatibility branch does not count.
+
+### Stage A — finish definition ownership
+
+**Current state:** the definition validation and registration methods have been
+extracted from `platform/world_evolution.py` into
+`platform/definition_runtime.py`. The extraction is still an uncommitted
+working-tree change.
+
+1. Run `git diff --check` and compile the two modules.
+2. Run the focused definition, action binding, institution and liveness tests.
+3. Confirm that `Platform` resolves each extracted method through the mixin
+   without a second implementation in `world_evolution.py`.
+4. Commit this extraction as one change. Do not combine it with persistence or
+   activity changes.
+
+**Acceptance:** dynamic Action + follow-up BT registration, research-source
+reachability validation, recipe normalization, and proposal rollback retain
+their existing behavior; `world_evolution.py` contains no definition registry
+or definition-effect validator.
+
+### Stage B — split world-evolution responsibilities
+
+**Status:** the first split is complete in the working tree. The old
+`world_evolution.py` owner has been removed; Platform now imports the four
+focused modules `definition_runtime.py`, `entity_proposals.py`,
+`story_runtime.py`, and `world_changes.py`. The remaining work in this stage
+is to finish the focused service boundary and commit the split after the
+vertical-slice checks below.
+
+Split the remaining `WorldEvolutionRuntimeMixin` in this order:
+
+1. `platform/entity_proposals.py`: agent, location, faction, object, resource
+   and institution proposals plus reference validation.
+2. `platform/story_runtime.py`: Story beat eligibility, source-event binding,
+   chapter progress and narrative follow-up registration.
+3. `platform/world_changes.py`: generic world-property, relationship, rule,
+   capability-evidence and progress changes.
+4. Keep only a thin facade while callers migrate; delete the facade once no
+   caller imports its private methods.
+
+For every move, use this loop: move code without behavior changes, run the
+focused tests, search for the old method owner, then remove the old copy. Do
+not add a new branch for a world, entity type, or visible name during the
+split.
+
+**Acceptance:** each responsibility has one owner, proposal errors still roll
+back the complete transaction, and no service imports `Platform` to reach a
+private method.
+
+### Stage C — make Platform a composed coordinator
+
+Replace the remaining runtime mixin inheritance with explicit service objects.
+The constructor creates services in dependency order:
+
+```text
+Store/UnitOfWork
+  → EventService → WakeService
+  → DefinitionService / ActivityService / SocialService / WorldTickService
+  → EvolutionService
+  → SnapshotService / TimelineService
+```
+
+`Platform` keeps the public API and delegates to these services. Each service
+gets a narrow context (`store`, transaction helper, target resolver, event
+publisher, and configuration projections); it cannot call another service's
+private methods. During this stage, keep one transaction boundary per public
+operation and preserve active-process resume semantics.
+
+**Acceptance:** `runtime.py` is below 500 lines, `Platform` has no runtime
+Mixin base classes, and a single tick still commits minute effects,
+activities, outcomes, events, wake tasks, and clock advancement atomically.
+
+### Stage D — unify persistence ownership
+
+Introduce repository interfaces behind one Unit of Work in this order:
+
+1. `EventRepository` and `ActivityRepository`;
+2. `EvolutionRepository` and `MemoryRepository`;
+3. `EntityRepository`, `AgentRepository`, and `SocialRepository`;
+4. `SnapshotRepository`.
+
+Repositories receive an active transaction and never call `commit()`.
+Existing SQLite tables remain the source of truth during this development
+phase. Add rollback, restart recovery, and event/projection atomicity tests at
+each step.
+
+**Acceptance:** no state-changing repository method can commit independently;
+crash recovery requeues claimed evolution tasks; event IDs, revisions and
+causation IDs remain stable across replay.
+
+### Stage E — converge AgentView and tools
+
+Create one definition compiler that emits the persisted normalized definition,
+the model JSON Schema, and the AgentView projection. Then split Agent code
+into `session.py`, `protocol.py`, `tool_registry.py`, `audit.py`, and
+`policies.py`.
+
+Remove legacy aliases and role-specific mutation checks after all callers use
+the canonical schema. Keep world history and role memory bounded projections;
+do not paste the full event log into prompts. Verify with a model-backed audit
+that records context, tool calls, accepted/rejected intents, and resulting
+world events without storing secrets or raw hidden reasoning.
+
+**Acceptance:** a world with unrelated attributes, entities and terminology
+boots from configuration alone; Story and God can only consume committed
+events and submit validated proposals.
+
+### Stage F — real-model and long-run gate
+
+Before declaring convergence complete, run these in order:
+
+```bash
+python -m pytest -q <focused suites>
+python -m compileall -q src scripts
+bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py --provider beam'
+python scripts/run_long_simulation.py --minutes 10080
+python -m pytest -q
+python scripts/benchmark_platform.py --agents 1000 --runs 5
+```
+
+The model-backed audit must inspect every round's bounded context, tool
+arguments, response summary, accepted intent, world event, and follow-up
+behavior. It must demonstrate at least ten causal rounds in which an NPC
+action wakes Story or God, the proposal is accepted, another NPC receives the
+result, and the next behavior changes. “Tool call succeeded” alone is not an
+acceptance criterion.
+
+Record the run ID, database path, provider role, latency, prompt/completion
+tokens, cache-hit information, and the reason for every wait or retry in
+`docs/operations/real-model-evolution-check.md`. Stop and fix the first
+causal break; do not mask it by increasing a token limit or adding a
+world-specific fallback.
+
+### Change discipline
+
+- One stage and one architectural owner per commit.
+- Every moved method has a focused regression test before its old owner is
+  deleted.
+- No new compatibility format, direct Story/God callback, or per-world
+  `if/else` is allowed.
+- A real-model failure is recorded with its context and causal chain, then
+  fixed at the protocol or configuration boundary that caused it.
+- Full slow tests run only at the merge boundary; focused tests run after each
+  stage.
+
 ## Final acceptance
 
 The refactor is complete when all of the following hold:
