@@ -670,7 +670,7 @@ def test_research_wakes_story_and_god_only_after_configured_rounds(tmp_path: Pat
         for minute in (201, 202, 203, 204):
             with platform.store.transaction():
                 event_id = platform.store.append_event("research.completed", "qiao_ning", minute, {"summary": "Another validated research result."})
-            platform._queue_event_consumer_task("god", event_id, "research.completed", "qiao_ning", minute, task_type="event:research.completed")
+            platform.wakes.queue("god", event_id, "research.completed", "qiao_ning", minute, task_type="event:research.completed")
         assert any(item["role"] == "god" and str(item["task_type"]).startswith("event_group:research_synthesis") for item in platform.ready_evolution_tasks())
         assert platform.store.connection.execute("SELECT COUNT(*) AS n FROM event_log WHERE event_type='research.progressed'").fetchone()["n"] == 1
     finally:

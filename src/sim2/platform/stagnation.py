@@ -210,5 +210,5 @@ class StagnationRuntimeMixin:
             "omitted_characters": omitted,
         }
         event_id = self.store.append_event("world.stagnation", None, int(minute), payload)
-        self._wake_configured_evolution_consumers(event_id, "world.stagnation", None, int(minute))
+        self.wakes.configured(event_id, "world.stagnation", None, int(minute))
         return event_id

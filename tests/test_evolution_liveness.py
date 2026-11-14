@@ -69,11 +69,11 @@ def test_manual_only_event_skips_automatic_fan_out_but_admits_explicit_producers
     try:
         event_id = platform.store.append_event("institution.allocation_completed", "mei_lan", 2, {"amount": 1})
         # Platform's own publication of the event is the automatic path.
-        platform._wake_configured_evolution_consumers(event_id, "institution.allocation_completed", "mei_lan", 2)
+        platform.wakes.configured(event_id, "institution.allocation_completed", "mei_lan", 2)
         assert _story_tasks(platform) == []
         # A behavior or Action that names Story in its own ``wake`` list is
         # an explicit producer declaration and still reaches Story.
-        task_id = platform._queue_event_consumer_task(
+        task_id = platform.wakes.queue(
             "story", event_id, "institution.allocation_completed", "mei_lan", 2, explicit=True,
         )
         assert task_id
@@ -122,16 +122,16 @@ def test_distinct_by_wakes_once_per_evidence_key_and_never_by_calendar(tmp_path:
     try:
         _distinct_god_policy(platform)
         first = _research_event(platform, 1, "stone", "stage_1")
-        first_task = platform._queue_event_consumer_task("god", first, "research.completed", "luo_shan", 1)
+        first_task = platform.wakes.queue("god", first, "research.completed", "luo_shan", 1)
         assert first_task
 
         # The same source and stage is the same evidence, however often it is repeated.
         repeat = _research_event(platform, 2, "stone", "stage_1")
-        assert platform._queue_event_consumer_task("god", repeat, "research.completed", "luo_shan", 2) is None
+        assert platform.wakes.queue("god", repeat, "research.completed", "luo_shan", 2) is None
 
         # New evidence one minute later wakes again: there is no week-long lockout.
         second = _research_event(platform, 3, "stone", "stage_2")
-        second_task = platform._queue_event_consumer_task("god", second, "research.completed", "luo_shan", 3)
+        second_task = platform.wakes.queue("god", second, "research.completed", "luo_shan", 3)
         assert second_task and second_task != first_task
         task = next(item for item in platform.ready_evolution_tasks() if item["task_id"] == second_task)
         assert [item["event_id"] for item in task["source_events"]] == [second]
@@ -143,7 +143,7 @@ def test_distinct_by_counts_only_novel_keys_toward_the_minimum(tmp_path: Path) -
     platform = _town(tmp_path, "distinct-minimum")
     try:
         _distinct_god_policy(platform, count=2)
-        queue = lambda event_id, minute: platform._queue_event_consumer_task("god", event_id, "research.completed", "luo_shan", minute)
+        queue = lambda event_id, minute: platform.wakes.queue("god", event_id, "research.completed", "luo_shan", minute)
         assert queue(_research_event(platform, 1, "stone", "stage_1"), 1) is None
         assert queue(_research_event(platform, 2, "stone", "stage_1"), 2) is None  # repeat: still one key
         task_id = queue(_research_event(platform, 3, "road", "stage_1"), 3)  # second key reaches the minimum
@@ -1001,7 +1001,7 @@ def test_outcome_review_wake_lets_god_revise_the_institution_it_reviewed(tmp_pat
                 for offset in range(3)
             ]
         for offset, event_id in enumerate(event_ids):
-            platform._wake_configured_evolution_consumers(event_id, "institution.allocation_completed", "mei_lan", 20 + offset)
+            platform.wakes.configured(event_id, "institution.allocation_completed", "mei_lan", 20 + offset)
         tasks = [item for item in platform.ready_evolution_tasks() if item["task_type"] == "event_group:institution_outcome_review"]
         assert len(tasks) == 1 and tasks[0]["role"] == "god"
 

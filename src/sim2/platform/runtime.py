@@ -22,12 +22,13 @@ from ..world.rules import RuleCompiler
 from ..world.schema import AttributeSchema
 from ..world.time import world_time_view
 from ..world.context import configured_context_values
-from ..evolution import EventWakeScheduler, WorldProposalEvaluator
+from ..evolution import WorldProposalEvaluator
 from .activity import ActivityRuntimeMixin
 from .learning import LearningRuntimeMixin
 from .social import SocialRuntimeMixin
 from .stagnation import StagnationRuntimeMixin
 from .world_evolution import WorldEvolutionRuntimeMixin
+from .wake_service import WakeService
 
 
 class Platform(
@@ -55,7 +56,7 @@ class Platform(
         self.effects = EffectPipeline(self.store.get_meta("attributes", []) or [])
         self.targets = TargetResolver(self.store)
         self.resources = ResourceLedger(self.store)
-        self.event_wakes = EventWakeScheduler(self.store)
+        self.wakes = WakeService(self.store, self._resolve_evolution_consumer)
         self.proposal_evaluator = WorldProposalEvaluator(self.store, self.targets)
 
     def close(self) -> None:
@@ -1228,7 +1229,7 @@ class Platform(
                     "summary": f"{entity.get('name', resource_id)} is at or below its configured reserve floor.",
                     "signal_kind": "crossing" if not previous else "repeat",
                 })
-                self._wake_configured_evolution_consumers(event_id, event_type, None, minute)
+                self.wakes.configured(event_id, event_type, None, minute)
                 state[resource_id] = {"active": active, "last_emitted_minute": int(minute)}
                 changed = True
             elif active != previous:
@@ -1366,7 +1367,7 @@ class Platform(
                         role, actor_id = "agent_reflection", target
                     else:
                         role, actor_id = target, None
-                    self._queue_event_consumer_task(role, event_id, str(signal.get("event_type") or f"world.rule.{name}"), actor_id, minute, task_type=f"rule:{name}")
+                    self.wakes.queue(role, event_id, str(signal.get("event_type") or f"world.rule.{name}"), actor_id, minute, task_type=f"rule:{name}")
         active_ids = {str(item.get("id")) for item in signals}
         for rule in self.rule_compiler.all_rules():
             state_key = str(rule.get("id") or rule.get("name") or "world_rule")

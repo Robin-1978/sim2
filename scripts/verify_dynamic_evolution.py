@@ -91,7 +91,7 @@ def main() -> int:
                     "summary": "蓄水已耗尽，梅岚携带的蓄水可以补入公共池。",
                 },
             )
-        platform._wake_configured_evolution_consumers(safety_event_id, "resource.safety_low", None, 1)
+        platform.wakes.configured(safety_event_id, "resource.safety_low", None, 1)
         god_task = next(item for item in platform.ready_evolution_tasks() if item.get("task_type") == "event_group:resource_safety")
         god_turn = AgentEngine(platform, god_provider).run(
             role="god",

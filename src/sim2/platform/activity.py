@@ -640,7 +640,7 @@ class ActivityRuntimeMixin:
                         "action_id": str(action.get("id") or ""),
                     })
                     allocation_event_id = self.store.append_event("institution.allocation_completed", agent["id"], minute, allocation_event)
-                    self._wake_configured_evolution_consumers(
+                    self.wakes.configured(
                         allocation_event_id, "institution.allocation_completed", agent["id"], minute,
                     )
                 else:
@@ -836,63 +836,6 @@ class ActivityRuntimeMixin:
         self.store.put_relationship(agent["id"], target_id, relation_type, data)
         self.store.append_event("relationship.changed", agent["id"], minute, {"target_id": target_id, "relation": relation_type, "delta": delta, "relation_strength": data["relation_strength"]})
 
-    def _queue_story_task(self, event_id: int, event_type: str, actor_id: str, minute: int) -> None:
-        """Create a same-boundary Story Agent barrier for a new discovery."""
-
-        self.store.put_evolution_task(
-            f"story:event:{event_id}", "story", "story", f"story:{event_type}", minute, 0,
-            data={"source_event_id": int(event_id), "source_event_type": event_type, "source_actor_id": actor_id},
-        )
-
-    def _queue_event_consumer_task(self, consumer: str, event_id: int, event_type: str, actor_id: str | None, minute: int, *, task_type: str | None = None, explicit: bool = False) -> str | None:
-        role, resolved_actor = self._resolve_evolution_consumer(consumer, actor_id)
-        evolution = self.store.get_meta("evolution", {}) or {}
-        evolution = evolution.get("evolution", evolution) if isinstance(evolution, dict) else {}
-        consumers = ((evolution.get("event_wake_policy", {}) or {}).get("consumers", {}) or {}) if isinstance(evolution, dict) else {}
-        manual_events = {str(item) for item in ((consumers.get(role, {}) or {}).get("manual_event_types") or [])}
-        # ``manual_only`` events reach a consumer only through an explicit
-        # producer declaration (a behavior/Action ``wake`` list).  Platform's
-        # own fan-out of the same event is automatic, so it must not wake the
-        # consumer one event at a time.
-        if not explicit and str(event_type) in manual_events:
-            return None
-        if role in {"agent_decision", "agent_reflection"} and resolved_actor:
-            task_id = f"{role}:event:{int(event_id)}:{resolved_actor}"
-            self.store.put_evolution_task(
-                task_id,
-                role,
-                resolved_actor,
-                str(task_type or f"event:{event_type}"),
-                int(minute),
-                0,
-                status="ready",
-                data={
-                    "source_events": [{"event_id": int(event_id), "event_type": str(event_type), "actor_id": actor_id}],
-                    "source_event_id": int(event_id),
-                    "source_event_type": str(event_type),
-                    "source_actor_id": actor_id,
-                },
-            )
-            return task_id
-        return self.event_wakes.queue(role, event_id, event_type, resolved_actor, minute, task_type=task_type, explicit=explicit)
-
-    def _queue_configured_followups(self, configured: dict[str, Any], event_id: int, event_type: str, actor_id: str, minute: int) -> None:
-        """Wake configured result consumers without knowing story-specific IDs."""
-
-        for role in configured.get("wake", configured.get("wake_roles", [])) or []:
-            role = str(role)
-            if not role:
-                continue
-            self._queue_event_consumer_task(
-                role,
-                event_id,
-                event_type,
-                actor_id,
-                minute,
-                task_type=f"event:{event_type}",
-                explicit=True,
-            )
-
     def _advance_information_progress(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> dict[str, Any] | None:
         definition = action.get("progress") or {}
         if not isinstance(definition, dict) or not definition.get("key"):
@@ -967,9 +910,9 @@ class ActivityRuntimeMixin:
         if progress["completed"]:
             wake = definition.get("wake")
             if wake is None:
-                self._queue_story_task(event_id, event_type, agent["id"], minute)
+                self.wakes.story_source(event_id, event_type, agent["id"], minute)
             else:
-                self._queue_configured_followups({"wake": wake}, event_id, event_type, agent["id"], minute)
+                self.wakes.followups({"wake": wake}, event_id, event_type, agent["id"], minute)
         return {**progress, "discovery": discovery, "stage_id": (discovery or {}).get("id"), "progress_key": key}
 
     def _record_information_result(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> dict[str, Any]:
@@ -1007,7 +950,7 @@ class ActivityRuntimeMixin:
                             agent["unlocked_bt_ids"] = unlocked
                             self.store.append_event("behavior.unlocked", agent["id"], minute, {"behavior_id": behavior_id, "discovery_id": discovery_id, "source": "exploration"})
                 event_id = self.store.append_event("exploration.completed", agent["id"], minute, {"area_id": area_id, "result_id": result_id, "discoveries": [str(item.get("id")) for item in discoveries]})
-                self._queue_story_task(event_id, "exploration.completed", agent["id"], minute)
+                self.wakes.story_source(event_id, "exploration.completed", agent["id"], minute)
                 result = {"result": "exploration_completed", "event_id": event_id}
         if source_id:
             source_id = str(source_id)
@@ -1035,7 +978,7 @@ class ActivityRuntimeMixin:
                             event_id=event_id,
                             world_minute=minute,
                         )
-                        self._queue_story_task(event_id, "research.completed", agent["id"], minute)
+                        self.wakes.story_source(event_id, "research.completed", agent["id"], minute)
                         result = {"result": "research_completed", "event_id": event_id, "progress": progress}
                     elif progress is not None:
                         result = {"result": "research_progressed", "progress": progress}
@@ -1054,7 +997,7 @@ class ActivityRuntimeMixin:
                 {"fact": fact, "source_type": "recovery", "source_id": object_id, "object_id": object_id, "behavior": action.get("id"), "confidence": 0.9, "observed_at": minute},
             )
             event_id = self.store.append_event("object.recovered", agent["id"], minute, {"object_id": object_id, "fact": fact})
-            self._queue_story_task(event_id, "object.recovered", agent["id"], minute)
+            self.wakes.story_source(event_id, "object.recovered", agent["id"], minute)
             result = {"result": "object_recovered", "event_id": event_id}
         if target_id and topic:
             target_id = str(target_id)
@@ -1101,7 +1044,7 @@ class ActivityRuntimeMixin:
             if "story" in {str(item) for item in (information.get("wake") or [])}:
                 event_data["story_source"] = True
             event_id = self.store.append_event(str(configured_event), agent["id"], minute, event_data)
-            self._queue_configured_followups(information, event_id, str(configured_event), agent["id"], minute)
+            self.wakes.followups(information, event_id, str(configured_event), agent["id"], minute)
             result.setdefault("event_id", event_id)
             result.setdefault("result", str(information.get("result") or "information_recorded"))
         fact_template = information.get("fact_template")
@@ -1190,7 +1133,7 @@ class ActivityRuntimeMixin:
                     # enough to wake God or Story. Event groups apply their
                     # own evidence count and cooldown; this call does not
                     # hard-code any institution or quota semantics.
-                    self._wake_configured_evolution_consumers(
+                    self.wakes.configured(
                         ledger_event_id, "institution.ledger_entry", actor_id, minute,
                     )
 
@@ -1299,10 +1242,10 @@ class ActivityRuntimeMixin:
                 # policies. The event itself remains the source of truth;
                 # event groups decide whether Story/God receive it directly,
                 # after a threshold, or not at all.
-                self._wake_configured_evolution_consumers(
+                self.wakes.configured(
                     event_id, event_type, agent["id"], minute,
                 )
-                self._queue_configured_followups(configured, event_id, event_type, agent["id"], minute)
+                self.wakes.followups(configured, event_id, event_type, agent["id"], minute)
                 # An institution may account for the verified outcome event
                 # emitted by a behavior (for example, a research or public
                 # inspection result) instead of the generic behavior.completed
@@ -1437,7 +1380,7 @@ class ActivityRuntimeMixin:
             agent["story_goals"] = [item for item in (agent.get("story_goals", []) or []) if str(item) not in cleared_goals]
             self.store.update_agent(actor_id, agent)
         self.store.set_meta("story_state", state)
-        self._queue_story_task(source_event_id, "behavior.failed", actor_id, minute)
+        self.wakes.story_source(source_event_id, "behavior.failed", actor_id, minute)
 
     def _complete_story_beats_for_actor(self, actor_id: str, behavior_id: str, minute: int) -> None:
         """Close active audience beats after a matching follow-up behavior.

@@ -110,17 +110,17 @@ def test_story_receives_only_configured_direct_events(tmp_path: Path):
     platform = _town(tmp_path, "story-direct-allowlist")
     try:
         ledger_id = platform.store.append_event("institution.ledger_entry", "mei_lan", 1, {"amount": 1})
-        assert platform._queue_event_consumer_task(
+        assert platform.wakes.queue(
             "story", ledger_id, "institution.ledger_entry", "mei_lan", 1,
         ) is None
         # Routine allocation completions are manual-only for Story: the
         # automatic fan-out must not wake it one completion at a time.
         allocation_id = platform.store.append_event("institution.allocation_completed", "mei_lan", 2, {"amount": 1})
-        assert platform._queue_event_consumer_task(
+        assert platform.wakes.queue(
             "story", allocation_id, "institution.allocation_completed", "mei_lan", 2,
         ) is None
         activated_id = platform.store.append_event("institution.activated", "god", 3, {"name": "Public Ledger"})
-        task_id = platform._queue_event_consumer_task(
+        task_id = platform.wakes.queue(
             "story", activated_id, "institution.activated", "god", 3,
         )
         assert task_id
@@ -482,7 +482,7 @@ def test_god_creates_new_settlement_behavior_after_ledger_review(tmp_path: Path)
                     "nodes": [{"type": "action", "action_id": "Settle Institution Allocation", "parameters": {
                         "institution": "context.institution", "pool_entity": "context.pool_entity", "item": "context.item", "period": "context.period",
                     }}],
-                "outcome_events": [{"event_type": "institution.allocation_applied", "wake": ["story"]}],
+                "outcome_events": [{"event_type": "institution.allocation_applied", "wake": ["story"], "summary": "The active institution allocation was applied."}],
             },
             "assign_to": ["梅岚"],
             "evidence": "Three verified ledger entries justify a repeatable settlement behavior.",
@@ -650,7 +650,7 @@ def test_ten_round_story_god_chain_keeps_creating_followups(tmp_path: Path):
                     "nodes": [{"type": "action", "action_id": "Settle Institution Allocation", "parameters": {"institution": "Test Public Ledger", "pool_entity": "cistern_water", "item": "water", "period": "week"}}],
                     "success_results": ["allocation_completed"],
                     "failure_results": ["allocation_failed"],
-                    "outcome_events": [{"event_type": "institution.allocation_completed", "wake": ["story"]}],
+                    "outcome_events": [{"event_type": "institution.allocation_completed", "wake": ["story"], "summary": "The active institution allocation was completed."}],
                 },
                 "assign_to": ["梅岚"],
                 "evidence": "Three new verified ledger entries require an executable settlement follow-up.",

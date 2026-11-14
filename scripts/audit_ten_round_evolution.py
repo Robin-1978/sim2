@@ -81,7 +81,7 @@ def main() -> int:
                         "entry_conditions": ["actor.can_inspect", "actor.alive"],
                         "nodes": [{"type": "action", "action_id": "Settle Institution Allocation", "parameters": {"institution": "Test Public Ledger", "pool_entity": "cistern_water", "item": "water", "period": "week"}}],
                         "success_results": ["allocation_completed"], "failure_results": ["allocation_failed"],
-                        "outcome_events": [{"event_type": "institution.allocation_completed", "wake": ["story"]}],
+                        "outcome_events": [{"event_type": "institution.allocation_completed", "wake": ["story"], "summary": "The active institution allocation was completed."}],
                     }, "assign_to": ["梅岚"],
                     "evidence": "Three new verified ledger entries require an executable settlement follow-up.",
                 })]), max_iterations=1).run(role="god", actor_id="god", task_type=review["task_type"], source_events=review.get("source_events") or [])

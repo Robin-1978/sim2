@@ -902,7 +902,7 @@ class WorldEvolutionRuntimeMixin:
                             + "; use machine predicates only in entry_conditions (for example actor.alive or actor.can_research), include a Travel node before a destination Action, and correct the Action parameters"
                         )
             event_id = self.store.append_event("definition.registered", actor_id, world_minute, {"definition_type": definition_type, "name": name, "definition_id": definition.get("id"), "assigned_to": [visible for _, visible in resolved_agents], "evidence": str(proposal.get("evidence") or "")})
-            self._wake_configured_evolution_consumers(event_id, "definition.registered", actor_id, world_minute)
+            self.wakes.configured(event_id, "definition.registered", actor_id, world_minute)
             followup_recipe_event_id = None
             if definition_type == "action" and followup_recipe_definition:
                 followup_recipe_event_id = self.store.append_event(
@@ -917,7 +917,7 @@ class WorldEvolutionRuntimeMixin:
                         "evidence": str(proposal.get("evidence") or ""),
                     },
                 )
-                self._wake_configured_evolution_consumers(followup_recipe_event_id, "definition.registered", actor_id, world_minute)
+                self.wakes.configured(followup_recipe_event_id, "definition.registered", actor_id, world_minute)
             followup_event_id = None
             if definition_type == "action" and followup_definition:
                 followup_event_id = self.store.append_event(
@@ -933,7 +933,7 @@ class WorldEvolutionRuntimeMixin:
                         "evidence": str(proposal.get("evidence") or ""),
                     },
                 )
-                self._wake_configured_evolution_consumers(followup_event_id, "definition.registered", actor_id, world_minute)
+                self.wakes.configured(followup_event_id, "definition.registered", actor_id, world_minute)
             if actor_id == "god":
                 remember_role(self.store, "god", "world_definition", {
                     "summary": f"Registered {definition_type}: {name}.",
@@ -1229,7 +1229,7 @@ class WorldEvolutionRuntimeMixin:
                         if problems:
                             raise _UnreachableProposal(problems)
                 event_id = self.store.append_event("entity.created", actor_id, world_minute, {"intent_id": intent_id, "entity_id": entity_id, "entity_type": entity_type, "summary": proposal.get("description", "")})
-                self._wake_configured_evolution_consumers(event_id, "entity.created", actor_id, world_minute)
+                self.wakes.configured(event_id, "entity.created", actor_id, world_minute)
                 if actor_id == "god":
                     remember_role(self.store, "god", "world_entity", {
                         "summary": f"Created {entity_type}: {proposal.get('name', entity_id)}.",

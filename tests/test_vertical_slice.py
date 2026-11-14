@@ -578,13 +578,13 @@ def test_god_event_wakes_use_configured_evidence_counts(tmp_path: Path):
         # Routine governance does not wake God by itself.
         with platform.store.transaction():
             routine_id = platform.store.append_event("governance.reviewed", "lin_bo", 1, {"summary": "One routine review."})
-        platform._queue_configured_followups({"wake": ["god"]}, routine_id, "governance.reviewed", "lin_bo", 1)
+        platform.wakes.followups({"wake": ["god"]}, routine_id, "governance.reviewed", "lin_bo", 1)
         assert not any(item["role"] == "god" for item in platform.ready_evolution_tasks())
 
         # A single public incident is a direct world consequence and wakes God.
         with platform.store.transaction():
             incident_id = platform.store.append_event("entity.installed", "tian_yan", 2, {"summary": "A public warning device was installed."})
-        platform._queue_event_consumer_task("god", incident_id, "entity.installed", "tian_yan", 2, task_type="event:entity.installed")
+        platform.wakes.queue("god", incident_id, "entity.installed", "tian_yan", 2, task_type="event:entity.installed")
         task = next(item for item in platform.ready_evolution_tasks() if item["role"] == "god" and item["task_type"] == "event_group:public_incident")
         assert task["source_events"] == [{"event_id": incident_id, "event_type": "entity.installed", "actor_id": "tian_yan"}]
     finally:
@@ -605,22 +605,22 @@ def test_configured_governance_and_trade_groups_reach_their_thresholds(tmp_path:
         for minute in range(1, 8):
             with platform.store.transaction():
                 event_id = platform.store.append_event("governance.reviewed", "lin_bo", minute, {"summary": "Verified governance review."})
-                platform._queue_configured_followups(governance, event_id, "governance.reviewed", "lin_bo", minute)
+                platform.wakes.followups(governance, event_id, "governance.reviewed", "lin_bo", minute)
             assert not any(task["task_type"] == "event_group:governance_capacity" for task in platform.ready_evolution_tasks())
         with platform.store.transaction():
             event_id = platform.store.append_event("governance.reviewed", "lin_bo", 8, {"summary": "Eighth verified governance review."})
-            platform._queue_configured_followups(governance, event_id, "governance.reviewed", "lin_bo", 8)
+            platform.wakes.followups(governance, event_id, "governance.reviewed", "lin_bo", 8)
         governance_task = next(task for task in platform.ready_evolution_tasks() if task["task_type"] == "event_group:governance_capacity")
         assert len(governance_task["source_events"]) == 8
 
         for minute in range(20, 25):
             with platform.store.transaction():
                 event_id = platform.store.append_event("negotiation.terms_recorded", "fei_lan", minute, {"summary": "Concrete terms were recorded."})
-                platform._queue_configured_followups(negotiation, event_id, "negotiation.terms_recorded", "fei_lan", minute)
+                platform.wakes.followups(negotiation, event_id, "negotiation.terms_recorded", "fei_lan", minute)
             assert not any(task["task_type"] == "event_group:trade_network" for task in platform.ready_evolution_tasks())
         with platform.store.transaction():
             event_id = platform.store.append_event("negotiation.terms_recorded", "fei_lan", 25, {"summary": "Sixth concrete negotiation result."})
-            platform._queue_configured_followups(negotiation, event_id, "negotiation.terms_recorded", "fei_lan", 25)
+            platform.wakes.followups(negotiation, event_id, "negotiation.terms_recorded", "fei_lan", 25)
         trade_task = next(task for task in platform.ready_evolution_tasks() if task["task_type"] == "event_group:trade_network")
         assert len(trade_task["source_events"]) == 6
     finally:
@@ -637,7 +637,7 @@ def test_runner_preserves_story_source_event_in_agent_view(tmp_path: Path):
                 "entity.installed", "tian_yan", 0,
                 {"summary": "The dawn bell was installed at the north gate.", "story_source": True},
             )
-            platform._queue_event_consumer_task(
+            platform.wakes.queue(
                 "story", source_event_id, "entity.installed", "tian_yan", 0,
                 task_type="event:entity.installed",
             )
@@ -963,7 +963,7 @@ def test_story_provider_failure_retries_without_pausing_world(tmp_path: Path):
                 1,
                 {"story_source": True, "summary": "The boundary marks were classified."},
             )
-        platform._queue_event_consumer_task("story", event_id, "security.marks_classified", "he_yan", 1, task_type="event:security.marks_classified")
+        platform.wakes.queue("story", event_id, "security.marks_classified", "he_yan", 1, task_type="event:security.marks_classified")
         report = SimulationRunner(platform, {"story": FailingProvider()}).run(2)
         assert report.end_minute == 2
         assert platform.status()["status"] == "running"
@@ -998,7 +998,7 @@ def test_evolution_provider_cooldown_retries_at_same_world_minute(tmp_path: Path
                 1,
                 {"story_source": True, "summary": "The boundary marks were classified."},
             )
-        platform._queue_event_consumer_task(
+        platform.wakes.queue(
             "story", event_id, "security.marks_classified", "he_yan", 1,
             task_type="event:security.marks_classified",
         )
@@ -3048,7 +3048,7 @@ def test_completed_action_respects_existing_public_incident_cooldown(tmp_path: P
                 "security.marks_classified", "he_yan", 96,
                 {"summary": "The configured investigation classified the marks."},
             )
-            platform._queue_event_consumer_task(
+            platform.wakes.queue(
                 "god", first_event, "security.marks_classified", "he_yan", 96,
                 task_type="event:security.marks_classified",
             )

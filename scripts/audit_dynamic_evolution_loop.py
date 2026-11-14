@@ -175,7 +175,7 @@ def main() -> int:
     try:
         with platform.store.transaction():
             event_id = platform.store.append_event("resource.safety_low", None, 1, {"resource_id": "energy_reserve", "quantity": 0, "minimum_reserve": 1, "summary": "公共能源储备为零，Mira 携带的 energy_cell 可作为真实补给来源。"})
-        platform._wake_configured_evolution_consumers(event_id, "resource.safety_low", None, 1)
+        platform.wakes.configured(event_id, "resource.safety_low", None, 1)
         rows: list[dict[str, Any]] = []
         for round_no in range(1, max(1, args.rounds) + 1):
             before_entity_ids = {

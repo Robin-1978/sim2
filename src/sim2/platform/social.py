@@ -136,26 +136,6 @@ class SocialRuntimeMixin:
                 matched.add(int(row["event_id"]))
         return len(matched)
 
-    def _wake_configured_evolution_consumers(self, event_id: int, event_type: str, actor_id: str, minute: int) -> None:
-        """Deliver a social event only to roles explicitly subscribed by the world.
-
-        Institution creation and activation are ordinary world events.  The
-        package decides whether Story or God should receive them; the runtime
-        does not assume that every world has either consumer enabled.
-        """
-
-        root = self.store.get_meta("evolution", {}) or {}
-        config = root.get("evolution", root) if isinstance(root, dict) else {}
-        policy = config.get("event_wake_policy", {}) if isinstance(config, dict) else {}
-        consumers = policy.get("consumers", {}) if isinstance(policy, dict) else {}
-        if not isinstance(consumers, dict):
-            return
-        for role in consumers:
-            # The scheduler applies direct-event, task-prefix, event-group,
-            # count and cooldown policy. Producers only publish the event and
-            # do not know which consumer role should receive it.
-            self._queue_event_consumer_task(str(role), event_id, event_type, actor_id, minute, task_type=f"event:{event_type}")
-
     def submit_institution_proposal(self, actor_id: str, proposal: dict[str, Any]) -> dict[str, Any]:
         """Record a proposed social institution without activating it.
 
@@ -252,7 +232,7 @@ class SocialRuntimeMixin:
         with self.store.transaction():
             self.store.put_institution(institution_id, "proposed", data, minute)
             event_id = self.store.append_event("institution.proposed", actor_id, minute, {"institution": {"name": name, "purpose": purpose, "scope": data["scope"]}, "status": "proposed"})
-            self._wake_configured_evolution_consumers(event_id, "institution.proposed", actor_id, minute)
+            self.wakes.configured(event_id, "institution.proposed", actor_id, minute)
             if actor_id == "god":
                 remember_role(self.store, "god", "institution_decision", {
                     "summary": f"Proposed institution {name}: {purpose}.",
@@ -291,7 +271,7 @@ class SocialRuntimeMixin:
             institution_data = {key: value for key, value in selected.items() if key not in {"institution_id", "status", "created_minute", "activated_minute"}}
             self.store.put_institution(str(selected["institution_id"]), "active", institution_data, int(selected.get("created_minute", minute)), minute)
             event_id = self.store.append_event("institution.activated", actor_id, minute, {"institution": {"name": selected.get("name"), "purpose": selected.get("purpose")}, "reason": reason, "status": "active"})
-            self._wake_configured_evolution_consumers(event_id, "institution.activated", actor_id, minute)
+            self.wakes.configured(event_id, "institution.activated", actor_id, minute)
             if actor_id == "god":
                 remember_role(self.store, "god", "institution_decision", {
                     "summary": f"Activated institution {selected.get('name')}: {selected.get('purpose') or ''}.",
@@ -457,7 +437,7 @@ class SocialRuntimeMixin:
                 str(selected["institution_id"]), "active", terms,
                 int(selected.get("created_minute", minute)), int(selected["activated_minute"]) if selected.get("activated_minute") is not None else minute,
             )
-            self._wake_configured_evolution_consumers(event_id, "institution.revised", actor_id, minute)
+            self.wakes.configured(event_id, "institution.revised", actor_id, minute)
             remember_role(self.store, "god", "institution_decision", {
                 "summary": f"Revised institution {selected.get('name')}: {reason_text}",
                 "institution": selected.get("name"),
