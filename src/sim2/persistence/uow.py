@@ -35,7 +35,7 @@ class EvolutionRepository:
         minute: int,
         due_minute: int,
         *,
-        status: str = "pending",
+        status: str = "scheduled",
         data: dict[str, Any] | None = None,
     ) -> None:
         self.store.put_evolution_task(
@@ -48,6 +48,27 @@ class EvolutionRepository:
             status=status,
             data=data,
         )
+
+    def due_tasks(self, world_minute: int) -> list[dict[str, Any]]:
+        return self.store.due_evolution_tasks(world_minute)
+
+    def ready_tasks(self) -> list[dict[str, Any]]:
+        return self.store.ready_evolution_tasks()
+
+    def mark_ready(self, task_id: str) -> None:
+        self.store.mark_evolution_task_ready(task_id)
+
+    def claim(self, task_id: str, world_minute: int) -> dict[str, Any] | None:
+        return self.store.claim_evolution_task(task_id, world_minute)
+
+    def recover_claimed(self, world_minute: int) -> list[str]:
+        return self.store.recover_claimed_evolution_tasks(world_minute)
+
+    def reschedule(self, task_id: str, due_minute: int, data: dict[str, Any] | None = None) -> None:
+        self.store.reschedule_evolution_task(task_id, due_minute, data)
+
+    def complete(self, task_id: str, completed_minute: int) -> None:
+        self.store.complete_evolution_task(task_id, completed_minute)
 
 
 class UnitOfWork:
