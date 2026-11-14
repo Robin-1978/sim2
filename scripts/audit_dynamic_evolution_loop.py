@@ -68,12 +68,12 @@ def _probe_template() -> dict[str, Any]:
                 "id": "research_source", "version": 1, "description": "Study one configured archive source.", "parameters": {"source_id": "string"}, "preconditions": ["actor.can_research", "research.new_fact_available"], "duration": {"minutes": 60}, "costs": {"reserve": {}, "per_minute": {"charge": 0.15}, "on_success": {}, "on_failure": {}, "refund": {}}, "effects": [{"type": "need_delta", "need": "focus", "delta": 0.5}], "progress": {"key": "research:{source_id}", "scope": "world", "amount": 1, "wake": ["story", "god"]}, "success": {"condition": "research.new_fact_found", "result": "research_completed"}, "failure": {"condition": "source.destroyed", "result": "failed"}, "kind": "atomic", "executor": "effect_pipeline",
             },
             {
-                "id": "inspect_archive", "version": 1, "description": "Inspect the public reserve and archive console.", "parameters": {"object_id": "string"}, "preconditions": ["actor.can_stewardship"], "duration": {"minutes": 15}, "costs": {"reserve": {}, "per_minute": {"charge": 0.1}, "on_success": {}, "on_failure": {}, "refund": {}}, "effects": [{"type": "world_property_delta", "property": "relay_stability", "delta": 0.02, "maximum": 1.0}], "success": {"condition": "actor.alive", "result": "archive_inspected"}, "failure": {"condition": "actor.incapacitated", "result": "failed"}, "information": {"event_type": "archive.inspected", "summary": "The relay archive and public reserve were inspected.", "source_type": "inspection", "confidence": 0.85, "result": "archive_inspected", "record_object_discovery": False}, "kind": "atomic", "executor": "effect_pipeline",
+                "id": "inspect_archive", "version": 1, "description": "Inspect the public reserve and archive console until the configured stability review threshold.", "parameters": {"object_id": "string"}, "preconditions": ["actor.can_stewardship", "world.relay_stability < 0.55"], "duration": {"minutes": 15}, "costs": {"reserve": {}, "per_minute": {"charge": 0.1}, "on_success": {}, "on_failure": {}, "refund": {}}, "effects": [{"type": "world_property_delta", "property": "relay_stability", "delta": 0.02, "maximum": 1.0}], "success": {"condition": "actor.alive", "result": "archive_inspected"}, "failure": {"condition": "actor.incapacitated", "result": "failed"}, "information": {"event_type": "archive.inspected", "summary": "The relay archive and public reserve were inspected.", "source_type": "inspection", "confidence": 0.85, "result": "archive_inspected", "record_object_discovery": False}, "kind": "atomic", "executor": "effect_pipeline",
             },
         ],
         "behavior_trees": [
             {"id": "study_source", "agent_label": "Study Configured Source", "summary": "Study Configured Source", "description": "Use the reusable research behavior on one visible source.", "no_op_travel_minutes": 0, "agent_parameters": {"source_id": {"type": "string", "required": True, "max_length": 120, "description": "Exact visible source name."}}, "entry_conditions": ["actor.can_research", "actor.alive"], "estimated_minutes": 61, "nodes": [{"type": "action", "action_id": "travel_to", "parameters": {"location_id": "context.source_location_id"}}, {"type": "action", "action_id": "research_source", "parameters": {"source_id": "context.source_id"}}], "success_results": ["research_completed"], "failure_results": ["failed", "interrupted"]},
-            {"id": "inspect_archive", "agent_label": "Inspect Archive", "summary": "Inspect Archive", "entry_conditions": ["actor.can_stewardship", "actor.alive"], "estimated_minutes": 16, "nodes": [{"type": "action", "action_id": "travel_to", "parameters": {"location_id": "relay_lab"}}, {"type": "action", "action_id": "inspect_archive", "parameters": {"object_id": "signal_archive"}}], "success_results": ["archive_inspected"], "failure_results": ["failed", "interrupted"]},
+            {"id": "inspect_archive", "agent_label": "Inspect Archive", "summary": "Inspect Archive", "entry_conditions": ["actor.can_stewardship", "actor.alive", "world.relay_stability < 0.55"], "estimated_minutes": 16, "nodes": [{"type": "action", "action_id": "travel_to", "parameters": {"location_id": "relay_lab"}}, {"type": "action", "action_id": "inspect_archive", "parameters": {"object_id": "signal_archive"}}], "success_results": ["archive_inspected"], "failure_results": ["failed", "interrupted"]},
         ],
         "agents": [
             {"id": "mira", "name": "Mira", "role": "relay_researcher", "ultimate_goal": "Keep the relay useful by turning verified archive facts into safer public systems.", "traits": {"curious": 0.9, "careful": 0.85}, "beliefs": [], "needs": {"focus": 70}, "capabilities": {"research": 0.95, "stewardship": 0.75}, "initial_bt_ids": ["study_source", "inspect_archive"], "research_targets": ["signal_archive"], "initial_state": {"location_id": "relay_lab", "status": "idle", "integrity": 100, "charge": 90}, "inventory": {"energy_cell": 2}},
@@ -139,6 +139,20 @@ def _summary(turn: AgentTurn | None) -> dict[str, Any] | None:
 def _ready(platform: Platform, *, role: str, task_prefix: str | None = None) -> dict[str, Any] | None:
     tasks = [item for item in platform.ready_evolution_tasks() if item.get("role") == role and (not task_prefix or str(item.get("task_type", "")).startswith(task_prefix))]
     return max(tasks, key=lambda item: int(item.get("task_id", "0").split(":")[-1]) if str(item.get("task_id", "").split(":")[-1]).isdigit() else 0, default=None)
+
+
+def _pending_structural_tasks(platform: Platform) -> list[dict[str, Any]]:
+    """Return ready Story/God work that can continue the causal loop.
+
+    A task can become ready in the same round as the final NPC outcome.  The
+    audit must not call that state absorbing merely because the requested
+    round window ended before the next consumer turn was run.
+    """
+
+    return [
+        item for item in platform.ready_evolution_tasks()
+        if str(item.get("role") or "") in {"story", "god"}
+    ]
 
 
 def _run_task(platform: Platform, provider: Any, task: dict[str, Any]) -> AgentTurn:
@@ -257,6 +271,7 @@ def main() -> int:
         # without a new object, Action, BT, or Story beat, the world has
         # reached an unexplained absorbing state and the probe must fail.
         quality_flags: list[str] = []
+        pending_structural_tasks = _pending_structural_tasks(platform)
         if len(rows) >= 3 and not turn_failures:
             tail = rows[-3:]
             structural_changes = sum(
@@ -275,13 +290,22 @@ def main() -> int:
                 for story in (row.get("story") or [])
                 if isinstance(story, dict) and story.get("status") == "accepted"
             )
-            if structural_changes == 0 and accepted_story == 0 and len(set(choices)) <= 1:
+            if structural_changes == 0 and accepted_story == 0 and len(set(choices)) <= 1 and not pending_structural_tasks:
                 quality_flags.append("absorbing_state:three_rounds_without_structural_or_story_progress")
         requested_rounds = max(1, int(args.rounds))
         if len(rows) != requested_rounds:
             quality_flags.append(f"incomplete_rounds:{len(rows)}/{requested_rounds}")
         quality_flags.extend(dict.fromkeys(turn_failures))
-        summary = {"status": "passed" if not quality_flags else "failed", "flags": quality_flags, "rounds": len(rows), "requested_rounds": requested_rounds}
+        summary = {
+            "status": "passed" if not quality_flags else "failed",
+            "flags": quality_flags,
+            "rounds": len(rows),
+            "requested_rounds": requested_rounds,
+            "pending_structural_tasks": [
+                {"task_id": item.get("task_id"), "role": item.get("role"), "task_type": item.get("task_type")}
+                for item in pending_structural_tasks
+            ],
+        }
         with (runtime_root / "evolution-audit-summary.json").open("w", encoding="utf-8") as stream:
             json.dump(summary, stream, ensure_ascii=False, indent=2)
         print(json.dumps({"audit": summary}, ensure_ascii=False), flush=True)

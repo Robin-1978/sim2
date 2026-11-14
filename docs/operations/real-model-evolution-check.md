@@ -437,6 +437,42 @@ The redacted audit ended with `10/10`, no provider errors or rejected intents,
 three distinct research objects, changed NPC choices, and
 `{"status":"passed","flags":[]}`. The generated files remain under `/tmp`.
 
+### Stability-threshold liveness audit
+
+After the expression AST and explicit service-dependency refactors, a new
+10-round audit initially reported an absorbing state. SQLite showed that this
+was a real configuration gap: `inspect_archive` remained executable after its
+configured `relay.stability_review` threshold, so it kept adding small
+stability deltas without creating a new consequence. God correctly waited
+because the current research source was already sufficient, leaving the NPC
+to repeat the inspection.
+
+The probe configuration now declares the terminal condition in both the
+Action and generic BT entry contract:
+
+```yaml
+world.relay_stability < 0.55
+```
+
+This is a content-level stop condition, not a Platform or audit special case.
+The audit also distinguishes a genuine absorbing state from a final-round
+state that already has a ready Story/God task; the latter is reported as
+pending continuation instead of being falsely failed.
+
+The corrected interactive DeepSeek run is:
+
+```bash
+bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py \
+  --provider remote --rounds 10 \
+  --runtime-dir /tmp/sim2-evolution-after-stability-gate'
+```
+
+It completed `10/10` rounds with `status=passed`, no provider errors or
+rejected intents, a God-created research object, changed NPC choices,
+multiple grounded Story beats, and a ready `relay.stability_review` task at
+the end of the requested window. The pending task is a continuation for the
+next round, not an unobserved mutation.
+
 ### Final deterministic one-week balance check
 
 The initial deterministic week exposed a harness defect rather than a missing

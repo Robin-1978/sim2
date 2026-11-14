@@ -1077,3 +1077,13 @@ draft-package editor. The Runtime Web Client is specified separately in
 timeline projections with incremental event cursors, while player commands
 still go through `ControlService` and Platform. Neither browser surface gets
 direct SQLite or LLM/provider access.
+
+The post-AST 10-round causal audit initially exposed a real liveness defect in
+the declarative probe: `inspect_archive` had no configured terminal condition
+after the stability-review threshold, so the same valid Action could repeat
+without a new consequence. The probe now gates that Action with
+`world.relay_stability < 0.55`, and the audit treats a ready final-round
+Story/God task as pending continuation rather than absorbing state. The
+corrected DeepSeek run at `/tmp/sim2-evolution-after-stability-gate/` passed
+10/10 with a God-created source, changed NPC choices and grounded Story
+continuations.

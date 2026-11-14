@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from scripts.audit_dynamic_evolution_loop import _ready
+from scripts.audit_dynamic_evolution_loop import _pending_structural_tasks, _ready
 
 
 class _TaskSource:
@@ -11,6 +11,17 @@ class _TaskSource:
 
     def ready_evolution_tasks(self) -> list[dict]:
         return list(self.tasks)
+
+
+def test_pending_structural_tasks_prevent_false_absorbing_state() -> None:
+    source = _TaskSource([
+        {"task_id": "god:event_group:relay_stability_review:7", "role": "god", "task_type": "event_group:relay_stability_review"},
+        {"task_id": "agent_decision:event:7:mira", "role": "agent_decision", "task_type": "agent_plan_selection"},
+    ])
+
+    pending = _pending_structural_tasks(source)
+
+    assert [item["task_type"] for item in pending] == ["event_group:relay_stability_review"]
 
 
 def test_ready_selects_any_configured_god_task_without_event_family_literal() -> None:
