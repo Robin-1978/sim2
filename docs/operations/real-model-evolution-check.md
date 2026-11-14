@@ -519,3 +519,22 @@ Platform still validates the canonical schema, and malformed proposals return
 quality pass when it exhausts its bounded ReAct session without a valid final
 Intent; the failure artifacts remain under `/tmp/sim2-evolution-beam-final/`
 and `/tmp/sim2-evolution-beam-native-adapter/`.
+
+### Current convergence verification
+
+After the restricted expression AST, explicit Platform service dependencies,
+and the stability-threshold liveness gate were committed, the repository
+checks were rerun:
+
+- `python -m pytest -q`: **428 passed**;
+- `python -m compileall -q src scripts`: passed;
+- `git diff --check`: passed;
+- `python scripts/benchmark_platform.py --agents 1000 --runs 5`: p95 tick
+  time **168.399 ms**, no failed agents.
+
+The dedicated real-model 10-round audit is recorded at
+`/tmp/sim2-evolution-after-stability-gate/`. It passed with no provider errors
+or rejected turns, distinct God-created research content, changed NPC choices,
+grounded Story continuations, and one ready God task at the requested window
+boundary. The one-week run was intentionally not repeated in this convergence
+turn; its previous deterministic evidence remains separate from this gate.

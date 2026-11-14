@@ -13,11 +13,14 @@ in the source tree.
 | Generic world | A non-village orbital template compiled to package YAML, initialized SQLite, and completed a behavior that changed reactor state and charge. | Ready |
 | WorldBuilder | The template schema, exact-template validation, initial runtime smoke test and real Beam transcript are covered. WorldBuilder inherits its role iteration budget. | Ready |
 | TUI and map | Textual tests cover map, timeline, character selection, pause and step. A separate orbital-world test proves the map is not village-specific. | Ready |
+| Expression DSL | Conditions and arithmetic formulas compile through the restricted `sim2.dsl` expression AST; Python/SQL/function syntax is rejected by focused tests. | Ready |
+| Platform service ownership | Platform facade methods and declared service dependencies have one explicit owner; dynamic method forwarding was removed. | Ready |
+| Web surfaces | Runtime Web Client and World Authoring Workbench designs are documented; implementation is a post-core product task and is not represented as complete. | Planned |
 | Deterministic week | Current code reached world minute 10080 with 751 provider calls, no LLM/rejection errors and no degeneration flags. | Ready |
-| Performance | 1000-agent, five-run Platform benchmark completed at p95 127.832 ms. | Ready |
+| Performance | Current 1000-agent, five-run Platform benchmark completed at p95 168.399 ms, below the 200 ms target, with no failed agents. | Ready |
 | Short real-model run | DeepSeek v4.1 Flash reached minute 360 with 45/45 quality-passing sessions, zero provider errors and 20 grounded testimony records carrying credibility and unverified status. | Ready |
 | Real-model week | DeepSeek v4.1 Flash run is in progress from a fresh SQLite instance. | Pending |
-| Protocol tests | `pytest -q` currently reports 257 passing tests; `compileall` passes. | Ready |
+| Protocol tests | Current `pytest -q` reports 428 passing tests; `compileall` and `git diff --check` pass. | Ready |
 | Packaging | Wheel and source distribution build successfully; wheel contains the bundled world and Apache license. | Ready |
 
 ## Short run statistics
