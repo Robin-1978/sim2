@@ -86,7 +86,7 @@ class EntityProposalRuntimeMixin:
 
         initial_bt_ids: list[str] = []
         for value in state.get("initial_bt_ids") or []:
-            behavior_id, matches = self._resolve_registered_definition("bt_def", value)
+            behavior_id, matches = self._context.services["definitions"]._resolve_registered_definition("bt_def", value)
             if not behavior_id:
                 errors.append(f"unknown or ambiguous initial behavior: {value}; matches={matches}")
             elif behavior_id not in initial_bt_ids:
@@ -195,13 +195,13 @@ class EntityProposalRuntimeMixin:
         if research_values_present and not proposed_state.get("research_assignees"):
             errors.append("a dynamic research source must declare at least one research_assignee")
         if research_values_present:
-            duplicate_research = self._research_duplicate(proposed_state, proposal.get("description"), proposal.get("location_id") or proposed_state.get("location_id"))
+            duplicate_research = self._context.services["definitions"]._research_duplicate(proposed_state, proposal.get("description"), proposal.get("location_id") or proposed_state.get("location_id"))
             if duplicate_research:
                 errors.append(
                     f"research source repeats existing evidence ({duplicate_research['name']}): {duplicate_research['reason']}; "
                     "submit a genuinely different research question or wait"
                 )
-        research_assignees, assignee_errors = self._resolve_research_assignees(proposed_state)
+        research_assignees, assignee_errors = self._context.services["definitions"]._resolve_research_assignees(proposed_state)
         errors.extend(assignee_errors)
         try:
             self.store.get_entity(entity_id)
@@ -215,7 +215,7 @@ class EntityProposalRuntimeMixin:
                 failed_check = "research_novelty_duplicate"
             else:
                 failed_check = "god_resource_creation" if any("stocked resource" in error for error in errors) else "entity_schema"
-            return self._reject_intent(intent_id, actor_id, "propose_entity", data, {"status": "rejected", "message": "Entity proposal failed validation.", "failed_check": failed_check, "errors": errors, "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_entity", data, {"status": "rejected", "message": "Entity proposal failed validation.", "failed_check": failed_check, "errors": errors, "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         # Entity proposals use one compact ``state`` object at the Agent
         # boundary.  Location topology is the one structural exception: the
@@ -227,7 +227,7 @@ class EntityProposalRuntimeMixin:
         proposed_state = dict(proposal.get("state") or {})
         entity_type = str(proposal.get("entity_type") or "")
         if proposed_state.get("research_discoveries") is not None or proposed_state.get("research_discovery") is not None:
-            focus, _ = self._research_focus(proposed_state, proposal.get("description"))
+            focus, _ = self._context.services["definitions"]._research_focus(proposed_state, proposal.get("description"))
             if focus:
                 proposed_state.setdefault("research_focus", focus)
         entity_data = {"description": proposal.get("description", ""), "initial_state": proposed_state}
@@ -235,7 +235,7 @@ class EntityProposalRuntimeMixin:
         if entity_type == "agent":
             agent_state, agent_errors = self._normalize_god_agent_state(entity_id, proposal)
             if agent_errors:
-                return self._reject_intent(intent_id, actor_id, "propose_entity", data, {"status": "rejected", "message": "Agent proposal failed validation.", "failed_check": "agent_schema", "errors": agent_errors, "retryable": True})
+                return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_entity", data, {"status": "rejected", "message": "Agent proposal failed validation.", "failed_check": "agent_schema", "errors": agent_errors, "retryable": True})
         elif entity_type == "location":
             for field in ("routes", "tags", "public", "safe", "discoveries", "map_position", "region_id"):
                 if field in proposed_state:
@@ -262,7 +262,7 @@ class EntityProposalRuntimeMixin:
                 else:
                     self.store.put_entity(entity_id, entity_type, str(proposal["name"]), entity_data)
                     if research_values_present:
-                        focus, _ = self._research_focus(proposed_state, proposal.get("description"))
+                        focus, _ = self._context.services["definitions"]._research_focus(proposed_state, proposal.get("description"))
                         gap_key = str(proposed_state.get("research_novelty_key") or proposed_state.get("research_gap_key") or f"source:{entity_id}")
                         question = str(proposed_state.get("research_question") or proposed_state.get("open_question") or focus or proposal.get("description") or proposal.get("name"))
                         self.store.upsert_knowledge_gap(
@@ -277,7 +277,7 @@ class EntityProposalRuntimeMixin:
                     if research_assignees:
                         # Judge reachability with the assignees' own views of
                         # the world that already contains the new source.
-                        problems = self._unreachable_research_assignees(proposed_name, research_assignees)
+                        problems = self._context.services["definitions"]._unreachable_research_assignees(proposed_name, research_assignees)
                         if problems:
                             raise _UnreachableProposal(problems)
                 event_id = self.uow.events.append("entity.created", actor_id, world_minute, {"intent_id": intent_id, "entity_id": entity_id, "entity_type": entity_type, "summary": proposal.get("description", "")})
@@ -293,7 +293,7 @@ class EntityProposalRuntimeMixin:
                 self.store.finish_intent(intent_id, "accepted", result)
         except _UnreachableProposal as exc:
             # The transaction has rolled back: nothing of the proposal exists.
-            return self._reject_intent(intent_id, actor_id, "propose_entity", data, {
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_entity", data, {
                 "status": "rejected",
                 "message": "The proposed research source would be unreachable for its assignees; nothing was created.",
                 "failed_check": "entity_unreachable",

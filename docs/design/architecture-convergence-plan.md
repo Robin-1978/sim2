@@ -11,6 +11,194 @@ This plan applies to the current development branch. Compatibility with
 retired schemas is not a goal. A definition or protocol is either migrated to
 the new form or rejected during development.
 
+## Authoritative execution plan (2026-11-14)
+
+This section is the working plan for the current branch. It replaces an
+implicit list of refactors with ordered deliverables and observable gates.
+The order matters: a later stage must not hide a failure in an earlier stage
+by adding another adapter, retry loop, or world-specific branch.
+
+### Current position
+
+The repository is between the first composition cut and the final removal of
+migration façades:
+
+1. The Platform facade and the world-evolution split are in place.
+2. Unit of Work and typed repositories are in place for state-changing paths.
+3. Agent tool registry, executor, session and runtime policy have been split.
+4. The current uncommitted change replaces implicit cross-service method
+   discovery with explicit service owners. It must be tested and committed
+   before the next structural change.
+5. The remaining architectural debt is the Store read façade, the duplicate
+   definition compiler/validation paths, and the still-large AgentEngine.
+6. A one-week deterministic run has already exposed a content-level liveness
+   issue (`vital_depleted:fei_lan`). This is tracked after the ownership
+   refactor; it must be fixed in world configuration or generic demand and
+   regeneration rules, never by adding a Starter Village branch.
+
+### Ordered work packages
+
+#### Package 1 — close the explicit-service boundary
+
+**Files:** `src/sim2/platform/*.py`,
+`tests/test_platform_composition.py`, `tests/test_unit_of_work.py`,
+`tests/test_action_binding.py`, `tests/test_god_world_content.py`,
+`tests/test_institution_evolution.py`, `tests/test_evolution_liveness.py`.
+
+- Finish the pending owner-call conversion in the working tree.
+- Keep `Platform` as the public dispatch facade; service-to-service calls use
+  declared context dependencies or typed callbacks only.
+- Do not add another `__getattr__` lookup, service scan, or compatibility
+  alias.
+- Run `git diff --check`, the focused suite, and `compileall`.
+- Commit this package separately with a short imperative subject.
+
+**Gate:** no service reaches an undeclared service; one tick still commits
+minute effects, activity progress, outcomes, events and wake tasks in one
+transaction; the focused suite is green.
+
+#### Package 2 — make event and wake ownership singular
+
+**Files:** `src/sim2/platform/events.py`,
+`src/sim2/platform/wake_service.py`, `src/sim2/platform/activity.py`,
+`src/sim2/platform/social.py`, `src/sim2/platform/entity_proposals.py`,
+`tests/test_event_wake_ownership.py`.
+
+- Add one event publisher that assigns `event_id`, `causation_id`,
+  `correlation_id`, `world_revision` and actor metadata.
+- Add one wake publisher that turns committed events into idempotent
+  `EvolutionTask` records.
+- Remove direct Story/God queue calls from activity and proposal code.
+- Keep evidence grouping as a pure calculation; it must not write tasks.
+- Test duplicate delivery, restart, cooldown, uncommitted-event rejection and
+  one task per consumer/event group.
+
+**Gate:** `rg "_queue_story_task|_queue_event_consumer_task" src/sim2`
+returns only the WakeService implementation and its tests. Every Story/God
+wake can be traced to a committed event.
+
+#### Package 3 — remove the Store read façade
+
+**Files:** `src/sim2/persistence/store.py`,
+`src/sim2/persistence/repositories/`, `src/sim2/platform/`,
+`src/sim2/agent_view/`, and repository ownership tests.
+
+- Replace read-heavy `Store` method calls with typed repository calls through
+  the existing Unit of Work or an explicit read context.
+- Keep SQLite as the source of truth and keep all writes inside Unit of Work.
+- Add restart and rollback tests while each read domain is migrated.
+- Delete the façade only after `rg "\.store\.[A-Za-z_]" src/sim2` shows no
+  unclassified access.
+
+**Gate:** no repository commits independently; event and projection writes are
+atomic; claimed evolution tasks are recovered after restart; replay preserves
+event IDs and revisions.
+
+#### Package 4 — one definition compiler and one validation contract
+
+**Files:** `src/sim2/world/schema.py`,
+`src/sim2/platform/definition_runtime.py`,
+`src/sim2/agent_view/compiler.py`, `src/sim2/agents/tool_registry.py`, and
+schema tests. If a dedicated compiler module is needed, create it beside the
+existing schema owner rather than adding another parallel schema source.
+
+- Define Action, BT, Recipe, capability, attribute and follow-up schemas once.
+- Emit from that source: persisted normalized definition, model JSON Schema,
+  AgentView description and Platform validation rules.
+- Remove food aliases, duplicate research formats, event/event_type aliases and
+  role-specific validation exceptions; migrate current development fixtures to
+  the canonical form instead of preserving old input.
+- Ensure a God-created Action plus BT is immediately reachable by the generic
+  NPC behavior selector and is covered by an end-to-end test.
+
+**Gate:** a world with unrelated names, attributes, objects and entities boots
+without Python changes; the same invalid proposal is rejected consistently by
+the model-facing schema and Platform.
+
+#### Package 5 — finish AgentEngine boundaries and prompt projections
+
+**Files:** `src/sim2/agents/engine.py`, `session.py`, `protocol.py`,
+`tool_registry.py`, `tool_executor.py`, `runtime_policy.py`, `audit.py`,
+`src/sim2/agent_view/compiler.py`.
+
+- Keep the bounded ReAct loop in the session owner.
+- Keep provider response normalization and tool-call IDs in the protocol
+  owner; the platform, not the model, generates persisted call identities.
+- Keep tool schemas and role permissions in the registry; keep mutation in the
+  executor/gateway.
+- Keep prompts compact: bounded world projection, relevant history and role
+  memory only. Do not paste the full event log or raw hidden reasoning.
+- Record input source, response summary, tool arguments, accepted/rejected
+  intent, latency, token usage and resulting event IDs without secrets.
+
+**Gate:** prompt history has a stable prefix, bounded suffix and explicit
+  truncation reason; a provider failure resumes or waits according to policy;
+  no reflection or Story/God output is silently rewritten into a different
+  intent merely to pass quality checks.
+
+#### Package 6 — causal evolution and liveness audit
+
+**Files:** `scripts/audit_dynamic_evolution_loop.py`,
+`docs/operations/real-model-evolution-check.md`, world configuration and
+generic rule tests only where the audit identifies a real content defect.
+
+- Run a ten-round NPC → committed event → Story/God → proposal → NPC loop
+  with the configured DeepSeek provider for semantic quality.
+- Run Beam as a provider/protocol check; `finish_reason=length` with no
+  response is a provider failure, not a world-quality pass.
+- Inspect every round's bounded context, tool arguments, response summary,
+  accepted intent, event, follow-up task, next NPC choice and world delta.
+- Run the deterministic one-week simulation and investigate every depleted
+  vital, repeated proposal, idle absorption state and unfinished activity.
+- Fix resource regeneration, demand, or progression in data/configuration or
+  generic primitives; do not add `if world == ...` logic.
+
+**Gate:** ten causal rounds show changed NPC behavior and committed world
+  state, not only successful tool calls; repeated proposals are explained by
+  missing evidence or rejected as duplicates; the one-week run has no
+  unexplained starvation/deadlock and all long activities have explicit end
+  semantics.
+
+### Required verification commands
+
+Run focused checks after each package and the full gate only at the merge
+boundary:
+
+```bash
+python -m pytest -q tests/test_platform_composition.py \
+  tests/test_unit_of_work.py tests/test_action_binding.py \
+  tests/test_god_world_content.py tests/test_institution_evolution.py \
+  tests/test_evolution_liveness.py
+python -m compileall -q src scripts
+bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py --provider deepseek'
+bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py --provider beam'
+python scripts/run_long_simulation.py --minutes 10080
+python -m pytest -q
+python scripts/benchmark_platform.py --agents 1000 --runs 5
+```
+
+The model-backed command must write a run record under
+`docs/operations/real-model-evolution-check.md` or its referenced artifact;
+it must not print keys, proxy settings or hidden reasoning. A failed provider
+call is recorded separately from a rejected world intent.
+
+### Stop conditions
+
+Stop the current package and fix its cause when any of the following occurs:
+
+- a state change bypasses Unit of Work or lacks a WorldEvent;
+- Story/God is woken without a committed causal event;
+- an NPC receives a proposal but no executable generic behavior or assignment;
+- a repeated action has no changed evidence, progress or explicit maintenance
+  reason;
+- a model output is accepted without grounded evidence;
+- a test passes only because a legacy alias, quality waiver, token-limit bump,
+  or world-specific fallback was added.
+
+The plan is complete only after all package gates and the final acceptance
+section pass. Until then, this document must retain the unresolved item and
+the evidence for it instead of marking the architecture complete.
+
 ## Baseline before convergence
 
 The current core contains approximately 21,000 lines of Python. The largest
@@ -18,13 +206,13 @@ modules are:
 
 | Module | Approximate size | Current concern |
 |---|---:|---|
-| `platform/runtime.py` | 1,700 lines | Tick loop, state mutation, evolution scheduling, timeline, snapshots and public API are mixed |
+| `platform/runtime.py` | 98 lines | Public facade still exposes the migration dispatch surface; lifecycle ownership now lives in services |
 | `platform/activity.py` | 1,500 lines | Action/BT execution, research, Story completion, institutions and event wakeups are mixed |
-| `platform/world_evolution.py` | 2,000 lines | Definition validation, entity proposals, Story beats and world changes share one module |
-| `persistence/store.py` | 1,750 lines | All repositories and metadata are exposed through one store |
+| `platform/definition_runtime.py`, `entity_proposals.py`, `story_runtime.py`, `world_changes.py` | split modules | Definition validation, entity proposals, Story beats and world changes now have separate owners |
+| `persistence/store.py` | 419 lines | Typed repositories exist, but read-heavy callers still use the migration façade |
 | `agent_view/compiler.py` | 1,900 lines | Decision, Story and God views share availability, parameter and rendering logic |
 | `agents/tools.py` | 1,200 lines | Schemas, dispatch, role policy, compatibility normalization and proposal rules are mixed |
-| `agents/engine.py` | 1,100 lines | ReAct protocol, provider messages, task policy, intent normalization and audit are mixed |
+| `agents/engine.py` | 1,067 lines | Session, provider protocol, intent normalization and audit still need a final boundary |
 
 The most important duplicate lifecycle is:
 
@@ -46,7 +234,7 @@ The first convergence stages have now landed:
 
 | Area | Current owner | State |
 |---|---|---|
-| Platform facade | `platform/runtime.py` | 81-line facade; no Runtime Mixin inheritance |
+| Platform facade | `platform/runtime.py` | 98-line facade; no Runtime Mixin inheritance |
 | Runtime API | `platform/api_service.py` | explicit service |
 | Behavior admission/execution | `platform/behavior_service.py` | explicit services |
 | World minute | `platform/world_tick_service.py` | explicit service |
@@ -194,7 +382,8 @@ social, events, evolution and LLM modules. `UnitOfWork` owns the SQLite
 transaction, all Platform event writes and evolution task operations use its
 typed repositories, and rollback coverage is present. The remaining work is
 to replace the Store method-name façade with typed repository calls in the
-read-heavy projections, then remove the façade.
+read-heavy projections, then remove the façade. This is Package 3 of the
+authoritative execution plan above.
 
 Replace the broad `WorldStore` API with repositories behind one Unit of Work:
 
@@ -225,7 +414,8 @@ only the public import façade. `AgentTurn` and role/evolution routing policy
 now live in `agents/session.py` and `agents/runtime_policy.py`. The remaining
 work is to make the definition compiler the sole source for model schemas and
 Platform validation, then separate the bounded session/audit implementation
-from the orchestration engine.
+from the orchestration engine. This is Packages 4 and 5 of the authoritative
+execution plan above.
 
 Create one definition compiler that emits:
 
@@ -352,10 +542,11 @@ private method.
 **Status:** the first composition cut is complete. `Platform` now has no
 Runtime Mixin base classes and is a small facade. Explicit services own the
 API, intent admission, action execution, minute ticks, evolution tasks,
-definitions, entities, Story, social work and liveness signals. Context
-cross-service lookup now uses a constructed unique method-owner registry
-instead of scanning arbitrary services; the remaining work is to replace that
-registry with narrow typed callbacks as each service is cleaned up.
+definitions, entities, Story, social work and liveness signals. The current
+branch has a constructed method-owner registry as a migration boundary; the
+pending Package 1 change makes every cross-service owner explicit and removes
+the remaining implicit lookup behavior. The registry is not a new public
+extension point.
 
 Harden the explicit service composition and remove its migration proxy. The
 constructor creates services in dependency order:
@@ -375,8 +566,9 @@ private methods. During this stage, keep one transaction boundary per public
 operation and preserve active-process resume semantics.
 
 **Acceptance:** `runtime.py` is below 500 lines, `Platform` has no runtime
-Mixin base classes, and a single tick still commits minute effects,
-activities, outcomes, events, wake tasks, and clock advancement atomically.
+Mixin base classes, service dependencies are declared, and a single tick
+still commits minute effects, activities, outcomes, events, wake tasks, and
+clock advancement atomically.
 
 ### Stage D — unify persistence ownership
 

@@ -27,8 +27,8 @@ class ActivityRuntimeMixin:
         if not action:
             return False, f"action is not registered: {action_id}"
         state = dict(agent.get("initial_state") or {})
-        parameters = self._resolve_activity_parameters(dict(action_info.get("parameters") or {}), state)
-        parameters = self._apply_action_parameter_defaults(agent, action, parameters)
+        parameters = self._context.services["execution"]._resolve_activity_parameters(dict(action_info.get("parameters") or {}), state)
+        parameters = self._context.services["execution"]._apply_action_parameter_defaults(agent, action, parameters)
         already_at_destination = bool(
             action.get("requires_destination")
             and action.get("completion", {}).get("if_already_at_destination")
@@ -58,8 +58,8 @@ class ActivityRuntimeMixin:
             "inventory": agent.get("inventory", {}) or {},
             "station_tags": [],
             "current_location": current_location,
-            "current_object": self._entity_for_context(parameters.get("object_id")),
-            "source": self._entity_for_context(parameters.get("source_id")),
+            "current_object": self._context.services["execution"]._entity_for_context(parameters.get("object_id")),
+            "source": self._context.services["execution"]._entity_for_context(parameters.get("source_id")),
             "research_discoveries": self.store.research_discoveries(str(parameters.get("source_id"))) if parameters.get("source_id") else [],
             "mapped_areas": self.store.explored_areas(agent["id"]),
             "researched_sources": self.store.researched_sources(agent["id"]),
@@ -72,7 +72,7 @@ class ActivityRuntimeMixin:
             "target.visible": (resolved_target or {}).get("visible", False),
             "target.available": (resolved_target or {}).get("available", False),
             "known_route_destinations": reachable_locations(self.store, location_id),
-            "recent_event_types": self._recent_event_types(),
+            "recent_event_types": self._context.services["evolution"]._recent_event_types(),
             "day_phase": world_time_view(self.store).get("day_phase"),
         }
         condition_context.update(configured_context_values(self.store.get_meta("rules", {}) or {}, agent))
@@ -96,7 +96,7 @@ class ActivityRuntimeMixin:
             condition_target = {**parameters, **(resolved_target or {})}
             if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=condition_context, world=self.store.get_meta("world_properties", {}) or {}):
                 return False, f"precondition failed: {predicate}"
-        duration = self._action_duration(agent, action, parameters, state.get("location_id"))
+        duration = self._context.services["execution"]._action_duration(agent, action, parameters, state.get("location_id"))
         if already_at_destination:
             behavior = next(
                 (item for item in self.store.get_definitions("bt_def") if str(item.get("id")) == str(state.get("active_behavior_id"))),
@@ -109,10 +109,10 @@ class ActivityRuntimeMixin:
             # but it does not charge movement costs or reserve resources.
             reservation = []
         else:
-            capacity_ok, capacity_reason = self._check_action_capacity(agent, action, duration)
+            capacity_ok, capacity_reason = self._context.services["execution"]._check_action_capacity(agent, action, duration)
             if not capacity_ok:
                 return False, capacity_reason
-            allowed, reason, reservation = self._reserve_action_costs(agent, action, parameters)
+            allowed, reason, reservation = self._context.services["execution"]._reserve_action_costs(agent, action, parameters)
             if not allowed:
                 return False, reason
         action_instance_id = f"{execution_id}:{state.get('active_action_index', 0)}"
@@ -141,8 +141,8 @@ class ActivityRuntimeMixin:
         if not action:
             return None, f"action is not registered: {action_info.get('action_id')}"
         state = dict(agent.get("initial_state") or {})
-        parameters = self._resolve_activity_parameters(dict(action_info.get("parameters") or {}), state)
-        parameters = self._apply_action_parameter_defaults(agent, action, parameters)
+        parameters = self._context.services["execution"]._resolve_activity_parameters(dict(action_info.get("parameters") or {}), state)
+        parameters = self._context.services["execution"]._apply_action_parameter_defaults(agent, action, parameters)
         already_at_destination = bool(
             action.get("requires_destination")
             and action.get("completion", {}).get("if_already_at_destination")
@@ -171,8 +171,8 @@ class ActivityRuntimeMixin:
             "inventory": agent.get("inventory", {}) or {},
             "station_tags": [],
             "current_location": current_location,
-            "current_object": self._entity_for_context(parameters.get("object_id")),
-            "source": self._entity_for_context(parameters.get("source_id")),
+            "current_object": self._context.services["execution"]._entity_for_context(parameters.get("object_id")),
+            "source": self._context.services["execution"]._entity_for_context(parameters.get("source_id")),
             "mapped_areas": self.store.explored_areas(agent["id"]),
             "researched_sources": self.store.researched_sources(agent["id"]),
             "known_fact_keys": [
@@ -184,7 +184,7 @@ class ActivityRuntimeMixin:
             "target.visible": (target or {}).get("visible", False),
             "target.available": (target or {}).get("available", False),
             "known_route_destinations": reachable_locations(self.store, state.get("location_id")),
-            "recent_event_types": self._recent_event_types(),
+            "recent_event_types": self._context.services["evolution"]._recent_event_types(),
             "day_phase": world_time_view(self.store).get("day_phase"),
         }
         context.update(configured_context_values(self.store.get_meta("rules", {}) or {}, agent))
@@ -208,15 +208,15 @@ class ActivityRuntimeMixin:
         for predicate in action.get("preconditions", []) or []:
             if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=context, world=self.store.get_meta("world_properties", {}) or {}):
                 return None, f"precondition failed: {predicate}"
-        duration = self._action_duration(agent, action, parameters, state.get("location_id"))
+        duration = self._context.services["execution"]._action_duration(agent, action, parameters, state.get("location_id"))
         if already_at_destination:
             reservation = []
         else:
-            capacity_ok, capacity_reason = self._check_action_capacity(agent, action, duration)
+            capacity_ok, capacity_reason = self._context.services["execution"]._check_action_capacity(agent, action, duration)
             if not capacity_ok:
                 return None, capacity_reason
             probe = copy.deepcopy(agent)
-            allowed, reason, reservation = self._reserve_action_costs(probe, action, parameters, commit=False)
+            allowed, reason, reservation = self._context.services["execution"]._reserve_action_costs(probe, action, parameters, commit=False)
             if not allowed:
                 return None, reason
         return {"action": action, "parameters": parameters, "target": target, "duration": duration, "reservation": reservation, "no_op": already_at_destination}, ""
@@ -264,7 +264,7 @@ class ActivityRuntimeMixin:
             for item_index, item, info in prepared:
                 action = info["action"]
                 if not info.get("no_op"):
-                    self._reserve_action_costs(agent, action, info["parameters"])
+                    self._context.services["execution"]._reserve_action_costs(agent, action, info["parameters"])
             active = {}
             for item_index, item, info in prepared:
                 action_id = item["action_id"]
@@ -298,7 +298,7 @@ class ActivityRuntimeMixin:
                 self._finish_behavior(agent, execution_id, behavior_id, "failed", f"action is not registered: {entry['action_id']}", minute)
                 return
             if not entry.get("no_op"):
-                self._apply_action_progress(agent, action)
+                self._context.services["execution"]._apply_action_progress(agent, action)
             entry["remaining"] = max(0, int(entry["remaining"]) - 1)
             elapsed = int(entry["duration"]) - int(entry["remaining"])
             self.store.update_action_instance(entry["action_instance_id"], status="succeeded" if entry["remaining"] == 0 else "running", elapsed_minutes=elapsed, remaining_minutes=entry["remaining"], data={"parameters": entry["parameters"], "target": entry["target"], "reservation": entry.get("reservation", []), "parallel_group": group, "no_op": bool(entry.get("no_op")), "definition_version": int(entry.get("definition_version", action.get("definition_version", action.get("version", 1))) or 1), "definition_snapshot": entry.get("definition_snapshot") or copy.deepcopy(action)}, updated_minute=minute)
@@ -387,7 +387,7 @@ class ActivityRuntimeMixin:
         # An idempotent destination Action still completes at this tick, but
         # its configured movement costs do not apply when already there.
         if not state.get("active_action_noop"):
-            self._apply_action_progress(agent, action)
+            self._context.services["execution"]._apply_action_progress(agent, action)
             # The progress pipeline mutates the agent projection.  Reload it
             # before advancing the action cursor; otherwise the old cursor
             # snapshot would silently overwrite every per-minute cost.
@@ -542,7 +542,7 @@ class ActivityRuntimeMixin:
                         value = max(float(effect["minimum"]), value)
                     if isinstance(effect.get("maximum"), (int, float)):
                         value = min(float(effect["maximum"]), value)
-                    self._set_world_property(property_id, value)
+                    self._context.services["tick"]._set_world_property(property_id, value)
                     self.uow.events.append(
                         "world.property_changed", agent["id"], minute,
                         {"property": property_id, "before": before_value, "after": value, "delta": value - float(before_value or 0), "source": action.get("id")},
@@ -617,7 +617,7 @@ class ActivityRuntimeMixin:
                             {"entity_id": entity["id"], "state": str(state_key), "before": before_value, "after": entity_state[str(state_key)], "action_id": action.get("id")},
                         )
             elif effect_type == "institution_allocation":
-                allocation = self.apply_institution_allocation(
+                allocation = self._context.services["social"].apply_institution_allocation(
                     str(resolved_effect.get("institution") or ""),
                     str(resolved_effect.get("pool_entity") or ""),
                     str(resolved_effect.get("item") or ""),
@@ -1005,12 +1005,12 @@ class ActivityRuntimeMixin:
                 listener = self.store.get_agent(target_id)
             except KeyError:
                 listener = None
-            testimony = self._testimony_metadata(agent, listener) if listener else {}
+            testimony = self._context.services["social"]._testimony_metadata(agent, listener) if listener else {}
             dialogue_id = self.store.put_dialogue_exchange(agent["id"], target_id if listener else None, str(topic), minute, {"source": action.get("id"), "message": message, "parameters": parameters})
             self.store.put_memory(agent["id"], "dialogue", {"topic": str(topic), "message": message, "target_id": target_id, "world_minute": minute, "dialogue_id": dialogue_id, "claim_status": "observed", "source_type": "own_statement"})
             if listener:
                 self.store.put_memory(target_id, "testimony", {"topic": str(topic), "message": message, "speaker_id": agent["id"], "world_minute": minute, "dialogue_id": dialogue_id, "claim_status": "reported", "source_type": "testimony", **testimony})
-                self._apply_configured_relationship_effect(agent, listener, "dialogue.completed", minute)
+                self._context.services["social"]._apply_configured_relationship_effect(agent, listener, "dialogue.completed", minute)
                 self.store.update_agent(listener["id"], listener)
             event_id = self.uow.events.append("dialogue.completed", agent["id"], minute, {"target_id": target_id, "topic": str(topic), "message": message, "dialogue_id": dialogue_id, **testimony})
             result = {"result": "dialogue_recorded", "event_id": event_id}
@@ -1156,13 +1156,13 @@ class ActivityRuntimeMixin:
             # other composite behaviors can change the world as well as the
             # actor without introducing world-specific branches here.
             self._apply_success_effects(agent, {"id": f"behavior:{behavior_id}", "effects": behavior_definition.get("outcome_effects", []) or []}, {}, minute)
-        after = self._execution_snapshot(agent)
+        after = self._context.services["execution"]._execution_snapshot(agent)
         outcome = {
             "status": status,
             "result": result,
             "expected": dict(bt_data.get("expected") or {}),
             "actual": after,
-            "delta": self._execution_delta(before, after) if before else {},
+            "delta": self._context.services["execution"]._execution_delta(before, after) if before else {},
             "decision": dict(bt_data.get("decision") or {}),
         }
         rule_followups: list[dict[str, Any]] = []
@@ -1170,11 +1170,11 @@ class ActivityRuntimeMixin:
             location_id = (agent.get("initial_state") or {}).get("location_id")
             context = {
                 "location_id": location_id,
-                "current_location": self._entity_for_context(location_id),
+                "current_location": self._context.services["execution"]._entity_for_context(location_id),
                 "behavior_id": behavior_id,
-                "recent_event_types": self._recent_event_types(),
+                "recent_event_types": self._context.services["evolution"]._recent_event_types(),
             }
-            world = self._world_trigger_context()
+            world = self._context.services["evolution"]._world_trigger_context()
             for raw_rule in self.rule_compiler.all_rules():
                 behavior = behavior_definition
                 if not self.rule_compiler.behavior_matches(raw_rule, behavior):

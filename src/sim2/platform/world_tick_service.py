@@ -81,7 +81,7 @@ class WorldTickService(PlatformService):
                         target={},
                         context={
                             **static_context_values,
-                            "current_location": self._entity_for_context(state.get("location_id")),
+                            "current_location": self._context.services["execution"]._entity_for_context(state.get("location_id")),
                         },
                         world=world_properties,
                     ):
@@ -164,7 +164,7 @@ class WorldTickService(PlatformService):
                 entity = self.store.get_entity(resource_id)
             except KeyError:
                 continue
-            quantity = self._entity_quantity(entity)
+            quantity = self._context.services["execution"]._entity_quantity(entity)
             floor = float(raw.get("minimum_reserve", raw.get("reserve_floor", 0)) or 0)
             active = quantity <= floor
             previous_state = state.get(resource_id, False)
@@ -226,7 +226,7 @@ class WorldTickService(PlatformService):
             if isinstance(item, dict)
         )
         location = (
-            self._entity_for_context((agent.get("initial_state") or {}).get("location_id"))
+            self._context.services["execution"]._entity_for_context((agent.get("initial_state") or {}).get("location_id"))
             if "location." in conditions or "current_location" in conditions
             else {}
         )
@@ -343,7 +343,7 @@ class WorldTickService(PlatformService):
                 before = agent.get("initial_state", {}).get("active_bt_instance")
                 if not before:
                     continue
-                self._progress_agent(agent, minute)
+                self._context.services["activity"]._progress_agent(agent, minute)
                 after = self.store.get_agent(agent["id"]).get("initial_state", {})
                 result = after.get("last_platform_result") or {}
                 if result.get("status") == "completed" and result.get("behavior_ref"):
@@ -352,12 +352,12 @@ class WorldTickService(PlatformService):
                     failed.append(agent["id"])
             self.store.set_meta("world_minute", minute)
             self.uow.events.append("world_minute.advanced", None, minute, {"minute": minute})
-            self._emit_world_rule_signals(minute, agent_ids=agent_ids)
+            self._context.services["evolution"]._emit_world_rule_signals(minute, agent_ids=agent_ids)
             self._emit_resource_safety_signals(minute)
             self.proposal_evaluator.evaluate_due(minute)
-            self._emit_evolution_triggers(minute, agent_ids=agent_ids)
-            self._emit_stagnation_signal(minute, agents=agents)
-            self._emit_due_evolution_tasks(minute)
+            self._context.services["evolution"]._emit_evolution_triggers(minute, agent_ids=agent_ids)
+            self._context.services["stagnation"]._emit_stagnation_signal(minute, agents=agents)
+            self._context.services["evolution"]._emit_due_evolution_tasks(minute)
         return {
             "status": "advanced",
             "from_minute": start,

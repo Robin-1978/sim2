@@ -99,7 +99,7 @@ class EvolutionService(PlatformService):
                 self.uow.events.append("evolution.triggered", None, minute, {"trigger_id": trigger_id, "condition": expression, "invoke": trigger.get("invoke", [])})
                 for index, target in enumerate(trigger.get("invoke", []) or []):
                     target = str(target)
-                    role_target, resolved_actor = self._resolve_evolution_consumer(target)
+                    role_target, resolved_actor = self._context.services["api"]._resolve_evolution_consumer(target)
                     if role_target == "agent_decision":
                         role, task_type, actor_id = role_target, f"trigger:{trigger_id}", resolved_actor
                     elif role_target == "god":

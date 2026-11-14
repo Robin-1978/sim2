@@ -106,7 +106,9 @@ class PlatformService:
         object.__setattr__(self, "_context", context)
 
     def __getattr__(self, name: str) -> Any:
-        return self._context.resolve(name, self)
+        if name in self._context.dependencies:
+            return self._context.dependencies[name]
+        raise AttributeError(name)
 
     def __setattr__(self, name: str, value: Any) -> None:
         if name == "_context":

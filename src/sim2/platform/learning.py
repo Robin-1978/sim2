@@ -13,14 +13,14 @@ class LearningRuntimeMixin:
         data = {"event_ref": event_ref, "summary": summary, "confidence": confidence, "claim_status": claim_status}
         intent_id = str(uuid4())
         if not summary.strip():
-            return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Experience summary is required.", "failed_check": "summary", "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Experience summary is required.", "failed_check": "summary", "retryable": True})
         if len(summary) > 500:
-            return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Experience summary must be at most 500 characters.", "failed_check": "summary_length", "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Experience summary must be at most 500 characters.", "failed_check": "summary_length", "retryable": True})
         if not 0 <= confidence <= 1:
-            return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Confidence must be between 0 and 1.", "failed_check": "confidence", "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "Confidence must be between 0 and 1.", "failed_check": "confidence", "retryable": True})
         allowed_claims = {"observed", "confirmed", "reported", "promised", "inferred", "disputed", "false", "failed"}
         if claim_status not in allowed_claims:
-            return self._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "claim_status must be observed, confirmed, reported, promised, inferred, disputed, false, or failed.", "failed_check": "claim_status", "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "record_experience", data, {"status": "rejected", "message": "claim_status must be observed, confirmed, reported, promised, inferred, disputed, false, or failed.", "failed_check": "claim_status", "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             agent = self.store.get_agent(actor_id)
@@ -109,36 +109,36 @@ class LearningRuntimeMixin:
         data = {"capability": capability, "delta": delta, "evidence": evidence}
         definitions = {str(item.get("id")): item for item in self.store.get_definitions("capability_def")}
         if capability not in definitions:
-            return self._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability is not configured.", "failed_check": "capability", "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability is not configured.", "failed_check": "capability", "retryable": True})
         if not 0 < float(delta) <= 0.2 or len(evidence) < 12:
-            return self._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability delta or evidence is invalid.", "failed_check": "evidence", "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability delta or evidence is invalid.", "failed_check": "evidence", "retryable": True})
         rules = self.store.get_meta("rules", {}) or {}
         progression = (rules.get("capability_progression", {}) or {}).get(capability)
         if not isinstance(progression, dict):
-            return self._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "This capability has no configured progression rule.", "failed_check": "capability_progression", "retryable": False})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "This capability has no configured progression rule.", "failed_check": "capability_progression", "retryable": False})
         minimum = max(1, int(progression.get("minimum_completed_outcomes", 3) or 3))
         maximum_delta = min(0.2, float(progression.get("max_delta", 0.1) or 0.1))
         if float(delta) > maximum_delta:
-            return self._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability delta exceeds the configured review bound.", "failed_check": "delta_limit", "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability delta exceeds the configured review bound.", "failed_check": "delta_limit", "retryable": True})
         try:
             agent = self.store.get_agent(actor_id)
         except KeyError:
-            return self._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability updates require an individual Agent.", "failed_check": "actor", "retryable": False})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability updates require an individual Agent.", "failed_check": "actor", "retryable": False})
         if capability not in (agent.get("capabilities") or {}) and not bool(definitions[capability].get("acquirable", False)):
-            return self._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "The character has no configured path to this capability.", "failed_check": "capability_ownership", "retryable": False})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "The character has no configured path to this capability.", "failed_check": "capability_ownership", "retryable": False})
         last = self.store.connection.execute("SELECT MAX(world_minute) AS minute FROM capability_progress WHERE agent_id=? AND capability=?", (actor_id, capability)).fetchone()["minute"]
         start = int(last) if last is not None else -1
         evidence_events = self.store.capability_evidence(actor_id, capability, after_minute=start)
         completed = len(evidence_events)
         if completed < minimum:
-            return self._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": f"More matching capability evidence is required before updating {capability}.", "failed_check": "insufficient_evidence", "completed_outcomes": completed, "required_outcomes": minimum, "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": f"More matching capability evidence is required before updating {capability}.", "failed_check": "insufficient_evidence", "completed_outcomes": completed, "required_outcomes": minimum, "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         current = float((agent.get("capabilities") or {}).get(capability, 0) or 0)
         maximum = float(progression.get("max_value", 1.0) or 1.0)
         after = min(maximum, current + float(delta))
         applied_delta = after - current
         if applied_delta <= 0:
-            return self._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability is already at its configured maximum.", "failed_check": "capability_max", "retryable": False})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_capability", data, {"status": "rejected", "message": "Capability is already at its configured maximum.", "failed_check": "capability_max", "retryable": False})
         with self.store.transaction():
             agent.setdefault("capabilities", {})[capability] = after
             self.store.create_intent(intent_id, actor_id, "update_capability", data, world_minute)
@@ -169,19 +169,19 @@ class LearningRuntimeMixin:
         definitions = rules.get("civilization_progress", {}) or {}
         definition = definitions.get(progress_key) if isinstance(definitions, dict) else None
         if not isinstance(definition, dict):
-            return self._reject_intent(intent_id, actor_id, "record_world_progress", data, {"status": "rejected", "message": "World progress key is not configured.", "failed_check": "progress_key", "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "record_world_progress", data, {"status": "rejected", "message": "World progress key is not configured.", "failed_check": "progress_key", "retryable": True})
         contribution = float(definition.get("evidence_value", 1) or 1)
         if contribution <= 0 or contribution > 5 or len(evidence) < 12:
-            return self._reject_intent(intent_id, actor_id, "record_world_progress", data, {"status": "rejected", "message": "The configured progress contribution or submitted evidence is invalid.", "failed_check": "evidence", "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "record_world_progress", data, {"status": "rejected", "message": "The configured progress contribution or submitted evidence is invalid.", "failed_check": "evidence", "retryable": True})
         if delta is not None and abs(float(delta) - contribution) > 1e-9:
-            return self._reject_intent(intent_id, actor_id, "record_world_progress", {**data, "requested_delta": delta}, {"status": "rejected", "message": "Platform derives progress from the configured evidence value; do not choose a delta.", "failed_check": "progress_delta", "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "record_world_progress", {**data, "requested_delta": delta}, {"status": "rejected", "message": "Platform derives progress from the configured evidence value; do not choose a delta.", "failed_check": "progress_delta", "retryable": True})
         source_events = (
             self.store.events_by_ids(list(source_event_ids or []))
             if source_event_ids
             else self.store.recent_events(limit=200)
         )
         if not source_events:
-            return self._reject_intent(intent_id, actor_id, "record_world_progress", data, {"status": "rejected", "message": "A public progress update needs a recent behavior outcome.", "failed_check": "insufficient_evidence", "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "record_world_progress", data, {"status": "rejected", "message": "A public progress update needs a recent behavior outcome.", "failed_check": "insufficient_evidence", "retryable": True})
         allowed_events = {str(item) for item in (definition.get("evidence_event_types") or [])}
         allowed_behaviors = {str(item) for item in (definition.get("evidence_behaviors") or [])}
         source_clauses = [item for item in (definition.get("evidence_sources") or []) if isinstance(item, dict)]
@@ -220,7 +220,7 @@ class LearningRuntimeMixin:
         ]
         if not matching_sources:
             description = str(definition.get("description") or progress_key.replace("_", " "))
-            return self._reject_intent(intent_id, actor_id, "record_world_progress", data, {
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "record_world_progress", data, {
                 "status": "rejected",
                 "message": f"The triggering result is not configured evidence for {description}. Choose a matching progress category or wait.",
                 "failed_check": "progress_evidence_mismatch",
@@ -240,7 +240,7 @@ class LearningRuntimeMixin:
             (progress_key, data["source_event_id"]),
         ).fetchone()
         if duplicate is not None:
-            return self._reject_intent(intent_id, actor_id, "record_world_progress", data, {"status": "rejected", "message": "This source event has already contributed to that progress category.", "failed_check": "duplicate_progress_evidence", "retryable": False})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "record_world_progress", data, {"status": "rejected", "message": "This source event has already contributed to that progress category.", "failed_check": "duplicate_progress_evidence", "retryable": False})
         world_minute = int(self.store.get_meta("world_minute", 0))
         world_id = str(self.store.get_meta("world_id", "world"))
         required = float(definition.get("required", 1) or 1)
@@ -278,9 +278,9 @@ class LearningRuntimeMixin:
         data = {"belief_id": belief_id, "statement": statement, "confidence": confidence, "reason": reason}
         intent_id = str(uuid4())
         if not statement and not belief_id:
-            return self._reject_intent(intent_id, actor_id, "update_belief", data, {"status": "rejected", "message": "A belief id or statement is required.", "failed_check": "belief", "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_belief", data, {"status": "rejected", "message": "A belief id or statement is required.", "failed_check": "belief", "retryable": True})
         if not 0 <= confidence <= 1:
-            return self._reject_intent(intent_id, actor_id, "update_belief", data, {"status": "rejected", "message": "Confidence must be between 0 and 1.", "failed_check": "confidence", "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_belief", data, {"status": "rejected", "message": "Confidence must be between 0 and 1.", "failed_check": "confidence", "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             agent = self.store.get_agent(actor_id)
@@ -305,9 +305,9 @@ class LearningRuntimeMixin:
         intent_id = str(uuid4())
         data = {"goal_id": goal_id, "statement": statement, "status": status, "priority": priority}
         if not statement.strip():
-            return self._reject_intent(intent_id, actor_id, "update_goal", data, {"status": "rejected", "message": "Goal statement is required.", "failed_check": "statement", "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_goal", data, {"status": "rejected", "message": "Goal statement is required.", "failed_check": "statement", "retryable": True})
         if not 0 <= priority <= 1:
-            return self._reject_intent(intent_id, actor_id, "update_goal", data, {"status": "rejected", "message": "Goal priority must be between 0 and 1.", "failed_check": "priority", "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "update_goal", data, {"status": "rejected", "message": "Goal priority must be between 0 and 1.", "failed_check": "priority", "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
             agent = self.store.get_agent(actor_id)
@@ -353,7 +353,7 @@ class LearningRuntimeMixin:
                 break
         data = {**proposal, "behavior_id": behavior_id, "actor_id": actor_id}
         if errors:
-            return self._reject_intent(intent_id, actor_id, "propose_behavior", data, {"status": "rejected", "message": "Behavior proposal failed validation.", "errors": errors, "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_behavior", data, {"status": "rejected", "message": "Behavior proposal failed validation.", "errors": errors, "retryable": True})
         estimated = 0
         nodes = []
         for action_id in action_ids:

@@ -217,7 +217,7 @@ class BehaviorIntentService(PlatformService):
             if source_location:
                 runtime_parameters.setdefault("source_location_id", source_location)
         intent_data["parameters"] = {**normalized_parameters, **runtime_parameters}
-        entry_context = self._behavior_condition_context(agent, runtime_parameters, intent.target)
+        entry_context = self._context.services["execution"]._behavior_condition_context(agent, runtime_parameters, intent.target)
         entry_target = {**runtime_parameters, **intent.target, **(entry_context.get("target") or {})}
         for predicate in bt.get("entry_conditions", []) or []:
             if not self.conditions.evaluate(
@@ -267,7 +267,7 @@ class BehaviorIntentService(PlatformService):
             {item["id"]: item for item in self.store.get_definitions("action_def")},
             available_defs,
             {item["id"]: item for item in self.store.get_definitions("recipe_def")},
-            self._route_distance,
+            self._context.services["execution"]._route_distance,
             capabilities=agent.get("capabilities", {}),
             capability_modifiers=(self.store.get_meta("rules", {}) or {}).get("capability_modifiers", {}),
         )
@@ -329,11 +329,11 @@ class BehaviorIntentService(PlatformService):
                 {
                     "target": intent.target,
                     "parameters": runtime_parameters,
-                    "actions": self._compile_behavior_actions(behavior_id),
+                    "actions": self._context.services["execution"]._compile_behavior_actions(behavior_id),
                     "behavior_version": int(bt.get("definition_version", bt.get("version", 1)) or 1),
                     "expected": expected,
                     "decision": {"reason": intent.reason, "confidence": intent.confidence},
-                    "before": self._execution_snapshot(agent),
+                    "before": self._context.services["execution"]._execution_snapshot(agent),
                 },
                 world_minute,
                 world_minute,
@@ -400,7 +400,7 @@ class BehaviorExecutionService(PlatformService):
             "target.visible": bool((resolved_target or {}).get("visible", False)),
             "target.available": bool((resolved_target or {}).get("available", False)),
             "known_route_destinations": reachable_locations(self.store, location_id),
-            "recent_event_types": self._recent_event_types(),
+            "recent_event_types": self._context.services["evolution"]._recent_event_types(),
             "day_phase": world_time_view(self.store).get("day_phase"),
             "conflict": {"available": conflict_available},
         }

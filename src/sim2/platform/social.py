@@ -146,7 +146,7 @@ class SocialRuntimeMixin:
 
         intent_id = str(uuid4())
         if str(actor_id) != "god":
-            return self._reject_intent(
+            return self._context.services["intent"]._reject_intent(
                 intent_id,
                 actor_id,
                 "propose_institution",
@@ -161,12 +161,12 @@ class SocialRuntimeMixin:
         name = str(proposal.get("name") or "").strip()
         purpose = str(proposal.get("purpose") or "").strip()
         if len(name) < 2 or len(name) > 120:
-            return self._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "Institution name must be 2 to 120 characters.", "failed_check": "name", "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "Institution name must be 2 to 120 characters.", "failed_check": "name", "retryable": True})
         if len(purpose) < 12 or len(purpose) > 500:
-            return self._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "Institution purpose must be 12 to 500 characters.", "failed_check": "purpose", "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "Institution purpose must be 12 to 500 characters.", "failed_check": "purpose", "retryable": True})
         term_errors = institution_term_errors(proposal.get("policy") or None, proposal.get("ledger") or None)
         if term_errors:
-            return self._reject_intent(intent_id, actor_id, "propose_institution", proposal, {
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_institution", proposal, {
                 "status": "rejected",
                 "message": "The institution's policy or ledger could not be settled as written.",
                 "failed_check": "institution_terms",
@@ -204,7 +204,7 @@ class SocialRuntimeMixin:
                     matched_evidence_ids.add(int(row["event_id"]))
             evidence_count = len(matched_evidence_ids)
         if not evidence_sources or evidence_count < minimum_evidence:
-            return self._reject_intent(intent_id, actor_id, "propose_institution", proposal, {
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_institution", proposal, {
                 "status": "rejected",
                 "message": "An institution needs configured evidence sources and the required number of verified events.",
                 "failed_check": "institution_evidence",
@@ -214,7 +214,7 @@ class SocialRuntimeMixin:
             })
         existing = self.store.list_institutions(limit=200)
         if any(str(item.get("name", "")).casefold() == name.casefold() and item.get("status") in {"proposed", "active"} for item in existing):
-            return self._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "An institution with this name is already proposed or active.", "failed_check": "duplicate_institution", "retryable": False})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "An institution with this name is already proposed or active.", "failed_check": "duplicate_institution", "retryable": False})
         institution_id = f"institution:{uuid4().hex[:16]}"
         minute = int(self.store.get_meta("world_minute", 0))
         data = {
@@ -249,7 +249,7 @@ class SocialRuntimeMixin:
 
         intent_id = str(uuid4())
         if str(actor_id) != "god":
-            return self._reject_intent(
+            return self._context.services["intent"]._reject_intent(
                 intent_id,
                 actor_id,
                 "approve_institution",
@@ -264,7 +264,7 @@ class SocialRuntimeMixin:
         choice = str(institution or "").strip()
         candidates = [item for item in self.store.list_institutions(status="proposed", limit=200) if str(item.get("name", "")).casefold() == choice.casefold() or str(item.get("institution_id", "")) == choice]
         if len(candidates) != 1:
-            return self._reject_intent(intent_id, actor_id, "activate_institution", {"institution": choice, "reason": reason}, {"status": "rejected", "message": "Choose one exact pending institution name.", "failed_check": "institution_choice", "retryable": True, "available_choices": [str(item.get("name", "")) for item in self.store.list_institutions(status="proposed", limit=20)]})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "activate_institution", {"institution": choice, "reason": reason}, {"status": "rejected", "message": "Choose one exact pending institution name.", "failed_check": "institution_choice", "retryable": True, "available_choices": [str(item.get("name", "")) for item in self.store.list_institutions(status="proposed", limit=20)]})
         selected = candidates[0]
         minute = int(self.store.get_meta("world_minute", 0))
         with self.store.transaction():
@@ -335,7 +335,7 @@ class SocialRuntimeMixin:
         choice = str(institution or "").strip()
         data = {"institution": choice, "policy": policy, "ledger": ledger, "reason": reason}
         if str(actor_id) != "god":
-            return self._reject_intent(intent_id, actor_id, "revise_institution", data, {
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "revise_institution", data, {
                 "status": "rejected",
                 "message": "Only God may revise a world institution.",
                 "failed_check": "institution_authority",
@@ -347,7 +347,7 @@ class SocialRuntimeMixin:
             if str(item.get("name", "")).casefold() == choice.casefold() or str(item.get("institution_id", "")) == choice
         ]
         if len(candidates) != 1:
-            return self._reject_intent(intent_id, actor_id, "revise_institution", data, {
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "revise_institution", data, {
                 "status": "rejected",
                 "message": "Choose one exact active institution name.",
                 "failed_check": "institution_choice",
@@ -357,14 +357,14 @@ class SocialRuntimeMixin:
         selected = candidates[0]
         reason_text = str(reason or "").strip()
         if len(reason_text) < 12 or len(reason_text) > 500:
-            return self._reject_intent(intent_id, actor_id, "revise_institution", data, {
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "revise_institution", data, {
                 "status": "rejected",
                 "message": "Revision reason must cite the recorded result in 12 to 500 characters.",
                 "failed_check": "reason",
                 "retryable": True,
             })
         if not policy and not ledger:
-            return self._reject_intent(intent_id, actor_id, "revise_institution", data, {
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "revise_institution", data, {
                 "status": "rejected",
                 "message": "Provide a replacement policy, replacement ledger selectors, or both.",
                 "failed_check": "institution_terms",
@@ -389,7 +389,7 @@ class SocialRuntimeMixin:
                 new_ledger["period"] = ledger["period"]
             new_ledger.pop("evidence", None)
         if errors:
-            return self._reject_intent(intent_id, actor_id, "revise_institution", data, {
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "revise_institution", data, {
                 "status": "rejected",
                 "message": "The revised terms could not be settled as written.",
                 "failed_check": "institution_terms",
@@ -397,7 +397,7 @@ class SocialRuntimeMixin:
                 "retryable": True,
             })
         if new_policy == old_policy and new_ledger == old_ledger:
-            return self._reject_intent(intent_id, actor_id, "revise_institution", data, {
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "revise_institution", data, {
                 "status": "rejected",
                 "message": "The revision does not change the institution's current terms.",
                 "failed_check": "institution_unchanged",
@@ -405,7 +405,7 @@ class SocialRuntimeMixin:
             })
         operations = self._institution_operations_since_revision(selected)
         if operations < 1:
-            return self._reject_intent(intent_id, actor_id, "revise_institution", data, {
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "revise_institution", data, {
                 "status": "rejected",
                 "message": "An institution can be revised only after it has settled or recorded something under its current terms.",
                 "failed_check": "institution_evidence",
@@ -715,7 +715,7 @@ class SocialRuntimeMixin:
         if isinstance(effects, dict):
             effects = [effects]
         for effect in effects or []:
-            self._apply_relationship_effect(source, target, dict(effect), minute)
+            self._context.services["activity"]._apply_relationship_effect(source, target, dict(effect), minute)
 
     def create_trade_offer(self, offerer_id: str, recipient_id: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
         """Create a two-phase item offer; no inventory moves until acceptance."""

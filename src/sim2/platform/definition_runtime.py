@@ -781,7 +781,7 @@ class DefinitionRuntimeMixin:
                 )
         data = {**proposal, "actor_id": actor_id, "definition": definition}
         if errors:
-            return self._reject_intent(intent_id, actor_id, "propose_definition", data, {"status": "rejected", "message": "Definition proposal failed validation.", "failed_check": "definition_schema", "errors": errors, "retryable": True})
+            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_definition", data, {"status": "rejected", "message": "Definition proposal failed validation.", "failed_check": "definition_schema", "errors": errors, "retryable": True})
         world_minute = int(self.store.get_meta("world_minute", 0))
         table = {"action": "action_def", "behavior": "bt_def", "recipe": "recipe_def", "capability": "capability_def"}.get(definition_type)
         with self.store.transaction():
@@ -988,6 +988,6 @@ class DefinitionRuntimeMixin:
             self.attribute_schema = AttributeSchema(attributes, self.store.get_meta("rules", {}) or {})
             self.effects = EffectPipeline(attributes)
             self.conditions = ConditionEngine(self.store.get_meta("rules", {}) or {})
-            self.rule_compiler = self._new_rule_compiler()
+            self.rule_compiler = self._context.services["api"]._new_rule_compiler()
         return result
 
