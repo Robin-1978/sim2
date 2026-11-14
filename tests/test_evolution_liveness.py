@@ -500,7 +500,7 @@ def test_story_thread_memory_closes_with_the_story_beat(tmp_path: Path) -> None:
         ).fetchall()
         assert any(json.loads(row["data_json"])["status"] == "active" for row in before)
 
-        platform._complete_story_beats_for_actor("han_qiu", "secure_north_watch", 20)
+        platform._services["activity"]._complete_story_beats_for_actor("han_qiu", "secure_north_watch", 20)
 
         after = platform.store.connection.execute(
             "SELECT data_json FROM memory_item WHERE agent_id='story' AND memory_type='story_thread'"
@@ -697,7 +697,7 @@ def _recipe_proposal() -> dict:
 def test_recipe_is_rejected_when_no_registered_action_can_craft(tmp_path: Path) -> None:
     platform = _town(tmp_path, "recipe-without-craft-action")
     try:
-        assert not any(platform._is_recipe_action(item) for item in platform.store.repositories.entities.get_definitions("action_def"))
+        assert not any(platform._services["definitions"]._is_recipe_action(item) for item in platform.store.repositories.entities.get_definitions("action_def"))
         result = platform.submit_definition_proposal("god", _recipe_proposal())
         assert result["status"] == "rejected" and result["failed_check"] == "definition_schema"
         assert any("no registered Action can craft a recipe" in error for error in result["errors"])
@@ -709,7 +709,7 @@ def test_recipe_is_rejected_when_no_registered_action_can_craft(tmp_path: Path) 
 def test_recipe_is_accepted_when_a_registered_action_can_craft(tmp_path: Path) -> None:
     platform = Platform(create_instance(Path(__file__).parents[1] / "worlds" / "starter_village", "recipe-with-craft-action", tmp_path / "runtime"))
     try:
-        assert any(platform._is_recipe_action(item) for item in platform.store.repositories.entities.get_definitions("action_def"))
+        assert any(platform._services["definitions"]._is_recipe_action(item) for item in platform.store.repositories.entities.get_definitions("action_def"))
         result = platform.submit_definition_proposal("god", _recipe_proposal())
         assert result["status"] == "accepted", result
         assert "灯芯芦苇束灯" in {item.get("name") for item in platform.store.repositories.entities.get_definitions("recipe_def")}
@@ -727,7 +727,7 @@ def _record_operation(platform: Platform, minute: int) -> None:
 
     with platform.store.transaction():
         event_id = platform.store.repositories.events.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern"})
-        platform._record_active_institution_entries(event_id, "cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern"})
+        platform._services["activity"]._record_active_institution_entries(event_id, "cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern"})
 
 
 def _active_institution(platform: Platform) -> dict:
@@ -820,7 +820,7 @@ def test_revised_ledger_selectors_change_what_future_work_is_credited(tmp_path: 
         def credited(event_type: str, minute: int) -> float:
             with platform.store.transaction():
                 event_id = platform.store.repositories.events.append_event(event_type, "luo_shan", minute, {})
-                platform._record_active_institution_entries(event_id, event_type, "luo_shan", minute, {})
+                platform._services["activity"]._record_active_institution_entries(event_id, event_type, "luo_shan", minute, {})
             totals = platform.store.repositories.social.institution_ledger_totals(institution["institution_id"])
             return sum(float(row["total"]) for row in totals if row["subject_id"] == "luo_shan")
 
@@ -971,7 +971,7 @@ def test_gathered_reeds_renew_so_the_gathering_loop_does_not_end(tmp_path: Path)
         reeds["initial_state"]["quantity"] = 0.0
         with platform.store.transaction():
             platform.store.repositories.entities.put_entity("reed_bundle", "resource", reeds["name"], {key: value for key, value in reeds.items() if key not in {"id", "entity_type", "name"}})
-            platform._apply_minute_effects(1440, agents=[])
+            platform._services["tick"]._apply_minute_effects(1440, agents=[])
         assert platform.store.repositories.entities.get_entity("reed_bundle")["initial_state"]["quantity"] == 6.0
         assert any(item["event_type"] == "resource.regenerated" and item["resource_id"] == "reed_bundle" for item in platform.store.repositories.events.recent_events(limit=20))
     finally:

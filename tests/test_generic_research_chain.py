@@ -243,7 +243,7 @@ def test_failed_story_followup_is_blocked_and_story_is_woken(tmp_path: Path):
             source_event_id = platform._services["events"].append(
                 "behavior.failed", "luo_shan", 10, {"behavior_id": "gather_reeds", "result": "resource_empty"},
             )
-        platform._block_story_beats_for_failed_followup("luo_shan", "gather_reeds", 10, source_event_id, "resource_empty")
+        platform._services["activity"]._block_story_beats_for_failed_followup("luo_shan", "gather_reeds", 10, source_event_id, "resource_empty")
         state = platform.store.get_meta("story_state")
         assert state["emergent:blocked-followup"]["status"] == "blocked"
         assert goal not in platform.store.repositories.entities.get_agent("luo_shan").get("story_goals", [])

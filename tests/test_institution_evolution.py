@@ -160,7 +160,7 @@ def test_failed_allocation_effect_fails_the_behavior_instead_of_reporting_succes
                     "cistern.reviewed", "mei_lan", minute,
                     {"behavior_id": "inspect_cistern"},
                 )
-                platform._record_active_institution_entries(event_id, "cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern"})
+                platform._services["activity"]._record_active_institution_entries(event_id, "cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern"})
         assert platform.submit_institution_proposal("god", {
             "name": "Broken Pool Ledger",
             "purpose": "Verify that failed settlement effects cannot publish success.",
@@ -412,7 +412,7 @@ def test_story_npc_evidence_and_god_institution_chain_uses_llm_tools(tmp_path: P
         event_id = platform.store.repositories.events.append_event(
             "behavior.completed", "mei_lan", 40, {"behavior_id": "inspect_cistern", "result": "record_inspected"}
         )
-        platform._record_active_institution_entries(event_id, "behavior.completed", "mei_lan", 40, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
+        platform._services["activity"]._record_active_institution_entries(event_id, "behavior.completed", "mei_lan", 40, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
         ledger = platform.store.repositories.social.institution_ledger_totals(active[0]["institution_id"])
         assert ledger and ledger[0]["subject_id"] == "mei_lan"
         allocation = platform.calculate_institution_allocation("Public Ration Ledger", ["mei_lan", "luo_shan"], 10, "week:0")
@@ -446,7 +446,7 @@ def test_god_and_story_continue_after_institution_activation(tmp_path: Path):
         active = platform.store.repositories.social.list_institutions(status="active")[0]
 
         for source_id, minute in zip(source_ids, (10, 11, 12)):
-            platform._record_active_institution_entries(
+            platform._services["activity"]._record_active_institution_entries(
                 source_id, "behavior.completed", "mei_lan", minute,
                 {"behavior_id": "inspect_cistern", "result": "record_inspected"},
             )
@@ -489,7 +489,7 @@ def test_god_creates_new_settlement_behavior_after_ledger_review(tmp_path: Path)
         assert platform.activate_institution("god", "Public Ration Ledger", "Evidence threshold reached.")["status"] == "accepted"
         active = platform.store.repositories.social.list_institutions(status="active")[0]
         for source_id, minute in zip((10, 11, 12), (10, 11, 12)):
-            platform._record_active_institution_entries(source_id, "behavior.completed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
+            platform._services["activity"]._record_active_institution_entries(source_id, "behavior.completed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
         review_task = next(item for item in platform.ready_evolution_tasks() if item["task_type"] == "event_group:institution_ledger_review")
         god_provider = SequenceProvider([{"tool_call": {"name": "propose_definition", "arguments": {
             "definition_type": "behavior",
@@ -658,7 +658,7 @@ def test_ten_round_story_god_chain_keeps_creating_followups(tmp_path: Path):
             base = 10 + cycle * 3
             for minute in (base, base + 1, base + 2):
                 event_id = platform.store.repositories.events.append_event("cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
-                platform._record_active_institution_entries(event_id, "cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
+                platform._services["activity"]._record_active_institution_entries(event_id, "cistern.reviewed", "mei_lan", minute, {"behavior_id": "inspect_cistern", "result": "record_inspected"})
             review = next(item for item in platform.ready_evolution_tasks() if item["task_type"] == "event_group:institution_ledger_review")
             behavior_id = f"settle_public_ledger_{cycle}"
             god_provider = SequenceProvider([{"tool_call": {"name": "propose_definition", "arguments": {

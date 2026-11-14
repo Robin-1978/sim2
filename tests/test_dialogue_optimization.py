@@ -400,7 +400,7 @@ def test_registered_world_rules_show_current_condition_status(tmp_path: Path):
         assert "currently inactive" in prompt
         assert "<active_world_rules>" not in prompt
 
-        platform._set_world_property("village_food", 100)
+        platform._services["tick"]._set_world_property("village_food", 100)
         changed = platform.decision_view("liang_he")
         ration = next(item for item in changed["active_world_rules"] if "food" in item["condition"].casefold())
         assert ration["current_status"] == "active"
@@ -480,7 +480,7 @@ def test_social_institution_is_absent_until_proposed_and_activated(tmp_path: Pat
         assert before["status"] == "accepted"
         assert all(row["total"] == 1 for row in before["allocations"])
         event_id = platform.store.repositories.events.append_event("behavior.completed", "liang_he", 20, {"behavior_id": "gather_resource", "result": "resource_collected"})
-        platform._record_active_institution_entries(event_id, "behavior.completed", "liang_he", 20, {"behavior_id": "gather_resource", "result": "resource_collected"})
+        platform._services["activity"]._record_active_institution_entries(event_id, "behavior.completed", "liang_he", 20, {"behavior_id": "gather_resource", "result": "resource_collected"})
         totals = platform.store.repositories.social.institution_ledger_totals(active["institution_id"])
         assert totals[0]["subject_id"] == "liang_he"
         assert totals[0]["total"] == 1
@@ -717,10 +717,10 @@ def test_research_wakes_story_and_god_only_after_configured_rounds(tmp_path: Pat
     try:
         agent = platform.store.repositories.entities.get_agent("qiao_ning")
         action = next(item for item in platform.store.repositories.entities.get_definitions("action_def") if item["id"] == "research_source")
-        first = platform._advance_information_progress(agent, action, {"source_id": "clean_water"}, 100)
+        first = platform._services["activity"]._advance_information_progress(agent, action, {"source_id": "clean_water"}, 100)
         assert first["completed"] is False
         assert platform.store.connection.execute("SELECT COUNT(*) AS n FROM evolution_task WHERE task_type LIKE 'event:%'").fetchone()["n"] == 0
-        second = platform._advance_information_progress(agent, action, {"source_id": "clean_water"}, 200)
+        second = platform._services["activity"]._advance_information_progress(agent, action, {"source_id": "clean_water"}, 200)
         assert second["completed"] is True
         rows = platform.store.connection.execute("SELECT role,task_type FROM evolution_task WHERE task_type='event:research.completed'").fetchall()
         assert {row["role"] for row in rows} == {"story"}

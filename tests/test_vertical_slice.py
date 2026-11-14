@@ -172,7 +172,7 @@ def test_configured_food_action_default_resolves_to_carried_item(tmp_path: Path)
         agent = platform.store.repositories.entities.get_agent("lin_bo")
         action = next(item for item in platform.store.repositories.entities.get_definitions("action_def") if item.get("id") == "consume_food")
         action["parameter_defaults"] = {"item_id": {"resolver": "context_value", "key": "item_id"}}
-        assert platform._apply_action_parameter_defaults(agent, action, {"item_id": None})["item_id"] == "rations"
+        assert platform._services["execution"]._apply_action_parameter_defaults(agent, action, {"item_id": None})["item_id"] == "rations"
     finally:
         platform.close()
 
@@ -2765,7 +2765,7 @@ def test_target_effects_update_target_health_not_actor(tmp_path: Path):
         platform.store.connection.commit()
         attack = next(item for item in platform.store.repositories.entities.get_definitions("action_def") if item["id"] == "attack")
         with platform.store.transaction():
-            platform._apply_success_effects(attacker, attack, {"weapon_id": "spear"}, 0, target={"id": "lu_xingzhou", "defense": 4})
+            platform._services["activity"]._apply_success_effects(attacker, attack, {"weapon_id": "spear"}, 0, target={"id": "lu_xingzhou", "defense": 4})
         assert platform.store.repositories.entities.get_agent("he_yan")["initial_state"]["health"] == 100
         assert platform.store.repositories.entities.get_agent("lu_xingzhou")["initial_state"]["health"] == 63
         relationship = next(item for item in platform.store.repositories.entities.list_relationships() if item["from"] == "he_yan" and item["to"] == "lu_xingzhou" and item["type"] == "hostility")
@@ -2783,7 +2783,7 @@ def test_public_event_and_world_property_effects_commit_through_platform(tmp_pat
             {"type": "world_property_delta", "property": "north_gate_threat_level", "delta": 0.1},
         ]}
         with platform.store.transaction():
-            platform._apply_success_effects(platform.store.repositories.entities.get_agent("he_yan"), action, {}, 0)
+            platform._services["activity"]._apply_success_effects(platform.store.repositories.entities.get_agent("he_yan"), action, {}, 0)
         assert platform.store.get_meta("world_properties")["north_gate_threat_level"] == 0.32
         assert any(item["event_type"] == "signal.raised" for item in platform.store.repositories.events.recent_events(limit=10))
     finally:
@@ -3312,14 +3312,15 @@ def test_step_commits_each_tick_before_a_later_tick_fails(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "tick-commit-world", tmp_path / "runtime")
     platform = Platform(db_path)
-    original = platform._apply_minute_effects
+    tick_service = platform._services["tick"]
+    original = tick_service._apply_minute_effects
 
     def fail_on_second_tick(minute: int, **kwargs):
         if minute == 2:
             raise RuntimeError("synthetic tick failure")
         return original(minute, **kwargs)
 
-    platform._apply_minute_effects = fail_on_second_tick
+    tick_service._apply_minute_effects = fail_on_second_tick
     try:
         with pytest.raises(RuntimeError, match="synthetic tick failure"):
             step_n(platform, 3)
@@ -4552,7 +4553,7 @@ def test_unused_invented_behavior_can_be_constrained_by_rule(tmp_path: Path):
         rules["world_rules"] = world_rules
         with platform.store.transaction():
             platform.store.set_meta("rules", rules)
-        platform.rule_compiler = platform._new_rule_compiler()
+        platform.rule_compiler = platform._services["api"]._new_rule_compiler()
         fresh = Platform(platform.store.db_path) if hasattr(platform.store, "db_path") else platform
         view = platform.decision_view("luo_shan")
         assert all(item.get("choice") != "Useless Routine" for item in view["executable_behaviors"])

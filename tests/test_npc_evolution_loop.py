@@ -60,7 +60,7 @@ def _base_institution(platform: Platform) -> None:
                 "cistern.reviewed", "mei_lan", minute,
                 {"behavior_id": "inspect_cistern", "fact": "Three public cistern reviews were persisted."},
             )
-            platform._record_active_institution_entries(
+            platform._services["activity"]._record_active_institution_entries(
                 event_id, "cistern.reviewed", "mei_lan", minute,
                 {"behavior_id": "inspect_cistern"},
             )

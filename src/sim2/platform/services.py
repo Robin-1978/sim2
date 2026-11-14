@@ -16,10 +16,10 @@ class PlatformContext:
     """Shared runtime capabilities exposed to Platform services.
 
     Services do not receive a SQLite connection directly from callers.  The
-    context is assembled once by Platform and resolves shared dependencies or
-    a method owned by another service.  This keeps service construction
-    explicit while allowing the existing transactional implementations to be
-    migrated incrementally.
+    context is assembled once by Platform and exposes only declared shared
+    dependencies plus an explicit service registry. Cross-service calls must
+    name their owning service (for example ``context.services["events"]``);
+    there is no method-name lookup or fallback dispatch.
     """
 
     _DEPENDENCY_NAMES = frozenset({
@@ -46,41 +46,11 @@ class PlatformContext:
             raise ValueError(f"unknown PlatformContext dependencies: {sorted(unknown)}")
         self.dependencies = dict(dependencies)
         self.services: dict[str, PlatformService] = {}
-        self.method_owners: dict[str, PlatformService] = {}
 
-    def bind_services(self, services: dict[str, PlatformService]) -> None:
-        """Register one owner for every service method used across services."""
+    def register_services(self, services: dict[str, PlatformService]) -> None:
+        """Register the named services used for explicit cross-service calls."""
 
-        owners: dict[str, PlatformService] = {}
-        for service in services.values():
-            for base in type(service).__mro__:
-                if base in {PlatformService, object}:
-                    continue
-                for name, value in base.__dict__.items():
-                    if name.startswith("__"):
-                        continue
-                    descriptor = value.__func__ if isinstance(value, (staticmethod, classmethod)) else value
-                    if not callable(descriptor):
-                        continue
-                    previous = owners.get(name)
-                    if previous is not None and previous is not service:
-                        raise RuntimeError(
-                            f"duplicate Platform service method owner for {name!r}: "
-                            f"{type(previous).__name__} and {type(service).__name__}"
-                        )
-                    owners[name] = service
         self.services = dict(services)
-        self.method_owners = owners
-
-    def resolve(self, name: str, requester: PlatformService | None = None) -> Any:
-        """Resolve a declared dependency or another registered service method."""
-
-        if name in self.dependencies:
-            return self.dependencies[name]
-        owner = self.method_owners.get(name)
-        if owner is not None and owner is not requester:
-            return object.__getattribute__(owner, name)
-        raise AttributeError(name)
 
     def set_dependency(self, name: str, value: Any) -> None:
         if name not in self._DEPENDENCY_NAMES:
@@ -94,13 +64,7 @@ class PlatformContext:
 
 
 class PlatformService:
-    """Base for services extracted from the former Platform mixins.
-
-    The forwarding path is deliberately centralized here.  It is a migration
-    seam: new service code should use the context directly, while existing
-    methods can be moved one owner at a time without recreating a second
-    Platform implementation.
-    """
+    """Base for services extracted from the former Platform mixins."""
 
     def __init__(self, context: PlatformContext) -> None:
         object.__setattr__(self, "_context", context)
@@ -181,5 +145,5 @@ def build_platform_services(context: PlatformContext) -> dict[str, PlatformServi
         "story": StoryService(context),
         "world_changes": WorldChangesService(context),
     }
-    context.bind_services(services)
+    context.register_services(services)
     return services
