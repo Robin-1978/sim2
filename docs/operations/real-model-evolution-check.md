@@ -125,3 +125,7 @@ result, new objects and story state are in
 `/tmp/sim2-evolution-loop-rule-audit/evolution-audit.jsonl`. The run was
 started with `bash -ic 'source ~/.bashrc && ...'`; no credentials or proxy
 settings were written to the log.
+
+The post-fix verification also passed `397` tests and `compileall`. The
+1,000-agent platform benchmark completed five runs with p95 tick time
+`143.422 ms` (warm-up excluded), with no failed agents.
