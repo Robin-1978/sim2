@@ -58,3 +58,42 @@ def test_provider_intent_normalization_keeps_visible_choice() -> None:
 def test_message_sentence_split_does_not_reject_decimal_or_chinese_two_sentence_reply() -> None:
     assert len(_message_sentences("Inspection shows village food at 319.0. Ration changes await your review.")) == 2
     assert len(_message_sentences("库存是319.0。配给调整等你确认。")) == 2
+
+
+def test_native_intent_batch_preserves_provider_order() -> None:
+    from pathlib import Path
+    import tempfile
+
+    from sim2.agents.engine import AgentEngine
+    from sim2.bootstrap.service import create_instance
+    from sim2.platform.runtime import Platform
+
+    class BatchProvider:
+        def __init__(self, response):
+            self.response = response
+
+        def complete_json(self, *, system, context, tools=None, messages=None, role=None):
+            return self.response
+
+    config = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+    with tempfile.TemporaryDirectory(prefix="intent-batch-") as root:
+        platform = Platform(create_instance(config, "intent-batch", Path(root)))
+        research_event = platform.store.repositories.events.append_event(
+            "research.completed", "luo_shan", 10,
+            {"source_id": "boundary_stone", "stage_id": "stage_1", "fact": "A verified boundary mark was recorded.", "story_source": True},
+        )
+        provider = BatchProvider({
+            "tool_calls": [
+                {"id": "progress", "type": "function", "function": {"name": "record_world_progress", "arguments": {"progress_key": "boundary_knowledge", "evidence": "The completed research records a verified boundary fact."}}},
+                {"id": "story", "type": "function", "function": {"name": "propose_story_beat", "arguments": {"beat": "记录界碑研究结果并决定下一步核验"}}},
+            ],
+        })
+        try:
+            turn = AgentEngine(platform, provider, max_iterations=1).run(
+                role="story", actor_id="story", task_type="integration_verification", source_event_id=research_event
+            )
+            assert turn.result["status"] == "accepted"
+            assert turn.result["submission_count"] == 2
+            assert [item.get("tool") for item in turn.result["submission_results"]] == ["record_world_progress", "propose_story_beat"]
+        finally:
+            platform.close()

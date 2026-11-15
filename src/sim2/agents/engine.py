@@ -278,6 +278,7 @@ class AgentEngine:
                 else:
                     calls.append((call[0], call[1], None))
                 accepted_result: dict[str, Any] | None = None
+                intent_results: list[dict[str, Any]] = []
                 for tool_name, arguments, native_call in calls:
                     tool_calls_used += 1
                     is_read_tool = TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "read"
@@ -340,11 +341,14 @@ class AgentEngine:
                     if native_call is not None:
                         conversation_messages.append({"role": "tool", "tool_call_id": native_call.get("id", "tool_call"), "name": tool_name, "content": json.dumps(model_result, ensure_ascii=False)})
                     if TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "intent" and model_result.get("status") in {"accepted", "wait"}:
+                        # A provider may return several deliberately ordered
+                        # intents in one native response.  Execute each exactly
+                        # once in that order so a fact proposal precedes the
+                        # narrative/rule that references it.  The batch remains
+                        # a single bounded Agent turn.
                         accepted_result = internal_tool_result
-                        # One session may batch read tools, but a decision or
-                        # proposal is a single side effect. Ignore any later
-                        # intent calls in the same model response.
-                        if not is_read_tool:
+                        intent_results.append(internal_tool_result)
+                        if not is_read_tool and not (native_tool_calls and len(calls) > 1):
                             break
                 if native_tool_calls:
                     # Native tool messages already contain every result.  An
@@ -361,6 +365,13 @@ class AgentEngine:
                 if len(conversation_messages) > 8:
                     conversation_messages = trim_conversation_messages(conversation_messages, max_tail=6)
                 if accepted_result is not None:
+                    if len(intent_results) > 1:
+                        accepted_result = {
+                            **intent_results[-1],
+                            "status": "accepted",
+                            "submission_results": intent_results,
+                            "submission_count": len(intent_results),
+                        }
                     return AgentTurn(role, task_type, last_response, accepted_result, iteration, transcript, initial_context, prompt_history)
                 continue
 
