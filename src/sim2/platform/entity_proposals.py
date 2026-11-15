@@ -157,6 +157,23 @@ class EntityProposalRuntimeMixin:
                     f"an entity with visible name {existing['name']} already exists "
                     f"({existing['entity_type']}:{existing['id']}); use it instead of creating a duplicate"
                 )
+        if str(proposal.get("entity_type") or "") == "location" and isinstance(proposal.get("state"), dict):
+            normalized_state = dict(proposal["state"])
+            raw_routes = normalized_state.get("routes", [])
+            if isinstance(raw_routes, list):
+                normalized_routes = [
+                    str(self.targets.canonical_id(str(route)) or route)
+                    for route in raw_routes
+                    if str(route)
+                ]
+                normalized_state["routes"] = list(dict.fromkeys(normalized_routes))
+            raw_distances = normalized_state.get("route_distances")
+            if isinstance(raw_distances, dict):
+                normalized_state["route_distances"] = {
+                    str(self.targets.canonical_id(str(route)) or route): distance
+                    for route, distance in raw_distances.items()
+                }
+            proposal = {**proposal, "state": normalized_state}
         if actor_id == "god":
             rules = self.store.repositories.metadata.get("rules", {}) or {}
             resource_types = {str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])}
@@ -165,6 +182,29 @@ class EntityProposalRuntimeMixin:
             quantity = state.get("quantity", state.get("amount"))
             if entity_type in resource_types and isinstance(quantity, (int, float)) and float(quantity) > 0:
                 errors.append("God cannot create a stocked resource directly; a behavior result must create or recover the supply")
+            if entity_type == "location":
+                routes = state.get("routes")
+                if not isinstance(routes, list) or not routes or any(not isinstance(item, str) or not item for item in routes):
+                    errors.append("a dynamic location requires at least one existing route neighbor")
+                else:
+                    for neighbor_id in routes:
+                        try:
+                            neighbor = self.store.repositories.entities.get_entity(str(neighbor_id))
+                        except KeyError:
+                            errors.append(f"location routes reference unknown location {neighbor_id}")
+                            continue
+                        if str(neighbor.get("entity_type") or "") != "location":
+                            errors.append(f"location route {neighbor_id} is not a location")
+                route_distances = state.get("route_distances", {})
+                if route_distances is not None and not isinstance(route_distances, dict):
+                    errors.append("location route_distances must be an object")
+                elif isinstance(route_distances, dict):
+                    route_ids = {str(item) for item in (routes or [])}
+                    for neighbor_id, distance in route_distances.items():
+                        if str(neighbor_id) not in route_ids:
+                            errors.append(f"location route distance references non-route {neighbor_id}")
+                        if isinstance(distance, bool) or not isinstance(distance, (int, float)) or float(distance) <= 0:
+                            errors.append(f"location route distance for {neighbor_id} must be positive")
         if proposal.get("location_id"):
             try:
                 self.store.repositories.entities.get_entity(str(proposal["location_id"]))
@@ -230,12 +270,19 @@ class EntityProposalRuntimeMixin:
                 proposed_state.setdefault("research_focus", focus)
         entity_data = {"description": proposal.get("description", ""), "initial_state": proposed_state}
         agent_state: dict[str, Any] | None = None
+        location_routes: list[str] = []
+        location_distances: dict[str, float] = {}
         if entity_type == "agent":
             agent_state, agent_errors = self._normalize_god_agent_state(entity_id, proposal)
             if agent_errors:
                 return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_entity", data, {"status": "rejected", "message": "Agent proposal failed validation.", "failed_check": "agent_schema", "errors": agent_errors, "retryable": True})
         elif entity_type == "location":
-            for field in ("routes", "tags", "public", "safe", "discoveries", "map_position", "region_id"):
+            location_routes = [str(item) for item in (proposed_state.get("routes") or [])]
+            location_distances = {
+                str(key): float(value)
+                for key, value in (proposed_state.get("route_distances") or {}).items()
+            }
+            for field in ("routes", "route_distances", "tags", "public", "safe", "discoveries", "map_position", "region_id"):
                 if field in proposed_state:
                     entity_data[field] = proposed_state.pop(field)
             entity_data["initial_state"] = proposed_state
@@ -259,6 +306,22 @@ class EntityProposalRuntimeMixin:
                             })
                 else:
                     self.store.repositories.entities.put_entity(entity_id, entity_type, str(proposal["name"]), entity_data)
+                    if entity_type == "location":
+                        for neighbor_id in location_routes:
+                            neighbor = self.store.repositories.entities.get_entity(neighbor_id)
+                            neighbor_routes = list(neighbor.get("routes") or [])
+                            if entity_id not in neighbor_routes:
+                                neighbor_routes.append(entity_id)
+                            neighbor_distances = dict(neighbor.get("route_distances") or {})
+                            neighbor_distances[entity_id] = location_distances.get(neighbor_id, 1.0)
+                            neighbor["routes"] = neighbor_routes
+                            neighbor["route_distances"] = neighbor_distances
+                            self.store.repositories.entities.put_entity(
+                                neighbor_id,
+                                "location",
+                                neighbor.get("name", neighbor_id),
+                                {key: value for key, value in neighbor.items() if key not in {"id", "entity_type", "name"}},
+                            )
                     if research_values_present:
                         focus, _ = self._context.services["definitions"]._research_focus(proposed_state, proposal.get("description"))
                         gap_key = str(proposed_state.get("research_novelty_key") or f"source:{entity_id}")

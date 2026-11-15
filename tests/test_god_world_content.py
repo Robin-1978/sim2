@@ -138,3 +138,45 @@ def test_god_cannot_create_duplicate_visible_entities(tmp_path: Path):
         assert result["failed_check"] == "entity_name_duplicate"
     finally:
         platform.close()
+
+
+def test_god_created_location_requires_and_builds_a_reciprocal_route(tmp_path: Path):
+    platform = _town(tmp_path, "god-linked-location")
+    try:
+        result = platform.submit_entity_proposal("god", {
+            "entity_type": "location",
+            "name": "North Watch",
+            "description": "A verified viewpoint beyond the square.",
+            "state": {
+                "routes": ["lantern_square"],
+                "route_distances": {"lantern_square": 3},
+                "tags": ["public", "watch"],
+                "public": True,
+                "safe": False,
+            },
+        })
+        assert result["status"] == "accepted", result
+        square = platform.store.repositories.entities.get_entity("lantern_square")
+        watch = platform.store.repositories.entities.get_entity(result["entity_id"])
+        assert result["entity_id"] in square["routes"]
+        assert "lantern_square" in watch["routes"]
+        assert square["route_distances"][result["entity_id"]] == 3
+        assert watch["route_distances"]["lantern_square"] == 3
+    finally:
+        platform.close()
+
+
+def test_god_cannot_create_a_disconnected_public_location(tmp_path: Path):
+    platform = _town(tmp_path, "god-disconnected-location")
+    try:
+        result = platform.submit_entity_proposal("god", {
+            "entity_type": "location",
+            "name": "Isolated Platform",
+            "description": "A location with no executable way to reach it.",
+            "state": {"tags": ["public"], "public": True},
+        })
+        assert result["status"] == "rejected"
+        assert result["failed_check"] == "entity_schema"
+        assert any("requires at least one existing route neighbor" in item for item in result["errors"])
+    finally:
+        platform.close()

@@ -147,6 +147,7 @@ behavior_trees:
   - actor.can_gather
   - actor.alive
   - actor.need.hydration > 45
+  - actor.need.satiety > 45
   estimated_minutes: 95
   cooldown_minutes: 240
   nodes:

@@ -602,3 +602,34 @@ chapters in the corrected day. Conversations and preserved rations are batched
 by configured event counts/cooldowns, partial research no longer wakes Story as
 if it were complete, and exploration uses one validated event source instead of
 parallel generic and BT-specific story tasks.
+
+### Tidebound Commons seven-day causal audit
+
+The same interactive DeepSeek instance was continued through a complete
+simulated week (`10080` minutes). The long run completed with 909 successful
+provider calls, no provider/protocol failures, 4,022,318 prompt tokens
+(1,875,200 cached) and 132,138 completion tokens. It produced:
+
+- 3 real gate repairs and 3 registered dynamic definitions;
+- 2 research stages completed and 2 civilization milestones;
+- 2 evidence-backed entity creations and one signal tuning;
+- 53 Story activations and 48 completed chapters;
+- 43 executions of the God-created `Log Tide Gate Maintenance` behavior.
+
+The long run exposed two issues that a one-day audit did not: dynamic location
+proposals could create a place disconnected from the route graph, and starving
+characters could repeatedly choose `Gather Shellfish` because its food drive
+tag outranked water gathering. The latter produced 41 hunger-damage events.
+
+Both defects were fixed at their source. Dynamic locations now require existing
+route neighbors and Platform writes reciprocal weighted links atomically; a
+fresh DeepSeek God call created `Low-Tide Channel` with `Salt Marsh Edge` as a
+route, and both sides became navigable immediately. `Gather Shellfish` now
+requires `satiety > 45`, leaving `Draw Fresh Water`, ration preparation and
+eating as the recovery path below that threshold.
+
+After the survival fix, a deterministic `10080`-minute stress run completed
+without hunger damage or degeneration flags; all six residents ended at
+Integrity `100` and satiety between `54` and `62`. A fresh targeted DeepSeek
+turn with Mara at satiety `0`, carrying shellfish but no water or rations,
+selected `Draw Fresh Water` instead of more shellfish gathering.

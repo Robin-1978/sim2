@@ -484,6 +484,13 @@ an Action `information` event or `public_event` effect. Duplicate publication is
 rejected during package validation because it would multiply evidence and can
 incorrectly satisfy later Story/God thresholds.
 
+Dynamic locations are navigable objects, not prose labels. A `propose_entity`
+location must declare a non-empty `state.routes` list whose entries resolve to
+existing locations and may provide positive `route_distances`. Platform inserts
+the new location and the reciprocal links in one transaction. A proposal that
+only names an `adjacent_to` place, or otherwise leaves a public location
+disconnected, is rejected.
+
 When a BT needs content chosen by the Agent, declare `agent_parameters` on the
 BT. Each entry states its type, whether it is required, its length bound and a
 plain-language description. The compiled behavior shows these requirements;

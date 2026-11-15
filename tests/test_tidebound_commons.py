@@ -76,7 +76,7 @@ def test_tidebound_commons_is_a_balanced_non_village_package(tmp_path: Path) -> 
         platform.close()
 
 
-def test_tidebound_research_can_expand_the_map_through_god_route_proposals(tmp_path: Path) -> None:
+def test_tidebound_research_can_expand_the_map_with_atomic_route_links(tmp_path: Path) -> None:
     platform = Platform(create_instance(WORLD, "tidebound-expansion", tmp_path / "runtime"))
     try:
         created = platform.submit_entity_proposal("god", {
@@ -85,6 +85,7 @@ def test_tidebound_research_can_expand_the_map_through_god_route_proposals(tmp_p
             "description": "A newly exposed shelf beyond the drowned observatory.",
             "state": {
                 "routes": ["drowned_observatory"],
+                "route_distances": {"drowned_observatory": 4},
                 "tags": ["exploration", "frontier"],
                 "public": True,
                 "safe": False,
@@ -92,19 +93,12 @@ def test_tidebound_research_can_expand_the_map_through_god_route_proposals(tmp_p
             },
         })
         assert created["status"] == "accepted", created
-        linked = platform.submit_world_change("god", {
-            "change_type": "route",
-            "summary": "The verified chart supports a weighted route to the Outer Shelf.",
-            "route": {"from": "Drowned Observatory", "to": "Outer Shelf", "distance": 4},
-            "expected_effects": ["A reciprocal route is registered."],
-        })
-        assert linked["status"] == "accepted", linked
         observatory = platform.store.repositories.entities.get_entity("drowned_observatory")
         shelf = platform.store.repositories.entities.get_entity(created["entity_id"])
         assert created["entity_id"] in observatory["routes"]
         assert "drowned_observatory" in shelf["routes"]
         assert float(observatory["route_distances"][created["entity_id"]]) == 4.0
-        assert any(event["event_type"] == "world.change.route" for event in platform.store.repositories.events.recent_events(limit=20))
+        assert float(shelf["route_distances"]["drowned_observatory"]) == 4.0
     finally:
         platform.close()
 
@@ -122,6 +116,15 @@ def test_survival_guard_hides_optional_work_but_keeps_recovery_choices(tmp_path:
         assert "behavior:drink_water" in choices
         assert "behavior:eat_ration" in choices
         assert "behavior:gather_water" in choices
+
+        agent = platform.store.repositories.entities.get_agent("mara")
+        agent["needs"]["hydration"] = 60
+        agent["needs"]["satiety"] = 20
+        platform.store.repositories.entities.update_agent("mara", agent)
+        choices = {item["ref"] for item in platform.decision_view("mara")["executable_behaviors"]}
+        assert "behavior:gather_shellfish" not in choices
+        assert "behavior:gather_water" in choices
+        assert "behavior:eat_ration" in choices
     finally:
         platform.close()
 

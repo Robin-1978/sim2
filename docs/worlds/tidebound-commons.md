@@ -138,5 +138,8 @@ The survival guard is deliberately visible in the action catalog. When
 hydration or satiety falls below 45, optional research, travel, inspection and
 repair behaviors disappear until the resident has a recovery choice; eating
 remains available even when dehydrated, and drinking remains available even
-when hungry. This prevents a long expedition from silently outranking survival
-without adding a hidden global decision rule.
+when hungry. Shellfish gathering also requires both needs above 45 because the
+raw catch is an input to ration preparation, not an immediate food action. A
+starving resident therefore follows draw water / prepare rations / eat rather
+than repeatedly gathering materials. This prevents a long expedition from
+silently outranking survival without adding a hidden global decision rule.

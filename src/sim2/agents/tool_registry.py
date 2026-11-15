@@ -348,7 +348,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "entity_type": {"type": "string", "description": "Use agent for a new playable character; otherwise use a configured type such as location, faction, object, material, or resource."},
                 "name": {"type": "string"},
                 "location": {"type": "string", "description": "A visible location name."},
-                "state": {"type": "object", "description": "Initial state. For an agent, include role, ultimate_goal, initial_bt_ids, capabilities, needs, inventory, and initial_state with a visible location and status. Platform initializes configured defaults and validates every reference."},
+                "state": {"type": "object", "description": "Initial state. A location must include non-empty routes naming existing locations and may include positive route_distances; Platform creates reciprocal route links atomically. For an agent, include role, ultimate_goal, initial_bt_ids, capabilities, needs, inventory, and initial_state with a visible location and status. Platform initializes configured defaults and validates every reference."},
                 "description": {"type": "string"},
             },
             "required": ["entity_type", "name"],
@@ -505,7 +505,7 @@ def _tool_for_role(role: str, name: str) -> dict[str, Any]:
     definition = copy.deepcopy(TOOL_DEFINITIONS[name])
     if name == "propose_entity" and role == "god":
         definition["purpose"] = "Propose a person, place, faction, object, or empty resource node needed by the verified storyline. Do not create stocked resources as a reward."
-        definition["parameters"]["properties"]["state"]["description"] = "Initial structural state. For an agent, include role, ultimate_goal, initial_bt_ids, capabilities, needs, inventory, and initial_state with a visible location and status. A positive resource quantity must come from a validated behavior result."
+        definition["parameters"]["properties"]["state"]["description"] = "Initial structural state. A location must include non-empty routes naming existing locations and may include positive route_distances; Platform creates reciprocal links atomically. For an agent, include role, ultimate_goal, initial_bt_ids, capabilities, needs, inventory, and initial_state with a visible location and status. A positive resource quantity must come from a validated behavior result."
     if name == "propose_world_change" and role == "god":
         definition["purpose"] = "Propose an evidence-backed rule, relationship, faction update, or narrative event. Existing world properties must be created through propose_definition, and behavior produces resource and personal/social values."
         change_type = definition["parameters"]["properties"]["change_type"]
