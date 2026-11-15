@@ -194,10 +194,18 @@
         const title = make("div"); title.append(make("strong", "inspector-title", agent.name || agent.id)); title.append(make("small", "inspector-muted", `${agent.role || "agent"} · ${agent.location || "未知地点"}`)); head.append(title); box.append(head);
         const status = make("div", "inspector-status"); status.append(make("span", "status-pill", agent.status || "idle")); if (agent.active_behavior) status.append(make("span", "inspector-muted", agent.active_behavior)); box.append(status);
         const grid = make("div", "inspector-stats"); grid.append(stat("剩余时间", agent.remaining_minutes ? `${agent.remaining_minutes} min` : "—")); grid.append(stat("地点", agent.location || "—")); box.append(grid);
-        const attributes = agent.attributes || {};
-        if (Object.keys(attributes).length) {
+        const attributes = Array.isArray(agent.attributes)
+          ? agent.attributes
+          : Object.entries(agent.attributes || {}).map(([id, value]) => ({ id, label: id, value }));
+        if (attributes.length) {
           const section = make("div", "inspector-section"); section.append(make("h3", "", "状态"));
-          for (const [key, value] of Object.entries(attributes).slice(0, 8)) { const row = make("div", "attribute-row"); row.append(make("span", "inspector-muted", key.replaceAll("_", " "))); row.append(make("strong", "", typeof value === "number" ? Number(value.toFixed?.(2) || value) : String(value))); section.append(row); }
+          for (const attribute of attributes.slice(0, 8)) {
+            const row = make("div", "attribute-row");
+            row.append(make("span", "inspector-muted", attribute.label || attribute.id || "attribute"));
+            const unit = attribute.unit ? ` ${attribute.unit}` : "";
+            row.append(make("strong", "", `${displayValue(attribute.value)}${unit}`));
+            section.append(row);
+          }
           box.append(section);
         }
         const back = make("button", "text-button inspector-back", "返回地点"); back.type = "button"; back.addEventListener("click", () => { state.selectedAgentId = null; renderInspector(); }); box.append(back);
@@ -222,6 +230,15 @@
   }
 
   function stat(label, value) { const node = make("div", "inspector-stat"); node.append(make("span", "inspector-muted", label)); node.append(make("strong", "", value)); return node; }
+
+  function displayValue(value) {
+    if (value === null || value === undefined || value === "") return "—";
+    if (typeof value === "number") return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+    if (typeof value === "boolean") return value ? "是" : "否";
+    if (Array.isArray(value)) return value.map(displayValue).join(", ");
+    if (typeof value === "object") return Object.entries(value).map(([key, item]) => `${key}: ${displayValue(item)}`).join(" · ");
+    return String(value);
+  }
 
   function renderTimeline() {
     const list = $("timeline-list");
