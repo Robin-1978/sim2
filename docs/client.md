@@ -54,19 +54,26 @@ renderer. Players see public and personally known locations; hidden locations
 are not exposed. The observer view also excludes hidden world truth.
 
 The MUD-style `sim2 mud` interface remains useful for scripts and recovery.
-`sim2 serve` exposes the same projections and controls over HTTP for a later
-Web or desktop client. Both go through Platform and share the same visibility,
-validation and transaction rules as the TUI.
+`sim2 serve` exposes the same projections and controls to the web client. Both
+go through Platform and share the same visibility, validation and transaction
+rules as the TUI.
 
 The repository now ships a dependency-free browser bundle for the local Runtime
 Web Client and Authoring Workbench. The local HTTP service is still a development
 server, not a finished public web server:
 
 ```bash
-sim2 serve --db "$DB" --host 127.0.0.1 --port 8080
+sim2 serve --host 127.0.0.1 --port 8080
+# or select one explicitly
+sim2 serve --instance-id my-world-001 --host 127.0.0.1 --port 8080
 curl 'http://127.0.0.1:8080/status'
 curl 'http://127.0.0.1:8080/timeline?limit=50&after=0'
 ```
+
+Without `--db`, the server uses `current_instance.json` under `--runtime-root`
+(default `~/.sim2`) and falls back to the most recently modified
+`instances/*/world.sqlite3`. Startup prints the selected database and a local
+Operator token.
 
 Open `http://127.0.0.1:8080/` in a browser. **运行世界** shows the map, public
 timeline, characters and evolution queue. **设计世界** edits a JSON world draft,
@@ -74,18 +81,27 @@ loads the canonical Schema, runs compile checks and a disposable SQLite smoke te
 opens the current source package, lists packages under `--authoring-root`, can
 create a new independent SQLite game from a selected reviewed template, can
 invoke the configured WorldBuilder Agent on an explicit button click, and
-downloads the generated YAML files as a package manifest. The workbench never
-changes the database passed to `sim2 serve`; after creating a game it shows a
-new `sim2 serve --db ...` command, so the operator explicitly stops the current
-server before switching instances.
+downloads the generated YAML files as a package manifest. **Create and open**
+first creates the SQLite instance and then activates it through the same server;
+the source package is never edited as a side effect.
 
 `sim2 serve` now creates a local in-memory session boundary. `GET /session`
 returns a read-only observer token; entering a player returns a player token that
 is required for that player's view, actions, waiting and dialogue. Operator
-commands (`pause`, `resume`, `step`, `events`, `audit`) require the startup
+commands (`runtime/start`, `runtime/pause`, `runtime/resume`, `runtime/stop`,
+`runtime/step`, instance creation/switching, `events`, `audit`) require the startup
 `operator_token` printed by the server or `SIM2_OPERATOR_TOKEN`. This is a local
 development boundary, not a replacement for production login and deployment
 authentication.
+
+One server process owns at most one autonomous runtime thread. Start accepts a
+provider name plus world-minute and LLM-call budgets. Pause finishes the current
+complete minute, including already-started Agent decisions, and then stops the
+worker. Continue preserves the same `run_id`, starting minute, target minute and
+LLM budget. Stop leaves committed history intact and pauses the persisted world.
+Manual wait returns `runtime_running` while the autonomous worker owns the clock.
+Switching an instance first stops and closes the old runtime, opens the replacement
+SQLite database, and scopes every player session to that one instance.
 
 网页默认先打开 **开始游戏**：选择玩家出身后，页面显示角色目标、需求条、
 当前位置、可见路线和行动卡。每张行动卡通过 `/player/act` 提交到 Platform；
@@ -108,8 +124,8 @@ player/operator permissions, and the separate World Authoring Workbench are
 specified in [`docs/design/web-client.md`](design/web-client.md). The workbench
 uses the same Schema and Definition Compiler as `world-schema` and
 `validate-world`; it does not edit a running SQLite instance. Do not expose the
-development HTTP service outside localhost until authentication, CORS policy and
-operator authorization are implemented.
+development HTTP service outside localhost without a reviewed reverse-proxy
+authentication layer and CORS policy.
 
 The runtime observer UI and the World Authoring Web 工作台 are separate
 surfaces. The observer UI reads an existing SQLite instance; the authoring

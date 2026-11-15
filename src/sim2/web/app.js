@@ -19,7 +19,14 @@
     playerId: null,
     playerData: null,
     playerEntry: null,
+    observerToken: null,
+    operatorToken: null,
+    playerToken: null,
     sessionToken: null,
+    runtime: null,
+    instances: [],
+    activeDb: null,
+    operatorResolve: null,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -31,8 +38,10 @@
   };
 
   async function request(path, options = {}) {
+    const usedOperatorToken = Boolean(state.operatorToken);
+    const sessionToken = state.operatorToken || state.playerToken || state.observerToken || state.sessionToken;
     const response = await fetch(path, {
-      headers: { "content-type": "application/json", ...(state.sessionToken ? { "x-sim2-session": state.sessionToken } : {}), ...(options.headers || {}) },
+      headers: { "content-type": "application/json", ...(sessionToken ? { "x-sim2-session": sessionToken } : {}), ...(options.headers || {}) },
       ...options,
     });
     const type = response.headers.get("content-type") || "";
@@ -40,8 +49,69 @@
       throw new Error(`服务端返回了 ${response.status} ${type || "未知内容"}`);
     }
     const value = await response.json();
-    if (!response.ok) throw new Error(value.message || `请求失败 (${response.status})`);
+    if (!response.ok) {
+      const error = new Error(value.message || `请求失败 (${response.status})`);
+      error.status = response.status;
+      error.code = value.failed_check || value.status || null;
+      if (usedOperatorToken && response.status === 403 && path !== "/session") {
+        clearOperatorSession();
+        openOperatorDialog(true);
+      }
+      throw error;
+    }
     return value;
+  }
+
+  function setOperatorState(unlocked) {
+    $("operator-unlock").textContent = unlocked ? "管理已解锁" : "解锁管理";
+    $("operator-unlock").classList.toggle("unlocked", unlocked);
+  }
+
+  function clearOperatorSession() {
+    state.operatorToken = null;
+    sessionStorage.removeItem("sim2_operator_token");
+    setOperatorState(false);
+  }
+
+  function openOperatorDialog(force = false) {
+    if (state.operatorToken && !force) return Promise.resolve(true);
+    if ($("operator-dialog").open) return Promise.resolve(false);
+    if (typeof $("operator-dialog").showModal === "function") $("operator-dialog").showModal();
+    return new Promise((resolve) => { state.operatorResolve = resolve; });
+  }
+
+  async function unlockOperator(rawToken) {
+    const token = String(rawToken || "").trim();
+    if (!token) throw new Error("请输入 Operator Token");
+    const result = await request("/session", { method: "POST", body: JSON.stringify({ role: "operator", operator_token: token }) });
+    if (result.status !== "ok" || result.role !== "operator") throw new Error(result.message || "解锁失败");
+    state.operatorToken = result.session_token;
+    sessionStorage.setItem("sim2_operator_token", result.session_token);
+    setOperatorState(true);
+    const resolve = state.operatorResolve;
+    state.operatorResolve = null;
+    if (resolve) resolve(true);
+    $("operator-dialog").close();
+    return true;
+  }
+
+  async function ensureOperator() {
+    if (state.operatorToken) return true;
+    return openOperatorDialog();
+  }
+
+  function operatorAction(handler) {
+    return async (...args) => {
+      if (!(await ensureOperator())) return;
+      try { return await handler(...args); }
+      catch (error) {
+        if (/operator|session|forbidden|权限/i.test(error.message || "")) {
+          clearOperatorSession();
+          openOperatorDialog(true);
+        }
+        throw error;
+      }
+    };
   }
 
   function setConnection(online, text = online ? "已连接" : "连接中断") {
@@ -55,12 +125,91 @@
     notice.classList.toggle("hidden", !message);
   }
 
-  function renderMetrics(status, observer) {
+  function renderMetrics(status, observer, runtime = {}) {
     $("world-clock").textContent = status.world_minute === undefined ? "—" : `minute ${status.world_minute}`;
-    $("metric-status").textContent = status.status || "—";
+    $("metric-status").textContent = runtime.state || status.status || "—";
     $("metric-agents").textContent = String((observer.agents || []).length);
     $("metric-locations").textContent = String((observer.entity_counts || {}).location || 0);
     $("metric-cursor").textContent = String(state.after);
+  }
+
+  function renderRuntime(runtime = {}) {
+    state.runtime = runtime;
+    const stateName = runtime.state || "stopped";
+    const labels = { stopped: "已停止", starting: "启动中", running: "自动运行", pausing: "正在暂停", paused: "已暂停", stopping: "正在停止", failed: "运行失败", cooldown: "模型冷却", paused_budget: "预算暂停" };
+    $("runtime-state").textContent = labels[stateName] || stateName;
+    $("runtime-state").className = `runtime-state ${stateName}`;
+    $("runtime-console-state").textContent = labels[stateName] || stateName;
+    const minute = runtime.world_minute ?? 0;
+    const target = runtime.target_minute;
+    const targetText = target == null ? "持续运行" : `目标 minute ${target}`;
+    $("runtime-console-detail").textContent = runtime.running
+      ? `正在运行 · ${targetText} · ${runtime.provider || "角色默认模型"}`
+      : (runtime.stop_reason || (stateName === "paused" ? "世界已暂停，可以继续或单步。" : "选择预算后开始世界自动演化。"));
+    const start = runtime.start_minute ?? minute;
+    const pct = target && target > start ? Math.max(0, Math.min(100, ((minute - start) / (target - start)) * 100)) : (runtime.running ? 8 : 0);
+    $("runtime-progress-bar").style.width = `${pct}%`;
+    $("runtime-usage").textContent = `minute ${minute} · 本 run ${runtime.llm_calls_this_run ?? 0}/${runtime.max_llm_calls ?? "∞"} calls · ${runtime.prompt_tokens ?? 0} prompt / ${runtime.completion_tokens ?? 0} completion tokens`;
+    $("runtime-error").textContent = runtime.last_error || "";
+    const provider = $("runtime-provider");
+    const previous = provider.value;
+    provider.replaceChildren(new Option("默认角色模型", ""));
+    for (const name of runtime.available_providers || []) provider.append(new Option(name, name));
+    if ([...provider.options].some((item) => item.value === previous)) provider.value = previous;
+    const running = Boolean(runtime.running);
+    $("start-button").disabled = running;
+    $("pause-button").disabled = !running;
+    $("resume-button").disabled = running || !runtime.run_id;
+    $("stop-button").disabled = !runtime.run_id || runtime.state === "stopped";
+    $("step-button").disabled = running;
+  }
+
+  function renderInstances(payload) {
+    state.instances = payload.instances || [];
+    state.activeDb = payload.active_db || null;
+    const select = $("instance-select");
+    select.replaceChildren();
+    for (const item of state.instances) {
+      const label = `${item.world_id || item.instance_id} · ${item.instance_id} · day ${Math.floor((item.world_minute || 0) / 1440) + 1}`;
+      select.append(new Option(label, item.db_path, false, item.active));
+    }
+    if (!state.instances.length) select.append(new Option("暂无实例", ""));
+  }
+
+  async function loadInstances() {
+    try { renderInstances(await request("/instances")); }
+    catch (error) { showNotice(error.message || "无法读取实例列表"); }
+  }
+
+  async function activateInstance(dbPath) {
+    if (!dbPath || dbPath === state.activeDb) return;
+    if (!(await ensureOperator())) {
+      $("instance-select").value = state.activeDb || "";
+      return;
+    }
+    try {
+      const result = await request("/instances/activate", { method: "POST", body: JSON.stringify({ db_path: dbPath }) });
+      if (result.status !== "accepted") throw new Error(result.message || "实例切换失败");
+      window.location.reload();
+    } catch (error) {
+      $("instance-select").value = state.activeDb || "";
+      throw error;
+    }
+  }
+
+  async function startRuntime() {
+    if (!(await ensureOperator())) return;
+    const result = await request("/runtime/start", { method: "POST", body: JSON.stringify({ provider: $("runtime-provider").value || null, max_world_minutes: Number($("runtime-minutes").value || 1440), max_llm_calls: Number($("runtime-llm-calls").value || 120) }) });
+    if (result.status !== "accepted") throw new Error(result.message || result.failed_check || "自动运行未启动");
+    renderRuntime(result); await refreshRuntime(true);
+  }
+
+  async function runtimeCommand(path, body = {}) {
+    if (!(await ensureOperator())) return;
+    const result = await request(path, { method: "POST", body: JSON.stringify(body) });
+    if (result.status === "rejected") throw new Error(result.message || result.failed_check || "运行命令被拒绝");
+    renderRuntime(result.runtime || result); await refreshRuntime(false);
+    return result;
   }
 
   function renderCharacters(observer) {
@@ -276,22 +425,23 @@
 
   async function refreshRuntime(full = false) {
     try {
-      const [status, observer, map, timeline] = await Promise.all([
+      const [status, observer, map, timeline, runtime] = await Promise.all([
         request("/status"), request("/observer?limit=30"), request("/map?observer=1"),
         request(`/timeline?limit=80&after=${full ? 0 : state.after}&ticks=${state.includeTicks ? 1 : 0}`),
+        request("/runtime"),
       ]);
       if (full) { state.events.clear(); state.after = 0; }
       for (const event of timeline.events || []) state.events.set(event.event_id, event);
       state.after = Math.max(state.after, Number(timeline.next_after_event_id || 0));
       state.lastObserver = observer;
-      renderMetrics(status, observer); renderCharacters(observer); renderDialogueTargets(observer); renderMap(map); renderTimeline();
+      renderMetrics(status, observer, runtime); renderRuntime(runtime); renderCharacters(observer); renderDialogueTargets(observer); renderMap(map); renderTimeline();
       await renderEvolution();
       setConnection(true, "已连接"); showNotice(""); $("last-update").textContent = `updated ${new Date().toLocaleTimeString()}`;
     } catch (error) { setConnection(false); showNotice(error.message || "无法读取世界投影"); }
   }
 
   async function control(path) {
-    try { await request(path, { method: "POST", body: JSON.stringify({ reason: "web" }) }); await refreshRuntime(true); }
+    try { await runtimeCommand(path, { reason: "web" }); }
     catch (error) { showNotice(error.message || "命令未提交"); }
   }
 
@@ -305,7 +455,8 @@
       const result = await request("/players", { method: "POST", body: JSON.stringify({ player_id: playerId, origin_id: originId, name: name || undefined }) });
       if (result.status !== "accepted") throw new Error(result.message || "玩家进入失败");
       state.playerId = playerId;
-      state.sessionToken = result.session_token || state.sessionToken;
+      state.playerToken = result.session_token || state.playerToken;
+      state.sessionToken = state.playerToken || state.observerToken;
       localStorage.setItem("sim2_player_id", playerId);
       if (result.session_token) localStorage.setItem("sim2_player_token", result.session_token);
       await loadPlayerView();
@@ -399,7 +550,9 @@
     const root = $("player-actions"); root.replaceChildren();
     if (activeTask.action || activeTask.bt) {
       const running = make("div", "active-task-card"); running.append(make("strong", "", `正在执行：${activeTask.action || activeTask.bt}`)); running.append(make("p", "", `还需要 ${activeTask.remaining_minutes ?? 0} 分钟。行为完成后，Platform 会记录结果并刷新下一步选择。`)); root.append(running);
-      const wait = make("button", "button ghost player-wait", "等待一分钟"); wait.type = "button"; wait.addEventListener("click", playerWait); root.append(wait); return;
+      if (!state.runtime?.running) { const wait = make("button", "button ghost player-wait", "等待一分钟"); wait.type = "button"; wait.addEventListener("click", playerWait); root.append(wait); }
+      else root.append(make("p", "empty-state", "世界正在自动推进。"));
+      return;
     }
     if (!actions.length) { root.append(make("div", "empty-state", "暂时没有可执行行动；看看地图或稍后再来。")); return; }
     for (const action of actions) {
@@ -408,7 +561,8 @@
       const meta = make("div", "action-card-meta"); for (const value of [...(action.cost || []), ...(action.impact || []).slice(0, 2)]) meta.append(make("span", "action-chip", value)); card.append(meta);
       const button = make("button", "button ghost", action.kind === "travel" ? "出发" : "执行行动"); button.type = "button"; button.addEventListener("click", () => submitPlayerAction(action)); card.append(button); root.append(card);
     }
-    const wait = make("button", "button ghost player-wait", "等待一分钟"); wait.type = "button"; wait.addEventListener("click", playerWait); root.append(wait);
+    if (!state.runtime?.running) { const wait = make("button", "button ghost player-wait", "等待一分钟"); wait.type = "button"; wait.addEventListener("click", playerWait); root.append(wait); }
+    else root.append(make("p", "empty-state", "世界正在自动推进，你仍然可以提交当前行动。"));
   }
 
   async function submitPlayerAction(action) {
@@ -423,6 +577,7 @@
 
   async function playerWait() {
     if (!state.playerId) return;
+    if (state.runtime?.running) { setPlayerResult("世界正在自动推进，无需手动等待。", true); return; }
     try { await request("/player/wait", { method: "POST", body: JSON.stringify({ player_id: state.playerId }) }); await loadPlayerView(); setPlayerResult("世界向前推进了一分钟。", true); }
     catch (error) { setPlayerResult(error.message || "无法推进世界", false); }
   }
@@ -649,12 +804,16 @@
     const instanceId = $("instance-id")?.value.trim() || "";
     const resultBox = $("instance-result");
     if (!packageId || !instanceId) { resultBox.textContent = "请选择模板并填写实例 ID"; resultBox.className = "interaction-result error"; return; }
+    if (!(await ensureOperator())) return;
     resultBox.textContent = "创建中…"; resultBox.className = "interaction-result";
     try {
-      const result = await request("/authoring/create", { method: "POST", body: JSON.stringify({ package_id: packageId, instance_id: instanceId }) });
+      const result = await request("/instances", { method: "POST", body: JSON.stringify({ package_id: packageId, instance_id: instanceId }) });
       if (result.status !== "passed") throw new Error((result.errors || ["创建失败"]).join("; "));
-      resultBox.textContent = `已创建 ${result.instance_id}：${result.db_path}。请停止当前服务后按 ${result.start_command} 启动。`;
+      resultBox.textContent = `已创建 ${result.instance_id}，正在打开…`;
       resultBox.className = "interaction-result ok";
+      const activated = await request("/instances/activate", { method: "POST", body: JSON.stringify({ instance_id: result.instance_id }) });
+      if (activated.status !== "accepted") throw new Error(activated.message || "实例已创建，但切换失败");
+      window.location.reload();
     } catch (error) { resultBox.textContent = error.message || "创建失败"; resultBox.className = "interaction-result error"; }
   }
 
@@ -663,15 +822,49 @@
     setDraft(initial);
     setEditorMode("guided");
     document.querySelectorAll(".mode-tab").forEach((tab) => tab.addEventListener("click", () => switchView(tab.dataset.view)));
-    $("refresh-button").addEventListener("click", () => refreshRuntime(true)); $("pause-button").addEventListener("click", () => control("/pause")); $("step-button").addEventListener("click", () => control("/step")); $("toggle-ticks").addEventListener("click", () => { state.includeTicks = !state.includeTicks; $("toggle-ticks").textContent = state.includeTicks ? "隐藏 tick" : "显示 tick"; refreshRuntime(true); });
-    $("open-player").addEventListener("click", () => switchView("play-view")); $("play-enter").addEventListener("click", enterPlayer); $("play-player-origin").addEventListener("change", updateOriginPreview); $("player-refresh").addEventListener("click", loadPlayerView); $("player-send-dialogue").addEventListener("click", sendPlayerDialogue); $("player-leave").addEventListener("click", () => { state.playerId = null; state.playerData = null; state.sessionToken = null; localStorage.removeItem("sim2_player_id"); localStorage.removeItem("sim2_player_token"); $("player-world").classList.add("hidden"); $("player-setup").classList.remove("hidden"); setPlayerResult("已退出当前角色。", true); }); $("send-dialogue").addEventListener("click", sendDialogue); $("create-instance").addEventListener("click", createNewInstance);
-    $("new-draft").addEventListener("click", () => setDraft(defaultTemplate(), { increment: true, clearSource: true })); $("open-current").addEventListener("click", () => openPackage()); $("open-path").addEventListener("click", () => openPackage($("authoring-path").value.trim())); $("format-draft").addEventListener("click", () => { const parsed = parseDraft(); if (!parsed.error) setDraft(parsed.value); else renderDiagnostics({ status: "rejected", errors: [parsed.error] }); }); $("apply-quick-fields").addEventListener("click", () => { const parsed = parseDraft(); if (parsed.error) { renderDiagnostics({ status: "rejected", errors: [parsed.error] }); return; } parsed.value.world = { ...(parsed.value.world || {}), id: $("quick-world-id").value.trim(), title: $("quick-world-title").value.trim(), locale: $("quick-world-locale").value.trim() || "en" }; setDraft(parsed.value, { increment: true }); renderDiagnostics(null); }); $("guided-mode").addEventListener("click", () => setEditorMode("guided")); $("raw-mode").addEventListener("click", () => setEditorMode("raw")); $("build-world").addEventListener("click", buildWorldFromBrief); $("compile-draft").addEventListener("click", compileDraft); $("smoke-draft").addEventListener("click", smokeDraft); $("export-draft").addEventListener("click", exportDraft);
-    let observerToken = null; try { const session = await request("/session"); observerToken = session.session_token || null; state.sessionToken = observerToken; } catch (error) { /* public projections remain readable in local read-only mode */ }
+    $("refresh-button").addEventListener("click", () => refreshRuntime(true));
+    $("start-button").addEventListener("click", () => startRuntime().catch((error) => showNotice(error.message || "自动运行未启动")));
+    $("pause-button").addEventListener("click", () => control("/runtime/pause"));
+    $("resume-button").addEventListener("click", () => control("/runtime/resume"));
+    $("stop-button").addEventListener("click", () => control("/runtime/stop"));
+    $("step-button").addEventListener("click", () => control("/runtime/step"));
+    $("toggle-ticks").addEventListener("click", () => { state.includeTicks = !state.includeTicks; $("toggle-ticks").textContent = state.includeTicks ? "隐藏 tick" : "显示 tick"; refreshRuntime(true); });
+    $("instance-select").addEventListener("change", (event) => activateInstance(event.target.value).catch((error) => showNotice(error.message || "实例切换失败")));
+    $("operator-unlock").addEventListener("click", () => openOperatorDialog(true));
+    $("operator-submit").addEventListener("click", (event) => { event.preventDefault(); unlockOperator($("operator-token").value).catch((error) => { $("operator-error").textContent = error.message || "解锁失败"; }); });
+    $("operator-dialog").addEventListener("close", () => { $("operator-token").value = ""; $("operator-error").textContent = ""; if (state.operatorResolve) state.operatorResolve(false); state.operatorResolve = null; });
+    $("open-player").addEventListener("click", () => switchView("play-view"));
+    $("play-enter").addEventListener("click", enterPlayer);
+    $("play-player-origin").addEventListener("change", updateOriginPreview);
+    $("player-refresh").addEventListener("click", loadPlayerView);
+    $("player-send-dialogue").addEventListener("click", sendPlayerDialogue);
+    $("player-leave").addEventListener("click", () => {
+      state.playerId = null; state.playerData = null; state.playerToken = null; state.sessionToken = state.observerToken;
+      localStorage.removeItem("sim2_player_id"); localStorage.removeItem("sim2_player_token");
+      $("player-world").classList.add("hidden"); $("player-setup").classList.remove("hidden"); setPlayerResult("已退出当前角色。", true);
+    });
+    $("send-dialogue").addEventListener("click", sendDialogue);
+    $("create-instance").addEventListener("click", () => createNewInstance().catch((error) => { $("instance-result").textContent = error.message || "创建失败"; $("instance-result").className = "interaction-result error"; }));
+    $("new-draft").addEventListener("click", () => setDraft(defaultTemplate(), { increment: true, clearSource: true }));
+    $("open-current").addEventListener("click", operatorAction(() => openPackage()));
+    $("open-path").addEventListener("click", operatorAction(() => openPackage($("authoring-path").value.trim())));
+    $("format-draft").addEventListener("click", () => { const parsed = parseDraft(); if (!parsed.error) setDraft(parsed.value); else renderDiagnostics({ status: "rejected", errors: [parsed.error] }); });
+    $("apply-quick-fields").addEventListener("click", () => { const parsed = parseDraft(); if (parsed.error) { renderDiagnostics({ status: "rejected", errors: [parsed.error] }); return; } parsed.value.world = { ...(parsed.value.world || {}), id: $("quick-world-id").value.trim(), title: $("quick-world-title").value.trim(), locale: $("quick-world-locale").value.trim() || "en" }; setDraft(parsed.value, { increment: true }); renderDiagnostics(null); });
+    $("guided-mode").addEventListener("click", () => setEditorMode("guided"));
+    $("raw-mode").addEventListener("click", () => setEditorMode("raw"));
+    $("build-world").addEventListener("click", operatorAction(buildWorldFromBrief));
+    $("compile-draft").addEventListener("click", operatorAction(compileDraft));
+    $("smoke-draft").addEventListener("click", operatorAction(smokeDraft));
+    $("export-draft").addEventListener("click", operatorAction(exportDraft));
+    state.operatorToken = sessionStorage.getItem("sim2_operator_token");
+    setOperatorState(Boolean(state.operatorToken));
+    try { const session = await request("/session"); state.observerToken = session.session_token || null; state.sessionToken = state.observerToken; } catch (error) { /* public projections remain readable in local read-only mode */ }
     const savedPlayer = localStorage.getItem("sim2_player_id"); const savedPlayerToken = localStorage.getItem("sim2_player_token");
-    if (savedPlayer && savedPlayerToken) { state.playerId = savedPlayer; state.sessionToken = savedPlayerToken; const restored = await loadPlayerView(); if (!restored) { state.playerId = null; state.sessionToken = observerToken; localStorage.removeItem("sim2_player_id"); localStorage.removeItem("sim2_player_token"); } }
+    if (savedPlayer && savedPlayerToken) { state.playerId = savedPlayer; state.playerToken = savedPlayerToken; state.sessionToken = savedPlayerToken; const restored = await loadPlayerView(); if (!restored) { state.playerId = null; state.playerToken = null; state.sessionToken = state.observerToken; localStorage.removeItem("sim2_player_id"); localStorage.removeItem("sim2_player_token"); } }
     try { const response = await request("/authoring/schema"); state.schema = response.schema; renderSchema(); } catch (error) { $("schema-list").replaceChildren(make("div", "empty-state", "Schema 暂不可用")); }
-    await loadPackageCatalog(); await loadPlayerEntry();
-    await refreshRuntime(true); state.poll = window.setInterval(() => { if ($("runtime-view").classList.contains("active-view")) refreshRuntime(false); else if ($("play-view").classList.contains("active-view") && state.playerId) loadPlayerView(); }, 4000);
+    await Promise.all([loadPackageCatalog(), loadPlayerEntry(), loadInstances()]);
+    await refreshRuntime(true);
+    state.poll = window.setInterval(() => { if ($("runtime-view").classList.contains("active-view")) refreshRuntime(false); else if ($("play-view").classList.contains("active-view") && state.playerId) loadPlayerView(); }, 4000);
   }
 
   window.addEventListener("DOMContentLoaded", init);

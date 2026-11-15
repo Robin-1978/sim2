@@ -42,8 +42,13 @@ In observer mode, use `timeline 50` to read the latest public events as a chrono
 Start the local HTTP control API when another client needs status, stepping, events, dialogue, or trade operations:
 
 ```bash
-sim2 serve --db "$DB" --host 127.0.0.1 --port 8080
+sim2 serve --host 127.0.0.1 --port 8080
 ```
+
+With no `--db`, `sim2 serve` opens the most recently activated instance under
+`~/.sim2`; use `--instance-id <id>` to choose one explicitly, or `--db "$DB"`
+for an instance outside that root. The terminal prints the URL, active database
+and a local Operator token.
 
 Run the autonomous Platform runtime after configuring providers in `~/.sim2/llm.json`:
 
@@ -66,12 +71,18 @@ export SIM2_BGE_MODEL=/path/to/bge-small-zh-v1.5
 
 The text interface supports movement, messages, offers, counteroffers, acceptance/rejection, waiting, and public world telemetry. HTTP exposes the same Platform operations for another client.
 
-The browser surfaces are separate from the TUI: the Runtime Web Client observes a
-running instance through local HTTP projections, while the World Authoring
-Workbench edits and compiles a draft package before initialization. The repository
-ships a dependency-free browser MVP at `sim2 serve` `/`; see [Web Client Design](docs/design/web-client.md) and
+The browser surfaces are separate from the TUI: the Runtime Web Client observes
+and controls one instance through local HTTP projections, while the World
+Authoring Workbench edits and compiles a draft package before initialization.
+The repository ships a dependency-free web client at `sim2 serve` `/`. After
+unlocking Operator mode, the page can create and open an instance, switch the
+active world, start autonomous simulation with explicit time/LLM budgets, pause
+at the current complete-minute boundary, continue the same run, stop, or advance
+one minute. See [Web Client Design](docs/design/web-client.md) and
 [World Authoring Web](docs/design/world-authoring-web.md) for the protocol and
-extension points.
+remaining extension points. The development server binds to localhost and must
+not be exposed publicly without additional deployment authentication and CORS
+controls.
 
 ## Worlds and extension
 

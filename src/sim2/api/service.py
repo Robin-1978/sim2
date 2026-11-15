@@ -13,7 +13,9 @@ class ControlService:
 
     def __init__(self, db_path: Path, *, authoring_root: Path | None = None):
         self.platform = Platform(db_path)
-        runtime_root = Path(db_path).resolve().parent.parent
+        resolved = Path(db_path).resolve()
+        container = resolved.parent.parent
+        runtime_root = container.parent if container.name == "instances" else container
         if authoring_root is None:
             report = self.platform.store.repositories.metadata.get("bootstrap_report", {}) or {}
             source = report.get("config_dir") if isinstance(report, dict) else None

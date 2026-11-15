@@ -13,6 +13,7 @@ from ..platform.runtime import Platform
 from worlds import world_path
 from .text import TextWorldSession
 from .http import ControlHTTPServer
+from .instances import InstanceRegistry
 from .map_view import render_topology_map
 
 
@@ -77,11 +78,14 @@ def main() -> None:
     simulate.add_argument("--provider", help="override all Agent roles with one configured provider (for example: remote)")
 
     serve = sub.add_parser("serve", help="start the local HTTP control API")
-    serve.add_argument("--db", type=Path, required=True)
+    serve_source = serve.add_mutually_exclusive_group()
+    serve_source.add_argument("--db", type=Path, help="world SQLite path; defaults to the current or most recent instance")
+    serve_source.add_argument("--instance-id", help="world instance id under the runtime root")
+    serve.add_argument("--runtime-root", type=Path, default=Path.home() / ".sim2", help="runtime root containing instances/ and current_instance.json")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8080)
     serve.add_argument("--authoring-root", type=Path, help="optional directory containing packages the web editor may open")
-    serve.add_argument("--operator-token", help="local token required for pause, step, audit and event injection; defaults to SIM2_OPERATOR_TOKEN or a generated token")
+    serve.add_argument("--operator-token", help="local token required for runtime control, instance switching, authoring writes and audit; defaults to SIM2_OPERATOR_TOKEN or a generated token")
 
     for name, help_text in [("status", "show instance status"), ("health", "check database and runtime health"), ("timeline", "show the public third-person timeline"), ("map", "show the location topology and character positions"), ("pause", "pause world advancement"), ("resume", "resume world advancement"), ("step", "advance one world minute"), ("metrics", "show runtime metrics"), ("audit", "export event and Agent audit")]:
         command = sub.add_parser(name, help=help_text)
@@ -227,14 +231,22 @@ def main() -> None:
             platform.close()
         return
     if args.command == "serve":
-        server = ControlHTTPServer((args.host, args.port), args.db, authoring_root=args.authoring_root, operator_token=args.operator_token)
+        db_path = args.db
+        if db_path is None:
+            db_path = InstanceRegistry(args.runtime_root).resolve(instance_id=args.instance_id)
+        server = ControlHTTPServer((args.host, args.port), db_path, authoring_root=args.authoring_root, operator_token=args.operator_token)
         try:
-            print(json.dumps({"status": "listening", "url": f"http://{args.host}:{args.port}", "operator_token": server.operator_token}, ensure_ascii=False), flush=True)
+            print(json.dumps({
+                "status": "listening",
+                "url": f"http://{args.host}:{args.port}",
+                "db": str(server.database_path),
+                "operator_token": server.operator_token,
+            }, ensure_ascii=False), flush=True)
             server.serve_forever()
         except KeyboardInterrupt:
-            return
+            pass
         finally:
-            server.close()
+            server.close_after_serve_forever()
         return
     if args.command in {"status", "health", "timeline", "map", "pause", "resume", "step", "metrics", "audit", "snapshot", "restore", "enter-player", "inject"}:
         platform = Platform(args.db)

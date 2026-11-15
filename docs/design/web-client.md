@@ -1,7 +1,8 @@
 # sim2 网页客户端设计
 
-> 状态：Runtime Web Client 与 Authoring Workbench MVP 已实现，后续增强按分阶段
-> 清单推进。当前网页由本地 HTTP 服务提供，远程认证和 SSE 仍未实现。
+> 状态：Runtime Web Client 与 Authoring Workbench 已形成单机本地闭环。自动运行、
+> 暂停/继续、停止、单步、实例创建与热切换、Operator 解锁均已实现；远程部署认证、
+> SSE 和草稿持久化仍属于后续增强。
 >
 > 全功能网页的架构、状态机、接口、权限、测试和交付顺序见
 > [全功能网页客户端实施规划](web-full-client-plan.md)。
@@ -17,7 +18,7 @@ SQLite、YAML、Agent prompt 或 LLM provider；所有数据都来自经过视�
 
 | 产品面 | 面向用户 | 读取 | 写入 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| Runtime Web Client | 旁观者、玩家、运行维护者 | 世界投影、地图、公开时间线、角色公开状态 | 玩家对话/交易；维护者暂停、单步和受控事件 | 已实现本地静态网页 MVP |
+| Runtime Web Client | 旁观者、玩家、运行维护者 | 世界投影、地图、公开时间线、角色公开状态 | 玩家对话/交易；维护者运行控制、实例切换和受控事件 | 已实现本地闭环 |
 | World Authoring Workbench | 世界作者、审查者 | 草稿、Schema、规范 IR、编译诊断、smoke 结果 | 草稿编译、smoke、YAML 文件包导出 | 已实现本地静态网页 MVP 与 `/authoring/*` |
 
 Runtime Client 观察的是已经初始化的 SQLite 实例；Authoring Workbench 编辑
@@ -113,13 +114,14 @@ Runtime Client 有三个视角：
 
 | 视角 | 能看到 | 能提交 |
 | --- | --- | --- |
-| Observer | 公共地图、公共时间线、公开角色状态、健康和指标 | 只读；本地维护模式可单独开启暂停/单步 |
-| Player | 自身、已知地点/事实、公开事件和允许的交互对象 | 对话、交易、移动、等待等玩家命令 |
-| Operator | Observer 全部内容、任务/审计/健康详情 | 暂停、恢复、单步、受控事件注入和快照操作 |
+| Observer | 公共地图、公共时间线、公开角色状态、健康和指标 | 只读 |
+| Player | 自身、已知地点/事实、公开事件和允许的交互对象 | 对话、交易、移动、等待等玩家命令；会话绑定当前实例 |
+| Operator | Observer 全部内容、任务/审计/健康详情 | 自动运行、暂停/继续、停止、单步、实例切换、受控事件注入和快照操作 |
 
-当前 `sim2 serve` 是绑定 `127.0.0.1` 的开发控制 API，尚未提供登录和远程
-授权。它不能直接暴露到公网。真正的 Operator/Player token、CORS allowlist
-和反向代理部署属于网页上线前的明确工作项，不能由前端假装解决。
+当前 `sim2 serve` 是绑定 `127.0.0.1` 的开发控制 API。Operator token 在
+服务启动时生成并在浏览器中换取短期 Operator session；Observer 和 Player
+session 分别隔离。它不能直接暴露到公网，公网部署仍需要反向代理认证、
+allowlist、TLS 与 CORS 策略。
 
 ## 数据和请求协议
 
@@ -131,6 +133,8 @@ Runtime Client 有三个视角：
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | GET | `/status` | 世界时间、运行状态和实例信息 |
+| GET | `/instances` | 扫描并列出可打开 SQLite 实例 |
+| GET | `/runtime` | 自动运行状态机、世界分钟和本次 run usage |
 | GET | `/session` | 创建本地只读 Observer 会话 |
 | GET | `/health` | 数据库/运行时健康；异常返回 HTTP 503 |
 | GET | `/metrics` | 运行指标 |
@@ -143,7 +147,14 @@ Runtime Client 有三个视角：
 | GET | `/authoring/catalog` | List validated packages under `--authoring-root` |
 | GET | `/player/entry` | 当前世界的玩家入口和出身选项 |
 | GET | `/player/view?player_id=<id>` | 玩家 HUD、可见地图、行动卡和结果 |
-| POST | `/pause`、`/resume`、`/step` | 本地维护控制 |
+| POST | `/instances` | 从已验证模板创建实例 |
+| POST | `/instances/activate` | 停止旧运行时并热切换实例 |
+| POST | `/runtime/start` | 使用 provider、世界分钟和 LLM 调用预算启动 |
+| POST | `/runtime/pause` | 请求在当前完整分钟结束后暂停 |
+| POST | `/runtime/resume` | 以原 `run_id`、目标分钟和预算继续 |
+| POST | `/runtime/stop` | 停止自动 worker，保留世界历史 |
+| POST | `/runtime/step` | 暂停态推进一个完整世界分钟 |
+| POST | `/pause`、`/resume`、`/step` | 运行控制的兼容别名 |
 | POST | `/dialogue` | 发送对话 |
 | POST | `/trade/offers`、`/trade/accept` | 交易交互 |
 | POST | `/players` | 创建/进入玩家 |
@@ -195,7 +206,7 @@ submitted → accepted → committed
 
 ### 刷新、缓存和重连
 
-首版使用 1–2 秒轮询，理由是当前 HTTP 服务是轻量的
+当前本地客户端使用 4 秒轮询，理由是当前 HTTP 服务是轻量的
 `ThreadingHTTPServer`，网页不需要每个模拟分钟建立 LLM 请求。刷新规则如下：
 
 1. 首次加载并行读取 `/status`、`/observer`、`/map` 和 `/timeline`。

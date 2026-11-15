@@ -20,6 +20,9 @@
         <button class="mode-tab" data-view="authoring-view">设计世界</button>
       </nav>
       <div class="top-status">
+        <select id="instance-select" class="compact-select" aria-label="当前世界实例"><option value="">载入实例…</option></select>
+        <span id="runtime-state" class="runtime-state stopped">已停止</span>
+        <button id="operator-unlock" class="text-button operator-unlock">解锁管理</button>
         <span id="connection-dot" class="status-dot offline"></span>
         <span id="connection-label">正在连接</span>
         <span id="world-clock" class="clock">—</span>
@@ -71,13 +74,28 @@
             <p class="muted">从已提交的事实、行为结果和世界变化中观察因果链。</p>
           </div>
           <div class="runtime-actions">
+            <button id="start-button" class="button primary">开始自动运行</button>
             <button id="pause-button" class="button ghost">暂停</button>
+            <button id="resume-button" class="button ghost">继续</button>
+            <button id="stop-button" class="button ghost">停止</button>
             <button id="step-button" class="button ghost">单步推进</button>
             <button id="refresh-button" class="button primary">刷新</button>
           </div>
         </div>
 
         <div id="runtime-notice" class="notice hidden" role="status"></div>
+        <section class="panel runtime-console">
+          <div class="runtime-console-main">
+            <div><span class="panel-kicker">AUTONOMOUS RUNTIME</span><strong id="runtime-console-state">已停止</strong><small id="runtime-console-detail">选择预算后开始世界自动演化。</small></div>
+            <div class="runtime-budget">
+              <label>模型<select id="runtime-provider"><option value="">默认角色模型</option></select></label>
+              <label>世界分钟<input id="runtime-minutes" type="number" min="1" value="1440"></label>
+              <label>LLM 上限<input id="runtime-llm-calls" type="number" min="1" value="120"></label>
+            </div>
+          </div>
+          <div class="runtime-progress"><span id="runtime-progress-bar"></span></div>
+          <div class="runtime-console-foot"><span id="runtime-usage">尚无运行记录</span><span id="runtime-error"></span></div>
+        </section>
         <div class="metric-strip" id="world-metrics" aria-live="polite">
           <div class="metric"><span>世界状态</span><strong id="metric-status">—</strong></div>
           <div class="metric"><span>公开角色</span><strong id="metric-agents">—</strong></div>
@@ -142,10 +160,10 @@
             </div>
             <div class="builder-box instance-box">
               <span class="panel-kicker">NEW INSTANCE</span>
-              <p>从已验证模板创建独立 SQLite 游戏。创建不会调用模型，也不会切换当前运行实例。</p>
+              <p>从已验证模板创建独立 SQLite 游戏，并立即切换到新世界。创建本身不会调用模型。</p>
               <label>世界模板<select id="package-select"><option value="">加载模板…</option></select></label>
               <label>实例 ID<input id="instance-id" placeholder="my-world-001" autocomplete="off"></label>
-              <button id="create-instance" class="button wide">创建新游戏</button>
+              <button id="create-instance" class="button wide">创建并打开游戏</button>
               <div id="instance-result" class="interaction-result" role="status"></div>
             </div>
             <div class="schema-note">字段来自 <code>world-schema</code>。网页不维护世界专用词汇。</div>
@@ -191,6 +209,14 @@
     </main>
     <footer class="footer"><span>sim2 · Platform is the source of truth</span><span id="last-update">—</span></footer>
   </div>
+  <dialog id="operator-dialog" class="operator-dialog">
+    <form method="dialog">
+      <div class="panel-heading"><div><span class="panel-kicker">LOCAL OPERATOR</span><h2>解锁管理界面</h2><p class="panel-subtitle">粘贴终端启动服务时显示的一次性 Operator Token。</p></div></div>
+      <label>Operator Token<input id="operator-token" type="password" autocomplete="off" spellcheck="false" placeholder="启动 sim2 serve 时显示"></label>
+      <div id="operator-error" class="interaction-result error"></div>
+      <div class="dialog-actions"><button id="operator-cancel" class="button ghost" value="cancel">取消</button><button id="operator-submit" class="button primary" value="default">解锁</button></div>
+    </form>
+  </dialog>
   <script src="/app.js" defer></script>
 </body>
 </html>
