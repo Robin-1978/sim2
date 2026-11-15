@@ -2,6 +2,9 @@
 
 > 状态：Runtime Web Client 与 Authoring Workbench MVP 已实现，后续增强按分阶段
 > 清单推进。当前网页由本地 HTTP 服务提供，远程认证和 SSE 仍未实现。
+>
+> 全功能网页的架构、状态机、接口、权限、测试和交付顺序见
+> [全功能网页客户端实施规划](web-full-client-plan.md)。
 
 网页是 Platform 的观察与输入层，不是第二个运行时。浏览器永远不直接读
 SQLite、YAML、Agent prompt 或 LLM provider；所有数据都来自经过视角过滤的
