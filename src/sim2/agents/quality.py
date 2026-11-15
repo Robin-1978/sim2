@@ -187,6 +187,7 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
         evidence_terms = set().union(
             _terms(selected.get("name", "")), _terms(selected.get("summary", "")),
             _terms(selected.get("purpose", "")), _terms(selected.get("goal_tags", [])),
+            _terms(selected.get("supports_drive_tags", [])),
             _terms(view.get("identity", {}).get("capabilities", {})), _terms(view.get("goal_tags", [])),
             _terms(view.get("self", {}).get("goal", "")), _terms(view.get("observation", {}).get("facts", [])),
             _terms(view.get("known_facts", [])), _terms(view.get("memories", [])),

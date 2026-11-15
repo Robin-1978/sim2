@@ -28,6 +28,23 @@ carried quantity left on the NPC, and the Story result. Its temporary SQLite
 instance belongs under `/tmp/sim2-dynamic-evolution-check*`; do not copy it
 into the repository.
 
+For food, hydration, and other consumable chains, run the focused semantic
+probe. It checks direct recovery, prepare-then-eat, and forage-prepare-eat with
+the real model, then advances Platform time and verifies the resulting need and
+inventory values:
+
+```bash
+bash -ic 'source ~/.bashrc && SIM2_BGE_MODEL=disabled \
+  python scripts/verify_food_semantics.py --provider remote \
+  --output artifacts/food-semantics-deepseek.json'
+```
+
+The probe exits nonzero unless the model chooses the direct eating action when
+a ration exists, preserves available ingredients when no ration exists, and
+forages before preserving when neither ration nor ingredients exist. The JSON
+keeps the rendered catalog, tool calls, world changes and selected behaviors;
+it is written under ignored `artifacts/` by default.
+
 For fast local regression, run only the evolution tests:
 
 ```bash

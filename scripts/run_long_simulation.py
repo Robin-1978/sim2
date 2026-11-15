@@ -82,10 +82,17 @@ class DeterministicProvider:
             drive_tags = []
             if drive_match:
                 drive_tags = [item.strip() for item in re.split(r"[,;]", drive_match.group(1)) if item.strip()]
-            # The first matching tag is the behavior's primary drive.  The
-            # order is declarative content, so a food behavior can prioritize
-            # the configured satiety need over a general safety tag.
-            score = next((drive_urgencies[tag] for tag in drive_tags if tag in drive_urgencies), 0.0)
+            support_match = re.search(r"^\s+supports_drive_tags: (.+)$", block, flags=re.MULTILINE)
+            support_tags = []
+            if support_match:
+                support_tags = [item.strip() for item in re.split(r"[,;]", support_match.group(1)) if item.strip()]
+            # Direct tags describe immediate recovery. Support tags describe
+            # ingredients or intermediate products that a later behavior uses.
+            direct_score = next((drive_urgencies[tag] for tag in drive_tags if tag in drive_urgencies), 0.0)
+            support_score = next((drive_urgencies[tag] for tag in support_tags if tag in drive_urgencies), 0.0)
+            # Direct recovery wins when both are executable; preparation still
+            # matters when the needed item has to be made before it can be used.
+            score = direct_score or support_score * 0.8
             scored.append((score, match.group(1)))
         urgent = [choice for score, choice in scored if score >= 0.05]
         if not drive_urgencies:

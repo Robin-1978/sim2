@@ -26,7 +26,7 @@ attributes:
   min: 0
   max: 100
   default: 78
-  prompt: Access to safe drinking water.
+  prompt: 0 means dangerously dehydrated and 100 means fully hydrated. Collecting water is preparation; only a configured drinking behavior restores this need.
 - id: satiety
   kind: need
   label: Satiety
@@ -34,7 +34,7 @@ attributes:
   min: 0
   max: 100
   default: 70
-  prompt: Access to preserved food.
+  prompt: 0 means starving and 100 means fully fed. Raw shellfish are an ingredient; only a configured eating behavior restores this need.
 - id: belonging
   kind: need
   label: Belonging

@@ -83,6 +83,7 @@ PROTOCOLS = {
 PLATFORM_RULES = {
     "agent_decision": [
         "Only listed behaviors are executable; shown time, costs, requirements and outcomes are authoritative.",
+        "impact lists immediate state changes. A behavior that only collects or produces an item is preparation; it does not restore a need until a later behavior consumes or uses that item.",
         "Platform reserves costs and applies all state changes. An active behavior continues without a new decision.",
         "Wait changes nothing. Never invent hidden facts or unavailable targets.",
     ],

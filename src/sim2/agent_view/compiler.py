@@ -123,7 +123,7 @@ def _effect_text(action: dict[str, Any], recipe: dict[str, Any] | None = None, p
             impacts.append(f"{_display_item(effect.get('state', 'state')).title()} {float(effect.get('delta', 0)):g}")
         elif effect_type == "inventory_add":
             impacts.append(f"Inventory +{effect.get('quantity', 1)} {_display_item(resolved(effect.get('item', 'item')))}")
-        elif effect_type == "inventory_remove":
+        elif effect_type in {"inventory_remove", "inventory.consume_item"}:
             impacts.append(f"Inventory -{effect.get('quantity', 1)} {_display_item(resolved(effect.get('item', 'item')))}")
         elif effect_type in {"attribute_delta", "attribute_set"}:
             attribute = _display_item(effect.get("attribute", "attribute"))
@@ -1116,6 +1116,7 @@ class AgentViewCompiler:
                 "tags": bt.get("tags", []),
                 "goal_tags": bt.get("goal_tags", []),
                 "drive_tags": bt.get("drive_tags", []),
+                "supports_drive_tags": bt.get("supports_drive_tags", []),
             })
         # Long-term goal tags are context only.  They must not promote a
         # behavior whose current drive, need, or resource conditions are weak.

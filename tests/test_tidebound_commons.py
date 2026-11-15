@@ -122,9 +122,67 @@ def test_survival_guard_hides_optional_work_but_keeps_recovery_choices(tmp_path:
         agent["needs"]["satiety"] = 20
         platform.store.repositories.entities.update_agent("mara", agent)
         choices = {item["ref"] for item in platform.decision_view("mara")["executable_behaviors"]}
-        assert "behavior:gather_shellfish" not in choices
+        # Food gathering is part of the recovery chain. A hungry resident with
+        # no ration must still be able to collect ingredients before cooking.
+        assert "behavior:gather_shellfish" in choices
         assert "behavior:gather_water" in choices
         assert "behavior:eat_ration" in choices
+    finally:
+        platform.close()
+
+
+def test_catalog_distinguishes_food_preparation_from_eating(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "tidebound-food-semantics", tmp_path / "runtime"))
+    try:
+        agent = platform.store.repositories.entities.get_agent("mara")
+        agent["needs"]["hydration"] = 60
+        agent["needs"]["satiety"] = 20
+        agent["inventory"].update({"shellfish": 2, "fresh_water": 1, "food_ration": 1})
+        platform.store.repositories.entities.update_agent("mara", agent)
+        view = platform.decision_view("mara")
+        behaviors = {item["ref"]: item for item in view["executable_behaviors"]}
+
+        assert "behavior:eat_ration" in behaviors
+        assert "behavior:craft_rations" in behaviors
+        assert behaviors["behavior:eat_ration"]["drive_tags"] == ["satiety"]
+        assert "Inventory -1 food ration" in behaviors["behavior:eat_ration"]["impact"]
+        assert behaviors["behavior:craft_rations"]["drive_tags"] == ["purpose", "belonging"]
+        assert behaviors["behavior:craft_rations"]["supports_drive_tags"] == ["satiety"]
+        assert "eating a ration is a separate behavior" in behaviors["behavior:craft_rations"]["purpose"]
+        assert any("only collects or produces an item is preparation" in rule for rule in view["platform_rules"])
+
+        agent["needs"]["satiety"] = 60
+        platform.store.repositories.entities.update_agent("mara", agent)
+        behaviors = {item["ref"]: item for item in platform.decision_view("mara")["executable_behaviors"]}
+        assert behaviors["behavior:gather_shellfish"]["drive_tags"] == ["purpose"]
+        assert behaviors["behavior:gather_shellfish"]["supports_drive_tags"] == ["satiety"]
+        assert "does not restore satiety" in behaviors["behavior:gather_shellfish"]["purpose"]
+    finally:
+        platform.close()
+
+
+def test_preserved_rations_are_limited_by_inputs_and_time_not_other_meals(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "tidebound-ration-conservation", tmp_path / "runtime"))
+    try:
+        # Meals held by other residents must not block a hungry resident from
+        # turning conserved inputs into another meal.
+        others = [actor for actor in platform.store.repositories.entities.list_agents() if actor["id"] != "mara"][:3]
+        for actor in others:
+            actor["inventory"]["food_ration"] = 10
+            platform.store.repositories.entities.update_agent(actor["id"], actor)
+        mara = platform.store.repositories.entities.get_agent("mara")
+        mara["needs"]["hydration"] = 60
+        mara["needs"]["satiety"] = 20
+        mara["inventory"].update({"shellfish": 2, "fresh_water": 1, "food_ration": 0})
+        platform.store.repositories.entities.update_agent("mara", mara)
+
+        accepted = _start(platform, "mara", "craft_rations", "tide-ration-cap")
+        assert accepted["status"] == "accepted", accepted
+        _run_active(platform, "mara")
+        mara = platform.store.repositories.entities.get_agent("mara")
+        assert mara["inventory"]["food_ration"] == 3
+        assert mara["inventory"].get("shellfish", 0) == 0
+        assert mara["inventory"].get("fresh_water", 0) == 0
     finally:
         platform.close()
 

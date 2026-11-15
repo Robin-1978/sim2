@@ -107,6 +107,7 @@ behavior_trees:
   agent_label: Draw Fresh Water
   summary: Draw Fresh Water
   description: Bring two units of renewable freshwater from the marsh pool.
+  purpose: Carry fresh water for later drinking; collecting it does not restore hydration by itself.
   entry_conditions:
   - actor.can_gather
   - actor.alive
@@ -137,17 +138,18 @@ behavior_trees:
   - water
   - supply
   drive_tags:
-  - hydration
   - purpose
+  supports_drive_tags:
+  - hydration
 - id: gather_shellfish
   agent_label: Gather Shellfish
   summary: Gather Shellfish
   description: Harvest a small renewable shellfish catch without emptying the bed.
+  purpose: Gather raw shellfish as an ingredient for preserved rations; the catch does not restore satiety by itself.
   entry_conditions:
   - actor.can_gather
   - actor.alive
   - actor.need.hydration > 45
-  - actor.need.satiety > 45
   estimated_minutes: 95
   cooldown_minutes: 240
   nodes:
@@ -175,8 +177,9 @@ behavior_trees:
   - food
   - supply
   drive_tags:
-  - satiety
   - purpose
+  supports_drive_tags:
+  - satiety
 - id: gather_driftwood
   agent_label: Salvage Driftwood
   summary: Salvage Driftwood
@@ -257,6 +260,7 @@ behavior_trees:
   agent_label: Preserve Marsh Rations
   summary: Preserve Marsh Rations
   description: Turn shellfish and freshwater into three carried food rations.
+  purpose: Make preserved rations from carried ingredients; eating a ration is a separate behavior.
   entry_conditions:
   - actor.can_craft
   - actor.alive
@@ -287,8 +291,10 @@ behavior_trees:
   - crafting
   - food
   drive_tags:
-  - satiety
+  - purpose
   - belonging
+  supports_drive_tags:
+  - satiety
 - id: research_chart
   agent_label: Research Drowned Chart
   summary: Research Drowned Chart
@@ -359,7 +365,6 @@ behavior_trees:
   - route
   drive_tags:
   - purpose
-  - satiety
 - id: communicate
   agent_label: Exchange Commons Information
   summary: Exchange Commons Information
@@ -407,6 +412,7 @@ behavior_trees:
 - id: eat_ration
   agent_label: Eat Preserved Ration
   summary: Eat Preserved Ration
+  purpose: Eat one carried preserved ration now and restore satiety.
   entry_conditions:
   - actor.alive
   - actor.inventory.food_ration >= 1
@@ -430,6 +436,7 @@ behavior_trees:
 - id: drink_water
   agent_label: Drink Fresh Water
   summary: Drink Fresh Water
+  purpose: Drink one carried unit of fresh water now and restore hydration.
   entry_conditions:
   - actor.alive
   - actor.inventory.fresh_water >= 1

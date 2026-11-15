@@ -138,8 +138,20 @@ The survival guard is deliberately visible in the action catalog. When
 hydration or satiety falls below 45, optional research, travel, inspection and
 repair behaviors disappear until the resident has a recovery choice; eating
 remains available even when dehydrated, and drinking remains available even
-when hungry. Shellfish gathering also requires both needs above 45 because the
-raw catch is an input to ration preparation, not an immediate food action. A
-starving resident therefore follows draw water / prepare rations / eat rather
-than repeatedly gathering materials. This prevents a long expedition from
-silently outranking survival without adding a hidden global decision rule.
+when hungry. Shellfish gathering remains available while hungry because the
+raw catch is the first step in a recovery chain when no ration exists; it is
+not treated as an immediate meal. A resident without rations therefore follows
+gather shellfish / draw water / prepare rations / eat rather than being left
+with no executable recovery behavior. Hydration still has to be above 45 for
+the marsh trip so the survival guard sends a dehydrated resident to water
+first.
+
+The catalog separates direct recovery from preparation. `drive_tags` lists a
+need that the behavior itself changes immediately; `supports_drive_tags` lists
+a need that its produced item can help later. Gathering shellfish therefore
+supports satiety, while only eating a preserved ration directly restores it.
+The Agent prompt repeats this distinction beside the authoritative `impact`
+field so an ingredient is never mistaken for a completed meal. Preserved
+rations have no world-wide inventory cap: each new ration still consumes
+carried shellfish and freshwater and takes recipe time, so one resident's
+stored meals cannot strand another resident who has the inputs to cook.

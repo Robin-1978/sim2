@@ -471,6 +471,13 @@ model-facing text. The model never receives the raw tree. Selecting a BT only
 submits intent; Platform resolves targets, reserves resources and advances its
 Actions minute by minute.
 
+Use `drive_tags` only for needs that the BT changes immediately. When a BT
+collects or produces an item that a later behavior consumes, put the eventual
+need in `supports_drive_tags` and state the distinction in `purpose` (for
+example, raw food supports satiety, while an eating behavior restores it). The
+Agent view renders both fields and `impact`; Platform does not infer that a
+positive inventory change already repaired a need.
+
 Optional `rules.progression` entries expose long world stages to the relevant
 Agents. A stage declares `target_behaviors`, optional `support_behaviors`, and a
 verified completion contract such as
