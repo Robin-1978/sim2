@@ -87,11 +87,40 @@
   function positionNodes(nodes) {
     const result = new Map();
     const count = Math.max(1, nodes.length);
+    const authored = nodes.filter((node) => node.position && Number.isFinite(Number(node.position.x)) && Number.isFinite(Number(node.position.y)));
+    const xs = authored.map((node) => Number(node.position.x));
+    const ys = authored.map((node) => Number(node.position.y));
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    const rangeX = Math.max(1e-9, maxX - minX), rangeY = Math.max(1e-9, maxY - minY);
     nodes.forEach((node, index) => {
-      const authored = node.position && Number.isFinite(Number(node.position.x)) && Number.isFinite(Number(node.position.y));
+      const hasPosition = authored.includes(node);
       const angle = (Math.PI * 2 * index) / count - Math.PI / 2;
-      result.set(node.id, authored ? { x: 15 + Math.max(0, Math.min(70, Number(node.position.x))), y: 16 + Math.max(0, Math.min(65, Number(node.position.y))) } : { x: 50 + Math.cos(angle) * 31, y: 50 + Math.sin(angle) * 31 });
+      if (hasPosition && authored.length > 1) {
+        result.set(node.id, { x: 14 + ((Number(node.position.x) - minX) / rangeX) * 72, y: 14 + ((Number(node.position.y) - minY) / rangeY) * 70 });
+      } else {
+        result.set(node.id, { x: 50 + Math.cos(angle) * 32, y: 50 + Math.sin(angle) * 32 });
+      }
     });
+    // Authored coordinates may legitimately be identical. Apply a small
+    // deterministic separation pass so a compact or imported map remains
+    // legible without changing the source coordinates in SQLite.
+    const points = [...result.entries()];
+    for (let pass = 0; pass < 8; pass += 1) {
+      for (let left = 0; left < points.length; left += 1) {
+        for (let right = left + 1; right < points.length; right += 1) {
+          const a = points[left][1], b = points[right][1];
+          let dx = b.x - a.x, dy = b.y - a.y;
+          if (Math.abs(dx) < 12 && Math.abs(dy) < 11) {
+            if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) { dx = (right - left) % 2 ? 1 : -1; dy = 1; }
+            const distance = Math.max(1, Math.hypot(dx, dy));
+            const pushX = ((12 - Math.abs(dx)) / distance) * Math.sign(dx || 1) * 0.5;
+            const pushY = ((11 - Math.abs(dy)) / distance) * Math.sign(dy || 1) * 0.5;
+            a.x = Math.max(8, Math.min(92, a.x - pushX)); b.x = Math.max(8, Math.min(92, b.x + pushX));
+            a.y = Math.max(8, Math.min(92, a.y - pushY)); b.y = Math.max(8, Math.min(92, b.y + pushY));
+          }
+        }
+      }
+    }
     return result;
   }
 
@@ -106,9 +135,10 @@
       const from = positions.get(edge.from), to = positions.get(edge.to);
       if (!from || !to) continue;
       const line = make("span", "map-edge");
-      const dx = (to.x - from.x) * 2.25, dy = (to.y - from.y) * 3.25;
+      const width = canvas.clientWidth || 600, height = canvas.clientHeight || 325;
+      const dx = ((to.x - from.x) / 100) * width, dy = ((to.y - from.y) / 100) * height;
       line.style.left = `${from.x}%`; line.style.top = `${from.y}%`;
-      line.style.width = `${Math.sqrt(dx * dx + dy * dy)}%`;
+      line.style.width = `${Math.sqrt(dx * dx + dy * dy)}px`;
       line.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
       canvas.append(line);
       const chip = make("span", "route-chip", `${labels.get(edge.from) || edge.from} ↔ ${labels.get(edge.to) || edge.to}`);
