@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ..intents.models import BehaviorIntent
 from ..platform.runtime import Platform
 from .authoring import AuthoringService
 
@@ -47,6 +48,109 @@ class ControlService:
 
     def enter_player(self, player_id: str, origin_id: str, name: str | None = None) -> dict[str, Any]:
         return self.platform.enter_player(player_id, origin_id, name=name)
+
+    def player_entry(self) -> dict[str, Any]:
+        """Return generic player creation choices from the loaded world pack."""
+
+        template = self.platform.store.repositories.metadata.get("player_template", {}) or {}
+        player = template.get("player", {}) if isinstance(template, dict) else {}
+        entry_id = str(player.get("entry_location_id") or "")
+        try:
+            entry = self.platform.store.repositories.entities.get_entity(entry_id)
+        except KeyError:
+            entry = {}
+        origins = []
+        for item in player.get("origin_choices", []) or []:
+            if not isinstance(item, dict) or not item.get("id"):
+                continue
+            origins.append({"id": str(item["id"]), "goal": str(item.get("starting_goal") or ""), "traits": dict(item.get("traits") or {})})
+        return {
+            "status": "ok",
+            "world_id": self.platform.store.repositories.metadata.get("world_id"),
+            "entry_location": {"id": entry_id, "name": str(entry.get("name") or entry_id)},
+            "origins": origins,
+        }
+
+    def player_view(self, player_id: str) -> dict[str, Any]:
+        """Build a compact, playable projection for one player."""
+
+        player_id = str(player_id or "").strip()
+        if not player_id:
+            return {"status": "rejected", "message": "player_id is required"}
+        try:
+            decision = self.platform.decision_view(player_id, role="agent_decision")
+        except KeyError:
+            return {"status": "rejected", "message": "player does not exist", "failed_check": "player_id"}
+        map_view = self.platform.map_view(viewer_id=player_id, observer=False)
+        current_id = str((self.platform.store.repositories.entities.get_agent(player_id).get("initial_state") or {}).get("location_id") or "")
+        nodes = {str(item.get("id")): item for item in map_view.get("nodes", []) if isinstance(item, dict)}
+        current = nodes.get(current_id, {})
+        routes = []
+        for destination in current.get("routes", []) or []:
+            target = nodes.get(str(destination))
+            if not target:
+                continue
+            edge = next((item for item in map_view.get("edges", []) if {str(item.get("from")), str(item.get("to"))} == {current_id, str(destination)}), {})
+            routes.append({
+                "id": str(destination),
+                "name": str(target.get("name") or destination),
+                "distance": edge.get("distance", 1),
+                "minutes": edge.get("minutes", 1),
+                "safe": bool(target.get("safe", False)),
+            })
+        active_task = decision.get("active_task", {}) or {}
+        actions = list(decision.get("executable_behaviors", []) or [])
+        # Travel is a generic player affordance. The decision projection hides
+        # a travel BT when its destination is not selected yet; the web client
+        # supplies each known route as an explicit, validated intent instead.
+        for route in routes:
+            if active_task.get("action") or active_task.get("bt"):
+                break
+            actions.insert(0, {
+                "ref": "behavior:travel",
+                "choice": f"前往 {route['name']}",
+                "name": f"前往 {route['name']}",
+                "summary": f"沿已知路线前往 {route['name']}。",
+                "purpose": "移动到另一个已知地点",
+                "parameters": {"location_id": route["id"]},
+                "time": f"预计 {route['minutes']} 分钟",
+                "cost": [],
+                "impact": ["抵达目标地点"],
+                "target_required": False,
+                "kind": "travel",
+            })
+        player_projection = dict(decision.get("self", {}) or {})
+        player_projection["location_id"] = current_id
+        return {
+            "status": "ok",
+            "world_id": map_view.get("world_id"),
+            "world_time": decision.get("world_time"),
+            "player": player_projection,
+            "inventory": decision.get("inventory", {}),
+            "needs": decision.get("needs", {}),
+            "active_task": active_task,
+            "actions": actions[:24],
+            "routes": routes,
+            "map": map_view,
+            "recent_outcomes": decision.get("recent_outcomes", [])[:6],
+            "nearby_entities": decision.get("nearby_entities", [])[:12],
+        }
+
+    def player_act(self, body: dict[str, Any]) -> dict[str, Any]:
+        player_id = str(body.get("player_id") or "").strip()
+        if not player_id:
+            return {"status": "rejected", "message": "player_id is required"}
+        intent = BehaviorIntent.from_json(dict(body), actor_id=player_id)
+        return self.platform.submit_behavior(intent)
+
+    def player_wait(self, player_id: str) -> dict[str, Any]:
+        """Advance one minute for a manual player session."""
+
+        try:
+            self.platform.store.repositories.entities.get_agent(str(player_id))
+        except KeyError:
+            return {"status": "rejected", "message": "player does not exist", "failed_check": "player_id"}
+        return self.platform.step()
 
     def metrics(self) -> dict[str, Any]:
         with self.platform.store.read_transaction():

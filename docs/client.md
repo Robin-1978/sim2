@@ -79,6 +79,11 @@ changes the database passed to `sim2 serve`; after creating a game it shows a
 new `sim2 serve --db ...` command, so the operator explicitly stops the current
 server before switching instances.
 
+网页默认先打开 **开始游戏**：选择玩家出身后，页面显示角色目标、需求条、
+当前位置、可见路线和行动卡。每张行动卡通过 `/player/act` 提交到 Platform；
+行动结果回到玩家事件流。**观察世界** 和 **设计世界** 仍分别用于旁观审查和
+配置编辑。
+
 To open other reviewed packages, constrain the server to their parent directory:
 
 ```bash

@@ -57,6 +57,19 @@ flowchart LR
 
 ## Runtime Web Client
 
+玩家入口优先采用“场景 + 行动卡”的网页游戏模式，而不是把 MUD 命令行搬到
+浏览器。地图给出空间上下文，HUD 保留角色目标和需求，行动卡告诉玩家当前
+能做什么、预计耗时和可见结果；事件流只负责回答“刚才发生了什么”。玩家循环
+是：
+
+```text
+进入世界 → 查看角色/地点 → 选择行动卡或对话
+        → Platform 校验并启动行为 → 查看结果 → 选择下一步
+```
+
+观察世界和设计世界仍然保留为独立标签页，但不会占据玩家的首屏。网页不把
+BT、Intent、SQLite 或 LLM 暴露给玩家，只把它们投影成可理解的行动和结果。
+
 ### 页面骨架
 
 桌面端首屏采用可调整宽度的三栏布局，窄屏切换为四个标签页。布局不包含
@@ -124,10 +137,14 @@ Runtime Client 有三个视角：
 | GET | `/evolution/tasks` | 当前就绪的演化任务 |
 | GET | `/authoring/schema` | Canonical World Template Schema |
 | GET | `/authoring/catalog` | List validated packages under `--authoring-root` |
+| GET | `/player/entry` | 当前世界的玩家入口和出身选项 |
+| GET | `/player/view?player_id=<id>` | 玩家 HUD、可见地图、行动卡和结果 |
 | POST | `/pause`、`/resume`、`/step` | 本地维护控制 |
 | POST | `/dialogue` | 发送对话 |
 | POST | `/trade/offers`、`/trade/accept` | 交易交互 |
 | POST | `/players` | 创建/进入玩家 |
+| POST | `/player/act` | 以玩家身份提交一个配置行为 |
+| POST | `/player/wait` | 玩家手动等待一个世界分钟 |
 | POST | `/events` | 维护模式的事件注入 |
 | POST | `/authoring/compile` | 编译内存草稿并返回诊断 |
 | POST | `/authoring/smoke` | 在临时 SQLite 实例推进短 smoke |

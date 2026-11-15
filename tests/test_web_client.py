@@ -35,6 +35,9 @@ def test_http_serves_runtime_and_authoring_workbench(tmp_path: Path):
         with urlopen(base + "/") as response:
             html = response.read().decode("utf-8")
         assert "设计世界" in html
+        assert "开始游戏" in html
+        assert "现在，你在这里" in html
+        assert "现在可以做什么" in html
         assert "scene-inspector" in html
         assert "创建新游戏" in html
         with urlopen(base + "/app.css") as response:
@@ -110,6 +113,37 @@ def test_web_catalog_can_create_an_independent_instance_from_a_template(tmp_path
         assert created["status"] == "passed"
         assert Path(created["db_path"]).is_file()
         assert created["instance_id"] == "catalog-child"
+    finally:
+        server.close()
+        thread.join(timeout=2)
+
+
+def test_web_player_loop_exposes_actions_and_submits_through_platform(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "player-web", tmp_path / "runtime")
+    server = ControlHTTPServer(("127.0.0.1", 0), db_path, authoring_root=Path(__file__).parents[1] / "worlds")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with urlopen(base + "/player/entry") as response:
+            entry = json.loads(response.read())
+        assert entry["status"] == "ok"
+        assert entry["origins"]
+        entered = _json_request(base + "/players", {"player_id": "web_player", "origin_id": entry["origins"][0]["id"], "name": "Web Player"})
+        assert entered["status"] == "accepted"
+        with urlopen(base + "/player/view?player_id=web_player") as response:
+            view = json.loads(response.read())
+        assert view["status"] == "ok"
+        assert view["player"]["name"] == "Web Player"
+        assert view["actions"]
+        travel = next(item for item in view["actions"] if item.get("kind") == "travel")
+        acted = _json_request(base + "/player/act", {"player_id": "web_player", "behavior_ref": travel["ref"], "parameters": travel["parameters"], "confidence": 1, "reason": "Player chose the route."})
+        assert acted["status"] == "accepted"
+        with urlopen(base + "/player/view?player_id=web_player") as response:
+            active_view = json.loads(response.read())
+        assert active_view["active_task"]["action"] or active_view["active_task"]["bt"]
+        assert not any(item.get("kind") == "travel" for item in active_view["actions"])
     finally:
         server.close()
         thread.join(timeout=2)

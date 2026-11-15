@@ -16,6 +16,9 @@
     selectedLocationId: null,
     selectedAgentId: null,
     packages: [],
+    playerId: null,
+    playerData: null,
+    playerEntry: null,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -292,11 +295,147 @@
   }
 
   async function enterPlayer() {
-    const playerId = $("player-id").value.trim(); const originId = $("player-origin").value.trim();
-    if (!playerId || !originId) { setInteractionResult("需要玩家 ID 和起点 ID", false); return; }
-    try { const result = await request("/players", { method: "POST", body: JSON.stringify({ player_id: playerId, origin_id: originId, name: $("player-name").value.trim() || undefined }) }); setInteractionResult(result.status === "accepted" ? "玩家已进入世界" : JSON.stringify(result), result.status === "accepted"); await refreshRuntime(true); }
-    catch (error) { setInteractionResult(error.message || "玩家进入失败", false); }
+    const playerId = $("play-player-id")?.value.trim();
+    const originId = $("play-player-origin")?.value;
+    const name = $("play-player-name")?.value.trim();
+    const resultBox = $("play-notice") || $("interaction-result");
+    if (!playerId || !originId) { setPlayerResult("需要填写玩家 ID 并选择出身", false); return; }
+    try {
+      const result = await request("/players", { method: "POST", body: JSON.stringify({ player_id: playerId, origin_id: originId, name: name || undefined }) });
+      if (result.status !== "accepted") throw new Error(result.message || "玩家进入失败");
+      state.playerId = playerId;
+      await loadPlayerView();
+      switchView("play-view");
+      setPlayerResult("你已经进入世界。先看看周围，再选择下一步。", true);
+    } catch (error) { setPlayerResult(error.message || "玩家进入失败", false); }
   }
+
+  async function loadPlayerEntry() {
+    try {
+      const entry = await request("/player/entry");
+      state.playerEntry = entry;
+      $("play-world-id").textContent = entry.world_id || "world";
+      $("player-entry-copy").textContent = `从 ${entry.entry_location?.name || "入口地点"} 开始；你的选择会产生真实世界事件。`;
+      const select = $("play-player-origin"); select.replaceChildren();
+      for (const origin of entry.origins || []) select.append(new Option(origin.id, origin.id));
+      if (entry.origins?.length) { select.value = entry.origins[0].id; updateOriginPreview(); }
+    } catch (error) { setPlayerResult(error.message || "无法读取世界入口", false); }
+  }
+
+  function updateOriginPreview() {
+    const id = $("play-player-origin")?.value;
+    const origin = (state.playerEntry?.origins || []).find((item) => item.id === id);
+    $("origin-preview").textContent = origin?.goal ? `起始目标：${origin.goal}` : "选择一个出身后开始。";
+  }
+
+  async function loadPlayerView() {
+    if (!state.playerId) return;
+    try {
+      const data = await request(`/player/view?player_id=${encodeURIComponent(state.playerId)}`);
+      if (data.status !== "ok") throw new Error(data.message || "无法读取玩家状态");
+      state.playerData = data;
+      renderPlayerWorld(data);
+      $("player-setup").classList.add("hidden");
+      $("player-world").classList.remove("hidden");
+      $("play-world-time").textContent = data.world_time?.label || "—";
+    } catch (error) { setPlayerResult(error.message || "玩家状态暂不可用", false); }
+  }
+
+  function renderPlayerWorld(data) {
+    const player = data.player || {};
+    const name = player.name || state.playerId || "玩家";
+    $("player-name-label").textContent = name;
+    $("player-avatar").textContent = name.slice(0, 1);
+    $("player-location-label").textContent = player.location || "未知地点";
+    $("player-goal-label").textContent = player.goal || "探索这个世界";
+    renderNeedBars(player.attributes || []);
+    renderPlayerMap(data.map || {});
+    renderPlayerActions(data.actions || [], data.active_task || {});
+    renderPlayerFeed(data.recent_outcomes || []);
+    const targets = $("player-dialogue-target"); targets.replaceChildren();
+    for (const entity of data.nearby_entities || []) {
+      if (!entity.id) continue;
+      targets.append(new Option(entity.name || entity.id, entity.id));
+    }
+    if (!targets.options.length) targets.append(new Option("附近没有可交谈对象", ""));
+  }
+
+  function renderNeedBars(attributes) {
+    const root = $("player-need-bars"); root.replaceChildren();
+    const needs = (attributes || []).filter((item) => item.kind === "need").slice(0, 4);
+    for (const item of needs) {
+      const value = Number(item.value || 0); const row = make("div", "need-bar");
+      const label = make("div", "need-bar-label"); label.append(make("span", "", item.label || item.id), make("span", "", `${Math.round(value)}`));
+      const track = make("div", "need-bar-track"); const fill = make("div", "need-bar-fill"); fill.style.width = `${Math.max(0, Math.min(100, value))}%`; track.append(fill); row.append(label, track); root.append(row);
+    }
+  }
+
+  function renderPlayerMap(view) {
+    const canvas = $("player-map-canvas"); canvas.replaceChildren();
+    const nodes = view.nodes || []; const positions = positionNodes(nodes); const player = state.playerData?.player || {};
+    for (const edge of view.edges || []) {
+      const from = positions.get(edge.from), to = positions.get(edge.to); if (!from || !to) continue;
+      const line = make("span", "map-edge"); const width = canvas.clientWidth || 600, height = canvas.clientHeight || 390;
+      const dx = ((to.x - from.x) / 100) * width, dy = ((to.y - from.y) / 100) * height;
+      line.style.left = `${from.x}%`; line.style.top = `${from.y}%`; line.style.width = `${Math.hypot(dx, dy)}px`; line.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`; canvas.append(line);
+    }
+    for (const node of nodes) {
+      const point = positions.get(node.id); if (!point) continue;
+      const item = make("div", "map-node player-map-node"); item.style.left = `${point.x}%`; item.style.top = `${point.y}%`; item.classList.toggle("selected", node.id === player.location_id);
+      item.append(make("strong", "", node.name || node.id)); item.append(make("small", "", node.id === player.location_id ? "你在这里" : (node.safe ? "安全" : "可探索"))); canvas.append(item);
+    }
+    $("player-map-summary").textContent = `${nodes.length} 个已知地点`;
+    const current = nodes.find((item) => item.id === player.location_id);
+    const summary = $("player-location-summary"); summary.replaceChildren();
+    if (current) { summary.append(make("strong", "", `${current.name || current.id} · ${current.safe ? "安全" : "保持警戒"}`)); for (const tag of current.tags || []) summary.append(make("span", "tag", tag)); }
+  }
+
+  function renderPlayerActions(actions, activeTask = {}) {
+    const root = $("player-actions"); root.replaceChildren();
+    if (activeTask.action || activeTask.bt) {
+      const running = make("div", "active-task-card"); running.append(make("strong", "", `正在执行：${activeTask.action || activeTask.bt}`)); running.append(make("p", "", `还需要 ${activeTask.remaining_minutes ?? 0} 分钟。行为完成后，Platform 会记录结果并刷新下一步选择。`)); root.append(running);
+      const wait = make("button", "button ghost player-wait", "等待一分钟"); wait.type = "button"; wait.addEventListener("click", playerWait); root.append(wait); return;
+    }
+    if (!actions.length) { root.append(make("div", "empty-state", "暂时没有可执行行动；看看地图或稍后再来。")); return; }
+    for (const action of actions) {
+      const card = make("article", "action-card"); const head = make("div", "action-card-head"); head.append(make("strong", "action-card-title", action.choice || action.name || "行动")); head.append(make("span", "action-card-time", action.time || "Platform 计算时间")); card.append(head);
+      card.append(make("p", "", action.summary || action.purpose || "按照当前世界规则执行一个行动。"));
+      const meta = make("div", "action-card-meta"); for (const value of [...(action.cost || []), ...(action.impact || []).slice(0, 2)]) meta.append(make("span", "action-chip", value)); card.append(meta);
+      const button = make("button", "button ghost", action.kind === "travel" ? "出发" : "执行行动"); button.type = "button"; button.addEventListener("click", () => submitPlayerAction(action)); card.append(button); root.append(card);
+    }
+    const wait = make("button", "button ghost player-wait", "等待一分钟"); wait.type = "button"; wait.addEventListener("click", playerWait); root.append(wait);
+  }
+
+  async function submitPlayerAction(action) {
+    if (!state.playerId) return;
+    setPlayerResult("行动已提交，Platform 正在校验…", true);
+    try {
+      const result = await request("/player/act", { method: "POST", body: JSON.stringify({ player_id: state.playerId, behavior_ref: action.ref, parameters: action.parameters || {}, target: action.target || {}, reason: "Player selected this action from the web client.", confidence: 1 }) });
+      if (result.status !== "accepted") throw new Error(result.message || result.errors?.join("; ") || "行动未被接受");
+      setPlayerResult(`${action.choice || action.name || "行动"} 已开始。`, true); await loadPlayerView();
+    } catch (error) { setPlayerResult(error.message || "行动未提交", false); }
+  }
+
+  async function playerWait() {
+    if (!state.playerId) return;
+    try { await request("/player/wait", { method: "POST", body: JSON.stringify({ player_id: state.playerId }) }); await loadPlayerView(); setPlayerResult("世界向前推进了一分钟。", true); }
+    catch (error) { setPlayerResult(error.message || "无法推进世界", false); }
+  }
+
+  async function sendPlayerDialogue() {
+    const target = $("player-dialogue-target")?.value; const message = $("player-dialogue-message")?.value.trim();
+    if (!state.playerId || !target || !message) { setPlayerResult("请选择附近对象并输入消息", false); return; }
+    try { const result = await request("/dialogue", { method: "POST", body: JSON.stringify({ speaker_id: state.playerId, listener_id: target, topic: "general", message }) }); if (result.status !== "accepted") throw new Error(result.message || "对话未提交"); $("player-dialogue-message").value = ""; setPlayerResult("对话已经进入世界事件流。", true); await loadPlayerView(); }
+    catch (error) { setPlayerResult(error.message || "对话未提交", false); }
+  }
+
+  function renderPlayerFeed(outcomes) {
+    const root = $("player-feed"); root.replaceChildren();
+    if (!outcomes.length) { root.append(make("div", "empty-state", "还没有新的结果。")); return; }
+    for (const outcome of outcomes) { const item = make("div", "player-feed-item"); item.append(make("strong", "", outcome.result || outcome.summary || outcome.behavior_choice || "行动结果")); item.append(make("small", "", `${outcome.event_type || "world event"} · minute ${outcome.world_minute ?? "—"}`)); root.append(item); }
+  }
+
+  function setPlayerResult(message, ok) { const notice = $("play-notice"); notice.textContent = message || ""; notice.className = `notice ${ok ? "notice-ok" : ""}`; notice.classList.toggle("hidden", !message); }
 
   async function sendDialogue() {
     const speakerId = $("dialogue-speaker").value; const listenerId = $("dialogue-listener").value; const message = $("dialogue-message").value.trim();
@@ -520,10 +659,10 @@
     setEditorMode("guided");
     document.querySelectorAll(".mode-tab").forEach((tab) => tab.addEventListener("click", () => switchView(tab.dataset.view)));
     $("refresh-button").addEventListener("click", () => refreshRuntime(true)); $("pause-button").addEventListener("click", () => control("/pause")); $("step-button").addEventListener("click", () => control("/step")); $("toggle-ticks").addEventListener("click", () => { state.includeTicks = !state.includeTicks; $("toggle-ticks").textContent = state.includeTicks ? "隐藏 tick" : "显示 tick"; refreshRuntime(true); });
-    $("enter-player").addEventListener("click", enterPlayer); $("send-dialogue").addEventListener("click", sendDialogue); $("create-instance").addEventListener("click", createNewInstance);
+    $("open-player").addEventListener("click", () => switchView("play-view")); $("play-enter").addEventListener("click", enterPlayer); $("play-player-origin").addEventListener("change", updateOriginPreview); $("player-refresh").addEventListener("click", loadPlayerView); $("player-send-dialogue").addEventListener("click", sendPlayerDialogue); $("player-leave").addEventListener("click", () => { state.playerId = null; state.playerData = null; $("player-world").classList.add("hidden"); $("player-setup").classList.remove("hidden"); setPlayerResult("已退出当前角色。", true); }); $("send-dialogue").addEventListener("click", sendDialogue); $("create-instance").addEventListener("click", createNewInstance);
     $("new-draft").addEventListener("click", () => setDraft(defaultTemplate(), { increment: true, clearSource: true })); $("open-current").addEventListener("click", () => openPackage()); $("open-path").addEventListener("click", () => openPackage($("authoring-path").value.trim())); $("format-draft").addEventListener("click", () => { const parsed = parseDraft(); if (!parsed.error) setDraft(parsed.value); else renderDiagnostics({ status: "rejected", errors: [parsed.error] }); }); $("apply-quick-fields").addEventListener("click", () => { const parsed = parseDraft(); if (parsed.error) { renderDiagnostics({ status: "rejected", errors: [parsed.error] }); return; } parsed.value.world = { ...(parsed.value.world || {}), id: $("quick-world-id").value.trim(), title: $("quick-world-title").value.trim(), locale: $("quick-world-locale").value.trim() || "en" }; setDraft(parsed.value, { increment: true }); renderDiagnostics(null); }); $("guided-mode").addEventListener("click", () => setEditorMode("guided")); $("raw-mode").addEventListener("click", () => setEditorMode("raw")); $("build-world").addEventListener("click", buildWorldFromBrief); $("compile-draft").addEventListener("click", compileDraft); $("smoke-draft").addEventListener("click", smokeDraft); $("export-draft").addEventListener("click", exportDraft);
     try { const response = await request("/authoring/schema"); state.schema = response.schema; renderSchema(); } catch (error) { $("schema-list").replaceChildren(make("div", "empty-state", "Schema 暂不可用")); }
-    await loadPackageCatalog();
+    await loadPackageCatalog(); await loadPlayerEntry();
     await refreshRuntime(true); state.poll = window.setInterval(() => { if ($("runtime-view").classList.contains("active-view")) refreshRuntime(false); }, 4000);
   }
 

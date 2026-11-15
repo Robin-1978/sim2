@@ -67,6 +67,11 @@ class _Handler(BaseHTTPRequestHandler):
                 viewer_id = query.get("viewer_id", [None])[0]
                 observer = query.get("observer", ["0"])[0].lower() in {"1", "true", "yes"}
                 return self._write(200, self.server.control.map(viewer_id=viewer_id, observer=observer))
+            if path == "/player/entry":
+                return self._write(200, self.server.control.player_entry())
+            if path == "/player/view":
+                query = parse_qs(urlparse(self.path).query)
+                return self._write(200, self.server.control.player_view(str(query.get("player_id", [""])[0])))
             if path == "/audit":
                 return self._write(200, self.server.control.audit())
             if path == "/evolution/tasks":
@@ -105,6 +110,10 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._write(200, self.server.control.inject(str(body["event_type"]), dict(body.get("payload", {})), body.get("actor_id")))
             if path == "/players":
                 return self._write(200, self.server.control.enter_player(str(body["player_id"]), str(body["origin_id"]), body.get("name")))
+            if path == "/player/act":
+                return self._write(200, self.server.control.player_act(body))
+            if path == "/player/wait":
+                return self._write(200, self.server.control.player_wait(str(body.get("player_id") or "")))
             if path == "/dialogue":
                 return self._write(200, self.server.control.dialogue(str(body["speaker_id"]), str(body["listener_id"]), str(body.get("topic", "general")), str(body["message"])))
             if path == "/trade/offers":
