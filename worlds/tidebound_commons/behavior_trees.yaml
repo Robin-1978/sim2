@@ -6,6 +6,8 @@ behavior_trees:
   entry_conditions:
   - actor.can_inspect
   - actor.alive
+  - actor.need.hydration > 45
+  - actor.need.satiety > 45
   estimated_minutes: 31
   cooldown_minutes: 360
   nodes:
@@ -41,6 +43,8 @@ behavior_trees:
   - actor.can_repair
   - actor.alive
   - actor.inventory.repair_kit >= 1
+  - actor.need.hydration > 45
+  - actor.need.satiety > 45
   estimated_minutes: 77
   cooldown_minutes: 720
   nodes:
@@ -78,6 +82,8 @@ behavior_trees:
   - actor.alive
   - actor.inventory.repair_kit >= 1
   - world.tide_gate_integrity >= 0.56
+  - actor.need.hydration > 45
+  - actor.need.satiety > 45
   estimated_minutes: 62
   cooldown_minutes: 720
   nodes:
@@ -104,7 +110,7 @@ behavior_trees:
   - route
   drive_tags:
   - purpose
-  - safety
+  - belonging
 - id: gather_water
   agent_label: Draw Fresh Water
   summary: Draw Fresh Water
@@ -150,6 +156,7 @@ behavior_trees:
   entry_conditions:
   - actor.can_gather
   - actor.alive
+  - actor.need.hydration > 45
   estimated_minutes: 95
   cooldown_minutes: 240
   nodes:
@@ -189,6 +196,8 @@ behavior_trees:
   entry_conditions:
   - actor.can_gather
   - actor.alive
+  - actor.need.hydration > 45
+  - actor.need.satiety > 45
   estimated_minutes: 80
   cooldown_minutes: 240
   nodes:
@@ -219,6 +228,7 @@ behavior_trees:
   - supply
   drive_tags:
   - purpose
+  - belonging
 - id: craft_repair_kit
   agent_label: Craft Repair Kit
   summary: Craft Repair Kit
@@ -229,6 +239,8 @@ behavior_trees:
   - actor.alive
   - recipe.available
   - inputs.available
+  - actor.need.hydration > 45
+  - actor.need.satiety > 45
   estimated_minutes: 75
   cooldown_minutes: 720
   nodes:
@@ -266,6 +278,7 @@ behavior_trees:
   - actor.alive
   - recipe.available
   - inputs.available
+  - actor.need.hydration > 45
   estimated_minutes: 60
   cooldown_minutes: 360
   nodes:
@@ -310,6 +323,8 @@ behavior_trees:
   entry_conditions:
   - actor.can_research
   - actor.alive
+  - actor.need.hydration > 45
+  - actor.need.satiety > 45
   estimated_minutes: 121
   cooldown_minutes: 720
   nodes:
@@ -345,6 +360,8 @@ behavior_trees:
   - actor.can_explore
   - actor.alive
   - actor.inventory.food_ration >= 1
+  - actor.need.hydration > 45
+  - actor.need.satiety > 45
   estimated_minutes: 153
   cooldown_minutes: 720
   nodes:
@@ -380,6 +397,8 @@ behavior_trees:
   - actor.can_speak
   - actor.alive
   - target.available
+  - actor.need.hydration > 45
+  - actor.need.satiety > 45
   estimated_minutes: 15
   cooldown_minutes: 240
   agent_parameters:

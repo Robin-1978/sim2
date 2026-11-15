@@ -28,7 +28,7 @@ plus one water). The caps prevent stockpiling from dominating the choice.
 Travel is weighted: the observatory is two distance units from the marsh and
 three from the gatehouse. A normal trip therefore costs time and stamina, while
 stamina recovers slowly each minute. The repair kit is capped at two total
-units and preserved food at sixteen; the player can prepare for a storm, but
+units and preserved food at thirty; the player can prepare for a storm, but
 cannot solve the world by repeatedly crafting.
 
 The four residents have complementary options:
@@ -113,3 +113,10 @@ configured stability threshold, Mara or Selene can spend conserved repair kits
 to retune the seasonal signal lens. Two verified tunings open the signal route;
 only then can God justify a new external location. This makes the route opening
 a result of resident work rather than a free story unlock.
+
+The survival guard is deliberately visible in the action catalog. When
+hydration or satiety falls below 45, optional research, travel, inspection and
+repair behaviors disappear until the resident has a recovery choice; eating
+remains available even when dehydrated, and drinking remains available even
+when hungry. This prevents a long expedition from silently outranking survival
+without adding a hidden global decision rule.

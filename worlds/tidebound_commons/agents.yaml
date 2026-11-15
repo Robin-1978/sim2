@@ -30,6 +30,7 @@ agents:
   - gather_shellfish
   - craft_rations
   - tune_signal
+  - gather_driftwood
   initial_state:
     location_id: commons_quay
     status: idle

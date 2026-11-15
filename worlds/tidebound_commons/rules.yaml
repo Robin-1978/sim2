@@ -1,18 +1,34 @@
 vital_attribute: integrity
 capacity_attribute: stamina
 research_default_required: 2
-fallback_behavior_ids: [eat_ration, drink_water, gather_water, communicate]
+fallback_behavior_ids:
+- eat_ration
+- drink_water
+- gather_water
+- communicate
+- gather_driftwood
+- craft_rations
+- craft_repair_kit
 location_tag_groups:
-  safe: [safe]
-  resource_node: [resource]
+  safe:
+  - safe
+  resource_node:
+  - resource
 capability_aliases:
-  inspect: [stewardship]
-  repair: [stewardship]
-  gather: [gathering]
-  craft: [crafting]
-  research: [research]
-  explore: [exploration]
-  speak: [conversation]
+  inspect:
+  - stewardship
+  repair:
+  - stewardship
+  gather:
+  - gathering
+  craft:
+  - crafting
+  research:
+  - research
+  explore:
+  - exploration
+  speak:
+  - conversation
 context_values:
   water_item: fresh_water
   food_item: food_ration
@@ -20,18 +36,32 @@ context_values:
   hydration_alert_threshold: 42
   satiety_alert_threshold: 38
 item_groups:
-  water: [fresh_water]
-  food: [food_ration]
+  water:
+  - fresh_water
+  food:
+  - food_ration
 context_resolvers: {}
 travel:
   minutes_per_distance: 24
   default_speed: 1
 resource_regeneration:
-- {resource_id: fresh_water, every_minutes: 720, amount: 6, cap: 20}
-- {resource_id: shellfish, every_minutes: 720, amount: 8, cap: 24}
-- {resource_id: driftwood, every_minutes: 1440, amount: 5, cap: 16}
+- resource_id: fresh_water
+  every_minutes: 720
+  amount: 6
+  cap: 20
+- resource_id: shellfish
+  every_minutes: 720
+  amount: 8
+  cap: 24
+- resource_id: driftwood
+  every_minutes: 1440
+  amount: 5
+  cap: 16
 resource_safety:
-- {resource_id: fresh_water, minimum_reserve: 6, repeat_every_minutes: 720, event_type: resource.safety_low}
+- resource_id: fresh_water
+  minimum_reserve: 6
+  repeat_every_minutes: 720
+  event_type: resource.safety_low
 resource_property_projections:
   fresh_water: fresh_water_reserve
 world_rules:
@@ -39,39 +69,102 @@ world_rules:
   condition: world.tide_gate_integrity >= 0.8
   effect: tide_gate.ready
   event_type: tide_gate.ready
-  wake: [story, god]
+  wake:
+  - story
+  - god
   description: The gate has enough verified integrity to support a safer route.
 - id: signal_route_open
   condition: world.signal_reach >= 0.7
   effect: signal.route_open
   event_type: signal.route_open
-  wake: [story, god]
+  wake:
+  - story
+  - god
   description: A stable signal can guide a second settlement to the commons.
+- id: storm_warning
+  condition: world.storm_pressure >= 0.7
+  effect: storm.warning
+  event_type: storm.warning
+  wake:
+  - story
+  - god
+  description: Storm pressure has crossed the configured warning threshold and requires
+    a public response.
 capability_progression:
-  stewardship: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
-  gathering: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
-  crafting: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
-  research: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
-  exploration: {minimum_completed_outcomes: 2, max_delta: 0.08, max_value: 1.0}
-  conversation: {minimum_completed_outcomes: 4, max_delta: 0.08, max_value: 1.0}
+  stewardship:
+    minimum_completed_outcomes: 2
+    max_delta: 0.08
+    max_value: 1.0
+  gathering:
+    minimum_completed_outcomes: 2
+    max_delta: 0.08
+    max_value: 1.0
+  crafting:
+    minimum_completed_outcomes: 2
+    max_delta: 0.08
+    max_value: 1.0
+  research:
+    minimum_completed_outcomes: 2
+    max_delta: 0.08
+    max_value: 1.0
+  exploration:
+    minimum_completed_outcomes: 2
+    max_delta: 0.08
+    max_value: 1.0
+  conversation:
+    minimum_completed_outcomes: 4
+    max_delta: 0.08
+    max_value: 1.0
 needs:
-- {id: hydration, target: 72, minimum: 0, gamma: 1.4, critical_threshold: 0.4, critical_gain: 1.0}
-- {id: satiety, target: 70, minimum: 0, gamma: 1.4, critical_threshold: 0.4, critical_gain: 1.0}
-- {id: belonging, target: 68, minimum: 0, gamma: 1.3, critical_threshold: 0.5, critical_gain: 1.0}
-- {id: purpose, target: 70, minimum: 0, gamma: 1.4, critical_threshold: 0.5, critical_gain: 1.0}
+- id: hydration
+  target: 72
+  minimum: 0
+  gamma: 1.4
+  critical_threshold: 0.4
+  critical_gain: 1.0
+- id: satiety
+  target: 70
+  minimum: 0
+  gamma: 1.4
+  critical_threshold: 0.4
+  critical_gain: 1.0
+- id: belonging
+  target: 68
+  minimum: 0
+  gamma: 1.3
+  critical_threshold: 0.5
+  critical_gain: 1.0
+- id: purpose
+  target: 70
+  minimum: 0
+  gamma: 1.4
+  critical_threshold: 0.5
+  critical_gain: 1.0
 motivation_model:
   family: hybrid_need_utility_appraisal
   no_fixed_hierarchy: true
-  dimensions: [safety_and_uncertainty, sustenance, relatedness, competence, meaning_and_goal_progress]
+  dimensions:
+  - safety_and_uncertainty
+  - sustenance
+  - relatedness
+  - competence
+  - meaning_and_goal_progress
 minute_effects:
 - id: stamina_recovery
   scope: agent
   every_minutes: 1
-  effect: {type: attribute_delta, attribute: stamina, delta: 0.45, maximum: 100}
+  effect:
+    type: attribute_delta
+    attribute: stamina
+    delta: 0.45
+    maximum: 100
 - id: hydration_decay
   scope: agent
   every_minutes: 1
-  effect: {type: need_delta, need: hydration, delta: -0.03}
+  effect:
+    type: need_delta
+    need: hydration
+    delta: -0.03
   events:
   - id: hydration_low
     event_type: need.hydration_low
@@ -79,11 +172,17 @@ minute_effects:
     edge: enter
     trend: true
     summary: Hydration crossed the configured drinking threshold.
-    data: {need: hydration, threshold: 42, signal_only: true}
+    data:
+      need: hydration
+      threshold: 42
+      signal_only: true
 - id: satiety_decay
   scope: agent
   every_minutes: 1
-  effect: {type: need_delta, need: satiety, delta: -0.025}
+  effect:
+    type: need_delta
+    need: satiety
+    delta: -0.025
   events:
   - id: satiety_low
     event_type: need.satiety_low
@@ -91,50 +190,79 @@ minute_effects:
     edge: enter
     trend: true
     summary: Satiety crossed the configured eating threshold.
-    data: {need: satiety, threshold: 38, signal_only: true}
+    data:
+      need: satiety
+      threshold: 38
+      signal_only: true
 - id: belonging_decay
   scope: agent
   every_minutes: 20
-  effect: {type: need_delta, need: belonging, delta: -0.01}
+  effect:
+    type: need_delta
+    need: belonging
+    delta: -0.01
 - id: purpose_decay
   scope: agent
   every_minutes: 30
-  effect: {type: need_delta, need: purpose, delta: -0.01}
+  effect:
+    type: need_delta
+    need: purpose
+    delta: -0.01
 - id: storm_pressure_rises
   scope: world
   every_minutes: 60
-  effect: {type: world_property_delta, property: storm_pressure, delta: 0.002, maximum: 1}
+  effect:
+    type: world_property_delta
+    property: storm_pressure
+    delta: 0.002
+    maximum: 1
 - id: hydration_damage
   scope: agent
   every_minutes: 60
   condition: actor.need.hydration <= 5
-  effect: {type: attribute_delta, attribute: integrity, delta: -1}
+  effect:
+    type: attribute_delta
+    attribute: integrity
+    delta: -1
   events:
   - id: dehydration_damage
     event_type: need.hydration_damage
     edge: each
     trend: true
     summary: Critical dehydration damaged a resident.
-    data: {need: hydration, threshold: 5, attribute: integrity, delta: -1}
+    data:
+      need: hydration
+      threshold: 5
+      attribute: integrity
+      delta: -1
 - id: hunger_damage
   scope: agent
   every_minutes: 60
   condition: actor.need.satiety <= 5
-  effect: {type: attribute_delta, attribute: integrity, delta: -1}
+  effect:
+    type: attribute_delta
+    attribute: integrity
+    delta: -1
   events:
   - id: hunger_damage
     event_type: need.hunger_damage
     edge: each
     trend: true
     summary: Critical hunger damaged a resident.
-    data: {need: satiety, threshold: 5, attribute: integrity, delta: -1}
+    data:
+      need: satiety
+      threshold: 5
+      attribute: integrity
+      delta: -1
 memory_quality:
-  semantic_similarity: {enabled: false}
+  semantic_similarity:
+    enabled: false
 social_credibility:
   base: 0.5
   trust_weight: 0.35
   reputation_weight: 0.15
-  trust_relations: [trust]
+  trust_relations:
+  - trust
   reputation_attribute: reputation
   reputation_min: -100
   reputation_max: 100
@@ -142,7 +270,12 @@ civilization_progress:
   safe_channel_knowledge:
     required: 2
     evidence_value: 2
-    description: Two verified chart stages create public knowledge of a safe low-tide channel.
-    evidence_event_types: [research.completed]
-    evidence_behaviors: [research_chart]
-    wake: [story, god]
+    description: Two verified chart stages create public knowledge of a safe low-tide
+      channel.
+    evidence_event_types:
+    - research.completed
+    evidence_behaviors:
+    - research_chart
+    wake:
+    - story
+    - god

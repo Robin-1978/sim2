@@ -107,3 +107,20 @@ def test_tidebound_research_can_expand_the_map_through_god_route_proposals(tmp_p
         assert any(event["event_type"] == "world.change.route" for event in platform.store.repositories.events.recent_events(limit=20))
     finally:
         platform.close()
+
+
+def test_survival_guard_hides_optional_work_but_keeps_recovery_choices(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "tidebound-survival-guard", tmp_path / "runtime"))
+    try:
+        agent = platform.store.repositories.entities.get_agent("mara")
+        agent["needs"]["hydration"] = 20
+        agent["needs"]["satiety"] = 20
+        platform.store.repositories.entities.update_agent("mara", agent)
+        choices = {item["ref"] for item in platform.decision_view("mara")["executable_behaviors"]}
+        assert "behavior:inspect_gate" not in choices
+        assert "behavior:craft_repair_kit" not in choices
+        assert "behavior:drink_water" in choices
+        assert "behavior:eat_ration" in choices
+        assert "behavior:gather_water" in choices
+    finally:
+        platform.close()
