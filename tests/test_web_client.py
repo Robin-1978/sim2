@@ -35,12 +35,18 @@ def test_http_serves_runtime_and_authoring_workbench(tmp_path: Path):
         with urlopen(base + "/") as response:
             html = response.read().decode("utf-8")
         assert "设计世界" in html
+        assert "scene-inspector" in html
+        assert "创建新游戏" in html
         with urlopen(base + "/app.css") as response:
             assert b"--cyan" in response.read()
         with urlopen(base + "/authoring/schema") as response:
             schema = json.loads(response.read())
         assert schema["status"] == "ok"
         assert "behavior_trees" in schema["schema"]["properties"]
+        with urlopen(base + "/authoring/catalog") as response:
+            catalog = json.loads(response.read())
+        assert catalog["status"] == "ok"
+        assert any(item["id"] == "starter_village" for item in catalog["packages"])
 
         opened = _json_request(base + "/authoring/open", {})
         assert opened["status"] == "passed"
@@ -85,4 +91,26 @@ def test_authoring_path_is_limited_to_configured_root(tmp_path: Path):
     result = service.open_package(outside)
     assert result["status"] == "rejected"
     assert "authoring_root" in result["errors"][0]
+
+
+def test_web_catalog_can_create_an_independent_instance_from_a_template(tmp_path: Path):
+    config_root = Path(__file__).parents[1] / "worlds"
+    db_path = create_instance(Path(__file__).parents[1] / "worlds" / "starter_village", "catalog-host", tmp_path / "runtime")
+    server = ControlHTTPServer(("127.0.0.1", 0), db_path, authoring_root=config_root)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with urlopen(base + "/authoring/catalog") as response:
+            catalog = json.loads(response.read())
+        assert catalog["status"] == "ok"
+        starter = next(item for item in catalog["packages"] if item["id"] == "starter_village")
+        assert starter["status"] == "passed"
+        created = _json_request(base + "/authoring/create", {"package_id": "starter_village", "instance_id": "catalog-child"})
+        assert created["status"] == "passed"
+        assert Path(created["db_path"]).is_file()
+        assert created["instance_id"] == "catalog-child"
+    finally:
+        server.close()
+        thread.join(timeout=2)
 

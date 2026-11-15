@@ -19,7 +19,7 @@ from ..evolution.memory import role_memory_query
 from ..memory.service import MemoryService
 from ..persistence.store import WorldStore
 from ..world.drives import DriveCalculator
-from ..world.navigation import configured_location_tags, nearest_location_with_tag, nearest_resource_node, nearest_safe_location, reachable_locations
+from ..world.navigation import configured_location_tags, movement_speed, nearest_location_with_tag, nearest_resource_node, nearest_safe_location, reachable_locations, route_minutes
 from ..world.rules import RuleCompiler
 from ..world.schema import AttributeSchema
 from ..world.context import configured_context_values
@@ -811,6 +811,7 @@ class AgentViewCompiler:
             recipe_defs,
             self._route_distance,
             capability_modifiers=(self.store.repositories.metadata.get("rules", {}) or {}).get("capability_modifiers", {}),
+            travel_speed=lambda values: movement_speed(self.store, agent, values),
         )
         available = []
         diagnostics: list[dict[str, Any]] = []
@@ -1403,26 +1404,7 @@ class AgentViewCompiler:
         return resolved
 
     def _route_distance(self, origin: str | None, destination: str | None) -> int:
-        if not origin or not destination or origin == destination:
-            return 0
-        hop_minutes = max(1, int((self.store.repositories.metadata.get("rules", {}) or {}).get("route_minutes_per_hop", 1)))
-        queue: list[tuple[str, int]] = [(str(origin), 0)]
-        visited = {str(origin)}
-        while queue:
-            current, distance = queue.pop(0)
-            try:
-                location = self.entities_repo.get_entity(current)
-            except KeyError:
-                continue
-            for neighbor in location.get("routes", []) or []:
-                neighbor = str(neighbor)
-                if neighbor in visited:
-                    continue
-                if neighbor == str(destination):
-                    return (distance + 1) * hop_minutes
-                visited.add(neighbor)
-                queue.append((neighbor, distance + 1))
-        return hop_minutes
+        return route_minutes(self.store, origin, destination)
 
     def _recent_event_types(self, limit: int = 120) -> list[str]:
         rows = self.store.connection.execute(

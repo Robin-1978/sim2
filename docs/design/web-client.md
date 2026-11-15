@@ -123,6 +123,7 @@ Runtime Client 有三个视角：
 | GET | `/audit` | 维护者审计导出 |
 | GET | `/evolution/tasks` | 当前就绪的演化任务 |
 | GET | `/authoring/schema` | Canonical World Template Schema |
+| GET | `/authoring/catalog` | List validated packages under `--authoring-root` |
 | POST | `/pause`、`/resume`、`/step` | 本地维护控制 |
 | POST | `/dialogue` | 发送对话 |
 | POST | `/trade/offers`、`/trade/accept` | 交易交互 |
@@ -132,6 +133,7 @@ Runtime Client 有三个视角：
 | POST | `/authoring/smoke` | 在临时 SQLite 实例推进短 smoke |
 | POST | `/authoring/export` | 返回已验证的 YAML 文件映射 |
 | POST | `/authoring/open` | 打开当前实例来源包或受限目录中的已有包 |
+| POST | `/authoring/create` | 从目录中的选定模板创建独立 SQLite 实例 |
 | POST | `/authoring/build` | 显式调用服务端 WorldBuilder Agent 起草模板 |
 
 事件游标使用整数 `event_id`。响应中的 `next_after_event_id` 是下一次请求

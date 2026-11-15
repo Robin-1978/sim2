@@ -2735,6 +2735,53 @@ def test_route_duration_is_derived_from_configured_route_distance(tmp_path: Path
         platform.close()
 
 
+def test_weighted_routes_and_configured_actor_speed_change_travel_duration(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "weighted-route-world", tmp_path / "runtime"))
+    try:
+        rules = dict(platform.store.repositories.metadata.get("rules", {}) or {})
+        rules["route_minutes_per_hop"] = 1
+        rules["travel"] = {"minutes_per_distance": 1, "agent_speed_attribute": "travel_speed"}
+        platform.store.repositories.metadata.set("rules", rules)
+        location = platform.store.repositories.entities.get_entity("village_square")
+        location["route_distances"] = {"inn": 10, "river_bridge": 100, "granary": 100, "old_well": 100, "watchtower": 100}
+        platform.store.repositories.entities.put_entity("village_square", "location", location["name"], location)
+        agent = platform.store.repositories.entities.get_agent("lu_xingzhou")
+        agent["initial_state"]["location_id"] = "village_square"
+        agent["initial_state"]["travel_speed"] = 2
+        platform.store.repositories.entities.update_agent("lu_xingzhou", agent)
+        platform.store.connection.commit()
+        result = platform.submit_behavior(BehaviorIntent("lu_xingzhou", "behavior:travel", {"location": "inn"}, {}, "Use the configured faster movement speed.", 0.8, "weighted-route"))
+        assert result["status"] == "accepted"
+        assert result["remaining_minutes"] == 5
+    finally:
+        platform.close()
+
+
+def test_transport_entity_speed_is_declarative_and_changes_route_duration(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "transport-route-world", tmp_path / "runtime"))
+    try:
+        rules = dict(platform.store.repositories.metadata.get("rules", {}) or {})
+        rules["route_minutes_per_hop"] = 1
+        rules["travel"] = {"minutes_per_distance": 1, "transport_state_key": "transport_id", "transport_speed_field": "speed"}
+        platform.store.repositories.metadata.set("rules", rules)
+        location = platform.store.repositories.entities.get_entity("village_square")
+        location["route_distances"] = {"inn": 6, "river_bridge": 100, "granary": 100, "old_well": 100, "watchtower": 100}
+        platform.store.repositories.entities.put_entity("village_square", "location", location["name"], location)
+        platform.store.repositories.entities.put_entity("cart", "vehicle", "Configured Cart", {"initial_state": {"speed": 3}})
+        agent = platform.store.repositories.entities.get_agent("lu_xingzhou")
+        agent["initial_state"]["location_id"] = "village_square"
+        agent["initial_state"]["transport_id"] = "cart"
+        platform.store.repositories.entities.update_agent("lu_xingzhou", agent)
+        platform.store.connection.commit()
+        result = platform.submit_behavior(BehaviorIntent("lu_xingzhou", "behavior:travel", {"location": "inn"}, {}, "Use the configured transport.", 0.8, "transport-route"))
+        assert result["status"] == "accepted"
+        assert result["remaining_minutes"] == 2
+    finally:
+        platform.close()
+
+
 def test_finite_resource_depletion_hides_gather_until_regeneration(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     platform = Platform(create_instance(config, "resource-cycle-world", tmp_path / "runtime"))

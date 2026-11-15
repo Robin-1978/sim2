@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import re
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,7 @@ from ..bootstrap.service import (
     world_template_schema,
     world_package_template,
     write_world_package_from_template,
-    create_instance,
+    create_instance as bootstrap_create_instance,
 )
 from ..platform.runtime import Platform
 from ..llm.gateway import LLMRouter
@@ -29,8 +30,62 @@ class AuthoringService:
     world instance.
     """
 
-    def __init__(self, authoring_root: Path | None = None) -> None:
+    def __init__(self, authoring_root: Path | None = None, runtime_root: Path | None = None) -> None:
         self.authoring_root = authoring_root.resolve() if authoring_root is not None else None
+        self.runtime_root = runtime_root.resolve() if runtime_root is not None else (Path.home() / ".sim2").resolve()
+
+    def list_packages(self) -> dict[str, Any]:
+        """List selectable declarative packages under the configured root."""
+
+        if self.authoring_root is None:
+            return {"status": "rejected", "errors": ["an authoring_root is required to list world packages"], "packages": []}
+        packages: list[dict[str, Any]] = []
+        candidates = [self.authoring_root] + sorted(item for item in self.authoring_root.iterdir() if item.is_dir())
+        for path in candidates:
+            manifest_path = path / "manifest.yaml"
+            if not manifest_path.is_file():
+                continue
+            try:
+                manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+                validation = validate_config(path)
+                packages.append({
+                    "id": str(manifest.get("world_id") or path.name),
+                    "name": str(manifest.get("name") or manifest.get("world_id") or path.name),
+                    "path": str(path),
+                    "config_version": str(manifest.get("config_version") or "unknown"),
+                    "status": "passed" if validation.get("valid") else "rejected",
+                    "errors": list(validation.get("errors") or []),
+                })
+            except (OSError, TypeError, ValueError, yaml.YAMLError) as exc:
+                packages.append({"id": path.name, "name": path.name, "path": str(path), "status": "rejected", "errors": [str(exc)]})
+        return {"status": "ok", "packages": packages}
+
+    def create_instance(self, package_id: str, instance_id: str, *, runtime_root: Path | None = None) -> dict[str, Any]:
+        """Create an independent SQLite instance from a catalog package."""
+
+        catalog = self.list_packages()
+        wanted = str(package_id or "").strip()
+        package = next((item for item in catalog.get("packages", []) if item.get("id") == wanted), None)
+        if package is None:
+            return {"status": "rejected", "errors": [f"unknown world package: {wanted}"], "packages": catalog.get("packages", [])}
+        if package.get("status") != "passed":
+            return {"status": "rejected", "errors": list(package.get("errors") or ["selected package is invalid"]), "package": package}
+        normalized_instance = str(instance_id or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", normalized_instance):
+            return {"status": "rejected", "errors": ["instance_id must contain 1-64 letters, numbers, underscores or hyphens"]}
+        destination = Path(runtime_root).resolve() if runtime_root is not None else self.runtime_root
+        try:
+            db_path = bootstrap_create_instance(Path(str(package["path"])), normalized_instance, destination)
+        except (FileExistsError, OSError, TypeError, ValueError) as exc:
+            return {"status": "rejected", "errors": [str(exc)], "package": package}
+        return {
+            "status": "passed",
+            "package": {"id": package["id"], "name": package["name"], "path": package["path"]},
+            "instance_id": normalized_instance,
+            "runtime_root": str(destination),
+            "db_path": str(db_path),
+            "start_command": f"sim2 serve --db {db_path}",
+        }
 
     def _check_path(self, config_dir: Path, *, trusted: bool = False) -> Path:
         resolved = config_dir.resolve()
@@ -177,7 +232,7 @@ class AuthoringService:
             with tempfile.TemporaryDirectory(prefix="sim2-authoring-smoke-") as directory:
                 root = Path(directory)
                 package = write_world_package_from_template(template, root / "world", overwrite=True, validate_template=not bool(source_path))
-                db_path = create_instance(package, "authoring-smoke", root / "runtime")
+                db_path = bootstrap_create_instance(package, "authoring-smoke", root / "runtime")
                 platform = Platform(db_path)
                 try:
                     steps_run = [platform.step() for _ in range(steps)]

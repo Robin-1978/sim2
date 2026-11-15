@@ -35,14 +35,15 @@ shares an LLM request transaction or mutates state directly.
 
 ## Map data
 
-`Platform.map_view` and `GET /map` return transport-neutral data:
+`Platform.map_view` and `GET /map` return transport-neutral data. Route edges
+include configured distance and the baseline minutes conversion:
 
 ```json
 {
   "nodes": [
     {"id": "reactor_bay", "name": "Reactor Bay", "routes": ["docking_ring"], "occupants": []}
   ],
-  "edges": [{"from": "docking_ring", "to": "reactor_bay"}]
+  "edges": [{"from": "docking_ring", "to": "reactor_bay", "distance": 2, "minutes": 10}]
 }
 ```
 
@@ -70,9 +71,13 @@ curl 'http://127.0.0.1:8080/timeline?limit=50&after=0'
 Open `http://127.0.0.1:8080/` in a browser. **运行世界** shows the map, public
 timeline, characters and evolution queue. **设计世界** edits a JSON world draft,
 loads the canonical Schema, runs compile checks and a disposable SQLite smoke test,
-opens the current source package, can invoke the configured WorldBuilder Agent on
-an explicit button click, and downloads the generated YAML files as a package
-manifest. The workbench never changes the database passed to `sim2 serve`.
+opens the current source package, lists packages under `--authoring-root`, can
+create a new independent SQLite game from a selected reviewed template, can
+invoke the configured WorldBuilder Agent on an explicit button click, and
+downloads the generated YAML files as a package manifest. The workbench never
+changes the database passed to `sim2 serve`; after creating a game it shows a
+new `sim2 serve --db ...` command, so the operator explicitly stops the current
+server before switching instances.
 
 To open other reviewed packages, constrain the server to their parent directory:
 

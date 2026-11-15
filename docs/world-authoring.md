@@ -64,10 +64,10 @@ must first call `validate_world_template` and then submit the exact validated
 object. Platform rejects changed or invalid submissions. The command writes
 human-editable YAML before any optional `--instance-id` bootstrap.
 
-For authors who do not want to maintain the YAML by hand, the planned World
-Authoring Web 工作台 is described in
+For authors who do not want to maintain the YAML by hand, the World Authoring
+Web 工作台 is described in
 [`docs/design/world-authoring-web.md`](design/world-authoring-web.md). It will
-generate forms and BT graphs from the same `world-schema` and Definition
+It generates forms and BT graphs from the same `world-schema` and Definition
 Compiler used by these commands, then run the same expression, reference,
 execution and temporary SQLite smoke checks. It will export a reviewed package;
 it will not edit a running instance or introduce a second configuration
@@ -85,12 +85,34 @@ preconditions so WorldBuilder can correct the actual cause instead of guessing.
 The template uses these top-level sections. The machine-readable source is
 `sim2 world-schema`; this table explains the intent.
 
+Routes are authored as topology plus optional edge data. For example:
+
+```yaml
+locations:
+  - id: harbor
+    name: Harbor
+    routes: [ridge]
+    route_distances: {ridge: 4}
+```
+
+Missing edge weights use one distance unit. `rules.route_minutes_per_hop` is
+the fallback minutes-per-distance conversion; a package may instead use
+`rules.travel.minutes_per_distance`. A character's configured state attribute
+(`rules.travel.agent_speed_attribute`) divides the travel time. A transport
+entity selected by the Action's configured `transport_parameter` can expose
+the configured `transport_speed_field`; when neither actor nor transport has a
+speed, the fixed distance conversion is used. Transport speed is absolute by
+default; `rules.travel.transport_speed_mode: multiplier` makes it multiply the
+actor's configured speed. These are declarative fields,
+so a later God proposal can register a vehicle entity or a new speed-bearing
+attribute without a Platform branch.
+
 | Section | Purpose |
 | --- | --- |
 | `template_version` | Version recorded as the package configuration version. |
 | `world` | ID, title, premise, genre, locale, clock, seed and initial world properties. |
 | `attributes` | Every numeric state or need, including direct meaning, range and default. |
-| `locations` | Place nodes, visible names, tags, safety, optional map position and route IDs. |
+| `locations` | Place nodes, visible names, tags, safety, optional map position, route IDs and optional `route_distances` edge weights. |
 | `resources` | Finite or regenerating world stocks at configured locations. A stock is an entity with a physical `location_id`; optional `storage_scope`, `owner_id`, and `access_policy` keep separate settlements or institutions from sharing it accidentally. |
 | `objects` | Machines, documents, hazards, items and other non-location entities. |
 | `factions` / `relationships` | Initial social structures and typed links. |
@@ -99,7 +121,7 @@ The template uses these top-level sections. The machine-readable source is
 | `actions` | Atomic execution contracts: target, conditions, duration, costs, effects and outcomes. |
 | `recipes` | Input-to-output transformations used by configured Actions. |
 | `behavior_trees` | Agent-readable choices composed from registered Actions or subtrees. A behavior created during runtime must be assigned to at least one existing character before it can enter the executable catalog. |
-| `rules` | Generic motivation, minute effects, navigation, interaction, memory and world policies. |
+| `rules` | Generic motivation, minute effects, navigation, interaction, memory and world policies. `travel` can set the minutes-per-distance conversion, an optional agent speed attribute, and the transport speed field. |
 | `evolution` | Optional cadence and event wake declarations. Use the compact `cadence`/`wakes` form below; the runtime compiles it to its internal policy. |
 | `story` | Optional evidence-triggered beats and registered BT unlocks. |
 | `player_template` | Optional entry location, origins and initial knowledge. |

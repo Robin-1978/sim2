@@ -6,13 +6,14 @@ from typing import Any, Callable
 class BehaviorDurationEstimator:
     """Calculate BT duration from registered Actions and control flow."""
 
-    def __init__(self, actions: dict[str, dict[str, Any]], behaviors: dict[str, dict[str, Any]], recipes: dict[str, dict[str, Any]], route_distance: Callable[[str | None, str | None], int], *, capabilities: dict[str, Any] | None = None, capability_modifiers: dict[str, Any] | None = None):
+    def __init__(self, actions: dict[str, dict[str, Any]], behaviors: dict[str, dict[str, Any]], recipes: dict[str, dict[str, Any]], route_distance: Callable[[str | None, str | None], int], *, capabilities: dict[str, Any] | None = None, capability_modifiers: dict[str, Any] | None = None, travel_speed: Callable[[dict[str, Any]], float] | None = None):
         self.actions = actions
         self.behaviors = behaviors
         self.recipes = recipes
         self.route_distance = route_distance
         self.capabilities = capabilities or {}
         self.capability_modifiers = capability_modifiers or {}
+        self.travel_speed = travel_speed
 
     def behavior_minutes(self, behavior_id: str, parameters: dict[str, Any] | None = None, origin: str | None = None) -> int:
         behavior = self.behaviors.get(behavior_id) or {}
@@ -50,6 +51,13 @@ class BehaviorDurationEstimator:
                 base = float(max(0, self.route_distance(origin, parameters.get("location_id") or parameters.get("destination_id"))))
                 if base == 0:
                     return max(0, int(no_op_minutes))
+                if self.travel_speed is not None:
+                    try:
+                        speed = float(self.travel_speed(parameters))
+                    except (TypeError, ValueError):
+                        speed = 1.0
+                    if speed > 0:
+                        base /= speed
             elif mode == "recipe_duration":
                 recipe = self.recipes.get(str(parameters.get("recipe_id")), {})
                 base = float(max(1, int(recipe.get("duration_minutes", duration.get("default_minutes", 1)))))

@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections import deque
 from typing import Any
 
+from ..world.navigation import route_edge_distance, route_minutes
+
 
 def build_map_view(store: Any, *, viewer_id: str | None = None, observer: bool = False) -> dict[str, Any]:
     """Build a transport-neutral topology projection from SQLite world data.
@@ -29,6 +31,11 @@ def build_map_view(store: Any, *, viewer_id: str | None = None, observer: bool =
             "safe": bool(location.get("safe", False)),
             "position": dict(position) if isinstance(position, dict) else None,
             "routes": [str(item) for item in (location.get("routes") or [])],
+            "route_distances": {
+                str(key): float(value)
+                for key, value in (location.get("route_distances") or {}).items()
+                if isinstance(value, (int, float)) and not isinstance(value, bool)
+            },
             "occupants": [],
         })
 
@@ -45,7 +52,7 @@ def build_map_view(store: Any, *, viewer_id: str | None = None, observer: bool =
                 "active_behavior": state.get("active_behavior_id"),
             })
 
-    edges: list[dict[str, str]] = []
+    edges: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for node in locations:
         for destination in node["routes"]:
@@ -55,7 +62,18 @@ def build_map_view(store: Any, *, viewer_id: str | None = None, observer: bool =
             if pair in seen:
                 continue
             seen.add(pair)
-            edges.append({"from": pair[0], "to": pair[1]})
+            distance = route_edge_distance(store, node["id"], destination)
+            reverse_distance = route_edge_distance(store, destination, node["id"])
+            # An authored reverse edge may carry the meaningful value when
+            # only that side declares route_distances.
+            if distance == 1.0 and reverse_distance != 1.0:
+                distance = reverse_distance
+            edges.append({
+                "from": pair[0],
+                "to": pair[1],
+                "distance": distance,
+                "minutes": route_minutes(store, pair[0], pair[1]),
+            })
 
     return {
         "status": "ok",
@@ -158,7 +176,9 @@ def render_topology_map(view: dict[str, Any]) -> str:
     for edge in view.get("edges") or []:
         pair = tuple(sorted((str(edge.get("from")), str(edge.get("to")))))
         if pair not in tree_edges:
-            cross.append(f"{nodes[pair[0]].get('name', pair[0])} ↔ {nodes[pair[1]].get('name', pair[1])}")
+            edge = next((item for item in (view.get("edges") or []) if tuple(sorted((str(item.get("from")), str(item.get("to"))))) == pair), {})
+            suffix = f" · {edge.get('distance')} distance · {edge.get('minutes')} min" if edge else ""
+            cross.append(f"{nodes[pair[0]].get('name', pair[0])} ↔ {nodes[pair[1]].get('name', pair[1])}{suffix}")
     if cross:
         lines.extend(["", "Other routes:", *[f"  • {item}" for item in sorted(set(cross))]])
     return "\n".join(lines)

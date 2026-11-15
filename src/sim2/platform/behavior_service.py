@@ -11,10 +11,12 @@ from ..intents.models import BehaviorIntent
 from ..world.context import configured_context_values
 from ..world.navigation import (
     configured_location_tags,
+    movement_speed,
     nearest_location_with_tag,
     nearest_resource_node,
     nearest_safe_location,
     reachable_locations,
+    route_minutes,
 )
 from ..world.time import world_time_view
 from ..world.rules import RuleCompiler
@@ -270,6 +272,7 @@ class BehaviorIntentService(PlatformService):
             self._context.services["execution"]._route_distance,
             capabilities=agent.get("capabilities", {}),
             capability_modifiers=(self.store.repositories.metadata.get("rules", {}) or {}).get("capability_modifiers", {}),
+            travel_speed=lambda values: movement_speed(self.store, agent, values),
         )
         remaining_minutes = estimator.behavior_minutes(behavior_id, {**runtime_parameters, **intent.target}, state.get("location_id"))
         current_world_revision = int(self.store.repositories.metadata.get("world_revision", 0) or 0)
@@ -543,28 +546,13 @@ class BehaviorExecutionService(PlatformService):
         return self._resolve_parameters(parameters, context)
 
     def _route_distance(self, origin: str | None, destination: str | None) -> int:
-        """Return weighted route distance in configured route hops."""
+        """Return baseline minutes for a weighted route.
 
-        if not origin or not destination or origin == destination:
-            return 0
-        hop_minutes = max(1, int((self.store.repositories.metadata.get("rules", {}) or {}).get("route_minutes_per_hop", 1)))
-        queue: list[tuple[str, int]] = [(str(origin), 0)]
-        visited = {str(origin)}
-        while queue:
-            current, distance = queue.pop(0)
-            try:
-                location = self.store.repositories.entities.get_entity(current)
-            except KeyError:
-                continue
-            for neighbor in location.get("routes", []) or []:
-                neighbor = str(neighbor)
-                if neighbor in visited:
-                    continue
-                if neighbor == str(destination):
-                    return (distance + 1) * hop_minutes
-                visited.add(neighbor)
-                queue.append((neighbor, distance + 1))
-        return hop_minutes
+        Actor-specific speed is applied by ``BehaviorDurationEstimator`` so
+        the same route can cost different characters different time.
+        """
+
+        return route_minutes(self.store, origin, destination)
 
     def _action_duration(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], origin_location: str | None = None) -> int:
         estimator = BehaviorDurationEstimator(
@@ -574,6 +562,7 @@ class BehaviorExecutionService(PlatformService):
             self._route_distance,
             capabilities=agent.get("capabilities", {}),
             capability_modifiers=(self.store.repositories.metadata.get("rules", {}) or {}).get("capability_modifiers", {}),
+            travel_speed=lambda values: movement_speed(self.store, agent, values),
         )
         return estimator._action_minutes(action, parameters, origin_location)
 

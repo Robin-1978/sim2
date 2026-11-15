@@ -12,7 +12,15 @@ class ControlService:
 
     def __init__(self, db_path: Path, *, authoring_root: Path | None = None):
         self.platform = Platform(db_path)
-        self.authoring = AuthoringService(authoring_root)
+        runtime_root = Path(db_path).resolve().parent.parent
+        if authoring_root is None:
+            report = self.platform.store.repositories.metadata.get("bootstrap_report", {}) or {}
+            source = report.get("config_dir") if isinstance(report, dict) else None
+            if source:
+                candidate = Path(str(source)).resolve().parent
+                if candidate.is_dir():
+                    authoring_root = candidate
+        self.authoring = AuthoringService(authoring_root, runtime_root=runtime_root)
 
     def close(self) -> None:
         self.platform.close()
@@ -81,6 +89,15 @@ class ControlService:
 
     def authoring_schema(self) -> dict[str, Any]:
         return self.authoring.schema()
+
+    def authoring_catalog(self) -> dict[str, Any]:
+        return self.authoring.list_packages()
+
+    def authoring_create(self, body: dict[str, Any]) -> dict[str, Any]:
+        return self.authoring.create_instance(
+            str(body.get("package_id") or ""),
+            str(body.get("instance_id") or ""),
+        )
 
     def authoring_compile(self, body: dict[str, Any]) -> dict[str, Any]:
         return self.authoring.compile(body.get("template"), source=body.get("source"), source_path=body.get("source_path"), draft_revision=body.get("draft_revision", 0))

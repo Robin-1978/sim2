@@ -73,6 +73,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._write(200, {"tasks": self.server.control.evolution_tasks()})
             if path == "/authoring/schema":
                 return self._write(200, self.server.control.authoring_schema())
+            if path == "/authoring/catalog":
+                return self._write(200, self.server.control.authoring_catalog())
             return self._write(404, {"status": "not_found"})
         except Exception as exc:
             return self._write(500, {"status": "error", "message": str(exc)})
@@ -83,6 +85,8 @@ class _Handler(BaseHTTPRequestHandler):
             body = self._read_json()
             if path == "/authoring/open":
                 return self._write(200, self.server.control.authoring_open(body))
+            if path == "/authoring/create":
+                return self._write(200, self.server.control.authoring_create(body))
             if path == "/authoring/build":
                 return self._write(200, self.server.control.authoring_build(body))
             if path == "/authoring/compile":

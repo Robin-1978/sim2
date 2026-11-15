@@ -48,26 +48,31 @@
           <div class="metric"><span>事件游标</span><strong id="metric-cursor">—</strong></div>
         </div>
 
-        <div class="runtime-grid">
+        <div class="runtime-grid game-layout">
           <article class="panel map-panel">
-            <div class="panel-heading"><div><span class="panel-kicker">01 / MAP</span><h2>世界地图</h2></div><span id="map-summary" class="badge">—</span></div>
+            <div class="panel-heading"><div><span class="panel-kicker">01 / WORLD SCENE</span><h2>世界地图</h2><p class="panel-subtitle">点击地点查看现场，点击角色查看状态。</p></div><span id="map-summary" class="badge">—</span></div>
+            <div class="map-toolbar"><span class="map-mode active">地点与路线</span><span class="map-mode">实时位置</span><span id="map-selection" class="map-selection">未选择地点</span></div>
             <div id="map-canvas" class="map-canvas" aria-label="世界地图"></div>
             <div id="map-routes" class="route-list"></div>
           </article>
+          <article class="panel inspector-panel">
+            <div class="panel-heading"><div><span class="panel-kicker">02 / INSPECTOR</span><h2>现场与角色</h2></div><span class="badge accent">可探索视角</span></div>
+            <div id="scene-inspector" class="scene-inspector"><div class="empty-state">点击地图上的地点或角色开始查看。</div></div>
+          </article>
           <article class="panel timeline-panel">
-            <div class="panel-heading"><div><span class="panel-kicker">02 / CAUSAL STREAM</span><h2>公共时间线</h2></div><button id="toggle-ticks" class="text-button">显示 tick</button></div>
+            <div class="panel-heading"><div><span class="panel-kicker">03 / CAUSAL STREAM</span><h2>世界事件</h2></div><button id="toggle-ticks" class="text-button">显示 tick</button></div>
             <div id="timeline-list" class="timeline-list" aria-live="polite"><div class="empty-state">等待世界事件…</div></div>
           </article>
           <article class="panel characters-panel">
-            <div class="panel-heading"><div><span class="panel-kicker">03 / ACTORS</span><h2>角色</h2></div><span class="badge">公开视角</span></div>
+            <div class="panel-heading"><div><span class="panel-kicker">04 / ACTORS</span><h2>角色</h2></div><span class="badge">公开视角</span></div>
             <div id="character-list" class="character-list"><div class="empty-state">暂无角色投影</div></div>
           </article>
           <article class="panel evolution-panel">
-            <div class="panel-heading"><div><span class="panel-kicker">04 / EVOLUTION</span><h2>演化队列</h2></div><span class="badge accent">事实优先</span></div>
+            <div class="panel-heading"><div><span class="panel-kicker">05 / EVOLUTION</span><h2>演化队列</h2></div><span class="badge accent">事实优先</span></div>
             <div id="evolution-list" class="evolution-list"><div class="empty-state">暂无待处理任务</div></div>
           </article>
           <article class="panel interaction-panel">
-            <div class="panel-heading"><div><span class="panel-kicker">05 / PARTICIPATE</span><h2>参与世界</h2></div><span class="badge">Platform 校验</span></div>
+            <div class="panel-heading"><div><span class="panel-kicker">06 / PARTICIPATE</span><h2>参与世界</h2></div><span class="badge">Platform 校验</span></div>
             <div class="interaction-form">
               <div class="interaction-row three"><label>玩家 ID<input id="player-id" placeholder="player_one"></label><label>起点 ID<input id="player-origin" placeholder="public_square"></label><label>名称<input id="player-name" placeholder="你的名字"></label></div>
               <button id="enter-player" class="button ghost">进入世界</button>
@@ -98,6 +103,14 @@
               <p>用一句话让已配置的 WorldBuilder Agent 起草模板。点击才会调用模型。</p>
               <textarea id="builder-brief" placeholder="例如：一座漂浮在盐海上的小型气象站，三名角色依靠风帆和潮汐协作…"></textarea>
               <button id="build-world" class="button wide">AI 起草世界</button>
+            </div>
+            <div class="builder-box instance-box">
+              <span class="panel-kicker">NEW INSTANCE</span>
+              <p>从已验证模板创建独立 SQLite 游戏。创建不会调用模型，也不会切换当前运行实例。</p>
+              <label>世界模板<select id="package-select"><option value="">加载模板…</option></select></label>
+              <label>实例 ID<input id="instance-id" placeholder="my-world-001" autocomplete="off"></label>
+              <button id="create-instance" class="button wide">创建新游戏</button>
+              <div id="instance-result" class="interaction-result" role="status"></div>
             </div>
             <div class="schema-note">字段来自 <code>world-schema</code>。网页不维护世界专用词汇。</div>
           </aside>

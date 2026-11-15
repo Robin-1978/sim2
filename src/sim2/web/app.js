@@ -12,6 +12,10 @@
     draftRevision: 1,
     poll: null,
     lastObserver: null,
+    lastMap: null,
+    selectedLocationId: null,
+    selectedAgentId: null,
+    packages: [],
   };
 
   const $ = (id) => document.getElementById(id);
@@ -62,6 +66,10 @@
     if (!agents.length) { list.append(make("div", "empty-state", "暂无角色投影")); return; }
     for (const agent of agents) {
       const card = make("div", "character-card");
+      card.tabIndex = 0;
+      card.setAttribute("role", "button");
+      card.addEventListener("click", () => { state.selectedAgentId = agent.id; state.selectedLocationId = agent.location_id; renderInspector(); });
+      card.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); card.click(); } });
       const main = make("div");
       main.append(make("strong", "", agent.name || agent.id));
       const behavior = agent.active_behavior || agent.status || "idle";
@@ -125,10 +133,12 @@
   }
 
   function renderMap(view) {
+    state.lastMap = view;
     const canvas = $("map-canvas");
     const routes = $("map-routes");
     canvas.replaceChildren(); routes.replaceChildren();
     const nodes = view.nodes || [];
+    if (!state.selectedLocationId || !nodes.some((node) => node.id === state.selectedLocationId)) state.selectedLocationId = nodes[0]?.id || null;
     const positions = positionNodes(nodes);
     const labels = new Map(nodes.map((node) => [node.id, node.name || node.id]));
     for (const edge of view.edges || []) {
@@ -141,21 +151,77 @@
       line.style.width = `${Math.sqrt(dx * dx + dy * dy)}px`;
       line.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
       canvas.append(line);
-      const chip = make("span", "route-chip", `${labels.get(edge.from) || edge.from} ↔ ${labels.get(edge.to) || edge.to}`);
+      const detail = Number.isFinite(Number(edge.distance))
+        ? ` · ${Number(edge.distance).toLocaleString()} distance · ${Number(edge.minutes || 0).toLocaleString()} min`
+        : "";
+      const chip = make("span", "route-chip", `${labels.get(edge.from) || edge.from} ↔ ${labels.get(edge.to) || edge.to}${detail}`);
       routes.append(chip);
     }
     for (const node of nodes) {
       const point = positions.get(node.id); if (!point) continue;
       const item = make("div", "map-node");
       item.style.left = `${point.x}%`; item.style.top = `${point.y}%`;
+      item.classList.toggle("selected", node.id === state.selectedLocationId);
+      item.tabIndex = 0;
+      item.setAttribute("role", "button");
+      item.setAttribute("aria-label", `查看 ${node.name || node.id}`);
+      item.addEventListener("click", () => { state.selectedLocationId = node.id; state.selectedAgentId = null; renderMap(state.lastMap); renderInspector(); });
+      item.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); item.click(); } });
       item.append(make("strong", "", node.name || node.id));
       const occupants = (node.occupants || []).length;
       item.append(make("small", "", occupants ? `${occupants} occupant${occupants > 1 ? "s" : ""}` : (node.safe ? "safe" : "visible")));
       canvas.append(item);
     }
     $("map-summary").textContent = `${nodes.length} locations · ${(view.edges || []).length} routes`;
+    $("map-selection").textContent = state.selectedLocationId ? (labels.get(state.selectedLocationId) || state.selectedLocationId) : "未选择地点";
     if (!nodes.length) canvas.append(make("div", "empty-state", "没有可见地点"));
+    renderInspector();
   }
+
+  function renderInspector() {
+    const box = $("scene-inspector");
+    if (!box) return;
+    box.replaceChildren();
+    const observer = state.lastObserver || {};
+    const map = state.lastMap || {};
+    const nodes = map.nodes || [];
+    const agents = observer.agents || [];
+    if (state.selectedAgentId) {
+      const agent = agents.find((item) => item.id === state.selectedAgentId);
+      if (agent) {
+        const head = make("div", "inspector-hero");
+        head.append(make("div", "avatar", (agent.name || agent.id).slice(0, 1)));
+        const title = make("div"); title.append(make("strong", "inspector-title", agent.name || agent.id)); title.append(make("small", "inspector-muted", `${agent.role || "agent"} · ${agent.location || "未知地点"}`)); head.append(title); box.append(head);
+        const status = make("div", "inspector-status"); status.append(make("span", "status-pill", agent.status || "idle")); if (agent.active_behavior) status.append(make("span", "inspector-muted", agent.active_behavior)); box.append(status);
+        const grid = make("div", "inspector-stats"); grid.append(stat("剩余时间", agent.remaining_minutes ? `${agent.remaining_minutes} min` : "—")); grid.append(stat("地点", agent.location || "—")); box.append(grid);
+        const attributes = agent.attributes || {};
+        if (Object.keys(attributes).length) {
+          const section = make("div", "inspector-section"); section.append(make("h3", "", "状态"));
+          for (const [key, value] of Object.entries(attributes).slice(0, 8)) { const row = make("div", "attribute-row"); row.append(make("span", "inspector-muted", key.replaceAll("_", " "))); row.append(make("strong", "", typeof value === "number" ? Number(value.toFixed?.(2) || value) : String(value))); section.append(row); }
+          box.append(section);
+        }
+        const back = make("button", "text-button inspector-back", "返回地点"); back.type = "button"; back.addEventListener("click", () => { state.selectedAgentId = null; renderInspector(); }); box.append(back);
+        return;
+      }
+      state.selectedAgentId = null;
+    }
+    const node = nodes.find((item) => item.id === state.selectedLocationId) || nodes[0];
+    if (!node) { box.append(make("div", "empty-state", "没有可见地点")); return; }
+    const hero = make("div", "inspector-hero"); hero.append(make("div", "location-glyph", "⌖")); const title = make("div"); title.append(make("strong", "inspector-title", node.name || node.id)); title.append(make("small", "inspector-muted", node.safe ? "安全地点" : "需要保持警戒")); hero.append(title); box.append(hero);
+    const tags = make("div", "tag-list"); for (const tag of node.tags || []) tags.append(make("span", "tag", tag)); box.append(tags);
+    const occupants = (node.occupants || []).map((item) => agents.find((agent) => agent.id === item.id) || item);
+    const people = make("div", "inspector-section"); people.append(make("h3", "", `在场角色 · ${occupants.length}`));
+    if (!occupants.length) people.append(make("p", "inspector-muted", "当前没有公开角色在这里。"));
+    for (const agent of occupants) { const row = make("button", "occupant-row", ""); row.type = "button"; row.append(make("span", "avatar mini", (agent.name || agent.id).slice(0, 1))); const copy = make("span"); copy.append(make("strong", "", agent.name || agent.id)); copy.append(make("small", "inspector-muted", agent.active_behavior || agent.status || "idle")); row.append(copy); row.addEventListener("click", () => { state.selectedAgentId = agent.id; renderInspector(); }); people.append(row); }
+    box.append(people);
+    const routes = make("div", "inspector-section"); routes.append(make("h3", "", "可达路线"));
+    const routeIds = node.routes || [];
+    if (!routeIds.length) routes.append(make("p", "inspector-muted", "没有已配置的路线。"));
+    for (const id of routeIds) { const target = nodes.find((item) => item.id === id); const edge = (map.edges || []).find((item) => new Set([item.from, item.to]).has(node.id) && new Set([item.from, item.to]).has(id)); const row = make("button", "route-row", ""); row.type = "button"; row.append(make("span", "", target?.name || id)); row.append(make("small", "inspector-muted", edge ? `${edge.distance} distance · ${edge.minutes} min` : "route")); row.addEventListener("click", () => { state.selectedLocationId = id; state.selectedAgentId = null; renderMap(state.lastMap); }); routes.append(row); }
+    box.append(routes);
+  }
+
+  function stat(label, value) { const node = make("div", "inspector-stat"); node.append(make("span", "inspector-muted", label)); node.append(make("strong", "", value)); return node; }
 
   function renderTimeline() {
     const list = $("timeline-list");
@@ -394,15 +460,53 @@
     catch (error) { renderDiagnostics({ status: "rejected", errors: [error.message] }); $("draft-status").textContent = "起草失败"; $("draft-dot").className = "status-dot offline"; }
   }
 
+  function renderPackageCatalog(response) {
+    const select = $("package-select");
+    if (!select) return;
+    select.replaceChildren();
+    const packages = response?.packages || [];
+    state.packages = packages;
+    const valid = packages.filter((item) => item.status === "passed");
+    if (!valid.length) {
+      select.append(new Option("没有可用模板", ""));
+      return;
+    }
+    for (const item of valid) select.append(new Option(`${item.name || item.id} · ${item.id}`, item.id));
+  }
+
+  async function loadPackageCatalog() {
+    try {
+      renderPackageCatalog(await request("/authoring/catalog"));
+    } catch (error) {
+      const select = $("package-select");
+      if (select) { select.replaceChildren(new Option("模板目录不可用", "")); }
+    }
+  }
+
+  async function createNewInstance() {
+    const packageId = $("package-select")?.value || "";
+    const instanceId = $("instance-id")?.value.trim() || "";
+    const resultBox = $("instance-result");
+    if (!packageId || !instanceId) { resultBox.textContent = "请选择模板并填写实例 ID"; resultBox.className = "interaction-result error"; return; }
+    resultBox.textContent = "创建中…"; resultBox.className = "interaction-result";
+    try {
+      const result = await request("/authoring/create", { method: "POST", body: JSON.stringify({ package_id: packageId, instance_id: instanceId }) });
+      if (result.status !== "passed") throw new Error((result.errors || ["创建失败"]).join("; "));
+      resultBox.textContent = `已创建 ${result.instance_id}：${result.db_path}。请停止当前服务后按 ${result.start_command} 启动。`;
+      resultBox.className = "interaction-result ok";
+    } catch (error) { resultBox.textContent = error.message || "创建失败"; resultBox.className = "interaction-result error"; }
+  }
+
   async function init() {
     const initial = defaultTemplate();
     setDraft(initial);
     setEditorMode("guided");
     document.querySelectorAll(".mode-tab").forEach((tab) => tab.addEventListener("click", () => switchView(tab.dataset.view)));
     $("refresh-button").addEventListener("click", () => refreshRuntime(true)); $("pause-button").addEventListener("click", () => control("/pause")); $("step-button").addEventListener("click", () => control("/step")); $("toggle-ticks").addEventListener("click", () => { state.includeTicks = !state.includeTicks; $("toggle-ticks").textContent = state.includeTicks ? "隐藏 tick" : "显示 tick"; refreshRuntime(true); });
-    $("enter-player").addEventListener("click", enterPlayer); $("send-dialogue").addEventListener("click", sendDialogue);
+    $("enter-player").addEventListener("click", enterPlayer); $("send-dialogue").addEventListener("click", sendDialogue); $("create-instance").addEventListener("click", createNewInstance);
     $("new-draft").addEventListener("click", () => setDraft(defaultTemplate(), { increment: true, clearSource: true })); $("open-current").addEventListener("click", () => openPackage()); $("open-path").addEventListener("click", () => openPackage($("authoring-path").value.trim())); $("format-draft").addEventListener("click", () => { const parsed = parseDraft(); if (!parsed.error) setDraft(parsed.value); else renderDiagnostics({ status: "rejected", errors: [parsed.error] }); }); $("apply-quick-fields").addEventListener("click", () => { const parsed = parseDraft(); if (parsed.error) { renderDiagnostics({ status: "rejected", errors: [parsed.error] }); return; } parsed.value.world = { ...(parsed.value.world || {}), id: $("quick-world-id").value.trim(), title: $("quick-world-title").value.trim(), locale: $("quick-world-locale").value.trim() || "en" }; setDraft(parsed.value, { increment: true }); renderDiagnostics(null); }); $("guided-mode").addEventListener("click", () => setEditorMode("guided")); $("raw-mode").addEventListener("click", () => setEditorMode("raw")); $("build-world").addEventListener("click", buildWorldFromBrief); $("compile-draft").addEventListener("click", compileDraft); $("smoke-draft").addEventListener("click", smokeDraft); $("export-draft").addEventListener("click", exportDraft);
     try { const response = await request("/authoring/schema"); state.schema = response.schema; renderSchema(); } catch (error) { $("schema-list").replaceChildren(make("div", "empty-state", "Schema 暂不可用")); }
+    await loadPackageCatalog();
     await refreshRuntime(true); state.poll = window.setInterval(() => { if ($("runtime-view").classList.contains("active-view")) refreshRuntime(false); }, 4000);
   }
 

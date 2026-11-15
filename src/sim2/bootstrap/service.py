@@ -58,6 +58,11 @@ def world_template_schema() -> dict[str, Any]:
             "safe": {"type": "boolean"},
             "tags": {"type": "array", "items": {"type": "string"}},
             "routes": {"type": "array", "items": {"type": "string"}},
+            "route_distances": {
+                "type": "object",
+                "description": "Optional positive distance per route neighbor; omitted neighbors use one distance unit.",
+                "additionalProperties": {"type": "number", "exclusiveMinimum": 0},
+            },
             "map_position": {"type": "object"},
         },
         "required": ["id", "name", "routes"],
@@ -247,6 +252,21 @@ def world_template_schema() -> dict[str, Any]:
                 },
             },
             "fallback_behavior_ids": {"type": "array", "items": {"type": "string"}},
+            "route_minutes_per_hop": {"type": "number", "exclusiveMinimum": 0},
+            "travel": {
+                "type": "object",
+                "description": "Generic movement conversion and optional actor/transport speed fields.",
+                "properties": {
+                    "minutes_per_distance": {"type": "number", "exclusiveMinimum": 0},
+                    "default_speed": {"type": "number", "exclusiveMinimum": 0},
+                    "agent_speed_attribute": {"type": "string"},
+                    "transport_parameter": {"type": "string"},
+                    "transport_state_key": {"type": "string"},
+                    "transport_speed_field": {"type": "string"},
+                    "transport_speed_mode": {"type": "string", "enum": ["absolute", "multiplier"]},
+                },
+                "additionalProperties": True,
+            },
             "memory_quality": {"type": "object"},
             "context_values": {"type": "object"},
             "item_groups": {
@@ -397,6 +417,15 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
         for route in location.get("routes", []) or []:
             if str(route) not in location_ids:
                 errors.append(f"location {location.get('id')} references unknown route {route}")
+        route_distances = location.get("route_distances", {})
+        if route_distances is not None and not isinstance(route_distances, dict):
+            errors.append(f"location {location.get('id')} route_distances must be an object")
+        elif isinstance(route_distances, dict):
+            for route, distance in route_distances.items():
+                if str(route) not in {str(item) for item in (location.get("routes", []) or [])}:
+                    errors.append(f"location {location.get('id')} route_distances references non-route {route}")
+                if isinstance(distance, bool) or not isinstance(distance, (int, float)) or float(distance) <= 0:
+                    errors.append(f"location {location.get('id')} route distance for {route} must be positive")
     for item in collections["resources"] + collections["objects"]:
         if not str(item.get("type") or "").strip():
             errors.append(f"{item.get('id')} requires a non-empty type")
@@ -1002,6 +1031,16 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
         for route in location.get("routes", []):
             if route not in location_ids:
                 errors.append(f"location {location.get('id')} references unknown route {route}")
+        route_distances = location.get("route_distances", {})
+        if route_distances is not None and not isinstance(route_distances, dict):
+            errors.append(f"location {location.get('id')} route_distances must be an object")
+        elif isinstance(route_distances, dict):
+            route_ids = {str(item) for item in (location.get("routes", []) or [])}
+            for route, distance in route_distances.items():
+                if str(route) not in route_ids:
+                    errors.append(f"location {location.get('id')} route_distances references non-route {route}")
+                if isinstance(distance, bool) or not isinstance(distance, (int, float)) or float(distance) <= 0:
+                    errors.append(f"location {location.get('id')} route distance for {route} must be positive")
     for obj in data["objects"]:
         location_id = obj.get("initial_state", {}).get("location_id")
         if location_id and location_id not in location_ids:

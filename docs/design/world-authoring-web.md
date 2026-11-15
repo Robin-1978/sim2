@@ -7,9 +7,9 @@
 作者理解较多的字段关系。网页工作台应降低配置门槛，同时保持一个事实：
 它是现有 Definition Compiler 的用户界面，不是另一套 DSL，也不直接修改
 运行中的世界。当前仓库已经提供一个无外部前端依赖的 MVP：`sim2 serve`
-根路径打开工作台，调用 `/authoring/schema`、`/authoring/open`、
-`/authoring/compile`、`/authoring/smoke`、`/authoring/export` 和显式的
-`/authoring/build`。
+根路径打开工作台，调用 `/authoring/schema`、`/authoring/catalog`、
+`/authoring/open`、`/authoring/compile`、`/authoring/smoke`、
+`/authoring/export`、`/authoring/create` 和显式的 `/authoring/build`。
 
 ## 单一契约
 
@@ -51,8 +51,9 @@ Action、Recipe、BT、Attribute、Capability、Entity、Rule 和 Evolution 的
    导出 YAML、JSON Schema 校验报告和临时 SQLite 预览。
 
 编辑流程是：编辑草稿 → 保存到工作区 → 编译 → 修复错误 → 运行短 smoke
-test → 查看 diff → 导出世界包。只有显式执行 `sim2 init` 才创建正式
-SQLite 实例；工作台不能直接修改正在运行的实例。
+test → 查看 diff → 导出世界包。只有显式执行 `sim2 init` 或点击“从模板
+创建新游戏”才创建正式 SQLite 实例；工作台不能直接修改正在运行的实例。
+创建接口返回新数据库路径和启动命令，浏览器不会在线切换当前实例。
 
 ### 网页工作台的交互状态
 
@@ -107,9 +108,11 @@ draft → compiling → diagnostics
 资源，不把草稿混进运行时 SQLite：
 
 - `GET /authoring/schema`：返回当前 World Template 和 Definition Schema；
+- `GET /authoring/catalog`：列出 `--authoring-root` 下通过包校验的模板；
 - `POST /authoring/compile`：编译内存中的模板，返回规范化 IR 和错误；
 - `POST /authoring/smoke`：在临时目录创建 SQLite 并运行有限分钟；
 - `POST /authoring/export`：导出 YAML 世界包和校验报告；
+- `POST /authoring/create`：从选定模板创建独立 SQLite 实例；
 - `GET /authoring/diff`：比较草稿与上一次编译产物；
 - `GET /authoring/jobs/{id}`：读取 smoke/compile 的结构化结果。
 
