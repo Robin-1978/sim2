@@ -71,6 +71,26 @@ python scripts/run_long_simulation.py \
   --minutes 2880
 ```
 
+For a real-model causal audit, each round records the rendered decision context,
+tool calls and final response, world events, progression states, resource
+levels and provider usage:
+
+```bash
+python scripts/audit_world_evolution.py \
+  --config worlds/tidebound_commons \
+  --provider remote \
+  --minutes 1440 \
+  --round-minutes 360 \
+  --runtime-dir /tmp/sim2-tidebound-audit \
+  --instance-id tidebound-audit
+```
+
+The five public stages in `rules.progression` are content declarations. They do
+not grant resources or bypass prerequisites. A gate measurement disappears once
+its verified event exists; repair becomes ready only after a carried kit exists;
+the chart stage advances from distinct verified research stages rather than
+duplicate reports. Story and God still own narrative and structural changes.
+
 The focused regression test checks package validation, package isolation from
 Starter Village fields, route distances, regenerative resource caps, and that
 every configured behavior is assigned to at least one resident. A real model

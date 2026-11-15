@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS event_log (
   world_minute INTEGER NOT NULL,
   data_json TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS event_log_type_idx ON event_log(event_type);
 CREATE TABLE IF NOT EXISTS memory_item (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   agent_id TEXT NOT NULL,

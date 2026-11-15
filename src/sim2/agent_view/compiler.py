@@ -1367,6 +1367,7 @@ class AgentViewCompiler:
             "active_institutions": active_institutions,
             "institution_ledgers": institution_ledgers,
             "story_goals": story_goals,
+            "progression_goals": self._progression_goals(agent, available=available, diagnostics=diagnostics, bt_defs=bt_defs),
             "behavior_assignments": behavior_assignments,
             "active_story_beats": active_story_beats,
             "active_story_threads": active_story_threads,
@@ -1544,6 +1545,104 @@ class AgentViewCompiler:
         if value is None:
             value = state.get("quantity", state.get("amount", 0))
         return float(value or 0)
+
+    def _progression_goals(
+        self,
+        agent: dict[str, Any],
+        *,
+        available: list[dict[str, Any]],
+        diagnostics: list[dict[str, Any]],
+        bt_defs: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Project configurable world-stage goals and their current blockers.
+
+        A progression entry is content, not a world branch.  It names visible
+        target/support behaviors and the validated event contract that closes
+        the stage.  Platform still decides whether a behavior is executable.
+        """
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
+        definitions = rules.get("progression", []) if isinstance(rules, dict) else []
+        if not isinstance(definitions, list):
+            return []
+        agent_name = str(agent.get("name") or agent.get("id") or "")
+        available_ids = {
+            str(item.get("ref") or "").removeprefix("behavior:")
+            for item in available
+            if isinstance(item, dict)
+        }
+        diagnostics_by_id = {
+            str(item.get("behavior_id") or ""): [str(value) for value in (item.get("failed") or [])]
+            for item in diagnostics
+            if isinstance(item, dict)
+        }
+
+        def visible_behavior(behavior_id: str) -> str:
+            definition = bt_defs.get(str(behavior_id), {})
+            return str(definition.get("agent_label") or definition.get("summary") or _label(behavior_id))
+
+        def completion(contract: Any) -> dict[str, Any]:
+            contract = contract if isinstance(contract, dict) else {}
+            required = max(1, int(contract.get("count", 1) or 1))
+            event_type = str(contract.get("event_type") or "")
+            if not event_type:
+                return {"completed": False, "current": 0, "required": required}
+            match = contract.get("match") if isinstance(contract.get("match"), dict) else {}
+            distinct_by = [str(value) for value in (contract.get("distinct_by") or []) if str(value)]
+            current = self.events_repo.matching_event_count(
+                event_type=event_type,
+                match=match,
+                distinct_by=distinct_by,
+            )
+            return {
+                "completed": current >= required,
+                "current": min(current, required),
+                "required": required,
+                "event_type": event_type,
+            }
+
+        goals: list[dict[str, Any]] = []
+        for raw in definitions:
+            if not isinstance(raw, dict) or not raw.get("id"):
+                continue
+            audience = {str(value) for value in (raw.get("audience") or [])}
+            if audience and agent_name not in audience and str(agent.get("id")) not in audience:
+                continue
+            target_ids = [str(value) for value in (raw.get("target_behaviors") or [])]
+            support_ids = [str(value) for value in (raw.get("support_behaviors") or [])]
+            target_choices = [visible_behavior(value) for value in target_ids]
+            support_choices = [visible_behavior(value) for value in support_ids if value in available_ids]
+            event_progress = completion(raw.get("complete_when"))
+            ready_targets = [visible_behavior(value) for value in target_ids if value in available_ids]
+            blockers: list[str] = []
+            for behavior_id in target_ids + support_ids:
+                if behavior_id in available_ids:
+                    continue
+                blockers.extend(_predicate_text(value) for value in diagnostics_by_id.get(behavior_id, []))
+            if event_progress["completed"]:
+                status = "completed"
+            elif ready_targets:
+                status = "ready"
+            elif support_choices or blockers:
+                status = "needs_support"
+            else:
+                status = "blocked"
+            if status == "completed":
+                continue
+            goal = {
+                "id": str(raw["id"]),
+                "label": str(raw.get("label") or _label(str(raw["id"]))),
+                "summary": str(raw.get("summary") or raw.get("label") or _label(str(raw["id"]))),
+                "priority": float(raw.get("priority", 0.5) or 0.5),
+                "status": status,
+                "target_behaviors": target_choices,
+                "ready_behaviors": ready_targets,
+                "support_behaviors": support_choices,
+                "missing_requirements": list(dict.fromkeys(blockers))[:6],
+                "progress": {key: event_progress[key] for key in ("current", "required")},
+            }
+            goals.append(goal)
+        goals.sort(key=lambda item: (-float(item.get("priority", 0)), str(item.get("label", ""))))
+        return goals[:5]
 
     def _pending_research_sources(
         self,

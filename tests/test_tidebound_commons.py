@@ -124,3 +124,48 @@ def test_survival_guard_hides_optional_work_but_keeps_recovery_choices(tmp_path:
         assert "behavior:gather_water" in choices
     finally:
         platform.close()
+
+
+def test_tidebound_progression_projection_exposes_ready_and_supporting_steps(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "tidebound-progression", tmp_path / "runtime"))
+    try:
+        mara = platform.decision_view("mara")
+        goals = {item["id"]: item for item in mara["progression_goals"]}
+        assert goals["inspect_tide_gate"]["status"] == "ready"
+        assert "Inspect Tide Gate" in goals["inspect_tide_gate"]["ready_behaviors"]
+        assert goals["repair_tide_gate"]["status"] == "needs_support"
+        assert "Salvage Driftwood" in goals["repair_tide_gate"]["support_behaviors"]
+        assert any("repair kit" in item.lower() for item in goals["repair_tide_gate"]["missing_requirements"])
+        selene = platform.decision_view("selene")
+        chart = next(item for item in selene["progression_goals"] if item["id"] == "complete_drowned_chart")
+        assert chart["status"] == "ready"
+        assert "Research Drowned Chart" in chart["ready_behaviors"]
+        taro_goals = {item["id"]: item for item in platform.decision_view("taro")["progression_goals"]}
+        assert not any(
+            item["id"] == "complete_drowned_chart"
+            for item in platform.decision_view("taro")["progression_goals"]
+        )
+        assert taro_goals["reopen_outer_route"]["status"] == "blocked"
+
+        with platform.store.transaction():
+            platform.store.repositories.events.append_event(
+                "research.completed", "selene", 1,
+                {"source_id": "drowned_chart", "stage_id": "shoreline"},
+            )
+            platform.store.repositories.events.append_event(
+                "research.completed", "selene", 2,
+                {"source_id": "drowned_chart", "stage_id": "shoreline"},
+            )
+        chart = next(item for item in platform.decision_view("selene")["progression_goals"] if item["id"] == "complete_drowned_chart")
+        assert chart["progress"] == {"current": 1, "required": 2}
+        with platform.store.transaction():
+            platform.store.repositories.events.append_event(
+                "research.completed", "selene", 3,
+                {"source_id": "drowned_chart", "stage_id": "open_water"},
+            )
+        assert not any(
+            item["id"] == "complete_drowned_chart"
+            for item in platform.decision_view("selene")["progression_goals"]
+        )
+    finally:
+        platform.close()

@@ -116,7 +116,7 @@ wakes:
 - id: inspection_story
   'on': gate.inspected
   for: story
-  count: 3
+  count: 1
   every: 1d
   tools:
   - query_history

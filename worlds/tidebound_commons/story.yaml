@@ -15,7 +15,7 @@ beats:
   - Mara
   - Selene
   followup_behaviors:
-  - Repair Tide Gate
+  - Salvage Driftwood
   - Research Drowned Chart
 - id: gate_restored
   trigger_events:

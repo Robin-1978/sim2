@@ -150,6 +150,49 @@ progress:
 因为每评估一个角色都要编译一次决策视图，其成本随人口增长。
 具体字段见 `docs/world-authoring.md`。
 
+## Declarative progression stages
+
+A long-running world can name its current public stages under
+`rules.progression`. This is optional configuration, not a Platform quest
+branch. Each stage names an audience, target behaviors, optional supporting
+behaviors, a priority, and the verified event contract that closes the stage:
+
+```yaml
+progression:
+- id: repair_public_gate
+  label: Repair the Gate
+  summary: Gather what the configured repair actually consumes, then repair it.
+  priority: 0.9
+  audience: [Mara, Ivo]
+  target_behaviors: [repair_gate]
+  support_behaviors: [gather_driftwood, gather_shellfish, craft_repair_kit]
+  complete_when:
+    event_type: tide_gate.repaired
+    count: 1
+- id: verify_chart
+  label: Verify the Chart
+  target_behaviors: [research_chart]
+  support_behaviors: []
+  complete_when:
+    event_type: research.completed
+    match: {source_id: drowned_chart}
+    distinct_by: [stage_id]
+    count: 2
+```
+
+The decision view derives `ready`, `needs_support`, or `blocked` from the
+ordinary executable catalog and its existing diagnostics. A completed stage
+disappears. Completion counts query the persisted event history directly, so an
+old verified event cannot fall out of a recent-event window. `distinct_by`
+prevents repeated reports of the same research stage from satisfying a
+multi-stage contract. Platform still enforces every precondition, cooldown,
+inventory cost, capability and effect; the projection only explains which
+configured behavior can advance the declared stage.
+
+Authoring validation rejects unknown behavior/audience references, malformed
+event contracts, duplicate stage ids, and configuration that emits the same
+event once as Action information and again as the surrounding BT outcome.
+
 ## 规则激活和验证闭环
 
 God 提交的规则必须经过 Platform 校验，并使用声明式条件和效果。通用

@@ -82,6 +82,7 @@ actions:
     confidence: 0.86
     result: inspection_completed
     record_object_discovery: false
+    wake: [story]
   interrupt_policy: cancel
   interaction_policy: allow
   kind: atomic

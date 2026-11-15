@@ -436,6 +436,21 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                     f"    beat: {_line(beat.get('summary'))} at world minute {_line(beat.get('world_minute'))}"
                 )
         lines.append("  </story_directives>")
+    progression = context.get("progression_goals") or []
+    if progression:
+        lines.append("  <progression>")
+        lines.append("    These are configured world stages. Prefer ready targets, then visible support behaviors that can unblock the highest-priority stage.")
+        for goal in progression[:5]:
+            progress = goal.get("progress") or {}
+            progress_text = f" ({progress.get('current', 0)}/{progress.get('required', 1)} verified)" if progress else ""
+            targets = "; ".join(goal.get("ready_behaviors") or goal.get("target_behaviors") or []) or "none ready"
+            support = "; ".join(goal.get("support_behaviors") or []) or "none"
+            missing = "; ".join(goal.get("missing_requirements") or []) or "none"
+            lines.append(
+                f"    - {goal.get('label')}: status={goal.get('status')}; "
+                f"target={targets}; support={support}; missing={missing}{progress_text}"
+            )
+        lines.append("  </progression>")
     lines.append("<recent_actions>")
     recent_actions = context.get("recent_actions") or []
     recent_lines = []

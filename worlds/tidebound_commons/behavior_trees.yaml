@@ -25,10 +25,8 @@ behavior_trees:
   - denied
   - interrupted
   outcome_events:
-  - event_type: gate.inspected
-    wake:
-    - story
-    summary: A measured tide gate inspection was completed.
+  - event_type: gate.measurement_recorded
+    summary: The carried inspection result was accepted as a completed behavior outcome.
   goal_tags:
   - infrastructure
   - safety

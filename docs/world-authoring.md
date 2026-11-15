@@ -471,6 +471,15 @@ model-facing text. The model never receives the raw tree. Selecting a BT only
 submits intent; Platform resolves targets, reserves resources and advances its
 Actions minute by minute.
 
+Optional `rules.progression` entries expose long world stages to the relevant
+Agents. A stage declares `target_behaviors`, optional `support_behaviors`, and a
+verified completion contract such as
+`{event_type: research.completed, match: {source_id: chart}, distinct_by: [stage_id], count: 2}`.
+The projection shows only currently executable target/support labels and the
+existing precondition diagnostics. Completed stages are omitted and completion
+counts use the full persisted event history. Stage ids, audiences, behavior
+references and contract fields are validated when authoring a package.
+
 When a BT needs content chosen by the Agent, declare `agent_parameters` on the
 BT. Each entry states its type, whether it is required, its length bound and a
 plain-language description. The compiled behavior shows these requirements;

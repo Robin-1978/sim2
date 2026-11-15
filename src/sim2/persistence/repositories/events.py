@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from typing import Any
 
@@ -67,6 +68,49 @@ class EventsRepository:
     def event_type_counts(self) -> dict[str, int]:
         rows = self.store.connection.execute("SELECT event_type,COUNT(*) AS count FROM event_log GROUP BY event_type").fetchall()
         return {str(row["event_type"]): int(row["count"]) for row in rows}
+
+    def matching_event_count(
+        self,
+        *,
+        event_type: str,
+        match: dict[str, Any] | None = None,
+        distinct_by: list[str] | tuple[str, ...] | None = None,
+    ) -> int:
+        """Count durable events matching flat payload fields.
+
+        Progression contracts need the full event history rather than a recent
+        window.  ``distinct_by`` is useful for verified stages: two events for
+        the same stage count once, while two different stages count twice.
+        Payload fields are restricted to identifiers before they are embedded
+        in a SQLite JSON path.
+        """
+
+        def json_path(key: str) -> str:
+            value = str(key)
+            if not re.fullmatch(r"[A-Za-z0-9_]+", value):
+                raise ValueError(f"event payload field must be a flat identifier: {value}")
+            return f"$.{value}"
+
+        clauses = ["event_type = ?"]
+        where_parameters: list[Any] = [str(event_type)]
+        for key, value in (match or {}).items():
+            clauses.append(f"CAST(COALESCE(json_extract(data_json, ?), '') AS TEXT) = ?")
+            where_parameters.extend((json_path(str(key)), str(value)))
+        fields = list(distinct_by or [])
+        select_parameters: list[Any] = []
+        if fields:
+            expressions = []
+            for key in fields:
+                expressions.append(f"CAST(COALESCE(json_extract(data_json, ?), '') AS TEXT)")
+                select_parameters.append(json_path(str(key)))
+            aggregate = "COUNT(DISTINCT " + " || char(31) || ".join(expressions) + ")"
+        else:
+            aggregate = "COUNT(*)"
+        row = self.store.connection.execute(
+            f"SELECT {aggregate} AS count FROM event_log WHERE {' AND '.join(clauses)}",
+            tuple(select_parameters + where_parameters),
+        ).fetchone()
+        return int(row["count"] if row else 0)
 
     def behavior_start_counts(self) -> dict[str, int]:
         rows = self.store.connection.execute(

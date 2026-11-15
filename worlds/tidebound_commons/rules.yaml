@@ -279,3 +279,83 @@ civilization_progress:
     wake:
     - story
     - god
+progression:
+- id: inspect_tide_gate
+  label: Measure the Tide Gate
+  summary: Establish the first verified condition of the public tide gate.
+  priority: 0.95
+  audience:
+  - Mara
+  - Selene
+  target_behaviors:
+  - inspect_gate
+  support_behaviors: []
+  complete_when:
+    event_type: gate.inspected
+    count: 1
+- id: repair_tide_gate
+  label: Repair the Tide Gate
+  summary: Turn gathered material into a carried repair kit and spend it on the gate.
+  priority: 0.92
+  audience:
+  - Mara
+  - Selene
+  - Ivo
+  target_behaviors:
+  - repair_gate
+  support_behaviors:
+  - gather_driftwood
+  - craft_repair_kit
+  - gather_shellfish
+  complete_when:
+    event_type: tide_gate.repaired
+    count: 1
+- id: complete_drowned_chart
+  label: Complete the Drowned Chart
+  summary: Verify both stages of the chart before anyone follows it through the marsh.
+  priority: 0.88
+  audience:
+  - Selene
+  target_behaviors:
+  - research_chart
+  support_behaviors: []
+  complete_when:
+    event_type: research.completed
+    match:
+      source_id: drowned_chart
+    distinct_by:
+    - stage_id
+    count: 2
+- id: tune_seasonal_signal
+  label: Retune the Seasonal Signal
+  summary: Use the repaired gate and conserved kits to bring the signal beyond the
+    coast.
+  priority: 0.82
+  audience:
+  - Mara
+  - Selene
+  target_behaviors:
+  - tune_signal
+  support_behaviors:
+  - craft_repair_kit
+  - gather_driftwood
+  - gather_shellfish
+  complete_when:
+    event_type: signal.tuned
+    count: 2
+- id: reopen_outer_route
+  label: Open the Outer Route
+  summary: Reach the configured public signal threshold before the commons commits
+    to a route beyond the marsh.
+  priority: 0.76
+  audience:
+  - Mara
+  - Ivo
+  - Selene
+  - Taro
+  target_behaviors: []
+  support_behaviors:
+  - tune_signal
+  complete_when:
+    event_type: signal.route_open
+    count: 1

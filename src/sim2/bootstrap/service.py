@@ -399,6 +399,74 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
     rules = template.get("rules") if isinstance(template.get("rules"), dict) else {}
     condition_engine = ConditionEngine(rules)
 
+    progression = rules.get("progression", [])
+    if progression is None:
+        progression = []
+    if not isinstance(progression, list):
+        errors.append("rules.progression must be a list")
+        progression = []
+    known_audience_ids = agent_ids | {
+        str(item.get("name")) for item in collections["agents"] if item.get("name")
+    }
+    progression_ids: set[str] = set()
+    for index, stage in enumerate(progression):
+        if not isinstance(stage, dict):
+            errors.append(f"rules.progression[{index}] must be an object")
+            continue
+        stage_id = str(stage.get("id") or "").strip()
+        owner = f"progression stage {stage_id or index}"
+        if not stage_id:
+            errors.append(f"rules.progression[{index}] requires a non-empty id")
+        elif stage_id in progression_ids:
+            errors.append(f"duplicate progression stage id: {stage_id}")
+        progression_ids.add(stage_id)
+        audience = stage.get("audience", [])
+        if audience is None:
+            audience = []
+        if not isinstance(audience, list) or any(not isinstance(item, str) or not item for item in audience):
+            errors.append(f"{owner}.audience must be a list of agent ids or names")
+        else:
+            for recipient in audience:
+                if recipient not in known_audience_ids:
+                    errors.append(f"{owner} references unknown audience member {recipient}")
+        referenced_behaviors: list[str] = []
+        for field in ("target_behaviors", "support_behaviors"):
+            values = stage.get(field, [])
+            if values is None:
+                values = []
+            if not isinstance(values, list) or any(not isinstance(item, str) or not item for item in values):
+                errors.append(f"{owner}.{field} must be a list of behavior ids")
+                continue
+            referenced_behaviors.extend(values)
+            for behavior_id in values:
+                if behavior_id not in behavior_ids:
+                    errors.append(f"{owner} references unknown behavior {behavior_id}")
+        if not referenced_behaviors:
+            errors.append(f"{owner} must name at least one target or support behavior")
+        contract = stage.get("complete_when")
+        if not isinstance(contract, dict):
+            errors.append(f"{owner}.complete_when must be an object")
+            continue
+        event_type = str(contract.get("event_type") or "").strip()
+        if not event_type:
+            errors.append(f"{owner}.complete_when.event_type is required")
+        count = contract.get("count", 1)
+        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            errors.append(f"{owner}.complete_when.count must be a positive integer")
+        match = contract.get("match", {})
+        if not isinstance(match, dict) or any(
+            not re.fullmatch(r"[A-Za-z0-9_]+", str(key)) for key in match
+        ):
+            errors.append(f"{owner}.complete_when.match must use flat identifier keys")
+        distinct_by = contract.get("distinct_by", [])
+        if distinct_by is None:
+            distinct_by = []
+        if not isinstance(distinct_by, list) or any(
+            not isinstance(item, str) or not re.fullmatch(r"[A-Za-z0-9_]+", item)
+            for item in distinct_by
+        ):
+            errors.append(f"{owner}.complete_when.distinct_by must be a list of flat identifier fields")
+
     for attribute in collections["attributes"]:
         for field in ("kind", "label", "min", "max", "default", "prompt"):
             if field not in attribute:
@@ -554,6 +622,7 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
             errors.append(f"behavior {behavior.get('id')} requires at least one node")
             continue
         allowed_nodes = {"action", "subtree", "behavior", "sequence", "parallel", "selector", "condition"}
+        used_action_ids: set[str] = set()
 
         def validate_node(node: Any, path: str) -> None:
             if not isinstance(node, dict):
@@ -565,6 +634,8 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
                 return
             if node_type == "action" and str(node.get("action_id")) not in action_ids:
                 errors.append(f"behavior {behavior.get('id')} references unknown action {node.get('action_id')}")
+            elif node_type == "action":
+                used_action_ids.add(str(node.get("action_id")))
             elif node_type in {"subtree", "behavior"} and str(node.get("behavior_id")) not in behavior_ids:
                 errors.append(f"behavior {behavior.get('id')} references unknown behavior {node.get('behavior_id')}")
             elif node_type in {"sequence", "parallel", "selector"}:
@@ -583,6 +654,23 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
             validate_expression(condition, f"behavior {behavior.get('id')} entry condition")
         if not str(behavior.get("agent_label") or behavior.get("summary") or behavior.get("description") or "").strip():
             errors.append(f"behavior {behavior.get('id')} requires a human-readable summary or agent_label")
+        action_information_events = {
+            str((action.get("information") or {}).get("event_type") or "")
+            for action in collections["actions"]
+            if str(action.get("id")) in used_action_ids
+            and isinstance(action.get("information"), dict)
+        }
+        for outcome in behavior.get("outcome_events", []) or []:
+            if not isinstance(outcome, dict):
+                errors.append(f"behavior {behavior.get('id')} outcome_events entries must be objects")
+                continue
+            event_type = str(outcome.get("event_type") or "")
+            if not event_type:
+                errors.append(f"behavior {behavior.get('id')} outcome event requires event_type")
+            elif event_type in action_information_events:
+                errors.append(
+                    f"behavior {behavior.get('id')} duplicates action information event {event_type}"
+                )
     assigned_behaviors: set[str] = set()
     for agent in collections["agents"]:
         state = agent.get("initial_state") if isinstance(agent.get("initial_state"), dict) else {}

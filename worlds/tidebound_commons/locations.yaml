@@ -3,7 +3,7 @@ locations:
   name: Commons Quay
   public: true
   safe: true
-  tags: [public, social, market]
+  tags: [public, social, market, resource]
   routes: [workshop, marsh_edge, gatehouse]
   route_distances: {workshop: 1, marsh_edge: 2, gatehouse: 2}
   map_position: {x: 0, y: 0}

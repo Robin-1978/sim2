@@ -230,6 +230,43 @@ def test_world_template_validates_recipe_resource_scope():
     assert validate_world_template(template) == {"valid": True, "errors": []}
 
 
+def test_world_template_validates_progression_contracts():
+    template = orbital_template()
+    template["rules"]["progression"] = [{
+        "id": "stabilize_relay",
+        "label": "Stabilize the relay",
+        "audience": ["unit_seven"],
+        "target_behaviors": ["stabilize_reactor"],
+        "support_behaviors": [],
+        "complete_when": {"event_type": "reactor.stabilized", "count": 1},
+    }]
+    assert validate_world_template(template) == {"valid": True, "errors": []}
+
+    stage = template["rules"]["progression"][0]
+    stage["audience"] = ["missing_unit"]
+    stage["target_behaviors"] = ["missing_behavior"]
+    stage["complete_when"] = {"event_type": "", "count": 0, "distinct_by": ["bad-key"]}
+    errors = validate_world_template(template)["errors"]
+    assert any("unknown audience member missing_unit" in item for item in errors)
+    assert any("unknown behavior missing_behavior" in item for item in errors)
+    assert any("event_type is required" in item for item in errors)
+    assert any("count must be a positive integer" in item for item in errors)
+    assert any("distinct_by must be a list" in item for item in errors)
+
+
+def test_world_template_rejects_duplicate_action_information_and_behavior_outcome():
+    template = orbital_template()
+    template["actions"][0]["information"] = {
+        "event_type": "reactor_stabilized",
+        "summary": "The reactor reached a stable state.",
+    }
+    template["behavior_trees"][0]["outcome_events"] = [
+        {"event_type": "reactor_stabilized", "summary": "The same result again."},
+    ]
+    errors = validate_world_template(template)["errors"]
+    assert any("duplicates action information event reactor_stabilized" in item for item in errors)
+
+
 def test_world_builder_agent_validates_exact_template_before_submission():
     provider = BuilderProvider(orbital_template())
     provider.max_agent_iterations = 3
