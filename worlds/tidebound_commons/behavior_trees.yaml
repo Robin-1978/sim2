@@ -60,9 +60,6 @@ behavior_trees:
   - interrupted
   outcome_events:
   - event_type: tide_gate.repaired
-    wake:
-    - story
-    - god
     summary: A carried repair kit was spent and the tide gate integrity increased.
   goal_tags:
   - repair
@@ -99,9 +96,6 @@ behavior_trees:
   - interrupted
   outcome_events:
   - event_type: signal.tuned
-    wake:
-    - story
-    - god
     summary: A carried repair kit was spent to retune the seasonal signal lens.
   goal_tags:
   - signal
@@ -135,8 +129,6 @@ behavior_trees:
   - gathering_failed
   outcome_events:
   - event_type: resource.gathered
-    wake:
-    - story
     summary: Freshwater was physically collected from the marsh pool.
     data:
       resource_id: fresh_water
@@ -174,9 +166,6 @@ behavior_trees:
   - gathering_failed
   outcome_events:
   - event_type: resource.gathered
-    wake:
-    - story
-    - god
     summary: Shellfish were physically collected from a renewable bed.
     data:
       resource_id: shellfish
@@ -215,8 +204,6 @@ behavior_trees:
   - gathering_failed
   outcome_events:
   - event_type: resource.gathered
-    wake:
-    - story
     summary: Driftwood was salvaged and entered a resident's carried inventory.
     data:
       resource_id: driftwood
@@ -258,8 +245,6 @@ behavior_trees:
   - interrupted
   outcome_events:
   - event_type: repair_kit.crafted
-    wake:
-    - story
     summary: A repair kit was made from carried, conserved materials.
   goal_tags:
   - crafting
@@ -296,8 +281,6 @@ behavior_trees:
   - interrupted
   outcome_events:
   - event_type: rations.preserved
-    wake:
-    - story
     summary: Three food rations were preserved from carried marsh materials.
   goal_tags:
   - crafting
@@ -339,12 +322,6 @@ behavior_trees:
   failure_results:
   - failed
   - interrupted
-  outcome_events:
-  - event_type: chart.research_completed
-    wake:
-    - story
-    - god
-    summary: A new verified chart fact was recorded at the drowned observatory.
   goal_tags:
   - research
   - route
@@ -376,11 +353,6 @@ behavior_trees:
   failure_results:
   - failed
   - interrupted
-  outcome_events:
-  - event_type: observatory.surveyed
-    wake:
-    - story
-    summary: A resident surveyed a newly exposed observatory section.
   goal_tags:
   - exploration
   - route
@@ -424,8 +396,6 @@ behavior_trees:
   - participant_left
   outcome_events:
   - event_type: commons.conversation_completed
-    wake:
-    - story
     summary: A resident shared a grounded observation with another resident.
   goal_tags:
   - coordination

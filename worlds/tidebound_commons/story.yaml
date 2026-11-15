@@ -1,7 +1,6 @@
 emergent_source_event_types:
-- chart.research_completed
+- research.completed
 - tide_gate.repaired
-- observatory.surveyed
 - resource.gathered
 - rations.preserved
 - tide_gate.ready
@@ -30,7 +29,7 @@ beats:
   - Survey Drowned Observatory
 - id: chart_stage_found
   trigger_events:
-  - chart.research_completed
+  - research.completed
   summary: A chart fact is translated into a concrete route question for the whole
     commons.
   audience:

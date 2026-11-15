@@ -267,6 +267,32 @@ def test_world_template_rejects_duplicate_action_information_and_behavior_outcom
     assert any("duplicates action information event reactor_stabilized" in item for item in errors)
 
 
+def test_event_wake_groups_accept_a_behavior_outcome_without_a_local_wake(tmp_path: Path):
+    template = orbital_template()
+    template["behavior_trees"][0]["outcome_events"] = [
+        {"event_type": "reactor_stabilized", "summary": "The reactor stabilized."},
+    ]
+    template["evolution"] = {
+        "wakes": [
+            {"id": "reactor_story", "on": "reactor_stabilized", "for": "story"},
+        ],
+    }
+    package = write_world_package_from_template(template, tmp_path / "grouped-wake")
+    assert describe_config(package)["valid"] is True
+
+
+def test_world_template_rejects_duplicate_action_public_event_and_behavior_outcome():
+    template = orbital_template()
+    template["actions"][0]["effects"].append(
+        {"type": "public_event", "event": "reactor_stabilized"},
+    )
+    template["behavior_trees"][0]["outcome_events"] = [
+        {"event_type": "reactor_stabilized", "summary": "The reactor stabilized."},
+    ]
+    errors = validate_world_template(template)["errors"]
+    assert any("duplicates action public_event reactor_stabilized" in item for item in errors)
+
+
 def test_world_builder_agent_validates_exact_template_before_submission():
     provider = BuilderProvider(orbital_template())
     provider.max_agent_iterations = 3

@@ -51,7 +51,7 @@ actions:
     key: research:{source_id}
     scope: world
     amount: 1
-    wake: [story, god]
+    wake: [story]
   success: {condition: research.new_fact_found, result: research_completed}
   failure: {condition: source.destroyed, result: failed}
   interrupt_policy: pause
@@ -122,7 +122,6 @@ actions:
   - {type: world_property_delta, property: tide_gate_integrity, delta: 0.28, maximum: 1}
   - {type: world_property_delta, property: public_confidence, delta: 0.08, maximum: 1}
   - {type: entity_state_set, entity_id: tide_gate, state: repaired, value: true}
-  - {type: public_event, event: tide_gate.repaired}
   success: {condition: actor.alive, result: tide_gate_repaired}
   failure: {condition: actor.incapacitated, result: repair_failed}
   interrupt_policy: pause
@@ -220,7 +219,6 @@ actions:
   - {type: inventory.consume_item, item: repair_kit, quantity: 1}
   - {type: world_property_delta, property: signal_reach, delta: 0.26, maximum: 1}
   - {type: entity_state_set, entity_id: signal_lens, state: tuned, value: true}
-  - {type: public_event, event: signal.tuned}
   success: {condition: actor.alive, result: signal_tuned}
   failure: {condition: actor.incapacitated, result: tuning_failed}
   interrupt_policy: pause

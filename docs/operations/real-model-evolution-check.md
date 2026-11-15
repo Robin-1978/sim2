@@ -572,3 +572,33 @@ provider/protocol failure, not a world-quality pass or a reason to rewrite the
 turn to `wait`. The runtime remains safe and auditable, but Beam does not meet
 the ten-round semantic gate until its output budget and native tool payloads
 are corrected upstream.
+
+### Tidebound Commons progression and evidence-integrity audit
+
+The generic world audit was run against `worlds/tidebound_commons` through the
+interactive DeepSeek provider for a full simulated day. The final corrected
+run recorded:
+
+- 136 successful provider calls and no provider errors;
+- 550,437 prompt tokens, 325,248 cached tokens and 20,062 completion tokens;
+- a provider cache hit rate of **59.09%**;
+- 12 Story activations and 11 completed chapters;
+- 67 behavior starts and 62 completed behaviors;
+- one actual repair that emitted exactly one `tide_gate.repaired` event;
+- no God wake because the configured two-repair evidence threshold was not met;
+- positive end-state public resources and executable food/water recovery paths.
+
+This run exposed and then verified fixes for two separate event-integrity
+failures. First, a chart BT declared a completed chart stage after only partial
+`1/2` research progress. The BT completion claim was removed; only the generic
+research progress pipeline may now emit a completed research event. Second, a
+single repair was published once by an Action `public_event` and again by the
+BT outcome, which incorrectly satisfied a two-repair God trigger. The Action
+duplicate was removed and package validation now rejects both
+`information`/outcome and `public_event`/outcome duplication.
+
+The same audit also reduced Story noise from 25 beats in an earlier day to 12
+chapters in the corrected day. Conversations and preserved rations are batched
+by configured event counts/cooldowns, partial research no longer wakes Story as
+if it were complete, and exploration uses one validated event source instead of
+parallel generic and BT-specific story tasks.

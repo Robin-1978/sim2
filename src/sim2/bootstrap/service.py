@@ -654,11 +654,17 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
             validate_expression(condition, f"behavior {behavior.get('id')} entry condition")
         if not str(behavior.get("agent_label") or behavior.get("summary") or behavior.get("description") or "").strip():
             errors.append(f"behavior {behavior.get('id')} requires a human-readable summary or agent_label")
+        used_actions = [action for action in collections["actions"] if str(action.get("id")) in used_action_ids]
         action_information_events = {
             str((action.get("information") or {}).get("event_type") or "")
-            for action in collections["actions"]
-            if str(action.get("id")) in used_action_ids
-            and isinstance(action.get("information"), dict)
+            for action in used_actions
+            if isinstance(action.get("information"), dict)
+        }
+        action_public_events = {
+            str(effect.get("event") or "")
+            for action in used_actions
+            for effect in (action.get("effects") or [])
+            if isinstance(effect, dict) and str(effect.get("type") or "") == "public_event"
         }
         for outcome in behavior.get("outcome_events", []) or []:
             if not isinstance(outcome, dict):
@@ -670,6 +676,10 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
             elif event_type in action_information_events:
                 errors.append(
                     f"behavior {behavior.get('id')} duplicates action information event {event_type}"
+                )
+            elif event_type in action_public_events:
+                errors.append(
+                    f"behavior {behavior.get('id')} duplicates action public_event {event_type}"
                 )
     assigned_behaviors: set[str] = set()
     for agent in collections["agents"]:
@@ -966,11 +976,10 @@ def _validate_event_wake_references(
         if isinstance(wake, str):
             wake = [wake]
         roles = [str(item) for item in wake if str(item)]
-        if not roles:
-            return
         event_type = str(definition.get("event_type") or default_event).strip()
         if not event_type:
-            errors.append(f"{source} declares wake consumers but no result event_type")
+            if roles:
+                errors.append(f"{source} declares wake consumers but no result event_type")
             return
         producers.append((source, event_type, roles, task_type or f"event:{event_type}"))
 

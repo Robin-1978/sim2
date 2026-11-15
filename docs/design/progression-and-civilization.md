@@ -191,7 +191,9 @@ configured behavior can advance the declared stage.
 
 Authoring validation rejects unknown behavior/audience references, malformed
 event contracts, duplicate stage ids, and configuration that emits the same
-event once as Action information and again as the surrounding BT outcome.
+event once as Action information or a `public_event` effect and again as the
+surrounding BT outcome. This prevents one physical repair from satisfying a
+two-repair God threshold.
 
 ## 规则激活和验证闭环
 

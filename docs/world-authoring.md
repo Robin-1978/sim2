@@ -479,6 +479,10 @@ The projection shows only currently executable target/support labels and the
 existing precondition diagnostics. Completed stages are omitted and completion
 counts use the full persisted event history. Stage ids, audiences, behavior
 references and contract fields are validated when authoring a package.
+An event may have one publishing owner: do not repeat the same BT outcome with
+an Action `information` event or `public_event` effect. Duplicate publication is
+rejected during package validation because it would multiply evidence and can
+incorrectly satisfy later Story/God thresholds.
 
 When a BT needs content chosen by the Agent, declare `agent_parameters` on the
 BT. Each entry states its type, whether it is required, its length bound and a
