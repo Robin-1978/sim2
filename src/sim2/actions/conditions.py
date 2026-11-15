@@ -280,6 +280,9 @@ class ConditionEngine:
             source_id = target.get("source_id") or context.get("source_id")
             if not source_id:
                 return False
+            stage_status = context.get("research_stage_status") or []
+            if isinstance(stage_status, list) and stage_status:
+                return any(bool(item.get("available")) for item in stage_status if isinstance(item, dict))
             known = {str(item) for item in (context.get("known_fact_keys", []) or [])}
             discoveries = context.get("research_discoveries") or []
             if isinstance(discoveries, dict):

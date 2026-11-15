@@ -1,0 +1,28 @@
+emergent_source_event_types:
+- chart.research_completed
+- tide_gate.repaired
+- observatory.surveyed
+- resource.gathered
+- rations.preserved
+- tide_gate.ready
+beats:
+- id: first_gate_measurement
+  trigger_events: [gate.inspected]
+  summary: The first measured gate reading forces the commons to choose between a visible repair and a safer chart search.
+  audience: [Mara, Selene]
+  followup_behaviors: [Repair Tide Gate, Research Drowned Chart]
+- id: gate_restored
+  trigger_events: [tide_gate.repaired]
+  summary: The repaired gate buys one safer tide, but the storm pressure makes its next destination a public choice.
+  audience: [Mara, Taro]
+  followup_behaviors: [Exchange Commons Information, Survey Drowned Observatory]
+- id: chart_stage_found
+  trigger_events: [chart.research_completed]
+  summary: A chart fact is translated into a concrete route question for the whole commons.
+  audience: [Selene, Taro]
+  followup_behaviors: [Survey Drowned Observatory, Exchange Commons Information]
+- id: safe_channel_open
+  trigger_events: [signal.route_open]
+  summary: The commons can see a route beyond emergency salvage; the next chapter is about who benefits and who bears its risk.
+  audience: [Mara, Ivo, Selene, Taro]
+  followup_behaviors: [Exchange Commons Information]

@@ -1,0 +1,38 @@
+objects:
+- id: tide_gate
+  type: machine
+  name: Tide Gate
+  initial_state:
+    location_id: gatehouse
+    status: damaged
+    repaired: false
+- id: drowned_chart
+  type: document
+  name: Drowned Observatory Chart
+  initial_state:
+    location_id: drowned_observatory
+    readable: true
+    status: partial
+  research_required: 2
+  research_question: Which safe route and tide window can reconnect the commons?
+  research_novelty_key: observatory-route
+  research_discoveries:
+  - id: researched:drowned_chart:tide_window
+    fact: The chart records a four-hour low-tide window that exposes a safe channel east of the marsh.
+  - id: researched:drowned_chart:signal_cause
+    fact: The old beacon failed because its lens was tuned for a seasonal tide cycle, not because the channel vanished.
+- id: rain_catcher
+  type: machine
+  name: Roof Rain Catcher
+  initial_state:
+    location_id: workshop
+    status: offline
+    repaired: false
+
+- id: signal_lens
+  type: machine
+  name: Seasonal Signal Lens
+  initial_state:
+    location_id: gatehouse
+    status: dim
+    tuned: false

@@ -7,6 +7,7 @@ import unicodedata
 from typing import Any, Callable
 
 from ..agents.engine import AgentEngine, AgentTurn
+from ..intents.models import BehaviorIntent
 from ..platform.runtime import Platform
 from ..world.time import minutes_until_next_day_phase
 
@@ -29,6 +30,7 @@ class SimulationReport:
     degeneration_flags: list[str] = field(default_factory=list)
     diversity: dict[str, Any] = field(default_factory=dict)
     stop_reason: str | None = None
+    bt_decisions: int = 0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -48,6 +50,7 @@ class SimulationReport:
             "degeneration_flags": self.degeneration_flags,
             "diversity": self.diversity,
             "stop_reason": self.stop_reason,
+            "bt_decisions": self.bt_decisions,
         }
 
 
@@ -330,12 +333,19 @@ class SimulationRunner:
 
     def _run_idle_decisions(self, report: SimulationReport) -> None:
         provider = self.providers.get("agent_decision")
-        if provider is None or self._provider_cooling_down(provider):
-            return
         minute = int(self.platform.store.repositories.metadata.get("world_minute", 0))
         self._refresh_decision_wakes(minute)
         for agent in self.platform.store.repositories.entities.list_agents():
-            if self._provider_cooling_down(provider):
+            controller = str(agent.get("controller") or "llm").casefold()
+            # Background population is still executed through the same
+            # validated BT/Action runtime, but it does not consume an LLM
+            # decision or reflection budget.  Important characters keep the
+            # default LLM controller and their full memory/learning loop.
+            if controller in {"bt", "behavior_tree", "bt_only"}:
+                if self._run_bt_only_decision(agent, report, minute):
+                    continue
+                continue
+            if provider is None or self._provider_cooling_down(provider):
                 return
             agent_id = agent["id"]
             state = agent.get("initial_state", {}) or {}
@@ -375,6 +385,64 @@ class SimulationRunner:
                 # budget. Let the world advance before trying again.
                 self._decision_not_before[agent_id] = minute + self.wait_cooldown_minutes
             self._persist_scheduler_state()
+
+    def _run_bt_only_decision(self, agent: dict[str, Any], report: SimulationReport, minute: int) -> bool:
+        """Run one configured full-BT choice for a non-LLM background actor.
+
+        The controller only chooses among the current executable catalog.  It
+        never bypasses AgentIntentGateway, so resource reservations, travel,
+        outcomes, memories and world events remain identical to an important
+        NPC's selected behavior.  ``bt_priority`` is optional declarative
+        ordering; without it the platform's visible catalog order is used.
+        """
+        agent_id = str(agent.get("id") or "")
+        state = agent.get("initial_state", {}) or {}
+        if not agent_id or state.get("status") in {"executing", "paused"}:
+            return True
+        if minute < int(self._decision_not_before.get(agent_id, 0) or 0):
+            return True
+        view = self.platform.decision_view(agent_id)
+        options = [item for item in (view.get("executable_behaviors") or []) if item.get("ref")]
+        if not options:
+            self._decision_not_before[agent_id] = minute + self._empty_catalog_delay(minute)
+            return True
+        priority = [str(item) for item in (agent.get("bt_priority") or [])]
+        ranked = {str(item.get("ref", "")).removeprefix("behavior:"): item for item in options}
+        urgency = {
+            str(item.get("id")): float(item.get("urgency", 0) or 0)
+            for item in (view.get("drives") or [])
+            if isinstance(item, dict) and item.get("id")
+        }
+        scored = []
+        for index, item in enumerate(options):
+            tags = [str(tag) for tag in (item.get("drive_tags") or [])]
+            score = max((urgency.get(tag, 0.0) for tag in tags), default=0.0)
+            behavior_id = str(item.get("ref", "")).removeprefix("behavior:")
+            priority_index = priority.index(behavior_id) if behavior_id in priority else len(priority)
+            scored.append((score, -priority_index, -index, item))
+        # A critical need is a hard tie breaker for background actors: their
+        # selection remains declarative, but they will eat/drink before doing
+        # another optional trip when a survival action is executable.
+        selected = max(scored, key=lambda value: value[:3])[3]
+        if not any(score > 0.02 for score, *_ in scored):
+            selected = next((ranked[item] for item in priority if item in ranked), options[0])
+        result = self.platform.submit_behavior(BehaviorIntent(
+            actor_id=agent_id,
+            behavior_ref=str(selected["ref"]),
+            target={},
+            parameters=dict(selected.get("parameter_values") or {}),
+            reason="Configured background controller selected the highest-priority executable behavior.",
+            confidence=1.0,
+            intent_id=f"bt:{agent_id}:{minute}:{selected['ref']}",
+        ))
+        report.bt_decisions += 1
+        self._record_turn(report, result, agent_id)
+        if result.get("status") == "accepted":
+            self._decision_not_before[agent_id] = minute + 1
+        else:
+            self._decision_not_before[agent_id] = minute + max(1, self.wait_cooldown_minutes)
+        self._persist_scheduler_state()
+        return True
 
     def _wait_delay(self, streak: int) -> int:
         policy = (self.platform.store.repositories.metadata.get("rules", {}) or {}).get("decision_policy", {}) or {}

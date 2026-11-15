@@ -128,6 +128,7 @@ Runtime Client 有三个视角：
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | GET | `/status` | 世界时间、运行状态和实例信息 |
+| GET | `/session` | 创建本地只读 Observer 会话 |
 | GET | `/health` | 数据库/运行时健康；异常返回 HTTP 503 |
 | GET | `/metrics` | 运行指标 |
 | GET | `/observer?limit=20` | 旁观者聚合投影 |

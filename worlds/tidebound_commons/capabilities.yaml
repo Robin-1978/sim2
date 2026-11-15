@@ -1,0 +1,31 @@
+capabilities:
+- id: stewardship
+  name: Stewardship
+  description: Inspect and repair shared infrastructure.
+  uses: [inspect_object, repair_tide_gate]
+  xp_rule: verified_outcome
+- id: gathering
+  name: Gathering
+  description: Collect renewable marsh and beach materials without exhausting them.
+  uses: [gather_resource]
+  xp_rule: verified_outcome
+- id: crafting
+  name: Crafting
+  description: Turn carried materials into food or repair kits at the workshop.
+  uses: [craft_recipe]
+  xp_rule: verified_outcome
+- id: research
+  name: Research
+  description: Advance an open chart question with verified observations.
+  uses: [research_source]
+  xp_rule: verified_fact
+- id: exploration
+  name: Exploration
+  description: Map exposed routes and recover safe passages.
+  uses: [explore_area]
+  xp_rule: verified_outcome
+- id: conversation
+  name: Conversation
+  description: Exchange grounded testimony and coordinate work.
+  uses: [communicate]
+  xp_rule: verified_outcome

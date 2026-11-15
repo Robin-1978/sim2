@@ -1,0 +1,220 @@
+agents:
+- id: mara
+  name: Mara
+  role: tide_steward
+  ultimate_goal: Make the commons safe enough to survive the next storm without hiding
+    the cost from its residents.
+  traits:
+    responsible: 0.92
+    patient: 0.78
+  beliefs:
+  - id: shared_costs
+    statement: A repair is only safe when the material cost is visible to everyone.
+    confidence: 0.82
+  needs:
+    hydration: 78
+    satiety: 72
+    belonging: 65
+    purpose: 78
+  capabilities:
+    stewardship: 0.92
+    crafting: 0.72
+    conversation: 0.7
+    gathering: 0.38
+  initial_bt_ids:
+  - inspect_gate
+  - repair_gate
+  - craft_repair_kit
+  - communicate
+  - gather_water
+  - gather_shellfish
+  - craft_rations
+  - tune_signal
+  initial_state:
+    location_id: commons_quay
+    status: idle
+    integrity: 100
+    stamina: 88
+  inventory:
+    fresh_water: 1
+    food_ration: 1
+- id: ivo
+  name: Ivo
+  role: marsh_forager
+  ultimate_goal: Keep food and clean water flowing while proving the marsh can be
+    used without being stripped bare.
+  traits:
+    resourceful: 0.9
+    playful: 0.72
+  beliefs:
+  - id: living_marsh
+    statement: A bed that is harvested too hard will not feed the commons next tide.
+    confidence: 0.8
+  needs:
+    hydration: 74
+    satiety: 76
+    belonging: 58
+    purpose: 70
+  capabilities:
+    gathering: 0.94
+    crafting: 0.6
+    exploration: 0.68
+    conversation: 0.62
+  initial_bt_ids:
+  - gather_water
+  - gather_shellfish
+  - gather_driftwood
+  - craft_rations
+  - eat_ration
+  - drink_water
+  - communicate
+  initial_state:
+    location_id: marsh_edge
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    fresh_water: 1
+    food_ration: 1
+- id: selene
+  name: Selene
+  role: chart_keeper
+  ultimate_goal: Turn the drowned observatory's fragments into a route that gives
+    the commons a future beyond emergency salvage.
+  traits:
+    curious: 0.96
+    methodical: 0.9
+  beliefs:
+  - id: evidence_over_hope
+    statement: A route is real only when another person can follow the same tide marks.
+    confidence: 0.88
+  needs:
+    hydration: 80
+    satiety: 68
+    belonging: 54
+    purpose: 84
+  capabilities:
+    research: 0.96
+    exploration: 0.9
+    conversation: 0.75
+    gathering: 0.32
+    crafting: 0.3
+    stewardship: 0.42
+  initial_bt_ids:
+  - research_chart
+  - explore_observatory
+  - communicate
+  - eat_ration
+  - drink_water
+  - gather_water
+  - gather_shellfish
+  - craft_rations
+  - tune_signal
+  initial_state:
+    location_id: commons_quay
+    status: idle
+    integrity: 100
+    stamina: 86
+  inventory:
+    fresh_water: 1
+    food_ration: 1
+- id: taro
+  name: Taro
+  role: ferry_runner
+  ultimate_goal: Reconnect separated households and make sure no useful discovery
+    stays in one person's notebook.
+  traits:
+    empathetic: 0.9
+    daring: 0.76
+  beliefs:
+  - id: knowledge_moves
+    statement: A discovery that cannot travel with people is not yet a public resource.
+    confidence: 0.78
+  needs:
+    hydration: 76
+    satiety: 74
+    belonging: 72
+    purpose: 68
+  capabilities:
+    exploration: 0.76
+    conversation: 0.94
+    gathering: 0.5
+    crafting: 0.28
+  initial_bt_ids:
+  - explore_observatory
+  - communicate
+  - gather_water
+  - eat_ration
+  - drink_water
+  - gather_shellfish
+  - craft_rations
+  initial_state:
+    location_id: gatehouse
+    status: idle
+    integrity: 100
+    stamina: 92
+  inventory:
+    fresh_water: 1
+    food_ration: 1
+- id: dockhand_nia
+  name: Nia
+  role: commons_dockhand
+  controller: bt
+  bt_priority:
+  - gather_driftwood
+  - gather_shellfish
+  ultimate_goal: Keep a small reserve of repair material moving through the quay.
+  traits:
+    steady: 0.8
+  beliefs: []
+  needs:
+    hydration: 76
+    satiety: 72
+    belonging: 60
+    purpose: 58
+  capabilities:
+    gathering: 0.62
+    crafting: 0.28
+  initial_bt_ids:
+  - gather_driftwood
+  - gather_shellfish
+  - craft_rations
+  initial_state:
+    location_id: commons_quay
+    status: idle
+    integrity: 100
+    stamina: 86
+  inventory:
+    fresh_water: 1
+    food_ration: 1
+- id: dockhand_ren
+  name: Ren
+  role: commons_dockhand
+  controller: bt
+  bt_priority:
+  - gather_shellfish
+  - gather_water
+  ultimate_goal: Keep the marsh harvest within its renewable limit.
+  traits:
+    observant: 0.82
+  beliefs: []
+  needs:
+    hydration: 74
+    satiety: 72
+    belonging: 57
+    purpose: 60
+  capabilities:
+    gathering: 0.58
+    crafting: 0.28
+  initial_bt_ids:
+  - gather_shellfish
+  - gather_water
+  - craft_rations
+  initial_state:
+    location_id: marsh_edge
+    status: idle
+    integrity: 100
+    stamina: 88
+  inventory:
+    fresh_water: 1
+    food_ration: 1

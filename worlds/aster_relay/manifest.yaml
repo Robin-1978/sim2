@@ -1,0 +1,23 @@
+config_version: aster-relay-1
+world_id: aster_relay
+name: Aster Relay
+time_unit: minute
+start_world_minute: 0
+random_seed: 6021
+files:
+- actions.yaml
+- agents.yaml
+- attributes.yaml
+- behavior_trees.yaml
+- capabilities.yaml
+- evolution.yaml
+- factions.yaml
+- locations.yaml
+- objects.yaml
+- opening_events.yaml
+- player_template.yaml
+- recipes.yaml
+- rules.yaml
+- setting.yaml
+- story.yaml
+- world_state.yaml

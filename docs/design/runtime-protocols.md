@@ -233,3 +233,40 @@ God can use a larger evidence-read budget and WorldBuilder can request a larger
 completion budget. This gives users one place to inspect both model choice and
 spend for each Agent role, and keeps one world's YAML from silently changing
 another world's LLM cost.
+
+## Background controllers and expanding topology
+
+A world may mark an agent definition with `controller: bt` (or `bt_only`). Such
+an actor is a persistent background character: the scheduler selects one
+currently executable behavior from its configured BT catalog, then submits the
+same `BehaviorIntent` gateway used by an LLM. It receives no LLM decision or
+reflection call. `bt_priority` is only a tie breaker; a configured urgent need
+such as food or water wins before optional work. This keeps crowd actors cheap
+without creating a second execution engine. Important NPCs keep the default
+`controller: llm`, memory, reflection and social decisions.
+
+A BT controller is not an ambient shortcut. Travel, reservations, costs,
+interruptions, Action effects, outcomes and event wakes all pass through the
+normal Platform transaction. A package can therefore assign different BT
+catalogs to dockhands, traders, guards and seasonal workers. A future large
+population optimization may replace many identical actors with cohorts, but a
+cohort must compile to the same typed outcome contract before it is introduced.
+
+God can extend the map in two validated steps: create a new location entity with
+its configured tags and then submit a `route` world change connecting it to an
+existing location with a positive distance. Platform writes both directions
+atomically and rejects missing endpoints, duplicate edges and non-positive
+weights. The new place is not considered visited until a resident executes a
+travel/exploration behavior. Story may frame the discovery but cannot assert
+that movement occurred.
+
+Survival is a hard constraint expressed by configured needs and critical
+Effects, not a hidden global hierarchy. A controller may choose purpose or
+belonging while needs are healthy; once a survival need crosses its configured
+critical threshold, only executable recovery choices should outrank optional
+work. Theft, raids, attacks and war remain optional world-content definitions:
+they must declare visible targets, permissions/relations, conserved costs,
+observable target effects and a failure path. The runtime does not add a
+universal morality or war branch to every world. A coastal world can introduce
+a rival salvage faction later through the same entity, route, Action and BT
+proposals after the evidence supports that escalation.

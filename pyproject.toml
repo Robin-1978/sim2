@@ -34,6 +34,8 @@ exclude = ["artifacts*", "docs*", "examples*", "scripts*", "tests*"]
 sim2 = ["world_builder/*.yaml", "web/*.html", "web/*.css", "web/*.js"]
 "worlds.starter_village" = ["*.yaml", "prompts/*.yaml"]
 "worlds.three_lanterns_town" = ["*.yaml"]
+"worlds.aster_relay" = ["*.yaml"]
+"worlds.tidebound_commons" = ["*.yaml"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

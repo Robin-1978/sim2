@@ -208,6 +208,8 @@ def world_template_schema() -> dict[str, Any]:
             "needs": {"type": "object"},
             "capabilities": {"type": "object"},
             "initial_bt_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+            "controller": {"type": "string", "enum": ["llm", "bt", "bt_only", "behavior_tree"]},
+            "bt_priority": {"type": "array", "items": {"type": "string"}},
             "initial_state": {"type": "object"},
             "inventory": {"type": "object"},
         },
@@ -605,6 +607,12 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
                 errors.append(f"agent {agent.get('id')} references undeclared need {need_id}")
         if not agent.get("initial_bt_ids"):
             errors.append(f"agent {agent.get('id')} requires at least one initial behavior")
+        controller = str(agent.get("controller") or "llm").casefold()
+        if controller not in {"llm", "bt", "bt_only", "behavior_tree"}:
+            errors.append(f"agent {agent.get('id')} controller must be llm or bt")
+        for priority_id in agent.get("bt_priority", []) or []:
+            if str(priority_id) not in behavior_ids:
+                errors.append(f"agent {agent.get('id')} bt_priority references unknown behavior {priority_id}")
         for behavior_id in agent.get("initial_bt_ids", []) or []:
             if str(behavior_id) not in behavior_ids:
                 errors.append(f"agent {agent.get('id')} references unknown behavior {behavior_id}")
@@ -1205,6 +1213,10 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                 agent_id = agent["id"]
                 reflection_cadence = int(schedule.get("agent_reflection_minutes", 0) or 0)
                 innovation_cadence = int(schedule.get("agent_innovation_minutes", 0) or 0)
+                controller = str(agent.get("controller") or "llm").casefold()
+                if controller in {"bt", "bt_only", "behavior_tree"}:
+                    reflection_cadence = 0
+                    innovation_cadence = 0
                 if reflection_cadence > 0:
                     store.repositories.evolution.put_evolution_task(f"reflection:{agent_id}", "agent_reflection", agent_id, "daily_reflection", reflection_cadence, reflection_cadence)
                 if innovation_cadence > 0:

@@ -79,6 +79,14 @@ changes the database passed to `sim2 serve`; after creating a game it shows a
 new `sim2 serve --db ...` command, so the operator explicitly stops the current
 server before switching instances.
 
+`sim2 serve` now creates a local in-memory session boundary. `GET /session`
+returns a read-only observer token; entering a player returns a player token that
+is required for that player's view, actions, waiting and dialogue. Operator
+commands (`pause`, `resume`, `step`, `events`, `audit`) require the startup
+`operator_token` printed by the server or `SIM2_OPERATOR_TOKEN`. This is a local
+development boundary, not a replacement for production login and deployment
+authentication.
+
 网页默认先打开 **开始游戏**：选择玩家出身后，页面显示角色目标、需求条、
 当前位置、可见路线和行动卡。每张行动卡通过 `/player/act` 提交到 Platform；
 行动结果回到玩家事件流。**观察世界** 和 **设计世界** 仍分别用于旁观审查和

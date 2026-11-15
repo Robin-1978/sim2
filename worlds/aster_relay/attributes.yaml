@@ -1,0 +1,29 @@
+attributes:
+- id: integrity
+  kind: state
+  label: Integrity
+  unit: '%'
+  min: 0
+  max: 100
+  default: 90
+  vital: true
+  cost_mode: decrease
+  prompt: Higher means the operator is physically well.
+- id: charge
+  kind: state
+  label: Charge
+  unit: '%'
+  min: 0
+  max: 100
+  default: 90
+  capacity: true
+  cost_mode: decrease
+  prompt: Higher means more short-term operating capacity.
+- id: focus
+  kind: need
+  label: Focus
+  unit: points
+  min: 0
+  max: 100
+  default: 70
+  prompt: Higher means the operator can sustain a meaningful technical task.

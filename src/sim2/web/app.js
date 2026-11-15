@@ -19,6 +19,7 @@
     playerId: null,
     playerData: null,
     playerEntry: null,
+    sessionToken: null,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -31,7 +32,7 @@
 
   async function request(path, options = {}) {
     const response = await fetch(path, {
-      headers: { "content-type": "application/json", ...(options.headers || {}) },
+      headers: { "content-type": "application/json", ...(state.sessionToken ? { "x-sim2-session": state.sessionToken } : {}), ...(options.headers || {}) },
       ...options,
     });
     const type = response.headers.get("content-type") || "";
@@ -304,6 +305,9 @@
       const result = await request("/players", { method: "POST", body: JSON.stringify({ player_id: playerId, origin_id: originId, name: name || undefined }) });
       if (result.status !== "accepted") throw new Error(result.message || "玩家进入失败");
       state.playerId = playerId;
+      state.sessionToken = result.session_token || state.sessionToken;
+      localStorage.setItem("sim2_player_id", playerId);
+      if (result.session_token) localStorage.setItem("sim2_player_token", result.session_token);
       await loadPlayerView();
       switchView("play-view");
       setPlayerResult("你已经进入世界。先看看周围，再选择下一步。", true);
@@ -338,7 +342,8 @@
       $("player-setup").classList.add("hidden");
       $("player-world").classList.remove("hidden");
       $("play-world-time").textContent = data.world_time?.label || "—";
-    } catch (error) { setPlayerResult(error.message || "玩家状态暂不可用", false); }
+      return true;
+    } catch (error) { setPlayerResult(error.message || "玩家状态暂不可用", false); return false; }
   }
 
   function renderPlayerWorld(data) {
@@ -659,8 +664,11 @@
     setEditorMode("guided");
     document.querySelectorAll(".mode-tab").forEach((tab) => tab.addEventListener("click", () => switchView(tab.dataset.view)));
     $("refresh-button").addEventListener("click", () => refreshRuntime(true)); $("pause-button").addEventListener("click", () => control("/pause")); $("step-button").addEventListener("click", () => control("/step")); $("toggle-ticks").addEventListener("click", () => { state.includeTicks = !state.includeTicks; $("toggle-ticks").textContent = state.includeTicks ? "隐藏 tick" : "显示 tick"; refreshRuntime(true); });
-    $("open-player").addEventListener("click", () => switchView("play-view")); $("play-enter").addEventListener("click", enterPlayer); $("play-player-origin").addEventListener("change", updateOriginPreview); $("player-refresh").addEventListener("click", loadPlayerView); $("player-send-dialogue").addEventListener("click", sendPlayerDialogue); $("player-leave").addEventListener("click", () => { state.playerId = null; state.playerData = null; $("player-world").classList.add("hidden"); $("player-setup").classList.remove("hidden"); setPlayerResult("已退出当前角色。", true); }); $("send-dialogue").addEventListener("click", sendDialogue); $("create-instance").addEventListener("click", createNewInstance);
+    $("open-player").addEventListener("click", () => switchView("play-view")); $("play-enter").addEventListener("click", enterPlayer); $("play-player-origin").addEventListener("change", updateOriginPreview); $("player-refresh").addEventListener("click", loadPlayerView); $("player-send-dialogue").addEventListener("click", sendPlayerDialogue); $("player-leave").addEventListener("click", () => { state.playerId = null; state.playerData = null; state.sessionToken = null; localStorage.removeItem("sim2_player_id"); localStorage.removeItem("sim2_player_token"); $("player-world").classList.add("hidden"); $("player-setup").classList.remove("hidden"); setPlayerResult("已退出当前角色。", true); }); $("send-dialogue").addEventListener("click", sendDialogue); $("create-instance").addEventListener("click", createNewInstance);
     $("new-draft").addEventListener("click", () => setDraft(defaultTemplate(), { increment: true, clearSource: true })); $("open-current").addEventListener("click", () => openPackage()); $("open-path").addEventListener("click", () => openPackage($("authoring-path").value.trim())); $("format-draft").addEventListener("click", () => { const parsed = parseDraft(); if (!parsed.error) setDraft(parsed.value); else renderDiagnostics({ status: "rejected", errors: [parsed.error] }); }); $("apply-quick-fields").addEventListener("click", () => { const parsed = parseDraft(); if (parsed.error) { renderDiagnostics({ status: "rejected", errors: [parsed.error] }); return; } parsed.value.world = { ...(parsed.value.world || {}), id: $("quick-world-id").value.trim(), title: $("quick-world-title").value.trim(), locale: $("quick-world-locale").value.trim() || "en" }; setDraft(parsed.value, { increment: true }); renderDiagnostics(null); }); $("guided-mode").addEventListener("click", () => setEditorMode("guided")); $("raw-mode").addEventListener("click", () => setEditorMode("raw")); $("build-world").addEventListener("click", buildWorldFromBrief); $("compile-draft").addEventListener("click", compileDraft); $("smoke-draft").addEventListener("click", smokeDraft); $("export-draft").addEventListener("click", exportDraft);
+    let observerToken = null; try { const session = await request("/session"); observerToken = session.session_token || null; state.sessionToken = observerToken; } catch (error) { /* public projections remain readable in local read-only mode */ }
+    const savedPlayer = localStorage.getItem("sim2_player_id"); const savedPlayerToken = localStorage.getItem("sim2_player_token");
+    if (savedPlayer && savedPlayerToken) { state.playerId = savedPlayer; state.sessionToken = savedPlayerToken; const restored = await loadPlayerView(); if (!restored) { state.playerId = null; state.sessionToken = observerToken; localStorage.removeItem("sim2_player_id"); localStorage.removeItem("sim2_player_token"); } }
     try { const response = await request("/authoring/schema"); state.schema = response.schema; renderSchema(); } catch (error) { $("schema-list").replaceChildren(make("div", "empty-state", "Schema 暂不可用")); }
     await loadPackageCatalog(); await loadPlayerEntry();
     await refreshRuntime(true); state.poll = window.setInterval(() => { if ($("runtime-view").classList.contains("active-view")) refreshRuntime(false); else if ($("play-view").classList.contains("active-view") && state.playerId) loadPlayerView(); }, 4000);

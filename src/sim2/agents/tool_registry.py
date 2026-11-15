@@ -361,12 +361,12 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "parameters": propose_definition_schema(),
     },
     "propose_world_change": {
-        "purpose": "Propose an evidence-backed rule, relationship, existing-faction change, or narrative event. Behavior outcomes own resources and personal/social value changes.",
+        "purpose": "Propose an evidence-backed rule, relationship, route connection, existing-faction change, or narrative event. Behavior outcomes own resources and personal/social value changes.",
         "kind": "intent",
         "parameters": {
             "type": "object",
             "properties": {
-                "change_type": {"type": "string", "enum": ["world_property", "rule", "relationship", "faction", "event"], "description": "Choose exactly one: world_property, rule, relationship, faction, or event."},
+                "change_type": {"type": "string", "enum": ["world_property", "rule", "relationship", "route", "faction", "event"], "description": "Choose exactly one: world_property, rule, relationship, route, faction, or event."},
                 "summary": {"type": "string"},
                 "scope": {"type": "string"},
                 "conditions": {"type": "array", "items": {"type": "string"}},
@@ -389,6 +389,17 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                         "action_names": {"type": "array", "items": {"type": "string"}, "description": "Optional visible Action names to block when the typed effect is a denial."},
                     },
                     "required": ["id", "condition", "effect"],
+                    "additionalProperties": False,
+                },
+                "route": {
+                    "type": "object",
+                    "description": "Connect two existing or newly registered visible locations with a weighted edge. This changes topology only; travel still consumes configured time and stamina.",
+                    "properties": {
+                        "from": {"type": "string", "description": "Exact visible origin location name."},
+                        "to": {"type": "string", "description": "Exact visible destination location name."},
+                        "distance": {"type": "number", "minimum": 0.1, "description": "Positive distance units used by configured travel conversion."},
+                    },
+                    "required": ["from", "to", "distance"],
                     "additionalProperties": False,
                 },
                 "relationship": {
@@ -498,8 +509,8 @@ def _tool_for_role(role: str, name: str) -> dict[str, Any]:
     if name == "propose_world_change" and role == "god":
         definition["purpose"] = "Propose an evidence-backed rule, relationship, faction update, or narrative event. Existing world properties must be created through propose_definition, and behavior produces resource and personal/social values."
         change_type = definition["parameters"]["properties"]["change_type"]
-        change_type["enum"] = ["rule", "relationship", "faction", "event"]
-        change_type["description"] = "Choose exactly one: rule, relationship, faction, or event. Do not directly set a world property."
+        change_type["enum"] = ["rule", "relationship", "route", "faction", "event"]
+        change_type["description"] = "Choose exactly one: rule, relationship, route, faction, or event. Do not directly set a world property."
         definition["parameters"]["properties"].pop("property", None)
         definition["parameters"]["properties"].pop("value", None)
     return {"name": name, **definition, "input": definition["parameters"]}

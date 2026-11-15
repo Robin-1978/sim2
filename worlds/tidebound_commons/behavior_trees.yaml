@@ -1,0 +1,464 @@
+behavior_trees:
+- id: inspect_gate
+  agent_label: Inspect Tide Gate
+  summary: Inspect Tide Gate
+  description: Measure the damaged gate before committing shared materials.
+  entry_conditions:
+  - actor.can_inspect
+  - actor.alive
+  estimated_minutes: 31
+  cooldown_minutes: 360
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: gatehouse
+  - type: action
+    action_id: inspect_object
+    parameters:
+      object_id: tide_gate
+  success_results:
+  - inspection_completed
+  failure_results:
+  - denied
+  - interrupted
+  outcome_events:
+  - event_type: gate.inspected
+    wake:
+    - story
+    summary: A measured tide gate inspection was completed.
+  goal_tags:
+  - infrastructure
+  - safety
+  drive_tags:
+  - purpose
+  - belonging
+- id: repair_gate
+  agent_label: Repair Tide Gate
+  summary: Repair Tide Gate
+  description: Carry a repair kit to the gatehouse and spend it on a measured repair.
+  entry_conditions:
+  - actor.can_repair
+  - actor.alive
+  - actor.inventory.repair_kit >= 1
+  estimated_minutes: 77
+  cooldown_minutes: 720
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: gatehouse
+  - type: action
+    action_id: repair_tide_gate
+    parameters: {}
+  success_results:
+  - tide_gate_repaired
+  failure_results:
+  - repair_failed
+  - interrupted
+  outcome_events:
+  - event_type: tide_gate.repaired
+    wake:
+    - story
+    - god
+    summary: A carried repair kit was spent and the tide gate integrity increased.
+  goal_tags:
+  - repair
+  - safety
+  - public
+  drive_tags:
+  - purpose
+  - belonging
+- id: tune_signal
+  agent_label: Tune Seasonal Signal
+  summary: Tune Seasonal Signal
+  description: Use a repair kit to retune the lens once the tide gate can hold.
+  entry_conditions:
+  - actor.can_repair
+  - actor.alive
+  - actor.inventory.repair_kit >= 1
+  - world.tide_gate_integrity >= 0.56
+  estimated_minutes: 62
+  cooldown_minutes: 720
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: gatehouse
+  - type: action
+    action_id: tune_signal
+    parameters: {}
+  success_results:
+  - signal_tuned
+  failure_results:
+  - tuning_failed
+  - interrupted
+  outcome_events:
+  - event_type: signal.tuned
+    wake:
+    - story
+    - god
+    summary: A carried repair kit was spent to retune the seasonal signal lens.
+  goal_tags:
+  - signal
+  - route
+  drive_tags:
+  - purpose
+  - safety
+- id: gather_water
+  agent_label: Draw Fresh Water
+  summary: Draw Fresh Water
+  description: Bring two units of renewable freshwater from the marsh pool.
+  entry_conditions:
+  - actor.can_gather
+  - actor.alive
+  estimated_minutes: 95
+  cooldown_minutes: 240
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: marsh_edge
+  - type: action
+    action_id: gather_resource
+    parameters:
+      resource_tag: fresh_water
+      location_id: marsh_edge
+  success_results:
+  - resource_collected
+  failure_results:
+  - resource_empty
+  - gathering_failed
+  outcome_events:
+  - event_type: resource.gathered
+    wake:
+    - story
+    summary: Freshwater was physically collected from the marsh pool.
+    data:
+      resource_id: fresh_water
+      result_kind: water_collected
+  goal_tags:
+  - water
+  - supply
+  drive_tags:
+  - hydration
+  - purpose
+- id: gather_shellfish
+  agent_label: Gather Shellfish
+  summary: Gather Shellfish
+  description: Harvest a small renewable shellfish catch without emptying the bed.
+  entry_conditions:
+  - actor.can_gather
+  - actor.alive
+  estimated_minutes: 95
+  cooldown_minutes: 240
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: marsh_edge
+  - type: action
+    action_id: gather_resource
+    parameters:
+      resource_tag: shellfish
+      location_id: marsh_edge
+  success_results:
+  - resource_collected
+  failure_results:
+  - resource_empty
+  - gathering_failed
+  outcome_events:
+  - event_type: resource.gathered
+    wake:
+    - story
+    - god
+    summary: Shellfish were physically collected from a renewable bed.
+    data:
+      resource_id: shellfish
+      result_kind: food_material_collected
+  goal_tags:
+  - food
+  - supply
+  drive_tags:
+  - satiety
+  - purpose
+- id: gather_driftwood
+  agent_label: Salvage Driftwood
+  summary: Salvage Driftwood
+  description: Collect usable driftwood from the quay after a safe tide.
+  entry_conditions:
+  - actor.can_gather
+  - actor.alive
+  estimated_minutes: 80
+  cooldown_minutes: 240
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: commons_quay
+  - type: action
+    action_id: gather_resource
+    parameters:
+      resource_tag: driftwood
+      location_id: commons_quay
+  success_results:
+  - resource_collected
+  failure_results:
+  - resource_empty
+  - gathering_failed
+  outcome_events:
+  - event_type: resource.gathered
+    wake:
+    - story
+    summary: Driftwood was salvaged and entered a resident's carried inventory.
+    data:
+      resource_id: driftwood
+      result_kind: repair_material_collected
+  goal_tags:
+  - repair
+  - supply
+  drive_tags:
+  - purpose
+- id: craft_repair_kit
+  agent_label: Craft Repair Kit
+  summary: Craft Repair Kit
+  description: Use two driftwood and one shellfish at the workshop to make one repair
+    kit.
+  entry_conditions:
+  - actor.can_craft
+  - actor.alive
+  - recipe.available
+  - inputs.available
+  estimated_minutes: 75
+  cooldown_minutes: 720
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: workshop
+  - type: action
+    action_id: craft_recipe
+    parameters:
+      recipe_id: repair_kit
+      station_id: context.station_id
+  success_results:
+  - recipe_completed
+  failure_results:
+  - crafting_failed
+  - interrupted
+  outcome_events:
+  - event_type: repair_kit.crafted
+    wake:
+    - story
+    summary: A repair kit was made from carried, conserved materials.
+  goal_tags:
+  - crafting
+  - repair
+  drive_tags:
+  - purpose
+  - belonging
+- id: craft_rations
+  agent_label: Preserve Marsh Rations
+  summary: Preserve Marsh Rations
+  description: Turn shellfish and freshwater into three carried food rations.
+  entry_conditions:
+  - actor.can_craft
+  - actor.alive
+  - recipe.available
+  - inputs.available
+  estimated_minutes: 60
+  cooldown_minutes: 360
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: workshop
+  - type: action
+    action_id: craft_recipe
+    parameters:
+      recipe_id: preserved_rations
+      station_id: context.station_id
+  success_results:
+  - recipe_completed
+  failure_results:
+  - crafting_failed
+  - interrupted
+  outcome_events:
+  - event_type: rations.preserved
+    wake:
+    - story
+    summary: Three food rations were preserved from carried marsh materials.
+  goal_tags:
+  - crafting
+  - food
+  drive_tags:
+  - satiety
+  - belonging
+- id: research_chart
+  agent_label: Research Drowned Chart
+  summary: Research Drowned Chart
+  description: Advance the next open stage of the observatory chart.
+  no_op_travel_minutes: 0
+  parameter_defaults:
+    source_id: drowned_chart
+  agent_parameters:
+    source_id:
+      type: string
+      required: true
+      max_length: 120
+      description: Exact visible research source name.
+  entry_conditions:
+  - actor.can_research
+  - actor.alive
+  estimated_minutes: 121
+  cooldown_minutes: 720
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: context.source_location_id
+  - type: action
+    action_id: research_source
+    parameters:
+      source_id: context.source_id
+  success_results:
+  - research_completed
+  failure_results:
+  - failed
+  - interrupted
+  outcome_events:
+  - event_type: chart.research_completed
+    wake:
+    - story
+    - god
+    summary: A new verified chart fact was recorded at the drowned observatory.
+  goal_tags:
+  - research
+  - route
+  drive_tags:
+  - purpose
+- id: explore_observatory
+  agent_label: Survey Drowned Observatory
+  summary: Survey Drowned Observatory
+  description: Carry one ration and map the next exposed part of the observatory.
+  entry_conditions:
+  - actor.can_explore
+  - actor.alive
+  - actor.inventory.food_ration >= 1
+  estimated_minutes: 153
+  cooldown_minutes: 720
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: drowned_observatory
+  - type: action
+    action_id: explore_area
+    parameters:
+      area_id: drowned_observatory
+  success_results:
+  - exploration_completed
+  failure_results:
+  - failed
+  - interrupted
+  outcome_events:
+  - event_type: observatory.surveyed
+    wake:
+    - story
+    summary: A resident surveyed a newly exposed observatory section.
+  goal_tags:
+  - exploration
+  - route
+  drive_tags:
+  - purpose
+  - satiety
+- id: communicate
+  agent_label: Exchange Commons Information
+  summary: Exchange Commons Information
+  description: Share one grounded observation or request with another resident.
+  entry_conditions:
+  - actor.can_speak
+  - actor.alive
+  - target.available
+  estimated_minutes: 15
+  cooldown_minutes: 240
+  agent_parameters:
+    topic:
+      type: string
+      required: true
+      max_length: 120
+      description: A concrete topic grounded in current facts.
+    message:
+      type: string
+      required: true
+      max_length: 240
+      description: Two concise sentences based on observed events.
+  nodes:
+  - type: action
+    action_id: communicate
+    parameters:
+      target_id: context.target_id
+      topic: context.topic
+      message: context.message
+  success_results:
+  - dialogue_recorded
+  failure_results:
+  - conversation_refused
+  - participant_left
+  outcome_events:
+  - event_type: commons.conversation_completed
+    wake:
+    - story
+    summary: A resident shared a grounded observation with another resident.
+  goal_tags:
+  - coordination
+  - belonging
+  drive_tags:
+  - belonging
+  - purpose
+- id: eat_ration
+  agent_label: Eat Preserved Ration
+  summary: Eat Preserved Ration
+  entry_conditions:
+  - actor.alive
+  - actor.inventory.food_ration >= 1
+  - actor.need.satiety <= context.satiety_alert_threshold
+  estimated_minutes: 5
+  nodes:
+  - type: action
+    action_id: eat_ration
+    parameters:
+      item_id: context.food_item
+  success_results:
+  - ration_eaten
+  failure_results:
+  - eating_failed
+  kind: fallback
+  goal_tags:
+  - food
+  - recovery
+  drive_tags:
+  - satiety
+- id: drink_water
+  agent_label: Drink Fresh Water
+  summary: Drink Fresh Water
+  entry_conditions:
+  - actor.alive
+  - actor.inventory.fresh_water >= 1
+  - actor.need.hydration <= context.hydration_alert_threshold
+  estimated_minutes: 5
+  nodes:
+  - type: action
+    action_id: drink_water
+    parameters:
+      item_id: context.water_item
+  success_results:
+  - water_drunk
+  failure_results:
+  - drinking_failed
+  kind: fallback
+  goal_tags:
+  - water
+  - recovery
+  drive_tags:
+  - hydration

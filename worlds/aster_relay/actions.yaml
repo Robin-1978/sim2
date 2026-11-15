@@ -1,0 +1,107 @@
+actions:
+- id: travel_to
+  version: 1
+  description: Move along a configured route.
+  parameters:
+    location_id: string
+  preconditions:
+  - route.known
+  - actor.mobile
+  - destination.reachable
+  requires_destination: true
+  completion:
+    if_already_at_destination: true
+  duration:
+    mode: route_distance
+  costs:
+    reserve: {}
+    per_minute:
+      charge: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success:
+    condition: actor.state.location_id == context.destination_id
+    result: arrived
+  effects:
+  - type: location_set
+    location_id: context.location_id
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  kind: atomic
+  executor: effect_pipeline
+- id: research_source
+  version: 1
+  description: Study one configured archive source.
+  parameters:
+    source_id: string
+  preconditions:
+  - actor.can_research
+  - research.new_fact_available
+  duration:
+    minutes: 60
+  costs:
+    reserve: {}
+    per_minute:
+      charge: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: need_delta
+    need: focus
+    delta: 0.5
+  progress:
+    key: research:{source_id}
+    scope: world
+    amount: 1
+    wake:
+    - story
+    - god
+  success:
+    condition: research.new_fact_found
+    result: research_completed
+  failure:
+    condition: source.destroyed
+    result: failed
+  kind: atomic
+  executor: effect_pipeline
+- id: inspect_archive
+  version: 1
+  description: Inspect the public reserve and archive console until the configured
+    stability review threshold.
+  parameters:
+    object_id: string
+  preconditions:
+  - actor.can_stewardship
+  - world.relay_stability < 0.55
+  duration:
+    minutes: 15
+  costs:
+    reserve: {}
+    per_minute:
+      charge: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: relay_stability
+    delta: 0.02
+    maximum: 1.0
+  success:
+    condition: actor.alive
+    result: archive_inspected
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  information:
+    event_type: archive.inspected
+    summary: The relay archive and public reserve were inspected.
+    source_type: inspection
+    confidence: 0.85
+    result: archive_inspected
+    record_object_discovery: false
+  kind: atomic
+  executor: effect_pipeline

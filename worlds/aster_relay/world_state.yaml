@@ -1,0 +1,4 @@
+world_state:
+  properties:
+    energy_reserve: 0
+    relay_stability: 0.45

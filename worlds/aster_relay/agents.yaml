@@ -1,0 +1,27 @@
+agents:
+- id: mira
+  name: Mira
+  role: relay_researcher
+  ultimate_goal: Keep the relay useful by turning verified archive facts into safer
+    public systems.
+  traits:
+    curious: 0.9
+    careful: 0.85
+  beliefs: []
+  needs:
+    focus: 70
+  capabilities:
+    research: 0.95
+    stewardship: 0.75
+  initial_bt_ids:
+  - study_source
+  - inspect_archive
+  research_targets:
+  - signal_archive
+  initial_state:
+    location_id: relay_lab
+    status: idle
+    integrity: 100
+    charge: 90
+  inventory:
+    energy_cell: 2

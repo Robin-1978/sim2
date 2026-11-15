@@ -514,3 +514,18 @@ whole package before SQLite exists. Every actual execution mechanism also has
 focused runtime tests; validation alone does not prove that a world is
 balanced, so a new content pack should still run a deterministic week and a
 real-model audit before release.
+
+### Background population and map growth
+
+An agent entry may set `controller: bt` and an optional `bt_priority` list. The
+scheduler then runs the selected full behavior tree without an LLM call; the
+actor still has persistent needs, inventory, travel, reservations, Action
+results and event history. Keep `controller` omitted (the default `llm`) for
+named characters whose memories, reflection and social choices matter. This is
+a content choice, not a Platform world branch.
+
+For expansion, God may create a location entity after verified research and then
+submit a `route` world change with `from`, `to` and a positive `distance`. The
+route is committed in both directions in one transaction. A route proposal is
+a topology change only; a later NPC behavior must pay the configured travel
+cost and produce the exploration result.

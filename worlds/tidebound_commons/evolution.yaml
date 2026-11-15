@@ -1,0 +1,145 @@
+cadence:
+  reflection: 1d
+wakes:
+- id: chart_synthesis
+  "on": chart.research_completed
+  for: god
+  count: 2
+  every: 3d
+  distinct_by: [source_id, stage_id]
+  tools: [query_history, query_knowledge_gaps, propose_entity, propose_definition, propose_world_change, wait]
+  purpose: Two distinct verified chart stages justify one new world-level continuation, not a duplicate research page.
+  result: Continue the active question when it remains open; otherwise create at most one genuinely new location or route object with a reachable route connection, then register the reciprocal weighted route with propose_world_change; never claim that a new place is visited until a resident executes travel.
+- id: gate_outcome_review
+  "on": tide_gate.repaired
+  for: god
+  count: 2
+  every: 3d
+  tools: [query_history, propose_definition, propose_entity, wait]
+  purpose: Repeated repairs are evidence that the commons needs a durable maintenance or transport structure.
+  result: Propose one conserved, reachable structure or reusable behavior that uses existing materials; do not mint stock or repeat the same repair behavior.
+- id: marsh_flow_review
+  "on": resource.gathered
+  for: god
+  count: 4
+  every: 2d
+  distinct_by: [resource_id, result_kind]
+  tools: [query_history, propose_definition, wait]
+  purpose: Repeated renewable harvest outcomes justify improving preservation, storage, or safe transport.
+  result: Add one executable improvement only if the verified harvest and current inventory support it; otherwise wait.
+- id: gate_story
+  "on": tide_gate.repaired
+  for: story
+  tools: [query_history, propose_story_beat, wait]
+  purpose: Turn a verified repair into the next grounded public choice.
+  result: Connect the repair to one already executable next behavior; never invent a storm outcome or a completed journey.
+- id: chart_story
+  "on": chart.research_completed
+  for: story
+  tools: [query_history, query_knowledge_gaps, propose_story_beat, wait]
+  purpose: Turn a verified chart stage into a chapter that names the next unanswered question.
+  result: Make the new fact actionable for its audience and preserve the unresolved part of the research; do not claim the full route is open before both stages.
+- id: public_milestone_story
+  "on": tide_gate.ready
+  for: story
+  tools: [query_history, propose_story_beat, wait]
+  purpose: A verified public threshold deserves a chapter transition.
+  result: Describe the threshold and offer one concrete decision already supported by the world state.
+- id: research_progress_god
+  "on": research.completed
+  for: god
+  count: 2
+  every: 3d
+  distinct_by: [source_id, stage_id]
+  tools: [query_history, query_knowledge_gaps, propose_entity, propose_definition, wait]
+  purpose: Two distinct verified research outcomes justify reviewing the next unanswered world question.
+  result: Continue one active gap or add one distinct executable continuation only when evidence supports it; otherwise wait.
+
+- id: research_progress_story
+  "on": research.completed
+  for: story
+  tools: [query_history, query_knowledge_gaps, propose_story_beat, wait]
+  purpose: A verified research result should become an actionable chapter.
+  result: Connect the fact to one executable next behavior and preserve unresolved uncertainty.
+- id: inspection_story
+  "on": gate.inspected
+  for: story
+  count: 3
+  every: 1d
+  tools: [query_history, propose_story_beat, wait]
+  purpose: A measured gate inspection creates a grounded public choice.
+  result: Name the measured condition and offer repair or investigation already available.
+- id: harvest_story
+  "on": resource.gathered
+  for: story
+  count: 4
+  every: 2d
+  tools: [query_history, propose_story_beat, wait]
+  purpose: A physical harvest should connect to food or repair work.
+  result: Continue from the conserved material that actually entered an inventory.
+- id: kit_story
+  "on": repair_kit.crafted
+  for: story
+  tools: [query_history, propose_story_beat, wait]
+  purpose: A repair kit is a real preparation step, not a completed repair.
+  result: Offer the repair behavior while preserving that the gate is still damaged.
+- id: ration_story
+  "on": rations.preserved
+  for: story
+  tools: [query_history, propose_story_beat, wait]
+  purpose: Preserved food changes the next safe choice.
+  result: Mention the carried ration outcome without claiming public stock changed.
+- id: survey_story
+  "on": observatory.surveyed
+  for: story
+  tools: [query_history, propose_story_beat, wait]
+  purpose: A survey reveals a bounded new observation.
+  result: Connect the survey to the still-open chart question.
+- id: conversation_story
+  "on": commons.conversation_completed
+  for: story
+  tools: [query_history, propose_story_beat, wait]
+  purpose: A grounded conversation can carry an existing fact to another character.
+  result: Preserve testimony as testimony and suggest a behavior that can verify it.
+- id: milestone_story
+  "on": civilization.milestone
+  for: story
+  tools: [query_history, propose_story_beat, wait]
+  purpose: A verified civic milestone changes the available chapter.
+  result: Describe only the milestone that the evidence supports.
+- id: gate_ready_god
+  "on": tide_gate.ready
+  for: god
+  tools: [query_history, propose_entity, propose_definition, wait]
+  purpose: A repaired gate crossed a durable public threshold.
+  result: Propose one grounded next structure or wait when the existing options suffice.
+- id: signal_tuned_story
+  "on": signal.tuned
+  for: story
+  tools: [query_history, propose_story_beat, wait]
+  purpose: A real lens adjustment changes the reachable signal, but does not by itself open the route.
+  result: Describe the measured tuning and preserve the remaining threshold work.
+- id: signal_tuned_god
+  "on": signal.tuned
+  for: god
+  tools: [query_history, propose_definition, propose_entity, wait]
+  purpose: Repeated signal tuning is evidence for a route-level continuation.
+  result: Wait until the configured signal threshold is crossed, then propose one grounded external continuation.
+- id: signal_story
+  "on": signal.route_open
+  for: story
+  tools: [query_history, propose_story_beat, wait]
+  purpose: A verified signal route opens a new chapter.
+  result: Describe the route opportunity and one supported social choice.
+- id: signal_god
+  "on": signal.route_open
+  for: god
+  tools: [query_history, propose_entity, propose_definition, wait]
+  purpose: A stable signal can justify an external relationship or route object.
+  result: Create at most one reachable structure or wait when no evidence-backed addition is needed.
+- id: chart_milestone_god
+  "on": civilization.milestone
+  for: god
+  tools: [query_history, query_knowledge_gaps, propose_entity, propose_definition, wait]
+  purpose: Verified public chart knowledge can justify a structural continuation.
+  result: Continue an open gap or add one distinct world object only when the causal evidence supports it.

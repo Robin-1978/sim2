@@ -373,7 +373,7 @@ def test_model_tool_schemas_use_visible_names_instead_of_ids():
 def test_god_schema_does_not_offer_direct_world_property_mutation():
     world_change = next(schema for schema in tool_schemas_for_role("god") if schema["function"]["name"] == "propose_world_change")
     parameters = world_change["function"]["parameters"]
-    assert parameters["properties"]["change_type"]["enum"] == ["rule", "relationship", "faction", "event"]
+    assert parameters["properties"]["change_type"]["enum"] == ["rule", "relationship", "route", "faction", "event"]
     assert "property" not in parameters["properties"]
     assert "value" not in parameters["properties"]
     progress = next(schema for schema in tool_schemas_for_role("god") if schema["function"]["name"] == "record_world_progress")
@@ -4355,7 +4355,7 @@ def test_local_http_control_adapter_uses_platform(tmp_path: Path):
         with urlopen(base + "/health") as response:
             health = json.loads(response.read())
         assert health["status"] == "ok"
-        request = Request(base + "/pause", data=b'{"reason":"test"}', headers={"content-type": "application/json"}, method="POST")
+        request = Request(base + "/pause", data=b'{"reason":"test"}', headers={"content-type": "application/json", "x-sim2-session": server.operator_token}, method="POST")
         with urlopen(request) as response:
             paused = json.loads(response.read())
         assert paused["status"] == "paused"

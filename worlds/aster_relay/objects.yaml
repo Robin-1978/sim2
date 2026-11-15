@@ -1,0 +1,13 @@
+objects:
+- id: signal_archive
+  type: archive
+  name: Signal Archive
+  initial_state:
+    location_id: relay_lab
+    readable: true
+    status: partially_decoded
+  research_required: 2
+  research_discoveries:
+  - id: researched:signal_archive:route
+    fact: The archive encodes a route to an unregistered relay, but its second checksum
+      is still unresolved.

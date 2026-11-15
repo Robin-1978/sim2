@@ -1,0 +1,9 @@
+world_state:
+  properties:
+    tide_gate_integrity: 0.28
+    signal_reach: 0.18
+    food_reserve: 8
+    fresh_water_reserve: 20
+    maintenance_evidence: 0
+    storm_pressure: 0.42
+    public_confidence: 0.48

@@ -1,0 +1,23 @@
+recipes:
+- id: repair_kit
+  name: Tide Gate Repair Kit
+  station_tags: [craft]
+  inputs:
+  - {item: driftwood, quantity: 2}
+  - {item: shellfish, quantity: 1}
+  outputs: [{item: repair_kit, quantity: 1}]
+  requires: [{capability: crafting, min_level: 0.35}]
+  duration_minutes: 75
+  limits: [{item: repair_kit, max_total: 2}]
+  effects: [{op: capability.add_xp, capability: crafting, value: 0.02}]
+- id: preserved_rations
+  name: Preserved Marsh Rations
+  station_tags: [craft]
+  inputs:
+  - {item: shellfish, quantity: 2}
+  - {item: fresh_water, quantity: 1}
+  outputs: [{item: food_ration, quantity: 3}]
+  requires: [{capability: crafting, min_level: 0.25}]
+  duration_minutes: 60
+  limits: [{item: food_ration, max_total: 16}]
+  effects: [{op: capability.add_xp, capability: crafting, value: 0.02}]

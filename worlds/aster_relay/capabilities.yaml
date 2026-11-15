@@ -1,0 +1,13 @@
+capabilities:
+- id: research
+  name: Archive research
+  description: Turn repeated archive study into verified technical knowledge.
+  uses:
+  - research_source
+  xp_rule: one_verified_fact
+- id: stewardship
+  name: Power stewardship
+  description: Inspect and preserve the public energy reserve.
+  uses:
+  - inspect_archive
+  xp_rule: one_successful_inspection

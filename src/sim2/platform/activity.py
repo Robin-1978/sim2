@@ -61,6 +61,7 @@ class ActivityRuntimeMixin:
             "current_object": self._context.services["execution"]._entity_for_context(parameters.get("object_id")),
             "source": self._context.services["execution"]._entity_for_context(parameters.get("source_id")),
             "research_discoveries": self.store.repositories.memory.research_discoveries(str(parameters.get("source_id"))) if parameters.get("source_id") else [],
+            "research_stage_status": self.store.repositories.memory.research_stage_status(str(agent["id"]), str(parameters.get("source_id"))) if parameters.get("source_id") else [],
             "mapped_areas": self.store.repositories.memory.explored_areas(agent["id"]),
             "researched_sources": self.store.repositories.memory.researched_sources(agent["id"]),
             "known_fact_keys": [
@@ -721,6 +722,7 @@ class ActivityRuntimeMixin:
             "location": location,
             "source": source,
             "research_discoveries": self.store.repositories.memory.research_discoveries(str(source_id)) if source_id else [],
+            "research_stage_status": self.store.repositories.memory.research_stage_status(str(agent["id"]), str(source_id)) if source_id else [],
             "known_fact_keys": [
                 item.get("fact_key")
                 for item in self.store.repositories.memory.list_knowledge_facts(agent["id"], limit=1000)

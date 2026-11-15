@@ -17,7 +17,7 @@ class WorldChangesRuntimeMixin:
         if not proposal.get("change_type") or not proposal.get("summary"):
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "change_type and summary are required.", "retryable": True})
         change_type = str(proposal["change_type"])
-        if change_type not in {"world_property", "rule", "relationship", "faction", "event"}:
+        if change_type not in {"world_property", "rule", "relationship", "route", "faction", "event"}:
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "Unsupported world change type.", "failed_check": "change_type", "retryable": True})
         if change_type in {"world_property", "event"} and proposal.get("property"):
             current_properties = self.store.repositories.metadata.get("world_properties", {}) or {}
@@ -84,6 +84,23 @@ class WorldChangesRuntimeMixin:
                 return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": message, "failed_check": failed_check, "retryable": True})
             if proposed_id and any(str(item.get("id") or item.get("name") or "").strip() == proposed_id for item in existing_rules if isinstance(item, dict)):
                 return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "A world rule with this name is already registered; review its existing outcome instead of adding a duplicate.", "failed_check": "rule_duplicate", "retryable": True})
+        if change_type == "route":
+            route = proposal.get("route") if isinstance(proposal.get("route"), dict) else {}
+            source = self.targets.canonical_id(str(route.get("from") or ""))
+            target = self.targets.canonical_id(str(route.get("to") or ""))
+            distance = route.get("distance")
+            locations = {str(item.get("id")): item for item in self.store.repositories.entities.entities_of_type("location")}
+            if not source or source not in locations or not target or target not in locations:
+                return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "route.from and route.to must name existing locations.", "failed_check": "route_endpoint", "retryable": True})
+            if source == target:
+                return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "A route must connect two different locations.", "failed_check": "route_cycle", "retryable": True})
+            if isinstance(distance, bool) or not isinstance(distance, (int, float)) or float(distance) <= 0:
+                return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "route.distance must be positive.", "failed_check": "route_distance", "retryable": True})
+            source_data = self.store.repositories.entities.get_entity(source)
+            target_data = self.store.repositories.entities.get_entity(target)
+            if str(target) in {str(item) for item in (source_data.get("routes") or [])} and str(source) in {str(item) for item in (target_data.get("routes") or [])}:
+                return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "That route is already registered.", "failed_check": "route_duplicate", "retryable": True})
+            proposal = {**proposal, "route": {"from": source, "to": target, "distance": float(distance)}}
         if change_type == "relationship" and not isinstance(proposal.get("relationship"), dict):
             return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "relationship object is required for a relationship change.", "failed_check": "relationship", "retryable": True})
         if change_type == "faction" and not isinstance(proposal.get("faction"), dict):
@@ -165,6 +182,30 @@ class WorldChangesRuntimeMixin:
                 self._context.set_dependency("conditions", ConditionEngine(rules))
                 self._context.set_dependency("rule_compiler", self._context.services["api"]._new_rule_compiler())
                 effect = {"rule_added": dict(proposal["rule"]), "rule_count": len(world_rules)}
+            elif change_type == "route":
+                route = dict(proposal["route"])
+                source = str(route["from"])
+                target = str(route["to"])
+                distance = float(route["distance"])
+                source_data = self.store.repositories.entities.get_entity(source)
+                target_data = self.store.repositories.entities.get_entity(target)
+                source_routes = list(source_data.get("routes") or [])
+                target_routes = list(target_data.get("routes") or [])
+                if target not in source_routes:
+                    source_routes.append(target)
+                if source not in target_routes:
+                    target_routes.append(source)
+                source_distances = dict(source_data.get("route_distances") or {})
+                target_distances = dict(target_data.get("route_distances") or {})
+                source_distances[target] = distance
+                target_distances[source] = distance
+                source_data["routes"] = source_routes
+                source_data["route_distances"] = source_distances
+                target_data["routes"] = target_routes
+                target_data["route_distances"] = target_distances
+                self.store.repositories.entities.put_entity(source, "location", source_data.get("name", source), {key: value for key, value in source_data.items() if key not in {"id", "entity_type", "name"}})
+                self.store.repositories.entities.put_entity(target, "location", target_data.get("name", target), {key: value for key, value in target_data.items() if key not in {"id", "entity_type", "name"}})
+                effect = {"route_added": {"from": source, "to": target, "distance": distance}}
             elif change_type == "relationship":
                 relation = dict(proposal["relationship"])
                 source = relation.pop("from", relation.pop("from_id", ""))
@@ -248,6 +289,8 @@ class WorldChangesRuntimeMixin:
                 "rule_id": str(rule.get("id") or rule.get("name") or ""),
                 "followup_behaviors": list(rule.get("behavior_names") or rule.get("behavior_ids") or rule.get("action_names") or []),
             })
+        elif change_type == "route":
+            expected.update({"mode": "route_topology", "route": dict(effect.get("route_added") or proposal.get("route") or {})})
         elif change_type == "relationship":
             expected.update({"mode": "relationship_state", "relationship": dict(effect.get("relationship") or proposal.get("relationship") or {})})
         elif change_type == "faction":

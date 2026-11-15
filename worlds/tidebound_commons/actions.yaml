@@ -1,0 +1,228 @@
+actions:
+- id: travel_to
+  version: 1
+  description: Move along a configured route to a visible location.
+  parameters: {location_id: string}
+  preconditions: [route.known, actor.mobile, destination.reachable]
+  requires_destination: true
+  completion: {if_already_at_destination: true}
+  duration: {mode: route_distance}
+  costs: {reserve: {}, per_minute: {stamina: 0.12}, on_success: {}, on_failure: {}, refund: {}}
+  success: {condition: actor.state.location_id == context.destination_id, result: arrived}
+  effects: [{type: location_set, location_id: context.location_id}]
+  failure: {condition: actor.incapacitated, result: failed}
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: gather_resource
+  version: 1
+  description: Harvest a configured renewable resource node into the actor's carried inventory.
+  parameters: {resource_tag: string, location_id: string}
+  preconditions: [actor.can_gather, actor.alive, location.resource_node, route.known]
+  duration: {minutes: 90}
+  costs:
+    reserve: {resource_parameter: resource_tag, resource_amount: 2}
+    per_minute: {stamina: 0.18}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects: [{type: inventory_add, item: context.resource_tag, quantity: 2}]
+  success: {condition: resource.collected, result: resource_collected}
+  failure: {condition: resource.empty or actor.incapacitated, result: gathering_failed}
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: research_source
+  version: 1
+  description: Advance the next open stage of a configured research source.
+  parameters: {source_id: string}
+  preconditions: [actor.can_research, actor.alive, research.new_fact_available]
+  duration: {minutes: 120}
+  costs:
+    reserve: {}
+    per_minute: {stamina: 0.14}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects: [{type: need_delta, need: purpose, delta: 0.5}]
+  progress:
+    key: research:{source_id}
+    scope: world
+    amount: 1
+    wake: [story, god]
+  success: {condition: research.new_fact_found, result: research_completed}
+  failure: {condition: source.destroyed, result: failed}
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: inspect_object
+  version: 1
+  description: Inspect a public machine and publish a measured maintenance result.
+  parameters: {object_id: string}
+  preconditions: [actor.can_inspect, actor.alive, object.available]
+  duration: {minutes: 30}
+  costs:
+    reserve: {}
+    per_minute: {stamina: 0.1}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_delta, property: maintenance_evidence, delta: 1, maximum: 3}
+  - {type: need_delta, need: purpose, delta: 0.2}
+  success: {condition: actor.alive, result: inspection_completed}
+  failure: {condition: location.locked, result: denied}
+  information:
+    event_type: gate.inspected
+    summary: The tide gate was inspected and its maintenance condition was recorded.
+    source_type: inspection
+    confidence: 0.86
+    result: inspection_completed
+    record_object_discovery: false
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: craft_recipe
+  version: 1
+  description: Craft a configured recipe at the tide workshop.
+  parameters: {recipe_id: string, station_id: string}
+  preconditions: [actor.can_craft, actor.alive, recipe.available, station.available, inputs.available]
+  duration: {mode: recipe_duration}
+  costs:
+    reserve: {recipe_inputs: 1}
+    per_minute: {stamina: 0.16}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  success: {condition: outputs.created, result: recipe_completed}
+  failure: {condition: inputs.lost or station.damaged, result: crafting_failed}
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: repair_tide_gate
+  version: 1
+  description: Spend one carried repair kit to restore the public tide gate.
+  parameters: {}
+  preconditions: [actor.can_repair, actor.alive, actor.inventory.repair_kit >= 1, world.tide_gate_integrity < 1]
+  duration: {minutes: 75}
+  costs:
+    reserve: {}
+    per_minute: {stamina: 0.2}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory.consume_item, item: repair_kit, quantity: 1}
+  - {type: world_property_delta, property: tide_gate_integrity, delta: 0.28, maximum: 1}
+  - {type: world_property_delta, property: public_confidence, delta: 0.08, maximum: 1}
+  - {type: entity_state_set, entity_id: tide_gate, state: repaired, value: true}
+  - {type: public_event, event: tide_gate.repaired}
+  success: {condition: actor.alive, result: tide_gate_repaired}
+  failure: {condition: actor.incapacitated, result: repair_failed}
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: explore_area
+  version: 1
+  description: Survey a configured area and record a new route observation.
+  parameters: {area_id: string}
+  preconditions: [actor.can_explore, actor.alive, route.known, area.not_fully_mapped]
+  duration: {minutes: 150}
+  costs:
+    reserve: {food_ration: 1}
+    per_minute: {stamina: 0.2}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: need_delta, need: purpose, delta: 0.5}
+  success: {condition: area.survey_complete, result: exploration_completed}
+  failure: {condition: actor.incapacitated, result: failed}
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: communicate
+  version: 1
+  description: Exchange a short grounded message with another visible resident.
+  parameters: {target_id: string, topic: string, message: string}
+  preconditions: [actor.can_speak, actor.alive, target.available, communication.channel_open]
+  duration: {minutes: 15}
+  costs: {reserve: {}, per_minute: {}, on_success: {}, on_failure: {}, refund: {}}
+  effects: [{type: need_delta, need: belonging, delta: 0.2}]
+  success: {condition: dialogue.completed, result: dialogue_recorded}
+  failure: {condition: target.refused, result: conversation_refused}
+  information:
+    event_type: dialogue.recorded
+    summary: Two residents exchanged a grounded message about the commons.
+    source_type: testimony
+    confidence: 0.65
+    result: dialogue_recorded
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: eat_ration
+  version: 1
+  description: Eat one carried preserved ration.
+  parameters: {item_id: string}
+  parameter_defaults: {item_id: {resolver: context_value, key: food_item}}
+  preconditions: [actor.alive, actor.inventory.food_ration >= 1]
+  duration: {minutes: 5}
+  costs: {reserve: {}, per_minute: {}, on_success: {}, on_failure: {}, refund: {}}
+  effects:
+  - {type: inventory.consume_item, item: context.item_id, quantity: 1}
+  - {type: need_delta, need: satiety, delta: 34}
+  success: {condition: actor.alive, result: ration_eaten}
+  failure: {condition: actor.incapacitated, result: eating_failed}
+  interrupt_policy: cancel
+  interaction_policy: deny
+  kind: atomic
+  executor: effect_pipeline
+- id: drink_water
+  version: 1
+  description: Drink one carried unit of fresh water.
+  parameters: {item_id: string}
+  parameter_defaults: {item_id: {resolver: context_value, key: water_item}}
+  preconditions: [actor.alive, actor.inventory.fresh_water >= 1]
+  duration: {minutes: 5}
+  costs: {reserve: {}, per_minute: {}, on_success: {}, on_failure: {}, refund: {}}
+  effects:
+  - {type: inventory.consume_item, item: context.item_id, quantity: 1}
+  - {type: need_delta, need: hydration, delta: 34}
+  success: {condition: actor.alive, result: water_drunk}
+  failure: {condition: actor.incapacitated, result: drinking_failed}
+  interrupt_policy: cancel
+  interaction_policy: deny
+  kind: atomic
+  executor: effect_pipeline
+
+- id: tune_signal
+  version: 1
+  description: Spend one repair kit to retune the seasonal signal lens after the tide gate is stable.
+  parameters: {}
+  preconditions: [actor.can_repair, actor.alive, actor.inventory.repair_kit >= 1, world.tide_gate_integrity >= 0.56, world.signal_reach < 0.7]
+  duration: {minutes: 60}
+  costs:
+    reserve: {}
+    per_minute: {stamina: 0.16}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory.consume_item, item: repair_kit, quantity: 1}
+  - {type: world_property_delta, property: signal_reach, delta: 0.26, maximum: 1}
+  - {type: entity_state_set, entity_id: signal_lens, state: tuned, value: true}
+  - {type: public_event, event: signal.tuned}
+  success: {condition: actor.alive, result: signal_tuned}
+  failure: {condition: actor.incapacitated, result: tuning_failed}
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline

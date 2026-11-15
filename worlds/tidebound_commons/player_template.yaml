@@ -1,0 +1,4 @@
+player:
+  entry_location: commons_quay
+  origin_choices: [steward, forager, chart_keeper, ferry_runner]
+  initial_knowledge: []

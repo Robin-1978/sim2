@@ -81,6 +81,7 @@ def main() -> None:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8080)
     serve.add_argument("--authoring-root", type=Path, help="optional directory containing packages the web editor may open")
+    serve.add_argument("--operator-token", help="local token required for pause, step, audit and event injection; defaults to SIM2_OPERATOR_TOKEN or a generated token")
 
     for name, help_text in [("status", "show instance status"), ("health", "check database and runtime health"), ("timeline", "show the public third-person timeline"), ("map", "show the location topology and character positions"), ("pause", "pause world advancement"), ("resume", "resume world advancement"), ("step", "advance one world minute"), ("metrics", "show runtime metrics"), ("audit", "export event and Agent audit")]:
         command = sub.add_parser(name, help=help_text)
@@ -226,8 +227,9 @@ def main() -> None:
             platform.close()
         return
     if args.command == "serve":
-        server = ControlHTTPServer((args.host, args.port), args.db, authoring_root=args.authoring_root)
+        server = ControlHTTPServer((args.host, args.port), args.db, authoring_root=args.authoring_root, operator_token=args.operator_token)
         try:
+            print(json.dumps({"status": "listening", "url": f"http://{args.host}:{args.port}", "operator_token": server.operator_token}, ensure_ascii=False), flush=True)
             server.serve_forever()
         except KeyboardInterrupt:
             return

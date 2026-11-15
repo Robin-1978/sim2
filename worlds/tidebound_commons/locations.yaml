@@ -1,0 +1,57 @@
+locations:
+- id: commons_quay
+  name: Commons Quay
+  public: true
+  safe: true
+  tags: [public, social, market]
+  routes: [workshop, marsh_edge, gatehouse]
+  route_distances: {workshop: 1, marsh_edge: 2, gatehouse: 2}
+  map_position: {x: 0, y: 0}
+- id: workshop
+  name: Tide Workshop
+  public: true
+  safe: true
+  tags: [craft, public, safe]
+  routes: [commons_quay, gatehouse]
+  route_distances: {commons_quay: 1, gatehouse: 2}
+  map_position: {x: 1, y: 0}
+- id: marsh_edge
+  name: Salt Marsh Edge
+  public: true
+  safe: false
+  tags: [resource, exploration]
+  routes: [commons_quay, drowned_observatory]
+  route_distances: {commons_quay: 2, drowned_observatory: 2}
+  map_position: {x: -1, y: 1}
+- id: gatehouse
+  name: Tide Gatehouse
+  public: true
+  safe: false
+  tags: [defense, infrastructure]
+  routes: [commons_quay, workshop, drowned_observatory]
+  route_distances: {commons_quay: 2, workshop: 2, drowned_observatory: 3}
+  map_position: {x: 1, y: 1}
+- id: drowned_observatory
+  name: Drowned Observatory
+  public: true
+  safe: false
+  tags: [research, exploration]
+  routes: [marsh_edge, gatehouse]
+  route_distances: {marsh_edge: 2, gatehouse: 3}
+  map_position: {x: 0, y: 2}
+resources:
+- id: fresh_water
+  type: resource
+  name: Freshwater Pool
+  location_id: marsh_edge
+  initial_state: {location_id: marsh_edge, quantity: 20}
+- id: shellfish
+  type: resource
+  name: Shellfish Bed
+  location_id: marsh_edge
+  initial_state: {location_id: marsh_edge, quantity: 24}
+- id: driftwood
+  type: resource
+  name: Driftwood Beach
+  location_id: commons_quay
+  initial_state: {location_id: commons_quay, quantity: 16}

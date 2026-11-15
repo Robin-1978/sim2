@@ -1,0 +1,52 @@
+behavior_trees:
+- id: study_source
+  agent_label: Study Configured Source
+  summary: Study Configured Source
+  description: Use the reusable research behavior on one visible source.
+  no_op_travel_minutes: 0
+  agent_parameters:
+    source_id:
+      type: string
+      required: true
+      max_length: 120
+      description: Exact visible source name.
+  entry_conditions:
+  - actor.can_research
+  - actor.alive
+  estimated_minutes: 61
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: context.source_location_id
+  - type: action
+    action_id: research_source
+    parameters:
+      source_id: context.source_id
+  success_results:
+  - research_completed
+  failure_results:
+  - failed
+  - interrupted
+- id: inspect_archive
+  agent_label: Inspect Archive
+  summary: Inspect Archive
+  entry_conditions:
+  - actor.can_stewardship
+  - actor.alive
+  - world.relay_stability < 0.55
+  estimated_minutes: 16
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: relay_lab
+  - type: action
+    action_id: inspect_archive
+    parameters:
+      object_id: signal_archive
+  success_results:
+  - archive_inspected
+  failure_results:
+  - failed
+  - interrupted

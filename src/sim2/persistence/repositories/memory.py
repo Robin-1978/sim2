@@ -131,6 +131,59 @@ class MemoryRepository:
             discoveries.append(value)
         return discoveries
 
+    def research_stage_status(self, agent_id: str, source_id: str) -> list[dict[str, Any]]:
+        """Return stage availability without mistaking partial work for completion.
+
+        A research fact is recorded when a stage first yields a finding, while
+        its configured progress may still require additional work units. The
+        stage remains executable until its progress row reaches ``required``.
+        """
+
+        discoveries = self.research_discoveries(str(source_id))
+        try:
+            source = self.store.repositories.entities.get_entity(str(source_id))
+        except KeyError:
+            source = {}
+        state = source.get("initial_state") if isinstance(source.get("initial_state"), dict) else {}
+        configured_required = source.get("research_required", state.get("research_required"))
+        if configured_required is None:
+            configured_required = (self.store.repositories.metadata.get("rules", {}) or {}).get("research_default_required", 1)
+        try:
+            configured_required = max(1.0, float(configured_required))
+        except (TypeError, ValueError):
+            configured_required = 1.0
+        known = {
+            str(item.get("fact_key"))
+            for item in self.list_knowledge_facts(str(agent_id), limit=1000)
+            if item.get("fact_key")
+        }
+        owner = str(self.store.repositories.metadata.get("world_id", "world"))
+        rows = self.store.connection.execute(
+            "SELECT progress_key,current_value,required_value FROM progress_state WHERE owner_id=? AND (progress_key=? OR progress_key LIKE ?)",
+            (owner, f"research:{source_id}", f"research:{source_id}:%"),
+        ).fetchall()
+        progress = {str(row["progress_key"]): row for row in rows}
+        multi_stage = len(discoveries) > 1
+        result: list[dict[str, Any]] = []
+        for item in discoveries or [{"id": f"researched:{source_id}:stage_1", "fact": str(source.get("name") or source_id)}]:
+            stage_id = str(item.get("id") or "")
+            key = f"research:{source_id}:{stage_id}" if multi_stage else f"research:{source_id}"
+            row = progress.get(key)
+            required = item.get("required", configured_required)
+            try:
+                required = max(1.0, float(row["required_value"] if row else required))
+            except (TypeError, ValueError):
+                required = configured_required
+            current = float(row["current_value"] if row else (required if stage_id in known else 0.0))
+            result.append({
+                "id": stage_id,
+                "current": current,
+                "required": required,
+                "completed": current >= required,
+                "available": current < required and str(item.get("status") or "active").casefold() not in {"obsolete", "disabled"},
+            })
+        return result
+
     def research_source_catalog(self) -> list[dict[str, Any]]:
         """Return every configured entity that exposes research stages.
 

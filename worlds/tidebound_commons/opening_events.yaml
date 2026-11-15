@@ -1,0 +1,12 @@
+opening_events:
+- id: storm_watch_begins
+  type: storm.watch_begun
+  world_minute: 0
+  payload:
+    summary: A storm season watch begins; the tide gate is damaged and the drowned observatory is only partly readable.
+    pressure: 0.42
+- id: commons_pledge
+  type: commons.pledge_made
+  world_minute: 0
+  payload:
+    summary: Four residents agree to expose the cost of every shared repair and keep the marsh renewable.

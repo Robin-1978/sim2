@@ -1,0 +1,26 @@
+locations:
+- id: relay_lab
+  name: Relay Lab
+  public: true
+  safe: true
+  tags:
+  - work
+  - archive
+  routes:
+  - storage_ring
+- id: storage_ring
+  name: Storage Ring
+  public: true
+  safe: true
+  tags:
+  - resource
+  routes:
+  - relay_lab
+resources:
+- id: energy_reserve
+  type: resource
+  name: Public Energy Reserve
+  location_id: relay_lab
+  initial_state:
+    location_id: relay_lab
+    quantity: 0

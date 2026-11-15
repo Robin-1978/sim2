@@ -1499,6 +1499,7 @@ class AgentViewCompiler:
             except KeyError:
                 return "the referenced source does not exist"
             context["research_discoveries"] = self.memory_repo.research_discoveries(str(parameters["source_id"]))
+            context["research_stage_status"] = self.memory_repo.research_stage_status(str(agent.get("id")), str(parameters["source_id"]))
         if (
             action.get("duration", {}).get("mode") == "recipe_duration"
             or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
@@ -1590,10 +1591,12 @@ class AgentViewCompiler:
             if source_location and reachable and str(source_location) not in reachable:
                 continue
             discoveries = list(source.get("discoveries") or [])
+            stage_status = self.memory_repo.research_stage_status(str(agent.get("id")), source_id)
+            pending_ids = {str(item.get("id")) for item in stage_status if item.get("available")}
             pending = [
                 item for item in discoveries
                 if isinstance(item, dict)
-                and str(item.get("id") or "") not in known
+                and (str(item.get("id") or "") in pending_ids or (not stage_status and str(item.get("id") or "") not in known))
                 and str(item.get("status") or "active").casefold() not in {"obsolete", "disabled"}
             ]
             if not pending and discoveries:

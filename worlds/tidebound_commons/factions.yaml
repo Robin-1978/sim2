@@ -1,0 +1,5 @@
+factions:
+- id: commons_council
+  name: Commons Council
+  description: An informal council that decides how shared stores and risks are carried.
+relationships: []

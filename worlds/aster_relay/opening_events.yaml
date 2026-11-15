@@ -1,0 +1,7 @@
+opening_events:
+- id: probe_started
+  type: probe.started
+  world_minute: 0
+  payload:
+    summary: The Aster Relay evolution probe begins with one unresolved archive and
+      a depleted public reserve.

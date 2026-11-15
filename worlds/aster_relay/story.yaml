@@ -1,0 +1,5 @@
+emergent_source_event_types:
+- research.completed
+- resource.replenished
+- entity.created
+beats: []

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import yaml
@@ -12,11 +13,11 @@ from sim2.api.authoring import AuthoringService
 from sim2.bootstrap.service import create_instance
 
 
-def _json_request(url: str, payload: dict) -> dict:
+def _json_request(url: str, payload: dict, headers: dict[str, str] | None = None) -> dict:
     request = Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"content-type": "application/json"},
+        headers={"content-type": "application/json", **(headers or {})},
         method="POST",
     )
     with urlopen(request) as response:
@@ -132,15 +133,22 @@ def test_web_player_loop_exposes_actions_and_submits_through_platform(tmp_path: 
         assert entry["origins"]
         entered = _json_request(base + "/players", {"player_id": "web_player", "origin_id": entry["origins"][0]["id"], "name": "Web Player"})
         assert entered["status"] == "accepted"
-        with urlopen(base + "/player/view?player_id=web_player") as response:
+        try:
+            urlopen(base + "/player/view?player_id=web_player")
+        except HTTPError as error:
+            assert error.code == 403
+        else:
+            raise AssertionError("player view must require a local player session")
+        player_headers = {"x-sim2-session": entered["session_token"]}
+        with urlopen(Request(base + "/player/view?player_id=web_player", headers=player_headers)) as response:
             view = json.loads(response.read())
         assert view["status"] == "ok"
         assert view["player"]["name"] == "Web Player"
         assert view["actions"]
         travel = next(item for item in view["actions"] if item.get("kind") == "travel")
-        acted = _json_request(base + "/player/act", {"player_id": "web_player", "behavior_ref": travel["ref"], "parameters": travel["parameters"], "confidence": 1, "reason": "Player chose the route."})
+        acted = _json_request(base + "/player/act", {"player_id": "web_player", "behavior_ref": travel["ref"], "parameters": travel["parameters"], "confidence": 1, "reason": "Player chose the route."}, headers=player_headers)
         assert acted["status"] == "accepted"
-        with urlopen(base + "/player/view?player_id=web_player") as response:
+        with urlopen(Request(base + "/player/view?player_id=web_player", headers=player_headers)) as response:
             active_view = json.loads(response.read())
         assert active_view["active_task"]["action"] or active_view["active_task"]["bt"]
         assert not any(item.get("kind") == "travel" for item in active_view["actions"])
