@@ -141,9 +141,26 @@
     $("operator-unlock").classList.toggle("unlocked", unlocked);
   }
 
+  function readStoredOperatorToken() {
+    try { return sessionStorage.getItem("sim2_operator_token"); }
+    catch (error) { return null; }
+  }
+
+  function rememberOperatorToken(token) {
+    // Storage may be blocked (hardened browser/policy). The session is
+    // already valid server-side; never let a storage failure strand the dialog.
+    try { sessionStorage.setItem("sim2_operator_token", token); }
+    catch (error) { /* memory-only session for this tab */ }
+  }
+
+  function forgetOperatorToken() {
+    try { sessionStorage.removeItem("sim2_operator_token"); }
+    catch (error) { /* ignore */ }
+  }
+
   function clearOperatorSession() {
     state.operatorToken = null;
-    sessionStorage.removeItem("sim2_operator_token");
+    forgetOperatorToken();
     setOperatorState(false);
   }
 
