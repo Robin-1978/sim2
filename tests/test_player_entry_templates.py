@@ -52,7 +52,7 @@ def test_tidebound_canonical_origins_can_enter_the_world(tmp_path: Path):
         assert result["status"] == "accepted"
         agent = platform.store.repositories.entities.get_agent("player_one")
         assert agent["initial_state"]["location_id"] == "commons_quay"
-        assert agent["ultimate_goal"] == DEFAULT_PLAYER_GOAL
+        assert agent["ultimate_goal"] == "让食物和净水持续流动，同时不把沼泽采空。"
         assert agent["name"] == "Ari"
     finally:
         platform.close()
@@ -66,16 +66,17 @@ def test_tidebound_player_gets_configured_capabilities_and_supplies(tmp_path: Pa
         assert result["status"] == "accepted"
         agent = platform.store.repositories.entities.get_agent("player_one")
         assert agent["controller"] == "manual"
-        assert agent["capabilities"]["gathering"] == 0.5
+        assert agent["capabilities"]["gathering"] == 0.6
         assert agent["capabilities"]["crafting"] == 0.5
         assert agent["capabilities"]["conversation"] == 0.6
-        assert agent["inventory"]["fresh_water"] == 2
+        assert agent["inventory"]["fresh_water"] == 1
         assert agent["inventory"]["food_ration"] == 3
+        assert agent["inventory"]["shellfish"] == 2
         assert "gather_shellfish" in agent["initial_bt_ids"]
 
         view = build_player_view(platform, "player_one")
         choices = {item.get("choice") for item in view["actions"]}
-        assert {"Draw Fresh Water", "Gather Shellfish", "Exchange Commons Information"}.issubset(choices)
+        assert {"取淡水", "采贝类", "交换公社情报"}.issubset(choices)
         assert all(item.get("id") != "driftwood" for item in view["nearby_participants"])
         assert all(item.get("type") in {"agent", "player"} for item in view["nearby_participants"])
         assert view["unavailable_actions"]
@@ -191,14 +192,20 @@ def test_player_entry_projection_lists_canonical_origins(tmp_path: Path):
     service = ControlService(db_path)
     try:
         entry = service.player_entry()
-        assert entry["entry_location"] == {"id": "commons_quay", "name": "Commons Quay"}
+        assert entry["entry_location"] == {"id": "commons_quay", "name": "公共码头"}
         assert [origin["id"] for origin in entry["origins"]] == [
             "steward",
             "forager",
             "chart_keeper",
             "ferry_runner",
         ]
-        assert all(origin["goal"] == DEFAULT_PLAYER_GOAL for origin in entry["origins"])
+        assert all(origin["goal"] for origin in entry["origins"])
+        assert [origin["name"] for origin in entry["origins"]] == [
+            "潮务学徒",
+            "沼泽采集者",
+            "海图学徒",
+            "渡船信使",
+        ]
     finally:
         service.close()
 
@@ -246,12 +253,12 @@ def test_text_client_say_accepts_nearby_name_and_defaults_topic(tmp_path: Path):
         session = TextWorldSession(
             platform,
             player_id="player_one",
-            reply_handler=lambda: reply_calls.append(True) or "Reply:\n[0] Mara · general: Hello back.",
+            reply_handler=lambda: reply_calls.append(True) or "Reply:\n[0] 玛拉 · general: Hello back.",
         )
         scene = session.execute("look")
-        assert "Mara" in scene
+        assert "玛拉" in scene
         assert "id=mara" in scene
-        result = session.execute("say Mara Hello")
+        result = session.execute("say 玛拉 Hello")
         assert result.startswith("status=accepted")
         assert "topic: general" in result
         assert "Hello back." in result
@@ -343,10 +350,10 @@ def test_text_scene_and_messages_show_player_dialogue(tmp_path: Path):
         session = TextWorldSession(platform, player_id="player_one")
         scene = session.execute("look")
         assert "== Conversation ==" in scene
-        assert "Mara -> Ari" in scene
+        assert "玛拉 -> Ari" in scene
         assert "Welcome to the quay." in scene
         messages = session.execute("messages")
-        assert "Mara -> Ari" in messages
+        assert "玛拉 -> Ari" in messages
         assert "Welcome to the quay." in messages
         with pytest.raises(ValueError, match="No reply provider"):
             session.execute("reply")
@@ -361,7 +368,7 @@ def test_dialogue_resolves_names_and_reports_missing_participant(tmp_path: Path)
     platform = Platform(db_path)
     try:
         assert platform.enter_player("player_one", "forager", name="Ari")["status"] == "accepted"
-        by_names = platform.submit_dialogue("Ari", "Mara", "general", "Hello by names")
+        by_names = platform.submit_dialogue("Ari", "玛拉", "general", "Hello by names")
         assert by_names["status"] == "accepted"
         stored = platform.store.repositories.social.get_dialogue_exchange(by_names["dialogue_id"])
         assert stored["speaker_id"] == "player_one"

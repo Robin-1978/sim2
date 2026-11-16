@@ -24,10 +24,15 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         decision = platform.view.build_decision_view(player_id, role="agent_decision", include_diagnostics=True)
     except KeyError:
         return {"status": "rejected", "message": "player does not exist", "failed_check": "player_id"}
+    agent = platform.store.repositories.entities.get_agent(player_id)
     map_view = platform.map_view(viewer_id=player_id, observer=False)
-    current_id = str((platform.store.repositories.entities.get_agent(player_id).get("initial_state") or {}).get("location_id") or "")
+    current_id = str((agent.get("initial_state") or {}).get("location_id") or "")
     nodes = {str(item.get("id")): item for item in map_view.get("nodes", []) if isinstance(item, dict)}
     current = nodes.get(current_id, {})
+    try:
+        location_entity = platform.store.repositories.entities.get_entity(current_id) if current_id else {}
+    except KeyError:
+        location_entity = {}
     routes = []
     for destination in current.get("routes", []) or []:
         target = nodes.get(str(destination))
@@ -87,16 +92,60 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
             "label": behavior.get("agent_label") or behavior.get("summary") or behavior_id,
             "reasons": [str(reason) for reason in (item.get("failed") or [])][:4],
         })
+    rules = platform.store.repositories.metadata.get("rules", {}) or {}
+    item_labels = {
+        str(key): str(value)
+        for key, value in (rules.get("item_labels") or {}).items()
+        if str(key) and str(value)
+    }
+    world_property_labels = {
+        str(key): dict(value)
+        for key, value in (rules.get("world_property_labels") or {}).items()
+        if str(key) and isinstance(value, dict)
+    }
+    alert_thresholds = {
+        str(key): float(value)
+        for key, value in (rules.get("context_values") or {}).items()
+        if str(key).endswith("_threshold") and isinstance(value, (int, float)) and not isinstance(value, bool)
+    }
+    capability_names = {
+        str(item.get("id")): str(item.get("name") or item.get("label") or item.get("id"))
+        for item in platform.store.repositories.entities.get_definitions("capability_def")
+    }
+    capabilities = [
+        {
+            "id": str(key),
+            "label": capability_names.get(str(key), str(key).replace("_", " ")),
+            "value": float(value),
+        }
+        for key, value in (agent.get("capabilities") or {}).items()
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+    ]
+    capabilities.sort(key=lambda item: (-item["value"], item["id"]))
+    location = {
+        "id": current_id,
+        "name": str(location_entity.get("name") or current.get("name") or current_id),
+        "description": str(location_entity.get("description") or ""),
+        "tags": [str(item) for item in (location_entity.get("tags") or current.get("tags") or [])],
+        "safe": bool(location_entity.get("safe", current.get("safe", False))),
+    }
     return {
         "status": "ok",
         "world_id": map_view.get("world_id"),
         "world_time": decision.get("world_time"),
         "player": player_projection,
         "inventory": decision.get("inventory", {}),
+        "item_labels": item_labels,
         "needs": decision.get("needs", {}),
+        "capabilities": capabilities,
+        "goals": decision.get("progression_goals", [])[:6],
         "active_task": active_task,
         "actions": actions[:24],
         "unavailable_actions": unavailable_actions[:12],
+        "location": location,
+        "world_properties": platform.store.repositories.metadata.get("world_properties", {}),
+        "world_property_labels": world_property_labels,
+        "alert_thresholds": alert_thresholds,
         "routes": routes,
         "map": map_view,
         "recent_outcomes": decision.get("recent_outcomes", [])[:6],
@@ -149,6 +198,27 @@ class ControlService:
     def enter_player(self, player_id: str, origin_id: str, name: str | None = None) -> dict[str, Any]:
         return self.platform.enter_player(player_id, origin_id, name=name)
 
+    def world_info(self) -> dict[str, Any]:
+        """Return the presentation facts a game client needs before entry."""
+
+        with self.platform.store.read_transaction():
+            metadata = self.platform.store.repositories.metadata
+            setting = metadata.get("setting", {}) or {}
+            world_id = str(metadata.get("world_id") or "")
+            return {
+                "status": "ok",
+                "world_id": world_id,
+                "instance_id": str(metadata.get("instance_id") or ""),
+                "title": str(setting.get("name") or world_id),
+                "premise": str(setting.get("premise") or ""),
+                "genre": str(setting.get("genre") or ""),
+                "locale": str(setting.get("locale") or "en"),
+                "season": str((setting.get("world_clock") or {}).get("season") or ""),
+                "calendar": dict(setting.get("calendar") or {}),
+                "world_clock": dict(setting.get("world_clock") or {}),
+                "world_minute": int(metadata.get("world_minute", 0) or 0),
+            }
+
     def player_entry(self) -> dict[str, Any]:
         """Return generic player creation choices from the loaded world pack."""
 
@@ -164,8 +234,12 @@ class ControlService:
         origins = [
             {
                 "id": str(item["id"]),
+                "name": str(item.get("name") or item["id"]),
+                "description": str(item.get("description") or ""),
                 "goal": str(item.get("starting_goal") or ""),
                 "traits": dict(item.get("traits") or {}),
+                "capabilities": dict(item.get("capabilities") or {}),
+                "inventory": dict(item.get("inventory") or {}),
             }
             for item in player.get("origins", [])
             if item.get("id")

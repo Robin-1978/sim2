@@ -96,6 +96,8 @@ def parse_player_template(raw: Any, *, require_entry: bool = False) -> dict[str,
             raise PlayerTemplateError(f"origins[{index}].starting_goal must be a string")
         origins.append({
             "id": origin_id,
+            "name": str(item.get("name") or origin_id),
+            "description": str(item.get("description") or ""),
             "traits": dict(traits),
             "starting_goal": starting_goal,
             "capabilities": _number_map(item.get("capabilities"), f"origins[{index}].capabilities", maximum=1.0),

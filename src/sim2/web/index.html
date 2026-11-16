@@ -3,304 +3,253 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="sim2 adaptive world runtime and authoring workbench">
-  <title>sim2 · Adaptive World Runtime</title>
-  <link rel="stylesheet" href="/app.css?v=3">
+  <meta name="description" content="sim2 潮汐公社游戏客户端">
+  <title>潮汐公社 · sim2</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230b2426'/%3E%3Cpath d='M8 39c8-8 16 8 24 0s16 8 24 0' fill='none' stroke='%2365d8c2' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='46' cy='18' r='5' fill='%23efb26f'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/app.css?v=2">
 </head>
 <body>
-  <a class="skip-link" href="#main">跳到主要内容</a>
-  <div class="app-shell">
-    <header class="topbar">
-      <a class="brand" href="/" aria-label="sim2 home">
-        <span class="brand-mark">s2</span>
-        <span><strong>sim2</strong><small>adaptive world runtime</small></span>
-      </a>
-      <nav class="mode-tabs" aria-label="主视图">
-        <button class="mode-tab active" data-view="play-view">开始游戏</button>
-        <button class="mode-tab" data-view="runtime-view">观察世界</button>
-        <button class="mode-tab" data-view="authoring-view">设计世界</button>
-        <button class="mode-tab" data-view="console-view">命令</button>
-      </nav>
-      <div class="top-status">
-        <select id="instance-select" class="compact-select" aria-label="当前世界实例"><option value="">载入实例…</option></select>
-        <span id="runtime-state" class="runtime-state stopped">已停止</span>
-        <button id="operator-unlock" class="text-button operator-unlock">解锁管理</button>
-        <span id="connection-dot" class="status-dot offline"></span>
-        <span id="connection-label">正在连接</span>
-        <span id="world-clock" class="clock">—</span>
+  <a class="skip-link" href="#center-stage">跳到主要画面</a>
+
+  <header class="hud">
+    <div class="hud-world">
+      <span class="hud-mark">s2</span>
+      <div>
+        <span class="hud-eyebrow">SIM2 世界</span>
+        <strong id="hud-world-title">正在载入…</strong>
       </div>
-    </header>
+    </div>
+    <div class="hud-clock" aria-live="polite">
+      <div class="clock-day"><span id="hud-day">第 1 天</span><span id="hud-season" class="season-chip">风暴季</span></div>
+      <div class="clock-time"><strong id="hud-time">07:00</strong><span id="hud-phase">清晨</span></div>
+    </div>
+    <div class="hud-status">
+      <span id="runtime-pill" class="pill">手动世界</span>
+      <span id="conn-dot" class="conn-dot offline" title="连接状态"></span>
+      <button id="hud-refresh" class="icon-button" type="button" title="刷新世界" aria-label="刷新世界"></button>
+      <button id="hud-settings" class="icon-button" type="button" title="设置与管理" aria-label="设置与管理"></button>
+    </div>
+  </header>
 
-    <main id="main">
-      <section id="play-view" class="view active-view" aria-labelledby="play-title">
-        <div class="view-heading play-heading">
-          <div>
-            <p class="eyebrow">ENTER THE WORLD</p>
-            <h1 id="play-title">现在，你在这里。</h1>
-            <p class="muted">选择一个身份，做出一个行动，看它如何改变你和这个世界。</p>
-          </div>
-          <div class="play-world-label"><span id="play-world-id">—</span><small id="play-world-time">—</small></div>
-        </div>
-        <div id="play-notice" class="notice hidden" role="status"></div>
-        <article id="player-setup" class="panel player-setup">
-          <div class="panel-heading"><div><span class="panel-kicker">YOUR ARRIVAL</span><h2>进入这个世界</h2><p id="player-entry-copy" class="panel-subtitle">加载世界入口…</p></div><span class="badge accent">可随时重新进入</span></div>
-          <div class="player-setup-form">
-            <label>你的名字<input id="play-player-name" placeholder="例如：阿里" autocomplete="off"></label>
-            <label>玩家 ID（新角色或已有角色）<input id="play-player-id" placeholder="player_one" autocomplete="off"></label>
-            <label>出身（仅新角色）<select id="play-player-origin"><option value="">加载出身…</option></select></label>
-            <button id="play-enter" class="button primary">进入 / 恢复世界</button>
-          </div>
-          <div id="origin-preview" class="origin-preview"><span>选择出身后，这里会显示你的起始目标。</span></div>
-        </article>
-        <section id="player-world" class="hidden">
-          <div class="player-hud panel">
-            <div class="player-identity"><div id="player-avatar" class="avatar">—</div><div><strong id="player-name-label">—</strong><small id="player-location-label">—</small></div></div>
-            <div class="player-goal"><span>当前目标</span><strong id="player-goal-label">—</strong></div>
-            <div id="player-need-bars" class="need-bars"></div>
-            <button id="player-leave" class="button ghost">更换角色</button>
-          </div>
-          <div class="player-grid">
-            <article class="panel player-map-panel"><div class="panel-heading"><div><span class="panel-kicker">YOUR SURROUNDINGS</span><h2>你所在的地方</h2></div><span id="player-map-summary" class="badge">—</span></div><div id="player-map-canvas" class="map-canvas player-map-canvas"></div><div id="player-location-summary" class="location-summary"></div></article>
-            <article class="panel action-panel"><div class="panel-heading"><div><span class="panel-kicker">WHAT CAN YOU DO?</span><h2>现在可以做什么</h2></div><span class="badge accent">Platform 校验</span></div><div id="player-actions" class="player-actions"><div class="empty-state">进入世界后加载行动…</div></div></article>
-            <article class="panel player-feed-panel"><div class="panel-heading"><div><span class="panel-kicker">WHAT HAPPENED</span><h2>刚刚发生</h2></div><button id="player-refresh" class="text-button">刷新</button></div><div id="player-feed" class="player-feed"><div class="empty-state">还没有新的结果。</div></div></article>
-            <article class="panel player-dialogue-panel"><div class="panel-heading"><div><span class="panel-kicker">TALK TO SOMEONE</span><h2>与附近的人交谈</h2></div></div><div class="player-dialogue-form"><label>对象<select id="player-dialogue-target"></select></label><label>消息<textarea id="player-dialogue-message" placeholder="说点什么…"></textarea></label><button id="player-send-dialogue" class="button primary">发送</button><div id="player-action-result" class="interaction-result"></div></div></article>
-            <article class="panel player-trade-panel"><div class="panel-heading"><div><span class="panel-kicker">TRADE WITH NEIGHBORS</span><h2 id="player-trade-title">与附近的人交易</h2></div><button id="player-trades-refresh" class="text-button">刷新</button></div><div class="player-trade-lists"><div id="player-trade-incoming" class="player-trade-group"><div class="empty-state">进入世界后加载交易…</div></div><div id="player-trade-outgoing" class="player-trade-group"></div></div><div class="player-dialogue-form"><div class="trade-form-row"><label>对方<select id="player-trade-target"></select></label></div><div class="trade-form-row"><label>给出 item=qty<input id="player-trade-give" placeholder="bread=2" autocomplete="off"></label><label>想要 item=qty<input id="player-trade-want" placeholder="water=1" autocomplete="off"></label></div><button id="player-send-trade" class="button primary">发起交易</button><div id="player-trade-result" class="interaction-result" role="status"></div></div></article>
-          </div>
-        </section>
-      </section>
-
-      <section id="runtime-view" class="view" aria-labelledby="runtime-title">
-        <div class="view-heading">
-          <div>
-            <p class="eyebrow">PUBLIC WORLD OBSERVER</p>
-            <h1 id="runtime-title">世界脉搏</h1>
-            <p class="muted">从已提交的事实、行为结果和世界变化中观察因果链。</p>
-          </div>
-          <div class="runtime-actions">
-            <button id="start-button" class="button primary">开始自动运行</button>
-            <button id="pause-button" class="button ghost">暂停</button>
-            <button id="resume-button" class="button ghost">继续</button>
-            <button id="stop-button" class="button ghost">停止</button>
-            <button id="step-button" class="button ghost">单步推进</button>
-            <button id="refresh-button" class="button primary">刷新</button>
+  <main id="game" class="game-grid hidden">
+    <aside class="left-rail" aria-label="角色">
+      <section class="panel character-panel">
+        <div class="character-head">
+          <div id="player-portrait" class="portrait">?</div>
+          <div class="character-title">
+            <span id="player-role" class="eyebrow">角色</span>
+            <h1 id="player-name">—</h1>
+            <p id="player-location">—</p>
           </div>
         </div>
-
-        <div id="runtime-notice" class="notice hidden" role="status"></div>
-        <section class="panel runtime-console">
-          <div class="runtime-console-main">
-            <div><span class="panel-kicker">AUTONOMOUS RUNTIME</span><strong id="runtime-console-state">已停止</strong><small id="runtime-console-detail">选择预算后开始世界自动演化。</small></div>
-            <div class="runtime-budget">
-              <label>模型<select id="runtime-provider"><option value="">默认角色模型</option></select></label>
-              <label>世界分钟<input id="runtime-minutes" type="number" min="1" value="1440"></label>
-              <label>LLM 上限<input id="runtime-llm-calls" type="number" min="1" value="120"></label>
-            </div>
-          </div>
-          <div class="runtime-progress"><span id="runtime-progress-bar"></span></div>
-          <div class="runtime-console-foot"><span id="runtime-usage">尚无运行记录</span><span id="runtime-error"></span></div>
-          <details class="runtime-history"><summary>运行历史与成本（<span id="runtime-history-count">0</span> 段）</summary><div id="runtime-history-list" class="runtime-history-list"><div class="empty-state">尚无已完成的运行段。</div></div></details>
-        </section>
-        <div class="metric-strip" id="world-metrics" aria-live="polite">
-          <div class="metric"><span>世界状态</span><strong id="metric-status">—</strong></div>
-          <div class="metric"><span>公开角色</span><strong id="metric-agents">—</strong></div>
-          <div class="metric"><span>地点</span><strong id="metric-locations">—</strong></div>
-          <div class="metric"><span>事件游标</span><strong id="metric-cursor">—</strong></div>
+        <div id="player-badges" class="badge-row"></div>
+        <div id="need-bars" class="bar-stack"></div>
+        <div id="vital-bars" class="bar-stack compact"></div>
+        <div class="goal-card">
+          <span class="eyebrow">当前目标</span>
+          <p id="player-goal">—</p>
         </div>
-
-        <div class="runtime-grid game-layout">
-          <article class="panel map-panel">
-            <div class="panel-heading"><div><span class="panel-kicker">01 / WORLD SCENE</span><h2>世界地图</h2><p class="panel-subtitle">点击地点查看现场，点击角色查看状态。</p></div><span id="map-summary" class="badge">—</span></div>
-            <div class="map-toolbar"><span class="map-mode active">地点与路线</span><span class="map-mode">实时位置</span><span id="map-selection" class="map-selection">未选择地点</span></div>
-            <div id="map-canvas" class="map-canvas" aria-label="世界地图"></div>
-            <div id="map-routes" class="route-list"></div>
-          </article>
-          <article class="panel inspector-panel">
-            <div class="panel-heading"><div><span class="panel-kicker">02 / INSPECTOR</span><h2>现场与角色</h2></div><span class="badge accent">可探索视角</span></div>
-            <div id="scene-inspector" class="scene-inspector"><div class="empty-state">点击地图上的地点或角色开始查看。</div></div>
-          </article>
-          <article class="panel timeline-panel">
-            <div class="panel-heading"><div><span class="panel-kicker">03 / CAUSAL STREAM</span><h2>世界事件</h2></div><button id="toggle-ticks" class="text-button">显示 tick</button></div>
-            <div id="timeline-list" class="timeline-list" aria-live="polite"><div class="empty-state">等待世界事件…</div></div>
-          </article>
-          <article class="panel dialogue-panel" aria-labelledby="npc-dialogue-title">
-            <div class="panel-heading"><div><span class="panel-kicker">07 / NPC DIALOGUE</span><h2 id="npc-dialogue-title">NPC 对话</h2><p class="panel-subtitle">全世界最近的公开交谈，含玩家在内。</p></div><button id="dialogue-refresh" class="text-button">刷新</button></div>
-            <div id="npc-dialogue-list" class="dialogue-list" aria-live="polite"><div class="empty-state">暂无对话</div></div>
-          </article>
-          <article class="panel decisions-panel" aria-labelledby="npc-decisions-title">
-            <div class="panel-heading"><div><span class="panel-kicker">08 / NPC DECISIONS</span><h2 id="npc-decisions-title">决策动态</h2><p class="panel-subtitle">谁决定做什么、为什么、结果如何。</p></div><button id="decisions-refresh" class="text-button">刷新</button></div>
-            <div id="npc-decisions-list" class="decisions-list" aria-live="polite"><div class="empty-state">暂无决策</div></div>
-          </article>
-          <article class="panel characters-panel">
-            <div class="panel-heading"><div><span class="panel-kicker">04 / ACTORS</span><h2>角色</h2></div><span class="badge">公开视角</span></div>
-            <div id="character-list" class="character-list"><div class="empty-state">暂无角色投影</div></div>
-          </article>
-          <article class="panel evolution-panel">
-            <div class="panel-heading"><div><span class="panel-kicker">05 / EVOLUTION</span><h2>演化队列</h2></div><span class="badge accent">事实优先</span></div>
-            <div id="evolution-list" class="evolution-list"><div class="empty-state">暂无待处理任务</div></div>
-          </article>
-          <article class="panel interaction-panel">
-            <div class="panel-heading"><div><span class="panel-kicker">06 / PARTICIPATE</span><h2>参与世界</h2></div><span class="badge">Platform 校验</span></div>
-            <div class="interaction-form">
-              <button id="open-player" class="button ghost">打开玩家界面</button>
-              <div class="interaction-row three"><label>说话者<select id="dialogue-speaker"></select></label><label>听者<select id="dialogue-listener"></select></label><label>主题<input id="dialogue-topic" value="general"></label></div>
-              <label>消息<textarea id="dialogue-message" placeholder="把一句话交给 Platform，结果会出现在公共时间线…"></textarea></label>
-              <button id="send-dialogue" class="button primary">发送对话</button>
-              <div id="interaction-result" class="interaction-result" role="status"></div>
-            </div>
-          </article>
+        <div class="character-actions">
+          <button id="player-leave" class="text-button" type="button">更换角色</button>
         </div>
       </section>
 
-      <section id="authoring-view" class="view" aria-labelledby="authoring-title">
-        <div class="view-heading">
-          <div>
-            <p class="eyebrow">WORLD AUTHORING WORKBENCH</p>
-            <h1 id="authoring-title">设计一个世界</h1>
-            <p class="muted">Schema 驱动的草稿、编译、smoke 和导出。草稿不会触碰运行中的 SQLite。</p>
+      <section class="panel inventory-panel">
+        <div class="panel-title"><h2>随身物品</h2><span id="inventory-count" class="hint">0 种</span></div>
+        <div id="inventory-grid" class="inventory-grid"></div>
+      </section>
+
+      <section class="panel capability-panel">
+        <div class="panel-title"><h2>能力</h2><span class="hint">已验证经验</span></div>
+        <div id="capability-list" class="capability-list"></div>
+      </section>
+    </aside>
+
+    <section id="center-stage" class="center-stage" aria-label="场景与行动">
+      <section class="panel scene-panel">
+        <div id="scene-art" class="scene-art" data-scene="harbor">
+          <div class="scene-backdrop"></div>
+          <div class="scene-copy">
+            <span id="scene-eyebrow" class="eyebrow">你在这里</span>
+            <h2 id="scene-title">—</h2>
+            <p id="scene-description">—</p>
+            <div id="scene-tags" class="badge-row"></div>
           </div>
-          <div class="draft-state"><span id="draft-dot" class="status-dot"></span><span id="draft-status">新建草稿</span></div>
+          <div id="scene-objects" class="scene-objects"></div>
         </div>
-        <div class="authoring-grid">
-          <aside class="panel schema-panel">
-            <div class="panel-heading"><div><span class="panel-kicker">SCHEMA</span><h2>世界结构</h2></div></div>
-            <div id="schema-list" class="schema-list"><div class="empty-state">加载 Schema…</div></div>
-            <div class="builder-box">
-              <span class="panel-kicker">WORLD BUILDER</span>
-              <p>用一句话让已配置的 WorldBuilder Agent 起草模板。点击才会调用模型。</p>
-              <textarea id="builder-brief" placeholder="例如：一座漂浮在盐海上的小型气象站，三名角色依靠风帆和潮汐协作…"></textarea>
-              <button id="build-world" class="button wide">AI 起草世界</button>
-            </div>
-            <div class="builder-box instance-box">
-              <span class="panel-kicker">NEW INSTANCE</span>
-              <p>从已验证模板创建独立 SQLite 游戏，并立即切换到新世界。创建本身不会调用模型。</p>
-              <label>世界模板<select id="package-select"><option value="">加载模板…</option></select></label>
-              <label>实例 ID<input id="instance-id" placeholder="my-world-001" autocomplete="off"></label>
-              <button id="create-instance" class="button wide">创建并打开游戏</button>
-              <div id="instance-result" class="interaction-result" role="status"></div>
-            </div>
-            <div class="schema-note">字段来自 <code>world-schema</code>。网页不维护世界专用词汇。</div>
-          </aside>
-          <section class="panel editor-panel">
-            <div class="editor-toolbar">
-              <div><span class="panel-kicker">DRAFT JSON</span><h2>模板编辑器</h2></div>
-              <div class="toolbar-actions">
-                <button id="new-draft" class="button ghost">新建</button>
-                <button id="open-current" class="button ghost">打开当前包</button>
-                <button id="format-draft" class="button ghost">格式化</button>
-                <button id="compile-draft" class="button primary">编译检查</button>
-              </div>
-            </div>
-            <div class="open-path-row">
-              <label>打开受限目录中的包<input id="authoring-path" placeholder="例如 worlds/my_world"></label>
-              <button id="open-path" class="button ghost">打开路径</button>
-            </div>
-            <div class="quick-fields" aria-label="世界基本信息">
-              <label>World ID<input id="quick-world-id" autocomplete="off"></label>
-              <label>标题<input id="quick-world-title" autocomplete="off"></label>
-              <label>Locale<input id="quick-world-locale" autocomplete="off"></label>
-              <button id="apply-quick-fields" class="button ghost">同步到模板</button>
-            </div>
-            <div class="editor-mode-tabs" aria-label="编辑模式">
-              <button id="guided-mode" class="text-button active">表单视图</button>
-              <button id="raw-mode" class="text-button">原始 JSON</button>
-            </div>
-            <div id="guided-editor" class="guided-editor"></div>
-            <textarea id="template-editor" class="code-editor" spellcheck="false" aria-label="世界模板编辑器"></textarea>
-            <div class="editor-footer"><span id="draft-revision">revision 1</span><span>JSON 输入，服务端导出 YAML 世界包</span></div>
-          </section>
-          <aside class="panel diagnostics-panel">
-            <div class="panel-heading"><div><span class="panel-kicker">CHECK & TEST</span><h2>诊断</h2></div></div>
-            <div class="diagnostic-actions">
-              <button id="smoke-draft" class="button wide">运行短 smoke</button>
-              <button id="export-draft" class="button wide ghost">导出 YAML 包</button>
-            </div>
-            <div id="diagnostics" class="diagnostics" aria-live="polite"><div class="empty-state">编译后显示结构、引用和执行性结果。</div></div>
-          </aside>
+        <div class="scene-footer">
+          <div class="scene-section">
+            <span class="scene-label">附近的人</span>
+            <div id="scene-people" class="people-row"></div>
+          </div>
+          <div class="scene-section">
+            <span class="scene-label">可采集与可检查</span>
+            <div id="scene-resources" class="resource-row"></div>
+          </div>
         </div>
       </section>
 
-      <section id="console-view" class="view" aria-labelledby="console-title">
-        <div class="view-heading">
-          <div>
-            <p class="eyebrow">OPERATOR CONSOLE</p>
-            <h1 id="console-title">命令</h1>
-            <p class="muted">覆盖全部 <code>sim2</code> CLI 指令：初始化世界、校验包、单步决策、同步推演、快照恢复、完整交易。管理写操作需要先解锁管理。</p>
-          </div>
-          <div class="toolbar-actions">
-            <button id="console-refresh" class="button ghost">刷新快照/实例</button>
-          </div>
+      <section id="task-panel" class="panel task-panel hidden" aria-live="polite">
+        <div class="task-copy">
+          <span class="eyebrow">正在执行</span>
+          <strong id="task-name">—</strong>
+          <span id="task-detail" class="hint">—</span>
         </div>
-        <div id="console-notice" class="notice hidden" role="status"></div>
-        <div class="console-grid">
-          <article class="panel">
-            <div class="panel-heading"><div><span class="panel-kicker">INIT / SNAPSHOT</span><h2>实例与快照</h2></div><span class="badge">init · snapshot · restore</span></div>
-            <div class="console-form">
-              <label>世界模板 ID<input id="console-init-package" placeholder="starter_village" autocomplete="off"></label>
-              <label>新实例 ID<input id="console-init-instance" placeholder="my-world-001" autocomplete="off"></label>
-              <label class="check"><input id="console-init-activate" type="checkbox" checked> 创建后切换到该实例</label>
-              <button id="console-init" class="button primary wide">初始化世界 (init)</button>
-              <label>快照标签<input id="console-snapshot-label" placeholder="manual" autocomplete="off"></label>
-              <div class="console-row"><button id="console-snapshot" class="button ghost">创建快照</button><button id="console-snapshots" class="button ghost">列出快照</button></div>
-              <label>恢复快照 ID<input id="console-restore-id" placeholder="snapshot_id" autocomplete="off"></label>
-              <button id="console-restore" class="button ghost wide">恢复快照 (restore)</button>
-              <div id="console-instances" class="console-output"><div class="empty-state">实例与快照列表…</div></div>
-            </div>
-          </article>
-          <article class="panel">
-            <div class="panel-heading"><div><span class="panel-kicker">RUN / DECIDE</span><h2>运行与诊断</h2></div><span class="badge">simulate · decide</span></div>
-            <div class="console-form">
-              <div class="console-row"><label>推演分钟<input id="console-sim-minutes" type="number" min="1" value="10"></label><label>Provider<input id="console-sim-provider" placeholder="默认" autocomplete="off"></label></div>
-              <button id="console-simulate" class="button primary wide">同步推演 (simulate)</button>
-              <div class="console-row"><label>Agent ID<input id="console-decide-agent" placeholder="agent id" autocomplete="off"></label><label>Role<input id="console-decide-role" value="agent_decision" autocomplete="off"></label></div>
-              <button id="console-decide" class="button ghost wide">单步决策 (decide)</button>
-              <div class="console-row"><button id="console-status" class="button ghost">status</button><button id="console-health" class="button ghost">health</button><button id="console-metrics" class="button ghost">metrics</button><button id="console-audit" class="button ghost">audit</button></div>
-            </div>
-          </article>
-          <article class="panel">
-            <div class="panel-heading"><div><span class="panel-kicker">PACKAGE</span><h2>世界包</h2></div><span class="badge">validate · describe</span></div>
-            <div class="console-form">
-              <label>包 ID<input id="console-pkg-id" placeholder="starter_village" autocomplete="off"></label>
-              <label>或受限路径<input id="console-pkg-path" placeholder="worlds/my_world" autocomplete="off"></label>
-              <div class="console-row"><button id="console-validate" class="button ghost">校验 (validate)</button><button id="console-describe" class="button ghost">详情 (describe)</button><button id="console-schema" class="button ghost">schema</button></div>
-              <label>输出目录名<input id="console-build-output" placeholder="my_new_world" autocomplete="off"></label>
-              <div class="console-row"><label>实例 ID(可选)<input id="console-build-instance" placeholder="my-world-001" autocomplete="off"></label><label class="check"><input id="console-build-overwrite" type="checkbox"> 覆盖</label></div>
-              <button id="console-build-world" class="button primary wide">用当前草稿创建世界包 (build-world)</button>
-              <p class="muted">build-world 使用设计页当前草稿模板，写入受限目录并可选建实例。</p>
-            </div>
-          </article>
-          <article class="panel">
-            <div class="panel-heading"><div><span class="panel-kicker">TRADE / EVENT</span><h2>交易与事件</h2></div><span class="badge">Platform 校验</span></div>
-            <div class="console-form">
-              <label>查询交易 Agent<input id="console-trade-agent" placeholder="agent id" autocomplete="off"></label>
-              <button id="console-trade-list" class="button ghost wide">列出交易</button>
-              <label>Offer ID<input id="console-offer-id" placeholder="offer id" autocomplete="off"></label>
-              <div class="console-row"><label>我方<input id="console-trade-me" placeholder="my agent id" autocomplete="off"></label><label>对方<input id="console-trade-peer" placeholder="peer agent id" autocomplete="off"></label></div>
-              <div class="console-row"><label>给出 item=qty<input id="console-trade-give" placeholder="bread=2" autocomplete="off"></label><label>想要 item=qty<input id="console-trade-want" placeholder="water=1" autocomplete="off"></label></div>
-              <div class="console-row"><button id="console-trade-offer" class="button ghost">发起</button><button id="console-trade-counter" class="button ghost">反报价</button><button id="console-trade-accept" class="button ghost">接受</button><button id="console-trade-reject" class="button ghost">拒绝</button></div>
-              <label>事件类型<input id="console-event-type" placeholder="story.note" autocomplete="off"></label>
-              <label>Payload JSON<textarea id="console-event-payload" placeholder='{"text":"..."}'></textarea></label>
-              <button id="console-inject" class="button ghost wide">注入事件 (inject)</button>
-            </div>
-          </article>
+        <div class="task-progress"><span id="task-progress-bar"></span></div>
+        <div class="task-actions">
+          <button id="task-advance" class="button primary" type="button">推进到完成</button>
+          <button id="task-wait" class="button ghost" type="button">等待 1 分钟</button>
         </div>
-        <article class="panel console-result-panel">
-          <div class="panel-heading"><div><span class="panel-kicker">RESULT</span><h2>命令结果</h2></div><button id="console-clear" class="text-button">清空</button></div>
-          <pre id="console-result" class="console-result">等待命令…</pre>
-        </article>
       </section>
-    </main>
-    <footer class="footer"><span>sim2 · Platform is the source of truth · <span id="js-build">web-v14</span></span><span id="last-update">—</span></footer>
+
+      <section class="panel actions-panel">
+        <div class="panel-title actions-heading">
+          <div><span class="eyebrow">平台已校验</span><h2>现在可以做什么</h2></div>
+          <div id="action-filters" class="segmented" role="tablist" aria-label="行动筛选"></div>
+        </div>
+        <div id="action-grid" class="action-grid"></div>
+        <details id="locked-actions" class="locked-actions hidden">
+          <summary>条件不足的行动 <span id="locked-count"></span></summary>
+          <div id="locked-list" class="locked-list"></div>
+        </details>
+      </section>
+
+      <section class="panel goals-panel">
+        <div class="panel-title"><h2>公社目标</h2><span class="hint">公开进度</span></div>
+        <div id="goal-list" class="goal-list"></div>
+      </section>
+    </section>
+
+    <aside class="right-rail" aria-label="世界动态">
+      <section class="panel feed-panel">
+        <div id="right-tabs" class="segmented tabs" role="tablist" aria-label="右侧面板">
+          <button class="segment active" data-tab="feed" type="button">动态</button>
+          <button class="segment" data-tab="talk" type="button">交谈</button>
+          <button class="segment" data-tab="trade" type="button">交易</button>
+        </div>
+        <div id="tab-feed" class="tab-body active">
+          <div id="world-feed" class="feed" aria-live="polite"></div>
+          <button id="feed-more" class="text-button wide" type="button">载入更早的事件</button>
+        </div>
+        <div id="tab-talk" class="tab-body">
+          <div id="dialogue-list" class="dialogue-list"></div>
+          <form id="talk-form" class="stack-form">
+            <label>对谁说<select id="talk-target"></select></label>
+            <label>消息<textarea id="talk-message" rows="3" placeholder="说点什么…" maxlength="240"></textarea></label>
+            <button id="talk-send" class="button primary wide" type="submit">发送对话</button>
+          </form>
+        </div>
+        <div id="tab-trade" class="tab-body">
+          <div id="trade-list" class="trade-list"></div>
+          <form id="trade-form" class="stack-form">
+            <label>交易对象<select id="trade-target"></select></label>
+            <div class="form-row">
+              <label>你给出<input id="trade-give" placeholder="shellfish=2" autocomplete="off"></label>
+              <label>你想要<input id="trade-want" placeholder="fresh_water=1" autocomplete="off"></label>
+            </div>
+            <button id="trade-send" class="button primary wide" type="submit">发起交易</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="panel world-panel">
+        <div class="panel-title"><h2>世界状态</h2><span class="hint">公共账目</span></div>
+        <div id="world-properties" class="world-properties"></div>
+        <p class="hint world-evolution-hint">Story 与 God 会根据已验证事件持续生成新章节和新结构；世界不会停在固定剧本里。</p>
+        <button id="open-map" class="button ghost wide" type="button">查看完整地图</button>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <span>sim2 · 事实来自 Platform · <span id="js-build">web-game-v2</span></span>
+    <span id="last-update">尚未同步</span>
+  </footer>
+
+  <div id="entry-screen" class="entry-screen">
+    <div class="entry-bg" aria-hidden="true"><span></span><span></span><span></span></div>
+    <section class="entry-card" aria-labelledby="entry-title">
+      <div class="entry-heading">
+        <span class="eyebrow">进入世界</span>
+        <h1 id="entry-title">潮汐公社</h1>
+        <p id="entry-premise">正在读取世界…</p>
+        <div class="badge-row">
+          <span id="entry-genre" class="badge">海岸生存</span>
+          <span id="entry-season" class="badge accent">风暴季</span>
+          <span id="entry-instance" class="badge">—</span>
+        </div>
+      </div>
+      <div class="entry-body">
+        <div class="entry-form">
+          <label>角色名<input id="entry-name" placeholder="例如：阿岚" autocomplete="off" maxlength="24"></label>
+          <label>玩家 ID（新角色或已有角色）<input id="entry-id" placeholder="例如：wolf_002" autocomplete="off" maxlength="64"></label>
+          <p class="hint">已有 ID 会恢复原角色并补齐缺失的模板能力；新 ID 会从所选出身开始。</p>
+          <button id="entry-submit" class="button primary wide" type="button">进入 / 恢复世界</button>
+          <p id="entry-error" class="form-error" role="alert"></p>
+        </div>
+        <div class="entry-origins">
+          <span class="eyebrow">选择出身（仅新角色）</span>
+          <div id="origin-list" class="origin-list"></div>
+        </div>
+      </div>
+      <div class="entry-footer">
+        <label class="inline-label">世界实例<select id="entry-instance-select" class="compact-select"></select></label>
+        <span id="entry-world-state" class="hint">—</span>
+      </div>
+    </section>
   </div>
-  <dialog id="operator-dialog" class="operator-dialog">
-    <form method="dialog">
-      <div class="panel-heading"><div><span class="panel-kicker">LOCAL OPERATOR</span><h2>解锁管理界面</h2><p class="panel-subtitle">粘贴终端启动服务时显示的一次性 Operator Token。</p></div></div>
-      <label>Operator Token<input id="operator-token" type="password" autocomplete="off" spellcheck="false" placeholder="启动 sim2 serve 时显示"></label>
-      <div id="operator-error" class="interaction-result error"></div>
-      <div class="dialog-actions"><button id="operator-cancel" class="button ghost" type="button" value="cancel">取消</button><button id="operator-submit" class="button primary" type="submit" value="default">解锁</button></div>
+
+  <div id="settings-drawer" class="drawer hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="drawer-scrim" data-close-drawer></div>
+    <aside class="drawer-panel">
+      <div class="drawer-head">
+        <div><span class="eyebrow">管理</span><h2 id="settings-title">世界与运行时</h2></div>
+        <button id="settings-close" class="icon-button close" type="button" aria-label="关闭"></button>
+      </div>
+      <div class="drawer-section">
+        <h3>世界实例</h3>
+        <select id="settings-instance" class="compact-select"></select>
+        <div class="form-row">
+          <button id="instance-activate" class="button ghost" type="button">切换实例</button>
+          <button id="instance-refresh" class="button ghost" type="button">刷新列表</button>
+        </div>
+      </div>
+      <div class="drawer-section">
+        <h3>同步推进</h3>
+        <p class="hint">手动行动会以同一个世界 tick 推进 NPC 决策。这里可以选择推进所用模型。</p>
+        <label>同步推进模型<select id="settings-provider" class="compact-select"></select></label>
+        <div class="form-row">
+          <button id="runtime-start" class="button primary" type="button">开始自动运行</button>
+          <button id="runtime-pause" class="button ghost" type="button">暂停</button>
+          <button id="runtime-stop" class="button ghost" type="button">停止</button>
+        </div>
+        <label>Operator Token<input id="operator-token" type="password" placeholder="启动 sim2 serve 时显示" autocomplete="off"></label>
+        <div class="form-row">
+          <button id="operator-unlock" class="button ghost" type="button">解锁管理写入</button>
+          <button id="runtime-step" class="button ghost" type="button">单步推进</button>
+        </div>
+        <p id="runtime-detail" class="hint">—</p>
+      </div>
+      <div class="drawer-section">
+        <h3>开发工具</h3>
+        <p class="hint">完整的设计、快照和命令界面保留在运营台。</p>
+        <a class="button ghost wide" href="/admin.html" target="_blank" rel="noopener">打开运营台</a>
+      </div>
+    </aside>
+  </div>
+
+  <dialog id="map-dialog" class="map-dialog">
+    <form method="dialog" class="map-dialog-head">
+      <div><span class="eyebrow">世界地图</span><h2>潮汐公社</h2></div>
+      <button class="icon-button close" value="close" aria-label="关闭"></button>
     </form>
+    <div id="map-canvas" class="map-canvas"></div>
+    <div id="map-legend" class="map-legend"></div>
   </dialog>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
   <!-- bump ?v= whenever app.js/app.css changes so stale tabs refetch -->
-  <script src="/app.js?v=13" defer></script>
+  <script src="/app.js?v=2" defer></script>
 </body>
 </html>
-

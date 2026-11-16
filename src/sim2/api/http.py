@@ -195,6 +195,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._write(200, {"status": "ok", "role": "observer", "session_token": token})
             if path == "/status":
                 return self._write(200, self.server.status_payload())
+            if path == "/world":
+                return self._write(200, self.server.service_call("world_info"))
             if path == "/instances":
                 return self._write(200, self.server.instance_list())
             if path == "/runtime":

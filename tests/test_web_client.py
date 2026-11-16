@@ -42,15 +42,22 @@ def test_http_serves_runtime_and_authoring_workbench(tmp_path: Path):
     try:
         with urlopen(base + "/") as response:
             html = response.read().decode("utf-8")
-        assert "设计世界" in html
-        assert "开始游戏" in html
-        assert "现在，你在这里" in html
         assert "现在可以做什么" in html
-        assert "scene-inspector" in html
-        assert "创建并打开游戏" in html
-        assert "开始自动运行" in html
-        assert "解锁管理" in html
-        assert 'id="instance-select"' in html
+        assert 'id="game"' in html
+        assert 'id="action-grid"' in html
+        assert 'id="world-feed"' in html
+        assert 'id="settings-drawer"' in html
+        assert 'id="map-canvas"' in html
+        with urlopen(base + "/admin.html") as response:
+            admin_html = response.read().decode("utf-8")
+        assert "设计世界" in admin_html
+        assert "开始游戏" in admin_html
+        assert "现在，你在这里" in admin_html
+        assert "scene-inspector" in admin_html
+        assert "创建并打开游戏" in admin_html
+        assert "开始自动运行" in admin_html
+        assert "解锁管理" in admin_html
+        assert 'id="instance-select"' in admin_html
         with urlopen(base + "/app.css") as response:
             assert b"--cyan" in response.read()
         with urlopen(base + "/authoring/schema") as response:
@@ -214,7 +221,7 @@ def test_web_console_covers_all_cli_commands(tmp_path: Path):
     base = f"http://127.0.0.1:{server.server_port}"
     operator = _operator_headers(server)
     try:
-        with urlopen(base + "/") as response:
+        with urlopen(base + "/admin.html") as response:
             html = response.read().decode("utf-8")
         assert "命令" in html
         assert "console-result" in html
@@ -410,7 +417,7 @@ def test_web_dialogue_accepts_names_and_reports_missing_participant(tmp_path: Pa
         player_headers = {"x-sim2-session": entered["session_token"]}
         by_names = _json_request(
             base + "/dialogue",
-            {"speaker_id": "Ari", "listener_id": "Mara", "topic": "general", "message": "hi by names"},
+            {"speaker_id": "Ari", "listener_id": "玛拉", "topic": "general", "message": "hi by names"},
             headers=player_headers,
         )
         assert by_names["status"] == "accepted", by_names
@@ -435,7 +442,7 @@ def test_observer_feeds_show_npc_dialogue_and_decisions(tmp_path: Path):
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
     try:
-        with urlopen(base + "/") as response:
+        with urlopen(base + "/admin.html") as response:
             html = response.read().decode("utf-8")
         assert "NPC 对话" in html
         assert "决策动态" in html
@@ -445,11 +452,11 @@ def test_observer_feeds_show_npc_dialogue_and_decisions(tmp_path: Path):
         with urlopen(base + "/observer/dialogue?limit=10") as response:
             exchanges = json.loads(response.read())["exchanges"]
         assert exchanges[-1]["message"] == "The tide is turning."
-        assert exchanges[-1]["speaker"] == "Mara"
+        assert exchanges[-1]["speaker"] == "玛拉"
         server.control.platform.inject_event("behavior.completed", {"behavior_id": "travel", "result": "arrived safely"}, actor_id="mara")
         with urlopen(base + "/observer/decisions?limit=10") as response:
             decisions = json.loads(response.read())["decisions"]
-        assert decisions[-1]["actor"] == "Mara"
+        assert decisions[-1]["actor"] == "玛拉"
         assert decisions[-1]["event_type"] == "behavior.completed"
     finally:
         server.close()
@@ -615,12 +622,15 @@ def test_web_full_client_surfaces_new_panels(tmp_path: Path):
             html = response.read().decode("utf-8")
         for marker in (
             'class="skip-link"',
-            'id="player-trade-target"',
-            'id="player-send-trade"',
-            'id="runtime-history-list"',
-            'id="npc-decisions-list"',
-            'id="console-result"',
-            'aria-labelledby="npc-decisions-title"',
+            'id="game"',
+            'id="action-grid"',
+            'id="world-feed"',
+            'id="talk-target"',
+            'id="trade-send"',
+            'id="map-canvas"',
+            'id="task-panel"',
+            'id="settings-drawer"',
+            "现在可以做什么",
         ):
             assert marker in html, marker
     finally:
@@ -642,7 +652,8 @@ def test_web_client_keeps_session_header_when_posting_with_idempotency_key():
     fetch_body = request_body.split("await fetch(path, {", 1)[1].split("});", 1)[0]
     assert "x-sim2-session" in fetch_body
     assert fetch_body.index("...options") < fetch_body.index("headers:")
-    assert "rememberOperatorToken(result.session_token)" in source
+    admin_source = (Path(__file__).parents[1] / "src" / "sim2" / "web" / "admin.js").read_text(encoding="utf-8")
+    assert "rememberOperatorToken(result.session_token)" in admin_source
 
 
 def test_operator_session_exchange_and_dialog_wiring(tmp_path: Path):
@@ -661,12 +672,16 @@ def test_operator_session_exchange_and_dialog_wiring(tmp_path: Path):
             assert error.code == 403
         else:
             raise AssertionError("wrong operator token must be rejected")
-        with urlopen(base + "/") as response:
+        with urlopen(base + "/admin.html") as response:
             html = response.read().decode("utf-8")
         # The unlock form must route through submit (covers Enter/autofill),
         # and cancel must not submit the dialog form.
         assert 'id="operator-cancel" class="button ghost" type="button"' in html
         assert 'id="operator-submit" class="button primary" type="submit"' in html
+        with urlopen(base + "/") as response:
+            game_html = response.read().decode("utf-8")
+        assert 'id="operator-token"' in game_html
+        assert 'id="operator-unlock"' in game_html
     finally:
         server.close()
         thread.join(timeout=3)
@@ -735,12 +750,22 @@ def test_web_can_resume_an_existing_player(tmp_path: Path):
             base + "/player/view?player_id=web_player",
             headers={"x-sim2-session": resumed["session_token"]},
         )
+        with urlopen(base + "/world") as response:
+            world = json.loads(response.read())
+        assert world["title"] == "潮汐公社"
+        assert world["locale"] == "zh-CN"
+        assert world["world_clock"]["start_minute"] == 420
+
         with urlopen(request) as response:
             view = json.loads(response.read())
         assert view["status"] == "ok"
         assert view["player"]["id"] == "web_player"
+        assert view["location"]["name"] == "公共码头"
         assert any(item.get("kind") == "travel" for item in view["actions"])
         assert view["inventory"]["food_ration"] == 3
+        assert view["item_labels"]["food_ration"] == "海藻口粮"
+        assert view["alert_thresholds"]["satiety_alert_threshold"] == 45
+        assert any(goal["id"] == "inspect_tide_gate" for goal in view["goals"])
     finally:
         server.close()
         thread.join(timeout=3)
@@ -791,7 +816,7 @@ def test_web_manual_wait_runs_the_same_npc_ticks(tmp_path: Path):
         assert provider_names[-1] == "remote"
         assert provider.contexts
         assert all('"web_player"' not in context for context in provider.contexts)
-        assert any(name in context for context in provider.contexts for name in ("Mara", "Ivo", "Selene", "Taro", "Nia", "Ren"))
+        assert any(name in context for context in provider.contexts for name in ("玛拉", "伊沃", "塞琳", "塔罗", "妮娅", "伦"))
     finally:
         server.close()
         thread.join(timeout=3)

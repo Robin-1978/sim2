@@ -81,22 +81,27 @@ export SIM2_BGE_MODEL=/path/to/bge-small-zh-v1.5
 
 The text interface renders a playable scene with numbered actions as well as movement, messages, offers, counteroffers, acceptance/rejection, waiting, and public world telemetry. HTTP exposes the same Platform operations for another client.
 
-The browser surfaces are separate from the TUI: the Runtime Web Client observes
-and controls one instance through local HTTP projections, while the World
-Authoring Workbench edits and compiles a draft package before initialization.
-The repository ships a dependency-free web client at `sim2 serve` `/`. After
-unlocking Operator mode, the page can create and open an instance, switch the
-active world, start autonomous simulation with explicit time/LLM budgets, pause
-at the current complete-minute boundary, continue the same run, stop, or advance
-one minute. See [Web Client Design](docs/design/web-client.md) and
-[World Authoring Web](docs/design/world-authoring-web.md) for the protocol and
-remaining extension points. The development server binds to localhost and must
-not be exposed publicly without additional deployment authentication and CORS
-controls.
+The browser surfaces are separate from the TUI. `sim2 serve` `/` is a
+game-oriented client: a scene, character sheet, action cards, goals, inventory,
+world feed, dialogue and trade. Existing players resume by ID, and manual player
+actions advance the same shared world tick as NPC decisions, interactions and
+Story/God evolution. `/admin.html` keeps the full operator and world-authoring
+workbench: runtime budgets, instance switching, snapshots, CLI-equivalent
+commands, package compilation and smoke tests. See
+[Web Client Design](docs/design/web-client.md) and
+[World Authoring Web](docs/design/world-authoring-web.md). The development
+server binds to localhost and must not be exposed publicly without additional
+deployment authentication and CORS controls.
 
 ## Worlds and extension
 
 The first validation world is [Starter Village](docs/worlds/starter-village.md), with its importable package in [`worlds/starter_village`](worlds/starter_village/). It is a small settlement around a failing pact, with food, water, health, patrol, exploration, trade, relationships, hidden locations, scheduled reflection, and God-led world change.
+
+[`worlds/tidebound_commons`](worlds/tidebound_commons/) is the Chinese coastal
+survival world used by the game client. It ships a survival loop (water, food,
+reeds, driftwood, rations, rope and repair kits), a public repair/route goal
+chain, and no pre-written story beats: Story and God evolve the commons from
+validated events, periodic cadence and the configured stagnation signal.
 
 To add a world, provide a package with `manifest.yaml`, setting and world state, locations, objects, factions, agents, actions, behavior trees, rules, evolution schedule, player template, and optional prompts. `manifest.config_version` is recorded in the new SQLite instance. Reusing an instance ID is rejected; initialize a new ID for every world instance.
 

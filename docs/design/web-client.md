@@ -1,408 +1,173 @@
 # sim2 网页客户端设计
 
-> 状态：Runtime Web Client 与 Authoring Workbench 已形成单机本地闭环。自动运行、
-> 暂停/继续、停止、单步、实例创建与热切换、Operator 解锁均已实现；远程部署认证、
-> SSE 和草稿持久化仍属于后续增强。
->
-> 全功能网页的架构、状态机、接口、权限、测试和交付顺序见
-> [全功能网页客户端实施规划](web-full-client-plan.md)。
-
-网页是 Platform 的观察与输入层，不是第二个运行时。浏览器永远不直接读
-SQLite、YAML、Agent prompt 或 LLM provider；所有数据都来自经过视角过滤的
-投影，所有改变都经过 `ControlService` 和 Platform 的校验、事务与事件记录。
+> 状态：网页已拆成两个产品面：面向玩家的游戏客户端 `/`，以及保留完整
+> 运维与设计能力的运营台 `/admin.html`。两者都只是 Platform 的投影与输入层，
+> 不直接读 SQLite、YAML、prompt 或 LLM provider。
 
 ## 产品边界
 
-网页包含两个产品面。它们可以共用 HTTP 传输和组件库，但不能共用状态写入
-权限。
+| 产品面 | 路径 | 面向用户 | 写入 |
+| --- | --- | --- | --- |
+| 游戏客户端 | `/` | 玩家 | 进入/恢复角色、行动、对话、交易、手动推进世界 |
+| 运营台 | `/admin.html` | 维护者、世界作者 | 运行时控制、实例切换、快照、命令、世界设计工作台 |
 
-| 产品面 | 面向用户 | 读取 | 写入 | 当前状态 |
-| --- | --- | --- | --- | --- |
-| Runtime Web Client | 旁观者、玩家、运行维护者 | 世界投影、地图、公开时间线、角色公开状态 | 玩家对话/交易；维护者运行控制、实例切换和受控事件 | 已实现本地闭环 |
-| World Authoring Workbench | 世界作者、审查者 | 草稿、Schema、规范 IR、编译诊断、smoke 结果 | 草稿编译、smoke、YAML 文件包导出 | 已实现本地静态网页 MVP 与 `/authoring/*` |
-
-Runtime Client 观察的是已经初始化的 SQLite 实例；Authoring Workbench 编辑
-的是独立草稿目录。工作台不能修改正在运行的实例，也不能把草稿直接发布成
-运行时状态。正式实例仍通过 `sim2 init` 创建。
-
-首版不做实时多人协作、远程暴露默认开放、在线编辑 SQLite、在浏览器执行
-Python/SQL/Shell、浏览器持有 API key，或让 Story/God 的内部 prompt 出现在
-普通玩家页面。
+游戏客户端不承担设计工作台职责。需要 Schema、草稿编译、smoke、快照或
+原始命令时，从游戏内“设置 → 开发工具”打开运营台。
 
 ## 总体结构
 
-```mermaid
-flowchart LR
-    B[Browser]
-    R[Runtime Web Client]
-    W[World Authoring Workbench]
-    H[ControlHTTPServer]
-    C[ControlService]
-    P[Platform]
-    D[(world.sqlite3)]
-    S[Schema / Definition Compiler]
-    T[临时 smoke world]
-
-    B --> R
-    B --> W
-    R --> H
-    W --> H
-    H --> C
-    C --> P
-    P --> D
-    W --> S
-    S --> T
-    T --> S
+```text
+Browser
+  ├─ Game Client  ──┐
+  └─ Admin Page   ──┤
+                    ▼
+              ControlHTTPServer
+                    ▼
+               ControlService
+                    ▼
+                 Platform
+                    ▼
+              world.sqlite3
 ```
 
-网页只处理投影、表单和请求状态。`ControlService` 是 TUI、MUD、HTTP 的
-共同入口；新增网页功能必须先扩展这个传输无关的服务，而不是在 HTTP handler
-中复制 Platform 逻辑。
+浏览器只发送经过认证的请求并渲染服务端投影。所有状态变化仍由
+`ControlService` 和 Platform 校验、事务化并写入事件日志。
 
-## Runtime Web Client
+## 游戏客户端
 
-玩家入口优先采用“场景 + 行动卡”的网页游戏模式，而不是把 MUD 命令行搬到
-浏览器。地图给出空间上下文，HUD 保留角色目标和需求，行动卡告诉玩家当前
-能做什么、预计耗时和可见结果；事件流只负责回答“刚才发生了什么”。玩家循环
-是：
+### 布局
+
+- **HUD**：世界名、世界日/时刻/阶段、季节、运行时状态、连接状态、刷新和设置。
+- **左栏**：角色头像/身份/地点、需求与体力条、当前目标、随身物品、能力。
+- **中栏**：地点场景、附近角色、资源点与设施、任务进度、平台校验过的行动卡、
+  条件不足行动及原因、公社公开目标。
+- **右栏**：世界动态、玩家对话、交易报价、公共世界数值。
+- **地图弹窗**：按配置坐标渲染地点与路线；相邻地点可直接出发。
+- **设置抽屉**：实例切换、同步推进模型、自动运行控制、Operator 解锁、运营台入口。
+
+视觉语义由通用字段驱动：地点 `tags` 决定场景色调，物品名来自
+`rules.item_labels`，世界数值名来自 `rules.world_property_labels`，饮水/进食
+警戒线来自 `rules.context_values.*_threshold`。代码不包含世界专用 ID 分支。
+
+### 玩家循环
 
 ```text
-进入世界 → 查看角色/地点 → 选择行动卡或对话
-        → Platform 校验并启动行为 → 查看结果 → 选择下一步
+进入/恢复角色 → 看场景与目标 → 选择行动卡或对话
+             → Platform 校验并启动行为 → 查看进度与结果 → 选择下一步
 ```
 
-已有玩家 ID 可以直接恢复：同一 ID 再次提交时，服务端签发新的 Player
-session，并按当前 `player_template` 补齐缺失的能力、初始物资和行为。玩家
-角色使用 `controller: manual`，自动运行不会替玩家角色做 LLM 决策；手动玩家
-暂停自动运行后通过行动卡行动，提交后客户端会按剩余分钟推进到行为完成，
-也可以选择“推进到完成”或逐分钟“等待一分钟”。手动推进不是私有玩家时钟：
-服务端使用与自动运行相同的 `SimulationRunner` 推进，NPC 决策、交互、演化
-任务、资源再生和分钟效果都在同一批世界 tick 中前进；玩家角色本身仍由人类
-控制。对话和交易下拉框只列出同地点的 Agent/Player，资源与场景物体不会作为
-可交谈目标。
+- 已有玩家 ID 再次提交会恢复角色，并补齐当前 `player_template` 中缺失的
+  能力、物资、行为和 controller。
+- 行动卡只显示 Platform 判定可执行的行为；其余行为进入“条件不足”列表，
+  并显示失败谓词的可读原因。
+- 带目标或参数的行为（例如交谈）会弹出行动配置对话框。目标以稳定 ID 提交，
+  避免重名角色产生歧义。
+- 长时间行为显示剩余分钟和进度条，支持“推进到完成”和“等待 1 分钟”。
 
-观察世界和设计世界仍然保留为独立标签页，但不会占据玩家的首屏。网页不把
-BT、Intent、SQLite 或 LLM 暴露给玩家，只把它们投影成可理解的行动和结果。
+### 手动推进与世界同步
 
-### 页面骨架
+玩家角色使用 `controller: manual`，自动运行不会替玩家角色做 LLM 决策。
+提交行动后，客户端按剩余分钟分块调用 `/player/wait`；服务端使用与自动运行
+相同的 `SimulationRunner`，所以每个 tick 同时推进：
 
-桌面端首屏采用可调整宽度的三栏布局，窄屏切换为四个标签页。布局不包含
-任何世界专用名称，所有标题、单位、颜色含义和状态标签由投影或世界 locale
-提供。
+- 世界分钟与分钟效果、资源再生；
+- NPC 的 Agent 决策、当前行为与行动；
+- 对话、交易等即时交互；
+- Story/God 的自动演化任务。
 
-```text
-┌ 世界名称 · 世界时间 · 运行状态 · 健康 · 连接游标 ┐
-├ 地图/区域 ─────────┬ 公共时间线 ────────────────┤
-│                     │ 事件、结果、因果链、任务状态 │
-├ 角色/势力 ──────────┼ 详情/交互抽屉 ──────────────┤
-│ 位置、活动、需求     │ 对话、交易、观察、审计链接   │
-└ 最近提交 · 错误 · 重连 · 权限提示 ──────────────┘
-```
+手动推进不是玩家私有时钟。`/player/wait` 接受可选 `provider`，游戏客户端
+把设置中选择的模型传给决策、反思、Story 和 God 角色；默认优先选择可用的
+`remote`，也可以在设置里改回服务端默认。客户端每块请求后更新世界时间、
+任务进度和 NPC 决策/错误计数，结束后明确显示成功或模型失败原因。
 
-1. **World header**：显示 `world_id`、世界时间、日历/季节投影、运行/暂停、
-   数据库健康、最近一次命令结果和事件游标。暂停状态必须来自服务端，浏览器
-   不根据本地计时器推断世界是否运行。
-2. **Map**：消费 `/map` 的 `nodes` 和 `edges`。有 `position` 时按配置坐标
-   绘制；没有坐标时使用带固定 seed 的网格布局。节点可展示公开标签、路线、
-   安全状态和当前公开占用者。地图只显示当前 viewer 能看到的地点。
-3. **Timeline**：消费 `/timeline?limit=<n>&after=<event_id>`。默认显示公开
-   叙事投影；用户可以展开结果、来源事件、`causation_id` 和 Story/God 后续
-   任务状态。`world_minute.advanced` 默认折叠，审查模式才显示每个 tick。
-4. **Characters**：显示可见人物的名称、地点、公开状态、当前行为、剩余时长、
-   公开需求和当前目标。详情页按需加载，不能把完整 AgentView 或私有记忆
-   发送给旁观者。
-5. **Interaction drawer**：玩家可以发送对话、建立/接受交易和移动到已知
-   地点；维护者可以暂停、恢复、单步。提交后以服务端结果替换乐观状态，平台
-   拒绝时显示结构化错误，不用自然语言关键字猜测失败原因。
-6. **Causal inspector**：从一个事件展开“触发它的意图/活动”和“它唤醒的
-   Story/God/Reflection 任务”。这只是审计投影，不允许从页面重放或编辑历史
-   事件。
+### 服务端投影
 
-### 运行模式
+`build_player_view` 在决策投影之上补充客户端需要的展示事实：
 
-Runtime Client 有三个视角：
-
-| 视角 | 能看到 | 能提交 |
-| --- | --- | --- |
-| Observer | 公共地图、公共时间线、公开角色状态、健康和指标 | 只读 |
-| Player | 自身、已知地点/事实、公开事件和允许的交互对象 | 对话、交易、移动、等待等玩家命令；会话绑定当前实例 |
-| Operator | Observer 全部内容、任务/审计/健康详情 | 自动运行、暂停/继续、停止、单步、实例切换、受控事件注入和快照操作 |
-
-当前 `sim2 serve` 是绑定 `127.0.0.1` 的开发控制 API。Operator token 在
-服务启动时生成并在浏览器中换取短期 Operator session；Observer 和 Player
-session 分别隔离。它不能直接暴露到公网，公网部署仍需要反向代理认证、
-allowlist、TLS 与 CORS 策略。
-
-## 调试与日志
-
-`sim2 serve` 默认只在 4xx/5xx 时向 stderr 输出请求日志；启动时加
-`--log-level info` 可以看到每个请求：
-
-```text
-2026-11-17 00:12:01 WARNING sim2.http POST /runtime/start -> 403 1.2ms session=none error='a local session with the required role is required'
-```
-
-日志只记录方法、路径、状态、耗时和会话类型，不记录 token、请求体或响应体。
-`session=none` 表示浏览器没有带 `x-sim2-session`，`session=invalid` 通常表示
-服务重启后旧会话已失效。
-
-浏览器侧可以这样定位：
-
-- DevTools → Console：失败的 API 请求会输出路径、状态、`failed_check` 和是否带 session。
-- DevTools → Network：检查 `/runtime/start` 请求头是否包含 `x-sim2-session`。
-- DevTools → Application → Session Storage：检查 `sim2_operator_token`。
-- 页脚构建号 `web-vN` 用于确认当前标签页是否加载了最新前端；升级后需强刷。
-- `GET /runtime` 的 `last_error`、`stop_reason` 和 `history`，以及
-  `GET /health`、`GET /audit`、timeline/events，保留运行与审计诊断。
-
-## 数据和请求协议
-
-### 现有接口
-
-这些接口已经由 `src/sim2/api/http.py` 提供，网页首版直接使用，不另造一套
-查询协议：
-
-| 方法 | 路径 | 用途 |
-| --- | --- | --- |
-| GET | `/status` | 世界时间、运行状态和实例信息 |
-| GET | `/instances` | 扫描并列出可打开 SQLite 实例 |
-| GET | `/runtime` | 自动运行状态机、世界分钟和本次 run usage |
-| GET | `/session` | 创建本地只读 Observer 会话 |
-| GET | `/health` | 数据库/运行时健康；异常返回 HTTP 503 |
-| GET | `/metrics` | 运行指标 |
-| GET | `/observer?limit=20` | 旁观者聚合投影 |
-| GET | `/timeline?limit=100&after=0&ticks=0` | 增量公共时间线 |
-| GET | `/map?viewer_id=<id>&observer=0` | 视角过滤后的地图 |
-| GET | `/audit` | 维护者审计导出 |
-| GET | `/evolution/tasks` | 当前就绪的演化任务 |
-| GET | `/authoring/schema` | Canonical World Template Schema |
-| GET | `/authoring/catalog` | List validated packages under `--authoring-root` |
-| GET | `/player/entry` | 当前世界的玩家入口和出身选项 |
-| GET | `/player/view?player_id=<id>` | 玩家 HUD、可见地图、行动卡和结果 |
-| GET | `/observer/dialogue?limit=20` | 全世界最近公开对话（说话人/听者名、主题、消息） |
-| GET | `/observer/decisions?limit=20` | 最近 NPC 行为决策（开始原因、完成/失败结果） |
-| GET | `/events/related?event_id=<id>` | 一件事的因果链：共享 intent/correlation/causation 的事件 |
-| GET | `/events/stream?after=<id>&ticks=0` | SSE 实时流：timeline 增量、`runtime` 变更、`dialogue`/`decisions` 新增通知；断线用 `after` 或 `Last-Event-ID` 续传，只读不触发模型 |
-| GET | `/snapshots/download?snapshot_id=<id>` | 下载服务端快照（Operator，会话走请求头，不进 URL） |
-| POST | `/instances` | 从已验证模板创建实例 |
-| POST | `/instances/activate` | 停止旧运行时并热切换实例 |
-| POST | `/runtime/start` | 使用 provider、世界分钟和 LLM 调用预算启动 |
-| POST | `/runtime/pause` | 请求在当前完整分钟结束后暂停 |
-| POST | `/runtime/resume` | 以原 `run_id`、目标分钟和预算继续 |
-| POST | `/runtime/stop` | 停止自动 worker，保留世界历史 |
-| POST | `/runtime/step` | 暂停态推进一个完整世界分钟 |
-| POST | `/pause`、`/resume`、`/step` | 运行控制的兼容别名 |
-| POST | `/dialogue` | 发送对话 |
-| POST | `/trade/offers`、`/trade/accept` | 交易交互 |
-| GET | `/trade/offers?agent_id=<id>` | 列出某角色的交易（玩家限自己，Operator 可查任意） |
-| POST | `/trade/counter`、`/trade/reject` | 反报价 / 拒绝（`counter_trade_offer`、`reject_trade_offer`） |
-| POST | `/instances/init` | `init` 等价：从目录模板建独立实例，可选 `activate` 切过去 |
-| POST | `/decide` | `decide` 等价：单 Agent turn，需 Operator |
-| POST | `/simulate` | `simulate` 等价：同步跑 N 分钟，运行时持有时钟时拒绝 |
-| GET | `/snapshots` | 列出服务端 `snapshots/` 下的 SQLite 快照 |
-| POST | `/snapshots` | `snapshot` 等价：一致性拷贝到 `snapshots/` |
-| POST | `/restore` | `restore` 等价：先停运行时再恢复 |
-| POST | `/authoring/validate` | `validate-world` 等价：按包 ID 或受限路径校验 |
-| POST | `/authoring/describe` | `describe-world` 等价：按包 ID 或受限路径输出清单 |
-| POST | `/authoring/build-world` | `build-world --template` 等价：写包到受限目录，可选建实例 |
-| POST | `/players` | 创建玩家；已存在的玩家 ID 直接恢复并补齐模板能力/物资 |
-| POST | `/player/act` | 以玩家身份提交一个配置行为 |
-| POST | `/player/wait` | 玩家手动等待一个世界分钟 |
-| POST | `/events` | 维护模式的事件注入 |
-| POST | `/authoring/compile` | 编译内存草稿并返回诊断 |
-| POST | `/authoring/smoke` | 在临时 SQLite 实例推进短 smoke |
-| POST | `/authoring/export` | 返回已验证的 YAML 文件映射 |
-| POST | `/authoring/open` | 打开当前实例来源包或受限目录中的已有包 |
-| POST | `/authoring/create` | 从目录中的选定模板创建独立 SQLite 实例 |
-| POST | `/authoring/build` | 显式调用服务端 WorldBuilder Agent 起草模板 |
-
-事件游标使用整数 `event_id`。响应中的 `next_after_event_id` 是下一次请求
-应使用的 `after`；同一事件可能因重连重复返回，前端必须按 `event_id` 去重。
-服务端返回的 `world_minute` 和事件内容优先于浏览器缓存。
-
-### 响应与错误
-
-现有读接口保留各自的投影形状；新增写接口统一采用以下错误字段，旧接口
-逐步收敛到同一结构：
-
-```json
-{
-  "status": "rejected",
-  "code": "precondition_failed",
-  "message": "the route is no longer available",
-  "failed_check": "route.open",
-  "retryable": true,
-  "path": "intent.parameters.destination",
-  "world_revision": 1842,
-  "event_id": null
-}
-```
-
-`code`、`failed_check` 和 `path` 是机器字段；`message` 只是给人看的本地化
-说明。浏览器不能通过查找“失败”“拒绝”“wait”等词来决定下一步。
-
-每个改变状态的请求都遵守以下状态机：
-
-```text
-submitted → accepted → committed
-     └──→ rejected
-     └──→ conflict → reload projection → retry (if retryable)
-```
-
-客户端可以显示 `submitted` 的进度，但不能把它当成世界事实。只有包含
-提交事件或最新投影的响应才可更新地图、库存、关系和角色状态。
-
-### 刷新、缓存和重连
-
-本地客户端以 4 秒轮询为事实基线，SSE `/events/stream` 为增量加速层：连接后
-时间线增量和 `runtime` 状态在 1 秒内到达并按 `event_id` 去重合并；SSE 出错
-3 次后自动降级回纯轮询。刷新规则如下：
-
-1. 首次加载并行读取 `/status`、`/observer`、`/map` 和 `/timeline`。
-2. 时间线只带上一次的 `next_after_event_id`；地图和角色投影按
-   `world_revision` 或 `ETag`（实现后）刷新。
-3. 长 Action 期间不提交新的决策，也不在浏览器运行倒计时；只显示服务端的
-   `remaining_minutes`。
-4. 网络中断时保留最后一个已确认快照，显示“连接中断”；恢复后从游标继续，
-   先合并事件再刷新状态，不能清空页面造成时间倒退。
-5. 事件按 `event_id` 去重，时间线按 `world_minute,event_id` 排序。分页边界
-   不以浏览器收到的时间作为依据。
-6. 失败重试只对 `retryable=true` 的命令进行，并带请求幂等键；暂停、交易和
-   事件注入不能因为刷新而重复提交。所有 `POST`（除 `/session` 外）都接受
-   `Idempotency-Key` 请求头或 `idempotency_key` 字段：同一会话_token_配同一
-   键只执行一次并返回同一响应；服务端内存保留最近 500 条。前端写操作统一经
-   `write()` 发送键并在网络失败时用同键重试一次，提交中按钮禁用防连点。
-   快照下载不走幂等，走带会话头的 `fetch`+blob，不把 token 放进 URL。
-
-只读 SSE `/events/stream` 已实现，但 SSE 只是事件通知，仍以 `/timeline` 和
-`/status` 的服务端投影为事实源。不引入 WebSocket 写通道。
-
-## 地图、时间线和演化展示
-
-### 地图
-
-地图投影只包含 `id`、显示名、标签、路线、可见性、安全标记、可选位置和
-公开占用者。前端不认识“村庄”“北门”“仓库”等语义；图标由配置标签或
-locale 映射决定。没有坐标的世界也必须可用，确定性布局保证同一实例刷新
-后位置不跳动。跨区域、多层地图可以先按区域折叠，再展开节点，数据仍是
-同一份 `nodes/edges`。
-
-### 时间线
-
-时间线是公共叙事投影，不是原始事件表。它应显示：
-
-- 发生时间、公开参与者、地点和结果；
-- 事件类型和来源事件（如果 viewer 有权限）；
-- 行为的 expected/actual/delta 是否闭合；
-- Story beat、God proposal 或反思任务是否已排队、执行、提交或等待；
-- 相关资源/能力变化的配置化 label、单位和合理精度。
-
-普通玩家不显示 `Story Agent`、`God Agent`、`NPC` 等框架名作为世界内人物；
-维护者审计页可以显示 role、task_id、provider、延迟和 token 统计，但不显示
-API key 或隐藏推理。`export_timeline.py` 生成的完整文件和网页公共时间线都
-来自同一事件历史，只是可见字段不同。
-
-### 演化面板
-
-演化面板将“事实”和“提议”分开：
-
-```text
-已发生事实 → 累计证据 → Story/God 任务 → 提案 → Platform 校验
-     → 注册定义/剧情进度 → 后续 NPC 行为 → 实际结果
-```
-
-它不能把“God 提议了制度”显示成“制度已经生效”。只有定义注册事件、行为
-结果或世界状态投影提交后才移动到已生效栏。重复提案、等待、冷却和被拒绝
-都要有原因与来源事件，帮助审查是否出现死循环。
-
-## World Authoring Workbench
-
-工作台与 Runtime Client 使用相同视觉语言，但有独立路由和数据源：
-
-1. **World**：世界元数据、时钟、locale、属性、地点、路线和地图坐标。
-2. **Entities**：资源、物体、人物、势力、关系、库存和初始知识。
-3. **Definitions**：Action、Recipe、Capability 和 BT 图；节点只能选择
-   Schema 返回的已注册定义。
-4. **Evolution**：Story/God 触发器、累计证据、冷却、任务类型和工具契约。
-5. **Compile & Test**：结构错误、Expression AST 错误、引用/权限/可达性、
-   未绑定 Action、资源守恒和临时 SQLite smoke 结果。
-
-工作台的完整校验层次和规划接口见
-[`world-authoring-web.md`](world-authoring-web.md)。它必须调用现有
-`world-schema`、Definition Compiler 和 Bootstrap 服务；表单只是这些协议的
-客户端，不得复制条件解析、效果结算或执行资格判断。
-
-“打开当前包”读取实例的 `bootstrap_report.config_dir`；“打开路径”只有在
-`sim2 serve --authoring-root <目录>` 下才允许，并且服务端拒绝目录之外的
-路径。WorldBuilder 通过服务端配置的 `world_builder` provider 运行，浏览器
-只发送世界简述和接收已验证模板/使用量摘要，永远不接触密钥。这个按钮是
-显式的模型调用，不会因为打开编辑器或轮询页面而消耗 tokens。
-
-## 前端实现约束
-
-首版采用轻量静态 JavaScript/HTML，不把新的领域模型带进 Runtime：
-
-```text
-web/
-  index.html
-  app.js                 # 路由、投影和启动
-  app.css                # 无外部依赖的响应式视觉层
-```
-
-MVP 的组件仍集中在 `app.js`，后续拆分时每个组件只消费 JSON 投影，不导入
-`Platform`、SQLite、YAML 或 Agent 工具代码。
-在 Python 服务端托管静态资源是后续部署选项；开发阶段也可以用独立静态
-服务器代理到 `sim2 serve`。API 地址、数据库路径、provider 和密钥不能写入
-页面源码或浏览器 localStorage。
-
-## 分阶段交付
-
-1. **协议层**：为现有投影补充 JSON Schema/契约测试、错误字段、游标边界和
-   只读视角测试；修正 HTTP handler 的统一异常映射。
-2. **Runtime MVP（已实现）**：静态页面实现 header、地图、时间线、角色详情、
-   演化队列和观察模式；使用轮询和事件游标。
-3. **玩家/维护交互（已实现）**：接入暂停、单步、结构化请求结果；对话、
-   交易和角色命令走幂等写通道（`Idempotency-Key`），开始游戏页有完整交易
-   抽屉（报价列表/发起/接受/反报价/拒绝）；远程授权仍是后续工作（需反向代理层）。
-4. **演化审查（已实现）**：显示 Story/God 任务、事实与提议的边界；决策行可
-   展开因果链（`GET /events/related`），运行控制台有分段历史与 token/预算
-   预警（80% 变黄，超限变红）；默认隐藏 provider 输入/输出。审计
-   因果检查器和脱敏 provider 详情留在维护模式增强。
-5. **Authoring MVP（基础已实现）**：Schema 驱动分区表单、原始 JSON 高级模式、
-   编译诊断、smoke run、打开已有包、WorldBuilder 起草和导出。
-6. **增强（部分已实现）**：只读 SSE 实时流、快照下载、跳过链接、焦点可见
-   样式、粗指针触控目标、`prefers-reduced-motion` 已落地；地图区域折叠、
-   版本历史、视觉回归仍待做。
-
-## 验收矩阵
-
-### Runtime
-
-| 场景 | 验收标准 |
+| 字段 | 用途 |
 | --- | --- |
-| 不同世界 | 换用完全不同的地点、属性和对象，网页不改代码即可显示 |
-| 视角隔离 | 玩家看不到私有记忆、隐藏地点或 God 专用上下文；Observer 才能看到公共全局投影 |
-| 增量时间线 | 断线重连从 `after` 继续；重复事件不重复显示；游标不会倒退 |
-| 长时行为 | Action 执行期间页面不重复提交决策，也不把本地计时当作事实 |
-| 写入结果 | 对话/交易/暂停/单步的接受、拒绝、冲突都显示服务端结构化结果 |
-| 因果审查 | 从公开事件可追到后续任务和已提交结果，但提议不伪装成已生效事实 |
-| 并发与回滚 | tick 冲突、SQLite 回滚和网络重试后，页面最终与最新投影一致 |
-| 可访问性 | 键盘可操作、颜色之外有文本状态、支持 Unicode 名称和窄屏布局 |
+| `location` | 当前地点的名称、描述、标签、安全性 |
+| `item_labels` | `rules.item_labels` 的物品显示名 |
+| `capabilities` | 角色能力值与 `capabilities.yaml` 中的名称 |
+| `goals` | 公开目标及 ready/needs_support/blocked 状态 |
+| `alert_thresholds` | 需求条警戒线 |
+| `world_properties` / `world_property_labels` | 右侧公共账目 |
+| `unavailable_actions` | 不可执行行为及失败原因 |
 
-### Authoring
+`GET /world` 提供进入界面需要的事实：世界标题、premise、题材、locale、
+日历、起始分钟和当前实例。`GET /player/entry` 返回配置的出身，包括名称、
+描述、目标和初始配置。
 
-| 场景 | 验收标准 |
-| --- | --- |
-| 表单生成 | 字段和选项来自 Schema/IR，换世界包无需改前端词汇表 |
-| 表达式 | 使用同一受限 AST 编译；错误指出字段路径和位置 |
-| BT 图 | 未注册 Action、循环、越权副作用和不可执行目标被明确标出 |
-| Smoke | 在临时 SQLite 运行最小行为并显示第一条真实失败事件 |
-| 导出 | 导出的 YAML 能通过 CLI 校验；工作台不修改运行实例 |
+## 自动演化
 
-## 相关文档
+世界不需要预写完整剧情。游戏客户端展示的章节来自 Story Agent 对已验证事件
+的提案，世界结构来自 God Agent 对累积证据的提案。当前 `tidebound_commons`
+的配置策略是：
 
-- [客户端使用指南](../client.md)
-- [World Authoring Web 工作台](world-authoring-web.md)
-- [World authoring and WorldBuilder](../world-authoring.md)
-- [运行时协议](runtime-protocols.md)
-- [AgentView 与上下文协议](agent-world-schema.md)
+- `story.yaml` 不包含预写 `beats`；只声明哪些事件可以作为 emergent 来源。
+- Story 在检查、研究、修复、校准、风暴、收获和对话等已验证事件后唤醒，
+  用 `count`、`every`、`distinct_by` 抑制重复讲述同一次收成。
+- God 在公共工程、资源压力和 `world.stagnation` 时唤醒，也可以按
+  `cadence.god` / `cadence.god_structural` 周期检查。
+- `stagnation` 按窗口比较所有角色累计的可执行选项；如果世界长期没有出现新
+  选项，就发布 `world.stagnation`，重新唤醒 God，而不是让角色重复封闭循环。
+- 演化任务使用的模型与手动推进选择的 provider 相同，避免 Story/God 落到不可用
+  的默认模型。
+
+运营台的“演化队列”和“决策动态”仍用于审查事实、提案与结果，但普通玩家只需
+在“动态”中看到已经提交的章节和世界变化。
+
+## 运营台
+
+`/admin.html` 保留原有能力：
+
+- 世界入口与角色预览；
+- 自动运行开始/暂停/继续/停止/单步；
+- 运行历史、LLM 成本、Provider 选择；
+- 实例创建与热切换、快照创建/恢复/下载；
+- 全量 CLI 等价命令；
+- Schema 驱动的世界设计、编译、smoke、导出和 AI 草稿。
+
+运营台使用独立静态资源 `admin.html` / `admin.js` / `admin.css`，不会与游戏
+客户端争用 DOM 或状态。管理写操作仍需 Operator Token 解锁。
+
+## HTTP 面
+
+游戏客户端使用的主要端点：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/world` | 世界展示事实与起始时钟 |
+| GET | `/player/entry` | 玩家出身与入口地点 |
+| POST | `/players` | 新建或恢复玩家，返回 Player session |
+| GET | `/player/view` | 玩家投影、行动、目标、物品标签、世界数值 |
+| POST | `/player/act` | 提交 Platform 校验的行为 |
+| POST | `/player/wait` | 以共享世界 tick 推进，可指定 provider |
+| GET | `/map` | 玩家可见地点、路线与占用者 |
+| GET | `/timeline` | 公开事件流 |
+| GET | `/observer/dialogue` | 公开对话记录 |
+| POST | `/dialogue` / `/trade/*` | 即时对话与交易 |
+| GET | `/runtime` | 运行时状态和可用 Provider |
+| POST | `/runtime/*` | 需要 Operator session |
+| POST | `/instances/activate` | 需要 Operator session |
+
+`/admin.html` 额外使用 `/authoring/*`、`/snapshots*`、`/audit`、`/decisions`
+等运营端点。
+
+## 缓存与构建标记
+
+`index.html` 的 `?v=` 用于资源缓存失效，页脚 `web-game-vN` 用于确认当前标签页
+是否加载了最新游戏客户端；运营台页脚使用 `admin-vN`。修改 `app.js`、
+`app.css`、`admin.js` 或 `admin.css` 后必须同步更新对应版本号。
+
+## 测试
+
+- `tests/test_web_client.py`：游戏页面与管理页面资源、玩家恢复、世界投影、
+  对话/交易、手动同步推进、会话头、Operator 解锁。
+- `tests/test_player_entry_templates.py`：玩家模板、恢复补齐、文本客户端和
+  行动目标。
+- `tests/test_tidebound_commons.py`：世界配置、资源/配方、公开目标、自动
+  Story wake、God cadence 与 stagnation 配置。
+
+新增网页能力应先在 `ControlService` 或 `build_player_view` 中形成传输无关的
+投影，再扩展 HTTP 与前端；不要在浏览器里复制 Platform 规则。

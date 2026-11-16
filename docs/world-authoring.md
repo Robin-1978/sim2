@@ -143,16 +143,20 @@ inventory: {food_ration: 2, fresh_water: 2}
 initial_bt_ids: [gather_water, communicate]
 origins:
   - id: courier
+    name: 渡船信使
+    description: 熟悉河道与住户，愿意把消息带到最远的地方。
     traits: {mobility: 0.7, negotiation: 0.5}
     capabilities: {exploration: 0.4}
+    inventory: {food_ration: 1}
     starting_goal: 找到失踪车队的下落
 knowledge_seed: [public:river_bridge, public:village_square]
 ```
 
 `controller: manual` keeps player characters out of autonomous LLM decision
 loops; use `controller: llm` only when the world intentionally wants an
-auto-driven player avatar. Origin-level `capabilities` and `inventory` override
-the top-level defaults.
+auto-driven player avatar. Origin `name` and `description` are shown by the game
+client's entry screen. Origin-level `capabilities` and `inventory` override the
+top-level defaults per key.
 
 Do not wrap this object in a `player:` key or use `origin_choices`,
 `entry_location`, or string-only origin entries. World validation and runtime
@@ -192,7 +196,35 @@ wakes:
 
 `on` is a persisted event type, `for` is `god`, `story`, or an individual
 consumer, `count` is the number of new events needed, and `every` is the
-cooldown (`m`, `h`, `d`, or `w`). `tools`, `purpose`, `result`, and optional
+cooldown (`m`, `h`, `d`, or `w`).
+### Continuous evolution instead of a fixed plot
+
+A world does not need a complete pre-written story or a full development tree.
+Ship the starting facts, the available survival/public behaviors, and an
+evolution policy; let Story and God create the next chapter from validated
+events:
+
+- keep `story.beats` empty (or only a seed) and list the event types that may
+  become emergent sources in `story.emergent_source_event_types`;
+- wake Story on discovery, repair, harvest, conversation and storm events,
+  using `count`, `every` and `distinct_by` so the same outcome is not retold
+  forever;
+- wake God on public works, resource pressure and `world.stagnation`, and add a
+  periodic `cadence.god` / `cadence.god_structural` review;
+- configure `stagnation: {window: 1d, max_interval: 7d}`. Platform compares each
+  character's cumulative executable options; when the world stops producing
+  new options it publishes `world.stagnation`, which wakes God to evolve the
+  world instead of letting residents repeat a closed loop;
+- do not mark evolution sources `manual_only` unless the world intentionally
+  requires an operator to trigger them. Automatic runs and synchronized player
+  waits execute the same Story/God tasks;
+- make sure the runtime provider selected for play also serves Story and God.
+  A failing local model otherwise stops both NPC decisions and evolution.
+
+Actions and behavior trees can still declare `wake: [story, god]` for a
+one-off producer event, but the `wakes` policy should remain the main source of
+continuous evolution.
+ `tools`, `purpose`, `result`, and optional
 `definition_type` constrain that one wake when a particular kind of definition
 is required. For example, ledger review may require `definition_type: behavior`,
 which prevents God from substituting a signal rule or unrelated capability.

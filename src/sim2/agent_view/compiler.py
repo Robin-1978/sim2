@@ -1024,7 +1024,7 @@ class AgentViewCompiler:
             target_text = "Platform resolves permitted targets from the current view."
             target_keys = self._target_parameter_keys(bt, bt_defs)
             target_required = bool(target_keys) and len(participants) > 1
-            target_options = [{"name": str(item.get("name", item.get("id", "participant")))} for item in participants[:8]]
+            target_options = [{"id": str(item.get("id", "")), "name": str(item.get("name", item.get("id", "participant")))} for item in participants[:8]]
             parameter_options: dict[str, list[dict[str, Any]]] = {}
             source_parameter = (bt.get("agent_parameters", {}) or {}).get("source_id")
             if source_parameter is not None and research_sources:
@@ -1606,7 +1606,8 @@ class AgentViewCompiler:
             if not isinstance(raw, dict) or not raw.get("id"):
                 continue
             audience = {str(value) for value in (raw.get("audience") or [])}
-            if audience and agent_name not in audience and str(agent.get("id")) not in audience:
+            player_audience = "player" in audience and str(agent.get("role") or "") == "player"
+            if audience and not player_audience and agent_name not in audience and str(agent.get("id")) not in audience:
                 continue
             target_ids = [str(value) for value in (raw.get("target_behaviors") or [])]
             support_ids = [str(value) for value in (raw.get("support_behaviors") or [])]
