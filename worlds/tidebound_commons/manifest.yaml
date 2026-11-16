@@ -1,6 +1,6 @@
-config_version: tidebound-commons-0.1
+config_version: tidebound-commons-2.0
 world_id: tidebound_commons
-name: Tidebound Commons
+name: 潮汐公社
 time_unit: minute
 start_world_minute: 0
 random_seed: 7419

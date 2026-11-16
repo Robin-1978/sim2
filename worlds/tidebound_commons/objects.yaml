@@ -1,37 +1,40 @@
 objects:
 - id: tide_gate
   type: machine
-  name: Tide Gate
+  name: 潮门
+  description: 公社最重要的防线。当前闸板开裂，只能承受小规模的风暴潮。
   initial_state:
     location_id: gatehouse
     status: damaged
     repaired: false
 - id: drowned_chart
   type: document
-  name: Drowned Observatory Chart
+  name: 沉没海图
+  description: 观测台墙上的旧航线图，只记录了一个低潮窗口，还缺少另一半验证。
   initial_state:
     location_id: drowned_observatory
     readable: true
     status: partial
   research_required: 2
-  research_question: Which safe route and tide window can reconnect the commons?
+  research_question: 哪一条安全通道和潮汐窗口能重新连接公社与外海？
   research_novelty_key: observatory-route
   research_discoveries:
   - id: researched:drowned_chart:tide_window
-    fact: The chart records a four-hour low-tide window that exposes a safe channel east of the marsh.
+    fact: 海图记录了一个四小时的低潮窗口；窗口打开时，沼泽东侧会露出一条安全水道。
   - id: researched:drowned_chart:signal_cause
-    fact: The old beacon failed because its lens was tuned for a seasonal tide cycle, not because the channel vanished.
+    fact: 旧信标失效并非因为水道消失，而是透镜被调成了季节潮周期，错过了每日的短潮。
 - id: rain_catcher
   type: machine
-  name: Roof Rain Catcher
+  name: 屋顶集雨器
+  description: 工坊屋顶的集雨装置，管路已经堵死。修好它能稳定补充淡水，但需要额外的材料。
   initial_state:
     location_id: workshop
     status: offline
     repaired: false
-
 - id: signal_lens
   type: machine
-  name: Seasonal Signal Lens
+  name: 季节信号透镜
+  description: 闸室屋顶的旧信号灯。校准后可以把安全航路的消息送到更远的海面。
   initial_state:
     location_id: gatehouse
     status: dim

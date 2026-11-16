@@ -1,15 +1,14 @@
 agents:
 - id: mara
-  name: Mara
-  role: tide_steward
-  ultimate_goal: Make the commons safe enough to survive the next storm without hiding
-    the cost from its residents.
+  name: 玛拉
+  role: 潮务官
+  ultimate_goal: 让公社撑过下一次风暴，同时把每一次修复的真实代价摆在所有人面前。
   traits:
-    responsible: 0.92
-    patient: 0.78
+    尽责: 0.92
+    沉得住气: 0.78
   beliefs:
   - id: shared_costs
-    statement: A repair is only safe when the material cost is visible to everyone.
+    statement: 只有把材料代价公开，修复才算真正安全。
     confidence: 0.82
   needs:
     hydration: 78
@@ -20,36 +19,40 @@ agents:
     stewardship: 0.92
     crafting: 0.72
     conversation: 0.7
-    gathering: 0.38
+    gathering: 0.45
   initial_bt_ids:
   - inspect_gate
   - repair_gate
   - craft_repair_kit
+  - craft_rope
+  - gather_reed
   - communicate
   - gather_water
   - gather_shellfish
   - craft_rations
   - tune_signal
   - gather_driftwood
+  - eat_ration
+  - drink_water
   initial_state:
     location_id: commons_quay
     status: idle
     integrity: 100
     stamina: 88
   inventory:
-    fresh_water: 1
-    food_ration: 1
+    fresh_water: 2
+    food_ration: 2
+    marsh_reed: 1
 - id: ivo
-  name: Ivo
-  role: marsh_forager
-  ultimate_goal: Keep food and clean water flowing while proving the marsh can be
-    used without being stripped bare.
+  name: 伊沃
+  role: 沼泽采集者
+  ultimate_goal: 让食物和净水持续流动，同时证明沼泽可以被使用，而不是被榨干。
   traits:
-    resourceful: 0.9
-    playful: 0.72
+    机敏: 0.9
+    爱开玩笑: 0.72
   beliefs:
   - id: living_marsh
-    statement: A bed that is harvested too hard will not feed the commons next tide.
+    statement: 采得太狠的贝滩，下一次潮水就养不活公社了。
     confidence: 0.8
   needs:
     hydration: 74
@@ -58,14 +61,16 @@ agents:
     purpose: 70
   capabilities:
     gathering: 0.94
-    crafting: 0.6
+    crafting: 0.62
     exploration: 0.68
-    conversation: 0.62
+    conversation: 0.6
   initial_bt_ids:
   - gather_water
   - gather_shellfish
   - gather_driftwood
+  - gather_reed
   - craft_rations
+  - craft_rope
   - eat_ration
   - drink_water
   - communicate
@@ -75,19 +80,20 @@ agents:
     integrity: 100
     stamina: 90
   inventory:
-    fresh_water: 1
-    food_ration: 1
+    fresh_water: 2
+    food_ration: 2
+    shellfish: 1
+    marsh_reed: 2
 - id: selene
-  name: Selene
-  role: chart_keeper
-  ultimate_goal: Turn the drowned observatory's fragments into a route that gives
-    the commons a future beyond emergency salvage.
+  name: 塞琳
+  role: 海图保管员
+  ultimate_goal: 把沉没观测台的碎片拼成一条真正可走的航路，让公社不再只靠紧急打捞过日子。
   traits:
-    curious: 0.96
-    methodical: 0.9
+    好奇: 0.96
+    条理分明: 0.9
   beliefs:
   - id: evidence_over_hope
-    statement: A route is real only when another person can follow the same tide marks.
+    statement: 只有别人也能沿着同样的潮痕走一遍，路线才算成立。
     confidence: 0.88
   needs:
     hydration: 80
@@ -98,8 +104,8 @@ agents:
     research: 0.96
     exploration: 0.9
     conversation: 0.75
-    gathering: 0.32
-    crafting: 0.3
+    gathering: 0.4
+    crafting: 0.4
     stewardship: 0.42
   initial_bt_ids:
   - research_chart
@@ -109,27 +115,30 @@ agents:
   - drink_water
   - gather_water
   - gather_shellfish
+  - gather_reed
+  - craft_rope
   - craft_rations
   - tune_signal
+  - craft_repair_kit
   initial_state:
     location_id: commons_quay
     status: idle
     integrity: 100
     stamina: 86
   inventory:
-    fresh_water: 1
-    food_ration: 1
+    fresh_water: 2
+    food_ration: 2
+    marsh_reed: 1
 - id: taro
-  name: Taro
-  role: ferry_runner
-  ultimate_goal: Reconnect separated households and make sure no useful discovery
-    stays in one person's notebook.
+  name: 塔罗
+  role: 渡船信使
+  ultimate_goal: 把分散的住户重新连起来，不让任何一条有用的发现只留在某个人的笔记本里。
   traits:
-    empathetic: 0.9
-    daring: 0.76
+    善解人意: 0.9
+    胆大: 0.76
   beliefs:
   - id: knowledge_moves
-    statement: A discovery that cannot travel with people is not yet a public resource.
+    statement: 不能跟着人走遍公社的发现，还不算公共资源。
     confidence: 0.78
   needs:
     hydration: 76
@@ -139,8 +148,8 @@ agents:
   capabilities:
     exploration: 0.76
     conversation: 0.94
-    gathering: 0.5
-    crafting: 0.28
+    gathering: 0.55
+    crafting: 0.35
   initial_bt_ids:
   - explore_observatory
   - communicate
@@ -148,25 +157,28 @@ agents:
   - eat_ration
   - drink_water
   - gather_shellfish
+  - gather_reed
   - craft_rations
+  - craft_rope
   initial_state:
     location_id: gatehouse
     status: idle
     integrity: 100
     stamina: 92
   inventory:
-    fresh_water: 1
-    food_ration: 1
+    fresh_water: 2
+    food_ration: 2
 - id: dockhand_nia
-  name: Nia
-  role: commons_dockhand
+  name: 妮娅
+  role: 码头帮工
   controller: bt
   bt_priority:
   - gather_driftwood
+  - gather_reed
   - gather_shellfish
-  ultimate_goal: Keep a small reserve of repair material moving through the quay.
+  ultimate_goal: 让码头始终有一小批修理材料在流动。
   traits:
-    steady: 0.8
+    沉稳: 0.8
   beliefs: []
   needs:
     hydration: 76
@@ -175,29 +187,33 @@ agents:
     purpose: 58
   capabilities:
     gathering: 0.62
-    crafting: 0.28
+    crafting: 0.32
   initial_bt_ids:
   - gather_driftwood
+  - gather_reed
   - gather_shellfish
+  - craft_rope
   - craft_rations
+  - eat_ration
+  - drink_water
   initial_state:
     location_id: commons_quay
     status: idle
     integrity: 100
     stamina: 86
   inventory:
-    fresh_water: 1
-    food_ration: 1
+    fresh_water: 2
+    food_ration: 2
 - id: dockhand_ren
-  name: Ren
-  role: commons_dockhand
+  name: 伦
+  role: 码头帮工
   controller: bt
   bt_priority:
   - gather_shellfish
   - gather_water
-  ultimate_goal: Keep the marsh harvest within its renewable limit.
+  ultimate_goal: 把沼泽的收成控制在可再生范围之内。
   traits:
-    observant: 0.82
+    观察细致: 0.82
   beliefs: []
   needs:
     hydration: 74
@@ -206,16 +222,19 @@ agents:
     purpose: 60
   capabilities:
     gathering: 0.58
-    crafting: 0.28
+    crafting: 0.3
   initial_bt_ids:
   - gather_shellfish
   - gather_water
+  - gather_reed
   - craft_rations
+  - eat_ration
+  - drink_water
   initial_state:
     location_id: marsh_edge
     status: idle
     integrity: 100
     stamina: 88
   inventory:
-    fresh_water: 1
-    food_ration: 1
+    fresh_water: 2
+    food_ration: 2

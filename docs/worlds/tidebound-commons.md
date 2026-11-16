@@ -1,79 +1,122 @@
-# Tidebound Commons
+# 潮汐公社 (Tidebound Commons)
 
-`Tidebound Commons` is the first deliberately playable non-village content pack
-for sim2. It is a four-person coastal survival and civic mystery rather than a
-single linear quest. The residents must decide how to spend the same working
-time and renewable materials:
+`tidebound_commons` 是 sim2 的中文海岸生存世界，也是网页游戏客户端使用的
+完整内容包。它围绕一条公共目标链展开，但**不预写完整剧情**：Story 与 God
+根据已经提交到事件日志的事实，持续生成下一段章节和世界结构。
 
-- repair the damaged tide gate before storm pressure rises;
-- preserve food and water so long expeditions remain possible;
-- survey and research the drowned observatory to recover a safe route;
-- share evidence so a private discovery becomes a commons decision.
+居民必须在同一份时间、体力和可再生材料之间做选择：
 
-The package contains no Platform branch for this setting. Locations, distance,
-attributes, actions, recipes, behaviors, resource regeneration, Story wakes and
-God wakes are all declarative YAML. The runtime instance is SQLite after
-bootstrap, so later God proposals become instance definitions rather than edits
-to this package.
+- 在风暴压力上升前测量并修复破损的潮门；
+- 保留淡水和口粮，让远行和修复都还有余量；
+- 勘察并补全沉没观测台的海图，找到真正的低潮通道；
+- 校准季节信号，把安全航路的消息送出海岸；
+- 让每一次采集都留在沼泽可以恢复的范围内。
 
-## Balance targets
+世界包只包含声明式 YAML：地点、距离、属性、行动、配方、行为树、资源再生、
+Story/God 唤醒策略和玩家模板。运行中的世界是 SQLite；后续 God 提案写入实例
+定义，不会反过来修改这个包。
 
-The starting reserve is intentionally neither a timer nor an infinite sandbox.
-Each resident starts with one ration and one water unit. The marsh pool and
-shellfish bed regenerate every 12 hours, while driftwood regenerates daily. A
-single gathering action reserves two units, so an early trip can fund either a
-repair kit (two driftwood plus one shellfish) or three rations (two shellfish
-plus one water). The caps prevent stockpiling from dominating the choice.
+## 平衡目标
 
-Travel is weighted: the observatory is two distance units from the marsh and
-three from the gatehouse. A normal trip therefore costs time and stamina, while
-stamina recovers slowly each minute. The repair kit is capped at two total
-units and preserved food at thirty; the player can prepare for a storm, but
-cannot solve the world by repeatedly crafting.
+初始资源点：
 
-The four residents have complementary options:
+| 资源 | 初始量 | 上限 | 再生 |
+| --- | --- | ---: | --- |
+| 淡水 | 24 | 30 | 每 6 小时 +8 |
+| 贝类 | 28 | 36 | 每 6 小时 +10 |
+| 浮木 | 20 | 28 | 每 8 小时 +6 |
+| 芦苇 | 20 | 30 | 每 6 小时 +8 |
 
-| Resident | Strength | Tension |
-| --- | --- | --- |
-| Mara | stewardship and repair | must spend scarce kits on a public gate |
-| Ivo | renewable gathering and preservation | harvesting too often delays repairs |
-| Selene | research and route discovery | needs food and water for long surveys |
-| Taro | communication and exploration | can carry knowledge, but cannot prove it alone |
+一次采集预留 2 份资源，步行到浅滩通常需要 48 分钟。配方形成一条
+可读的加工链：
 
-No single initial behavior can complete the main arc. A healthy run needs
-material collection, workshop production, gate repair, and two research stages.
-The route is not considered open after the first fact: Story receives each
-verified stage while the world milestone is emitted only after the configured
-progress is complete.
+- **腌制海藻口粮**：贝类 2 + 淡水 1 → 口粮 3（60 分钟）
+- **搓制芦苇绳**：芦苇 2 → 芦苇绳 1（30 分钟）
+- **潮门修理工具包**：浮木 2 + 芦苇绳 1 → 工具包 1（75 分钟）
 
-## Emergent continuation contract
+玩家基础模板是 3 份口粮、2 份淡水、2 份贝类和 1 份芦苇；不同出身会覆盖
+对应物品与能力。工具包上限 3，防止无限囤积；口粮仍需要真实消耗输入和制作
+时间。
 
-Story turns a verified inspection, harvest, craft, repair, survey, or research
-outcome into a grounded next chapter. It may name an already executable choice,
-but cannot claim that an unperformed journey or repair happened.
+生存阈值刻意对齐，避免“不能吃也不能干活”的夹层：
 
-God wakes on accumulated distinct evidence rather than on a fixed daily clock.
-Two distinct chart stages can justify one new route object or executable
-continuation; repeated repairs can justify a maintenance structure; repeated
-harvests can justify preservation or transport. Platform rejects duplicate,
-unreachable, or resource-minting proposals. If the current choices remain
-adequate, God is allowed to wait.
+- 饮水/进食警戒线：水分 ≤ 45、饱食 ≤ 45；
+- 研究、修复、采集等需要体力的行为：水分 > 40、饱食 > 40；
+- 因此 41–45 区间仍可工作，0–45 区间可以进食饮水，不存在纯死区；
+- 严重脱水/饥饿只在 ≤5 时造成体力伤害。
 
-## Verification
+## 居民
+
+| 居民 | 身份 | 强项 | 张力 |
+| --- | --- | --- | --- |
+| 玛拉 | 潮务官 | 公共维护、修复 | 必须把稀缺工具包用在公共潮门上 |
+| 伊沃 | 沼泽采集者 | 采集、腌制 | 采得太勤会拖慢修复 |
+| 塞琳 | 海图保管员 | 研究、勘察 | 远行需要口粮和净水 |
+| 塔罗 | 渡船信使 | 交涉、探索 | 能传播消息，但不能独自证明 |
+| 妮娅 | 码头帮工 (`bt`) | 浮木、芦苇、贝类 | 后台行为树，固定优先级 |
+| 伦 | 码头帮工 (`bt`) | 贝类、淡水 | 后台行为树，固定优先级 |
+
+妮娅和伦使用 `controller: bt`，按 `bt_priority` 和需求紧急度工作，不消耗
+模型调用；四名决策角色使用 LLM，拥有记忆、反思和社交回应能力。
+
+## 公开目标链
+
+`rules.progression` 声明五个公开阶段，玩家和配置的受众都能看到：
+
+1. 测量潮门
+2. 修复潮门（先备齐浮木、芦苇绳和工具包）
+3. 补全沉没海图（两个不同研究阶段）
+4. 校准季节信号（潮门完整性阈值 + 工具包）
+5. 重开外海航路（公共信号阈值）
+
+这些阶段只声明目标、目标行为和完成事件，不直接发放资源或跳过前置条件。
+Story 负责把已验证结果变成章节；God 负责在证据足够时增加可达的新结构。
+
+## 自动演化，而不是固定剧情
+
+这个包**没有预写 `story.beats`**。`story.yaml` 只声明哪些事件可以作为
+emergent 来源；真正的章节由 Story Agent 在事件唤醒时提出。当前策略：
+
+- Story 在 `gate.inspected`、`research.completed`、`tide_gate.repaired`、
+  `signal.tuned`、`signal.route_open`、`storm.warning`、资源收获和对话后
+  被唤醒；`count`、`every`、`distinct_by` 抑制同一次收成被反复讲述。
+- God 在公共工程、资源压力和 `world.stagnation` 时被唤醒，并按
+  `cadence.god: 3d`、`cadence.god_structural: 7d` 周期复查。
+- `stagnation` 每 1 天比较所有角色累计的可执行选项；若世界没有产生新选项，
+  发布 `world.stagnation`，再次唤醒 God，最大间隔 7 天。这样世界不会在若干
+  tick 后只剩重复的生存动作。
+- 自动运行和玩家手动同步推进都会执行这些 Story/God 任务；不要把演化源标成
+  `manual_only`，除非确实需要管理员触发。
+- 演化任务使用玩家在网页设置里选择的 provider。若默认 `local` 模型失败，
+  NPC 决策和演化都会停摆，因此游戏客户端默认优先选择可用的 `remote`。
+
+一次真实检查中，玛拉完成 `inspect_gate` 后，Story 在 90 分钟自动生成了新的
+`emergent` 章节，并推动她先打捞浮木、再与塔罗交换情报；God 周期任务和
+stagnation 也在同一套配置下运行。
+
+## 生存与目录语义
+
+行为目录把“准备”和“恢复”分开：
+
+- `drive_tags` 表示行为本身立即改变的需求；
+- `supports_drive_tags` 表示产物以后可以帮助的需求；
+- 采贝类不会恢复饱食，只有吃口粮才会；
+- 腌制口粮是制作行为，不是进食行为；
+- 没有口粮的饥饿居民仍可采贝类，因为这是恢复链的第一步；
+- 沼泽采集要求水分 > 40，避免脱水居民硬走远路。
+
+Platform 只为当前可执行的行为生成行动卡；其余行为以
+`unavailable_actions` 暴露失败谓词，网页会把它翻译成可读原因。
+
+## 验证
 
 ```bash
 sim2 validate-world --config worlds/tidebound_commons
 sim2 describe-world --config worlds/tidebound_commons
 sim2 init --config worlds/tidebound_commons --instance-id tidebound-demo
-python scripts/run_long_simulation.py \
-  --config worlds/tidebound_commons \
-  --instance-id tidebound-deterministic \
-  --minutes 2880
 ```
 
-For a real-model causal audit, each round records the rendered decision context,
-tool calls and final response, world events, progression states, resource
-levels and provider usage:
+真实模型因果审计：
 
 ```bash
 python scripts/audit_world_evolution.py \
@@ -85,73 +128,16 @@ python scripts/audit_world_evolution.py \
   --instance-id tidebound-audit
 ```
 
-The five public stages in `rules.progression` are content declarations. They do
-not grant resources or bypass prerequisites. A gate measurement disappears once
-its verified event exists; repair becomes ready only after a carried kit exists;
-the chart stage advances from distinct verified research stages rather than
-duplicate reports. Story and God still own narrative and structural changes.
+重点回归测试覆盖：包验证、地点/资源/配方数量、资源再生上限、公开目标投影、
+`story.beats == []`、Story/God 自动唤醒、God cadence 与 stagnation 配置，以及
+一次真实 `inspect_gate` 后自动生成 ready Story 任务。
 
-The focused regression test checks package validation, package isolation from
-Starter Village fields, route distances, regenerative resource caps, and that
-every configured behavior is assigned to at least one resident. A real model
-run should audit the same loop at the event level: material collected, recipe
-inputs reserved, repair result, each chart stage, Story beat, and any God
-proposal must all be visible in the timeline.
+## 地图扩展
 
-## Expansion beyond the starting shore
+六个初始地点只是起点。两个研究阶段完成后，God 可以创建一个新的外部地点，
+再用通用 route 变化建立带权重的双向路线。新地点只是“可导航的可能”；只有
+现有居民获得可执行的探索行为并真的走完旅程，它才进入实际玩法。Story 可以
+描述这次扩展，但不能声称旅程已经发生。
 
-The five starting locations are a foothold, not the world boundary. The chart
-has two separate research stages. After both are verified, God may create one
-new location (for example, an outer shelf or a second settlement) and then add a
-weighted reciprocal route with the generic `route` world change. A new location
-is only a navigable possibility; it becomes part of play after an existing
-resident receives an executable exploration behavior and completes the travel.
-Story can frame that opening, but cannot claim the journey happened. This keeps
-map growth causal and gives every expansion a time, stamina and supply cost.
-
-## Named characters and the wider population
-
-Mara, Ivo, Selene and Taro are the four decision-bearing characters. They have
-LLM controllers, private memories, reflection and the ability to ask for a
-social response. Nia and Ren are dockhands with `controller: bt`: they use the
-same gathering, preservation, travel and recovery BTs, but their routine work
-never spends a model call. Their survival choice is scored from configured need
-urgency before the optional `bt_priority` ordering. This makes the commons feel
-populated while reserving model budget for choices that can change the story.
-
-The opening season deliberately has no universal war system. Conflict is a
-content branch: once an expanded route produces a rival salvage faction, God
-may register a relationship, a guarded route, a negotiation behavior or a
-conserved raid/defense Action. An attack must have a visible reachable target,
-explicit capability and cost, an observable target effect, a failure result and
-an event that Story can ground. If the evidence does not justify escalation,
-the world stays social and exploratory; adding a war clock would remove the
-meaning of the commons' early choices.
-
-The mid-game has a second concrete branch: once the tide gate reaches the
-configured stability threshold, Mara or Selene can spend conserved repair kits
-to retune the seasonal signal lens. Two verified tunings open the signal route;
-only then can God justify a new external location. This makes the route opening
-a result of resident work rather than a free story unlock.
-
-The survival guard is deliberately visible in the action catalog. When
-hydration or satiety falls below 45, optional research, travel, inspection and
-repair behaviors disappear until the resident has a recovery choice; eating
-remains available even when dehydrated, and drinking remains available even
-when hungry. Shellfish gathering remains available while hungry because the
-raw catch is the first step in a recovery chain when no ration exists; it is
-not treated as an immediate meal. A resident without rations therefore follows
-gather shellfish / draw water / prepare rations / eat rather than being left
-with no executable recovery behavior. Hydration still has to be above 45 for
-the marsh trip so the survival guard sends a dehydrated resident to water
-first.
-
-The catalog separates direct recovery from preparation. `drive_tags` lists a
-need that the behavior itself changes immediately; `supports_drive_tags` lists
-a need that its produced item can help later. Gathering shellfish therefore
-supports satiety, while only eating a preserved ration directly restores it.
-The Agent prompt repeats this distinction beside the authoritative `impact`
-field so an ingredient is never mistaken for a completed meal. Preserved
-rations have no world-wide inventory cap: each new ration still consumes
-carried shellfish and freshwater and takes recipe time, so one resident's
-stored meals cannot strand another resident who has the inputs to cook.
+如果证据不足，God 应选择 `wait`，而不是凭空生成战争、灾难或已完成的结果。
+扩展的代价、可达性和可执行性仍由 Platform 校验。

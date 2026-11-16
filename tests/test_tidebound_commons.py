@@ -35,15 +35,15 @@ def test_tidebound_commons_is_a_balanced_non_village_package(tmp_path: Path) -> 
     description = describe_config(WORLD)
     assert description["world_id"] == "tidebound_commons"
     assert description["counts"]["agents"] == 6
-    assert description["counts"]["locations"] == 5
-    assert description["counts"]["recipes"] == 2
+    assert description["counts"]["locations"] == 6
+    assert description["counts"]["recipes"] == 3
 
     platform = Platform(create_instance(WORLD, "tidebound-balance", tmp_path / "runtime"))
     try:
         assert platform.store.repositories.metadata.get("world_properties")["tide_gate_integrity"] == 0.28
         assert "hydration" in platform.store.repositories.metadata.get("attributes")[2]["id"]
         assert all(platform.decision_view(agent["id"])["executable_behaviors"] for agent in platform.store.repositories.entities.list_agents())
-        for resource_id, cap in (("fresh_water", 20), ("shellfish", 24), ("driftwood", 16)):
+        for resource_id, cap in (("fresh_water", 30), ("shellfish", 36), ("driftwood", 28), ("marsh_reed", 30)):
             entity = platform.store.repositories.entities.get_entity(resource_id)
             assert float(entity["initial_state"]["quantity"]) <= cap
         # The first choice is meaningful: harvesting shellfish creates a real
@@ -53,24 +53,24 @@ def test_tidebound_commons_is_a_balanced_non_village_package(tmp_path: Path) -> 
         assert accepted["status"] == "accepted", accepted
         _run_active(platform, "ivo")
         ivo = platform.store.repositories.entities.get_agent("ivo")
-        assert ivo["inventory"].get("shellfish", 0) == 2
+        assert ivo["inventory"].get("shellfish", 0) == 3
         shellfish_before = platform.store.repositories.entities.get_entity("shellfish")["initial_state"]["quantity"]
-        assert shellfish_before == 22
+        assert shellfish_before == 26
 
         accepted = _start(platform, "ivo", "craft_rations", "tide-craft-1")
         assert accepted["status"] == "accepted", accepted
         spent = _run_active(platform, "ivo")
         ivo = platform.store.repositories.entities.get_agent("ivo")
         assert spent >= 100  # weighted return to the workshop is part of the choice
-        assert ivo["inventory"].get("food_ration", 0) == 4
-        assert ivo["inventory"].get("shellfish", 0) == 0
-        assert ivo["inventory"].get("fresh_water", 0) == 0
+        assert ivo["inventory"].get("food_ration", 0) == 5
+        assert ivo["inventory"].get("shellfish", 0) == 1
+        assert ivo["inventory"].get("fresh_water", 0) == 1
 
         # Regeneration is bounded and does not erase the prior cost.
         for _ in range(720):
             platform.step()
         shellfish = platform.store.repositories.entities.get_entity("shellfish")
-        assert 22 < shellfish["initial_state"]["quantity"] <= 24
+        assert 26 < shellfish["initial_state"]["quantity"] <= 36
         assert platform.store.repositories.metadata.get("world_properties")["tide_gate_integrity"] == 0.28
     finally:
         platform.close()
@@ -148,7 +148,7 @@ def test_catalog_distinguishes_food_preparation_from_eating(tmp_path: Path) -> N
         assert "Inventory -1 food ration" in behaviors["behavior:eat_ration"]["impact"]
         assert behaviors["behavior:craft_rations"]["drive_tags"] == ["purpose", "belonging"]
         assert behaviors["behavior:craft_rations"]["supports_drive_tags"] == ["satiety"]
-        assert "eating a ration is a separate behavior" in behaviors["behavior:craft_rations"]["purpose"]
+        assert "吃口粮" in behaviors["behavior:craft_rations"]["purpose"]
         assert any("only collects or produces an item is preparation" in rule for rule in view["platform_rules"])
 
         agent["needs"]["satiety"] = 60
@@ -156,7 +156,7 @@ def test_catalog_distinguishes_food_preparation_from_eating(tmp_path: Path) -> N
         behaviors = {item["ref"]: item for item in platform.decision_view("mara")["executable_behaviors"]}
         assert behaviors["behavior:gather_shellfish"]["drive_tags"] == ["purpose"]
         assert behaviors["behavior:gather_shellfish"]["supports_drive_tags"] == ["satiety"]
-        assert "does not restore satiety" in behaviors["behavior:gather_shellfish"]["purpose"]
+        assert "不会恢复饱食" in behaviors["behavior:gather_shellfish"]["purpose"]
     finally:
         platform.close()
 
@@ -193,14 +193,14 @@ def test_tidebound_progression_projection_exposes_ready_and_supporting_steps(tmp
         mara = platform.decision_view("mara")
         goals = {item["id"]: item for item in mara["progression_goals"]}
         assert goals["inspect_tide_gate"]["status"] == "ready"
-        assert "Inspect Tide Gate" in goals["inspect_tide_gate"]["ready_behaviors"]
+        assert "测量潮门" in goals["inspect_tide_gate"]["ready_behaviors"]
         assert goals["repair_tide_gate"]["status"] == "needs_support"
-        assert "Salvage Driftwood" in goals["repair_tide_gate"]["support_behaviors"]
+        assert "打捞浮木" in goals["repair_tide_gate"]["support_behaviors"]
         assert any("repair kit" in item.lower() for item in goals["repair_tide_gate"]["missing_requirements"])
         selene = platform.decision_view("selene")
         chart = next(item for item in selene["progression_goals"] if item["id"] == "complete_drowned_chart")
         assert chart["status"] == "ready"
-        assert "Research Drowned Chart" in chart["ready_behaviors"]
+        assert "研究沉没海图" in chart["ready_behaviors"]
         taro_goals = {item["id"]: item for item in platform.decision_view("taro")["progression_goals"]}
         assert not any(
             item["id"] == "complete_drowned_chart"
@@ -228,5 +228,48 @@ def test_tidebound_progression_projection_exposes_ready_and_supporting_steps(tmp
             item["id"] == "complete_drowned_chart"
             for item in platform.decision_view("selene")["progression_goals"]
         )
+    finally:
+        platform.close()
+
+
+def test_tidebound_evolution_is_automatic_and_keeps_generating(tmp_path: Path) -> None:
+    """Story and God must keep evolving from facts, not replay a fixed plot.
+
+    The package ships no pre-authored story beats.  A verified inspection has
+    to create a ready Story task on its own, a periodic God cadence must exist,
+    and stagnation must be able to wake God when the commons stops gaining new
+    executable options.
+    """
+
+    import yaml
+
+    from sim2.evolution.config import normalize_evolution_config
+
+    story = yaml.safe_load((WORLD / "story.yaml").read_text(encoding="utf-8"))
+    assert story["beats"] == []
+    assert "gate.inspected" in story["emergent_source_event_types"]
+
+    compiled = normalize_evolution_config(yaml.safe_load((WORLD / "evolution.yaml").read_text(encoding="utf-8")))
+    assert compiled["schedule"]["god_local_minutes"] > 0
+    assert compiled["schedule"]["god_structural_minutes"] > 0
+    assert compiled["stagnation"]["window_minutes"] == 1440
+    consumers = compiled["event_wake_policy"]["consumers"]
+    assert consumers["story"]["manual_event_types"] == []
+    assert consumers["god"]["manual_event_types"] == []
+    assert any(
+        "world.stagnation" in group["event_types"]
+        for group in consumers["god"]["event_groups"]
+    )
+
+    platform = Platform(create_instance(WORLD, "tidebound-auto-evolution", tmp_path / "runtime"))
+    try:
+        accepted = _start(platform, "mara", "inspect_gate", "tide-auto-inspect")
+        assert accepted["status"] == "accepted", accepted
+        _run_active(platform, "mara")
+        ready = platform.store.repositories.evolution.ready_evolution_tasks()
+        assert any(task["role"] == "story" for task in ready), ready
+        scheduled = platform.store.repositories.evolution.due_evolution_tasks(10**9)
+        assert any(task["task_id"] == "god_local" for task in scheduled), scheduled
+        assert any(task["task_id"] == "god_structural" for task in scheduled), scheduled
     finally:
         platform.close()

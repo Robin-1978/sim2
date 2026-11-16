@@ -1,22 +1,34 @@
 locations:
 - id: commons_quay
-  name: Commons Quay
+  name: 公共码头
+  description: 公社最热闹的落脚点。退潮后，浮木和消息一起被冲上石阶，居民们在这里交换收成与传闻。
   public: true
   safe: true
   tags: [public, social, market, resource]
-  routes: [workshop, marsh_edge, gatehouse]
-  route_distances: {workshop: 1, marsh_edge: 2, gatehouse: 2}
+  routes: [workshop, marsh_edge, gatehouse, lantern_row]
+  route_distances: {workshop: 1, marsh_edge: 2, gatehouse: 2, lantern_row: 1}
   map_position: {x: 0, y: 0}
 - id: workshop
-  name: Tide Workshop
+  name: 潮汐工坊
+  description: 由旧船棚改成的工坊。屋檐下挂着风干的芦苇绳，炉火常年不灭，是公社把材料变成储备的地方。
   public: true
   safe: true
   tags: [craft, public, safe]
-  routes: [commons_quay, gatehouse]
-  route_distances: {commons_quay: 1, gatehouse: 2}
+  routes: [commons_quay, gatehouse, lantern_row]
+  route_distances: {commons_quay: 1, gatehouse: 2, lantern_row: 1}
   map_position: {x: 1, y: 0}
+- id: lantern_row
+  name: 灯笼巷
+  description: 沿着防波堤搭起的几间住屋。夜里巷口的灯笼会亮起，居民在这里吃饭、取暖，也在这里争论公社该往哪里走。
+  public: true
+  safe: true
+  tags: [public, social, home]
+  routes: [commons_quay, workshop]
+  route_distances: {commons_quay: 1, workshop: 1}
+  map_position: {x: -1, y: 0}
 - id: marsh_edge
-  name: Salt Marsh Edge
+  name: 盐沼浅滩
+  description: 淡水和贝类都藏在潮沟里。芦苇丛能挡住风暴，也能编成结实的绳子，但采得太狠就会让整片浅滩失去恢复力。
   public: true
   safe: false
   tags: [resource, exploration]
@@ -24,7 +36,8 @@ locations:
   route_distances: {commons_quay: 2, drowned_observatory: 2}
   map_position: {x: -1, y: 1}
 - id: gatehouse
-  name: Tide Gatehouse
+  name: 潮门闸室
+  description: 控制内湾水位的旧闸室。闸门一旦失守，风暴潮会直接灌进码头；屋顶的季节信号透镜也早已暗淡。
   public: true
   safe: false
   tags: [defense, infrastructure]
@@ -32,7 +45,8 @@ locations:
   route_distances: {commons_quay: 2, workshop: 2, drowned_observatory: 3}
   map_position: {x: 1, y: 1}
 - id: drowned_observatory
-  name: Drowned Observatory
+  name: 沉没观测台
+  description: 半沉在盐沼深处的石塔。墙上的旧海图仍能辨认，但只有补全两个阶段，才能确认一条真正可走的低潮通道。
   public: true
   safe: false
   tags: [research, exploration]
@@ -42,16 +56,21 @@ locations:
 resources:
 - id: fresh_water
   type: resource
-  name: Freshwater Pool
-  location_id: marsh_edge
-  initial_state: {location_id: marsh_edge, quantity: 20}
-- id: shellfish
-  type: resource
-  name: Shellfish Bed
+  name: 淡水洼地
   location_id: marsh_edge
   initial_state: {location_id: marsh_edge, quantity: 24}
+- id: shellfish
+  type: resource
+  name: 贝类滩
+  location_id: marsh_edge
+  initial_state: {location_id: marsh_edge, quantity: 28}
 - id: driftwood
   type: resource
-  name: Driftwood Beach
+  name: 浮木滩
   location_id: commons_quay
-  initial_state: {location_id: commons_quay, quantity: 16}
+  initial_state: {location_id: commons_quay, quantity: 20}
+- id: marsh_reed
+  type: resource
+  name: 芦苇丛
+  location_id: marsh_edge
+  initial_state: {location_id: marsh_edge, quantity: 20}

@@ -1,66 +1,17 @@
 emergent_source_event_types:
+- gate.inspected
 - research.completed
 - tide_gate.repaired
 - resource.gathered
 - rations.preserved
+- rope.crafted
+- repair_kit.crafted
 - tide_gate.ready
-beats:
-- id: first_gate_measurement
-  trigger_events:
-  - gate.inspected
-  summary: The first measured gate reading forces the commons to choose between a
-    visible repair and a safer chart search.
-  audience:
-  - Mara
-  - Selene
-  followup_behaviors:
-  - Salvage Driftwood
-  - Research Drowned Chart
-- id: gate_restored
-  trigger_events:
-  - tide_gate.repaired
-  summary: The repaired gate buys one safer tide, but the storm pressure makes its
-    next destination a public choice.
-  audience:
-  - Mara
-  - Taro
-  followup_behaviors:
-  - Exchange Commons Information
-  - Survey Drowned Observatory
-- id: chart_stage_found
-  trigger_events:
-  - research.completed
-  summary: A chart fact is translated into a concrete route question for the whole
-    commons.
-  audience:
-  - Selene
-  - Taro
-  followup_behaviors:
-  - Survey Drowned Observatory
-  - Exchange Commons Information
-- id: safe_channel_open
-  trigger_events:
-  - signal.route_open
-  summary: The commons can see a route beyond emergency salvage; the next chapter
-    is about who benefits and who bears its risk.
-  audience:
-  - Mara
-  - Ivo
-  - Selene
-  - Taro
-  followup_behaviors:
-  - Exchange Commons Information
-- id: storm_warning
-  trigger_events:
-  - storm.warning
-  summary: The storm pressure has crossed the warning line; the commons must choose
-    preparation over another expedition.
-  audience:
-  - Mara
-  - Ivo
-  - Selene
-  - Taro
-  followup_behaviors:
-  - Inspect Tide Gate
-  - Gather Driftwood
-  - Exchange Commons Information
+- signal.tuned
+- signal.route_open
+- storm.warning
+# Story chapters are not pre-authored here.  The Story Agent receives verified
+# source events and proposes emergent beats from those facts.  Keeping this list
+# empty prevents the runtime from cycling through a fixed plot after the first
+# few discoveries.
+beats: []

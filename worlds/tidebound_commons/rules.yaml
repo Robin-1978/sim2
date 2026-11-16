@@ -33,34 +33,53 @@ context_values:
   water_item: fresh_water
   food_item: food_ration
   station_id: workshop
-  hydration_alert_threshold: 42
-  satiety_alert_threshold: 38
+  hydration_alert_threshold: 45
+  satiety_alert_threshold: 45
 item_groups:
   water:
   - fresh_water
   food:
   - food_ration
+item_labels:
+  fresh_water: 淡水
+  food_ration: 海藻口粮
+  shellfish: 贝类
+  driftwood: 浮木
+  marsh_reed: 芦苇
+  repair_kit: 修理工具包
+  reed_rope: 芦苇绳
+world_property_labels:
+  tide_gate_integrity: {label: 潮门完整性, unit: percent, max: 1}
+  signal_reach: {label: 信号覆盖, unit: percent, max: 1}
+  fresh_water_reserve: {label: 淡水储备, unit: amount}
+  maintenance_evidence: {label: 维护记录, unit: amount, max: 3}
+  storm_pressure: {label: 风暴压力, unit: percent, max: 1}
+  public_confidence: {label: 公共信心, unit: percent, max: 1}
 context_resolvers: {}
 travel:
   minutes_per_distance: 24
   default_speed: 1
 resource_regeneration:
 - resource_id: fresh_water
-  every_minutes: 720
-  amount: 6
-  cap: 20
-- resource_id: shellfish
-  every_minutes: 720
+  every_minutes: 360
   amount: 8
-  cap: 24
+  cap: 30
+- resource_id: shellfish
+  every_minutes: 360
+  amount: 10
+  cap: 36
 - resource_id: driftwood
-  every_minutes: 1440
-  amount: 5
-  cap: 16
+  every_minutes: 480
+  amount: 6
+  cap: 28
+- resource_id: marsh_reed
+  every_minutes: 360
+  amount: 8
+  cap: 30
 resource_safety:
 - resource_id: fresh_water
-  minimum_reserve: 6
-  repeat_every_minutes: 720
+  minimum_reserve: 8
+  repeat_every_minutes: 360
   event_type: resource.safety_low
 resource_property_projections:
   fresh_water: fresh_water_reserve
@@ -72,7 +91,7 @@ world_rules:
   wake:
   - story
   - god
-  description: The gate has enough verified integrity to support a safer route.
+  description: 潮门完整性已足以支撑一条更安全的路线。
 - id: signal_route_open
   condition: world.signal_reach >= 0.7
   effect: signal.route_open
@@ -80,7 +99,7 @@ world_rules:
   wake:
   - story
   - god
-  description: A stable signal can guide a second settlement to the commons.
+  description: 稳定的信号可以为另一处聚落指路，让他们抵达公社。
 - id: storm_warning
   condition: world.storm_pressure >= 0.7
   effect: storm.warning
@@ -88,8 +107,7 @@ world_rules:
   wake:
   - story
   - god
-  description: Storm pressure has crossed the configured warning threshold and requires
-    a public response.
+  description: 风暴压力越过警戒线，公社必须公开回应。
 capability_progression:
   stewardship:
     minimum_completed_outcomes: 2
@@ -171,10 +189,10 @@ minute_effects:
     condition: actor.need.hydration <= context.hydration_alert_threshold
     edge: enter
     trend: true
-    summary: Hydration crossed the configured drinking threshold.
+    summary: 水分跌破饮水警戒线。
     data:
       need: hydration
-      threshold: 42
+      threshold: 45
       signal_only: true
 - id: satiety_decay
   scope: agent
@@ -189,10 +207,10 @@ minute_effects:
     condition: actor.need.satiety <= context.satiety_alert_threshold
     edge: enter
     trend: true
-    summary: Satiety crossed the configured eating threshold.
+    summary: 饱食跌破进食警戒线。
     data:
       need: satiety
-      threshold: 38
+      threshold: 45
       signal_only: true
 - id: belonging_decay
   scope: agent
@@ -229,7 +247,7 @@ minute_effects:
     event_type: need.hydration_damage
     edge: each
     trend: true
-    summary: Critical dehydration damaged a resident.
+    summary: 严重脱水正在损害一位居民。
     data:
       need: hydration
       threshold: 5
@@ -248,7 +266,7 @@ minute_effects:
     event_type: need.hunger_damage
     edge: each
     trend: true
-    summary: Critical hunger damaged a resident.
+    summary: 严重饥饿正在损害一位居民。
     data:
       need: satiety
       threshold: 5
@@ -270,8 +288,7 @@ civilization_progress:
   safe_channel_knowledge:
     required: 2
     evidence_value: 2
-    description: Two verified chart stages create public knowledge of a safe low-tide
-      channel.
+    description: 两个被验证的海图阶段会形成关于低潮安全通道的公共知识。
     evidence_event_types:
     - research.completed
     evidence_behaviors:
@@ -281,12 +298,13 @@ civilization_progress:
     - god
 progression:
 - id: inspect_tide_gate
-  label: Measure the Tide Gate
-  summary: Establish the first verified condition of the public tide gate.
+  label: 测量潮门
+  summary: 先确认潮门的真实状况，为公共修复建立第一条可靠证据。
   priority: 0.95
   audience:
-  - Mara
-  - Selene
+  - player
+  - 玛拉
+  - 塞琳
   target_behaviors:
   - inspect_gate
   support_behaviors: []
@@ -294,28 +312,32 @@ progression:
     event_type: gate.inspected
     count: 1
 - id: repair_tide_gate
-  label: Repair the Tide Gate
-  summary: Turn gathered material into a carried repair kit and spend it on the gate.
+  label: 修复潮门
+  summary: 把采集到的材料做成工具包，真正用在潮门缺口上。
   priority: 0.92
   audience:
-  - Mara
-  - Selene
-  - Ivo
+  - player
+  - 玛拉
+  - 塞琳
+  - 伊沃
   target_behaviors:
   - repair_gate
   support_behaviors:
   - gather_driftwood
+  - gather_reed
+  - craft_rope
   - craft_repair_kit
   - gather_shellfish
   complete_when:
     event_type: tide_gate.repaired
     count: 1
 - id: complete_drowned_chart
-  label: Complete the Drowned Chart
-  summary: Verify both stages of the chart before anyone follows it through the marsh.
+  label: 补全沉没海图
+  summary: 在有人真正沿着海图走进沼泽之前，验证两个阶段。
   priority: 0.88
   audience:
-  - Selene
+  - player
+  - 塞琳
   target_behaviors:
   - research_chart
   support_behaviors: []
@@ -327,32 +349,34 @@ progression:
     - stage_id
     count: 2
 - id: tune_seasonal_signal
-  label: Retune the Seasonal Signal
-  summary: Use the repaired gate and conserved kits to bring the signal beyond the
-    coast.
+  label: 校准季节信号
+  summary: 利用修好的潮门和省下的工具包，把信号送出海岸。
   priority: 0.82
   audience:
-  - Mara
-  - Selene
+  - player
+  - 玛拉
+  - 塞琳
   target_behaviors:
   - tune_signal
   support_behaviors:
-  - craft_repair_kit
   - gather_driftwood
+  - gather_reed
+  - craft_rope
+  - craft_repair_kit
   - gather_shellfish
   complete_when:
     event_type: signal.tuned
     count: 2
 - id: reopen_outer_route
-  label: Open the Outer Route
-  summary: Reach the configured public signal threshold before the commons commits
-    to a route beyond the marsh.
+  label: 重开外海航路
+  summary: 在公社决定走向外海之前，把公共信号推到配置阈值。
   priority: 0.76
   audience:
-  - Mara
-  - Ivo
-  - Selene
-  - Taro
+  - player
+  - 玛拉
+  - 伊沃
+  - 塞琳
+  - 塔罗
   target_behaviors: []
   support_behaviors:
   - tune_signal

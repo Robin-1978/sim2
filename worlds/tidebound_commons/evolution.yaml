@@ -1,30 +1,99 @@
+# Automatic evolution policy.
+#
+# This world deliberately ships no fixed plot.  Story and God are woken by
+# verified events, and they must turn those facts into new beats, structures or
+# definitions.  Cooldowns and distinct keys keep repeated harvests from
+# producing the same chapter forever.  Stagnation is the safety net: if the
+# commons goes too long without a genuinely new executable option, God is asked
+# to evolve the world again instead of letting residents repeat a closed loop.
 cadence:
   reflection: 1d
+  innovation: 7d
+  god: 3d
+  god_structural: 7d
+stagnation:
+  window: 1d
+  max_interval: 7d
+  progress_event_types:
+  - research.progressed
+  - research.completed
+  - exploration.completed
+  - capability.updated
+  - institution.revised
+  - tide_gate.repaired
+  - signal.tuned
+  - signal.route_open
+  - civilization.milestone
+  - world.change.world_property
+  - world.change.rule
+  - world.change.relationship
+  - world.change.faction
 wakes:
-- id: inspection_story_source
-  'on': gate.inspected
+- id: story_after_verified_change
+  'on':
+  - gate.inspected
+  - research.completed
+  - tide_gate.repaired
+  - tide_gate.ready
+  - signal.tuned
+  - signal.route_open
+  - storm.warning
+  - civilization.milestone
   for: story
-  manual_only: true
-- id: research_story_source
-  'on': research.completed
-  for: story
-  manual_only: true
-- id: gate_outcome_review
-  'on': tide_gate.repaired
-  for: god
-  count: 2
-  every: 3d
+  every: 6h
   tools:
   - query_history
-  - propose_definition
-  - propose_entity
+  - propose_story_beat
   - wait
-  purpose: Repeated repairs are evidence that the commons needs a durable maintenance
-    or transport structure.
-  result: Propose one conserved, reachable structure or reusable behavior that uses
-    existing materials; do not mint stock or repeat the same repair behavior.
-- id: marsh_flow_review
-  'on': resource.gathered
+  purpose: 把已经提交的世界事实变成下一段可继续行动的公共剧情，不预写结局。
+- id: story_after_supply_change
+  'on':
+  - resource.gathered
+  - rations.preserved
+  - rope.crafted
+  - repair_kit.crafted
+  for: story
+  count: 4
+  every: 12h
+  distinct_by:
+  - resource_id
+  - result_kind
+  tools:
+  - query_history
+  - propose_story_beat
+  - wait
+  purpose: 让真实的采集与制作结果推动新的选择，而不是反复讲述同一次收成。
+- id: story_after_dialogue
+  'on': commons.conversation_completed
+  for: story
+  count: 4
+  every: 6h
+  tools:
+  - query_history
+  - propose_story_beat
+  - wait
+  purpose: 把有依据的对话转化为公共问题或新的合作方向。
+- id: god_after_public_work
+  'on':
+  - tide_gate.repaired
+  - tide_gate.ready
+  - signal.tuned
+  - signal.route_open
+  - storm.warning
+  - civilization.milestone
+  for: god
+  every: 1d
+  tools:
+  - query_history
+  - query_knowledge_gaps
+  - propose_entity
+  - propose_definition
+  - wait
+  purpose: 从已验证的公共工程中提出一个可达的新结构或可复用定义；如果现有选项足够就等待。
+- id: god_after_supply_pressure
+  'on':
+  - resource.safety_low
+  - resource.gathered
   for: god
   count: 4
   every: 2d
@@ -35,135 +104,9 @@ wakes:
   - query_history
   - propose_definition
   - wait
-  purpose: Repeated renewable harvest outcomes justify improving preservation, storage,
-    or safe transport.
-  result: Add one executable improvement only if the verified harvest and current
-    inventory support it; otherwise wait.
-- id: gate_story
-  'on': tide_gate.repaired
-  for: story
-  tools:
-  - query_history
-  - propose_story_beat
-  - wait
-  purpose: Turn a verified repair into the next grounded public choice.
-  result: Connect the repair to one already executable next behavior; never invent
-    a storm outcome or a completed journey.
-- id: public_milestone_story
-  'on': tide_gate.ready
-  for: story
-  tools:
-  - query_history
-  - propose_story_beat
-  - wait
-  purpose: A verified public threshold deserves a chapter transition.
-  result: Describe the threshold and offer one concrete decision already supported
-    by the world state.
-- id: harvest_story
-  'on': resource.gathered
-  for: story
-  count: 4
-  every: 2d
-  tools:
-  - query_history
-  - propose_story_beat
-  - wait
-  purpose: A physical harvest should connect to food or repair work.
-  result: Continue from the conserved material that actually entered an inventory.
-- id: kit_story
-  'on': repair_kit.crafted
-  for: story
-  tools:
-  - query_history
-  - propose_story_beat
-  - wait
-  purpose: A repair kit is a real preparation step, not a completed repair.
-  result: Offer the repair behavior while preserving that the gate is still damaged.
-- id: ration_story
-  'on': rations.preserved
-  for: story
-  count: 2
-  every: 12h
-  tools:
-  - query_history
-  - propose_story_beat
-  - wait
-  purpose: Preserved food changes the next safe choice.
-  result: Mention the carried ration outcome without claiming public stock changed.
-- id: conversation_story
-  'on': commons.conversation_completed
-  for: story
-  count: 4
-  every: 6h
-  tools:
-  - query_history
-  - propose_story_beat
-  - wait
-  purpose: A grounded conversation can carry an existing fact to another character.
-  result: Preserve testimony as testimony and suggest a behavior that can verify it.
-- id: milestone_story
-  'on': civilization.milestone
-  for: story
-  tools:
-  - query_history
-  - propose_story_beat
-  - wait
-  purpose: A verified civic milestone changes the available chapter.
-  result: Describe only the milestone that the evidence supports.
-- id: gate_ready_god
-  'on': tide_gate.ready
-  for: god
-  tools:
-  - query_history
-  - propose_entity
-  - propose_definition
-  - wait
-  purpose: A repaired gate crossed a durable public threshold.
-  result: Propose one grounded next structure or wait when the existing options suffice.
-- id: signal_tuned_story
-  'on': signal.tuned
-  for: story
-  tools:
-  - query_history
-  - propose_story_beat
-  - wait
-  purpose: A real lens adjustment changes the reachable signal, but does not by itself
-    open the route.
-  result: Describe the measured tuning and preserve the remaining threshold work.
-- id: signal_tuned_god
-  'on': signal.tuned
-  for: god
-  count: 2
-  tools:
-  - query_history
-  - propose_definition
-  - propose_entity
-  - wait
-  purpose: Repeated signal tuning is evidence for a route-level continuation.
-  result: Wait until the configured signal threshold is crossed, then propose one
-    grounded external continuation.
-- id: signal_story
-  'on': signal.route_open
-  for: story
-  tools:
-  - query_history
-  - propose_story_beat
-  - wait
-  purpose: A verified signal route opens a new chapter.
-  result: Describe the route opportunity and one supported social choice.
-- id: signal_god
-  'on': signal.route_open
-  for: god
-  tools:
-  - query_history
-  - propose_entity
-  - propose_definition
-  - wait
-  purpose: A stable signal can justify an external relationship or route object.
-  result: Create at most one reachable structure or wait when no evidence-backed addition
-    is needed.
-- id: chart_milestone_god
-  'on': civilization.milestone
+  purpose: 只在采集压力与当前库存支持时，提出保存、运输或再生方式的改进。
+- id: god_on_stagnation
+  'on': world.stagnation
   for: god
   tools:
   - query_history
@@ -171,27 +114,4 @@ wakes:
   - propose_entity
   - propose_definition
   - wait
-  purpose: Verified public chart knowledge can justify a structural continuation.
-  result: Continue an open gap or add one distinct world object only when the causal
-    evidence supports it.
-- id: storm_story
-  'on': storm.warning
-  for: story
-  tools:
-  - query_history
-  - propose_story_beat
-  - wait
-  purpose: A verified storm threshold changes the value of preparation.
-  result: Offer an executable preparation behavior and do not claim that damage already
-    occurred.
-- id: storm_god
-  'on': storm.warning
-  for: god
-  tools:
-  - query_history
-  - propose_definition
-  - propose_entity
-  - wait
-  purpose: A storm threshold is evidence for a structural preparation or route decision.
-  result: Propose one reachable preparation only when existing behaviors cannot address
-    the observed pressure; otherwise wait.
+  purpose: 世界已经太久没有出现新的可执行选项；提出一个有证据支持、可达且不重复现有内容的结构或行为。

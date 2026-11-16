@@ -11,6 +11,7 @@ inventory:
   fresh_water: 2
   food_ration: 3
   shellfish: 2
+  marsh_reed: 1
 initial_bt_ids:
   - travel
   - inspect_gate
@@ -19,7 +20,9 @@ initial_bt_ids:
   - gather_water
   - gather_shellfish
   - gather_driftwood
+  - gather_reed
   - craft_repair_kit
+  - craft_rope
   - craft_rations
   - research_chart
   - explore_observatory
@@ -29,6 +32,54 @@ initial_bt_ids:
 knowledge_seed: []
 origins:
   - id: steward
+    name: 潮务学徒
+    description: 跟着玛拉学习测量与维护，懂得公共材料来之不易。
+    starting_goal: 让公社撑过下一次风暴，并让每一次修复的代价都公开。
+    traits:
+      尽责: 0.72
+      谨慎: 0.6
+    capabilities:
+      stewardship: 0.55
+      crafting: 0.45
+    inventory:
+      food_ration: 1
+      repair_kit: 1
   - id: forager
+    name: 沼泽采集者
+    description: 熟悉潮沟与贝滩，知道哪一片浅滩还能再采一次。
+    starting_goal: 让食物和净水持续流动，同时不把沼泽采空。
+    traits:
+      机敏: 0.7
+      耐劳: 0.65
+    capabilities:
+      gathering: 0.6
+      exploration: 0.45
+    inventory:
+      shellfish: 2
+      fresh_water: 1
   - id: chart_keeper
+    name: 海图学徒
+    description: 替塞琳整理观测记录，相信一条路线必须能被别人重复走通。
+    starting_goal: 补全沉没海图，找到一条真正可走的低潮通道。
+    traits:
+      好奇: 0.75
+      有条理: 0.6
+    capabilities:
+      research: 0.55
+      exploration: 0.5
+    inventory:
+      food_ration: 1
+      marsh_reed: 1
   - id: ferry_runner
+    name: 渡船信使
+    description: 在码头与闸室之间送信，认识公社里几乎每一个人。
+    starting_goal: 把有用的发现带到每一个住户手里，不让消息停在半路。
+    traits:
+      善谈: 0.72
+      胆大: 0.55
+    capabilities:
+      conversation: 0.65
+      exploration: 0.5
+    inventory:
+      fresh_water: 1
+      food_ration: 1

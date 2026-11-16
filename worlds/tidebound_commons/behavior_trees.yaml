@@ -1,13 +1,13 @@
 behavior_trees:
 - id: inspect_gate
-  agent_label: Inspect Tide Gate
-  summary: Inspect Tide Gate
-  description: Measure the damaged gate before committing shared materials.
+  agent_label: 测量潮门
+  summary: 测量潮门
+  description: 在投入公共材料之前，先确认闸门的真实受损程度。
   entry_conditions:
   - actor.can_inspect
   - actor.alive
-  - actor.need.hydration > 45
-  - actor.need.satiety > 45
+  - actor.need.hydration > 40
+  - actor.need.satiety > 40
   estimated_minutes: 31
   cooldown_minutes: 360
   nodes:
@@ -26,7 +26,7 @@ behavior_trees:
   - interrupted
   outcome_events:
   - event_type: gate.measurement_recorded
-    summary: The carried inspection result was accepted as a completed behavior outcome.
+    summary: 一次实地测量被记入公社的维护账目。
   goal_tags:
   - infrastructure
   - safety
@@ -34,15 +34,15 @@ behavior_trees:
   - purpose
   - belonging
 - id: repair_gate
-  agent_label: Repair Tide Gate
-  summary: Repair Tide Gate
-  description: Carry a repair kit to the gatehouse and spend it on a measured repair.
+  agent_label: 修复潮门
+  summary: 修复潮门
+  description: 带着修理工具包赶到闸室，把材料真正用在缺口上。
   entry_conditions:
   - actor.can_repair
   - actor.alive
   - actor.inventory.repair_kit >= 1
-  - actor.need.hydration > 45
-  - actor.need.satiety > 45
+  - actor.need.hydration > 40
+  - actor.need.satiety > 40
   estimated_minutes: 77
   cooldown_minutes: 720
   nodes:
@@ -60,7 +60,7 @@ behavior_trees:
   - interrupted
   outcome_events:
   - event_type: tide_gate.repaired
-    summary: A carried repair kit was spent and the tide gate integrity increased.
+    summary: 一个修理工具包被消耗，潮门完整性上升。
   goal_tags:
   - repair
   - safety
@@ -69,16 +69,16 @@ behavior_trees:
   - purpose
   - belonging
 - id: tune_signal
-  agent_label: Tune Seasonal Signal
-  summary: Tune Seasonal Signal
-  description: Use a repair kit to retune the lens once the tide gate can hold.
+  agent_label: 校准季节信号
+  summary: 校准季节信号
+  description: 在潮门能撑住之后，用工具包重新校准屋顶的信号透镜。
   entry_conditions:
   - actor.can_repair
   - actor.alive
   - actor.inventory.repair_kit >= 1
   - world.tide_gate_integrity >= 0.56
-  - actor.need.hydration > 45
-  - actor.need.satiety > 45
+  - actor.need.hydration > 40
+  - actor.need.satiety > 40
   estimated_minutes: 62
   cooldown_minutes: 720
   nodes:
@@ -96,7 +96,7 @@ behavior_trees:
   - interrupted
   outcome_events:
   - event_type: signal.tuned
-    summary: A carried repair kit was spent to retune the seasonal signal lens.
+    summary: 一个修理工具包被消耗，季节信号透镜重新校准。
   goal_tags:
   - signal
   - route
@@ -104,15 +104,15 @@ behavior_trees:
   - purpose
   - belonging
 - id: gather_water
-  agent_label: Draw Fresh Water
-  summary: Draw Fresh Water
-  description: Bring two units of renewable freshwater from the marsh pool.
-  purpose: Carry fresh water for later drinking; collecting it does not restore hydration by itself.
+  agent_label: 取淡水
+  summary: 取淡水
+  description: 从沼泽水洼带回两份可再生淡水。
+  purpose: 把淡水带在身上备用；取水本身不会恢复水分。
   entry_conditions:
   - actor.can_gather
   - actor.alive
   estimated_minutes: 95
-  cooldown_minutes: 240
+  cooldown_minutes: 360
   nodes:
   - type: action
     action_id: travel_to
@@ -130,7 +130,7 @@ behavior_trees:
   - gathering_failed
   outcome_events:
   - event_type: resource.gathered
-    summary: Freshwater was physically collected from the marsh pool.
+    summary: 淡水从沼泽水洼被真正取回。
     data:
       resource_id: fresh_water
       result_kind: water_collected
@@ -142,16 +142,16 @@ behavior_trees:
   supports_drive_tags:
   - hydration
 - id: gather_shellfish
-  agent_label: Gather Shellfish
-  summary: Gather Shellfish
-  description: Harvest a small renewable shellfish catch without emptying the bed.
-  purpose: Gather raw shellfish as an ingredient for preserved rations; the catch does not restore satiety by itself.
+  agent_label: 采贝类
+  summary: 采贝类
+  description: 在不采空贝滩的前提下，带回一小筐贝类。
+  purpose: 贝类是腌制口粮的原料；生吃贝类不会恢复饱食。
   entry_conditions:
   - actor.can_gather
   - actor.alive
-  - actor.need.hydration > 45
+  - actor.need.hydration > 40
   estimated_minutes: 95
-  cooldown_minutes: 240
+  cooldown_minutes: 360
   nodes:
   - type: action
     action_id: travel_to
@@ -169,7 +169,7 @@ behavior_trees:
   - gathering_failed
   outcome_events:
   - event_type: resource.gathered
-    summary: Shellfish were physically collected from a renewable bed.
+    summary: 贝类从可再生贝滩被真正采回。
     data:
       resource_id: shellfish
       result_kind: food_material_collected
@@ -181,16 +181,16 @@ behavior_trees:
   supports_drive_tags:
   - satiety
 - id: gather_driftwood
-  agent_label: Salvage Driftwood
-  summary: Salvage Driftwood
-  description: Collect usable driftwood from the quay after a safe tide.
+  agent_label: 打捞浮木
+  summary: 打捞浮木
+  description: 趁退潮在码头收集还能用的浮木。
   entry_conditions:
   - actor.can_gather
   - actor.alive
-  - actor.need.hydration > 45
-  - actor.need.satiety > 45
+  - actor.need.hydration > 40
+  - actor.need.satiety > 40
   estimated_minutes: 80
-  cooldown_minutes: 240
+  cooldown_minutes: 360
   nodes:
   - type: action
     action_id: travel_to
@@ -208,7 +208,7 @@ behavior_trees:
   - gathering_failed
   outcome_events:
   - event_type: resource.gathered
-    summary: Driftwood was salvaged and entered a resident's carried inventory.
+    summary: 浮木被捞起，真正进入某位居民的随身物品。
     data:
       resource_id: driftwood
       result_kind: repair_material_collected
@@ -218,18 +218,55 @@ behavior_trees:
   drive_tags:
   - purpose
   - belonging
+- id: gather_reed
+  agent_label: 收割芦苇
+  summary: 收割芦苇
+  description: 从浅滩割下两份芦苇，留出下一季重新长高的余地。
+  purpose: 芦苇是搓绳的原料；芦苇本身不能直接当饭吃。
+  entry_conditions:
+  - actor.can_gather
+  - actor.alive
+  - actor.need.hydration > 40
+  - actor.need.satiety > 40
+  estimated_minutes: 95
+  cooldown_minutes: 360
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: marsh_edge
+  - type: action
+    action_id: gather_resource
+    parameters:
+      resource_tag: marsh_reed
+      location_id: marsh_edge
+  success_results:
+  - resource_collected
+  failure_results:
+  - resource_empty
+  - gathering_failed
+  outcome_events:
+  - event_type: resource.gathered
+    summary: 芦苇被割下并带进随身物品。
+    data:
+      resource_id: marsh_reed
+      result_kind: reed_collected
+  goal_tags:
+  - repair
+  - supply
+  drive_tags:
+  - purpose
 - id: craft_repair_kit
-  agent_label: Craft Repair Kit
-  summary: Craft Repair Kit
-  description: Use two driftwood and one shellfish at the workshop to make one repair
-    kit.
+  agent_label: 制作修理工具包
+  summary: 制作修理工具包
+  description: 在工坊用两块浮木和一段芦苇绳做出一个修理工具包。
   entry_conditions:
   - actor.can_craft
   - actor.alive
   - recipe.available
   - inputs.available
-  - actor.need.hydration > 45
-  - actor.need.satiety > 45
+  - actor.need.hydration > 40
+  - actor.need.satiety > 40
   estimated_minutes: 75
   cooldown_minutes: 720
   nodes:
@@ -249,24 +286,61 @@ behavior_trees:
   - interrupted
   outcome_events:
   - event_type: repair_kit.crafted
-    summary: A repair kit was made from carried, conserved materials.
+    summary: 一个修理工具包由随身材料制成。
   goal_tags:
   - crafting
   - repair
   drive_tags:
   - purpose
   - belonging
-- id: craft_rations
-  agent_label: Preserve Marsh Rations
-  summary: Preserve Marsh Rations
-  description: Turn shellfish and freshwater into three carried food rations.
-  purpose: Make preserved rations from carried ingredients; eating a ration is a separate behavior.
+- id: craft_rope
+  agent_label: 搓制芦苇绳
+  summary: 搓制芦苇绳
+  description: 在工坊把两份芦苇搓成一段结实的绳子。
+  purpose: 芦苇绳是修理工具包的中间材料，不能直接用于修复潮门。
   entry_conditions:
   - actor.can_craft
   - actor.alive
   - recipe.available
   - inputs.available
-  - actor.need.hydration > 45
+  - actor.need.hydration > 40
+  - actor.need.satiety > 40
+  estimated_minutes: 55
+  cooldown_minutes: 240
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: workshop
+  - type: action
+    action_id: craft_recipe
+    parameters:
+      recipe_id: reed_rope
+      station_id: context.station_id
+  success_results:
+  - recipe_completed
+  failure_results:
+  - crafting_failed
+  - interrupted
+  outcome_events:
+  - event_type: rope.crafted
+    summary: 一段芦苇绳被搓好并放进随身物品。
+  goal_tags:
+  - crafting
+  - repair
+  drive_tags:
+  - purpose
+- id: craft_rations
+  agent_label: 腌制海藻口粮
+  summary: 腌制海藻口粮
+  description: 用贝类和淡水做成三份随身口粮。
+  purpose: 用随身材料腌制口粮；吃口粮是另一个独立行为。
+  entry_conditions:
+  - actor.can_craft
+  - actor.alive
+  - recipe.available
+  - inputs.available
+  - actor.need.hydration > 40
   estimated_minutes: 60
   cooldown_minutes: 360
   nodes:
@@ -286,7 +360,7 @@ behavior_trees:
   - interrupted
   outcome_events:
   - event_type: rations.preserved
-    summary: Three food rations were preserved from carried marsh materials.
+    summary: 三份口粮由随身材料腌制完成。
   goal_tags:
   - crafting
   - food
@@ -296,9 +370,9 @@ behavior_trees:
   supports_drive_tags:
   - satiety
 - id: research_chart
-  agent_label: Research Drowned Chart
-  summary: Research Drowned Chart
-  description: Advance the next open stage of the observatory chart.
+  agent_label: 研究沉没海图
+  summary: 研究沉没海图
+  description: 推进观测台海图的下一个开放阶段。
   no_op_travel_minutes: 0
   parameter_defaults:
     source_id: drowned_chart
@@ -307,12 +381,12 @@ behavior_trees:
       type: string
       required: true
       max_length: 120
-      description: Exact visible research source name.
+      description: 可见研究来源的准确名称。
   entry_conditions:
   - actor.can_research
   - actor.alive
-  - actor.need.hydration > 45
-  - actor.need.satiety > 45
+  - actor.need.hydration > 40
+  - actor.need.satiety > 40
   estimated_minutes: 121
   cooldown_minutes: 720
   nodes:
@@ -335,15 +409,15 @@ behavior_trees:
   drive_tags:
   - purpose
 - id: explore_observatory
-  agent_label: Survey Drowned Observatory
-  summary: Survey Drowned Observatory
-  description: Carry one ration and map the next exposed part of the observatory.
+  agent_label: 勘察沉没观测台
+  summary: 勘察沉没观测台
+  description: 带上一份口粮，测绘观测台下一段暴露的结构。
   entry_conditions:
   - actor.can_explore
   - actor.alive
   - actor.inventory.food_ration >= 1
-  - actor.need.hydration > 45
-  - actor.need.satiety > 45
+  - actor.need.hydration > 40
+  - actor.need.satiety > 40
   estimated_minutes: 153
   cooldown_minutes: 720
   nodes:
@@ -366,15 +440,15 @@ behavior_trees:
   drive_tags:
   - purpose
 - id: communicate
-  agent_label: Exchange Commons Information
-  summary: Exchange Commons Information
-  description: Share one grounded observation or request with another resident.
+  agent_label: 交换公社情报
+  summary: 交换公社情报
+  description: 把一条有依据的观察或请求告诉另一位居民。
   entry_conditions:
   - actor.can_speak
   - actor.alive
   - target.available
-  - actor.need.hydration > 45
-  - actor.need.satiety > 45
+  - actor.need.hydration > 40
+  - actor.need.satiety > 40
   estimated_minutes: 15
   cooldown_minutes: 240
   agent_parameters:
@@ -382,12 +456,12 @@ behavior_trees:
       type: string
       required: true
       max_length: 120
-      description: A concrete topic grounded in current facts.
+      description: 一个基于当前事实的具体话题。
     message:
       type: string
       required: true
       max_length: 240
-      description: Two concise sentences based on observed events.
+      description: 两句基于已观察事件的简洁消息。
   nodes:
   - type: action
     action_id: communicate
@@ -402,7 +476,7 @@ behavior_trees:
   - participant_left
   outcome_events:
   - event_type: commons.conversation_completed
-    summary: A resident shared a grounded observation with another resident.
+    summary: 一位居民向另一位居民分享了一条有依据的观察。
   goal_tags:
   - coordination
   - belonging
@@ -410,9 +484,10 @@ behavior_trees:
   - belonging
   - purpose
 - id: eat_ration
-  agent_label: Eat Preserved Ration
-  summary: Eat Preserved Ration
-  purpose: Eat one carried preserved ration now and restore satiety.
+  agent_label: 吃一份口粮
+  summary: 吃一份口粮
+  description: 吃下一份随身口粮，立刻恢复饱食。
+  purpose: 现在吃一份随身口粮，恢复饱食。
   entry_conditions:
   - actor.alive
   - actor.inventory.food_ration >= 1
@@ -434,9 +509,10 @@ behavior_trees:
   drive_tags:
   - satiety
 - id: drink_water
-  agent_label: Drink Fresh Water
-  summary: Drink Fresh Water
-  purpose: Drink one carried unit of fresh water now and restore hydration.
+  agent_label: 喝一份淡水
+  summary: 喝一份淡水
+  description: 喝下一份随身淡水，立刻恢复水分。
+  purpose: 现在喝一份随身淡水，恢复水分。
   entry_conditions:
   - actor.alive
   - actor.inventory.fresh_water >= 1
@@ -457,11 +533,10 @@ behavior_trees:
   - recovery
   drive_tags:
   - hydration
-
 - id: travel
-  agent_label: Travel
-  summary: Travel
-  description: Move to a connected known location.
+  agent_label: 移动
+  summary: 移动
+  description: 沿已知路线前往一个相连的地点。
   entry_conditions:
   - actor.alive
   estimated_minutes: 1
@@ -470,7 +545,7 @@ behavior_trees:
       type: string
       required: true
       max_length: 120
-      description: A connected known location selected from the player's route list.
+      description: 从当前路线列表中选择一个相连的已知地点。
   nodes:
   - type: action
     action_id: travel_to

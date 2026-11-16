@@ -1,31 +1,31 @@
 capabilities:
 - id: stewardship
-  name: Stewardship
-  description: Inspect and repair shared infrastructure.
+  name: 公共维护
+  description: 检查并修复公共设施。
   uses: [inspect_object, repair_tide_gate]
   xp_rule: verified_outcome
 - id: gathering
-  name: Gathering
-  description: Collect renewable marsh and beach materials without exhausting them.
+  name: 采集
+  description: 在不采空沼泽的前提下收集可再生材料。
   uses: [gather_resource]
   xp_rule: verified_outcome
 - id: crafting
-  name: Crafting
-  description: Turn carried materials into food or repair kits at the workshop.
+  name: 制作
+  description: 在工坊把材料加工成口粮、绳索和修理工具。
   uses: [craft_recipe]
   xp_rule: verified_outcome
 - id: research
-  name: Research
-  description: Advance an open chart question with verified observations.
+  name: 研究
+  description: 用可靠的观测推进海图上的未解问题。
   uses: [research_source]
   xp_rule: verified_fact
 - id: exploration
-  name: Exploration
-  description: Map exposed routes and recover safe passages.
+  name: 探索
+  description: 勘察暴露的路线，记录安全通道。
   uses: [explore_area]
   xp_rule: verified_outcome
 - id: conversation
-  name: Conversation
-  description: Exchange grounded testimony and coordinate work.
+  name: 交涉
+  description: 交换可靠的见闻，协调公共工作。
   uses: [communicate]
   xp_rule: verified_outcome

@@ -1,5 +1,4 @@
 factions:
 - id: commons_council
-  name: Commons Council
-  description: An informal council that decides how shared stores and risks are carried.
-relationships: []
+  name: 公社议事会
+  description: 一个非正式的议事会，决定公共储备如何分配、风险由谁承担。
