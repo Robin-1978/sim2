@@ -103,7 +103,7 @@ class WorldTUI(App[None]):
     #controls { height: 3; margin: 0 1; }
     #controls Button { min-width: 12; margin-right: 1; }
     #command { width: 1fr; }
-    #message { height: 3; padding: 1 2; color: #a7f3d0; }
+    #message { height: 8; padding: 1 2; color: #a7f3d0; scrollbar-size: 1 1; }
     """
 
     BINDINGS = [
@@ -152,13 +152,14 @@ class WorldTUI(App[None]):
             yield Button("Pause", id="pause", variant="warning")
             yield Button("Step +1m", id="step")
             yield Button("Refresh", id="refresh", variant="primary")
-            yield Input(placeholder="Command: map, look, move…, say…, offer…", id="command")
-        yield Static("Ready.", id="message")
+            yield Input(placeholder="Command: look, actions, do 1, go <place>, map, say…", id="command")
+        yield RichLog(id="message", wrap=True, markup=False, auto_scroll=True)
         yield Footer()
 
     def on_mount(self) -> None:
         table = self.query_one("#agents", DataTable)
         table.add_columns("Character", "Location", "State", "Activity", "Left")
+        self.query_one("#message", RichLog).write("Ready.")
         if self.worker:
             self.worker.start()
         self.refresh_world()
@@ -257,7 +258,7 @@ class WorldTUI(App[None]):
             result = self.session.execute(command)
         except (TypeError, ValueError) as exc:
             result = f"Error: {exc}"
-        self.query_one("#message", Static).update(result[:1000] or "Command completed.")
+        self.query_one("#message", RichLog).write(Text(result[:1000] or "Command completed."))
         self.refresh_world()
 
     def action_toggle_pause(self) -> None:
@@ -267,15 +268,15 @@ class WorldTUI(App[None]):
             result = self.service.resume("tui")
             if self.worker:
                 self.worker.start()
-        self.query_one("#message", Static).update(f"Runtime is {result.get('status')}.")
+        self.query_one("#message", RichLog).write(f"Runtime is {result.get('status')}.")
         self.refresh_world()
 
     def action_step_world(self) -> None:
         if self.service.status().get("status") == "running" and self.worker:
-            self.query_one("#message", Static).update("Pause the automatic runtime before stepping one minute.")
+            self.query_one("#message", RichLog).write("Pause the automatic runtime before stepping one minute.")
             return
         result = self.service.step()
-        self.query_one("#message", Static).update(
+        self.query_one("#message", RichLog).write(
             f"Advanced from minute {result.get('from_minute')} to {result.get('to_minute')}."
         )
         self.refresh_world()

@@ -29,13 +29,19 @@ sim2 tui --db "$DB" --observer --run --provider remote_beam
 sim2 tui --db "$DB" --player-id player_one --origin courier --name Ari --run --provider remote_beam
 ```
 
-The complete client guide is [here](docs/client.md). The smaller text interface
-remains available for scripts and diagnostics:
+The complete client guide is [here](docs/client.md). `sim2 mud` provides the
+script-friendly plain-text client with the same playable projection as the web
+client:
 
 ```bash
 sim2 mud --db "$DB" --player-id player_one --origin courier --name Ari
 sim2 mud --db "$DB" --observer
 ```
+
+The player view starts with the world clock, location, goal, need meters,
+routes and numbered actions. Use `do 1` to submit an action, `go 1` to travel,
+and `wait [minutes]` to advance a manual session. Observer mode adds `world`,
+`events`, `pause`, `resume`, `step`, `evolution` and `metrics`.
 
 In observer mode, use `timeline 50` to read the latest public events as a chronological third-person account, or `events 50` for the compact technical event list. The HTTP equivalent is `GET /timeline?limit=50&after=0`; pass the returned `next_after_event_id` as `after` to continue without duplicates. A player enters through the same text interface without `--observer` and sees only their permitted local view.
 
@@ -69,7 +75,7 @@ Memory retrieval uses SQLite FTS plus task-conditioned ranking. To enable the op
 export SIM2_BGE_MODEL=/path/to/bge-small-zh-v1.5
 ```
 
-The text interface supports movement, messages, offers, counteroffers, acceptance/rejection, waiting, and public world telemetry. HTTP exposes the same Platform operations for another client.
+The text interface renders a playable scene with numbered actions as well as movement, messages, offers, counteroffers, acceptance/rejection, waiting, and public world telemetry. HTTP exposes the same Platform operations for another client.
 
 The browser surfaces are separate from the TUI: the Runtime Web Client observes
 and controls one instance through local HTTP projections, while the World

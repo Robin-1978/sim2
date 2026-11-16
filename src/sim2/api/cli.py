@@ -54,7 +54,7 @@ def main() -> None:
     decide.add_argument("--agent-id", required=True)
     decide.add_argument("--role", default="agent_decision")
 
-    mud = sub.add_parser("mud", help="start a text player or observer session")
+    mud = sub.add_parser("mud", help="start a readable text player or observer session")
     mud.add_argument("--db", type=Path, required=True)
     mud.add_argument("--player-id")
     mud.add_argument("--origin")

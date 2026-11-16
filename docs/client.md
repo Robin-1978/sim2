@@ -21,6 +21,7 @@ The screen has four live areas:
 - **Story timeline**: public events in world-time order.
 - **Characters**: location, execution state, active BT and minutes remaining.
 - **Details and command bar**: public attributes plus player or observer commands.
+  A scrollable command log keeps multi-line `look` and `actions` output visible.
 
 The status bar uses the instance's configured calendar, starting clock, day
 phase and season. Character rows show public location and behavior names; raw
@@ -29,9 +30,51 @@ used as the primary interface text.
 
 Keys: `p` pauses or resumes, `s` advances exactly one minute while paused,
 `r` refreshes and `q` exits. Buttons expose the same controls. The command bar
-accepts `map`, `look`, `move`, `say`, trade commands and the text-client command
-set. The TUI runtime worker uses its own SQLite connection; the display never
-shares an LLM request transaction or mutates state directly.
+accepts `map`, `look`, `actions`, `do 1`, `go <place>`, `say`, trade commands and
+the text-client command set. The TUI runtime worker uses its own SQLite
+connection; the display never shares an LLM request transaction or mutates
+state directly.
+
+## Text client
+
+`sim2 mud` is the plain-text counterpart. It renders the same `player_view`
+projection used by the web client, so a player sees the world clock, current
+location and safety tags, goal, need meters, inventory, known routes, numbered
+actions, nearby entities and recent outcomes.
+
+```text
+== World ==
+World minute 0 · Day 1, 07:00, day, late_autumn · world=starter_village
+
+== You ==
+Ari · player · idle · 河桥 (unsafe)
+Goal: 找到失踪车队的下落
+Needs: Satiety [########--] 80 | Safety [#######---] 70 | ...
+Routes: 村广场 (5 min, safe)
+
+== Actions ==
+ 1. 前往 村广场 · 预计 5 分钟 · 沿已知路线前往 村广场。  [do 1]
+    -> 抵达目标地点
+```
+
+The common commands are:
+
+- `look` or `status` shows the scene or a compact status.
+- `actions` lists the current numbered actions. `do 1` submits the selected
+  action through Platform; optional `key=value` arguments override that
+  action's parameters.
+- `go 1`, `go village_square` or `go 村广场` starts travel to a connected known
+  location.
+- `wait [minutes]` advances a manual session one or more minutes.
+- `say`, `offer`, `offers`, `accept`, `counter` and `reject` cover dialogue and
+  trade.
+- `map`, `timeline [limit]` and `help [command]` inspect the known world.
+  `quit` leaves the session.
+
+Observer mode adds `world`, `events [limit]`, `pause`, `resume`, `step`,
+`evolution` and `metrics`. The output remains plain text and the client only
+submits intents through Platform; it never writes SQLite or exposes hidden
+locations, private memory or God-only context.
 
 ## Map data
 
@@ -53,10 +96,10 @@ routes, so cyclic maps remain accurate in narrow windows. A world may add
 renderer. Players see public and personally known locations; hidden locations
 are not exposed. The observer view also excludes hidden world truth.
 
-The MUD-style `sim2 mud` interface remains useful for scripts and recovery.
-`sim2 serve` exposes the same projections and controls to the web client. Both
-go through Platform and share the same visibility, validation and transaction
-rules as the TUI.
+The MUD-style `sim2 mud` client now renders a playable text scene with the same
+`player_view` projection used by the web client. `sim2 serve` exposes the same
+projections and controls to the web client. Both go through Platform and share
+the same visibility, validation and transaction rules as the TUI.
 
 The repository now ships a dependency-free browser bundle for the local Runtime
 Web Client and Authoring Workbench. The local HTTP service is still a development

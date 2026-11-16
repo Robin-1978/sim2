@@ -8,6 +8,79 @@ from ..platform.runtime import Platform
 from .authoring import AuthoringService
 
 
+def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
+    """Build a compact, playable projection for one player.
+
+    The projection is shared by every client that needs the scene, exits and
+    executable actions.  It is read-only and never bypasses a Platform
+    visibility boundary.
+    """
+
+    player_id = str(player_id or "").strip()
+    if not player_id:
+        return {"status": "rejected", "message": "player_id is required"}
+    try:
+        decision = platform.decision_view(player_id, role="agent_decision")
+    except KeyError:
+        return {"status": "rejected", "message": "player does not exist", "failed_check": "player_id"}
+    map_view = platform.map_view(viewer_id=player_id, observer=False)
+    current_id = str((platform.store.repositories.entities.get_agent(player_id).get("initial_state") or {}).get("location_id") or "")
+    nodes = {str(item.get("id")): item for item in map_view.get("nodes", []) if isinstance(item, dict)}
+    current = nodes.get(current_id, {})
+    routes = []
+    for destination in current.get("routes", []) or []:
+        target = nodes.get(str(destination))
+        if not target:
+            continue
+        edge = next((item for item in map_view.get("edges", []) if {str(item.get("from")), str(item.get("to"))} == {current_id, str(destination)}), {})
+        routes.append({
+            "id": str(destination),
+            "name": str(target.get("name") or destination),
+            "distance": edge.get("distance", 1),
+            "minutes": edge.get("minutes", 1),
+            "safe": bool(target.get("safe", False)),
+        })
+    active_task = decision.get("active_task", {}) or {}
+    actions = list(decision.get("executable_behaviors", []) or [])
+    # Travel is a generic player affordance. The decision projection hides
+    # a travel BT when its destination is not selected yet; clients supply
+    # each known route as an explicit, validated intent instead.
+    for route in routes:
+        if active_task.get("action") or active_task.get("bt"):
+            break
+        actions.insert(0, {
+            "ref": "behavior:travel",
+            "choice": f"前往 {route['name']}",
+            "name": f"前往 {route['name']}",
+            "summary": f"沿已知路线前往 {route['name']}。",
+            "purpose": "移动到另一个已知地点",
+            "parameters": {"location_id": route["id"]},
+            "time": f"预计 {route['minutes']} 分钟",
+            "cost": [],
+            "impact": ["抵达目标地点"],
+            "target_required": False,
+            "kind": "travel",
+        })
+    player_projection = dict(decision.get("self", {}) or {})
+    player_projection["location_id"] = current_id
+    player_projection["location_safe"] = bool(current.get("safe", False))
+    player_projection["location_tags"] = list(current.get("tags") or [])
+    return {
+        "status": "ok",
+        "world_id": map_view.get("world_id"),
+        "world_time": decision.get("world_time"),
+        "player": player_projection,
+        "inventory": decision.get("inventory", {}),
+        "needs": decision.get("needs", {}),
+        "active_task": active_task,
+        "actions": actions[:24],
+        "routes": routes,
+        "map": map_view,
+        "recent_outcomes": decision.get("recent_outcomes", [])[:6],
+        "nearby_entities": decision.get("nearby_entities", [])[:12],
+    }
+
+
 class ControlService:
     """Small transport-neutral control API for CLI, HTTP or a future UI."""
 
@@ -76,67 +149,7 @@ class ControlService:
     def player_view(self, player_id: str) -> dict[str, Any]:
         """Build a compact, playable projection for one player."""
 
-        player_id = str(player_id or "").strip()
-        if not player_id:
-            return {"status": "rejected", "message": "player_id is required"}
-        try:
-            decision = self.platform.decision_view(player_id, role="agent_decision")
-        except KeyError:
-            return {"status": "rejected", "message": "player does not exist", "failed_check": "player_id"}
-        map_view = self.platform.map_view(viewer_id=player_id, observer=False)
-        current_id = str((self.platform.store.repositories.entities.get_agent(player_id).get("initial_state") or {}).get("location_id") or "")
-        nodes = {str(item.get("id")): item for item in map_view.get("nodes", []) if isinstance(item, dict)}
-        current = nodes.get(current_id, {})
-        routes = []
-        for destination in current.get("routes", []) or []:
-            target = nodes.get(str(destination))
-            if not target:
-                continue
-            edge = next((item for item in map_view.get("edges", []) if {str(item.get("from")), str(item.get("to"))} == {current_id, str(destination)}), {})
-            routes.append({
-                "id": str(destination),
-                "name": str(target.get("name") or destination),
-                "distance": edge.get("distance", 1),
-                "minutes": edge.get("minutes", 1),
-                "safe": bool(target.get("safe", False)),
-            })
-        active_task = decision.get("active_task", {}) or {}
-        actions = list(decision.get("executable_behaviors", []) or [])
-        # Travel is a generic player affordance. The decision projection hides
-        # a travel BT when its destination is not selected yet; the web client
-        # supplies each known route as an explicit, validated intent instead.
-        for route in routes:
-            if active_task.get("action") or active_task.get("bt"):
-                break
-            actions.insert(0, {
-                "ref": "behavior:travel",
-                "choice": f"前往 {route['name']}",
-                "name": f"前往 {route['name']}",
-                "summary": f"沿已知路线前往 {route['name']}。",
-                "purpose": "移动到另一个已知地点",
-                "parameters": {"location_id": route["id"]},
-                "time": f"预计 {route['minutes']} 分钟",
-                "cost": [],
-                "impact": ["抵达目标地点"],
-                "target_required": False,
-                "kind": "travel",
-            })
-        player_projection = dict(decision.get("self", {}) or {})
-        player_projection["location_id"] = current_id
-        return {
-            "status": "ok",
-            "world_id": map_view.get("world_id"),
-            "world_time": decision.get("world_time"),
-            "player": player_projection,
-            "inventory": decision.get("inventory", {}),
-            "needs": decision.get("needs", {}),
-            "active_task": active_task,
-            "actions": actions[:24],
-            "routes": routes,
-            "map": map_view,
-            "recent_outcomes": decision.get("recent_outcomes", [])[:6],
-            "nearby_entities": decision.get("nearby_entities", [])[:12],
-        }
+        return build_player_view(self.platform, player_id)
 
     def player_act(self, body: dict[str, Any]) -> dict[str, Any]:
         player_id = str(body.get("player_id") or "").strip()
