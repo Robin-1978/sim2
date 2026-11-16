@@ -259,7 +259,12 @@ class SimulationRunner:
             last_minute, rounds = self._interaction_rounds.get(thread_key, (minute, 0))
             if minute - last_minute >= self.interaction_thread_window_minutes:
                 rounds = 0
-            if event.get("event_type") == "dialogue.completed" and self._is_repeated_message(pair, minute, message):
+            explicit_player_message = dialogue is not None and dialogue.get("origin") == "player"
+            if (
+                event.get("event_type") == "dialogue.completed"
+                and not explicit_player_message
+                and self._is_repeated_message(pair, minute, message)
+            ):
                 report.interaction_replies_suppressed += 1
                 continue
             if rounds >= self.max_interaction_rounds:

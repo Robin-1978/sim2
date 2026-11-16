@@ -27,6 +27,8 @@
     instances: [],
     activeDb: null,
     operatorResolve: null,
+    stream: null,
+    streamFailures: 0,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -62,6 +64,78 @@
     return value;
   }
 
+  function newIdempotencyKey() {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+    return `web-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e12).toString(36)}`;
+  }
+
+  async function write(path, body = {}) {
+    // POST with an idempotency key; retries once on network failure with the same key.
+    const key = newIdempotencyKey();
+    const attempt = () => request(path, { method: "POST", headers: { "Idempotency-Key": key }, body: JSON.stringify({ ...body, idempotency_key: key }) });
+    try {
+      return await attempt();
+    } catch (error) {
+      if (error instanceof TypeError) return await attempt();
+      throw error;
+    }
+  }
+
+  async function withPending(button, fn) {
+    if (!button) return fn();
+    const wasDisabled = button.disabled;
+    button.disabled = true;
+    try { return await fn(); }
+    finally { button.disabled = wasDisabled; }
+  }
+
+  function mergeTimelineEvents(events) {
+    let advanced = false;
+    for (const event of events || []) {
+      if (event == null || event.event_id == null) continue;
+      if (!state.events.has(event.event_id)) advanced = true;
+      state.events.set(event.event_id, event);
+      state.after = Math.max(state.after, Number(event.event_id || state.after));
+    }
+    if (advanced) renderTimeline();
+  }
+
+  function startStream() {
+    if (state.stream || typeof EventSource === "undefined") return;
+    let source;
+    try {
+      source = new EventSource(`/events/stream?after=${state.after || 0}${state.includeTicks ? "&ticks=1" : ""}`);
+    } catch (error) { return; }
+    state.stream = source;
+    state.streamFailures = 0;
+    source.addEventListener("timeline", (event) => {
+      try {
+        const payload = JSON.parse(event.data || "{}");
+        mergeTimelineEvents(payload.events);
+        if (payload.next_after_event_id) state.after = Math.max(state.after, Number(payload.next_after_event_id));
+        setConnection(true, "实时连接");
+      } catch (error) { /* keep polling as the fallback */ }
+    });
+    source.addEventListener("runtime", (event) => {
+      try {
+        const runtime = JSON.parse(event.data || "{}");
+        renderRuntime(runtime);
+        if (runtime.world_minute !== undefined) $("world-clock").textContent = `minute ${runtime.world_minute}`;
+        $("last-update").textContent = `updated ${new Date().toLocaleTimeString()}`;
+        setConnection(true, "实时连接");
+      } catch (error) { /* keep polling as the fallback */ }
+    });
+    source.addEventListener("dialogue", () => { renderNpcDialogue(); });
+    source.addEventListener("decisions", () => { renderNpcDecisions(); });
+    source.onerror = () => {
+      state.streamFailures = (state.streamFailures || 0) + 1;
+      if (state.streamFailures >= 3 && state.stream) {
+        try { state.stream.close(); } catch (error) { /* ignore */ }
+        state.stream = null;
+      }
+    };
+  }
+
   function setOperatorState(unlocked) {
     $("operator-unlock").textContent = unlocked ? "管理已解锁" : "解锁管理";
     $("operator-unlock").classList.toggle("unlocked", unlocked);
@@ -76,7 +150,12 @@
   function openOperatorDialog(force = false) {
     if (state.operatorToken && !force) return Promise.resolve(true);
     if ($("operator-dialog").open) return Promise.resolve(false);
-    if (typeof $("operator-dialog").showModal === "function") $("operator-dialog").showModal();
+    if (typeof $("operator-dialog").showModal === "function") {
+      $("operator-dialog").showModal();
+      const input = $("operator-token");
+      // Autofill + Enter submits the form; focus here so paste/keyboard flow lands in the input.
+      if (input && typeof input.focus === "function") { input.focus(); input.select(); }
+    }
     return new Promise((resolve) => { state.operatorResolve = resolve; });
   }
 
@@ -150,6 +229,30 @@
     const pct = target && target > start ? Math.max(0, Math.min(100, ((minute - start) / (target - start)) * 100)) : (runtime.running ? 8 : 0);
     $("runtime-progress-bar").style.width = `${pct}%`;
     $("runtime-usage").textContent = `minute ${minute} · 本 run ${runtime.llm_calls_this_run ?? 0}/${runtime.max_llm_calls ?? "∞"} calls · ${runtime.prompt_tokens ?? 0} prompt / ${runtime.completion_tokens ?? 0} completion tokens`;
+    const usageNode = $("runtime-usage");
+    usageNode.classList.remove("usage-warn", "usage-over");
+    if (runtime.max_llm_calls) {
+      const ratio = Number(runtime.llm_calls_this_run || 0) / Number(runtime.max_llm_calls);
+      if (ratio >= 1) usageNode.classList.add("usage-over");
+      else if (ratio >= 0.8) usageNode.classList.add("usage-warn");
+    }
+    const history = runtime.history || [];
+    $("runtime-history-count").textContent = String(history.length);
+    const historyList = $("runtime-history-list");
+    if (historyList) {
+      historyList.replaceChildren();
+      if (!history.length) historyList.append(make("div", "empty-state", "尚无已完成的运行段。"));
+      for (const item of history.slice(0, 10)) {
+        const row = make("div", "run-segment");
+        row.append(make("strong", "", `${item.run_id ? String(item.run_id).slice(0, 8) : "?"} · ${item.state || "done"}`));
+        row.append(document.createTextNode(
+          ` · minute ${item.start_minute ?? "?"}→${item.end_minute ?? "?"}（+${item.minutes_advanced ?? 0}）`
+          + ` · ${item.llm_calls ?? 0} calls · ${item.prompt_tokens ?? 0}/${item.completion_tokens ?? 0} tokens`
+          + (item.stop_reason ? ` · ${item.stop_reason}` : "")
+        ));
+        historyList.append(row);
+      }
+    }
     $("runtime-error").textContent = runtime.last_error || "";
     const provider = $("runtime-provider");
     const previous = provider.value;
@@ -188,7 +291,7 @@
       return;
     }
     try {
-      const result = await request("/instances/activate", { method: "POST", body: JSON.stringify({ db_path: dbPath }) });
+      const result = await write("/instances/activate", { db_path: dbPath });
       if (result.status !== "accepted") throw new Error(result.message || "实例切换失败");
       window.location.reload();
     } catch (error) {
@@ -199,14 +302,14 @@
 
   async function startRuntime() {
     if (!(await ensureOperator())) return;
-    const result = await request("/runtime/start", { method: "POST", body: JSON.stringify({ provider: $("runtime-provider").value || null, max_world_minutes: Number($("runtime-minutes").value || 1440), max_llm_calls: Number($("runtime-llm-calls").value || 120) }) });
+    const result = await write("/runtime/start", { provider: $("runtime-provider").value || null, max_world_minutes: Number($("runtime-minutes").value || 1440), max_llm_calls: Number($("runtime-llm-calls").value || 120) });
     if (result.status !== "accepted") throw new Error(result.message || result.failed_check || "自动运行未启动");
     renderRuntime(result); await refreshRuntime(true);
   }
 
   async function runtimeCommand(path, body = {}) {
     if (!(await ensureOperator())) return;
-    const result = await request(path, { method: "POST", body: JSON.stringify(body) });
+    const result = await write(path, body);
     if (result.status === "rejected") throw new Error(result.message || result.failed_check || "运行命令被拒绝");
     renderRuntime(result.runtime || result); await refreshRuntime(false);
     return result;
@@ -423,6 +526,78 @@
     } catch (error) { list.append(make("div", "empty-state", "演化队列暂时不可用")); }
   }
 
+  async function renderNpcDialogue() {
+    const list = $("npc-dialogue-list"); if (!list) return;
+    list.replaceChildren();
+    try {
+      const response = await request("/observer/dialogue?limit=20");
+      const exchanges = response.exchanges || [];
+      if (!exchanges.length) { list.append(make("div", "empty-state", "暂无对话")); return; }
+      for (const item of [...exchanges].reverse()) {
+        const row = make("article", "dialogue-item");
+        const head = make("p", "");
+        head.append(make("span", "dialogue-speaker", item.speaker || item.speaker_id || "?"));
+        head.append(document.createTextNode(` → ${item.listener || item.listener_id || "小镇"} · ${item.topic || "general"} · #${item.world_minute ?? "—"}`));
+        row.append(head);
+        row.append(make("p", "", item.message || "(无内容)"));
+        list.append(row);
+      }
+    } catch (error) { list.append(make("div", "empty-state", "对话暂时不可用")); }
+  }
+
+  async function renderNpcDecisions() {
+    const list = $("npc-decisions-list"); if (!list) return;
+    list.replaceChildren();
+    try {
+      const response = await request("/observer/decisions?limit=20");
+      const decisions = response.decisions || [];
+      if (!decisions.length) { list.append(make("div", "empty-state", "暂无决策")); return; }
+      const verbs = { "behavior.started": "开始", "behavior.completed": "完成", "behavior.failed": "失败", "behavior.interrupted": "中断" };
+      for (const item of decisions) {
+        const row = make("article", "decision-item");
+        const head = make("p", "");
+        head.append(make("span", "dialogue-speaker", item.actor || item.actor_id || "?"));
+        head.append(document.createTextNode(` ${verbs[item.event_type] || item.event_type} ${item.behavior || "行动"} · #${item.world_minute ?? "—"}`));
+        row.append(head);
+        if (item.detail) row.append(make("small", "", item.detail));
+        if (item.event_id != null) {
+          const toggle = make("button", "text-button", "因果链");
+          toggle.type = "button";
+          toggle.setAttribute("aria-expanded", "false");
+          toggle.addEventListener("click", () => toggleCausal(row, toggle, item.event_id));
+          row.append(toggle);
+        }
+        list.append(row);
+      }
+    } catch (error) { list.append(make("div", "empty-state", "决策暂时不可用")); }
+  }
+
+  async function toggleCausal(row, toggle, eventId) {
+    const open = row.querySelector(".causal-box");
+    if (open) { open.remove(); toggle.setAttribute("aria-expanded", "false"); toggle.textContent = "因果链"; return; }
+    toggle.disabled = true;
+    try {
+      const result = await request(`/events/related?event_id=${encodeURIComponent(eventId)}`);
+      const box = make("div", "causal-box");
+      const origin = result.event;
+      if (origin) box.append(make("div", "causal-item", `本题：#${origin.world_minute ?? "—"} · ${origin.event_type || ""} · ${origin.actor || ""}${origin.summary ? ` — ${origin.summary}` : ""}`));
+      for (const item of result.related || []) {
+        const line = make("div", "causal-item");
+        line.append(make("strong", "", `#${item.world_minute ?? "—"} · ${item.event_type || ""} · ${item.actor || ""}`));
+        if (item.summary) line.append(document.createTextNode(` — ${item.summary}`));
+        box.append(line);
+      }
+      if (!(result.related || []).length) box.append(make("div", "causal-item", "没有关联的因果事件。"));
+      row.append(box);
+      toggle.setAttribute("aria-expanded", "true");
+      toggle.textContent = "收起";
+    } catch (error) {
+      row.append(make("div", "causal-item", `因果链读取失败：${error.message || "未知错误"}`));
+    } finally {
+      toggle.disabled = false;
+    }
+  }
+
   async function refreshRuntime(full = false) {
     try {
       const [status, observer, map, timeline, runtime] = await Promise.all([
@@ -435,7 +610,7 @@
       state.after = Math.max(state.after, Number(timeline.next_after_event_id || 0));
       state.lastObserver = observer;
       renderMetrics(status, observer, runtime); renderRuntime(runtime); renderCharacters(observer); renderDialogueTargets(observer); renderMap(map); renderTimeline();
-      await renderEvolution();
+      await Promise.all([renderEvolution(), renderNpcDialogue(), renderNpcDecisions()]);
       setConnection(true, "已连接"); showNotice(""); $("last-update").textContent = `updated ${new Date().toLocaleTimeString()}`;
     } catch (error) { setConnection(false); showNotice(error.message || "无法读取世界投影"); }
   }
@@ -452,7 +627,7 @@
     const resultBox = $("play-notice") || $("interaction-result");
     if (!playerId || !originId) { setPlayerResult("需要填写玩家 ID 并选择出身", false); return; }
     try {
-      const result = await request("/players", { method: "POST", body: JSON.stringify({ player_id: playerId, origin_id: originId, name: name || undefined }) });
+      const result = await write("/players", { player_id: playerId, origin_id: originId, name: name || undefined });
       if (result.status !== "accepted") throw new Error(result.message || "玩家进入失败");
       state.playerId = playerId;
       state.playerToken = result.session_token || state.playerToken;
@@ -514,6 +689,108 @@
       targets.append(new Option(entity.name || entity.id, entity.id));
     }
     if (!targets.options.length) targets.append(new Option("附近没有可交谈对象", ""));
+    const tradeTargets = $("player-trade-target");
+    if (tradeTargets) {
+      const previous = tradeTargets.value;
+      tradeTargets.replaceChildren();
+      for (const entity of data.nearby_entities || []) {
+        if (!entity.id || entity.id === state.playerId) continue;
+        tradeTargets.append(new Option(entity.name || entity.id, entity.id));
+      }
+      if (!tradeTargets.options.length) tradeTargets.append(new Option("附近没有可交易对象", ""));
+      else if ([...tradeTargets.options].some((option) => option.value === previous)) tradeTargets.value = previous;
+    }
+    renderPlayerTrades();
+  }
+
+  function setPlayerTradeResult(message, ok) {
+    const notice = $("player-trade-result");
+    if (!notice) return;
+    notice.textContent = message || "";
+    notice.className = `interaction-result ${ok ? "ok" : "error"}`;
+  }
+
+  function bundleText(bundle) {
+    if (!bundle || typeof bundle !== "object") return "—";
+    const parts = Object.entries(bundle).map(([key, value]) => `${key}×${value}`);
+    return parts.length ? parts.join("，") : "—";
+  }
+
+  async function renderPlayerTrades() {
+    const incoming = $("player-trade-incoming");
+    const outgoing = $("player-trade-outgoing");
+    if (!incoming || !outgoing || !state.playerId) return;
+    incoming.replaceChildren(); outgoing.replaceChildren();
+    try {
+      const response = await request(`/trade/offers?agent_id=${encodeURIComponent(state.playerId)}&include_closed=0`);
+      const offers = (response.offers || []).filter((item) => item.status === "open").slice(0, 10);
+      if (!offers.length) incoming.append(make("div", "empty-state", "暂无待处理的交易。"));
+      for (const offer of offers) {
+        const mine = offer.recipient_id === state.playerId;
+        const card = make("article", "trade-card");
+        const peer = mine ? offer.offerer_id : offer.recipient_id;
+        card.append(make("strong", "", mine ? `来自 ${peer} 的报价` : `发给 ${peer} 的报价（等待对方）`));
+        card.append(make("small", "", `给出 ${bundleText(offer.give)} · 想要 ${bundleText(offer.want)} · 第 ${offer.round || 1} 轮`));
+        if (mine) {
+          const actions = make("div", "trade-card-actions");
+          const accept = make("button", "button ghost", "接受");
+          accept.type = "button";
+          accept.addEventListener("click", () => actOnPlayerOffer("accept", offer, accept));
+          const counter = make("button", "button ghost", "用表单反报价");
+          counter.type = "button";
+          counter.title = "使用下方给出/想要输入框的内容反报价";
+          counter.addEventListener("click", () => actOnPlayerOffer("counter", offer, counter));
+          const reject = make("button", "button ghost", "拒绝");
+          reject.type = "button";
+          reject.addEventListener("click", () => actOnPlayerOffer("reject", offer, reject));
+          actions.append(accept, counter, reject);
+          card.append(actions);
+        }
+        (mine ? incoming : outgoing).append(card);
+      }
+      if (!outgoing.children.length) outgoing.append(make("div", "empty-state", "没有发出的待定报价。"));
+    } catch (error) {
+      incoming.append(make("div", "empty-state", `交易暂不可用：${error.message || "未知错误"}`));
+    }
+  }
+
+  async function actOnPlayerOffer(kind, offer, button) {
+    if (!state.playerId) return;
+    await withPending(button, async () => {
+      try {
+        let result;
+        if (kind === "accept") {
+          result = await write("/trade/accept", { recipient_id: state.playerId, offer_id: offer.offer_id });
+        } else if (kind === "reject") {
+          result = await write("/trade/reject", { recipient_id: state.playerId, offer_id: offer.offer_id });
+        } else {
+          const give = parseBundle($("player-trade-give")?.value || "");
+          const want = parseBundle($("player-trade-want")?.value || "");
+          result = await write("/trade/counter", { counterparty_id: state.playerId, offer_id: offer.offer_id, give, want });
+        }
+        if (result.status !== "accepted") throw new Error(describeRejection(result, "交易未提交"));
+        setPlayerTradeResult(kind === "accept" ? "交易已完成。" : kind === "reject" ? "已拒绝该报价。" : "反报价已发送。", true);
+        await loadPlayerView();
+      } catch (error) { setPlayerTradeResult(error.message || "交易未提交", false); }
+    });
+  }
+
+  async function submitPlayerTrade(button) {
+    const peer = $("player-trade-target")?.value;
+    if (!state.playerId || !peer) { setPlayerTradeResult("请选择交易对方", false); return; }
+    await withPending(button, async () => {
+      try {
+        const result = await write("/trade/offers", {
+          offerer_id: state.playerId,
+          recipient_id: peer,
+          give: parseBundle($("player-trade-give")?.value || ""),
+          want: parseBundle($("player-trade-want")?.value || ""),
+        });
+        if (result.status !== "accepted") throw new Error(describeRejection(result, "交易未提交"));
+        setPlayerTradeResult("报价已发送，等待对方回应。", true);
+        await loadPlayerView();
+      } catch (error) { setPlayerTradeResult(error.message || "交易未提交", false); }
+    });
   }
 
   function renderNeedBars(attributes) {
@@ -569,7 +846,7 @@
     if (!state.playerId) return;
     setPlayerResult("行动已提交，Platform 正在校验…", true);
     try {
-      const result = await request("/player/act", { method: "POST", body: JSON.stringify({ player_id: state.playerId, behavior_ref: action.ref, parameters: action.parameters || {}, target: action.target || {}, reason: "Player selected this action from the web client.", confidence: 1 }) });
+      const result = await write("/player/act", { player_id: state.playerId, behavior_ref: action.ref, parameters: action.parameters || {}, target: action.target || {}, reason: "Player selected this action from the web client.", confidence: 1 });
       if (result.status !== "accepted") throw new Error(result.message || result.errors?.join("; ") || "行动未被接受");
       setPlayerResult(`${action.choice || action.name || "行动"} 已开始。`, true); await loadPlayerView();
     } catch (error) { setPlayerResult(error.message || "行动未提交", false); }
@@ -578,15 +855,17 @@
   async function playerWait() {
     if (!state.playerId) return;
     if (state.runtime?.running) { setPlayerResult("世界正在自动推进，无需手动等待。", true); return; }
-    try { await request("/player/wait", { method: "POST", body: JSON.stringify({ player_id: state.playerId }) }); await loadPlayerView(); setPlayerResult("世界向前推进了一分钟。", true); }
+    try { await write("/player/wait", { player_id: state.playerId }); await loadPlayerView(); setPlayerResult("世界向前推进了一分钟。", true); }
     catch (error) { setPlayerResult(error.message || "无法推进世界", false); }
   }
 
-  async function sendPlayerDialogue() {
+  async function sendPlayerDialogue(button) {
     const target = $("player-dialogue-target")?.value; const message = $("player-dialogue-message")?.value.trim();
     if (!state.playerId || !target || !message) { setPlayerResult("请选择附近对象并输入消息", false); return; }
-    try { const result = await request("/dialogue", { method: "POST", body: JSON.stringify({ speaker_id: state.playerId, listener_id: target, topic: "general", message }) }); if (result.status !== "accepted") throw new Error(result.message || "对话未提交"); $("player-dialogue-message").value = ""; setPlayerResult("对话已经进入世界事件流。", true); await loadPlayerView(); }
-    catch (error) { setPlayerResult(error.message || "对话未提交", false); }
+    await withPending(button || $("player-send-dialogue"), async () => {
+      try { const result = await write("/dialogue", { speaker_id: state.playerId, listener_id: target, topic: "general", message }); if (result.status !== "accepted") throw new Error(describeRejection(result, "对话未提交")); $("player-dialogue-message").value = ""; setPlayerResult("对话已经进入世界事件流。", true); await loadPlayerView(); }
+      catch (error) { setPlayerResult(error.message || "对话未提交", false); }
+    });
   }
 
   function renderPlayerFeed(outcomes) {
@@ -597,11 +876,21 @@
 
   function setPlayerResult(message, ok) { const notice = $("play-notice"); notice.textContent = message || ""; notice.className = `notice ${ok ? "notice-ok" : ""}`; notice.classList.toggle("hidden", !message); }
 
-  async function sendDialogue() {
+  function describeRejection(result, fallback) {
+    if (!result || typeof result !== "object") return fallback;
+    const parts = [result.message || fallback];
+    if (result.missing) parts.push(`缺失: ${result.missing}`);
+    if (Array.isArray(result.allowed_values) && result.allowed_values.length) parts.push(`可用: ${result.allowed_values.slice(0, 12).join(", ")}`);
+    return parts.join(" ");
+  }
+
+  async function sendDialogue(button) {
     const speakerId = $("dialogue-speaker").value; const listenerId = $("dialogue-listener").value; const message = $("dialogue-message").value.trim();
     if (!speakerId || !listenerId || !message) { setInteractionResult("请选择说话者、听者并输入消息", false); return; }
-    try { const result = await request("/dialogue", { method: "POST", body: JSON.stringify({ speaker_id: speakerId, listener_id: listenerId, topic: $("dialogue-topic").value.trim() || "general", message }) }); setInteractionResult(result.status === "accepted" ? "对话已提交并写入 Platform 事件流" : JSON.stringify(result), result.status === "accepted"); if (result.status === "accepted") { $("dialogue-message").value = ""; await refreshRuntime(true); } }
-    catch (error) { setInteractionResult(error.message || "对话未提交", false); }
+    await withPending(button || $("send-dialogue"), async () => {
+      try { const result = await write("/dialogue", { speaker_id: speakerId, listener_id: listenerId, topic: $("dialogue-topic").value.trim() || "general", message }); setInteractionResult(result.status === "accepted" ? "对话已提交并写入 Platform 事件流" : JSON.stringify(result), result.status === "accepted"); if (result.status === "accepted") { $("dialogue-message").value = ""; await refreshRuntime(true); } }
+      catch (error) { setInteractionResult(error.message || "对话未提交", false); }
+    });
   }
 
   function setInteractionResult(message, ok) { const target = $("interaction-result"); target.textContent = message || ""; target.className = `interaction-result ${ok ? "ok" : "error"}`; }
@@ -807,14 +1096,111 @@
     if (!(await ensureOperator())) return;
     resultBox.textContent = "创建中…"; resultBox.className = "interaction-result";
     try {
-      const result = await request("/instances", { method: "POST", body: JSON.stringify({ package_id: packageId, instance_id: instanceId }) });
+      const result = await write("/instances", { package_id: packageId, instance_id: instanceId });
       if (result.status !== "passed") throw new Error((result.errors || ["创建失败"]).join("; "));
       resultBox.textContent = `已创建 ${result.instance_id}，正在打开…`;
       resultBox.className = "interaction-result ok";
-      const activated = await request("/instances/activate", { method: "POST", body: JSON.stringify({ instance_id: result.instance_id }) });
+      const activated = await write("/instances/activate", { instance_id: result.instance_id });
       if (activated.status !== "accepted") throw new Error(activated.message || "实例已创建，但切换失败");
       window.location.reload();
     } catch (error) { resultBox.textContent = error.message || "创建失败"; resultBox.className = "interaction-result error"; }
+  }
+
+  function setConsoleResult(value) {
+    const box = $("console-result");
+    if (!box) return;
+    box.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  }
+
+  function consoleNotice(message, ok) {
+    const notice = $("console-notice");
+    if (!notice) return;
+    notice.textContent = message || "";
+    notice.className = `notice ${ok ? "notice-ok" : ""}`;
+    notice.classList.toggle("hidden", !message);
+  }
+
+  function parseBundle(text) {
+    const result = {};
+    const raw = String(text || "").trim();
+    if (!raw) return result;
+    for (const token of raw.split(",")) {
+      const item = token.trim();
+      if (!item) continue;
+      const [name, quantity] = item.split("=").map((part) => part.trim());
+      const value = Number(quantity);
+      if (!name || !Number.isFinite(value) || value <= 0) throw new Error("交易数量格式应为 item=qty，例如 bread=2");
+      result[name] = value;
+    }
+    return result;
+  }
+
+  async function runConsole(label, fn, { operator = true } = {}) {
+    if (operator && !(await ensureOperator())) return;
+    setConsoleResult(`${label} …`);
+    consoleNotice("", true);
+    try {
+      const result = await fn();
+      setConsoleResult(result);
+      return result;
+    } catch (error) {
+      const message = error.message || "命令失败";
+      setConsoleResult({ status: "error", message, code: error.code || null });
+      consoleNotice(message, false);
+      return null;
+    }
+  }
+
+  async function downloadSnapshot(snapshotId, button) {
+    if (!snapshotId) return;
+    if (!(await ensureOperator())) return;
+    await withPending(button, async () => {
+      const sessionToken = state.operatorToken || state.playerToken || state.observerToken || state.sessionToken;
+      const response = await fetch(`/snapshots/download?snapshot_id=${encodeURIComponent(snapshotId)}`, {
+        headers: { ...(sessionToken ? { "x-sim2-session": sessionToken } : {}) },
+      });
+      if (!response.ok) {
+        let message = `下载失败 (${response.status})`;
+        try {
+          const value = await response.json();
+          message = value.message || message;
+        } catch (error) { /* non-JSON error body */ }
+        throw new Error(message);
+      }
+      const blob = await response.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${snapshotId}.sqlite3`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+    }).catch((error) => consoleNotice(error.message || "下载失败", false));
+  }
+
+  async function refreshConsoleInstances() {
+    const result = await runConsole("刷新实例与快照", async () => {
+      const [instances, snapshots] = await Promise.all([request("/instances"), request("/snapshots")]);
+      return { instances: instances.instances, snapshots: snapshots.snapshots };
+    });
+    if (result) {
+      const box = $("console-instances");
+      if (box) {
+        box.replaceChildren();
+        for (const item of result.instances || []) box.append(make("div", "", `${item.instance_id} · ${item.world_id || ""} · minute ${item.world_minute ?? "—"}${item.active ? " · active" : ""}`));
+        for (const item of result.snapshots || []) {
+          const row = make("div", "snapshot-row");
+          row.append(make("span", "", `snapshot ${item.snapshot_id} · ${(item.size / 1024).toFixed(0)} KB`));
+          const download = make("button", "text-button", "下载");
+          download.type = "button";
+          download.addEventListener("click", () => downloadSnapshot(item.snapshot_id, download));
+          row.append(download);
+          box.append(row);
+        }
+        if (!((result.instances || []).length || (result.snapshots || []).length)) box.append(make("div", "empty-state", "暂无实例或快照"));
+      }
+      await loadInstances();
+    }
   }
 
   async function init() {
@@ -829,21 +1215,32 @@
     $("stop-button").addEventListener("click", () => control("/runtime/stop"));
     $("step-button").addEventListener("click", () => control("/runtime/step"));
     $("toggle-ticks").addEventListener("click", () => { state.includeTicks = !state.includeTicks; $("toggle-ticks").textContent = state.includeTicks ? "隐藏 tick" : "显示 tick"; refreshRuntime(true); });
+    $("dialogue-refresh").addEventListener("click", renderNpcDialogue);
+    $("decisions-refresh").addEventListener("click", renderNpcDecisions);
     $("instance-select").addEventListener("change", (event) => activateInstance(event.target.value).catch((error) => showNotice(error.message || "实例切换失败")));
     $("operator-unlock").addEventListener("click", () => openOperatorDialog(true));
-    $("operator-submit").addEventListener("click", (event) => { event.preventDefault(); unlockOperator($("operator-token").value).catch((error) => { $("operator-error").textContent = error.message || "解锁失败"; }); });
+    // Handle the form submit (not the button click): Enter/autofill/mobile-go
+    // submit the method="dialog" form natively, which would close the dialog
+    // without unlocking. Centralizing here covers click and keyboard alike.
+    $("operator-dialog").querySelector("form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      unlockOperator($("operator-token").value).catch((error) => { $("operator-error").textContent = error.message || "解锁失败"; });
+    });
+    $("operator-cancel").addEventListener("click", () => $("operator-dialog").close());
     $("operator-dialog").addEventListener("close", () => { $("operator-token").value = ""; $("operator-error").textContent = ""; if (state.operatorResolve) state.operatorResolve(false); state.operatorResolve = null; });
     $("open-player").addEventListener("click", () => switchView("play-view"));
     $("play-enter").addEventListener("click", enterPlayer);
     $("play-player-origin").addEventListener("change", updateOriginPreview);
     $("player-refresh").addEventListener("click", loadPlayerView);
-    $("player-send-dialogue").addEventListener("click", sendPlayerDialogue);
+    $("player-send-dialogue").addEventListener("click", (event) => sendPlayerDialogue(event.currentTarget));
+    $("player-send-trade").addEventListener("click", (event) => submitPlayerTrade(event.currentTarget));
+    $("player-trades-refresh").addEventListener("click", renderPlayerTrades);
     $("player-leave").addEventListener("click", () => {
       state.playerId = null; state.playerData = null; state.playerToken = null; state.sessionToken = state.observerToken;
       localStorage.removeItem("sim2_player_id"); localStorage.removeItem("sim2_player_token");
       $("player-world").classList.add("hidden"); $("player-setup").classList.remove("hidden"); setPlayerResult("已退出当前角色。", true);
     });
-    $("send-dialogue").addEventListener("click", sendDialogue);
+    $("send-dialogue").addEventListener("click", (event) => sendDialogue(event.currentTarget));
     $("create-instance").addEventListener("click", () => createNewInstance().catch((error) => { $("instance-result").textContent = error.message || "创建失败"; $("instance-result").className = "interaction-result error"; }));
     $("new-draft").addEventListener("click", () => setDraft(defaultTemplate(), { increment: true, clearSource: true }));
     $("open-current").addEventListener("click", operatorAction(() => openPackage()));
@@ -856,6 +1253,75 @@
     $("compile-draft").addEventListener("click", operatorAction(compileDraft));
     $("smoke-draft").addEventListener("click", operatorAction(smokeDraft));
     $("export-draft").addEventListener("click", operatorAction(exportDraft));
+    $("console-refresh").addEventListener("click", refreshConsoleInstances);
+    $("console-clear").addEventListener("click", () => setConsoleResult("等待命令…"));
+    $("console-init").addEventListener("click", () => runConsole("初始化世界", async () => {
+      const packageId = $("console-init-package").value.trim() || $("package-select")?.value || "";
+      const instanceId = $("console-init-instance").value.trim();
+      if (!packageId || !instanceId) throw new Error("需要填写世界模板 ID 和新实例 ID");
+      const result = await write("/instances/init", { package_id: packageId, instance_id: instanceId, activate: $("console-init-activate").checked });
+      if (result.activation?.status === "accepted") window.location.reload();
+      await loadInstances();
+      return result;
+    }));
+    $("console-snapshot").addEventListener("click", () => runConsole("创建快照", async () => write("/snapshots", { label: $("console-snapshot-label").value.trim() || "manual" })));
+    $("console-snapshots").addEventListener("click", refreshConsoleInstances);
+    $("console-restore").addEventListener("click", () => runConsole("恢复快照", async () => {
+      const snapshotId = $("console-restore-id").value.trim();
+      if (!snapshotId) throw new Error("需要填写快照 ID");
+      const result = await write("/restore", { snapshot_id: snapshotId });
+      await refreshRuntime(true);
+      return result;
+    }));
+    $("console-simulate").addEventListener("click", () => runConsole("同步推演", async () => write("/simulate", { minutes: Number($("console-sim-minutes").value || 10), provider: $("console-sim-provider").value.trim() || null })));
+    $("console-decide").addEventListener("click", () => runConsole("单步决策", async () => {
+      const agentId = $("console-decide-agent").value.trim();
+      if (!agentId) throw new Error("需要填写 Agent ID");
+      return write("/decide", { agent_id: agentId, role: $("console-decide-role").value.trim() || "agent_decision" });
+    }));
+    $("console-status").addEventListener("click", () => runConsole("status", async () => request("/status"), { operator: false }));
+    $("console-health").addEventListener("click", () => runConsole("health", async () => request("/health"), { operator: false }));
+    $("console-metrics").addEventListener("click", () => runConsole("metrics", async () => request("/metrics"), { operator: false }));
+    $("console-audit").addEventListener("click", () => runConsole("audit", async () => request("/audit")));
+    $("console-validate").addEventListener("click", () => runConsole("校验世界包", async () => write("/authoring/validate", { package_id: $("console-pkg-id").value.trim() || undefined, path: $("console-pkg-path").value.trim() || undefined })));
+    $("console-describe").addEventListener("click", () => runConsole("世界包详情", async () => write("/authoring/describe", { package_id: $("console-pkg-id").value.trim() || undefined, path: $("console-pkg-path").value.trim() || undefined })));
+    $("console-schema").addEventListener("click", () => runConsole("world-schema", async () => request("/authoring/schema"), { operator: false }));
+    $("console-build-world").addEventListener("click", () => runConsole("创建世界包", async () => {
+      const parsed = parseDraft();
+      if (parsed.error) throw new Error(parsed.error);
+      return write("/authoring/build-world", { template: parsed.value, output: $("console-build-output").value.trim(), overwrite: $("console-build-overwrite").checked, instance_id: $("console-build-instance").value.trim() || undefined, source_path: state.sourcePath || undefined });
+    }));
+    $("console-trade-list").addEventListener("click", () => runConsole("列出交易", async () => {
+      const agentId = $("console-trade-agent").value.trim() || state.playerId || "";
+      if (!agentId) throw new Error("需要填写 Agent ID（或先进入世界）");
+      return request(`/trade/offers?agent_id=${encodeURIComponent(agentId)}&include_closed=1`);
+    }, { operator: false }));
+    const tradeAct = (kind) => runConsole(kind, async () => {
+      const me = $("console-trade-me").value.trim() || state.playerId || "";
+      const peer = $("console-trade-peer").value.trim();
+      const offerId = $("console-offer-id").value.trim();
+      if (!me) throw new Error("需要填写我方 Agent ID（或先进入世界）");
+      if (kind === "offer") {
+        if (!peer) throw new Error("发起交易需要对方 ID");
+        return write("/trade/offers", { offerer_id: me, recipient_id: peer, give: parseBundle($("console-trade-give").value), want: parseBundle($("console-trade-want").value) });
+      }
+      if (!offerId) throw new Error("需要填写 Offer ID");
+      if (kind === "counter") return write("/trade/counter", { counterparty_id: me, offer_id: offerId, give: parseBundle($("console-trade-give").value), want: parseBundle($("console-trade-want").value) });
+      if (kind === "accept") return write("/trade/accept", { recipient_id: me, offer_id: offerId });
+      return write("/trade/reject", { recipient_id: me, offer_id: offerId });
+    }, { operator: false });
+    $("console-trade-offer").addEventListener("click", () => tradeAct("offer"));
+    $("console-trade-counter").addEventListener("click", () => tradeAct("counter"));
+    $("console-trade-accept").addEventListener("click", () => tradeAct("accept"));
+    $("console-trade-reject").addEventListener("click", () => tradeAct("reject"));
+    $("console-inject").addEventListener("click", () => runConsole("注入事件", async () => {
+      const eventType = $("console-event-type").value.trim();
+      if (!eventType) throw new Error("需要填写事件类型");
+      let payload = {};
+      try { payload = $("console-event-payload").value.trim() ? JSON.parse($("console-event-payload").value) : {}; }
+      catch (error) { throw new Error(`Payload JSON 错误：${error.message}`); }
+      return write("/events", { event_type: eventType, payload });
+    }));
     state.operatorToken = sessionStorage.getItem("sim2_operator_token");
     setOperatorState(Boolean(state.operatorToken));
     try { const session = await request("/session"); state.observerToken = session.session_token || null; state.sessionToken = state.observerToken; } catch (error) { /* public projections remain readable in local read-only mode */ }
@@ -864,6 +1330,7 @@
     try { const response = await request("/authoring/schema"); state.schema = response.schema; renderSchema(); } catch (error) { $("schema-list").replaceChildren(make("div", "empty-state", "Schema 暂不可用")); }
     await Promise.all([loadPackageCatalog(), loadPlayerEntry(), loadInstances()]);
     await refreshRuntime(true);
+    startStream();
     state.poll = window.setInterval(() => { if ($("runtime-view").classList.contains("active-view")) refreshRuntime(false); else if ($("play-view").classList.contains("active-view") && state.playerId) loadPlayerView(); }, 4000);
   }
 

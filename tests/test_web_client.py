@@ -196,6 +196,97 @@ def _wait_until(predicate, timeout: float = 5.0) -> None:
     raise AssertionError("condition was not reached before timeout")
 
 
+def test_web_console_covers_all_cli_commands(tmp_path: Path):
+    import shutil
+
+    worlds_root = tmp_path / "console-worlds"
+    shutil.copytree(Path(__file__).parents[1] / "worlds" / "starter_village", worlds_root / "starter_village")
+    runtime_root = tmp_path / "runtime"
+    db_path = create_instance(worlds_root / "starter_village", "console-all", runtime_root)
+
+    def providers(_name):
+        return {role: _SlowWaitProvider() for role in ("agent_decision", "agent_reflection", "god", "story")}
+
+    server = ControlHTTPServer(("127.0.0.1", 0), db_path, authoring_root=worlds_root, runtime_provider_factory=providers)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    operator = _operator_headers(server)
+    try:
+        with urlopen(base + "/") as response:
+            html = response.read().decode("utf-8")
+        assert "命令" in html
+        assert "console-result" in html
+        assert "console-init" in html
+
+        validated = _json_request(base + "/authoring/validate", {"package_id": "starter_village"}, headers=operator)
+        assert validated["status"] == "passed", validated
+        described = _json_request(base + "/authoring/describe", {"package_id": "starter_village"}, headers=operator)
+        assert described["status"] == "passed", described
+        assert described["world_id"] == "starter_village"
+
+        with urlopen(base + "/authoring/schema") as response:
+            assert json.loads(response.read())["status"] == "ok"
+
+        opened = _json_request(base + "/authoring/open", {}, headers=operator)
+        assert opened["status"] == "passed"
+        built = _json_request(
+            base + "/authoring/build-world",
+            {"template": opened["template"], "source_path": opened["source_path"], "output": "console_built", "overwrite": True},
+            headers=operator,
+        )
+        assert built["status"] == "passed", built
+        assert (worlds_root / "console_built" / "manifest.yaml").is_file()
+
+        inited = _json_request(
+            base + "/instances/init",
+            {"package_id": "starter_village", "instance_id": "console-init-child"},
+            headers=operator,
+        )
+        assert inited["status"] == "passed", inited
+
+        observer = json.loads(urlopen(base + "/observer?limit=5").read())
+        agent_id = observer["agents"][0]["id"]
+        decided = _json_request(base + "/decide", {"agent_id": agent_id, "role": "agent_decision"}, headers=operator)
+        assert decided["result"]["status"] in {"accepted", "wait", "skipped", "rejected"}, decided
+
+        simulated = _json_request(base + "/simulate", {"minutes": 2}, headers=operator)
+        assert simulated["status"] == "ok", simulated
+        assert simulated["report"]["end_minute"] >= simulated["report"]["start_minute"] + 2
+
+        created = _json_request(base + "/snapshots", {"label": "console"}, headers=operator)
+        assert created["status"] == "ok", created
+        listed = json.loads(Request(base + "/snapshots", headers=operator).get_full_url() and urlopen(Request(base + "/snapshots", headers=operator)).read())
+        assert any(item["snapshot_id"] == created["snapshot_id"] for item in listed["snapshots"])
+        restored = _json_request(base + "/restore", {"snapshot_id": created["snapshot_id"]}, headers=operator)
+        assert restored["status"] == "ok", restored
+
+        with urlopen(base + "/player/entry") as response:
+            entry = json.loads(response.read())
+        player_headers = {}
+        entered = _json_request(base + "/players", {"player_id": "console_p1", "origin_id": entry["origins"][0]["id"]}, headers=None)
+        assert entered["status"] == "accepted"
+        player_headers = {"x-sim2-session": entered["session_token"]}
+        with urlopen(Request(base + "/trade/offers?agent_id=console_p1", headers=player_headers)) as response:
+            assert json.loads(response.read())["status"] == "ok"
+        # Invalid offer still goes through Platform validation instead of 500.
+        bad_counter = _json_request(
+            base + "/trade/counter",
+            {"counterparty_id": "console_p1", "offer_id": "missing", "give": {}, "want": {}},
+            headers=player_headers,
+        )
+        assert bad_counter["status"] == "rejected"
+        bad_reject = _json_request(
+            base + "/trade/reject", {"recipient_id": "console_p1", "offer_id": "missing"}, headers=player_headers
+        )
+        assert bad_reject["status"] == "rejected"
+        injected = _json_request(base + "/events", {"event_type": "story.note", "payload": {"text": "console"}}, headers=operator)
+        assert injected["status"] in {"accepted", "rejected"}, injected
+    finally:
+        server.close()
+        thread.join(timeout=3)
+
+
 def test_web_runtime_controls_and_instance_hot_switch(tmp_path: Path):
     world = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
     runtime_root = tmp_path / "runtime"
@@ -296,6 +387,268 @@ def test_web_runtime_controls_and_instance_hot_switch(tmp_path: Path):
         stepped = _json_request(base + "/runtime/step", {}, headers=operator)
         assert stepped["to_minute"] == before_step + 1
         assert stepped["runtime"]["state"] == "paused"
+    finally:
+        server.close()
+        thread.join(timeout=3)
+
+
+def test_web_dialogue_accepts_names_and_reports_missing_participant(tmp_path: Path):
+    from sim2.bootstrap.service import create_instance as _create
+
+    config = Path(__file__).parents[1] / "worlds" / "tidebound_commons"
+    db_path = _create(config, "dialogue-names", tmp_path / "runtime")
+    server = ControlHTTPServer(("127.0.0.1", 0), db_path, authoring_root=Path(__file__).parents[1] / "worlds")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with urlopen(base + "/player/entry") as response:
+            entry = json.loads(response.read())
+        entered = _json_request(base + "/players", {"player_id": "player_one", "origin_id": entry["origins"][0]["id"], "name": "Ari"})
+        assert entered["status"] == "accepted"
+        player_headers = {"x-sim2-session": entered["session_token"]}
+        by_names = _json_request(
+            base + "/dialogue",
+            {"speaker_id": "Ari", "listener_id": "Mara", "topic": "general", "message": "hi by names"},
+            headers=player_headers,
+        )
+        assert by_names["status"] == "accepted", by_names
+        missing = _json_request(
+            base + "/dialogue",
+            {"speaker_id": "player_one", "listener_id": "nobody_xyz", "topic": "general", "message": "hi"},
+            headers=player_headers,
+        )
+        assert missing["status"] == "rejected", missing
+        assert missing["missing"] == "nobody_xyz"
+        assert "mara" in missing["allowed_values"]
+    finally:
+        server.close()
+        thread.join(timeout=3)
+
+
+def test_observer_feeds_show_npc_dialogue_and_decisions(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "tidebound_commons"
+    db_path = create_instance(config, "observer-feeds", tmp_path / "runtime")
+    server = ControlHTTPServer(("127.0.0.1", 0), db_path, authoring_root=Path(__file__).parents[1] / "worlds")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with urlopen(base + "/") as response:
+            html = response.read().decode("utf-8")
+        assert "NPC 对话" in html
+        assert "决策动态" in html
+        with urlopen(base + "/observer/dialogue?limit=10") as response:
+            assert json.loads(response.read())["exchanges"] == []
+        assert server.control.platform.submit_dialogue("mara", "selene", "general", "The tide is turning.")["status"] == "accepted"
+        with urlopen(base + "/observer/dialogue?limit=10") as response:
+            exchanges = json.loads(response.read())["exchanges"]
+        assert exchanges[-1]["message"] == "The tide is turning."
+        assert exchanges[-1]["speaker"] == "Mara"
+        server.control.platform.inject_event("behavior.completed", {"behavior_id": "travel", "result": "arrived safely"}, actor_id="mara")
+        with urlopen(base + "/observer/decisions?limit=10") as response:
+            decisions = json.loads(response.read())["decisions"]
+        assert decisions[-1]["actor"] == "Mara"
+        assert decisions[-1]["event_type"] == "behavior.completed"
+    finally:
+        server.close()
+        thread.join(timeout=3)
+
+
+def _sse_read_event(fp, timeout_at):
+    import time as _time
+
+    event_name, data_lines = None, []
+    while _time.monotonic() < timeout_at:
+        line = fp.readline().decode("utf-8", "replace")
+        if not line:
+            break
+        line = line.rstrip("\n").rstrip("\r")
+        if line == "":
+            if event_name:
+                return event_name, "\n".join(data_lines)
+            event_name, data_lines = None, []
+        elif line.startswith("event:"):
+            event_name = line.split(":", 1)[1].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line.split(":", 1)[1].strip())
+        # comment/heartbeat lines (": ...") are ignored
+    raise AssertionError("timed out waiting for SSE event")
+
+
+def test_web_sse_pushes_timeline_deltas(tmp_path: Path):
+    import http.client
+    import time as _time
+
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "web-sse", tmp_path / "runtime")
+    server = ControlHTTPServer(("127.0.0.1", 0), db_path)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    operator = _operator_headers(server)
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=12)
+    try:
+        conn.request("GET", "/events/stream?after=0")
+        response = conn.getresponse()
+        assert response.status == 200
+        assert response.getheader("content-type", "").startswith("text/event-stream")
+        name, payload = _sse_read_event(response.fp, _time.monotonic() + 8)
+        assert name == "ready", payload
+        assert json.loads(payload)["after"] == 0
+        injected = _json_request(base + "/events", {"event_type": "story.note", "payload": {"text": "sse-ping"}}, headers=operator)
+        assert injected["status"] == "accepted"
+        deadline = _time.monotonic() + 10
+        seen = False
+        while _time.monotonic() < deadline and not seen:
+            name, payload = _sse_read_event(response.fp, deadline)
+            if name == "timeline":
+                seen = any(item.get("event_id") == injected["event_id"] for item in json.loads(payload).get("events", []))
+        assert seen, "SSE did not push the injected event"
+    finally:
+        conn.close()
+        server.close()
+        thread.join(timeout=3)
+
+
+def test_web_idempotency_key_dedupes_retries(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "web-idem", tmp_path / "runtime")
+    server = ControlHTTPServer(("127.0.0.1", 0), db_path)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    operator = _operator_headers(server)
+    try:
+        before = json.loads(urlopen(base + "/timeline?limit=500").read())
+        before_ids = {item["event_id"] for item in before["events"]}
+        first = _json_request(base + "/events", {"event_type": "story.note", "payload": {"n": 1}, "idempotency_key": "retry-1"}, headers=operator)
+        second = _json_request(base + "/events", {"event_type": "story.note", "payload": {"n": 2}, "idempotency_key": "retry-1"}, headers=operator)
+        assert first["event_id"] == second["event_id"]
+        third = _json_request(base + "/events", {"event_type": "story.note", "payload": {"n": 3}, "idempotency_key": "retry-2"}, headers=operator)
+        assert third["event_id"] != first["event_id"]
+        after = json.loads(urlopen(base + "/timeline?limit=500").read())
+        new_ids = {item["event_id"] for item in after["events"]} - before_ids
+        assert new_ids == {first["event_id"], third["event_id"]}
+    finally:
+        server.close()
+        thread.join(timeout=3)
+
+
+def test_web_event_related_traces_causal_chain(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "web-related", tmp_path / "runtime")
+    server = ControlHTTPServer(("127.0.0.1", 0), db_path)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    operator = _operator_headers(server)
+    try:
+        first = _json_request(base + "/events", {"event_type": "behavior.started", "payload": {"behavior_id": "travel", "correlation_id": "chain-9"}}, headers=operator)
+        second = _json_request(base + "/events", {"event_type": "behavior.completed", "payload": {"behavior_id": "travel", "result": "ok", "correlation_id": "chain-9"}}, headers=operator)
+        with urlopen(base + f"/events/related?event_id={second['event_id']}") as response:
+            chain = json.loads(response.read())
+        assert chain["status"] == "ok"
+        assert chain["event"]["event_id"] == second["event_id"]
+        assert first["event_id"] in [item["event_id"] for item in chain["related"]]
+        with urlopen(base + "/events/related?event_id=999999999") as response:
+            missing = json.loads(response.read())
+        assert missing["status"] == "rejected"
+    finally:
+        server.close()
+        thread.join(timeout=3)
+
+
+def test_web_runtime_history_and_snapshot_download(tmp_path: Path):
+    world = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+    runtime_root = tmp_path / "runtime"
+    first = create_instance(world, "web-hist", runtime_root)
+
+    def providers(_name):
+        return {role: _SlowWaitProvider() for role in ("agent_decision", "agent_reflection", "god", "story")}
+
+    server = ControlHTTPServer(("127.0.0.1", 0), first, runtime_provider_factory=providers)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    operator = _operator_headers(server)
+    try:
+        started = _json_request(base + "/runtime/start", {"max_world_minutes": 50, "max_llm_calls": 1}, headers=operator)
+        assert started["status"] == "accepted", started
+        _wait_until(lambda: not json.loads(urlopen(base + "/runtime").read())["running"])
+        stopped = _json_request(base + "/runtime/stop", {"reason": "hist-stop"}, headers=operator)
+        assert stopped["status"] == "accepted", stopped
+        history = json.loads(urlopen(base + "/runtime").read()).get("history", [])
+        assert history, "runtime history should record finished segments"
+        assert history[0]["run_id"] == started["run_id"]
+        assert "llm_calls" in history[0] and "prompt_tokens" in history[0]
+
+        created = _json_request(base + "/snapshots", {"label": "hist-dl"}, headers=operator)
+        assert created["status"] == "ok", created
+        download = Request(base + f"/snapshots/download?snapshot_id={created['snapshot_id']}", headers=operator)
+        with urlopen(download) as response:
+            assert response.status == 200
+            assert response.headers.get("content-type") == "application/octet-stream"
+            assert "attachment" in (response.headers.get("content-disposition") or "")
+            assert response.read()[:16] == b"SQLite format 3\x00"
+        try:
+            urlopen(base + f"/snapshots/download?snapshot_id={created['snapshot_id']}")
+        except HTTPError as error:
+            assert error.code == 403
+        else:
+            raise AssertionError("snapshot download must require an operator session")
+    finally:
+        server.close()
+        thread.join(timeout=3)
+
+
+def test_web_full_client_surfaces_new_panels(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "web-panels", tmp_path / "runtime")
+    server = ControlHTTPServer(("127.0.0.1", 0), db_path)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with urlopen(base + "/") as response:
+            html = response.read().decode("utf-8")
+        for marker in (
+            'class="skip-link"',
+            'id="player-trade-target"',
+            'id="player-send-trade"',
+            'id="runtime-history-list"',
+            'id="npc-decisions-list"',
+            'id="console-result"',
+            'aria-labelledby="npc-decisions-title"',
+        ):
+            assert marker in html, marker
+    finally:
+        server.close()
+        thread.join(timeout=2)
+
+
+def test_operator_session_exchange_and_dialog_wiring(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "web-session", tmp_path / "runtime")
+    server = ControlHTTPServer(("127.0.0.1", 0), db_path, operator_token="fixed-test-token")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        ok = _json_request(base + "/session", {"role": "operator", "operator_token": "fixed-test-token"})
+        assert ok["status"] == "ok" and ok["role"] == "operator" and ok["session_token"]
+        try:
+            _json_request(base + "/session", {"role": "operator", "operator_token": "wrong-token"})
+        except HTTPError as error:
+            assert error.code == 403
+        else:
+            raise AssertionError("wrong operator token must be rejected")
+        with urlopen(base + "/") as response:
+            html = response.read().decode("utf-8")
+        # The unlock form must route through submit (covers Enter/autofill),
+        # and cancel must not submit the dialog form.
+        assert 'id="operator-cancel" class="button ghost" type="button"' in html
+        assert 'id="operator-submit" class="button primary" type="submit"' in html
     finally:
         server.close()
         thread.join(timeout=3)

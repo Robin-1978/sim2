@@ -23,8 +23,8 @@ _COMMAND_HELP = {
     "actions": "List the numbered actions available right now.",
     "do": "do <n|behavior_ref> [key=value ...] - submit a listed action through Platform.",
     "go": "go <location_id|name|n> - travel to a connected known location.",
-    "say": "say <target> <message...> - speak to a nearby character by name or ID; topic defaults to general.",
-    "reply": "Ask the configured Agent runtime for any pending dialogue replies.",
+    "say": "say <target> <message...> - speak to a nearby character and ask their Agent to answer now.",
+    "reply": "Retry or resolve any remaining pending dialogue replies.",
     "messages": "Show recent dialogue involving your character.",
     "offer": "offer <target_id> <give:item=qty> <want:item=qty> - propose a trade.",
     "offers": "List your open trade offers.",
@@ -190,10 +190,12 @@ class TextWorldSession:
             result = self.platform.submit_dialogue(self.player_id or "", args[0], "general", message)
             formatted = self._format_result(result)
             if result.get("status") == "accepted" and self.reply_handler is not None:
-                formatted += "\nNext: type reply to let the recipient answer."
+                formatted += "\n" + self.reply_handler()
             return formatted
         if command == "reply":
             self._require_player()
+            if args:
+                raise ValueError("reply does not take a recipient; it asks the runtime to resolve any pending dialogue.")
             if self.reply_handler is None:
                 raise ValueError("No reply provider is configured for this text session.")
             return self.reply_handler()

@@ -611,6 +611,35 @@ class SocialRuntimeMixin:
         action = next((item for item in self.store.repositories.entities.get_definitions("action_def") if item.get("id") == action_id), None)
         return bool(action and action.get("interaction_policy") == "allow")
 
+    def _canonical_agent_id(self, value: Any) -> str | None:
+        """Resolve an agent id or exact name to its canonical agent id."""
+
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        try:
+            canonical = self.targets.canonical_id(raw)
+        except Exception:
+            canonical = None
+        for candidate in ([str(canonical)] if canonical else []) + [raw]:
+            if not candidate:
+                continue
+            try:
+                agent = self.store.repositories.entities.get_agent(candidate)
+            except KeyError:
+                continue
+            agent_id = str(agent.get("id") or candidate)
+            if agent_id:
+                return agent_id
+        return None
+
+    def _agent_id_hint(self, limit: int = 20) -> list[str]:
+        try:
+            agents = self.store.repositories.entities.list_agents()
+        except Exception:
+            return []
+        return sorted(str(item.get("id")) for item in agents if item.get("id"))[:max(1, int(limit))]
+
     def _testimony_metadata(self, speaker: dict[str, Any], listener: dict[str, Any]) -> dict[str, Any]:
         """Attach a configured credibility prior without deciding truth."""
 
@@ -662,35 +691,48 @@ class SocialRuntimeMixin:
         """Record a direct, permission-checked text exchange."""
 
         intent_id = str(uuid4())
-        listener_id = self.targets.canonical_id(listener_id) or str(listener_id)
+        raw_speaker = str(speaker_id or "").strip()
+        raw_listener = str(listener_id) if listener_id is not None else ""
+        raw_listener = str(raw_listener).strip()
+        speaker = self._canonical_agent_id(raw_speaker)
+        listener = self._canonical_agent_id(raw_listener)
         topic = str(topic).strip()
         message = str(message).strip()
-        if not listener_id or listener_id == speaker_id or not topic or not message:
+        if not speaker or not listener or not topic or not message or speaker == listener:
+            if (not speaker and raw_speaker.casefold() == "god") or (not listener and raw_listener.casefold() == "god"):
+                return {"status": "rejected", "message": "god is not a dialogue participant; use inject_event for world events.", "failed_check": "participant", "retryable": False}
+            if not speaker or not listener:
+                missing = raw_speaker if not speaker else raw_listener
+                return {"status": "rejected", "message": f"Dialogue participant does not exist: {missing}.", "failed_check": "participant", "retryable": False, "missing": missing, "allowed_values": self._agent_id_hint()}
             return {"status": "rejected", "message": "speaker, listener, topic and message are required.", "failed_check": "dialogue", "retryable": True}
         if len(message) > 1000:
             return {"status": "rejected", "message": "message must be at most 1000 characters.", "failed_check": "message_length", "retryable": True}
         try:
-            speaker = self.store.repositories.entities.get_agent(speaker_id)
-            listener = self.store.repositories.entities.get_agent(listener_id)
+            speaker_agent = self.store.repositories.entities.get_agent(speaker)
+            listener_agent = self.store.repositories.entities.get_agent(listener)
         except KeyError:
             return {"status": "rejected", "message": "Both participants must exist.", "failed_check": "participant", "retryable": False}
-        if not self._same_public_location(speaker, listener):
+        if not self._same_public_location(speaker_agent, listener_agent):
             return {"status": "rejected", "message": "Both participants must be at the same location.", "failed_check": "location", "retryable": True}
-        if not self._available_for_instant_interaction(speaker) or not self._available_for_instant_interaction(listener):
+        if not self._available_for_instant_interaction(speaker_agent) or not self._available_for_instant_interaction(listener_agent):
             return {"status": "rejected", "message": "A participant is busy with an action that does not allow instant interaction.", "failed_check": "participant_busy", "retryable": True}
         minute = int(self.store.repositories.metadata.get("world_minute", 0))
-        testimony = self._testimony_metadata(speaker, listener)
+        testimony = self._testimony_metadata(speaker_agent, listener_agent)
+        # Runtime loop protection may suppress repeated NPC-to-NPC messages.
+        # An explicit player message is a deliberate command, so preserve that
+        # origin separately and let the recipient's Agent decide how to answer.
+        origin = "player" if str(speaker_agent.get("role") or "").casefold() == "player" else "agent"
         with self.store.transaction():
-            self.store.repositories.evolution.create_intent(intent_id, speaker_id, "send_message", {"target_id": listener_id, "topic": topic, "message": message}, minute)
-            exchange_id = self.store.repositories.social.put_dialogue_exchange(speaker_id, listener_id, topic, minute, {"message": message, "source": "direct_text"})
-            self.store.repositories.memory.put_memory(speaker_id, "dialogue", {"topic": topic, "message": message, "target_id": listener_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.35, "claim_status": "observed", "source_type": "own_statement"})
-            self.store.repositories.memory.put_memory(listener_id, "testimony", {"topic": topic, "message": message, "speaker_id": speaker_id, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.45, "pending_decision": True, "claim_status": "reported", "source_type": "testimony", **testimony})
-            self._apply_configured_need_effect(speaker, "dialogue.completed")
-            self._apply_configured_need_effect(listener, "dialogue.completed")
-            self._apply_configured_relationship_effect(speaker, listener, "dialogue.completed", minute)
-            self.store.repositories.entities.update_agent(speaker_id, speaker)
-            self.store.repositories.entities.update_agent(listener_id, listener)
-            event_id = self._context.services["events"].append("dialogue.completed", speaker_id, minute, {"dialogue_id": exchange_id, "target_id": listener_id, "topic": topic, "summary": "A direct exchange was recorded as unverified testimony.", "activation": "recipient_next_decision_or_reflection", "duration_minutes": 0, "priority": "normal", **testimony})
+            self.store.repositories.evolution.create_intent(intent_id, speaker, "send_message", {"target_id": listener, "topic": topic, "message": message, "origin": origin}, minute)
+            exchange_id = self.store.repositories.social.put_dialogue_exchange(speaker, listener, topic, minute, {"message": message, "source": "direct_text", "origin": origin})
+            self.store.repositories.memory.put_memory(speaker, "dialogue", {"topic": topic, "message": message, "target_id": listener, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.35, "claim_status": "observed", "source_type": "own_statement"})
+            self.store.repositories.memory.put_memory(listener, "testimony", {"topic": topic, "message": message, "speaker_id": speaker, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.45, "pending_decision": True, "claim_status": "reported", "source_type": "testimony", **testimony})
+            self._apply_configured_need_effect(speaker_agent, "dialogue.completed")
+            self._apply_configured_need_effect(listener_agent, "dialogue.completed")
+            self._apply_configured_relationship_effect(speaker_agent, listener_agent, "dialogue.completed", minute)
+            self.store.repositories.entities.update_agent(speaker, speaker_agent)
+            self.store.repositories.entities.update_agent(listener, listener_agent)
+            event_id = self._context.services["events"].append("dialogue.completed", speaker, minute, {"dialogue_id": exchange_id, "target_id": listener, "topic": topic, "summary": "A direct exchange was recorded as unverified testimony.", "activation": "recipient_next_decision_or_reflection", "duration_minutes": 0, "priority": "normal", **testimony})
             result = {"status": "accepted", "intent_id": intent_id, "dialogue_id": exchange_id, "event_id": event_id, "topic": topic}
             self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result
@@ -720,35 +762,45 @@ class SocialRuntimeMixin:
 
         give = dict(give or {})
         want = dict(want or {})
-        recipient_id = self.targets.canonical_id(recipient_id) or str(recipient_id)
-        if not recipient_id or recipient_id == offerer_id or not self._valid_transfer(give) or not self._valid_transfer(want):
+        raw_offerer = str(offerer_id or "").strip()
+        raw_recipient = str(recipient_id) if recipient_id is not None else ""
+        raw_recipient = str(raw_recipient).strip()
+        offerer = self._canonical_agent_id(raw_offerer)
+        recipient = self._canonical_agent_id(raw_recipient)
+        if not offerer or not recipient:
+            missing = raw_offerer if not offerer else raw_recipient
+            return {"status": "rejected", "message": f"Trade participant does not exist: {missing}.", "failed_check": "participant", "retryable": False, "missing": missing, "allowed_values": self._agent_id_hint()}
+        if recipient == offerer or not self._valid_transfer(give) or not self._valid_transfer(want):
             return {"status": "rejected", "message": "A trade needs two participants and positive give/want quantities.", "failed_check": "trade_schema", "retryable": True}
         try:
-            offerer = self.store.repositories.entities.get_agent(offerer_id)
-            recipient = self.store.repositories.entities.get_agent(recipient_id)
+            offerer_agent = self.store.repositories.entities.get_agent(offerer)
+            recipient_agent = self.store.repositories.entities.get_agent(recipient)
         except KeyError:
             return {"status": "rejected", "message": "Both traders must exist.", "failed_check": "participant", "retryable": False}
-        if not self._same_public_location(offerer, recipient):
+        if not self._same_public_location(offerer_agent, recipient_agent):
             return {"status": "rejected", "message": "Both traders must be at the same location.", "failed_check": "location", "retryable": True}
-        if not self._available_for_instant_interaction(offerer) or not self._available_for_instant_interaction(recipient):
+        if not self._available_for_instant_interaction(offerer_agent) or not self._available_for_instant_interaction(recipient_agent):
             return {"status": "rejected", "message": "A participant is busy with an action that does not allow instant trade.", "failed_check": "participant_busy", "retryable": True}
-        if not self._has_inventory(offerer, give):
+        if not self._has_inventory(offerer_agent, give):
             return {"status": "rejected", "message": "The offerer lacks an offered item.", "failed_check": "offer_inventory", "retryable": True}
         minute = int(self.store.repositories.metadata.get("world_minute", 0))
         offer_id = str(uuid4())
         intent_id = str(uuid4())
         with self.store.transaction():
-            self.store.repositories.evolution.create_intent(intent_id, offerer_id, "create_trade_offer", {"recipient_id": recipient_id, "give": give, "want": want}, minute)
-            self.store.repositories.social.put_trade_offer(offer_id, offerer_id, recipient_id, give, want, minute)
-            self.store.repositories.memory.put_memory(recipient_id, "trade_offer", {"offer_id": offer_id, "offerer_id": offerer_id, "give": give, "want": want, "world_minute": minute, "pending_decision": True, "importance": 0.6})
-            self.store.repositories.memory.put_memory(offerer_id, "trade_offer", {"offer_id": offer_id, "recipient_id": recipient_id, "give": give, "want": want, "world_minute": minute, "pending_decision": True, "importance": 0.45})
-            event_id = self._context.services["events"].append("trade.offer_created", offerer_id, minute, {"offer_id": offer_id, "recipient_id": recipient_id, "give": give, "want": want, "activation": "recipient_next_decision", "duration_minutes": 0, "priority": "normal"})
+            self.store.repositories.evolution.create_intent(intent_id, offerer, "create_trade_offer", {"recipient_id": recipient, "give": give, "want": want}, minute)
+            self.store.repositories.social.put_trade_offer(offer_id, offerer, recipient, give, want, minute)
+            self.store.repositories.memory.put_memory(recipient, "trade_offer", {"offer_id": offer_id, "offerer_id": offerer, "give": give, "want": want, "world_minute": minute, "pending_decision": True, "importance": 0.6})
+            self.store.repositories.memory.put_memory(offerer, "trade_offer", {"offer_id": offer_id, "recipient_id": recipient, "give": give, "want": want, "world_minute": minute, "pending_decision": True, "importance": 0.45})
+            event_id = self._context.services["events"].append("trade.offer_created", offerer, minute, {"offer_id": offer_id, "recipient_id": recipient, "give": give, "want": want, "activation": "recipient_next_decision", "duration_minutes": 0, "priority": "normal"})
             result = {"status": "accepted", "intent_id": intent_id, "offer_id": offer_id, "event_id": event_id, "trade_status": "open"}
             self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result
 
     def accept_trade_offer(self, recipient_id: str, offer_id: str) -> dict[str, Any]:
-        recipient_id = self.targets.canonical_id(recipient_id) or str(recipient_id)
+        raw_recipient = str(recipient_id or "").strip()
+        recipient_id = self._canonical_agent_id(raw_recipient) or raw_recipient
+        if not self._canonical_agent_id(raw_recipient):
+            return {"status": "rejected", "message": f"Trade participant does not exist: {raw_recipient}.", "failed_check": "participant", "retryable": False, "missing": raw_recipient, "allowed_values": self._agent_id_hint()}
         offer = self.store.repositories.social.get_trade_offer(offer_id)
         if offer is None:
             return {"status": "rejected", "message": "Trade offer does not exist.", "failed_check": "offer_id", "retryable": False}
@@ -797,7 +849,10 @@ class SocialRuntimeMixin:
     def counter_trade_offer(self, counterparty_id: str, offer_id: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
         """Close an offer and create the counterparty's next-round offer."""
 
-        counterparty_id = self.targets.canonical_id(counterparty_id) or str(counterparty_id)
+        raw_counterparty = str(counterparty_id or "").strip()
+        counterparty_id = self._canonical_agent_id(raw_counterparty) or raw_counterparty
+        if not self._canonical_agent_id(raw_counterparty):
+            return {"status": "rejected", "message": f"Trade participant does not exist: {raw_counterparty}.", "failed_check": "participant", "retryable": False, "missing": raw_counterparty, "allowed_values": self._agent_id_hint()}
         offer = self.store.repositories.social.get_trade_offer(offer_id)
         if offer is None or offer["status"] != "open" or offer["recipient_id"] != counterparty_id:
             return {"status": "rejected", "message": "Only the open offer recipient can counter it.", "failed_check": "offer", "retryable": False}
@@ -828,7 +883,10 @@ class SocialRuntimeMixin:
         return {"status": "accepted", "offer_id": counter_id, "parent_offer_id": offer_id, "trade_status": "open", "event_id": event_id}
 
     def reject_trade_offer(self, recipient_id: str, offer_id: str) -> dict[str, Any]:
-        recipient_id = self.targets.canonical_id(recipient_id) or str(recipient_id)
+        raw_recipient = str(recipient_id or "").strip()
+        recipient_id = self._canonical_agent_id(raw_recipient) or raw_recipient
+        if not self._canonical_agent_id(raw_recipient):
+            return {"status": "rejected", "message": f"Trade participant does not exist: {raw_recipient}.", "failed_check": "participant", "retryable": False, "missing": raw_recipient, "allowed_values": self._agent_id_hint()}
         offer = self.store.repositories.social.get_trade_offer(offer_id)
         if offer is None or offer["recipient_id"] != recipient_id or offer["status"] != "open":
             return {"status": "rejected", "message": "The trade offer cannot be rejected by this participant.", "failed_check": "offer", "retryable": False}

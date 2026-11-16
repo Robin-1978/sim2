@@ -58,8 +58,15 @@ def _dialogue_reply_handler(platform: Platform, player_id: str, provider_name: s
             if str(item.get("speaker_id")) != player_id
         ]
         if not replies:
-            suffix = f" ({report.stop_reason})" if report.stop_reason else ""
-            return f"No reply was produced{suffix}. The recipient may have chosen not to answer."
+            if report.stop_reason:
+                return f"No reply was produced ({report.stop_reason})."
+            if report.decisions == 0:
+                if report.interaction_replies_suppressed:
+                    return "No reply was run automatically: the repeated message was suppressed. Send a different message."
+                return "No new dialogue is pending. Use say <recipient> <message> before reply."
+            if report.interaction_threads_closed and not report.waits:
+                return "No reply was produced automatically: this dialogue reached its configured reply limit. Send a new message later."
+            return "No reply was produced. The recipient chose not to answer."
         lines = ["Reply:"]
         for item in replies:
             speaker_id = str(item.get("speaker_id") or "?")
@@ -118,7 +125,7 @@ def main() -> None:
     mud.add_argument("--origin")
     mud.add_argument("--name")
     mud.add_argument("--observer", action="store_true")
-    mud.add_argument("--provider", help="provider used by the reply command")
+    mud.add_argument("--provider", help="provider used when a character replies")
 
     tui = sub.add_parser("tui", help="open the live world map, timeline and character interface")
     tui.add_argument("--db", type=Path, required=True)

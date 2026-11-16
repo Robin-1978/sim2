@@ -127,6 +127,20 @@ class EventsRepository:
         ).fetchall()
         return [{"event_id": row["event_id"], "event_type": row["event_type"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
 
+    def recent_events_by_types(self, event_types: list[str] | tuple[str, ...], *, limit: int = 20) -> list[dict[str, Any]]:
+        """Return the newest events of the given types, newest first."""
+
+        wanted = [str(item) for item in (event_types or []) if str(item)]
+        if not wanted:
+            return []
+        placeholders = ",".join("?" for _ in wanted)
+        rows = self.store.connection.execute(
+            "SELECT event_id,event_type,actor_id,world_minute,data_json FROM event_log "
+            f"WHERE event_type IN ({placeholders}) ORDER BY event_id DESC LIMIT ?",
+            (*wanted, max(1, min(int(limit), 200))),
+        ).fetchall()
+        return [{"event_id": row["event_id"], "event_type": row["event_type"], "actor_id": row["actor_id"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
+
     def recent_outcomes_for_actor(self, actor_id: str, *, limit: int = 5) -> list[dict[str, Any]]:
         """Return behavior outcomes even when later action events are numerous."""
 

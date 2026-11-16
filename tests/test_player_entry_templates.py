@@ -10,6 +10,7 @@ from sim2.api.text import TextWorldSession
 from sim2.bootstrap.service import create_instance
 from sim2.llm.gateway import LLMRouter
 from sim2.platform.runtime import Platform
+from sim2.simulation.runner import SimulationRunner
 from sim2.world.player_template import DEFAULT_PLAYER_GOAL, PlayerTemplateError, parse_player_template
 
 WORLDS = Path(__file__).parents[1] / "worlds"
@@ -92,13 +93,21 @@ def test_text_client_say_accepts_nearby_name_and_defaults_topic(tmp_path: Path):
     platform = Platform(db_path)
     try:
         assert platform.enter_player("player_one", "forager", name="Ari")["status"] == "accepted"
-        session = TextWorldSession(platform, player_id="player_one")
+        reply_calls: list[bool] = []
+        session = TextWorldSession(
+            platform,
+            player_id="player_one",
+            reply_handler=lambda: reply_calls.append(True) or "Reply:\n[0] Mara · general: Hello back.",
+        )
         scene = session.execute("look")
         assert "Mara" in scene
         assert "id=mara" in scene
         result = session.execute("say Mara Hello")
         assert result.startswith("status=accepted")
         assert "topic: general" in result
+        assert "Hello back." in result
+        assert "type reply" not in result
+        assert reply_calls == [True]
     finally:
         platform.close()
 
@@ -143,6 +152,39 @@ def test_text_reply_handler_invokes_agent_interaction_without_advancing_time(tmp
         platform.close()
 
 
+def test_explicit_player_duplicate_message_still_reaches_the_recipient(tmp_path: Path):
+    db_path = create_instance(WORLDS / "tidebound_commons", "tidebound-player-repeat", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        assert platform.enter_player("player_one", "forager", name="Ari")["status"] == "accepted"
+
+        class WaitProvider:
+            def __init__(self):
+                self.calls = 0
+
+            def complete_json(self, *, system, context, tools=None, messages=None):
+                self.calls += 1
+                return {"intent_type": "wait", "reason": "The greeting needs no further information."}
+
+        provider = WaitProvider()
+        runner = SimulationRunner(platform, {"agent_decision": provider})
+        first = platform.submit_dialogue("player_one", "mara", "general", "Hello")
+        assert first["status"] == "accepted"
+        runner.resolve_pending_interactions()
+
+        second = platform.submit_dialogue("player_one", "mara", "general", "hello")
+        assert second["status"] == "accepted"
+        report = runner.resolve_pending_interactions()
+
+        assert provider.calls == 2
+        assert report.interaction_replies_suppressed == 0
+        first_exchange = platform.store.repositories.social.get_dialogue_exchange(first["dialogue_id"])
+        assert first_exchange["source"] == "direct_text"
+        assert first_exchange["origin"] == "player"
+    finally:
+        platform.close()
+
+
 def test_text_scene_and_messages_show_player_dialogue(tmp_path: Path):
     db_path = create_instance(WORLDS / "tidebound_commons", "tidebound-transcript", tmp_path / "runtime")
     platform = Platform(db_path)
@@ -159,5 +201,34 @@ def test_text_scene_and_messages_show_player_dialogue(tmp_path: Path):
         assert "Welcome to the quay." in messages
         with pytest.raises(ValueError, match="No reply provider"):
             session.execute("reply")
+        with pytest.raises(ValueError, match="does not take a recipient"):
+            session.execute("reply Mara")
+    finally:
+        platform.close()
+
+
+def test_dialogue_resolves_names_and_reports_missing_participant(tmp_path: Path):
+    db_path = create_instance(WORLDS / "tidebound_commons", "tidebound-names", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        assert platform.enter_player("player_one", "forager", name="Ari")["status"] == "accepted"
+        by_names = platform.submit_dialogue("Ari", "Mara", "general", "Hello by names")
+        assert by_names["status"] == "accepted"
+        stored = platform.store.repositories.social.get_dialogue_exchange(by_names["dialogue_id"])
+        assert stored["speaker_id"] == "player_one"
+        assert stored["listener_id"] == "mara"
+
+        missing = platform.submit_dialogue("player_one", "nobody_xyz", "general", "Hi")
+        assert missing["status"] == "rejected"
+        assert missing["missing"] == "nobody_xyz"
+        assert "mara" in missing["allowed_values"]
+
+        god = platform.submit_dialogue("god", "mara", "general", "Hi")
+        assert god["status"] == "rejected"
+        assert "inject_event" in god["message"]
+
+        bad_trade = platform.create_trade_offer("player_one", "nobody_xyz", {"bread": 1}, {"water": 1})
+        assert bad_trade["status"] == "rejected"
+        assert bad_trade["missing"] == "nobody_xyz"
     finally:
         platform.close()

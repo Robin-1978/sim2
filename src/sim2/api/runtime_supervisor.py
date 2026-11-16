@@ -44,6 +44,8 @@ class RuntimeSupervisor:
         self._stop_reason = ""
         self._started_at: str | None = None
         self._finished_at: str | None = None
+        self._history: list[dict[str, Any]] = []
+        self._usage_at_start: dict[str, int] = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
 
     @property
     def running(self) -> bool:
@@ -100,7 +102,45 @@ class RuntimeSupervisor:
                 "last_error": self._last_error,
                 "stop_reason": self._stop_reason,
                 "available_providers": self.available_providers(),
+                "history": list(self._history),
             }
+
+    def _record_segment(self, state: str) -> None:
+        """Append one finished run segment for the cost dashboard.
+
+        Pause/resume/stop of the same run produce separate segments sharing
+        a run_id. Exact duplicates (same run, state and end minute, e.g. a
+        worker exit immediately followed by stop()) collapse into one entry.
+        """
+
+        if not self._run_id:
+            return
+        try:
+            usage = self._usage()
+            end_minute = int(self.service.platform.status().get("world_minute", 0))
+        except Exception:
+            return
+        base = self._usage_at_start
+        entry = {
+            "run_id": self._run_id,
+            "provider": self._provider_name,
+            "state": state,
+            "start_minute": self._start_minute,
+            "end_minute": end_minute,
+            "minutes_advanced": max(0, end_minute - int(self._start_minute or end_minute)),
+            "llm_calls": max(0, int(usage.get("calls", 0)) - int(base.get("calls", 0))),
+            "prompt_tokens": max(0, int(usage.get("prompt_tokens", 0)) - int(base.get("prompt_tokens", 0))),
+            "completion_tokens": max(0, int(usage.get("completion_tokens", 0)) - int(base.get("completion_tokens", 0))),
+            "stop_reason": self._stop_reason,
+            "started_at": self._started_at,
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if self._history:
+            last = self._history[0]
+            if (last.get("run_id"), last.get("state"), last.get("end_minute")) == (entry["run_id"], entry["state"], entry["end_minute"]):
+                return
+        self._history.insert(0, entry)
+        del self._history[20:]
 
     def start(
         self,
@@ -141,6 +181,11 @@ class RuntimeSupervisor:
             self._run_id = uuid4().hex
             self._start_minute = int(platform.status().get("world_minute", 0))
             self._llm_calls_at_start = int(usage.get("calls", 0))
+            self._usage_at_start = {
+                "calls": int(usage.get("calls", 0)),
+                "prompt_tokens": int(usage.get("prompt_tokens", 0)),
+                "completion_tokens": int(usage.get("completion_tokens", 0)),
+            }
             self._started_at = datetime.now(timezone.utc).isoformat()
         self._providers = providers
         self._runner = SimulationRunner(platform, providers)
@@ -225,6 +270,7 @@ class RuntimeSupervisor:
                 self._finished_at = datetime.now(timezone.utc).isoformat()
             else:
                 self._state = "stopping"
+        self._record_segment(self._state if isinstance(self._state, str) else "stopped")
         return {"status": "accepted", **self.status()}
 
     def step(self) -> dict[str, Any]:
@@ -294,6 +340,8 @@ class RuntimeSupervisor:
                 self._finished_at = datetime.now(timezone.utc).isoformat()
                 if self._state == "running":
                     self._state = "stopped"
+                exit_state = self._state
+            self._record_segment(exit_state if isinstance(exit_state, str) else "stopped")
 
     def close(self) -> None:
         self.stop("web-server-close", wait_seconds=30.0)

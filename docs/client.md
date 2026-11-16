@@ -66,17 +66,18 @@ The common commands are:
 - `go 1`, `go village_square` or `go 村广场` starts travel to a connected known
   location.
 - `wait [minutes]` advances a manual session one or more minutes.
-- `say <target> <message>` records a message to a nearby character; the target
-  may be a name or ID and the topic defaults to `general`.
-- `reply` drains the pending interaction with the configured Agent provider
-  without advancing world time. `messages [limit]` and the `Conversation`
-  section of `look` show the resulting transcript.
+- `say <target> <message>` records a message to a nearby character and asks the
+  recipient's Agent to answer immediately. The target may be a name or ID and
+  the topic defaults to `general`.
+- `reply` retries any remaining pending interaction with the configured Agent
+  provider without advancing world time. `messages [limit]` and the
+  `Conversation` section of `look` show the resulting transcript.
 - `offer`, `offers`, `accept`, `counter` and `reject` cover trade.
 - `map`, `timeline [limit]` and `help [command]` inspect the known world.
   `quit` leaves the session.
 
-A manual `sim2 mud` session can let the recipient answer with `reply`. The
-command uses the provider selected by `--provider`, or the configured default
+A manual `sim2 mud` session asks the recipient to answer as part of `say`. It
+uses the provider selected by `--provider`, or the configured default
 `agent_decision` provider when the flag is omitted:
 
 ```bash
@@ -159,10 +160,37 @@ Manual wait returns `runtime_running` while the autonomous worker owns the clock
 Switching an instance first stops and closes the old runtime, opens the replacement
 SQLite database, and scopes every player session to that one instance.
 
+The **命令** tab covers every `sim2` CLI instruction without leaving the browser:
+`init` (`POST /instances/init`), `validate-world`/`describe-world`
+(`POST /authoring/validate|describe`), `world-schema` (`GET /authoring/schema`),
+`build-world --template` (`POST /authoring/build-world` from the current draft),
+`decide` (`POST /decide`), `simulate` (`POST /simulate`, rejected while the
+autonomous runner owns the clock), `snapshot`/`restore` (`POST /snapshots`,
+`GET /snapshots`, `POST /restore`), full trade (`GET /trade/offers`,
+`POST /trade/offers|counter|accept|reject`), `inject` (`POST /events`) and the
+read-only `status`/`health`/`metrics`/`audit` probes. `mud`/`tui` are client
+modes: the play view is the web `mud` and the runtime view is the web `tui`.
+All management writes require the Operator session; all player writes require
+the matching Player session. Every `POST` (except `/session`) accepts an
+`Idempotency-Key` header (or `idempotency_key` field): the same session token
+plus the same key executes once and replays the same response, so browser
+retries never duplicate a behavior or trade. The web client sends a fresh key
+per user action, retries network failures once with the same key, and disables
+the clicked button while the request is in flight.
+
+The observer keeps a 4-second polling baseline plus an SSE live layer
+(`GET /events/stream`): timeline deltas and runtime changes arrive within a
+second and merge by `event_id`; three consecutive stream errors fall back to
+polling. The stream is read-only and never triggers a model call.
+
 网页默认先打开 **开始游戏**：选择玩家出身后，页面显示角色目标、需求条、
 当前位置、可见路线和行动卡。每张行动卡通过 `/player/act` 提交到 Platform；
-行动结果回到玩家事件流。**观察世界** 和 **设计世界** 仍分别用于旁观审查和
-配置编辑。
+行动结果回到玩家事件流。行内还有交易抽屉：待处理报价列表、发起/接受/
+反报价/拒绝都走同一幂等通道。**观察世界**多了 NPC 对话与决策动态两个
+面板（公开交谈全文、谁决定做什么及原因/结果），决策行可展开因果链
+（`GET /events/related` 只含公开字段，不含 prompt 与私有记忆）；运行
+控制台有分段历史与 token/预算预警，命令页快照列表可直接下载 SQLite。
+**设计世界** 仍用于配置编辑。
 
 To open other reviewed packages, constrain the server to their parent directory:
 

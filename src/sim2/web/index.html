@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
   <div class="app-shell">
     <header class="topbar">
       <a class="brand" href="/" aria-label="sim2 home">
@@ -18,6 +19,7 @@
         <button class="mode-tab active" data-view="play-view">开始游戏</button>
         <button class="mode-tab" data-view="runtime-view">观察世界</button>
         <button class="mode-tab" data-view="authoring-view">设计世界</button>
+        <button class="mode-tab" data-view="console-view">命令</button>
       </nav>
       <div class="top-status">
         <select id="instance-select" class="compact-select" aria-label="当前世界实例"><option value="">载入实例…</option></select>
@@ -29,7 +31,7 @@
       </div>
     </header>
 
-    <main>
+    <main id="main">
       <section id="play-view" class="view active-view" aria-labelledby="play-title">
         <div class="view-heading play-heading">
           <div>
@@ -62,6 +64,7 @@
             <article class="panel action-panel"><div class="panel-heading"><div><span class="panel-kicker">WHAT CAN YOU DO?</span><h2>现在可以做什么</h2></div><span class="badge accent">Platform 校验</span></div><div id="player-actions" class="player-actions"><div class="empty-state">进入世界后加载行动…</div></div></article>
             <article class="panel player-feed-panel"><div class="panel-heading"><div><span class="panel-kicker">WHAT HAPPENED</span><h2>刚刚发生</h2></div><button id="player-refresh" class="text-button">刷新</button></div><div id="player-feed" class="player-feed"><div class="empty-state">还没有新的结果。</div></div></article>
             <article class="panel player-dialogue-panel"><div class="panel-heading"><div><span class="panel-kicker">TALK TO SOMEONE</span><h2>与附近的人交谈</h2></div></div><div class="player-dialogue-form"><label>对象<select id="player-dialogue-target"></select></label><label>消息<textarea id="player-dialogue-message" placeholder="说点什么…"></textarea></label><button id="player-send-dialogue" class="button primary">发送</button><div id="player-action-result" class="interaction-result"></div></div></article>
+            <article class="panel player-trade-panel"><div class="panel-heading"><div><span class="panel-kicker">TRADE WITH NEIGHBORS</span><h2 id="player-trade-title">与附近的人交易</h2></div><button id="player-trades-refresh" class="text-button">刷新</button></div><div class="player-trade-lists"><div id="player-trade-incoming" class="player-trade-group"><div class="empty-state">进入世界后加载交易…</div></div><div id="player-trade-outgoing" class="player-trade-group"></div></div><div class="player-dialogue-form"><div class="trade-form-row"><label>对方<select id="player-trade-target"></select></label></div><div class="trade-form-row"><label>给出 item=qty<input id="player-trade-give" placeholder="bread=2" autocomplete="off"></label><label>想要 item=qty<input id="player-trade-want" placeholder="water=1" autocomplete="off"></label></div><button id="player-send-trade" class="button primary">发起交易</button><div id="player-trade-result" class="interaction-result" role="status"></div></div></article>
           </div>
         </section>
       </section>
@@ -95,6 +98,7 @@
           </div>
           <div class="runtime-progress"><span id="runtime-progress-bar"></span></div>
           <div class="runtime-console-foot"><span id="runtime-usage">尚无运行记录</span><span id="runtime-error"></span></div>
+          <details class="runtime-history"><summary>运行历史与成本（<span id="runtime-history-count">0</span> 段）</summary><div id="runtime-history-list" class="runtime-history-list"><div class="empty-state">尚无已完成的运行段。</div></div></details>
         </section>
         <div class="metric-strip" id="world-metrics" aria-live="polite">
           <div class="metric"><span>世界状态</span><strong id="metric-status">—</strong></div>
@@ -117,6 +121,14 @@
           <article class="panel timeline-panel">
             <div class="panel-heading"><div><span class="panel-kicker">03 / CAUSAL STREAM</span><h2>世界事件</h2></div><button id="toggle-ticks" class="text-button">显示 tick</button></div>
             <div id="timeline-list" class="timeline-list" aria-live="polite"><div class="empty-state">等待世界事件…</div></div>
+          </article>
+          <article class="panel dialogue-panel" aria-labelledby="npc-dialogue-title">
+            <div class="panel-heading"><div><span class="panel-kicker">07 / NPC DIALOGUE</span><h2 id="npc-dialogue-title">NPC 对话</h2><p class="panel-subtitle">全世界最近的公开交谈，含玩家在内。</p></div><button id="dialogue-refresh" class="text-button">刷新</button></div>
+            <div id="npc-dialogue-list" class="dialogue-list" aria-live="polite"><div class="empty-state">暂无对话</div></div>
+          </article>
+          <article class="panel decisions-panel" aria-labelledby="npc-decisions-title">
+            <div class="panel-heading"><div><span class="panel-kicker">08 / NPC DECISIONS</span><h2 id="npc-decisions-title">决策动态</h2><p class="panel-subtitle">谁决定做什么、为什么、结果如何。</p></div><button id="decisions-refresh" class="text-button">刷新</button></div>
+            <div id="npc-decisions-list" class="decisions-list" aria-live="polite"><div class="empty-state">暂无决策</div></div>
           </article>
           <article class="panel characters-panel">
             <div class="panel-heading"><div><span class="panel-kicker">04 / ACTORS</span><h2>角色</h2></div><span class="badge">公开视角</span></div>
@@ -206,6 +218,76 @@
           </aside>
         </div>
       </section>
+
+      <section id="console-view" class="view" aria-labelledby="console-title">
+        <div class="view-heading">
+          <div>
+            <p class="eyebrow">OPERATOR CONSOLE</p>
+            <h1 id="console-title">命令</h1>
+            <p class="muted">覆盖全部 <code>sim2</code> CLI 指令：初始化世界、校验包、单步决策、同步推演、快照恢复、完整交易。管理写操作需要先解锁管理。</p>
+          </div>
+          <div class="toolbar-actions">
+            <button id="console-refresh" class="button ghost">刷新快照/实例</button>
+          </div>
+        </div>
+        <div id="console-notice" class="notice hidden" role="status"></div>
+        <div class="console-grid">
+          <article class="panel">
+            <div class="panel-heading"><div><span class="panel-kicker">INIT / SNAPSHOT</span><h2>实例与快照</h2></div><span class="badge">init · snapshot · restore</span></div>
+            <div class="console-form">
+              <label>世界模板 ID<input id="console-init-package" placeholder="starter_village" autocomplete="off"></label>
+              <label>新实例 ID<input id="console-init-instance" placeholder="my-world-001" autocomplete="off"></label>
+              <label class="check"><input id="console-init-activate" type="checkbox" checked> 创建后切换到该实例</label>
+              <button id="console-init" class="button primary wide">初始化世界 (init)</button>
+              <label>快照标签<input id="console-snapshot-label" placeholder="manual" autocomplete="off"></label>
+              <div class="console-row"><button id="console-snapshot" class="button ghost">创建快照</button><button id="console-snapshots" class="button ghost">列出快照</button></div>
+              <label>恢复快照 ID<input id="console-restore-id" placeholder="snapshot_id" autocomplete="off"></label>
+              <button id="console-restore" class="button ghost wide">恢复快照 (restore)</button>
+              <div id="console-instances" class="console-output"><div class="empty-state">实例与快照列表…</div></div>
+            </div>
+          </article>
+          <article class="panel">
+            <div class="panel-heading"><div><span class="panel-kicker">RUN / DECIDE</span><h2>运行与诊断</h2></div><span class="badge">simulate · decide</span></div>
+            <div class="console-form">
+              <div class="console-row"><label>推演分钟<input id="console-sim-minutes" type="number" min="1" value="10"></label><label>Provider<input id="console-sim-provider" placeholder="默认" autocomplete="off"></label></div>
+              <button id="console-simulate" class="button primary wide">同步推演 (simulate)</button>
+              <div class="console-row"><label>Agent ID<input id="console-decide-agent" placeholder="agent id" autocomplete="off"></label><label>Role<input id="console-decide-role" value="agent_decision" autocomplete="off"></label></div>
+              <button id="console-decide" class="button ghost wide">单步决策 (decide)</button>
+              <div class="console-row"><button id="console-status" class="button ghost">status</button><button id="console-health" class="button ghost">health</button><button id="console-metrics" class="button ghost">metrics</button><button id="console-audit" class="button ghost">audit</button></div>
+            </div>
+          </article>
+          <article class="panel">
+            <div class="panel-heading"><div><span class="panel-kicker">PACKAGE</span><h2>世界包</h2></div><span class="badge">validate · describe</span></div>
+            <div class="console-form">
+              <label>包 ID<input id="console-pkg-id" placeholder="starter_village" autocomplete="off"></label>
+              <label>或受限路径<input id="console-pkg-path" placeholder="worlds/my_world" autocomplete="off"></label>
+              <div class="console-row"><button id="console-validate" class="button ghost">校验 (validate)</button><button id="console-describe" class="button ghost">详情 (describe)</button><button id="console-schema" class="button ghost">schema</button></div>
+              <label>输出目录名<input id="console-build-output" placeholder="my_new_world" autocomplete="off"></label>
+              <div class="console-row"><label>实例 ID(可选)<input id="console-build-instance" placeholder="my-world-001" autocomplete="off"></label><label class="check"><input id="console-build-overwrite" type="checkbox"> 覆盖</label></div>
+              <button id="console-build-world" class="button primary wide">用当前草稿创建世界包 (build-world)</button>
+              <p class="muted">build-world 使用设计页当前草稿模板，写入受限目录并可选建实例。</p>
+            </div>
+          </article>
+          <article class="panel">
+            <div class="panel-heading"><div><span class="panel-kicker">TRADE / EVENT</span><h2>交易与事件</h2></div><span class="badge">Platform 校验</span></div>
+            <div class="console-form">
+              <label>查询交易 Agent<input id="console-trade-agent" placeholder="agent id" autocomplete="off"></label>
+              <button id="console-trade-list" class="button ghost wide">列出交易</button>
+              <label>Offer ID<input id="console-offer-id" placeholder="offer id" autocomplete="off"></label>
+              <div class="console-row"><label>我方<input id="console-trade-me" placeholder="my agent id" autocomplete="off"></label><label>对方<input id="console-trade-peer" placeholder="peer agent id" autocomplete="off"></label></div>
+              <div class="console-row"><label>给出 item=qty<input id="console-trade-give" placeholder="bread=2" autocomplete="off"></label><label>想要 item=qty<input id="console-trade-want" placeholder="water=1" autocomplete="off"></label></div>
+              <div class="console-row"><button id="console-trade-offer" class="button ghost">发起</button><button id="console-trade-counter" class="button ghost">反报价</button><button id="console-trade-accept" class="button ghost">接受</button><button id="console-trade-reject" class="button ghost">拒绝</button></div>
+              <label>事件类型<input id="console-event-type" placeholder="story.note" autocomplete="off"></label>
+              <label>Payload JSON<textarea id="console-event-payload" placeholder='{"text":"..."}'></textarea></label>
+              <button id="console-inject" class="button ghost wide">注入事件 (inject)</button>
+            </div>
+          </article>
+        </div>
+        <article class="panel console-result-panel">
+          <div class="panel-heading"><div><span class="panel-kicker">RESULT</span><h2>命令结果</h2></div><button id="console-clear" class="text-button">清空</button></div>
+          <pre id="console-result" class="console-result">等待命令…</pre>
+        </article>
+      </section>
     </main>
     <footer class="footer"><span>sim2 · Platform is the source of truth</span><span id="last-update">—</span></footer>
   </div>
@@ -214,7 +296,7 @@
       <div class="panel-heading"><div><span class="panel-kicker">LOCAL OPERATOR</span><h2>解锁管理界面</h2><p class="panel-subtitle">粘贴终端启动服务时显示的一次性 Operator Token。</p></div></div>
       <label>Operator Token<input id="operator-token" type="password" autocomplete="off" spellcheck="false" placeholder="启动 sim2 serve 时显示"></label>
       <div id="operator-error" class="interaction-result error"></div>
-      <div class="dialog-actions"><button id="operator-cancel" class="button ghost" value="cancel">取消</button><button id="operator-submit" class="button primary" value="default">解锁</button></div>
+      <div class="dialog-actions"><button id="operator-cancel" class="button ghost" type="button" value="cancel">取消</button><button id="operator-submit" class="button primary" type="submit" value="default">解锁</button></div>
     </form>
   </dialog>
   <script src="/app.js" defer></script>

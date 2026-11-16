@@ -147,6 +147,11 @@ allowlist、TLS 与 CORS 策略。
 | GET | `/authoring/catalog` | List validated packages under `--authoring-root` |
 | GET | `/player/entry` | 当前世界的玩家入口和出身选项 |
 | GET | `/player/view?player_id=<id>` | 玩家 HUD、可见地图、行动卡和结果 |
+| GET | `/observer/dialogue?limit=20` | 全世界最近公开对话（说话人/听者名、主题、消息） |
+| GET | `/observer/decisions?limit=20` | 最近 NPC 行为决策（开始原因、完成/失败结果） |
+| GET | `/events/related?event_id=<id>` | 一件事的因果链：共享 intent/correlation/causation 的事件 |
+| GET | `/events/stream?after=<id>&ticks=0` | SSE 实时流：timeline 增量、`runtime` 变更、`dialogue`/`decisions` 新增通知；断线用 `after` 或 `Last-Event-ID` 续传，只读不触发模型 |
+| GET | `/snapshots/download?snapshot_id=<id>` | 下载服务端快照（Operator，会话走请求头，不进 URL） |
 | POST | `/instances` | 从已验证模板创建实例 |
 | POST | `/instances/activate` | 停止旧运行时并热切换实例 |
 | POST | `/runtime/start` | 使用 provider、世界分钟和 LLM 调用预算启动 |
@@ -157,6 +162,17 @@ allowlist、TLS 与 CORS 策略。
 | POST | `/pause`、`/resume`、`/step` | 运行控制的兼容别名 |
 | POST | `/dialogue` | 发送对话 |
 | POST | `/trade/offers`、`/trade/accept` | 交易交互 |
+| GET | `/trade/offers?agent_id=<id>` | 列出某角色的交易（玩家限自己，Operator 可查任意） |
+| POST | `/trade/counter`、`/trade/reject` | 反报价 / 拒绝（`counter_trade_offer`、`reject_trade_offer`） |
+| POST | `/instances/init` | `init` 等价：从目录模板建独立实例，可选 `activate` 切过去 |
+| POST | `/decide` | `decide` 等价：单 Agent turn，需 Operator |
+| POST | `/simulate` | `simulate` 等价：同步跑 N 分钟，运行时持有时钟时拒绝 |
+| GET | `/snapshots` | 列出服务端 `snapshots/` 下的 SQLite 快照 |
+| POST | `/snapshots` | `snapshot` 等价：一致性拷贝到 `snapshots/` |
+| POST | `/restore` | `restore` 等价：先停运行时再恢复 |
+| POST | `/authoring/validate` | `validate-world` 等价：按包 ID 或受限路径校验 |
+| POST | `/authoring/describe` | `describe-world` 等价：按包 ID 或受限路径输出清单 |
+| POST | `/authoring/build-world` | `build-world --template` 等价：写包到受限目录，可选建实例 |
 | POST | `/players` | 创建/进入玩家 |
 | POST | `/player/act` | 以玩家身份提交一个配置行为 |
 | POST | `/player/wait` | 玩家手动等待一个世界分钟 |
@@ -206,8 +222,9 @@ submitted → accepted → committed
 
 ### 刷新、缓存和重连
 
-当前本地客户端使用 4 秒轮询，理由是当前 HTTP 服务是轻量的
-`ThreadingHTTPServer`，网页不需要每个模拟分钟建立 LLM 请求。刷新规则如下：
+本地客户端以 4 秒轮询为事实基线，SSE `/events/stream` 为增量加速层：连接后
+时间线增量和 `runtime` 状态在 1 秒内到达并按 `event_id` 去重合并；SSE 出错
+3 次后自动降级回纯轮询。刷新规则如下：
 
 1. 首次加载并行读取 `/status`、`/observer`、`/map` 和 `/timeline`。
 2. 时间线只带上一次的 `next_after_event_id`；地图和角色投影按
@@ -219,10 +236,14 @@ submitted → accepted → committed
 5. 事件按 `event_id` 去重，时间线按 `world_minute,event_id` 排序。分页边界
    不以浏览器收到的时间作为依据。
 6. 失败重试只对 `retryable=true` 的命令进行，并带请求幂等键；暂停、交易和
-   事件注入不能因为刷新而重复提交。
+   事件注入不能因为刷新而重复提交。所有 `POST`（除 `/session` 外）都接受
+   `Idempotency-Key` 请求头或 `idempotency_key` 字段：同一会话_token_配同一
+   键只执行一次并返回同一响应；服务端内存保留最近 500 条。前端写操作统一经
+   `write()` 发送键并在网络失败时用同键重试一次，提交中按钮禁用防连点。
+   快照下载不走幂等，走带会话头的 `fetch`+blob，不把 token 放进 URL。
 
-稳定后可增加只读 SSE `/stream`，但 SSE 只是事件通知，仍以 `/timeline` 和
-`/status` 的服务端投影为事实源。首版不引入 WebSocket 写通道。
+只读 SSE `/events/stream` 已实现，但 SSE 只是事件通知，仍以 `/timeline` 和
+`/status` 的服务端投影为事实源。不引入 WebSocket 写通道。
 
 ## 地图、时间线和演化展示
 
@@ -308,13 +329,18 @@ MVP 的组件仍集中在 `app.js`，后续拆分时每个组件只消费 JSON �
    只读视角测试；修正 HTTP handler 的统一异常映射。
 2. **Runtime MVP（已实现）**：静态页面实现 header、地图、时间线、角色详情、
    演化队列和观察模式；使用轮询和事件游标。
-3. **玩家/维护交互（基础已实现）**：接入暂停、单步、结构化请求结果；对话、
-   交易和角色命令沿用现有 HTTP 接口，幂等键和远程授权仍是后续工作。
-4. **演化审查（基础已实现）**：显示 Story/God 任务、事实与提议的边界；审计
-   因果检查器和脱敏 provider 详情留在维护模式增强；默认隐藏 provider 输入/输出。
+3. **玩家/维护交互（已实现）**：接入暂停、单步、结构化请求结果；对话、
+   交易和角色命令走幂等写通道（`Idempotency-Key`），开始游戏页有完整交易
+   抽屉（报价列表/发起/接受/反报价/拒绝）；远程授权仍是后续工作（需反向代理层）。
+4. **演化审查（已实现）**：显示 Story/God 任务、事实与提议的边界；决策行可
+   展开因果链（`GET /events/related`），运行控制台有分段历史与 token/预算
+   预警（80% 变黄，超限变红）；默认隐藏 provider 输入/输出。审计
+   因果检查器和脱敏 provider 详情留在维护模式增强。
 5. **Authoring MVP（基础已实现）**：Schema 驱动分区表单、原始 JSON 高级模式、
    编译诊断、smoke run、打开已有包、WorldBuilder 起草和导出。
-6. **增强**：只读 SSE、地图区域折叠、版本历史、浏览器可访问性和视觉回归。
+6. **增强（部分已实现）**：只读 SSE 实时流、快照下载、跳过链接、焦点可见
+   样式、粗指针触控目标、`prefers-reduced-motion` 已落地；地图区域折叠、
+   版本历史、视觉回归仍待做。
 
 ## 验收矩阵
 

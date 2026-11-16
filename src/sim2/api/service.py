@@ -191,6 +191,128 @@ class ControlService:
         with self.platform.store.read_transaction():
             return self.platform.timeline(limit=event_limit, after_event_id=after_event_id, include_ticks=include_ticks)
 
+    @staticmethod
+    def _clip(text: Any, size: int = 140) -> str:
+        words = " ".join(str(text or "").split())
+        return words if len(words) <= size else words[: max(0, size - 1)] + "…"
+
+    def _public_name(self, agent_id: str | None) -> str:
+        if not agent_id:
+            return "世界"
+        try:
+            return str(self.platform.store.repositories.entities.get_entity(str(agent_id)).get("name") or agent_id)
+        except KeyError:
+            return str(agent_id)
+
+    def observer_dialogue(self, limit: int = 20) -> dict[str, Any]:
+        """Return the newest world-wide dialogue for the observer NPC feed.
+
+        Only the public transcript fields are projected: speaker/listener
+        names, topic, message and minute. Testimony metadata, memories and
+        credibility internals stay out, matching the public timeline which
+        already renders dialogue messages.
+        """
+
+        with self.platform.store.read_transaction():
+            exchanges = self.platform.store.repositories.social.list_recent_dialogue_exchanges(limit=max(1, min(int(limit), 100)))
+            items = [
+                {
+                    "dialogue_id": item.get("dialogue_id"),
+                    "world_minute": item.get("world_minute"),
+                    "topic": item.get("topic") or "general",
+                    "message": item.get("message") or "",
+                    "speaker_id": item.get("speaker_id"),
+                    "speaker": self._public_name(item.get("speaker_id")),
+                    "listener_id": item.get("listener_id"),
+                    "listener": self._public_name(item.get("listener_id")),
+                }
+                for item in exchanges
+            ]
+        return {"status": "ok", "exchanges": items}
+
+    def observer_decisions(self, limit: int = 20) -> dict[str, Any]:
+        """Return recent NPC behavior decisions for the observer feed.
+
+        Sourced from the same public behavior events the timeline renders
+        (started with reason, completed/failed with result). Prompts, full
+        decision payloads and private memories are never included.
+        """
+
+        wanted = ("behavior.started", "behavior.completed", "behavior.failed", "behavior.interrupted")
+        with self.platform.store.read_transaction():
+            events = self.platform.store.repositories.events.recent_events_by_types(wanted, limit=max(1, min(int(limit), 100)))
+            labels = {
+                str(item.get("id")): str(item.get("agent_label") or item.get("summary") or item.get("description") or item.get("id"))
+                for item in self.platform.store.repositories.entities.get_definitions("bt_def")
+            }
+            items = []
+            for event in events:
+                behavior_id = str(event.get("behavior_id") or "")
+                detail: str | None = None
+                if event.get("event_type") == "behavior.started":
+                    decision = event.get("decision") if isinstance(event.get("decision"), dict) else {}
+                    detail = str(decision.get("reason") or "") or None
+                else:
+                    detail = str(event.get("result") or "") or None
+                items.append({
+                    "event_id": event.get("event_id"),
+                    "world_minute": event.get("world_minute"),
+                    "event_type": event.get("event_type"),
+                    "actor_id": event.get("actor_id"),
+                    "actor": self._public_name(event.get("actor_id")),
+                    "behavior_id": behavior_id or None,
+                    "behavior": labels.get(behavior_id, behavior_id or None),
+                    "detail": self._clip(detail, 140) if detail else None,
+                })
+        return {"status": "ok", "decisions": items}
+
+    def _public_event(self, event: dict[str, Any]) -> dict[str, Any]:
+        """Project one event for observer drill-down without private payloads."""
+
+        decision = event.get("decision") if isinstance(event.get("decision"), dict) else {}
+        reason = str(decision.get("reason") or "") or None
+        summary = event.get("summary") or event.get("result") or reason
+        return {
+            "event_id": event.get("event_id"),
+            "world_minute": event.get("world_minute"),
+            "event_type": event.get("event_type"),
+            "actor_id": event.get("actor_id"),
+            "actor": self._public_name(event.get("actor_id")),
+            "topic": event.get("topic"),
+            "summary": self._clip(summary, 160) if summary else None,
+        }
+
+    def event_related(self, event_id: int) -> dict[str, Any]:
+        """Return one public event plus the events sharing its causal links.
+
+        Links are the intent/correlation/causation identifiers the Platform
+        already stamps on events, so a decision can be traced back to its
+        trigger and forward to its committed outcome without exposing
+        prompts, full decision payloads or private memories.
+        """
+
+        try:
+            target_id = int(event_id)
+        except (TypeError, ValueError):
+            return {"status": "rejected", "message": "event_id must be an integer", "failed_check": "event_id"}
+        with self.platform.store.read_transaction():
+            found = self.platform.store.repositories.events.events_by_ids([target_id])
+            if not found:
+                return {"status": "rejected", "message": f"event does not exist: {target_id}", "failed_check": "event_id"}
+            event = found[0]
+            links = {str(event.get(key)) for key in ("causation_id", "correlation_id", "intent_id") if event.get(key)}
+            related = []
+            if links:
+                for item in self.platform.store.repositories.events.recent_events(limit=500):
+                    if int(item.get("event_id", -1)) == target_id:
+                        continue
+                    item_links = {str(item.get(key)) for key in ("causation_id", "correlation_id", "intent_id") if item.get(key)}
+                    if links & item_links:
+                        related.append(self._public_event(item))
+                        if len(related) >= 50:
+                            break
+        return {"status": "ok", "event": self._public_event(event), "related": related}
+
     def dialogue(self, speaker_id: str, listener_id: str, topic: str, message: str) -> dict[str, Any]:
         return self.platform.submit_dialogue(speaker_id, listener_id, topic, message)
 
@@ -199,6 +321,64 @@ class ControlService:
 
     def trade_accept(self, recipient_id: str, offer_id: str) -> dict[str, Any]:
         return self.platform.accept_trade_offer(recipient_id, offer_id)
+
+    def trade_counter(self, counterparty_id: str, offer_id: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
+        return self.platform.counter_trade_offer(counterparty_id, offer_id, give, want)
+
+    def trade_reject(self, recipient_id: str, offer_id: str) -> dict[str, Any]:
+        return self.platform.reject_trade_offer(recipient_id, offer_id)
+
+    def trade_offers(self, agent_id: str, *, include_closed: bool = False) -> list[dict[str, Any]]:
+        with self.platform.store.read_transaction():
+            return self.platform.store.repositories.social.list_trade_offers(str(agent_id), include_closed=bool(include_closed))
+
+    def decide(self, agent_id: str, role: str = "agent_decision", provider: Any | None = None) -> dict[str, Any]:
+        """Run one Agent turn for any CLI `decide` equivalent."""
+
+        from ..agents.engine import AgentEngine
+        from ..llm.gateway import LLMRouter
+
+        actor = str(agent_id or "").strip()
+        if not actor:
+            return {"status": "rejected", "message": "agent_id is required", "failed_check": "agent_id"}
+        chosen = str(role or "agent_decision").strip() or "agent_decision"
+        try:
+            active = provider if provider is not None else LLMRouter.from_default_config().provider_for_role(chosen)
+        except Exception as exc:
+            return {"status": "rejected", "message": str(exc), "failed_check": "provider"}
+        try:
+            turn = AgentEngine(self.platform, active).run(role=chosen, actor_id=actor)
+        except (KeyError, ValueError) as exc:
+            return {"status": "rejected", "message": str(exc), "failed_check": "agent_id"}
+        return {"response": turn.response, "result": turn.result, "iterations": turn.iterations}
+
+    def simulate(
+        self,
+        minutes: int,
+        *,
+        wait_cooldown_minutes: int = 30,
+        llm_error_cooldown_minutes: int = 60,
+        provider_name: str | None = None,
+        providers: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Run the synchronous CLI `simulate` loop without the background supervisor."""
+
+        total = int(minutes)
+        if total < 1:
+            return {"status": "rejected", "message": "minutes must be at least 1", "failed_check": "minutes"}
+        try:
+            report = self.platform.run(
+                total,
+                providers=providers,
+                provider_name=provider_name,
+                wait_cooldown_minutes=int(wait_cooldown_minutes),
+                llm_error_cooldown_minutes=int(llm_error_cooldown_minutes),
+            )
+        except Exception as exc:
+            return {"status": "rejected", "message": str(exc), "failed_check": "simulate"}
+        with self.platform.store.read_transaction():
+            metrics = self.platform.metrics()
+        return {"status": "ok", "report": report.as_dict(), "metrics": metrics}
 
     def audit(self) -> dict[str, Any]:
         with self.platform.store.read_transaction():
@@ -257,6 +437,40 @@ class ControlService:
             return self.authoring.open_package(Path(str(source)), trusted=True)
         except (TypeError, ValueError, OSError) as exc:
             return {"status": "rejected", "errors": [str(exc)], "diagnostics": self.authoring.diagnostics([str(exc)])}
+
+    def authoring_validate(self, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        body = dict(body or {})
+        if not body.get("package_id") and not body.get("path"):
+            report = self.platform.store.repositories.metadata.get("bootstrap_report", {}) or {}
+            source = report.get("config_dir") if isinstance(report, dict) else None
+            if source:
+                try:
+                    return self.authoring.describe_package(None, str(Path(str(source)).parent))
+                except (TypeError, ValueError, OSError):
+                    pass
+        return self.authoring.validate_package(body.get("package_id"), body.get("path"))
+
+    def authoring_describe(self, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        body = dict(body or {})
+        if not body.get("package_id") and not body.get("path"):
+            report = self.platform.store.repositories.metadata.get("bootstrap_report", {}) or {}
+            source = report.get("config_dir") if isinstance(report, dict) else None
+            if source:
+                try:
+                    return self.authoring.describe_package(None, str(Path(str(source)).parent))
+                except (TypeError, ValueError, OSError):
+                    pass
+        return self.authoring.describe_package(body.get("package_id"), body.get("path"))
+
+    def authoring_build_world(self, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        body = dict(body or {})
+        return self.authoring.build_world_package(
+            body.get("template"),
+            output=body.get("output"),
+            overwrite=bool(body.get("overwrite", False)),
+            instance_id=body.get("instance_id"),
+            source_path=body.get("source_path"),
+        )
 
     def authoring_build(self, body: dict[str, Any]) -> dict[str, Any]:
         return self.authoring.build_from_brief(str(body.get("brief") or ""), provider_name=body.get("provider"))

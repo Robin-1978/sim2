@@ -127,6 +127,100 @@ class AuthoringService:
     def schema(self) -> dict[str, Any]:
         return {"status": "ok", "schema": world_template_schema()}
 
+    def _resolve_package_path(self, package_id: str | None, path: str | None, *, trusted: bool = False) -> tuple[Path | None, str | None]:
+        wanted = str(package_id or "").strip()
+        if wanted:
+            catalog = self.list_packages()
+            match = next((item for item in catalog.get("packages", []) if item.get("id") == wanted), None)
+            if match is None:
+                return None, f"unknown world package: {wanted}"
+            return Path(str(match["path"])), None
+        raw = str(path or "").strip()
+        if not raw:
+            return None, "package_id or path is required"
+        try:
+            resolved = self._check_path(Path(raw), trusted=trusted)
+        except (TypeError, ValueError, OSError) as exc:
+            return None, str(exc)
+        if not resolved.is_dir():
+            return None, f"config directory does not exist: {resolved}"
+        return resolved, None
+
+    def validate_package(self, package_id: str | None = None, path: str | None = None) -> dict[str, Any]:
+        """CLI `validate-world` equivalent for one catalog package or sandboxed path."""
+
+        target, error = self._resolve_package_path(package_id, path)
+        if target is None:
+            return {"status": "rejected", "errors": [str(error)], "diagnostics": self.diagnostics([str(error)])}
+        validation = validate_config(target)
+        errors = list(validation.get("errors") or [])
+        return {
+            "status": "passed" if validation.get("valid") else "rejected",
+            "source_path": str(target),
+            "valid": bool(validation.get("valid")),
+            "errors": errors,
+            "diagnostics": self.diagnostics(errors),
+            "manifest": validation.get("manifest") or {},
+        }
+
+    def describe_package(self, package_id: str | None = None, path: str | None = None) -> dict[str, Any]:
+        """CLI `describe-world` equivalent for one catalog package or sandboxed path."""
+
+        target, error = self._resolve_package_path(package_id, path)
+        if target is None:
+            return {"status": "rejected", "errors": [str(error)], "diagnostics": self.diagnostics([str(error)])}
+        try:
+            report = describe_config(target)
+        except (TypeError, ValueError, OSError) as exc:
+            errors = [str(exc)]
+            return {"status": "rejected", "errors": errors, "diagnostics": self.diagnostics(errors)}
+        if not report.get("valid"):
+            return {**report, "status": "rejected", "source_path": str(target)}
+        return {**report, "status": "passed", "source_path": str(target)}
+
+    def build_world_package(
+        self,
+        template: Any = None,
+        *,
+        output: str | None = None,
+        overwrite: bool = False,
+        instance_id: str | None = None,
+        source_path: str | None = None,
+    ) -> dict[str, Any]:
+        """CLI `build-world --template` equivalent writing into the authoring root."""
+
+        if self.authoring_root is None:
+            return {"status": "rejected", "errors": ["an authoring_root is required to write a world package"]}
+        name = str(output or "").strip()
+        if not name or any(part in name for part in ("/", "\\", "..")):
+            return {"status": "rejected", "errors": ["output must be a plain directory name inside the authoring root"]}
+        compiled = self.compile(template, source_path=source_path)
+        if compiled.get("status") != "passed":
+            return {**compiled, "phase": "compile"}
+        raw, _ = self._template(template)
+        assert raw is not None
+        destination = (self.authoring_root / name).resolve()
+        try:
+            destination.relative_to(self.authoring_root)
+        except ValueError:
+            return {"status": "rejected", "errors": ["output escapes the configured authoring_root"]}
+        try:
+            package = write_world_package_from_template(raw, destination, overwrite=bool(overwrite), validate_template=not bool(source_path))
+            description = describe_config(package)
+        except (FileExistsError, TypeError, ValueError, OSError) as exc:
+            return {"status": "rejected", "errors": [str(exc)], "diagnostics": self.diagnostics([str(exc)])}
+        result: dict[str, Any] = {
+            "status": "passed" if description.get("valid") else "rejected",
+            "package": str(package),
+            "package_id": str((description.get("manifest") or {}).get("world_id") or name),
+            "description": description,
+            "files": sorted(path.relative_to(package).as_posix() for path in package.rglob("*.yaml")),
+        }
+        wanted = str(instance_id or "").strip()
+        if wanted:
+            result.update(self.create_instance(result["package_id"], wanted))
+        return result
+
     def build_from_brief(self, brief: str, *, provider_name: str | None = None, provider: Any = None) -> dict[str, Any]:
         """Run the existing bounded WorldBuilder behind an explicit UI action.
 
