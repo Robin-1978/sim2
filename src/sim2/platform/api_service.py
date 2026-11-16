@@ -9,6 +9,7 @@ from ..behavior.estimator import BehaviorDurationEstimator
 from ..behavior.recovery import failure_block_recovered
 from ..intents.models import BehaviorIntent
 from ..world.context import configured_context_values
+from ..world.player_template import PlayerTemplateError, parse_player_template
 from ..world.navigation import (
     configured_location_tags,
     nearest_location_with_tag,
@@ -177,11 +178,31 @@ class RuntimeApiService(PlatformService):
             return {"status": "rejected", "message": "The player id already exists.", "failed_check": "player_id"}
         except KeyError:
             pass
-        template = self.store.repositories.metadata.get("player_template", {}).get("player", {})
-        origin = next((item for item in template.get("origin_choices", []) if item.get("id") == origin_id), None)
+        try:
+            template = parse_player_template(
+                self.store.repositories.metadata.get("player_template", {}),
+                require_entry=True,
+            )
+        except PlayerTemplateError as exc:
+            return {
+                "status": "rejected",
+                "message": str(exc),
+                "failed_check": "player_template",
+                "retryable": False,
+            }
+        origins = template["origins"]
+        origin = next((item for item in origins if item.get("id") == origin_id), None)
         if origin is None:
-            return {"status": "rejected", "message": "The selected origin is not configured.", "failed_check": "origin_id", "retryable": True}
-        location_id = template.get("entry_location_id")
+            return {
+                "status": "rejected",
+                "message": "The selected origin is not configured.",
+                "failed_check": "origin_id",
+                "retryable": True,
+                "allowed_values": [str(item["id"]) for item in origins],
+            }
+        location_id = template["entry_location_id"]
+        if not location_id:
+            return {"status": "rejected", "message": "The player template does not configure an entry location.", "failed_check": "entry_location_id", "retryable": False}
         try:
             self.store.repositories.entities.get_entity(location_id)
         except KeyError:
@@ -192,12 +213,14 @@ class RuntimeApiService(PlatformService):
         for item in ((self.store.repositories.metadata.get("rules", {}) or {}).get("needs", []) or []):
             if isinstance(item, dict) and item.get("id"):
                 needs.setdefault(str(item["id"]), float(item.get("target", 100)))
+        state_defaults["reputation"] = template["initial_reputation"]
         agent = {
             "id": player_id,
             "name": name or player_id,
             "role": "player",
+            "faction_ids": list(template["initial_faction_ids"]),
             "traits": dict(origin.get("traits") or {}),
-            "ultimate_goal": origin.get("starting_goal", "Find a meaningful place in this world."),
+            "ultimate_goal": origin.get("starting_goal") or "Find a meaningful place in this world.",
             "beliefs": [],
             "needs": needs,
             "knowledge_seed": list(template.get("knowledge_seed") or []),

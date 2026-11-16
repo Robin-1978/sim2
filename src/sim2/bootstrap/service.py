@@ -11,6 +11,7 @@ import yaml
 from ..actions.conditions import ConditionEngine
 from ..evolution.config import normalize_evolution_config
 from ..persistence.store import WorldStore, config_hash
+from ..world.player_template import PlayerTemplateError, parse_player_template
 from ..world.schema import AttributeSchema
 
 
@@ -1176,10 +1177,20 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
         for faction_id in agent.get("faction_ids", []):
             if faction_id not in faction_ids:
                 errors.append(f"agent {agent.get('id')} references unknown faction {faction_id}")
-    player_template = load_yaml(config_dir, "player_template.yaml", {}).get("player", {})
+    try:
+        player_template = parse_player_template(load_yaml(config_dir, "player_template.yaml", {}))
+    except PlayerTemplateError as exc:
+        errors.append(f"player_template.yaml: {exc}")
+        player_template = {}
+    entry_location_id = str(player_template.get("entry_location_id") or "")
+    if entry_location_id and entry_location_id not in location_ids:
+        errors.append(f"player template references unknown entry location {entry_location_id}")
     for behavior_id in player_template.get("initial_bt_ids", []) or []:
         if behavior_id not in behavior_ids:
             errors.append(f"player template references unknown behavior {behavior_id}")
+    for faction_id in player_template.get("initial_faction_ids", []) or []:
+        if faction_id not in faction_ids:
+            errors.append(f"player template references unknown faction {faction_id}")
     for faction in data["factions"]:
         leader_id = faction.get("leader_id")
         if leader_id and leader_id not in agent_ids:
@@ -1242,7 +1253,10 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
             story = load_yaml(config_dir, "story.yaml", {})
             store.repositories.metadata.set("story", story)
             store.repositories.metadata.set("story_state", {})
-            store.repositories.metadata.set("player_template", load_yaml(config_dir, "player_template.yaml", {}))
+            store.repositories.metadata.set(
+                "player_template",
+                parse_player_template(load_yaml(config_dir, "player_template.yaml", {})),
+            )
 
             for location in load_yaml(config_dir, "locations.yaml", {}).get("locations", []):
                 store.repositories.entities.put_entity(location["id"], "location", location.get("name", location["id"]), location)

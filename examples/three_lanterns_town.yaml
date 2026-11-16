@@ -434,4 +434,4 @@ initial_events:
   type: season.dry_started
   world_minute: 0
   payload: {summary: 旱季开始，三灯镇必须核对蓄水与商路记录。}
-player_template: {entry_location_id: lantern_square, origins: [traveler, resident]}
+player_template: {entry_location_id: lantern_square, origins: [{id: traveler}, {id: resident}]}

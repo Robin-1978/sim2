@@ -1,4 +1,7 @@
-player:
-  entry_location: commons_quay
-  origin_choices: [steward, forager, chart_keeper, ferry_runner]
-  initial_knowledge: []
+entry_location_id: commons_quay
+knowledge_seed: []
+origins:
+  - id: steward
+  - id: forager
+  - id: chart_keeper
+  - id: ferry_runner

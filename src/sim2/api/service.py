@@ -5,6 +5,7 @@ from typing import Any
 
 from ..intents.models import BehaviorIntent
 from ..platform.runtime import Platform
+from ..world.player_template import PlayerTemplateError, parse_player_template
 from .authoring import AuthoringService
 
 
@@ -127,18 +128,24 @@ class ControlService:
     def player_entry(self) -> dict[str, Any]:
         """Return generic player creation choices from the loaded world pack."""
 
-        template = self.platform.store.repositories.metadata.get("player_template", {}) or {}
-        player = template.get("player", {}) if isinstance(template, dict) else {}
-        entry_id = str(player.get("entry_location_id") or "")
+        try:
+            player = parse_player_template(self.platform.store.repositories.metadata.get("player_template", {}))
+        except PlayerTemplateError as exc:
+            return {"status": "rejected", "message": str(exc), "failed_check": "player_template"}
+        entry_id = player["entry_location_id"]
         try:
             entry = self.platform.store.repositories.entities.get_entity(entry_id)
         except KeyError:
             entry = {}
-        origins = []
-        for item in player.get("origin_choices", []) or []:
-            if not isinstance(item, dict) or not item.get("id"):
-                continue
-            origins.append({"id": str(item["id"]), "goal": str(item.get("starting_goal") or ""), "traits": dict(item.get("traits") or {})})
+        origins = [
+            {
+                "id": str(item["id"]),
+                "goal": str(item.get("starting_goal") or ""),
+                "traits": dict(item.get("traits") or {}),
+            }
+            for item in player.get("origins", [])
+            if item.get("id")
+        ]
         return {
             "status": "ok",
             "world_id": self.platform.store.repositories.metadata.get("world_id"),

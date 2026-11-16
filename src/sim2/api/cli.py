@@ -17,6 +17,23 @@ from .instances import InstanceRegistry
 from .map_view import render_topology_map
 
 
+def _ensure_player(platform: Platform, player_id: str, origin: str | None, name: str | None) -> None:
+    try:
+        platform.store.repositories.entities.get_agent(player_id)
+        return
+    except KeyError:
+        pass
+    if not origin:
+        raise SystemExit("--origin is required when creating a new player")
+    entered = platform.enter_player(player_id, origin, name=name)
+    if entered.get("status") == "accepted":
+        return
+    message = str(entered.get("message") or entered).rstrip(".")
+    allowed = [str(item) for item in entered.get("allowed_values") or []]
+    hint = f" Available origins: {', '.join(allowed)}." if allowed else ""
+    raise SystemExit(f"Cannot enter player: {message}.{hint}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="sim2")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -174,14 +191,7 @@ def main() -> None:
         try:
             observer = bool(args.observer or not args.player_id)
             if not observer:
-                try:
-                    platform.store.repositories.entities.get_agent(args.player_id)
-                except KeyError:
-                    if not args.origin:
-                        raise ValueError("--origin is required when creating a new player")
-                    entered = platform.enter_player(args.player_id, args.origin, name=args.name)
-                    if entered.get("status") != "accepted":
-                        raise ValueError(str(entered))
+                _ensure_player(platform, str(args.player_id), args.origin, args.name)
         finally:
             platform.close()
         from .tui import run_tui
@@ -202,15 +212,8 @@ def main() -> None:
         try:
             if not args.observer:
                 if not args.player_id:
-                    raise ValueError("--player-id is required in player mode")
-                try:
-                    platform.store.repositories.entities.get_agent(args.player_id)
-                except KeyError:
-                    if not args.origin:
-                        raise ValueError("--origin is required when creating a new player")
-                    entered = platform.enter_player(args.player_id, args.origin, name=args.name)
-                    if entered.get("status") != "accepted":
-                        raise ValueError(str(entered))
+                    raise SystemExit("--player-id is required in player mode")
+                _ensure_player(platform, str(args.player_id), args.origin, args.name)
             TextWorldSession(platform, player_id=args.player_id, observer=args.observer).run()
         finally:
             platform.close()

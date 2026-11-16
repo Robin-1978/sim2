@@ -128,6 +128,26 @@ attribute without a Platform branch.
 | `initial_events` | Opening facts recorded at configured world minutes. |
 | `prompts` | Optional world-owned runtime prompt policies. |
 
+### Player entry template
+
+`player_template` has one canonical top-level shape. Origins are objects so a
+simple world can provide only `id`, while a richer world can add traits and a
+starting goal:
+
+```yaml
+entry_location_id: river_bridge
+origins:
+  - id: courier
+    traits: {mobility: 0.7, negotiation: 0.5}
+    starting_goal: 找到失踪车队的下落
+knowledge_seed: [public:river_bridge, public:village_square]
+initial_bt_ids: [travel]
+```
+
+Do not wrap this object in a `player:` key or use `origin_choices`,
+`entry_location`, or string-only origin entries. World validation and runtime
+entry accept only the canonical form above.
+
 `story.emergent_source_event_types` declares which recorded events may seed a
 fallback emergent beat when no task-bound source is supplied. A
 `story.narrative_claim_guard` may list locale-specific claim terms plus the
