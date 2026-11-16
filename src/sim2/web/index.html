@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="sim2 adaptive world runtime and authoring workbench">
   <title>sim2 · Adaptive World Runtime</title>
-  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/app.css?v=2">
 </head>
 <body>
   <a class="skip-link" href="#main">跳到主要内容</a>
@@ -299,7 +299,8 @@
       <div class="dialog-actions"><button id="operator-cancel" class="button ghost" type="button" value="cancel">取消</button><button id="operator-submit" class="button primary" type="submit" value="default">解锁</button></div>
     </form>
   </dialog>
-  <script src="/app.js" defer></script>
+  <!-- bump ?v= whenever app.js/app.css changes so stale tabs refetch -->
+  <script src="/app.js?v=2" defer></script>
 </body>
 </html>
 
