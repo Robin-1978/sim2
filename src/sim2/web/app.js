@@ -43,8 +43,10 @@
     const usedOperatorToken = Boolean(state.operatorToken);
     const sessionToken = state.operatorToken || state.playerToken || state.observerToken || state.sessionToken;
     const response = await fetch(path, {
-      headers: { "content-type": "application/json", ...(sessionToken ? { "x-sim2-session": sessionToken } : {}), ...(options.headers || {}) },
       ...options,
+      // Spread options first: per-call headers (Idempotency-Key) must extend,
+      // never replace, the session and content-type headers.
+      headers: { "content-type": "application/json", ...(sessionToken ? { "x-sim2-session": sessionToken } : {}), ...(options.headers || {}) },
     });
     const type = response.headers.get("content-type") || "";
     if (!type.includes("application/json")) {
@@ -190,7 +192,7 @@
     const result = await request("/session", { method: "POST", body: JSON.stringify({ role: "operator", operator_token: token }) });
     if (result.status !== "ok" || result.role !== "operator") throw new Error(result.message || "解锁失败");
     state.operatorToken = result.session_token;
-    sessionStorage.setItem("sim2_operator_token", result.session_token);
+    rememberOperatorToken(result.session_token);
     setOperatorState(true);
     const resolve = state.operatorResolve;
     state.operatorResolve = null;

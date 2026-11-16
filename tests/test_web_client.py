@@ -627,6 +627,23 @@ def test_web_full_client_surfaces_new_panels(tmp_path: Path):
         thread.join(timeout=2)
 
 
+def test_web_client_keeps_session_header_when_posting_with_idempotency_key():
+    """Idempotent writes must not drop the operator session header.
+
+    ``write()`` passes ``Idempotency-Key`` as per-request headers. Spreading
+    the fetch options after ``headers`` replaced the auth and content-type
+    headers, so every runtime command returned 403 and reopened the unlock
+    dialog even though unlocking had succeeded.
+    """
+
+    source = (Path(__file__).parents[1] / "src" / "sim2" / "web" / "app.js").read_text(encoding="utf-8")
+    request_body = source.split("async function request(", 1)[1].split("function newIdempotencyKey", 1)[0]
+    fetch_body = request_body.split("await fetch(path, {", 1)[1].split("});", 1)[0]
+    assert "x-sim2-session" in fetch_body
+    assert fetch_body.index("...options") < fetch_body.index("headers:")
+    assert "rememberOperatorToken(result.session_token)" in source
+
+
 def test_operator_session_exchange_and_dialog_wiring(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "web-session", tmp_path / "runtime")
