@@ -181,6 +181,12 @@ h2 { margin: 0; font-size: 16px; letter-spacing: -.02em; }
 .active-task-card { margin: 12px 4px; padding: 14px; border: 1px solid rgba(98,228,211,.25); border-radius: 12px; background: rgba(98,228,211,.06); }
 .active-task-card strong { display: block; color: var(--cyan); font-size: 13px; }
 .active-task-card p { color: var(--muted); font-size: 10px; line-height: 1.5; margin: 7px 0 0; }
+.unavailable-actions { margin: 10px 4px 0; padding: 10px 0 0; border-top: 1px dashed var(--line); }
+.unavailable-actions summary { cursor: pointer; color: var(--muted); font-size: 10px; }
+.unavailable-action { padding: 8px 0; }
+.unavailable-action strong, .unavailable-action small { display: block; }
+.unavailable-action strong { color: var(--text); font-size: 11px; }
+.unavailable-action small { color: var(--muted); font-size: 10px; line-height: 1.45; margin-top: 3px; }
 .player-feed-panel, .player-dialogue-panel { min-height: 260px; }
 .player-feed { padding: 0 18px 15px; max-height: 250px; overflow: auto; }
 .player-feed-item { padding: 10px 0; border-top: 1px solid var(--line); }

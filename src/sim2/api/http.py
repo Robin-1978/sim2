@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import secrets
+import time
 from threading import RLock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -15,14 +17,43 @@ from .service import ControlService
 from .web import web_asset
 
 
+_LOGGER = logging.getLogger("sim2.http")
+
+
 class _Handler(BaseHTTPRequestHandler):
     server: "ControlHTTPServer"
 
-    def log_message(self, format: str, *args: Any) -> None:  # pragma: no cover - avoid noisy library output
+    def log_message(self, format: str, *args: Any) -> None:  # pragma: no cover - request logging is structured below
         return
+
+    def _session_label(self) -> str:
+        """Describe the caller without ever logging the token itself."""
+
+        token = self._token()
+        if not token:
+            return "session=none"
+        if secrets.compare_digest(token, self.server.operator_token):
+            return "session=operator-token"
+        session = self.server.session_for(token)
+        if session is None:
+            return "session=invalid"
+        return f"session={session.get('role') or 'unknown'}"
+
+    def _log_request(self, status: int, value: dict[str, Any] | None = None) -> None:
+        started = getattr(self, "_request_started", None)
+        elapsed = (time.monotonic() - started) * 1000 if started is not None else 0.0
+        message = f"{getattr(self, 'command', '?')} {getattr(self, 'path', '?')} -> {status} {elapsed:.1f}ms {self._session_label()}"
+        if status >= 400 and isinstance(value, dict):
+            detail = value.get("message") or value.get("failed_check")
+            if detail:
+                message += f" error={str(detail)[:160]!r}"
+        # Successful requests stay quiet by default; 4xx/5xx are visible even
+        # without --log-level info because they are the useful debugging trail.
+        _LOGGER.log(logging.WARNING if status >= 400 else logging.INFO, message)
 
     def _write(self, status: int, value: dict[str, Any]) -> None:
         body = json.dumps(value, ensure_ascii=False).encode("utf-8")
+        self._log_request(status, value)
         self.send_response(status)
         self.send_header("content-type", "application/json; charset=utf-8")
         self.send_header("content-length", str(len(body)))
@@ -30,6 +61,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _write_bytes(self, status: int, body: bytes, content_type: str, *, filename: str | None = None) -> None:
+        self._log_request(status)
         self.send_response(status)
         self.send_header("content-type", content_type)
         self.send_header("content-length", str(len(body)))
@@ -152,6 +184,7 @@ class _Handler(BaseHTTPRequestHandler):
             _time.sleep(1.0)
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
+        self._request_started = time.monotonic()
         path = urlparse(self.path).path
         try:
             asset = web_asset(path)
@@ -255,6 +288,7 @@ class _Handler(BaseHTTPRequestHandler):
             return self._write(500, {"status": "error", "message": str(exc)})
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+        self._request_started = time.monotonic()
         path = urlparse(self.path).path
         try:
             body = self._read_json()
@@ -387,6 +421,8 @@ class _Handler(BaseHTTPRequestHandler):
             if path == "/player/wait":
                 return self._write(200, self.server.player_wait(
                     str(body.get("player_id") or ""),
+                    minutes=int(body.get("minutes", 1) or 1),
+                    provider_name=body.get("provider"),
                     authorize_token=self._token(),
                 ))
             if path == "/dialogue":
@@ -582,7 +618,7 @@ class ControlHTTPServer(ThreadingHTTPServer):
             player_id = str(body["player_id"])
             result = self.control.enter_player(
                 player_id,
-                str(body["origin_id"]),
+                str(body.get("origin_id") or ""),
                 body.get("name"),
             )
             if result.get("status") == "accepted":
@@ -674,7 +710,7 @@ class ControlHTTPServer(ThreadingHTTPServer):
         with self._control_lock:
             return self._resolve_agent_id_locked(value)
 
-    def player_wait(self, player_id: str, *, authorize_token: str | None = None) -> dict[str, Any]:
+    def player_wait(self, player_id: str, *, minutes: int = 1, provider_name: str | None = None, authorize_token: str | None = None) -> dict[str, Any]:
         with self._control_lock:
             resolved = self._resolve_agent_id_locked(player_id)
             allowed, message = self.authorize_session(
@@ -690,7 +726,7 @@ class ControlHTTPServer(ThreadingHTTPServer):
                     "failed_check": "runtime_running",
                     "message": "The autonomous world is already advancing; pause or stop it before using manual wait.",
                 }
-            return self.control.player_wait(resolved)
+            return self.runtime.advance_manual(minutes, provider_name=provider_name, reason="web-player-wait")
 
     def trade_offers(self, agent_id: str, *, include_closed: bool = False, token: str | None = None) -> dict[str, Any]:
         with self._control_lock:

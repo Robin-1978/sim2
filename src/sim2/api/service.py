@@ -21,7 +21,7 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
     if not player_id:
         return {"status": "rejected", "message": "player_id is required"}
     try:
-        decision = platform.decision_view(player_id, role="agent_decision")
+        decision = platform.view.build_decision_view(player_id, role="agent_decision", include_diagnostics=True)
     except KeyError:
         return {"status": "rejected", "message": "player does not exist", "failed_check": "player_id"}
     map_view = platform.map_view(viewer_id=player_id, observer=False)
@@ -66,6 +66,27 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
     player_projection["location_id"] = current_id
     player_projection["location_safe"] = bool(current.get("safe", False))
     player_projection["location_tags"] = list(current.get("tags") or [])
+    # Dialogue and trade target living participants only.  The raw nearby
+    # projection also contains resources and objects for scene context; those
+    # ids are not valid listeners and used to surface as "participant does not
+    # exist" when a player picked them from the target dropdown.
+    nearby = list(decision.get("nearby_entities", []) or [])
+    participants = [
+        item for item in nearby
+        if str(item.get("type") or item.get("entity_type") or "") in {"agent", "player"}
+    ]
+    bt_defs = {str(item.get("id")): item for item in platform.store.repositories.entities.get_definitions("bt_def")}
+    unavailable_actions = []
+    for item in (decision.get("unavailable_behavior_diagnostics") or []):
+        behavior_id = str(item.get("behavior_id") or "")
+        if not behavior_id or behavior_id == "travel":
+            continue
+        behavior = bt_defs.get(behavior_id, {})
+        unavailable_actions.append({
+            "ref": f"behavior:{behavior_id}",
+            "label": behavior.get("agent_label") or behavior.get("summary") or behavior_id,
+            "reasons": [str(reason) for reason in (item.get("failed") or [])][:4],
+        })
     return {
         "status": "ok",
         "world_id": map_view.get("world_id"),
@@ -75,10 +96,12 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         "needs": decision.get("needs", {}),
         "active_task": active_task,
         "actions": actions[:24],
+        "unavailable_actions": unavailable_actions[:12],
         "routes": routes,
         "map": map_view,
         "recent_outcomes": decision.get("recent_outcomes", [])[:6],
-        "nearby_entities": decision.get("nearby_entities", [])[:12],
+        "nearby_entities": nearby[:12],
+        "nearby_participants": participants[:12],
         "recent_dialogue": platform.store.repositories.social.list_dialogue_exchanges(player_id, limit=4),
     }
 
@@ -166,14 +189,22 @@ class ControlService:
         intent = BehaviorIntent.from_json(dict(body), actor_id=player_id)
         return self.platform.submit_behavior(intent)
 
-    def player_wait(self, player_id: str) -> dict[str, Any]:
-        """Advance one minute for a manual player session."""
+    def player_wait(self, player_id: str, *, minutes: int = 1) -> dict[str, Any]:
+        """Advance manual time for a player, stopping when their task ends."""
 
         try:
             self.platform.store.repositories.entities.get_agent(str(player_id))
         except KeyError:
             return {"status": "rejected", "message": "player does not exist", "failed_check": "player_id"}
-        return self.platform.step()
+        steps = max(1, min(int(minutes), 480))
+        result: dict[str, Any] = {}
+        for _ in range(steps):
+            result = self.platform.step()
+            agent = self.platform.store.repositories.entities.get_agent(str(player_id))
+            state = agent.get("initial_state", {}) or {}
+            if state.get("status") not in {"executing", "paused"} and not state.get("active_action") and not state.get("active_bt_instance"):
+                break
+        return result
 
     def metrics(self) -> dict[str, Any]:
         with self.platform.store.read_transaction():

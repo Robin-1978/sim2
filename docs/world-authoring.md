@@ -132,21 +132,41 @@ attribute without a Platform branch.
 
 `player_template` has one canonical top-level shape. Origins are objects so a
 simple world can provide only `id`, while a richer world can add traits and a
-starting goal:
+starting goal. Player capabilities, starting inventory, initial behaviors and
+the controller mode are world configuration, not framework constants:
 
 ```yaml
 entry_location_id: river_bridge
+controller: manual
+capabilities: {gathering: 0.5, conversation: 0.5}
+inventory: {food_ration: 2, fresh_water: 2}
+initial_bt_ids: [gather_water, communicate]
 origins:
   - id: courier
     traits: {mobility: 0.7, negotiation: 0.5}
+    capabilities: {exploration: 0.4}
     starting_goal: 找到失踪车队的下落
 knowledge_seed: [public:river_bridge, public:village_square]
-initial_bt_ids: [travel]
 ```
+
+`controller: manual` keeps player characters out of autonomous LLM decision
+loops; use `controller: llm` only when the world intentionally wants an
+auto-driven player avatar. Origin-level `capabilities` and `inventory` override
+the top-level defaults.
 
 Do not wrap this object in a `player:` key or use `origin_choices`,
 `entry_location`, or string-only origin entries. World validation and runtime
 entry accept only the canonical form above.
+
+Existing instances snapshot their player template at creation. After changing
+`player_template.yaml`, apply the new contract explicitly:
+
+```bash
+sim2 sync-player-template --db "$DB"
+```
+
+The command reloads the package template recorded in `bootstrap_report` and
+backfills missing capabilities, inventory and behaviors for existing players.
 
 `story.emergent_source_event_types` declares which recorded events may seed a
 fallback emergent beat when no task-bound source is supplied. A

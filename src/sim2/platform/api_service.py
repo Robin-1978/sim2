@@ -169,15 +169,24 @@ class RuntimeApiService(PlatformService):
         return {"status": "accepted", "event_id": event_id, "world_minute": minute}
 
     def enter_player(self, player_id: str, origin_id: str, *, name: str | None = None) -> dict[str, Any]:
-        """Instantiate a player from the package's generic entry template."""
+        """Instantiate a player or resume an existing one from the template.
 
-        if not player_id.strip() or not origin_id.strip():
-            raise ValueError("player_id and origin_id are required")
+        A player session is local and browser-held.  Re-entering an existing
+        player id used to be impossible after the browser lost its session
+        token; this method now treats an existing player as a resume and
+        backfills any template capabilities, inventory or behaviors that were
+        introduced after the character was created.
+        """
+
+        player_id = str(player_id or "").strip()
+        if not player_id:
+            raise ValueError("player_id is required")
         try:
-            self.store.repositories.entities.get_entity(player_id)
-            return {"status": "rejected", "message": "The player id already exists.", "failed_check": "player_id"}
+            existing = self.store.repositories.entities.get_agent(player_id)
         except KeyError:
-            pass
+            existing = None
+        if existing is not None and str(existing.get("role") or "") != "player":
+            return {"status": "rejected", "message": "That id belongs to a world character, not a player.", "failed_check": "player_id"}
         try:
             template = parse_player_template(
                 self.store.repositories.metadata.get("player_template", {}),
@@ -191,8 +200,8 @@ class RuntimeApiService(PlatformService):
                 "retryable": False,
             }
         origins = template["origins"]
-        origin = next((item for item in origins if item.get("id") == origin_id), None)
-        if origin is None:
+        origin = next((item for item in origins if item.get("id") == str(origin_id or "").strip()), None)
+        if existing is None and origin is None:
             return {
                 "status": "rejected",
                 "message": "The selected origin is not configured.",
@@ -200,6 +209,8 @@ class RuntimeApiService(PlatformService):
                 "retryable": True,
                 "allowed_values": [str(item["id"]) for item in origins],
             }
+        if existing is not None:
+            return self._resume_player(existing, template, origin, name=name)
         location_id = template["entry_location_id"]
         if not location_id:
             return {"status": "rejected", "message": "The player template does not configure an entry location.", "failed_check": "entry_location_id", "retryable": False}
@@ -218,6 +229,7 @@ class RuntimeApiService(PlatformService):
             "id": player_id,
             "name": name or player_id,
             "role": "player",
+            "controller": template["controller"],
             "faction_ids": list(template["initial_faction_ids"]),
             "traits": dict(origin.get("traits") or {}),
             "ultimate_goal": origin.get("starting_goal") or "Find a meaningful place in this world.",
@@ -225,9 +237,9 @@ class RuntimeApiService(PlatformService):
             "needs": needs,
             "knowledge_seed": list(template.get("knowledge_seed") or []),
             "initial_bt_ids": list(template.get("initial_bt_ids") or []),
-            "capabilities": {},
+            "capabilities": self._player_capabilities(template, origin),
             "initial_state": state_defaults,
-            "inventory": {},
+            "inventory": self._player_inventory(template, origin),
         }
         minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
@@ -235,7 +247,112 @@ class RuntimeApiService(PlatformService):
             for fact in agent["knowledge_seed"]:
                 self.store.repositories.memory.put_knowledge_fact(player_id, str(fact), {"fact": str(fact), "source_type": "player_template", "confidence": 1.0})
             self._context.services["events"].append("player.entered", player_id, minute, {"origin_id": origin_id, "location_id": location_id})
-        return {"status": "accepted", "player_id": player_id, "origin_id": origin_id, "location_id": location_id}
+        return {"status": "accepted", "player_id": player_id, "origin_id": origin_id, "location_id": location_id, "resumed": False}
+
+    @staticmethod
+    def _player_capabilities(template: dict[str, Any], origin: dict[str, Any] | None) -> dict[str, float]:
+        values = {str(key): float(value) for key, value in (template.get("capabilities") or {}).items()}
+        values.update({str(key): float(value) for key, value in ((origin or {}).get("capabilities") or {}).items()})
+        return values
+
+    @staticmethod
+    def _player_inventory(template: dict[str, Any], origin: dict[str, Any] | None) -> dict[str, float]:
+        values = {str(key): float(value) for key, value in (template.get("inventory") or {}).items()}
+        values.update({str(key): float(value) for key, value in ((origin or {}).get("inventory") or {}).items()})
+        return values
+
+    def sync_player_template(self, raw_template: dict[str, Any]) -> dict[str, Any]:
+        """Reload a player entry template and backfill existing players.
+
+        World packages evolve after an instance is created.  This explicit
+        migration keeps the instance snapshot authoritative until the operator
+        asks for the package's current player contract to be applied.
+        """
+
+        template = parse_player_template(raw_template, require_entry=True)
+        updated: list[str] = []
+        with self.store.transaction():
+            self.store.repositories.metadata.set("player_template", dict(raw_template))
+            for agent in self.store.repositories.entities.list_agents():
+                if str(agent.get("role") or "") != "player":
+                    continue
+                before = (dict(agent.get("capabilities") or {}), dict(agent.get("inventory") or {}), list(agent.get("initial_bt_ids") or []), agent.get("controller"))
+                capabilities = dict(agent.get("capabilities") or {})
+                for key, value in template["capabilities"].items():
+                    capabilities.setdefault(key, value)
+                inventory = dict(agent.get("inventory") or {})
+                for key, value in template["inventory"].items():
+                    inventory.setdefault(key, value)
+                behavior_ids = list(agent.get("initial_bt_ids") or [])
+                for behavior_id in template["initial_bt_ids"]:
+                    if behavior_id not in behavior_ids:
+                        behavior_ids.append(behavior_id)
+                agent["capabilities"] = capabilities
+                agent["inventory"] = inventory
+                agent["initial_bt_ids"] = behavior_ids
+                agent["controller"] = template["controller"]
+                after = (capabilities, inventory, behavior_ids, agent.get("controller"))
+                if after != before:
+                    self.store.repositories.entities.put_agent(str(agent["id"]), agent, str(agent.get("name") or agent["id"]))
+                    updated.append(str(agent["id"]))
+        return {
+            "status": "ok",
+            "updated_players": updated,
+            "capabilities": list(template["capabilities"]),
+            "inventory": list(template["inventory"]),
+            "initial_bt_ids": list(template["initial_bt_ids"]),
+            "controller": template["controller"],
+        }
+
+    def _resume_player(
+        self,
+        existing: dict[str, Any],
+        template: dict[str, Any],
+        origin: dict[str, Any] | None,
+        *,
+        name: str | None = None,
+    ) -> dict[str, Any]:
+        agent = dict(existing)
+        if name and not str(agent.get("name") or "").strip():
+            agent["name"] = name
+        capabilities = dict(agent.get("capabilities") or {})
+        for key, value in self._player_capabilities(template, origin).items():
+            capabilities.setdefault(key, value)
+        inventory = dict(agent.get("inventory") or {})
+        for key, value in self._player_inventory(template, origin).items():
+            inventory.setdefault(key, value)
+        behavior_ids = list(agent.get("initial_bt_ids") or [])
+        for behavior_id in template.get("initial_bt_ids") or []:
+            if behavior_id not in behavior_ids:
+                behavior_ids.append(str(behavior_id))
+        changed = (
+            capabilities != (agent.get("capabilities") or {})
+            or inventory != (agent.get("inventory") or {})
+            or behavior_ids != (agent.get("initial_bt_ids") or [])
+            or agent.get("controller") != template["controller"]
+        )
+        agent["capabilities"] = capabilities
+        agent["inventory"] = inventory
+        agent["initial_bt_ids"] = behavior_ids
+        agent["controller"] = template["controller"]
+        if changed:
+            minute = int(self.store.repositories.metadata.get("world_minute", 0))
+            with self.store.transaction():
+                self.store.repositories.entities.put_agent(agent["id"], agent, str(agent.get("name") or agent["id"]))
+                self._context.services["events"].append("player.resumed", str(agent["id"]), minute, {
+                    "origin_id": str((origin or {}).get("id") or ""),
+                    "migrated": True,
+                })
+        location_id = str((agent.get("initial_state") or {}).get("location_id") or "")
+        return {
+            "status": "accepted",
+            "player_id": str(agent["id"]),
+            "origin_id": str((origin or {}).get("id") or ""),
+            "location_id": location_id,
+            "name": str(agent.get("name") or agent["id"]),
+            "resumed": True,
+            "migrated": changed,
+        }
 
     def decision_view(self, agent_id: str, role: str = "agent_decision") -> dict[str, Any]:
         return self.view.build_decision_view(agent_id, role=role)

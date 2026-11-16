@@ -29,6 +29,7 @@
     operatorResolve: null,
     stream: null,
     streamFailures: 0,
+    advancing: false,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -42,18 +43,31 @@
   async function request(path, options = {}) {
     const usedOperatorToken = Boolean(state.operatorToken);
     const sessionToken = state.operatorToken || state.playerToken || state.observerToken || state.sessionToken;
-    const response = await fetch(path, {
-      ...options,
-      // Spread options first: per-call headers (Idempotency-Key) must extend,
-      // never replace, the session and content-type headers.
-      headers: { "content-type": "application/json", ...(sessionToken ? { "x-sim2-session": sessionToken } : {}), ...(options.headers || {}) },
-    });
+    const method = String(options.method || "GET").toUpperCase();
+    let response;
+    try {
+      response = await fetch(path, {
+        ...options,
+        // Spread options first: per-call headers (Idempotency-Key) must extend,
+        // never replace, the session and content-type headers.
+        headers: { "content-type": "application/json", ...(sessionToken ? { "x-sim2-session": sessionToken } : {}), ...(options.headers || {}) },
+      });
+    } catch (error) {
+      if (typeof console !== "undefined" && console.error) console.error(`[sim2] ${method} ${path} 网络错误`, error);
+      throw error;
+    }
     const type = response.headers.get("content-type") || "";
     if (!type.includes("application/json")) {
       throw new Error(`服务端返回了 ${response.status} ${type || "未知内容"}`);
     }
     const value = await response.json();
     if (!response.ok) {
+      if (typeof console !== "undefined" && console.error) {
+        console.error(`[sim2] ${method} ${path} -> ${response.status} ${value.message || ""}`, {
+          failed_check: value.failed_check || value.status || null,
+          session: sessionToken ? "present" : "missing",
+        });
+      }
       const error = new Error(value.message || `请求失败 (${response.status})`);
       error.status = response.status;
       error.code = value.failed_check || value.status || null;
@@ -652,9 +666,9 @@
     const originId = $("play-player-origin")?.value;
     const name = $("play-player-name")?.value.trim();
     const resultBox = $("play-notice") || $("interaction-result");
-    if (!playerId || !originId) { setPlayerResult("需要填写玩家 ID 并选择出身", false); return; }
+    if (!playerId) { setPlayerResult("需要填写玩家 ID", false); return; }
     try {
-      const result = await write("/players", { player_id: playerId, origin_id: originId, name: name || undefined });
+      const result = await write("/players", { player_id: playerId, origin_id: originId || undefined, name: name || undefined });
       if (result.status !== "accepted") throw new Error(result.message || "玩家进入失败");
       state.playerId = playerId;
       state.playerToken = result.session_token || state.playerToken;
@@ -663,7 +677,11 @@
       if (result.session_token) localStorage.setItem("sim2_player_token", result.session_token);
       await loadPlayerView();
       switchView("play-view");
-      setPlayerResult("你已经进入世界。先看看周围，再选择下一步。", true);
+      if (result.resumed) {
+        setPlayerResult(result.migrated ? `已恢复角色 ${result.name || playerId}，并补齐了模板能力与物资。` : `已恢复角色 ${result.name || playerId}。`, true);
+      } else {
+        setPlayerResult("你已经进入世界。先看看周围，再选择下一步。", true);
+      }
     } catch (error) { setPlayerResult(error.message || "玩家进入失败", false); }
   }
 
@@ -672,7 +690,7 @@
       const entry = await request("/player/entry");
       state.playerEntry = entry;
       $("play-world-id").textContent = entry.world_id || "world";
-      $("player-entry-copy").textContent = `从 ${entry.entry_location?.name || "入口地点"} 开始；你的选择会产生真实世界事件。`;
+      $("player-entry-copy").textContent = `从 ${entry.entry_location?.name || "入口地点"} 开始；已有玩家 ID 会恢复该角色并补齐模板能力。`;
       const select = $("play-player-origin"); select.replaceChildren();
       for (const origin of entry.origins || []) select.append(new Option(origin.id, origin.id));
       if (entry.origins?.length) { select.value = entry.origins[0].id; updateOriginPreview(); }
@@ -708,10 +726,13 @@
     $("player-goal-label").textContent = player.goal || "探索这个世界";
     renderNeedBars(player.attributes || []);
     renderPlayerMap(data.map || {});
-    renderPlayerActions(data.actions || [], data.active_task || {});
+    renderPlayerActions(data.actions || [], data.active_task || {}, data.unavailable_actions || []);
     renderPlayerFeed(data.recent_outcomes || []);
+    const participants = (data.nearby_participants || data.nearby_entities || []).filter((entity) =>
+      ["agent", "player"].includes(entity.type || entity.entity_type)
+    );
     const targets = $("player-dialogue-target"); targets.replaceChildren();
-    for (const entity of data.nearby_entities || []) {
+    for (const entity of participants) {
       if (!entity.id) continue;
       targets.append(new Option(entity.name || entity.id, entity.id));
     }
@@ -720,7 +741,7 @@
     if (tradeTargets) {
       const previous = tradeTargets.value;
       tradeTargets.replaceChildren();
-      for (const entity of data.nearby_entities || []) {
+      for (const entity of participants) {
         if (!entity.id || entity.id === state.playerId) continue;
         tradeTargets.append(new Option(entity.name || entity.id, entity.id));
       }
@@ -850,39 +871,103 @@
     if (current) { summary.append(make("strong", "", `${current.name || current.id} · ${current.safe ? "安全" : "保持警戒"}`)); for (const tag of current.tags || []) summary.append(make("span", "tag", tag)); }
   }
 
-  function renderPlayerActions(actions, activeTask = {}) {
+  function renderPlayerActions(actions, activeTask = {}, unavailable = []) {
     const root = $("player-actions"); root.replaceChildren();
+    const appendUnavailable = () => {
+      if (!unavailable.length) return;
+      const details = document.createElement("details");
+      details.className = "unavailable-actions";
+      const summary = document.createElement("summary");
+      summary.textContent = `未显示的行动（条件未满足，${unavailable.length}）`;
+      details.append(summary);
+      for (const item of unavailable.slice(0, 10)) {
+        const row = make("div", "unavailable-action");
+        row.append(make("strong", "", item.label || item.ref || "行动"));
+        row.append(make("small", "", (item.reasons || []).join("；") || "当前条件不满足"));
+        details.append(row);
+      }
+      root.append(details);
+    };
     if (activeTask.action || activeTask.bt) {
       const running = make("div", "active-task-card"); running.append(make("strong", "", `正在执行：${activeTask.action || activeTask.bt}`)); running.append(make("p", "", `还需要 ${activeTask.remaining_minutes ?? 0} 分钟。行为完成后，Platform 会记录结果并刷新下一步选择。`)); root.append(running);
       if (!state.runtime?.running) { const wait = make("button", "button ghost player-wait", "等待一分钟"); wait.type = "button"; wait.addEventListener("click", playerWait); root.append(wait); }
+      if (!state.runtime?.running) { const advance = make("button", "button primary", "推进到完成"); advance.type = "button"; advance.addEventListener("click", () => advancePlayerAction()); root.append(advance); }
       else root.append(make("p", "empty-state", "世界正在自动推进。"));
+      if (!state.runtime?.running) root.append(make("p", "empty-state", "手动推进使用与自动运行相同的世界 tick：NPC 也会在同一分钟决策并行动（会调用 LLM），不是只推进玩家。"));
+      if (!state.runtime?.running) root.append(make("p", "empty-state", `同步推进模型：${playerProvider() || "默认角色模型（可在“观察世界”选择 remote/DeepSeek）"}`));
       return;
     }
-    if (!actions.length) { root.append(make("div", "empty-state", "暂时没有可执行行动；看看地图或稍后再来。")); return; }
+    if (!actions.length) { root.append(make("div", "empty-state", "暂时没有可执行行动；看看地图或稍后再来。")); appendUnavailable(); return; }
     for (const action of actions) {
       const card = make("article", "action-card"); const head = make("div", "action-card-head"); head.append(make("strong", "action-card-title", action.choice || action.name || "行动")); head.append(make("span", "action-card-time", action.time || "Platform 计算时间")); card.append(head);
       card.append(make("p", "", action.summary || action.purpose || "按照当前世界规则执行一个行动。"));
       const meta = make("div", "action-card-meta"); for (const value of [...(action.cost || []), ...(action.impact || []).slice(0, 2)]) meta.append(make("span", "action-chip", value)); card.append(meta);
       const button = make("button", "button ghost", action.kind === "travel" ? "出发" : "执行行动"); button.type = "button"; button.addEventListener("click", () => submitPlayerAction(action)); card.append(button); root.append(card);
     }
+    appendUnavailable();
     if (!state.runtime?.running) { const wait = make("button", "button ghost player-wait", "等待一分钟"); wait.type = "button"; wait.addEventListener("click", playerWait); root.append(wait); }
     else root.append(make("p", "empty-state", "世界正在自动推进，你仍然可以提交当前行动。"));
   }
 
   async function submitPlayerAction(action) {
-    if (!state.playerId) return;
+    if (!state.playerId || state.advancing) return;
     setPlayerResult("行动已提交，Platform 正在校验…", true);
     try {
-      const result = await write("/player/act", { player_id: state.playerId, behavior_ref: action.ref, parameters: action.parameters || {}, target: action.target || {}, reason: "Player selected this action from the web client.", confidence: 1 });
+      const result = await write("/player/act", { player_id: state.playerId, behavior_ref: action.ref, parameters: action.parameters && !Array.isArray(action.parameters) ? action.parameters : {}, target: action.target && typeof action.target === "object" ? action.target : {}, reason: "Player selected this action from the web client.", confidence: 1 });
       if (result.status !== "accepted") throw new Error(result.message || result.errors?.join("; ") || "行动未被接受");
-      setPlayerResult(`${action.choice || action.name || "行动"} 已开始。`, true); await loadPlayerView();
+      await loadPlayerView();
+      if (!state.runtime?.running) {
+        await advancePlayerAction(`${action.choice || action.name || "行动"} 已开始，`);
+      } else {
+        setPlayerResult(`${action.choice || action.name || "行动"} 已开始；世界会自动推进。`, true);
+      }
     } catch (error) { setPlayerResult(error.message || "行动未提交", false); }
+  }
+
+  function playerProvider() {
+    return $("runtime-provider")?.value || state.runtime?.provider || null;
+  }
+
+  async function advancePlayerAction(prefix = "") {
+    if (!state.playerId || state.advancing || state.runtime?.running) return;
+    state.advancing = true;
+    let llmErrors = 0;
+    let stopReason = "";
+    let npcDecisions = 0;
+    try {
+      for (let i = 0; i < 40; i += 1) {
+        const task = state.playerData?.active_task || {};
+        if (!task.action && !task.bt) break;
+        const remaining = Number(task.remaining_minutes || 0);
+        const minutes = Math.max(1, Math.min(remaining + 1, 10));
+        const result = await write("/player/wait", { player_id: state.playerId, minutes, provider: playerProvider() });
+        if (result.status !== "accepted") throw new Error(result.message || "无法推进世界");
+        llmErrors += Number(result.report?.llm_errors || 0);
+        npcDecisions += Number(result.report?.decisions || 0);
+        stopReason = result.report?.stop_reason || stopReason;
+        await loadPlayerView();
+        const worldTime = state.playerData?.world_time?.label || "";
+        setPlayerResult(`${prefix}同步推进中${worldTime ? ` · ${worldTime}` : ""}${remaining ? ` · 还需约 ${remaining} 分钟` : ""}`, true);
+      }
+      if (state.playerData?.active_task?.action || state.playerData?.active_task?.bt) {
+        setPlayerResult("行动尚未完成，请再点“推进到完成”继续。", false);
+      } else if (llmErrors) {
+        setPlayerResult(`行动已执行完成；NPC 决策 ${npcDecisions} 次，其中 ${llmErrors} 次失败（${stopReason || "模型错误"}）。请检查模型配置。`, false);
+      } else {
+        const worldTime = state.playerData?.world_time?.label || "";
+        setPlayerResult(`行动已执行完成${worldTime ? `，世界时间 ${worldTime}` : ""}；NPC 决策 ${npcDecisions} 次。`, true);
+      }
+    } catch (error) {
+      setPlayerResult(error.message || "无法推进世界", false);
+    } finally {
+      state.advancing = false;
+    }
   }
 
   async function playerWait() {
     if (!state.playerId) return;
     if (state.runtime?.running) { setPlayerResult("世界正在自动推进，无需手动等待。", true); return; }
-    try { await write("/player/wait", { player_id: state.playerId }); await loadPlayerView(); setPlayerResult("世界向前推进了一分钟。", true); }
+    try { await write("/player/wait", { player_id: state.playerId, minutes: 1, provider: playerProvider() }); await loadPlayerView(); setPlayerResult("世界向前推进了一分钟。", true); }
     catch (error) { setPlayerResult(error.message || "无法推进世界", false); }
   }
 

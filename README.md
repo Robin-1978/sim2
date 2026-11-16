@@ -57,7 +57,8 @@ sim2 serve --host 127.0.0.1 --port 8080
 With no `--db`, `sim2 serve` opens the most recently activated instance under
 `~/.sim2`; use `--instance-id <id>` to choose one explicitly, or `--db "$DB"`
 for an instance outside that root. The terminal prints the URL, active database
-and a local Operator token.
+and a local Operator token. Add `--log-level info` to log every HTTP request;
+4xx/5xx responses are logged even at the default `warning` level.
 
 Run the autonomous Platform runtime after configuring providers in `~/.sim2/llm.json`:
 

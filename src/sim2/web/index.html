@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="sim2 adaptive world runtime and authoring workbench">
   <title>sim2 · Adaptive World Runtime</title>
-  <link rel="stylesheet" href="/app.css?v=2">
+  <link rel="stylesheet" href="/app.css?v=3">
 </head>
 <body>
   <a class="skip-link" href="#main">跳到主要内容</a>
@@ -46,9 +46,9 @@
           <div class="panel-heading"><div><span class="panel-kicker">YOUR ARRIVAL</span><h2>进入这个世界</h2><p id="player-entry-copy" class="panel-subtitle">加载世界入口…</p></div><span class="badge accent">可随时重新进入</span></div>
           <div class="player-setup-form">
             <label>你的名字<input id="play-player-name" placeholder="例如：阿里" autocomplete="off"></label>
-            <label>玩家 ID<input id="play-player-id" placeholder="player_one" autocomplete="off"></label>
-            <label>出身<select id="play-player-origin"><option value="">加载出身…</option></select></label>
-            <button id="play-enter" class="button primary">进入世界</button>
+            <label>玩家 ID（新角色或已有角色）<input id="play-player-id" placeholder="player_one" autocomplete="off"></label>
+            <label>出身（仅新角色）<select id="play-player-origin"><option value="">加载出身…</option></select></label>
+            <button id="play-enter" class="button primary">进入 / 恢复世界</button>
           </div>
           <div id="origin-preview" class="origin-preview"><span>选择出身后，这里会显示你的起始目标。</span></div>
         </article>
@@ -289,7 +289,7 @@
         </article>
       </section>
     </main>
-    <footer class="footer"><span>sim2 · Platform is the source of truth · <span id="js-build">web-v4</span></span><span id="last-update">—</span></footer>
+    <footer class="footer"><span>sim2 · Platform is the source of truth · <span id="js-build">web-v14</span></span><span id="last-update">—</span></footer>
   </div>
   <dialog id="operator-dialog" class="operator-dialog">
     <form method="dialog">
@@ -300,7 +300,7 @@
     </form>
   </dialog>
   <!-- bump ?v= whenever app.js/app.css changes so stale tabs refetch -->
-  <script src="/app.js?v=3" defer></script>
+  <script src="/app.js?v=13" defer></script>
 </body>
 </html>
 

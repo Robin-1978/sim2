@@ -90,6 +90,9 @@ class Platform:
     def enter_player(self, *args: Any, **kwargs: Any) -> Any:
         return self._services["api"].enter_player(*args, **kwargs)
 
+    def sync_player_template(self, *args: Any, **kwargs: Any) -> Any:
+        return self._services["api"].sync_player_template(*args, **kwargs)
+
     def decision_view(self, *args: Any, **kwargs: Any) -> Any:
         return self._services["api"].decision_view(*args, **kwargs)
 

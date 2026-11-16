@@ -3,11 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from sim2.api.cli import _dialogue_reply_handler, _ensure_player
-from sim2.api.service import ControlService
+from sim2.api.service import ControlService, build_player_view
 from sim2.api.text import TextWorldSession
 from sim2.bootstrap.service import create_instance
+from sim2.intents.models import BehaviorIntent
 from sim2.llm.gateway import LLMRouter
 from sim2.platform.runtime import Platform
 from sim2.simulation.runner import SimulationRunner
@@ -19,10 +21,16 @@ WORLDS = Path(__file__).parents[1] / "worlds"
 def test_player_template_uses_one_canonical_shape():
     template = parse_player_template({
         "entry_location_id": "lantern_square",
+        "controller": "manual",
+        "capabilities": {"gathering": 0.5},
+        "inventory": {"food_ration": 2},
         "origins": [{"id": "traveler"}, {"id": "resident"}],
     })
 
     assert template["entry_location_id"] == "lantern_square"
+    assert template["controller"] == "manual"
+    assert template["capabilities"] == {"gathering": 0.5}
+    assert template["inventory"] == {"food_ration": 2}
     assert [origin["id"] for origin in template["origins"]] == ["traveler", "resident"]
     assert all(origin["starting_goal"] == DEFAULT_PLAYER_GOAL for origin in template["origins"])
 
@@ -30,6 +38,10 @@ def test_player_template_uses_one_canonical_shape():
         parse_player_template({"player": {"entry_location_id": "lantern_square", "origin_choices": []}})
     with pytest.raises(PlayerTemplateError, match="must be an object"):
         parse_player_template({"entry_location_id": "lantern_square", "origins": ["traveler"]})
+    with pytest.raises(PlayerTemplateError, match="controller must"):
+        parse_player_template({"entry_location_id": "lantern_square", "origins": [{"id": "traveler"}], "controller": "auto"})
+    with pytest.raises(PlayerTemplateError, match="must not be negative"):
+        parse_player_template({"entry_location_id": "lantern_square", "origins": [{"id": "traveler"}], "inventory": {"food_ration": -1}})
 
 
 def test_tidebound_canonical_origins_can_enter_the_world(tmp_path: Path):
@@ -46,6 +58,60 @@ def test_tidebound_canonical_origins_can_enter_the_world(tmp_path: Path):
         platform.close()
 
 
+def test_tidebound_player_gets_configured_capabilities_and_supplies(tmp_path: Path):
+    db_path = create_instance(WORLDS / "tidebound_commons", "tidebound-player-profile", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        result = platform.enter_player("player_one", "forager", name="Ari")
+        assert result["status"] == "accepted"
+        agent = platform.store.repositories.entities.get_agent("player_one")
+        assert agent["controller"] == "manual"
+        assert agent["capabilities"]["gathering"] == 0.5
+        assert agent["capabilities"]["crafting"] == 0.5
+        assert agent["capabilities"]["conversation"] == 0.6
+        assert agent["inventory"]["fresh_water"] == 2
+        assert agent["inventory"]["food_ration"] == 3
+        assert "gather_shellfish" in agent["initial_bt_ids"]
+
+        view = build_player_view(platform, "player_one")
+        choices = {item.get("choice") for item in view["actions"]}
+        assert {"Draw Fresh Water", "Gather Shellfish", "Exchange Commons Information"}.issubset(choices)
+        assert all(item.get("id") != "driftwood" for item in view["nearby_participants"])
+        assert all(item.get("type") in {"agent", "player"} for item in view["nearby_participants"])
+        assert view["unavailable_actions"]
+        assert all(item.get("ref") != "behavior:travel" for item in view["unavailable_actions"])
+    finally:
+        platform.close()
+
+
+def test_resuming_an_old_player_backfills_the_template_profile(tmp_path: Path):
+    db_path = create_instance(WORLDS / "tidebound_commons", "tidebound-player-resume", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        assert platform.enter_player("player_one", "forager", name="Ari")["status"] == "accepted"
+        agent = platform.store.repositories.entities.get_agent("player_one")
+        agent["capabilities"] = {}
+        agent["inventory"] = {}
+        agent["initial_bt_ids"] = []
+        agent.pop("controller", None)
+        with platform.store.transaction():
+            platform.store.repositories.entities.put_agent("player_one", agent, "Ari")
+
+        resumed = platform.enter_player("player_one", "", name="Ari")
+        assert resumed["status"] == "accepted"
+        assert resumed["resumed"] is True and resumed["migrated"] is True
+        restored = platform.store.repositories.entities.get_agent("player_one")
+        assert restored["controller"] == "manual"
+        assert restored["capabilities"]["gathering"] == 0.5
+        assert restored["inventory"]["food_ration"] == 3
+
+        rejected = platform.enter_player("mara", "forager")
+        assert rejected["status"] == "rejected"
+        assert rejected["failed_check"] == "player_id"
+    finally:
+        platform.close()
+
+
 def test_three_lanterns_canonical_origins_can_enter_the_world(tmp_path: Path):
     db_path = create_instance(WORLDS / "three_lanterns_town", "three-lanterns-player-entry", tmp_path / "runtime")
     platform = Platform(db_path)
@@ -57,6 +123,67 @@ def test_three_lanterns_canonical_origins_can_enter_the_world(tmp_path: Path):
         assert agent["ultimate_goal"] == DEFAULT_PLAYER_GOAL
     finally:
         platform.close()
+
+
+def test_sync_player_template_backfills_an_existing_instance(tmp_path: Path):
+    db_path = create_instance(WORLDS / "tidebound_commons", "tidebound-player-sync", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        assert platform.enter_player("player_one", "forager", name="Ari")["status"] == "accepted"
+        agent = platform.store.repositories.entities.get_agent("player_one")
+        agent["capabilities"] = {}
+        agent["inventory"] = {}
+        agent["initial_bt_ids"] = []
+        agent.pop("controller", None)
+        with platform.store.transaction():
+            platform.store.repositories.entities.put_agent("player_one", agent, "Ari")
+            platform.store.repositories.metadata.set("player_template", {
+                "entry_location_id": "commons_quay",
+                "origins": [{"id": "forager"}],
+            })
+
+        raw_template = yaml.safe_load((WORLDS / "tidebound_commons" / "player_template.yaml").read_text(encoding="utf-8"))
+        result = platform.sync_player_template(raw_template)
+        assert result["status"] == "ok"
+        assert result["updated_players"] == ["player_one"]
+        restored = platform.store.repositories.entities.get_agent("player_one")
+        assert restored["controller"] == "manual"
+        assert restored["capabilities"]["gathering"] == 0.5
+        assert restored["inventory"]["food_ration"] == 3
+        assert "gather_water" in restored["initial_bt_ids"]
+    finally:
+        platform.close()
+
+
+def test_player_travel_registers_missing_generic_behavior(tmp_path: Path):
+    db_path = create_instance(WORLDS / "tidebound_commons", "tidebound-player-travel", tmp_path / "runtime")
+    service = ControlService(db_path)
+    try:
+        assert service.enter_player("player_one", "forager", name="Ari")["status"] == "accepted"
+        # Existing instances created before the generic travel behavior existed
+        # must still be able to use the route cards exposed by the player view.
+        with service.platform.store.transaction():
+            service.platform.store.connection.execute("DELETE FROM bt_def WHERE id='travel'")
+        view = build_player_view(service.platform, "player_one")
+        travel = next(item for item in view["actions"] if item.get("kind") == "travel" and item.get("parameters", {}).get("location_id") == "workshop")
+        result = service.platform.submit_behavior(BehaviorIntent(
+            actor_id="player_one",
+            behavior_ref=travel["ref"],
+            target={},
+            parameters=dict(travel["parameters"]),
+            reason="Test route travel.",
+            confidence=1.0,
+            intent_id="test-travel-1",
+        ))
+        assert result["status"] == "accepted"
+        definitions = {item["id"] for item in service.platform.store.repositories.entities.get_definitions("bt_def")}
+        assert "travel" in definitions
+
+        service.player_wait("player_one", minutes=30)
+        agent = service.platform.store.repositories.entities.get_agent("player_one")
+        assert agent["initial_state"]["location_id"] == "workshop"
+    finally:
+        service.close()
 
 
 def test_player_entry_projection_lists_canonical_origins(tmp_path: Path):
@@ -84,6 +211,28 @@ def test_cli_entry_lists_valid_origins_after_a_bad_choice(tmp_path: Path):
             _ensure_player(platform, "player_bad", "traveler", "Ari")
         _ensure_player(platform, "player_good", "forager", "Ari")
         assert platform.store.repositories.entities.get_agent("player_good")["name"] == "Ari"
+    finally:
+        platform.close()
+
+
+def test_autonomous_runtime_does_not_drive_a_manual_player(tmp_path: Path):
+    db_path = create_instance(WORLDS / "tidebound_commons", "tidebound-player-manual", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        assert platform.enter_player("player_one", "forager", name="Ari")["status"] == "accepted"
+
+        class WaitProvider:
+            def __init__(self):
+                self.contexts: list[str] = []
+
+            def complete_json(self, *, system, context, tools=None, messages=None):
+                self.contexts.append(str(context))
+                return {"intent_type": "wait", "reason": "Test provider keeps the world idle."}
+
+        provider = WaitProvider()
+        SimulationRunner(platform, {"agent_decision": provider}).run(1)
+        assert provider.contexts
+        assert all('"player_one"' not in context for context in provider.contexts)
     finally:
         platform.close()
 

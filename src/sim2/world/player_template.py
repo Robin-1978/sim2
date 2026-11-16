@@ -21,15 +21,41 @@ def _string_list(value: Any, field: str) -> list[str]:
     return list(value)
 
 
+def _number_map(value: Any, field: str, *, maximum: float | None = None) -> dict[str, float]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise PlayerTemplateError(f"{field} must be an object of name: number")
+    result: dict[str, float] = {}
+    for key, raw in value.items():
+        name = str(key or "").strip()
+        if not name:
+            raise PlayerTemplateError(f"{field} keys must be non-empty names")
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+            raise PlayerTemplateError(f"{field}.{name} must be a number")
+        number = float(raw)
+        if number < 0:
+            raise PlayerTemplateError(f"{field}.{name} must not be negative")
+        if maximum is not None and number > maximum:
+            raise PlayerTemplateError(f"{field}.{name} must be at most {maximum:g}")
+        result[name] = number
+    return result
+
+
 def parse_player_template(raw: Any, *, require_entry: bool = False) -> dict[str, Any]:
     """Parse the canonical top-level player entry template.
 
     The supported format is::
 
         entry_location_id: village_square
+        capabilities: {gathering: 0.5, conversation: 0.5}
+        inventory: {food_ration: 2, fresh_water: 2}
+        initial_bt_ids: [gather_water, communicate]
         origins:
           - id: traveler
             traits: {mobility: 0.6}
+            capabilities: {exploration: 0.5}
+            inventory: {food_ration: 1}
             starting_goal: Find the missing caravan.
     """
 
@@ -72,6 +98,8 @@ def parse_player_template(raw: Any, *, require_entry: bool = False) -> dict[str,
             "id": origin_id,
             "traits": dict(traits),
             "starting_goal": starting_goal,
+            "capabilities": _number_map(item.get("capabilities"), f"origins[{index}].capabilities", maximum=1.0),
+            "inventory": _number_map(item.get("inventory"), f"origins[{index}].inventory"),
         })
 
     if origins and not entry_location_id:
@@ -83,6 +111,9 @@ def parse_player_template(raw: Any, *, require_entry: bool = False) -> dict[str,
     initial_reputation = source.get("initial_reputation", 0)
     if isinstance(initial_reputation, bool) or not isinstance(initial_reputation, (int, float)):
         raise PlayerTemplateError("initial_reputation must be a number")
+    controller = str(source.get("controller") or "manual").strip().lower()
+    if controller not in {"manual", "llm"}:
+        raise PlayerTemplateError("controller must be 'manual' or 'llm'")
 
     return {
         "id_prefix": str(source.get("id_prefix") or "player_"),
@@ -92,4 +123,7 @@ def parse_player_template(raw: Any, *, require_entry: bool = False) -> dict[str,
         "initial_bt_ids": _string_list(source.get("initial_bt_ids"), "initial_bt_ids"),
         "initial_faction_ids": initial_faction_ids,
         "initial_reputation": float(initial_reputation),
+        "capabilities": _number_map(source.get("capabilities"), "capabilities", maximum=1.0),
+        "inventory": _number_map(source.get("inventory"), "inventory"),
+        "controller": controller,
     }

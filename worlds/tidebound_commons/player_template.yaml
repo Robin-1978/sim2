@@ -1,4 +1,31 @@
 entry_location_id: commons_quay
+controller: manual
+capabilities:
+  gathering: 0.5
+  crafting: 0.5
+  conversation: 0.6
+  stewardship: 0.3
+  exploration: 0.4
+  research: 0.3
+inventory:
+  fresh_water: 2
+  food_ration: 3
+  shellfish: 2
+initial_bt_ids:
+  - travel
+  - inspect_gate
+  - repair_gate
+  - tune_signal
+  - gather_water
+  - gather_shellfish
+  - gather_driftwood
+  - craft_repair_kit
+  - craft_rations
+  - research_chart
+  - explore_observatory
+  - communicate
+  - eat_ration
+  - drink_water
 knowledge_seed: []
 origins:
   - id: steward

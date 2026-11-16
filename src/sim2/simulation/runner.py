@@ -130,14 +130,14 @@ class SimulationRunner:
         if self.turn_observer is not None:
             self.turn_observer(turn, actor_id)
 
-    def run(self, minutes: int) -> SimulationReport:
+    def run(self, minutes: int, *, require_running: bool = True) -> SimulationReport:
         minutes = int(minutes)
         if minutes < 1:
             raise ValueError("minutes must be at least 1")
         start = int(self.platform.store.repositories.metadata.get("world_minute", 0))
         report = SimulationReport(start, start + minutes)
         for _ in range(minutes):
-            if self.platform.status().get("status") != "running":
+            if require_running and self.platform.status().get("status") != "running":
                 report.stop_reason = "runtime_not_running"
                 break
             cooling_roles = self._cooling_provider_roles()
@@ -174,7 +174,7 @@ class SimulationRunner:
             # without advancing time again.
             if any(task.get("role") == "story" for task in self.platform.ready_evolution_tasks()):
                 self._run_due_evolution(report)
-                if self.platform.status().get("status") != "running":
+                if require_running and self.platform.status().get("status") != "running":
                     break
             self.platform.step()
             if not self._run_instant_interactions(report):
@@ -365,6 +365,10 @@ class SimulationRunner:
             if controller in {"bt", "behavior_tree", "bt_only"}:
                 if self._run_bt_only_decision(agent, report, minute):
                     continue
+                continue
+            if controller in {"manual", "player"}:
+                # Human-controlled characters act only through player intents;
+                # the autonomous runtime must not spend an LLM turn or overrule them.
                 continue
             if provider is None or self._provider_cooling_down(provider):
                 return

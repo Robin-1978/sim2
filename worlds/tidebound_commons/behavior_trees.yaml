@@ -457,3 +457,31 @@ behavior_trees:
   - recovery
   drive_tags:
   - hydration
+
+- id: travel
+  agent_label: Travel
+  summary: Travel
+  description: Move to a connected known location.
+  entry_conditions:
+  - actor.alive
+  estimated_minutes: 1
+  agent_parameters:
+    location_id:
+      type: string
+      required: true
+      max_length: 120
+      description: A connected known location selected from the player's route list.
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: context.location_id
+  success_results:
+  - arrived
+  failure_results:
+  - route_unknown
+  - blocked
+  goal_tags:
+  - movement
+  drive_tags:
+  - autonomy

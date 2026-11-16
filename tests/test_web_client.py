@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 from pathlib import Path
@@ -666,6 +667,131 @@ def test_operator_session_exchange_and_dialog_wiring(tmp_path: Path):
         # and cancel must not submit the dialog form.
         assert 'id="operator-cancel" class="button ghost" type="button"' in html
         assert 'id="operator-submit" class="button primary" type="submit"' in html
+    finally:
+        server.close()
+        thread.join(timeout=3)
+
+
+def test_http_request_log_names_session_state_without_tokens(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "web-logging", tmp_path / "runtime")
+    server = ControlHTTPServer(("127.0.0.1", 0), db_path, operator_token="log-test-token")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    messages: list[str] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            messages.append(record.getMessage())
+
+    handler = _Capture()
+    logger = logging.getLogger("sim2.http")
+    logger.addHandler(handler)
+    old_level = logger.level
+    logger.setLevel(logging.INFO)
+    try:
+        for headers, expected in ((None, "session=none"), ({"x-sim2-session": "stale-token"}, "session=invalid")):
+            try:
+                _json_request(base + "/runtime/start", {"max_world_minutes": 1}, headers=headers)
+            except HTTPError as error:
+                assert error.code == 403
+            else:
+                raise AssertionError("runtime start without an operator session must be rejected")
+            rejected = [message for message in messages if "POST /runtime/start" in message]
+            assert rejected, messages
+            assert "-> 403" in rejected[-1]
+            assert expected in rejected[-1]
+            assert "error=" in rejected[-1]
+            assert "log-test-token" not in "\n".join(messages)
+            assert "stale-token" not in "\n".join(messages)
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(old_level)
+        server.close()
+        thread.join(timeout=3)
+
+
+
+def test_web_can_resume_an_existing_player(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "tidebound_commons"
+    db_path = create_instance(config, "web-player-resume", tmp_path / "runtime")
+    server = ControlHTTPServer(("127.0.0.1", 0), db_path)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        created = _json_request(base + "/players", {"player_id": "web_player", "origin_id": "forager", "name": "Ari"})
+        assert created["status"] == "accepted"
+        assert created["resumed"] is False
+        assert created["session_token"]
+
+        resumed = _json_request(base + "/players", {"player_id": "web_player"})
+        assert resumed["status"] == "accepted"
+        assert resumed["resumed"] is True
+        assert resumed["session_token"]
+
+        request = Request(
+            base + "/player/view?player_id=web_player",
+            headers={"x-sim2-session": resumed["session_token"]},
+        )
+        with urlopen(request) as response:
+            view = json.loads(response.read())
+        assert view["status"] == "ok"
+        assert view["player"]["id"] == "web_player"
+        assert any(item.get("kind") == "travel" for item in view["actions"])
+        assert view["inventory"]["food_ration"] == 3
+    finally:
+        server.close()
+        thread.join(timeout=3)
+
+
+def test_web_manual_wait_runs_the_same_npc_ticks(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "tidebound_commons"
+    db_path = create_instance(config, "web-player-sync", tmp_path / "runtime")
+
+    class WaitProvider:
+        def __init__(self):
+            self.contexts: list[str] = []
+
+        def complete_json(self, *, system, context, tools=None, messages=None):
+            self.contexts.append(str(context))
+            return {"intent_type": "wait", "reason": "Test provider keeps NPCs idle."}
+
+    provider = WaitProvider()
+    provider_names: list[str | None] = []
+
+    def provider_factory(name):
+        provider_names.append(name)
+        return {
+            "agent_decision": provider,
+            "agent_reflection": provider,
+            "story": provider,
+            "god": provider,
+        }
+
+    server = ControlHTTPServer(
+        ("127.0.0.1", 0),
+        db_path,
+        runtime_provider_factory=provider_factory,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        created = _json_request(base + "/players", {"player_id": "web_player", "origin_id": "forager"})
+        token = created["session_token"]
+        result = _json_request(
+            base + "/player/wait",
+            {"player_id": "web_player", "minutes": 2, "provider": "remote"},
+            headers={"x-sim2-session": token},
+        )
+        assert result["status"] == "accepted"
+        assert result["report"]["start_minute"] < result["report"]["end_minute"]
+        assert provider_names[-1] == "remote"
+        assert provider.contexts
+        assert all('"web_player"' not in context for context in provider.contexts)
+        assert any(name in context for context in provider.contexts for name in ("Mara", "Ivo", "Selene", "Taro", "Nia", "Ren"))
     finally:
         server.close()
         thread.join(timeout=3)

@@ -343,6 +343,37 @@ class RuntimeSupervisor:
                 exit_state = self._state
             self._record_segment(exit_state if isinstance(exit_state, str) else "stopped")
 
+    def advance_manual(self, minutes: int, *, provider_name: str | None = None, reason: str = "web-player-advance") -> dict[str, Any]:
+        """Advance a manual player through the same synchronized runner.
+
+        Manual time must not become a private player-only clock.  NPC decisions,
+        interactions, evolution tasks and Platform minute effects all advance
+        together, exactly as they do under automatic running.
+        """
+
+        with self._lock:
+            if self.running:
+                return {"status": "rejected", "failed_check": "already_running", "message": "Stop the automatic runner before advancing manually.", **self.status()}
+            selected = str(provider_name).strip() if provider_name else self._provider_name
+            try:
+                providers = self._providers_for(selected)
+            except Exception as exc:
+                self._last_error = str(exc)
+                return {"status": "rejected", "failed_check": "provider", "message": str(exc), **self.status()}
+            if selected:
+                self._provider_name = selected
+        platform = self.service.platform
+        report = SimulationRunner(platform, providers).run(max(1, min(int(minutes), 480)), require_running=False)
+        if report.stop_reason and report.end_minute == report.start_minute:
+            return {
+                "status": "rejected",
+                "failed_check": report.stop_reason,
+                "message": f"Manual advance stopped before the first minute: {report.stop_reason}",
+                "report": report.as_dict(),
+                **self.status(),
+            }
+        return {"status": "accepted", "report": report.as_dict(), **self.status()}
+
     def close(self) -> None:
         self.stop("web-server-close", wait_seconds=30.0)
 

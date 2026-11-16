@@ -71,6 +71,49 @@ class BehaviorIntentService(PlatformService):
                 errors.append(f"behavior parameter {name} is too long")
         return errors
 
+    def _ensure_generic_travel_behavior(self) -> dict[str, Any] | None:
+        """Register the player route affordance derived from ``travel_to``.
+
+        The player projection exposes one generic travel choice for every known
+        route.  A world may not ship a dedicated ``travel`` behavior tree (the
+        action layer still owns route validation and duration), so create the
+        minimal BT on demand from the world's own Action definition.
+        """
+
+        action_defs = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
+        if "travel_to" not in action_defs:
+            return None
+        behavior = {
+            "id": "travel",
+            "agent_label": "Travel",
+            "summary": "Travel",
+            "description": "Move to a connected known location.",
+            "entry_conditions": ["actor.alive"],
+            "estimated_minutes": 1,
+            "agent_parameters": {
+                "location_id": {
+                    "type": "string",
+                    "required": True,
+                    "max_length": 120,
+                    "description": "A connected known location selected from the player's route list.",
+                },
+            },
+            "nodes": [{
+                "type": "action",
+                "action_id": "travel_to",
+                "parameters": {"location_id": "context.location_id"},
+            }],
+            "success_results": ["arrived"],
+            "failure_results": ["route_unknown", "blocked"],
+            "goal_tags": ["movement"],
+            "drive_tags": ["autonomy"],
+            "definition_version": 1,
+            "status": "active",
+        }
+        with self.store.transaction():
+            self.store.repositories.entities.put_definition("bt_def", "travel", behavior)
+        return behavior
+
     def submit_behavior(self, intent: BehaviorIntent) -> dict[str, Any]:
         previous = self.store.repositories.evolution.get_intent(intent.intent_id)
         if previous is not None:
@@ -115,6 +158,10 @@ class BehaviorIntentService(PlatformService):
             "observed_agent_revision": intent.observed_agent_revision,
         }
         available_defs = {x["id"]: x for x in self.store.repositories.entities.get_definitions("bt_def")}
+        if behavior_id not in available_defs and behavior_id == "travel" and str(agent.get("role") or "") == "player":
+            registered = self._ensure_generic_travel_behavior()
+            if registered is not None:
+                available_defs[behavior_id] = registered
         if behavior_id not in available_defs:
             return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                 "status": "rejected", "message": "The selected behavior is not registered.", "failed_check": "behavior_ref", "retryable": True,
@@ -132,6 +179,11 @@ class BehaviorIntentService(PlatformService):
             | set(agent.get("unlocked_bt_ids", []))
             | set((self.store.repositories.metadata.get("rules", {}) or {}).get("fallback_behavior_ids", []))
         )
+        if behavior_id == "travel" and str(agent.get("role") or "") == "player":
+            # Route movement is a player affordance; the reachable routes were
+            # already projected by build_player_view and are validated here by
+            # travel_to's route.known / destination.reachable preconditions.
+            allowed.add("travel")
         if behavior_id not in allowed:
             return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                 "status": "rejected", "message": "This behavior is not available to this character.", "failed_check": "capability", "retryable": True,

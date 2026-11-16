@@ -71,6 +71,16 @@ flowchart LR
         → Platform 校验并启动行为 → 查看结果 → 选择下一步
 ```
 
+已有玩家 ID 可以直接恢复：同一 ID 再次提交时，服务端签发新的 Player
+session，并按当前 `player_template` 补齐缺失的能力、初始物资和行为。玩家
+角色使用 `controller: manual`，自动运行不会替玩家角色做 LLM 决策；手动玩家
+暂停自动运行后通过行动卡行动，提交后客户端会按剩余分钟推进到行为完成，
+也可以选择“推进到完成”或逐分钟“等待一分钟”。手动推进不是私有玩家时钟：
+服务端使用与自动运行相同的 `SimulationRunner` 推进，NPC 决策、交互、演化
+任务、资源再生和分钟效果都在同一批世界 tick 中前进；玩家角色本身仍由人类
+控制。对话和交易下拉框只列出同地点的 Agent/Player，资源与场景物体不会作为
+可交谈目标。
+
 观察世界和设计世界仍然保留为独立标签页，但不会占据玩家的首屏。网页不把
 BT、Intent、SQLite 或 LLM 暴露给玩家，只把它们投影成可理解的行动和结果。
 
@@ -123,6 +133,28 @@ Runtime Client 有三个视角：
 session 分别隔离。它不能直接暴露到公网，公网部署仍需要反向代理认证、
 allowlist、TLS 与 CORS 策略。
 
+## 调试与日志
+
+`sim2 serve` 默认只在 4xx/5xx 时向 stderr 输出请求日志；启动时加
+`--log-level info` 可以看到每个请求：
+
+```text
+2026-11-17 00:12:01 WARNING sim2.http POST /runtime/start -> 403 1.2ms session=none error='a local session with the required role is required'
+```
+
+日志只记录方法、路径、状态、耗时和会话类型，不记录 token、请求体或响应体。
+`session=none` 表示浏览器没有带 `x-sim2-session`，`session=invalid` 通常表示
+服务重启后旧会话已失效。
+
+浏览器侧可以这样定位：
+
+- DevTools → Console：失败的 API 请求会输出路径、状态、`failed_check` 和是否带 session。
+- DevTools → Network：检查 `/runtime/start` 请求头是否包含 `x-sim2-session`。
+- DevTools → Application → Session Storage：检查 `sim2_operator_token`。
+- 页脚构建号 `web-vN` 用于确认当前标签页是否加载了最新前端；升级后需强刷。
+- `GET /runtime` 的 `last_error`、`stop_reason` 和 `history`，以及
+  `GET /health`、`GET /audit`、timeline/events，保留运行与审计诊断。
+
 ## 数据和请求协议
 
 ### 现有接口
@@ -173,7 +205,7 @@ allowlist、TLS 与 CORS 策略。
 | POST | `/authoring/validate` | `validate-world` 等价：按包 ID 或受限路径校验 |
 | POST | `/authoring/describe` | `describe-world` 等价：按包 ID 或受限路径输出清单 |
 | POST | `/authoring/build-world` | `build-world --template` 等价：写包到受限目录，可选建实例 |
-| POST | `/players` | 创建/进入玩家 |
+| POST | `/players` | 创建玩家；已存在的玩家 ID 直接恢复并补齐模板能力/物资 |
 | POST | `/player/act` | 以玩家身份提交一个配置行为 |
 | POST | `/player/wait` | 玩家手动等待一个世界分钟 |
 | POST | `/events` | 维护模式的事件注入 |

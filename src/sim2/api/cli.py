@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from pathlib import Path
 
 import yaml
@@ -152,6 +153,12 @@ def main() -> None:
     serve.add_argument("--port", type=int, default=8080)
     serve.add_argument("--authoring-root", type=Path, help="optional directory containing packages the web editor may open")
     serve.add_argument("--operator-token", help="local token required for runtime control, instance switching, authoring writes and audit; defaults to SIM2_OPERATOR_TOKEN or a generated token")
+    serve.add_argument(
+        "--log-level",
+        choices=("debug", "info", "warning", "error"),
+        default="warning",
+        help="HTTP request log level; 4xx/5xx responses are logged at warning (default: warning)",
+    )
 
     for name, help_text in [("status", "show instance status"), ("health", "check database and runtime health"), ("timeline", "show the public third-person timeline"), ("map", "show the location topology and character positions"), ("pause", "pause world advancement"), ("resume", "resume world advancement"), ("step", "advance one world minute"), ("metrics", "show runtime metrics"), ("audit", "export event and Agent audit")]:
         command = sub.add_parser(name, help=help_text)
@@ -171,6 +178,9 @@ def main() -> None:
     enter.add_argument("--player-id", required=True)
     enter.add_argument("--origin", required=True)
     enter.add_argument("--name")
+    sync_player = sub.add_parser("sync-player-template", help="reload the player entry template and backfill existing players")
+    sync_player.add_argument("--db", type=Path, required=True)
+    sync_player.add_argument("--config", type=Path, help="world package directory; defaults to the instance bootstrap_report config_dir")
     inject = sub.add_parser("inject", help="append an external world event")
     inject.add_argument("--db", type=Path, required=True)
     inject.add_argument("--event-type", required=True)
@@ -296,6 +306,11 @@ def main() -> None:
         db_path = args.db
         if db_path is None:
             db_path = InstanceRegistry(args.runtime_root).resolve(instance_id=args.instance_id)
+        logging.basicConfig(
+            level=getattr(logging, str(args.log_level).upper(), logging.WARNING),
+            format="%(asctime)s %(levelname)s %(name)s %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
         server = ControlHTTPServer((args.host, args.port), db_path, authoring_root=args.authoring_root, operator_token=args.operator_token)
         try:
             print(json.dumps({
@@ -310,7 +325,7 @@ def main() -> None:
         finally:
             server.close_after_serve_forever()
         return
-    if args.command in {"status", "health", "timeline", "map", "pause", "resume", "step", "metrics", "audit", "snapshot", "restore", "enter-player", "inject"}:
+    if args.command in {"status", "health", "timeline", "map", "pause", "resume", "step", "metrics", "audit", "snapshot", "restore", "enter-player", "sync-player-template", "inject"}:
         platform = Platform(args.db)
         try:
             if args.command == "status":
@@ -338,6 +353,19 @@ def main() -> None:
                 result = platform.restore_snapshot(args.source)
             elif args.command == "enter-player":
                 result = platform.enter_player(args.player_id, args.origin, name=args.name)
+            elif args.command == "sync-player-template":
+                config_dir = args.config
+                if config_dir is None:
+                    report = platform.store.repositories.metadata.get("bootstrap_report", {}) or {}
+                    source = report.get("config_dir") if isinstance(report, dict) else None
+                    if not source:
+                        raise SystemExit("sync-player-template needs --config because the instance has no bootstrap_report config_dir")
+                    config_dir = Path(str(source))
+                template_path = Path(config_dir) / "player_template.yaml"
+                if not template_path.is_file():
+                    raise SystemExit(f"player template not found: {template_path}")
+                raw_template = yaml.safe_load(template_path.read_text(encoding="utf-8")) or {}
+                result = platform.sync_player_template(raw_template)
             else:
                 payload = json.loads(args.payload)
                 if not isinstance(payload, dict):
