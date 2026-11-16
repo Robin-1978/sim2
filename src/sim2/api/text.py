@@ -23,7 +23,7 @@ _COMMAND_HELP = {
     "actions": "List the numbered actions available right now.",
     "do": "do <n|behavior_ref> [key=value ...] - submit a listed action through Platform.",
     "go": "go <location_id|name|n> - travel to a connected known location.",
-    "say": "say <target_id> <topic> <message> - speak to a nearby character.",
+    "say": "say <target> <message...> - speak to a nearby character by name or ID; topic defaults to general.",
     "offer": "offer <target_id> <give:item=qty> <want:item=qty> - propose a trade.",
     "offers": "List your open trade offers.",
     "accept": "accept <offer_id> - accept a trade offer addressed to you.",
@@ -172,9 +172,12 @@ class TextWorldSession:
             return self._wait(args)
         if command == "say":
             self._require_player()
-            if len(args) < 3:
-                raise ValueError("say <target_id> <topic> <message>")
-            return self._format_result(self.platform.submit_dialogue(self.player_id or "", args[0], args[1], " ".join(args[2:])))
+            if len(args) < 2:
+                raise ValueError("say <target> <message>")
+            message = " ".join(args[1:]).strip()
+            if not message:
+                raise ValueError("say <target> <message>")
+            return self._format_result(self.platform.submit_dialogue(self.player_id or "", args[0], "general", message))
         if command == "offer":
             self._require_player()
             if len(args) != 3:
@@ -429,7 +432,13 @@ class TextWorldSession:
             for item in nearby[:12]:
                 name_or_id = item.get("name") or item.get("id") or "entity"
                 kind = item.get("role") or item.get("type") or item.get("entity_type")
-                lines.append(f"- {name_or_id}" + (f" ({kind})" if kind else ""))
+                identifier = str(item.get("id") or "")
+                label = f"- {name_or_id}"
+                if kind:
+                    label += f" · {kind}"
+                if identifier and identifier != str(name_or_id):
+                    label += f" · id={identifier}"
+                lines.append(label)
         outcomes = view.get("recent_outcomes") or []
         if outcomes:
             lines.extend(["", "== Recent =="])

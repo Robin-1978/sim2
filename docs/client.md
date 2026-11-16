@@ -66,8 +66,9 @@ The common commands are:
 - `go 1`, `go village_square` or `go 村广场` starts travel to a connected known
   location.
 - `wait [minutes]` advances a manual session one or more minutes.
-- `say`, `offer`, `offers`, `accept`, `counter` and `reject` cover dialogue and
-  trade.
+- `say <target> <message>` speaks with a nearby character; the target may be a
+  name or ID and the topic defaults to `general`.
+- `offer`, `offers`, `accept`, `counter` and `reject` cover trade.
 - `map`, `timeline [limit]` and `help [command]` inspect the known world.
   `quit` leaves the session.
 

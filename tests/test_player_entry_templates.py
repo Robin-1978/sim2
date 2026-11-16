@@ -6,6 +6,7 @@ import pytest
 
 from sim2.api.cli import _ensure_player
 from sim2.api.service import ControlService
+from sim2.api.text import TextWorldSession
 from sim2.bootstrap.service import create_instance
 from sim2.platform.runtime import Platform
 from sim2.world.player_template import DEFAULT_PLAYER_GOAL, PlayerTemplateError, parse_player_template
@@ -81,5 +82,21 @@ def test_cli_entry_lists_valid_origins_after_a_bad_choice(tmp_path: Path):
             _ensure_player(platform, "player_bad", "traveler", "Ari")
         _ensure_player(platform, "player_good", "forager", "Ari")
         assert platform.store.repositories.entities.get_agent("player_good")["name"] == "Ari"
+    finally:
+        platform.close()
+
+
+def test_text_client_say_accepts_nearby_name_and_defaults_topic(tmp_path: Path):
+    db_path = create_instance(WORLDS / "tidebound_commons", "tidebound-say", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        assert platform.enter_player("player_one", "forager", name="Ari")["status"] == "accepted"
+        session = TextWorldSession(platform, player_id="player_one")
+        scene = session.execute("look")
+        assert "Mara" in scene
+        assert "id=mara" in scene
+        result = session.execute("say Mara Hello")
+        assert result.startswith("status=accepted")
+        assert "topic: general" in result
     finally:
         platform.close()
