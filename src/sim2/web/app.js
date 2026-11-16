@@ -158,6 +158,14 @@
     catch (error) { /* ignore */ }
   }
 
+  function storageWritable() {
+    try {
+      sessionStorage.setItem("sim2_probe", "1");
+      sessionStorage.removeItem("sim2_probe");
+      return true;
+    } catch (error) { return false; }
+  }
+
   function clearOperatorSession() {
     state.operatorToken = null;
     forgetOperatorToken();
@@ -1339,11 +1347,15 @@
       catch (error) { throw new Error(`Payload JSON 错误：${error.message}`); }
       return write("/events", { event_type: eventType, payload });
     }));
-    state.operatorToken = sessionStorage.getItem("sim2_operator_token");
+    state.operatorToken = readStoredOperatorToken();
     setOperatorState(Boolean(state.operatorToken));
+    if (!storageWritable()) {
+      showNotice("浏览器阻止了本地存储：解锁状态仅当前页面有效，刷新或重开后需重新解锁。");
+    }
     try { const session = await request("/session"); state.observerToken = session.session_token || null; state.sessionToken = state.observerToken; } catch (error) { /* public projections remain readable in local read-only mode */ }
-    const savedPlayer = localStorage.getItem("sim2_player_id"); const savedPlayerToken = localStorage.getItem("sim2_player_token");
-    if (savedPlayer && savedPlayerToken) { state.playerId = savedPlayer; state.playerToken = savedPlayerToken; state.sessionToken = savedPlayerToken; const restored = await loadPlayerView(); if (!restored) { state.playerId = null; state.playerToken = null; state.sessionToken = state.observerToken; localStorage.removeItem("sim2_player_id"); localStorage.removeItem("sim2_player_token"); } }
+    let savedPlayer = null, savedPlayerToken = null;
+    try { savedPlayer = localStorage.getItem("sim2_player_id"); savedPlayerToken = localStorage.getItem("sim2_player_token"); } catch (error) { /* ignore */ }
+    if (savedPlayer && savedPlayerToken) { state.playerId = savedPlayer; state.playerToken = savedPlayerToken; state.sessionToken = savedPlayerToken; const restored = await loadPlayerView(); if (!restored) { state.playerId = null; state.playerToken = null; state.sessionToken = state.observerToken; try { localStorage.removeItem("sim2_player_id"); localStorage.removeItem("sim2_player_token"); } catch (error) { /* ignore */ } } }
     try { const response = await request("/authoring/schema"); state.schema = response.schema; renderSchema(); } catch (error) { $("schema-list").replaceChildren(make("div", "empty-state", "Schema 暂不可用")); }
     await Promise.all([loadPackageCatalog(), loadPlayerEntry(), loadInstances()]);
     await refreshRuntime(true);
