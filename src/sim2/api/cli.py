@@ -10,6 +10,7 @@ from ..agents.engine import AgentEngine
 from ..bootstrap.service import create_instance, describe_config, validate_config, world_template_schema, write_world_package_from_template
 from ..llm.gateway import LLMRouter
 from ..platform.runtime import Platform
+from ..simulation.runner import SimulationRunner
 from worlds import world_path
 from .text import TextWorldSession
 from .http import ControlHTTPServer
@@ -32,6 +33,46 @@ def _ensure_player(platform: Platform, player_id: str, origin: str | None, name:
     allowed = [str(item) for item in entered.get("allowed_values") or []]
     hint = f" Available origins: {', '.join(allowed)}." if allowed else ""
     raise SystemExit(f"Cannot enter player: {message}.{hint}")
+
+
+def _dialogue_reply_handler(platform: Platform, player_id: str, provider_name: str | None = None):
+    def reply() -> str:
+        social = platform.store.repositories.social
+        before = max(
+            (int(item["dialogue_id"]) for item in social.list_dialogue_exchanges(player_id, limit=1)),
+            default=0,
+        )
+        try:
+            router = LLMRouter.from_default_config()
+            provider = (
+                router.new_provider_for_name(provider_name, role="agent_decision")
+                if provider_name
+                else router.provider_for_role("agent_decision")
+            )
+            report = SimulationRunner(platform, {"agent_decision": provider}).resolve_pending_interactions()
+        except Exception as exc:
+            return f"Reply unavailable: {exc}"
+        replies = [
+            item
+            for item in social.list_dialogue_exchanges(player_id, after_id=before, limit=30)
+            if str(item.get("speaker_id")) != player_id
+        ]
+        if not replies:
+            suffix = f" ({report.stop_reason})" if report.stop_reason else ""
+            return f"No reply was produced{suffix}. The recipient may have chosen not to answer."
+        lines = ["Reply:"]
+        for item in replies:
+            speaker_id = str(item.get("speaker_id") or "?")
+            try:
+                speaker = str(platform.store.repositories.entities.get_agent(speaker_id).get("name") or speaker_id)
+            except KeyError:
+                speaker = speaker_id
+            lines.append(
+                f"[{item.get('world_minute')}] {speaker} · {item.get('topic') or 'general'}: {item.get('message') or ''}"
+            )
+        return "\n".join(lines)
+
+    return reply
 
 
 def main() -> None:
@@ -77,6 +118,7 @@ def main() -> None:
     mud.add_argument("--origin")
     mud.add_argument("--name")
     mud.add_argument("--observer", action="store_true")
+    mud.add_argument("--provider", help="provider used by the reply command")
 
     tui = sub.add_parser("tui", help="open the live world map, timeline and character interface")
     tui.add_argument("--db", type=Path, required=True)
@@ -214,7 +256,17 @@ def main() -> None:
                 if not args.player_id:
                     raise SystemExit("--player-id is required in player mode")
                 _ensure_player(platform, str(args.player_id), args.origin, args.name)
-            TextWorldSession(platform, player_id=args.player_id, observer=args.observer).run()
+            reply_handler = (
+                _dialogue_reply_handler(platform, str(args.player_id), args.provider)
+                if not args.observer
+                else None
+            )
+            TextWorldSession(
+                platform,
+                player_id=args.player_id,
+                observer=args.observer,
+                reply_handler=reply_handler,
+            ).run()
         finally:
             platform.close()
 

@@ -46,6 +46,18 @@ class SocialRepository:
             **json.loads(row["data_json"] or "{}"),
         }
 
+    def list_dialogue_exchanges(self, agent_id: str, *, limit: int = 20, after_id: int = 0) -> list[dict[str, Any]]:
+        """Return a chronological transcript visible to one participant."""
+
+        rows = self.store.connection.execute(
+            "SELECT id FROM dialogue_exchange "
+            "WHERE (speaker_id=? OR listener_id=?) AND id>? "
+            "ORDER BY id DESC LIMIT ?",
+            (str(agent_id), str(agent_id), max(0, int(after_id)), max(1, min(int(limit), 100))),
+        ).fetchall()
+        exchanges = [self.get_dialogue_exchange(row["id"]) for row in rows]
+        return [item for item in reversed(exchanges) if item is not None]
+
     def put_trade_offer(self, offer_id: str, offerer_id: str, recipient_id: str, give: dict[str, Any], want: dict[str, Any], world_minute: int, *, parent_offer_id: str | None = None, round_number: int = 1) -> None:
         self.store.connection.execute(
             "INSERT INTO trade_offer(offer_id,parent_offer_id,round,offerer_id,recipient_id,give_json,want_json,status,created_minute) VALUES (?,?,?,?,?,?,?,?,?)",

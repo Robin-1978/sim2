@@ -40,8 +40,11 @@ sim2 mud --db "$DB" --observer
 
 The player view starts with the world clock, location, goal, need meters,
 routes and numbered actions. Use `do 1` to submit an action, `go 1` to travel,
-and `wait [minutes]` to advance a manual session. Observer mode adds `world`,
-`events`, `pause`, `resume`, `step`, `evolution` and `metrics`.
+and `wait [minutes]` to advance a manual session. After `say <target> <message>`,
+type `reply` to let the configured Agent provider answer; `messages` shows the
+transcript. Pass `--provider <name>` to choose that provider explicitly.
+Observer mode adds `world`, `events`, `pause`, `resume`, `step`, `evolution`
+and `metrics`.
 
 In observer mode, use `timeline 50` to read the latest public events as a chronological third-person account, or `events 50` for the compact technical event list. The HTTP equivalent is `GET /timeline?limit=50&after=0`; pass the returned `next_after_event_id` as `after` to continue without duplicates. A player enters through the same text interface without `--observer` and sees only their permitted local view.
 

@@ -194,6 +194,22 @@ class SimulationRunner:
         self._persist_scheduler_state()
         return report
 
+    def resolve_pending_interactions(self) -> SimulationReport:
+        """Drain pending dialogue/trade micro-turns without advancing time."""
+
+        minute = int(self.platform.store.repositories.metadata.get("world_minute", 0))
+        report = SimulationReport(minute, minute)
+        resolved = self._run_instant_interactions(report)
+        if not resolved:
+            cooling_roles = self._cooling_provider_roles()
+            report.stop_reason = (
+                "provider_cooldown:" + ",".join(cooling_roles)
+                if cooling_roles
+                else "interaction_pending"
+            )
+        self._persist_scheduler_state()
+        return report
+
     def _cooling_provider_roles(self) -> list[str]:
         return sorted(role for role, provider in self.providers.items() if self._provider_cooling_down(provider))
 

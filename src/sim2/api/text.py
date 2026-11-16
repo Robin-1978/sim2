@@ -24,6 +24,8 @@ _COMMAND_HELP = {
     "do": "do <n|behavior_ref> [key=value ...] - submit a listed action through Platform.",
     "go": "go <location_id|name|n> - travel to a connected known location.",
     "say": "say <target> <message...> - speak to a nearby character by name or ID; topic defaults to general.",
+    "reply": "Ask the configured Agent runtime for any pending dialogue replies.",
+    "messages": "Show recent dialogue involving your character.",
     "offer": "offer <target_id> <give:item=qty> <want:item=qty> - propose a trade.",
     "offers": "List your open trade offers.",
     "accept": "accept <offer_id> - accept a trade offer addressed to you.",
@@ -100,12 +102,20 @@ def _quantity(value: float) -> str:
 class TextWorldSession:
     """Execute short text commands for a player or a whole-world observer."""
 
-    def __init__(self, platform: Platform, *, player_id: str | None = None, observer: bool = False):
+    def __init__(
+        self,
+        platform: Platform,
+        *,
+        player_id: str | None = None,
+        observer: bool = False,
+        reply_handler: Callable[[], str] | None = None,
+    ):
         if not observer and not player_id:
             raise ValueError("player_id is required unless observer mode is enabled")
         self.platform = platform
         self.player_id = player_id
         self.observer = observer
+        self.reply_handler = reply_handler
         self._command_seq = 0
 
     def execute(self, line: str) -> str:
@@ -177,7 +187,21 @@ class TextWorldSession:
             message = " ".join(args[1:]).strip()
             if not message:
                 raise ValueError("say <target> <message>")
-            return self._format_result(self.platform.submit_dialogue(self.player_id or "", args[0], "general", message))
+            result = self.platform.submit_dialogue(self.player_id or "", args[0], "general", message)
+            formatted = self._format_result(result)
+            if result.get("status") == "accepted" and self.reply_handler is not None:
+                formatted += "\nNext: type reply to let the recipient answer."
+            return formatted
+        if command == "reply":
+            self._require_player()
+            if self.reply_handler is None:
+                raise ValueError("No reply provider is configured for this text session.")
+            return self.reply_handler()
+        if command == "messages":
+            self._require_player()
+            limit = self._limit(args, 20, maximum=100)
+            exchanges = self.platform.store.repositories.social.list_dialogue_exchanges(self.player_id or "", limit=limit)
+            return self._format_dialogue(exchanges, self._player_view())
         if command == "offer":
             self._require_player()
             if len(args) != 3:
@@ -359,11 +383,13 @@ class TextWorldSession:
             if not text:
                 raise ValueError(f"Unknown command: {name}. Type help.")
             return f"{name.lower()}: {text}"
-        order = (
-            ["status", "world", "events", "timeline", "map", "pause", "resume", "step", "evolution", "metrics", "help", "quit"]
-            if self.observer
-            else ["look", "status", "actions", "do", "go", "say", "offer", "offers", "accept", "counter", "reject", "wait", "map", "timeline", "help", "quit"]
-        )
+        if self.observer:
+            order = ["status", "world", "events", "timeline", "map", "pause", "resume", "step", "evolution", "metrics", "help", "quit"]
+        else:
+            order = ["look", "status", "actions", "do", "go", "say"]
+            if self.reply_handler is not None:
+                order.append("reply")
+            order.extend(["messages", "offer", "offers", "accept", "counter", "reject", "wait", "map", "timeline", "help", "quit"])
         mode = "observer" if self.observer else "player"
         lines = [f"Commands: {mode} mode"]
         lines.extend(f"  {item:<10} {_COMMAND_HELP[item]}" for item in order)
@@ -439,6 +465,10 @@ class TextWorldSession:
                 if identifier and identifier != str(name_or_id):
                     label += f" · id={identifier}"
                 lines.append(label)
+        dialogues = view.get("recent_dialogue") or []
+        if dialogues:
+            lines.extend(["", "== Conversation =="])
+            lines.extend(cls._dialogue_lines(dialogues[-4:], view))
         outcomes = view.get("recent_outcomes") or []
         if outcomes:
             lines.extend(["", "== Recent =="])
@@ -447,6 +477,38 @@ class TextWorldSession:
                 lines.append(f"[minute {item.get('world_minute', '?')}] {_scalar(text)}")
         lines.extend(["", "Type actions, do <n>, go <place>, map or help."])
         return "\n".join(lines)
+
+    @staticmethod
+    def _entity_names(view: dict[str, Any]) -> dict[str, str]:
+        names = {
+            str(item.get("id")): str(item.get("name") or item.get("id"))
+            for item in view.get("nearby_entities") or []
+            if item.get("id")
+        }
+        for node in (view.get("map") or {}).get("nodes") or []:
+            for occupant in node.get("occupants") or []:
+                if occupant.get("id"):
+                    names[str(occupant["id"])] = str(occupant.get("name") or occupant["id"])
+        return names
+
+    @classmethod
+    def _dialogue_lines(cls, exchanges: list[dict[str, Any]], view: dict[str, Any]) -> list[str]:
+        names = cls._entity_names(view)
+        lines = []
+        for item in exchanges:
+            speaker_id = str(item.get("speaker_id") or "?")
+            listener_id = str(item.get("listener_id") or "?")
+            speaker = names.get(speaker_id, speaker_id)
+            listener = names.get(listener_id, listener_id)
+            topic = str(item.get("topic") or "general")
+            message = str(item.get("message") or "").strip()
+            lines.append(f"[{item.get('world_minute', '?')}] {speaker} -> {listener} · {topic}: {message}")
+        return lines
+
+    def _format_dialogue(self, exchanges: list[dict[str, Any]], view: dict[str, Any]) -> str:
+        if not exchanges:
+            return "No dialogue yet."
+        return "\n".join(["Conversation:", *self._dialogue_lines(exchanges, view)])
 
     @staticmethod
     def _action_lines(actions: list[dict[str, Any]]) -> list[str]:

@@ -66,12 +66,24 @@ The common commands are:
 - `go 1`, `go village_square` or `go 村广场` starts travel to a connected known
   location.
 - `wait [minutes]` advances a manual session one or more minutes.
-- `say <target> <message>` speaks with a nearby character; the target may be a
-  name or ID and the topic defaults to `general`.
+- `say <target> <message>` records a message to a nearby character; the target
+  may be a name or ID and the topic defaults to `general`.
+- `reply` drains the pending interaction with the configured Agent provider
+  without advancing world time. `messages [limit]` and the `Conversation`
+  section of `look` show the resulting transcript.
 - `offer`, `offers`, `accept`, `counter` and `reject` cover trade.
 - `map`, `timeline [limit]` and `help [command]` inspect the known world.
   `quit` leaves the session.
 
+A manual `sim2 mud` session can let the recipient answer with `reply`. The
+command uses the provider selected by `--provider`, or the configured default
+`agent_decision` provider when the flag is omitted:
+
+```bash
+sim2 mud --db "$DB" --player-id player_one --provider remote_beam
+```
+
+An autonomous TUI runtime handles these interaction wakes in the background.
 Observer mode adds `world`, `events [limit]`, `pause`, `resume`, `step`,
 `evolution` and `metrics`. The output remains plain text and the client only
 submits intents through Platform; it never writes SQLite or exposes hidden

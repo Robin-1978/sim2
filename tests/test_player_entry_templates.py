@@ -4,10 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from sim2.api.cli import _ensure_player
+from sim2.api.cli import _dialogue_reply_handler, _ensure_player
 from sim2.api.service import ControlService
 from sim2.api.text import TextWorldSession
 from sim2.bootstrap.service import create_instance
+from sim2.llm.gateway import LLMRouter
 from sim2.platform.runtime import Platform
 from sim2.world.player_template import DEFAULT_PLAYER_GOAL, PlayerTemplateError, parse_player_template
 
@@ -98,5 +99,65 @@ def test_text_client_say_accepts_nearby_name_and_defaults_topic(tmp_path: Path):
         result = session.execute("say Mara Hello")
         assert result.startswith("status=accepted")
         assert "topic: general" in result
+    finally:
+        platform.close()
+
+
+def test_text_reply_handler_invokes_agent_interaction_without_advancing_time(tmp_path: Path, monkeypatch):
+    db_path = create_instance(WORLDS / "tidebound_commons", "tidebound-reply", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        assert platform.enter_player("player_one", "forager", name="Ari")["status"] == "accepted"
+        assert platform.submit_dialogue("player_one", "mara", "general", "Hello")["status"] == "accepted"
+
+        class ReplyProvider:
+            def complete_json(self, *, system, context, tools=None, messages=None):
+                return {
+                    "tool_calls": [{
+                        "id": "reply-1",
+                        "type": "function",
+                        "function": {
+                            "name": "send_message",
+                            "arguments": {
+                                "recipient": "Ari",
+                                "topic": "general",
+                                "message": "Hello back from Mara.",
+                            },
+                        },
+                    }],
+                }
+
+        class Router:
+            def provider_for_role(self, role):
+                assert role == "agent_decision"
+                return ReplyProvider()
+
+        monkeypatch.setattr(LLMRouter, "from_default_config", lambda: Router())
+        result = _dialogue_reply_handler(platform, "player_one")()
+        assert "Reply:" in result
+        assert "Hello back from Mara." in result
+        assert platform.store.repositories.metadata.get("world_minute") == 0
+        transcript = platform.store.repositories.social.list_dialogue_exchanges("player_one")
+        assert any(item["speaker_id"] == "mara" and item["message"] == "Hello back from Mara." for item in transcript)
+    finally:
+        platform.close()
+
+
+def test_text_scene_and_messages_show_player_dialogue(tmp_path: Path):
+    db_path = create_instance(WORLDS / "tidebound_commons", "tidebound-transcript", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        assert platform.enter_player("player_one", "forager", name="Ari")["status"] == "accepted"
+        assert platform.submit_dialogue("mara", "player_one", "general", "Welcome to the quay.")["status"] == "accepted"
+        session = TextWorldSession(platform, player_id="player_one")
+        scene = session.execute("look")
+        assert "== Conversation ==" in scene
+        assert "Mara -> Ari" in scene
+        assert "Welcome to the quay." in scene
+        messages = session.execute("messages")
+        assert "Mara -> Ari" in messages
+        assert "Welcome to the quay." in messages
+        with pytest.raises(ValueError, match="No reply provider"):
+            session.execute("reply")
     finally:
         platform.close()

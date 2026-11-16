@@ -79,6 +79,7 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         "map": map_view,
         "recent_outcomes": decision.get("recent_outcomes", [])[:6],
         "nearby_entities": decision.get("nearby_entities", [])[:12],
+        "recent_dialogue": platform.store.repositories.social.list_dialogue_exchanges(player_id, limit=4),
     }
 
 
