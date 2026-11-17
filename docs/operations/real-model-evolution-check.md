@@ -77,6 +77,16 @@ registered definitions, NPC choices, Story beats, resource quantities and
 the retained story state. The SQLite file and `evolution-audit.jsonl` stay
 under the supplied runtime directory.
 
+The probe's temporary world declares no `cadence` or `stagnation` window
+(`worlds/aster_relay/evolution.yaml` does), so it checks only the model-driven
+loop God → NPC → Story → NPC.  It cannot show whether the Platform's own
+liveness signal keeps a quiet world evolving; that check is recorded under
+"Stagnation signal with a real model" below.  The final audit fails a run
+whose last three rounds added no new object, Action, BT, or accepted Story
+beat, whatever the NPC chose (a waiting round and alternating inspections
+count as no progress).  The judgement is deferred when Story or God work is
+still queued at the end of the window, and skipped after a failed turn.
+
 ## Recent architecture-convergence verification
 
 On 2026-11-14, after the Platform service and Unit-of-Work refactor:
@@ -650,3 +660,86 @@ without hunger damage or degeneration flags; all six residents ended at
 Integrity `100` and satiety between `54` and `62`. A fresh targeted DeepSeek
 turn with Mara at satiety `0`, carrying shellfish but no water or rations,
 selected `Draw Fresh Water` instead of more shellfish gathering.
+
+### Stagnation signal with a real model
+
+**Probe gate gap (2026-11-17).** A 10-round probe reported `passed` although
+the NPC had inspected the archive five times in a row and then waited. The
+old gate called a stall only when the last three rounds also repeated one
+`choice`; a waiting round carries no `choice`, so its empty string counted as a
+different choice. The gate now looks only at progress (commit `c07d0fb`, tests
+in `tests/test_evolution_audit.py`). Replayed over the 45 probe runs that were
+kept under `/tmp` at the time (33 without a failed turn, 12 with one), the old
+and new rules differ on exactly that one run.
+
+**Probe results at `HEAD`** (provider `remote`, `deepseek-v4.1-flash`):
+
+| Run | Result |
+| --- | --- |
+| `/tmp/sim2-evolution-refactor-check` | 1 new object, 4 beats. `Inspect Archive` in rounds 5–9, then God and NPC both `wait` in round 10. Old gate: passed. New gate: absorbing state. |
+| `/tmp/sim2-evolution-refactor-check-2` | 4 new objects, 8 beats. God accepted a new source in rounds 4, 6, 8 and 10. |
+| `/tmp/sim2-evolution-refactor-check-3`, `-4` | 1 new object, 5 beats. `Inspect Archive` in rounds 6–10. A `relay_stability_review` God task was ready but not yet consumed when the window ended, so the gate deferred. |
+| `/tmp/sim2-evolution-long-30` | 30-round window, ended after 13 rounds at world minute 429: five inspections, then God `wait` at the review and NPC `wait`. Status `failed` (`absorbing_state`, `incomplete_rounds:13/30`). |
+
+The stall is the probe world's own design: `inspect_archive` stays executable
+while `relay_stability < 0.55` and adds `0.02` per run, so five inspections end
+it and publish `relay.stability_review`, whose God wake may answer `wait`. Of
+the 27 clean probe runs with at least eight rounds left in `/tmp`, 12 end in a
+tail of three or more rounds without progress (9 of 23 earlier runs and 3 of
+today's 4). The runs come from different code and prompt versions, so this is
+not a trend.
+
+**What the probe does not test.** Its temporary world has no `cadence` or
+`stagnation`. `worlds/aster_relay/evolution.yaml` adds
+`stagnation: {window: 1d, max_interval: 7d}`, a `god_on_stagnation` wake and
+`cadence.god: 3d`. `src/sim2/platform/stagnation.py` publishes `world.stagnation`
+when no character gained an executable option for a window and no configured
+progress event occurred. Deterministic tests cover the mechanism
+(`tests/test_evolution_liveness.py`) and require every shipped world to wake
+God on it (`tests/test_world_liveness_contract.py`). No earlier real-model run
+in this document exercised it.
+
+**Stage A: healthy path.** A temporary copy of `worlds/aster_relay` whose only
+change is `stagnation.window: 3h`, run for 720 world minutes with
+`scripts/audit_real_world.py` (`--config <copy> --minutes 720`, run from a
+scratch directory because the script creates `artifacts/` under the working
+directory). The NPC chose `Study Configured Source` 12 times; God accepted a
+new research source at minutes 121, 241, 361, 481 and 601; Story activated 13
+beats; no `world.stagnation` was needed. 40 model calls, 156,107 prompt tokens
+(55.8% cached), 9,641 completion tokens, no provider errors or rejected turns.
+
+**Stage B: stagnation-only ablation.** The same copy with the two God wakes
+that follow research set to `count: 1000` (`research_synthesis`,
+`relay_stability_review`), so the stagnation signal is the only way God is
+woken. Deleting them is not possible: package validation rejects a God wake
+on an unregistered event, and a registered group applies its `count` even to an
+explicit producer (`src/sim2/evolution/wakes.py:120-126` vs `206`). Run for
+1140 world minutes. Criteria were written before the run: (1) `world.stagnation`
+is published; (2) God accepts at least one proposal after it; (3) the NPC makes
+new research progress afterwards; (4) the last 180 minutes contain progress.
+All four held:
+
+| World minute | Event | God (tool calls, result) | NPC afterwards |
+| ---: | --- | --- | --- |
+| 196 | `relay.stability_review` published, God wake disabled | none | idle |
+| 360 | `world.stagnation` (no growth for 3 h, last growth 180) | 3 calls → `propose_entity` accepted | studied the new source at 361 |
+| 720 | `world.stagnation` (last growth 540) | 3 calls → accepted | studied at 720 |
+| 1080 | `world.stagnation` (last growth 900) | 6 calls → accepted | studied at 1080 and 1140 |
+
+80 model calls, 294,911 prompt tokens (62.4% cached), 7,667 completion tokens,
+no provider errors or rejected turns.
+
+**Idle cost.** 51 of the 80 calls were NPC decisions answered with `wait`
+while the prompt read `<executable_behaviors> - none; return wait`. They are
+15 minutes apart because `worlds/aster_relay/rules.yaml` sets
+`decision_policy.empty_catalog_retry_minutes: 15`; the Platform default is 360
+(`src/sim2/simulation/runner.py:487-493`). A model-driven NPC with an empty
+catalog is asked once per retry interval, so this setting, not the stagnation
+signal, dominated the cost of the run.
+
+**Limits.** Each configuration was run once, so these are samples, not rates.
+The window was shortened from `1d` to `3h` and Stage B removed two wakes; the
+shipped `1d` configuration was not run with a real model. From this run's
+average of 3,686 prompt tokens per call, 2.5 world days of the shipped
+configuration would need about 190 calls and 0.7M prompt tokens (an estimate,
+not a measurement).
