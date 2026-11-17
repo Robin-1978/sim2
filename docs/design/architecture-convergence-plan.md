@@ -218,6 +218,7 @@ at a time, each in its own commit and each compared with the code it replaces.
 |---|---:|---|
 | `AgentEngine.run` | 317 lines in `agents/engine.py` | 24 lines. `run` skips a busy or incapacitated character, compiles the task context (`_compile_task_context` over `_attach_evolution_trigger`, `_attach_triggering_evidence` and `_select_session_tools`), starts a `ReactSession` (`agents/session.py`, which holds the counters and messages that were loop locals) and calls `_react_step` once per iteration. `_react_step` asks the model (`_request_model`) and then submits the final Intent (`_submit_intent`) or runs the tool calls (`_run_tool_calls` over `_collect_calls`, `_execute_calls` and `_record_tool_result`). The guard chain for tool requests is `agents/tool_guards.py:screen_tool_call` (49 lines, fixed order). The longest new method is 44 lines |
 | `submit_definition_proposal` and `_validate_definition_proposal` | 350 and 296 lines in `platform/definition_runtime.py` | 26 and 30 lines. Validation moved to `platform/definition_validation.py`: `DefinitionValidationMixin` is composed with `DefinitionRuntimeMixin` in `DefinitionService`. `_validate_definition_proposal` compiles the shape and dispatches to one `_validate_<kind>` method per definition kind. The behavior-tree walk is the `BehaviorNodeNormalizer` class, which owns the 32-node and 8-level limits that were closure state, and the resource-transfer and dynamic-inventory contracts are module functions. `submit_definition_proposal` validates through `_plan_definition` into a `DefinitionPlan` (the normalized definitions, the resolved characters and the errors), rejects when there are errors, and otherwise registers inside one transaction (`_register_definition`, `_publish_definition_events` returning `DefinitionEventIds`, `_assign_new_behavior`, `_definition_result`); the attribute-dependent services are rebuilt after commit. The longest new function is 43 lines |
+| `BehaviorIntentService.submit_behavior` | 295 lines in `platform/behavior_service.py` | 13 lines. `BehaviorIntentService` moved to `platform/behavior_intent.py`; `behavior_service.py` keeps `BehaviorExecutionService`. `submit_behavior` returns the stored result of a known intent, rejects an unknown actor, opens a `BehaviorSubmission` (the intent, the actor record, the parameters as they change and the values read on the way) and calls `_admit`. `_admit` runs the admission steps in their fixed order: resolve the behavior, apply BT defaults, then one check method per rejection (`_check_available`, `_check_parameters`, `_check_actor_free`, `_resolve_targets`, `_check_entry_conditions`, `_check_cooldown`, `_check_catalog`, `_check_agent_revision`), each returning the rejection result or `None`. The first rejection is stored with the intent by one `reject_intent` call. `_start_behavior` commits the intent, the actor state, the BT instance and the `behavior.started` event in one transaction. The longest new function is 38 lines |
 
 `AgentEngine.run` equivalence: 887 scripted ReAct sessions on the five shipped
 worlds produced the same `AgentTurn`, provider usage and database content as
@@ -247,9 +248,30 @@ resource-transfer and node-limit contracts, for the rollback of a registration
 whose follow-up behavior is not executable, and for the assignment of a new
 behavior.
 
-Still above 200 lines: `submit_behavior` (295), `api/cli.py:main` (291),
-`submit_world_change` (257), `submit_entity_proposal` (230),
-`evaluate_turn` (228), `do_POST` (207) and `_build_story_view` (203).
+`BehaviorIntentService.submit_behavior` equivalence: the previous service was
+kept outside the package and run side by side with the new one on fresh
+instances of the five shipped worlds (24,000 operations over 300 scenarios).
+The operations were intents from every character and from unknown actors
+(catalog behaviors, other registered behaviors, unknown and malformed
+references, parameter and target aliases, visible, hidden and named targets,
+stale and malformed revisions, repeated intent ids), world ticks of 1 to 200
+minutes, and state changes that open the rare branches (busy or paused
+characters, failure blocks, role changes, locked behaviors, cooldowns,
+parameter bindings and defaults, institution allocation behaviors, changed
+entry conditions). Results, exceptions and a dump of every table were
+identical after each operation; two deliberate mutations (a copied instead of
+shared parameter dict, and a swapped check order) were caught by the same run.
+The new code is 99% line-covered; the three uncovered lines are in methods that
+moved unchanged and are AST-identical to the previous ones, as are the sixteen
+`BehaviorExecutionService` methods. `tests/test_behavior_intent.py` is the
+permanent guard (it also passes on the previous implementation): the fixed
+check order, the parameters recorded with a rejected intent at each step, alias
+folding, target resolution, stale revisions, idempotent resubmission and the
+rollback of a failure while the activity is opened.
+
+Still above 200 lines: `api/cli.py:main` (291), `submit_world_change` (257),
+`submit_entity_proposal` (230), `evaluate_turn` (228), `do_POST` (207) and
+`_build_story_view` (203).
 
 ### Execution order for the remaining work
 
@@ -594,7 +616,7 @@ The first convergence stages have now landed:
 |---|---|---|
 | Platform facade | `platform/runtime.py` | 98-line facade; no Runtime Mixin inheritance |
 | Runtime API | `platform/api_service.py` | explicit service |
-| Behavior admission/execution | `platform/behavior_service.py` | explicit services |
+| Behavior admission/execution | `platform/behavior_intent.py` (admission), `platform/behavior_service.py` (execution) | explicit services |
 | World minute | `platform/world_tick_service.py` | explicit service |
 | Evolution tasks | `platform/evolution_service.py` | explicit service and UoW task repository |
 | Definitions/entities/Story/world changes | `platform/definition_validation.py`, `definition_runtime.py`, `entity_proposals.py`, `story_runtime.py`, `world_changes.py` | separate owners |
