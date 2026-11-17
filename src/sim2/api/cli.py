@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 from pathlib import Path
+from typing import Any, Callable
 
 import yaml
 
@@ -83,10 +84,7 @@ def _dialogue_reply_handler(platform: Platform, player_id: str, provider_name: s
     return reply
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(prog="sim2")
-    sub = parser.add_subparsers(dest="command", required=True)
-
+def _add_world_package_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     init = sub.add_parser("init", help="create a new SQLite world instance")
     init_source = init.add_mutually_exclusive_group()
     init_source.add_argument("--config", type=Path, help="world package directory; defaults to the bundled Starter Village")
@@ -115,6 +113,8 @@ def main() -> None:
     build_world.add_argument("--max-completion-tokens", type=int, help="optional one-off override; otherwise roles.world_builder owns the budget")
     build_world.add_argument("--audit-output", type=Path, help="optional JSON transcript path without credentials")
 
+
+def _add_agent_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     decide = sub.add_parser("decide", help="run one Decision Agent turn")
     decide.add_argument("--db", type=Path, required=True)
     decide.add_argument("--agent-id", required=True)
@@ -144,6 +144,8 @@ def main() -> None:
     simulate.add_argument("--llm-error-cooldown", type=int, default=60)
     simulate.add_argument("--provider", help="override all Agent roles with one configured provider (for example: remote)")
 
+
+def _add_serve_command(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     serve = sub.add_parser("serve", help="start the local HTTP control API")
     serve_source = serve.add_mutually_exclusive_group()
     serve_source.add_argument("--db", type=Path, help="world SQLite path; defaults to the current or most recent instance")
@@ -160,6 +162,8 @@ def main() -> None:
         help="HTTP request log level; 4xx/5xx responses are logged at warning (default: warning)",
     )
 
+
+def _add_instance_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     for name, help_text in [("status", "show instance status"), ("health", "check database and runtime health"), ("timeline", "show the public third-person timeline"), ("map", "show the location topology and character positions"), ("pause", "pause world advancement"), ("resume", "resume world advancement"), ("step", "advance one world minute"), ("metrics", "show runtime metrics"), ("audit", "export event and Agent audit")]:
         command = sub.add_parser(name, help=help_text)
         command.add_argument("--db", type=Path, required=True)
@@ -187,193 +191,247 @@ def main() -> None:
     inject.add_argument("--payload", default="{}", help="JSON object")
     inject.add_argument("--actor-id")
 
-    args = parser.parse_args()
-    if args.command == "init":
-        config = args.config or world_path(args.world or "starter_village")
-        db = create_instance(config, args.instance_id, args.runtime_root)
-        print(json.dumps({"db_path": str(db)}, ensure_ascii=False))
-        return
-    if args.command == "validate-world":
-        report = validate_config(args.config)
-        print(json.dumps(report, ensure_ascii=False, indent=2))
-        if not report["valid"]:
-            raise SystemExit(1)
-        return
-    if args.command == "describe-world":
-        report = describe_config(args.config)
-        print(json.dumps(report, ensure_ascii=False, indent=2))
-        if not report["valid"]:
-            raise SystemExit(1)
-        return
-    if args.command == "world-schema":
-        print(json.dumps(world_template_schema(), ensure_ascii=False, indent=2))
-        return
-    if args.command == "build-world":
-        build_audit = None
-        if args.template:
-            raw = yaml.safe_load(args.template.read_text(encoding="utf-8"))
-            if not isinstance(raw, dict):
-                raise ValueError("--template must contain a YAML object")
-        else:
-            brief = args.brief if args.brief is not None else args.brief_file.read_text(encoding="utf-8")
-            from ..world_builder import WorldBuilderError, WorldBuilderService
 
-            provider = LLMRouter.from_default_config().new_provider_for_name(
-                args.provider,
-                max_completion_tokens=args.max_completion_tokens,
-                role="world_builder",
-            )
-            try:
-                draft = WorldBuilderService(provider).build(brief)
-            except WorldBuilderError as exc:
-                failed_audit = {"status": "rejected", "message": str(exc), "usage": exc.usage, "transcript": exc.transcript}
-                if args.audit_output:
-                    args.audit_output.parent.mkdir(parents=True, exist_ok=True)
-                    args.audit_output.write_text(json.dumps(failed_audit, ensure_ascii=False, indent=2), encoding="utf-8")
-                raise
-            raw = draft.template
-            build_audit = {"iterations": draft.iterations, "usage": draft.usage, "transcript": draft.transcript}
-        package = write_world_package_from_template(raw, args.output, overwrite=args.overwrite)
-        result: dict[str, object] = {"status": "accepted", "package": str(package), "validation": describe_config(package)}
-        if build_audit is not None:
-            result["world_builder"] = {"iterations": build_audit["iterations"], "usage": build_audit["usage"]}
-            if args.audit_output:
-                args.audit_output.parent.mkdir(parents=True, exist_ok=True)
-                args.audit_output.write_text(json.dumps(build_audit, ensure_ascii=False, indent=2), encoding="utf-8")
-                result["audit"] = str(args.audit_output)
-        if args.instance_id:
-            result["db_path"] = str(create_instance(package, args.instance_id, args.runtime_root))
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-        return
-    if args.command == "tui":
-        platform = Platform(args.db)
-        try:
-            observer = bool(args.observer or not args.player_id)
-            if not observer:
-                _ensure_player(platform, str(args.player_id), args.origin, args.name)
-        finally:
-            platform.close()
-        from .tui import run_tui
-        run_tui(args.db, observer=observer, player_id=args.player_id, run_world=args.run, provider_name=args.provider)
-        return
-    if args.command == "decide":
-        platform = Platform(args.db)
-        try:
-            router = LLMRouter.from_default_config()
-            provider = router.provider_for_role(args.role)
-            engine = AgentEngine(platform, provider)
-            turn = engine.run(role=args.role, actor_id=args.agent_id)
-            print(json.dumps({"response": turn.response, "result": turn.result, "iterations": turn.iterations}, ensure_ascii=False))
-        finally:
-            platform.close()
-    if args.command == "mud":
-        platform = Platform(args.db)
-        try:
-            if not args.observer:
-                if not args.player_id:
-                    raise SystemExit("--player-id is required in player mode")
-                _ensure_player(platform, str(args.player_id), args.origin, args.name)
-            reply_handler = (
-                _dialogue_reply_handler(platform, str(args.player_id), args.provider)
-                if not args.observer
-                else None
-            )
-            TextWorldSession(
-                platform,
-                player_id=args.player_id,
-                observer=args.observer,
-                reply_handler=reply_handler,
-            ).run()
-        finally:
-            platform.close()
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="sim2")
+    sub = parser.add_subparsers(dest="command", required=True)
+    _add_world_package_commands(sub)
+    _add_agent_commands(sub)
+    _add_serve_command(sub)
+    _add_instance_commands(sub)
+    return parser
 
 
-        return
-    if args.command == "simulate":
-        platform = Platform(args.db)
-        try:
-            report = platform.run(
-                args.minutes,
-                provider_name=args.provider,
-                wait_cooldown_minutes=args.wait_cooldown,
-                llm_error_cooldown_minutes=args.llm_error_cooldown,
-            )
-            print(json.dumps({"report": report.as_dict(), "metrics": platform.metrics()}, ensure_ascii=False))
-        finally:
-            platform.close()
-        return
-    if args.command == "serve":
-        db_path = args.db
-        if db_path is None:
-            db_path = InstanceRegistry(args.runtime_root).resolve(instance_id=args.instance_id)
-        logging.basicConfig(
-            level=getattr(logging, str(args.log_level).upper(), logging.WARNING),
-            format="%(asctime)s %(levelname)s %(name)s %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
+def _run_init(args: argparse.Namespace) -> None:
+    config = args.config or world_path(args.world or "starter_village")
+    db = create_instance(config, args.instance_id, args.runtime_root)
+    print(json.dumps({"db_path": str(db)}, ensure_ascii=False))
+
+
+def _run_validate_world(args: argparse.Namespace) -> None:
+    report = validate_config(args.config)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    if not report["valid"]:
+        raise SystemExit(1)
+
+
+def _run_describe_world(args: argparse.Namespace) -> None:
+    report = describe_config(args.config)
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    if not report["valid"]:
+        raise SystemExit(1)
+
+
+def _run_world_schema(args: argparse.Namespace) -> None:
+    print(json.dumps(world_template_schema(), ensure_ascii=False, indent=2))
+
+
+def _read_template(path: Path) -> dict[str, Any]:
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError("--template must contain a YAML object")
+    return raw
+
+
+def _write_audit(path: Path, audit: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _draft_from_brief(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Ask the WorldBuilder Agent for a template; return it with the audit of how it was built."""
+
+    brief = args.brief if args.brief is not None else args.brief_file.read_text(encoding="utf-8")
+    from ..world_builder import WorldBuilderError, WorldBuilderService
+
+    provider = LLMRouter.from_default_config().new_provider_for_name(
+        args.provider,
+        max_completion_tokens=args.max_completion_tokens,
+        role="world_builder",
+    )
+    try:
+        draft = WorldBuilderService(provider).build(brief)
+    except WorldBuilderError as exc:
+        failed_audit = {"status": "rejected", "message": str(exc), "usage": exc.usage, "transcript": exc.transcript}
+        if args.audit_output:
+            _write_audit(args.audit_output, failed_audit)
+        raise
+    return draft.template, {"iterations": draft.iterations, "usage": draft.usage, "transcript": draft.transcript}
+
+
+def _run_build_world(args: argparse.Namespace) -> None:
+    build_audit = None
+    if args.template:
+        raw = _read_template(args.template)
+    else:
+        raw, build_audit = _draft_from_brief(args)
+    package = write_world_package_from_template(raw, args.output, overwrite=args.overwrite)
+    result: dict[str, object] = {"status": "accepted", "package": str(package), "validation": describe_config(package)}
+    if build_audit is not None:
+        result["world_builder"] = {"iterations": build_audit["iterations"], "usage": build_audit["usage"]}
+        if args.audit_output:
+            _write_audit(args.audit_output, build_audit)
+            result["audit"] = str(args.audit_output)
+    if args.instance_id:
+        result["db_path"] = str(create_instance(package, args.instance_id, args.runtime_root))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def _run_tui(args: argparse.Namespace) -> None:
+    platform = Platform(args.db)
+    try:
+        observer = bool(args.observer or not args.player_id)
+        if not observer:
+            _ensure_player(platform, str(args.player_id), args.origin, args.name)
+    finally:
+        platform.close()
+    from .tui import run_tui
+    run_tui(args.db, observer=observer, player_id=args.player_id, run_world=args.run, provider_name=args.provider)
+
+
+def _run_decide(args: argparse.Namespace) -> None:
+    platform = Platform(args.db)
+    try:
+        router = LLMRouter.from_default_config()
+        provider = router.provider_for_role(args.role)
+        engine = AgentEngine(platform, provider)
+        turn = engine.run(role=args.role, actor_id=args.agent_id)
+        print(json.dumps({"response": turn.response, "result": turn.result, "iterations": turn.iterations}, ensure_ascii=False))
+    finally:
+        platform.close()
+
+
+def _run_mud(args: argparse.Namespace) -> None:
+    platform = Platform(args.db)
+    try:
+        if not args.observer:
+            if not args.player_id:
+                raise SystemExit("--player-id is required in player mode")
+            _ensure_player(platform, str(args.player_id), args.origin, args.name)
+        reply_handler = (
+            _dialogue_reply_handler(platform, str(args.player_id), args.provider)
+            if not args.observer
+            else None
         )
-        server = ControlHTTPServer((args.host, args.port), db_path, authoring_root=args.authoring_root, operator_token=args.operator_token)
-        try:
-            print(json.dumps({
-                "status": "listening",
-                "url": f"http://{args.host}:{args.port}",
-                "db": str(server.database_path),
-                "operator_token": server.operator_token,
-            }, ensure_ascii=False), flush=True)
-            server.serve_forever()
-        except KeyboardInterrupt:
-            pass
-        finally:
-            server.close_after_serve_forever()
-        return
-    if args.command in {"status", "health", "timeline", "map", "pause", "resume", "step", "metrics", "audit", "snapshot", "restore", "enter-player", "sync-player-template", "inject"}:
-        platform = Platform(args.db)
-        try:
-            if args.command == "status":
-                result = platform.status()
-            elif args.command == "health":
-                result = platform.health()
-            elif args.command == "timeline":
-                result = platform.timeline(limit=args.limit, after_event_id=args.after, include_ticks=args.ticks)
-            elif args.command == "map":
-                print(render_topology_map(platform.map_view(observer=True)))
-                return
-            elif args.command == "pause":
-                result = platform.pause()
-            elif args.command == "resume":
-                result = platform.resume()
-            elif args.command == "step":
-                result = platform.step()
-            elif args.command == "metrics":
-                result = platform.metrics()
-            elif args.command == "audit":
-                result = platform.export_audit()
-            elif args.command == "snapshot":
-                result = {"snapshot": str(platform.snapshot(args.destination))}
-            elif args.command == "restore":
-                result = platform.restore_snapshot(args.source)
-            elif args.command == "enter-player":
-                result = platform.enter_player(args.player_id, args.origin, name=args.name)
-            elif args.command == "sync-player-template":
-                config_dir = args.config
-                if config_dir is None:
-                    report = platform.store.repositories.metadata.get("bootstrap_report", {}) or {}
-                    source = report.get("config_dir") if isinstance(report, dict) else None
-                    if not source:
-                        raise SystemExit("sync-player-template needs --config because the instance has no bootstrap_report config_dir")
-                    config_dir = Path(str(source))
-                template_path = Path(config_dir) / "player_template.yaml"
-                if not template_path.is_file():
-                    raise SystemExit(f"player template not found: {template_path}")
-                raw_template = yaml.safe_load(template_path.read_text(encoding="utf-8")) or {}
-                result = platform.sync_player_template(raw_template)
-            else:
-                payload = json.loads(args.payload)
-                if not isinstance(payload, dict):
-                    raise ValueError("--payload must be a JSON object")
-                result = platform.inject_event(args.event_type, payload, args.actor_id)
-            print(json.dumps(result, ensure_ascii=False))
-        finally:
-            platform.close()
+        TextWorldSession(
+            platform,
+            player_id=args.player_id,
+            observer=args.observer,
+            reply_handler=reply_handler,
+        ).run()
+    finally:
+        platform.close()
+
+
+def _run_simulate(args: argparse.Namespace) -> None:
+    platform = Platform(args.db)
+    try:
+        report = platform.run(
+            args.minutes,
+            provider_name=args.provider,
+            wait_cooldown_minutes=args.wait_cooldown,
+            llm_error_cooldown_minutes=args.llm_error_cooldown,
+        )
+        print(json.dumps({"report": report.as_dict(), "metrics": platform.metrics()}, ensure_ascii=False))
+    finally:
+        platform.close()
+
+
+def _run_serve(args: argparse.Namespace) -> None:
+    db_path = args.db
+    if db_path is None:
+        db_path = InstanceRegistry(args.runtime_root).resolve(instance_id=args.instance_id)
+    logging.basicConfig(
+        level=getattr(logging, str(args.log_level).upper(), logging.WARNING),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    server = ControlHTTPServer((args.host, args.port), db_path, authoring_root=args.authoring_root, operator_token=args.operator_token)
+    try:
+        print(json.dumps({
+            "status": "listening",
+            "url": f"http://{args.host}:{args.port}",
+            "db": str(server.database_path),
+            "operator_token": server.operator_token,
+        }, ensure_ascii=False), flush=True)
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.close_after_serve_forever()
+
+
+def _sync_player_template(platform: Platform, args: argparse.Namespace) -> Any:
+    config_dir = args.config
+    if config_dir is None:
+        report = platform.store.repositories.metadata.get("bootstrap_report", {}) or {}
+        source = report.get("config_dir") if isinstance(report, dict) else None
+        if not source:
+            raise SystemExit("sync-player-template needs --config because the instance has no bootstrap_report config_dir")
+        config_dir = Path(str(source))
+    template_path = Path(config_dir) / "player_template.yaml"
+    if not template_path.is_file():
+        raise SystemExit(f"player template not found: {template_path}")
+    raw_template = yaml.safe_load(template_path.read_text(encoding="utf-8")) or {}
+    return platform.sync_player_template(raw_template)
+
+
+def _inject_event(platform: Platform, args: argparse.Namespace) -> Any:
+    payload = json.loads(args.payload)
+    if not isinstance(payload, dict):
+        raise ValueError("--payload must be a JSON object")
+    return platform.inject_event(args.event_type, payload, args.actor_id)
+
+
+# Instance commands that ask the Platform one question; the answer is printed as JSON.
+_PLATFORM_COMMANDS: dict[str, Callable[[Platform, argparse.Namespace], Any]] = {
+    "status": lambda platform, args: platform.status(),
+    "health": lambda platform, args: platform.health(),
+    "timeline": lambda platform, args: platform.timeline(limit=args.limit, after_event_id=args.after, include_ticks=args.ticks),
+    "pause": lambda platform, args: platform.pause(),
+    "resume": lambda platform, args: platform.resume(),
+    "step": lambda platform, args: platform.step(),
+    "metrics": lambda platform, args: platform.metrics(),
+    "audit": lambda platform, args: platform.export_audit(),
+    "snapshot": lambda platform, args: {"snapshot": str(platform.snapshot(args.destination))},
+    "restore": lambda platform, args: platform.restore_snapshot(args.source),
+    "enter-player": lambda platform, args: platform.enter_player(args.player_id, args.origin, name=args.name),
+    "sync-player-template": _sync_player_template,
+    "inject": _inject_event,
+}
+
+
+def _run_platform_command(args: argparse.Namespace) -> None:
+    platform = Platform(args.db)
+    try:
+        if args.command == "map":
+            print(render_topology_map(platform.map_view(observer=True)))
+            return
+        result = _PLATFORM_COMMANDS[args.command](platform, args)
+        print(json.dumps(result, ensure_ascii=False))
+    finally:
+        platform.close()
+
+
+_COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
+    "init": _run_init,
+    "validate-world": _run_validate_world,
+    "describe-world": _run_describe_world,
+    "world-schema": _run_world_schema,
+    "build-world": _run_build_world,
+    "decide": _run_decide,
+    "mud": _run_mud,
+    "tui": _run_tui,
+    "simulate": _run_simulate,
+    "serve": _run_serve,
+    "map": _run_platform_command,
+    **{name: _run_platform_command for name in _PLATFORM_COMMANDS},
+}
+
+
+def main() -> None:
+    args = _build_parser().parse_args()
+    _COMMANDS[args.command](args)
 
 
 if __name__ == "__main__":

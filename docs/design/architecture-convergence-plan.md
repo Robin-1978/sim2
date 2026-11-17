@@ -224,6 +224,7 @@ at a time, each in its own commit and each compared with the code it replaces.
 | `evaluate_turn` | 228 lines in `agents/quality.py` | 26 lines. `evaluate_turn` collects the checks every role shares (`_protocol_checks`), returns the `provider_error` grade as soon as the provider gave no usable response, reads the final submission (`_final_submission`, unchanged) and runs one function per role: `_decision_checks`, `_reflection_checks`, `_god_checks` or `_story_checks`. Each appends its checks in the order the inline branches did. A decision turn returns a `_DecisionChoice` (the candidates and their refs, whether the turn waited, was guarded or interacted, the institution intent, the candidate matched by label and the selected ref) built by `_select_decision`; `_grounding_checks` adds the goal and drive alignment to it, and `_decision_grade` or `_role_grade` turns the checks into the grade. The branches that were inline are functions of their own: `_institution_checks`, `_experience_checks`, `_capability_update_checks`, `_definition_checks`, `_world_change_checks` (over `_narrative_event_checks` and `_rule_checks`, which calls `_declared_condition_checks`) and `_story_beat_checks`. Two locals that were assigned and never read (a `tokens` lambda and `effect_is_gate`) are gone. The longest new function is 37 lines |
 | `_Handler.do_POST` | 207 lines in `api/http.py` | 14 lines. `do_POST` reads the JSON body, lets `_replay_idempotent_post` answer a repeated request from its stored response (or install the write that stores the first response of a new one) and hands the rest to `_route_post`; the mapping of errors to 400, 403 and 500 stayed in `do_POST`. `_route_post` serves `/session` (`_post_session`), then the operator calls, then the player routes. `_OPERATOR_POSTS` lists the 25 operator paths (the `/authoring/*` routes and the runtime, instance, snapshot, decide, simulate and event routes) with the server call behind each; one guard requires an operator session for them and for every other path under `/authoring/`, so an unknown authoring path is still refused before it is reported as not found. `_PLAYER_POSTS` maps the player paths to `_post_enter_player`, `_post_player_act`, `_post_player_wait`, `_post_dialogue` and the four `_post_trade_*` methods, whose bodies moved unchanged. The longest new function is 23 lines |
 | `StoryViewMixin._build_story_view` | 203 lines in `agent_view/story_view.py` | 54 lines, most of it the returned view. `_build_story_view` reads the world, picks the source event (`_story_source_event`), builds the memory query (`_story_memory_query`) and the Story memories, describes the source (`_validated_story_source`, over `_describe_allocation` for an institution allocation and `_attach_source_fact` for the public fact the actor recorded), collects the audience candidates, the observed events and the facts, offers the beats (`_story_beat_choices`) and the facts the Story model knows (`_story_known_facts`), and returns the view; `_world_progress_candidates` builds the progress tracks that were a comprehension inside the returned literal. The calls are made in the order the inline code made them. The longest new helper is 33 lines |
+| `main` (the `sim2` console script) | 291 lines in `api/cli.py` | 3 lines: `main` parses the arguments with `_build_parser` and calls the handler `_COMMANDS` names for the command. `_build_parser` is 8 lines over `_add_world_package_commands`, `_add_agent_commands`, `_add_serve_command` and `_add_instance_commands`, which hold the argument definitions exactly as they were written inline, in the same order. The ten commands with their own logic have one function each (`_run_init`, `_run_validate_world`, `_run_describe_world`, `_run_world_schema`, `_run_build_world`, `_run_tui`, `_run_decide`, `_run_mud`, `_run_simulate`, `_run_serve`); `build-world` is split into `_read_template`, `_draft_from_brief` (the WorldBuilder Agent call and the rejected-draft audit) and `_write_audit`. The 13 commands that call the Platform once and print the answer as JSON are entries of `_PLATFORM_COMMANDS` (`sync-player-template` and `inject` through `_sync_player_template` and `_inject_event`); `_run_platform_command` opens the Platform for all of them, and for `map`, which prints the rendered map, and closes it on every path. The longest new function is 29 lines (`_add_agent_commands`, argument definitions) |
 
 `AgentEngine.run` equivalence: 887 scripted ReAct sessions on the five shipped
 worlds produced the same `AgentTurn`, provider usage and database content as
@@ -468,7 +469,49 @@ fix them:
   `agent_view/story_view.py:212` turns `0` into `-1` (`int(... or -1)`),
   which matches no `observed_at`.
 
-Still above 200 lines: `api/cli.py:main` (291).
+`main` equivalence: `tests/test_cli_commands.py` (112 test cases) was written
+against the previous `cli.py` first and passes on it and on the split one. Its
+fakes record every call a command makes, so it pins the order of the calls,
+the exact output text, the exit codes and which exception ends a command, and
+for the parser the list and order of the 24 commands, the defaults, the
+mutually exclusive groups and 39 malformed command lines. A test also fails
+when a command ends in an exit or an exception that the test never looked at.
+Before and after the split the same 31 statements of the file are not
+reached by the tests: the unchanged body of `_dialogue_reply_handler` and the
+`__main__` call; every line and branch of the previous `main` is. Against the
+previous code (a `git archive` of `HEAD`) the split code gave identical
+stdout, stderr and exit codes for 88 command lines: `--help` of the main
+parser and of the 24 commands, argument errors, and `world-schema`. On a real
+`starter_village` instance (SQLite in a temporary directory, no model), 25
+commands run through `python -m sim2.api.cli` (`init`, the instance commands,
+`sync-player-template`, `enter-player`, `describe-world`, `validate-world`,
+`world-schema` and `mud`) printed the same stdout and returned the same exit
+codes in both versions; the one stderr that differs is the traceback of an
+uncaught `ValueError` (`inject` with a payload that is not an object): same
+message and exit code, more frames. The previous `main` had 235 statements and
+clauses; 53 no longer exist as written: the 23 command tests of the dispatch
+chain, nine closing `return`s,
+the 13 `result = platform.<call>()` assignments (the expression of each is
+compared with its entry in `_PLATFORM_COMMANDS`, and the `sync-player-template`
+and `inject` blocks statement by statement), the `parse_args` call, and seven
+statements of `build-world` that moved into `_read_template`,
+`_draft_from_brief` and `_write_audit`. Every other statement of the previous
+`main`, every argument definition included, appears unchanged in the split
+code; the comparison counts statements, so their order is pinned by the call
+log of the tests and by the identical help text. `_ensure_player` and
+`_dialogue_reply_handler` are untouched. 58 deliberate mutations (command
+order, requiredness and defaults of the arguments, the dispatch table, the
+arguments passed to each Platform call, closing the Platform, the audit of a
+rejected draft, the `serve` options and Ctrl-C) were each caught. The first
+run missed two, a `map` that falls through into the JSON table and an audit
+directory created without `parents=True`; the tests were tightened until both
+were caught. `tests/test_cli_commands.py` is the permanent guard.
+
+No function in `src/sim2` is above 200 lines now except
+`world_template_schema` (332), a schema literal. Two audit scripts outside the
+package are above 200 lines and were not part of any of these passes:
+`scripts/review_audit.py:_database_checks` (278) and
+`scripts/audit_real_world.py:main` (227).
 
 ### Hardcode leftovers pass (2026-11-17)
 
