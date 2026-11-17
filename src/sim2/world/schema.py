@@ -61,6 +61,11 @@ class AttributeSchema:
                 result[str(item["id"])] = value
         return result
 
+    def state_ids(self) -> list[str]:
+        """Ids of the world's state attributes (as opposed to needs)."""
+
+        return [str(item["id"]) for item in self.definitions if str(item.get("kind")) == "state"]
+
     def need_defaults(self) -> dict[str, Any]:
         result: dict[str, Any] = {}
         for item in self.definitions:

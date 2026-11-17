@@ -1,6 +1,13 @@
 world_id: starter_village
 name: 雾溪村
 locale: zh-CN
+ui_text:
+  travel_choice: "前往 {name}"
+  travel_summary: "沿已知路线前往 {name}。"
+  travel_purpose: 移动到另一个已知地点
+  travel_time: "预计 {minutes} 分钟"
+  travel_impact: 抵达目标地点
+  world_label: 世界
 genre: frontier_fantasy
 premise: 灰林边缘的村庄依靠一份正在减弱的古老契约维持边界。
 public_history:

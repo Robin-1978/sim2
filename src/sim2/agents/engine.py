@@ -115,6 +115,7 @@ class AgentEngine:
             if is_inactive(state):
                 result = {"status": "skipped", "reason": "incapacitated", "message": "The character is unconscious or dead and cannot act."}
                 return AgentTurn(role, task_type, {}, result, 0, [{"step": "skipped", "result": result}], {}, [])
+        state_attributes = self.platform.attribute_schema.state_ids()
         context = self.view.build_decision_view(actor_id, role=role, source_event_id=source_event_id)
         context["role"] = role
         trigger_config = configured_evolution_trigger(self.platform, task_type)
@@ -322,7 +323,7 @@ class AgentEngine:
                         read_signatures.add(self._read_signature(tool_name, arguments))
                         if role == "agent_decision":
                             context["decision_guidance"] = f"{read_tool_calls} focused read(s) completed. Use those results now; choose one listed behavior or wait."
-                    model_result = model_tool_result(tool_name, tool_result)
+                    model_result = model_tool_result(tool_name, tool_result, state_attributes=state_attributes)
                     internal_tool_result = self._restore_internal_tool_result(tool_name, arguments, tool_result)
                     transcript.append({
                         "step": "tool",

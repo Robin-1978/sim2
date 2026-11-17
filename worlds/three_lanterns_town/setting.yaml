@@ -2,6 +2,13 @@ name: 三灯镇
 premise: 三灯镇靠一口旧蓄水池和一条商路维持生计，边界石碑正在失去光泽。
 genre: frontier_mystery
 locale: zh-CN
+ui_text:
+  travel_choice: "前往 {name}"
+  travel_summary: "沿已知路线前往 {name}。"
+  travel_purpose: 移动到另一个已知地点
+  travel_time: "预计 {minutes} 分钟"
+  travel_impact: 抵达目标地点
+  world_label: 世界
 calendar:
   minutes_per_day: 1440
   day_phases:

@@ -83,58 +83,15 @@ def _tokens(source: str) -> Iterator[_Token]:
     yield _Token("eof", "", len(source))
 
 
-_REFERENCE_PREFIXES = (
-    "actor.",
-    "target.",
-    "world.",
-    "context.",
-    "event.",
-    "location.",
-    "destination.",
-    "area.",
-    "object.",
-    "resource.",
-    "route.",
-    "research.",
-    "secret.",
-    "inventory.",
-    "recipe.",
-    "inputs.",
-    "medicine.",
-    "patient.",
-    "counterparty.",
-    "communication.",
-    "institution.",
-    "alarm.",
-    "attack.",
-    "combat.",
-    "conflict.",
-    "defense.",
-    "dialogue.",
-    "food.",
-    "water.",
-    "ration.",
-    "threat.",
-    "treatment.",
-    "outputs.",
-    "station.",
-    "weapon.",
-)
+# A word with dotted segments (``context.limit``, ``supply.level``) names a
+# value; a bare word without a dot (``pathfinder``) is a label.  The syntax
+# alone decides, so a world may introduce any root without touching the parser:
+# the evaluator resolves the path and treats an unknown one as unavailable.
+_DOTTED_PATH = re.compile(r"[^\W\d][\w:\-]*(?:\.[\w:\-]+)+", re.UNICODE)
 
 
 def _looks_like_reference(value: str) -> bool:
-    return value.startswith(_REFERENCE_PREFIXES) or value in {
-        "true", "false", "action.none", "alarm.broadcast", "attack.resolved",
-        "communication.channel_open", "conflict.available", "danger.detected",
-        "defense.window_complete", "dialogue.completed", "entity.installed",
-        "food.consumed", "food.unavailable", "hostile_contact", "inputs.lost",
-        "location.locked", "market.empty", "medicine.failed", "negotiation.recorded",
-        "object.recovered", "patient.fever_reduced", "ration.purchased",
-        "ration.withdrawn", "resource.collected", "resource.empty", "route.completed",
-        "source.accessible", "source.destroyed", "target.out_of_range",
-        "target.refused", "threat.overwhelming", "treatment.completed",
-        "trust.collapsed", "village_food.empty", "water.consumed", "water.unavailable",
-    }
+    return _DOTTED_PATH.fullmatch(value) is not None
 
 
 class _Parser:

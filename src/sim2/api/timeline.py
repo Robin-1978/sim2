@@ -19,7 +19,7 @@ def build_timeline(store: Any, *, limit: int = 100, after_event_id: int = 0, inc
             ("故事节拍", "当前进展"),
             ("story goal", "current goal"),
             ("story beat", "current development"),
-            ("Story Agent", "the town's account"),
+            ("Story Agent", "the account"),
             ("NPC", "the character"),
             ("Agent", "the character"),
             ("行为树", "行动方案"),
@@ -81,7 +81,7 @@ def build_timeline(store: Any, *, limit: int = 100, after_event_id: int = 0, inc
                     topic = topic if topic and topic != "unknown" else clip(exchange.get("topic"), 60)
             message = clip(message, 140)
             if message:
-                sentence = f"{actor} told {target or 'the town'} ({topic}): {message}"
+                sentence = f"{actor} told {target or 'everyone'} ({topic}): {message}"
             else:
                 sentence = f"{actor} exchanged information{f' with {target}' if target else ''}."
         elif event_type in {"trade.offer_created", "trade.countered"}:

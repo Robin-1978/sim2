@@ -258,12 +258,13 @@
   function renderEntry() {
     const world = state.world || {};
     const entry = state.entry || {};
-    $("entry-title").textContent = world.title || "潮汐公社";
+    $("entry-title").textContent = world.title || "世界";
+    if (world.title) document.title = `${world.title} · sim2`;
     $("entry-premise").textContent = world.premise || "读取世界入口…";
     $("entry-genre").textContent = world.genre || "世界模拟";
-    $("entry-season").textContent = world.season || "风暴季";
+    $("entry-season").textContent = world.season || "—";
     $("entry-instance").textContent = world.instance_id || "当前实例";
-    $("hud-world-title").textContent = world.title || "潮汐公社";
+    $("hud-world-title").textContent = world.title || "世界";
     const instanceSelect = $("entry-instance-select");
     instanceSelect.replaceChildren();
     const instances = state.instances.length ? state.instances : [{ instance_id: world.instance_id || "当前实例", active: true, world_minute: world.world_minute || 0 }];
@@ -362,7 +363,7 @@
         state.playerToken = result.session_token || null;
         storageSet(PLAYER_KEY, { id: state.playerId, token: state.playerToken, name: state.playerName });
         enterGame();
-        toast(result.resumed ? `已恢复角色 ${state.playerName}。` : `欢迎来到潮汐公社，${state.playerName}。`, "ok");
+        toast(result.resumed ? `已恢复角色 ${state.playerName}。` : `欢迎来到${state.world?.title || "这个世界"}，${state.playerName}。`, "ok");
         await Promise.all([loadView(), loadRuntime()]);
         await Promise.allSettled([loadFeed(), loadDialogue(), loadTrades()]);
       } catch (error) {
@@ -457,8 +458,8 @@
     $("hud-day").textContent = clock.day;
     $("hud-time").textContent = clock.time;
     $("hud-phase").textContent = clock.phase;
-    $("hud-season").textContent = state.world?.season || worldTime?.season || "风暴季";
-    $("hud-world-title").textContent = state.world?.title || view?.world_id || "潮汐公社";
+    $("hud-season").textContent = state.world?.season || worldTime?.season || "—";
+    $("hud-world-title").textContent = state.world?.title || view?.world_id || "世界";
     const running = Boolean(state.runtime?.running);
     const pill = $("runtime-pill");
     pill.textContent = running ? "自动运行中" : "手动世界";
@@ -1282,19 +1283,23 @@
       button.append(el("strong", "", node.name || node.id));
       button.append(el("small", "", node.id === current ? "你在这里" : reachable ? "可前往" : (node.tags || []).join(" · ")));
       if (reachable && node.id !== current) {
-        button.title = `前往 ${node.name || node.id}`;
+        // The server words every travel action from the world's ui_text, so the
+        // map reuses it instead of composing its own phrases.
+        const travelAction = () => (state.view?.actions || []).find(
+          (entry) => entry.ref === "behavior:travel" && entry.parameters?.location_id === node.id,
+        );
+        button.title = travelAction()?.choice || node.name || node.id;
         button.addEventListener("click", () => {
-          const route = (state.view?.routes || []).find((entry) => entry.id === node.id);
           const dialog = $("map-dialog");
           if (dialog.open) dialog.close();
-          submitAction({
+          // beginAction forwards action.parameters; calling submitAction directly
+          // sent an empty parameter object, dropping the destination.
+          beginAction(travelAction() || {
             ref: "behavior:travel",
-            choice: `前往 ${node.name || node.id}`,
-            name: `前往 ${node.name || node.id}`,
+            choice: node.name || node.id,
+            name: node.name || node.id,
             kind: "travel",
             parameters: { location_id: node.id },
-            time: `预计 ${route?.minutes || 0} 分钟`,
-            summary: `沿已知路线前往 ${node.name || node.id}。`,
           });
         });
       }

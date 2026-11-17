@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 import json
 from typing import Any
+
+# State every character has regardless of the world's attribute schema.
+STRUCTURAL_STATE_KEYS = frozenset({"status", "location_id", "active_behavior", "active_action", "remaining_minutes"})
 
 
 @dataclass(frozen=True)
@@ -17,8 +21,15 @@ class AgentTurn:
     prompt_history: list[str] = field(default_factory=list)
 
 
-def model_tool_result(tool_name: str, result: dict[str, Any]) -> dict[str, Any]:
-    """Return the bounded tool projection sent back through the session."""
+def model_tool_result(tool_name: str, result: dict[str, Any], *, state_attributes: Iterable[str] = ()) -> dict[str, Any]:
+    """Return the bounded tool projection sent back through the session.
+
+    An entity's ``state`` keeps the structural fields every character has plus
+    the numeric attributes the world declares (``state_attributes``); it never
+    forwards other state, which can be large or private.
+    """
+
+    state_keys = STRUCTURAL_STATE_KEYS | {str(item) for item in state_attributes}
 
     def compact(value: Any, *, key: str = "", depth: int = 0) -> Any:
         if depth > 4:
@@ -40,7 +51,6 @@ def model_tool_result(tool_name: str, result: dict[str, Any]) -> dict[str, Any]:
             if normalized in drop or normalized.endswith("_id"):
                 continue
             if normalized in {"initial_state", "state"} and isinstance(child_value, dict):
-                state_keys = {"status", "location_id", "active_behavior", "active_action", "remaining_minutes", "energy", "attention", "health", "exposure", "threat_level", "reputation"}
                 child_value = {k: v for k, v in child_value.items() if k in state_keys}
             output[normalized] = compact(child_value, key=normalized, depth=depth + 1)
         return output

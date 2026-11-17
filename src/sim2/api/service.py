@@ -6,6 +6,7 @@ from typing import Any
 from ..intents.models import BehaviorIntent
 from ..platform.runtime import Platform
 from ..world.player_template import PlayerTemplateError, parse_player_template
+from ..world.ui_text import UiText
 from .authoring import AuthoringService
 
 
@@ -51,19 +52,20 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
     # Travel is a generic player affordance. The decision projection hides
     # a travel BT when its destination is not selected yet; clients supply
     # each known route as an explicit, validated intent instead.
+    ui = UiText.from_setting(platform.store.repositories.metadata.get("setting", {}))
     for route in routes:
         if active_task.get("action") or active_task.get("bt"):
             break
         actions.insert(0, {
             "ref": "behavior:travel",
-            "choice": f"前往 {route['name']}",
-            "name": f"前往 {route['name']}",
-            "summary": f"沿已知路线前往 {route['name']}。",
-            "purpose": "移动到另一个已知地点",
+            "choice": ui.text("travel_choice", name=route["name"]),
+            "name": ui.text("travel_choice", name=route["name"]),
+            "summary": ui.text("travel_summary", name=route["name"]),
+            "purpose": ui.text("travel_purpose"),
             "parameters": {"location_id": route["id"]},
-            "time": f"预计 {route['minutes']} 分钟",
+            "time": ui.text("travel_time", minutes=route["minutes"]),
             "cost": [],
-            "impact": ["抵达目标地点"],
+            "impact": [ui.text("travel_impact")],
             "target_required": False,
             "kind": "travel",
         })
@@ -301,9 +303,15 @@ class ControlService:
         words = " ".join(str(text or "").split())
         return words if len(words) <= size else words[: max(0, size - 1)] + "…"
 
-    def _public_name(self, agent_id: str | None) -> str:
+    def _world_label(self) -> str:
+        """What the world calls itself as the actor of an event nobody caused."""
+
+        setting = self.platform.store.repositories.metadata.get("setting", {})
+        return UiText.from_setting(setting).text("world_label")
+
+    def _public_name(self, agent_id: str | None, world_label: str) -> str:
         if not agent_id:
-            return "世界"
+            return world_label
         try:
             return str(self.platform.store.repositories.entities.get_entity(str(agent_id)).get("name") or agent_id)
         except KeyError:
@@ -319,6 +327,7 @@ class ControlService:
         """
 
         with self.platform.store.read_transaction():
+            world_label = self._world_label()
             exchanges = self.platform.store.repositories.social.list_recent_dialogue_exchanges(limit=max(1, min(int(limit), 100)))
             items = [
                 {
@@ -327,9 +336,9 @@ class ControlService:
                     "topic": item.get("topic") or "general",
                     "message": item.get("message") or "",
                     "speaker_id": item.get("speaker_id"),
-                    "speaker": self._public_name(item.get("speaker_id")),
+                    "speaker": self._public_name(item.get("speaker_id"), world_label),
                     "listener_id": item.get("listener_id"),
-                    "listener": self._public_name(item.get("listener_id")),
+                    "listener": self._public_name(item.get("listener_id"), world_label),
                 }
                 for item in exchanges
             ]
@@ -345,6 +354,7 @@ class ControlService:
 
         wanted = ("behavior.started", "behavior.completed", "behavior.failed", "behavior.interrupted")
         with self.platform.store.read_transaction():
+            world_label = self._world_label()
             events = self.platform.store.repositories.events.recent_events_by_types(wanted, limit=max(1, min(int(limit), 100)))
             labels = {
                 str(item.get("id")): str(item.get("agent_label") or item.get("summary") or item.get("description") or item.get("id"))
@@ -364,14 +374,14 @@ class ControlService:
                     "world_minute": event.get("world_minute"),
                     "event_type": event.get("event_type"),
                     "actor_id": event.get("actor_id"),
-                    "actor": self._public_name(event.get("actor_id")),
+                    "actor": self._public_name(event.get("actor_id"), world_label),
                     "behavior_id": behavior_id or None,
                     "behavior": labels.get(behavior_id, behavior_id or None),
                     "detail": self._clip(detail, 140) if detail else None,
                 })
         return {"status": "ok", "decisions": items}
 
-    def _public_event(self, event: dict[str, Any]) -> dict[str, Any]:
+    def _public_event(self, event: dict[str, Any], world_label: str) -> dict[str, Any]:
         """Project one event for observer drill-down without private payloads."""
 
         decision = event.get("decision") if isinstance(event.get("decision"), dict) else {}
@@ -382,7 +392,7 @@ class ControlService:
             "world_minute": event.get("world_minute"),
             "event_type": event.get("event_type"),
             "actor_id": event.get("actor_id"),
-            "actor": self._public_name(event.get("actor_id")),
+            "actor": self._public_name(event.get("actor_id"), world_label),
             "topic": event.get("topic"),
             "summary": self._clip(summary, 160) if summary else None,
         }
@@ -405,6 +415,7 @@ class ControlService:
             if not found:
                 return {"status": "rejected", "message": f"event does not exist: {target_id}", "failed_check": "event_id"}
             event = found[0]
+            world_label = self._world_label()
             links = {str(event.get(key)) for key in ("causation_id", "correlation_id", "intent_id") if event.get(key)}
             related = []
             if links:
@@ -413,10 +424,10 @@ class ControlService:
                         continue
                     item_links = {str(item.get(key)) for key in ("causation_id", "correlation_id", "intent_id") if item.get(key)}
                     if links & item_links:
-                        related.append(self._public_event(item))
+                        related.append(self._public_event(item, world_label))
                         if len(related) >= 50:
                             break
-        return {"status": "ok", "event": self._public_event(event), "related": related}
+            return {"status": "ok", "event": self._public_event(event, world_label), "related": related}
 
     def dialogue(self, speaker_id: str, listener_id: str, topic: str, message: str) -> dict[str, Any]:
         return self.platform.submit_dialogue(speaker_id, listener_id, topic, message)

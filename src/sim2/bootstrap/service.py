@@ -14,6 +14,7 @@ from ..persistence.store import WorldStore, config_hash
 from ..world.lifecycle import validate_incapacitation_rule
 from ..world.player_template import PlayerTemplateError, parse_player_template
 from ..world.schema import AttributeSchema
+from ..world.ui_text import validate_ui_text
 
 
 CONFIG_COLLECTIONS = {
@@ -373,6 +374,8 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
     world = template.get("world")
     if not isinstance(world, dict) or not str(world.get("id") or "").strip():
         errors.append("world.id is required")
+    if isinstance(world, dict):
+        errors.extend(error.replace("ui_text", "world.ui_text", 1) for error in validate_ui_text(world.get("ui_text")))
     if template.get("template_version") is not None and not isinstance(template.get("template_version"), str):
         errors.append("template_version must be a string")
 
@@ -908,7 +911,7 @@ def world_package_template(config_dir: Path) -> dict[str, Any]:
         "random_seed": manifest.get("random_seed"),
         "properties": dict(world_state.get("properties", {}) or {}),
     }
-    for key in ("public_history", "secrets", "calendar", "world_clock"):
+    for key in ("public_history", "secrets", "calendar", "world_clock", "ui_text"):
         if key in setting:
             world[key] = setting[key]
 
@@ -1222,6 +1225,8 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
 
     rules = load_yaml(config_dir, "rules.yaml", {}) or {}
     errors.extend(validate_incapacitation_rule(rules))
+    setting = load_yaml(config_dir, "setting.yaml", {})
+    errors.extend(validate_ui_text(setting.get("ui_text") if isinstance(setting, dict) else None))
     try:
         evolution = normalize_evolution_config(load_yaml(config_dir, "evolution.yaml", {}) or {})
     except (TypeError, ValueError) as exc:
@@ -1445,7 +1450,7 @@ def write_world_package_from_template(
         "genre": world.get("genre", ""),
         "locale": world.get("locale", "en"),
     }
-    for optional in ("public_history", "secrets", "calendar", "world_clock"):
+    for optional in ("public_history", "secrets", "calendar", "world_clock", "ui_text"):
         if world.get(optional) is not None:
             setting[optional] = world[optional]
     write("setting.yaml", setting)

@@ -2,6 +2,13 @@ name: 潮汐公社
 premise: 风暴季正在逼近。四名居民守着一段破损的潮门和一座半沉的观测台，必须在修复海堤、补全海图与重开外海航路之间做出选择，并让每一次采集都留给沼泽恢复的余地。
 genre: 海岸生存与公共抉择
 locale: zh-CN
+ui_text:
+  travel_choice: "前往 {name}"
+  travel_summary: "沿已知路线前往 {name}。"
+  travel_purpose: 移动到另一个已知地点
+  travel_time: "预计 {minutes} 分钟"
+  travel_impact: 抵达目标地点
+  world_label: 世界
 calendar:
   minutes_per_day: 1440
   day_phases:

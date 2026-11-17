@@ -75,7 +75,11 @@ language.
 
 Validation checks executable condition paths, declared attributes and world
 properties, required effect fields such as `delta`, entity types, Action/BT
-references, and generic context resolvers. It then creates a disposable SQLite
+references, and generic context resolvers. In an expression, a dotted word
+(`context.limit`, `supply.level`) is always a value reference, a bare word
+(`pathfinder`) is a label and a quoted string is text; the parser keeps no list
+of allowed roots, so a path whose root the world does not provide is reported
+as an unsupported condition path instead of being compared as text. It then creates a disposable SQLite
 instance and executes one initial behavior per individual. When that smoke test
 cannot start a behavior, its feedback names the failed BT conditions or Action
 preconditions so WorldBuilder can correct the actual cause instead of guessing.
@@ -110,7 +114,7 @@ attribute without a Platform branch.
 | Section | Purpose |
 | --- | --- |
 | `template_version` | Version recorded as the package configuration version. |
-| `world` | ID, title, premise, genre, locale, clock, seed and initial world properties. |
+| `world` | ID, title, premise, genre, locale, clock, seed, optional `ui_text` phrases and initial world properties. |
 | `attributes` | Every numeric state or need, including direct meaning, range and default. |
 | `locations` | Place nodes, visible names, tags, safety, optional map position, route IDs and optional `route_distances` edge weights. |
 | `resources` | Finite or regenerating world stocks at configured locations. A stock is an entity with a physical `location_id`; optional `storage_scope`, `owner_id`, and `access_policy` keep separate settlements or institutions from sharing it accidentally. |
@@ -127,6 +131,34 @@ attribute without a Platform branch.
 | `player_template` | Optional entry location, origins and initial knowledge. |
 | `initial_events` | Opening facts recorded at configured world minutes. |
 | `prompts` | Optional world-owned runtime prompt policies. |
+
+### World-owned presentation text
+
+Clients and public projections do not embed wording that belongs to one world.
+`world.ui_text` (`ui_text` in `setting.yaml`) holds the phrases a world wants to
+override. Every key is optional and falls back to neutral English:
+
+| Key | Placeholders | Neutral default |
+| --- | --- | --- |
+| `travel_choice` | `{name}` | `Travel to {name}` |
+| `travel_summary` | `{name}` | `Follow the known route to {name}.` |
+| `travel_purpose` | none | `Move to another known place` |
+| `travel_time` | `{minutes}` | `{minutes} minutes` |
+| `travel_impact` | none | `Arrive at the selected location` |
+| `world_label` | none | `The world` |
+
+```yaml
+ui_text:
+  travel_choice: "前往 {name}"
+  travel_time: "预计 {minutes} 分钟"
+  world_label: 世界
+```
+
+The travel phrases word the generic travel action in the player view, and the
+game client's map reuses that action instead of composing its own text.
+`world_label` names the world as the actor of an event nobody caused in the
+observer feeds. Validation rejects unknown keys, empty phrases and placeholders
+a key does not offer.
 
 ### Player entry template
 
