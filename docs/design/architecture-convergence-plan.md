@@ -222,6 +222,7 @@ at a time, each in its own commit and each compared with the code it replaces.
 | `submit_world_change` | 257 lines in `platform/world_changes.py` | 6 lines. Validation moved to `platform/world_change_validation.py`: `WorldChangeValidationMixin` is composed with `WorldChangesRuntimeMixin` in `WorldChangesService`. `submit_world_change` opens a `WorldChangeSubmission` (the proposal as it is normalized on the way), runs `_validate_world_change` and commits through `_commit_world_change`. `_validate_world_change` runs the gates in their fixed order (required fields, change type, property key, property presence, payload object, rule, route, event effects, property value), each returning the rejection that `reject_intent` stored or `None`; the property key, the route endpoints and the property value are normalized into `submission.proposal`, so a rejection stores the proposal as it stood at that gate. `_commit_world_change` creates the intent, applies the change (`_apply_rule`, `_apply_route`, `_apply_relationship`, `_apply_faction` or the world property setter), publishes the `world.change.*` event, stores the pending proposal, remembers it for God and finishes the intent in one transaction. A relationship or faction change that is unusable while it is applied raises `_ChangeRejected` before anything is written; the intent and its rejection are committed together, as before. The longest new function is 32 lines |
 | `submit_entity_proposal` | 230 lines in `platform/entity_proposals.py` | 10 lines. Validation moved to `platform/entity_proposal_validation.py`: `EntityProposalValidationMixin` is composed with `EntityProposalRuntimeMixin` in `EntityProposalService`. `submit_entity_proposal` opens an `EntitySubmission` (the intent and entity ids, the proposal as received, the proposal as it is normalized and the errors found so far), runs `_collect_entity_errors` and rejects once with every reason it found; `entity_failed_check` names the rejection after the most specific reason. `_collect_entity_errors` runs the steps in a fixed order (`_check_entity_label`, `_normalize_location_routes`, `_check_god_limits`, `_check_location_reference`, `_check_research_state`, `_check_research_assignees`, `_check_entity_id_free`), each appending to `submission.errors`; only `_normalize_location_routes` changes the proposal, by storing route neighbors and distances under their canonical ids. `_plan_entity` turns the validated proposal into an `EntityPlan` (the state to store, the structure promoted out of a location's state, and the character from `_normalize_god_agent_state`, which moved unchanged and rejects with `agent_schema`). `_commit_entity` creates the intent, writes the character (`_write_agent`) or the entity (`_write_structure`: `_join_neighbors`, `_record_research_gap` and the reachability check that raises `_UnreachableProposal`), publishes `entity.created`, remembers it for God and finishes the intent in one transaction; an unreachable research source rolls all of it back and is rejected with `entity_unreachable`. The longest new function is 29 lines, not counting `_normalize_god_agent_state` (118 lines, unchanged) |
 | `evaluate_turn` | 228 lines in `agents/quality.py` | 26 lines. `evaluate_turn` collects the checks every role shares (`_protocol_checks`), returns the `provider_error` grade as soon as the provider gave no usable response, reads the final submission (`_final_submission`, unchanged) and runs one function per role: `_decision_checks`, `_reflection_checks`, `_god_checks` or `_story_checks`. Each appends its checks in the order the inline branches did. A decision turn returns a `_DecisionChoice` (the candidates and their refs, whether the turn waited, was guarded or interacted, the institution intent, the candidate matched by label and the selected ref) built by `_select_decision`; `_grounding_checks` adds the goal and drive alignment to it, and `_decision_grade` or `_role_grade` turns the checks into the grade. The branches that were inline are functions of their own: `_institution_checks`, `_experience_checks`, `_capability_update_checks`, `_definition_checks`, `_world_change_checks` (over `_narrative_event_checks` and `_rule_checks`, which calls `_declared_condition_checks`) and `_story_beat_checks`. Two locals that were assigned and never read (a `tokens` lambda and `effect_is_gate`) are gone. The longest new function is 37 lines |
+| `_Handler.do_POST` | 207 lines in `api/http.py` | 14 lines. `do_POST` reads the JSON body, lets `_replay_idempotent_post` answer a repeated request from its stored response (or install the write that stores the first response of a new one) and hands the rest to `_route_post`; the mapping of errors to 400, 403 and 500 stayed in `do_POST`. `_route_post` serves `/session` (`_post_session`), then the operator calls, then the player routes. `_OPERATOR_POSTS` lists the 25 operator paths (the `/authoring/*` routes and the runtime, instance, snapshot, decide, simulate and event routes) with the server call behind each; one guard requires an operator session for them and for every other path under `/authoring/`, so an unknown authoring path is still refused before it is reported as not found. `_PLAYER_POSTS` maps the player paths to `_post_enter_player`, `_post_player_act`, `_post_player_wait`, `_post_dialogue` and the four `_post_trade_*` methods, whose bodies moved unchanged. The longest new function is 23 lines |
 
 `AgentEngine.run` equivalence: 887 scripted ReAct sessions on the five shipped
 worlds produced the same `AgentTurn`, provider usage and database content as
@@ -376,8 +377,41 @@ decisions, every reflection submission, every God submission (progress,
 institutions, entities, definitions, narrative events and rules with their
 enforcement and declared conditions) and Story progress, waits and beats.
 
-Still above 200 lines: `api/cli.py:main` (291), `do_POST` (207) and
-`_build_story_view` (203).
+`do_POST` equivalence: the previous module was kept outside the package and
+its handler was driven side by side with the new one, without sockets, over a
+recording stand-in for the server that keeps the real authorization, session
+and idempotency code. 84,000 POST requests in 2,100 sequences of 40 covered
+every route and a few that do not exist, with and without a query string; no
+credential, the operator token, an operator, observer and player session, a
+player session of another instance and an unknown one, as a header or as a
+bearer token; idempotency keys in the body and the header, repeated, too long
+and shared between sessions; bodies with missing, mistyped or Chinese values,
+text that is not JSON, arrays, numbers and empty bodies; a wrong content
+length; and errors raised from inside the server call (`KeyError`, `TypeError`,
+`ValueError`, `JSONDecodeError`, `PermissionError`, `RuntimeError`). The status,
+every header, the body, the order and arguments of every call made on the
+server, the stored idempotent responses, the issued sessions, the log lines
+and whether the handler's write was replaced were identical for every request,
+and the POST code of both modules is 100% line-covered by it. Twenty-seven deliberate
+mutations (the replay status, a replay that goes on, the token or the session
+exemption of the idempotency key, an unguarded authoring prefix or operator
+table, the guard role, a swapped or renamed call, a changed default reason, a
+call without the body, a player path mapped to another handler, the speaker
+role of a dialogue, a changed status for bad requests and refusals, and a body
+that is not read) were each caught, and also by the permanent tests. The
+statements of the session branch and the eight player branches are
+AST-identical to the new methods, the 25 operator calls are AST-identical to
+the table entries once `self.server` is `server`, the exception handlers and
+the nested capturing write are unchanged, and no other function of the module
+differs. The only string of the previous `do_POST` that the new code has fewer
+of is `"operator"` (sixteen guards became one).
+`tests/test_http_post_routes.py` is the permanent guard (it also passes on the
+previous implementation): the call behind each operator route and its refusal
+for every other session, unknown routes, the sessions that may be created, the
+authorization of player actions, waits, dialogues and trade calls, idempotent
+replay and what it stores, and the mapping of errors.
+
+Still above 200 lines: `api/cli.py:main` (291) and `_build_story_view` (203).
 
 ### Execution order for the remaining work
 

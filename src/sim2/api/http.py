@@ -5,6 +5,7 @@ import logging
 import os
 import secrets
 import time
+from collections.abc import Callable
 from threading import RLock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -18,6 +19,36 @@ from .web import web_asset
 
 
 _LOGGER = logging.getLogger("sim2.http")
+
+
+# Control calls that need an operator session: the path and what the server does with the request body.
+_OPERATOR_POSTS: dict[str, Callable[[Any, dict[str, Any]], Any]] = {
+    "/authoring/open": lambda server, body: server.service_call("authoring_open", body),
+    "/authoring/create": lambda server, body: server.create_instance(body),
+    "/authoring/build": lambda server, body: server.service_call("authoring_build", body),
+    "/authoring/compile": lambda server, body: server.service_call("authoring_compile", body),
+    "/authoring/smoke": lambda server, body: server.service_call("authoring_smoke", body),
+    "/authoring/export": lambda server, body: server.service_call("authoring_export", body),
+    "/authoring/validate": lambda server, body: server.service_call("authoring_validate", body),
+    "/authoring/describe": lambda server, body: server.service_call("authoring_describe", body),
+    "/authoring/build-world": lambda server, body: server.service_call("authoring_build_world", body),
+    "/instances": lambda server, body: server.create_instance(body),
+    "/instances/init": lambda server, body: server.init_instance(body),
+    "/instances/activate": lambda server, body: server.activate_instance(body),
+    "/runtime/start": lambda server, body: server.start_runtime(body),
+    "/runtime/pause": lambda server, body: server.pause_runtime(str(body.get("reason", "web"))),
+    "/runtime/resume": lambda server, body: server.resume_runtime(str(body.get("reason", "web"))),
+    "/runtime/stop": lambda server, body: server.stop_runtime(str(body.get("reason", "web-stop"))),
+    "/runtime/step": lambda server, body: server.step_runtime(),
+    "/decide": lambda server, body: server.decide(body),
+    "/simulate": lambda server, body: server.simulate(body),
+    "/snapshots": lambda server, body: server.snapshot_create(body),
+    "/restore": lambda server, body: server.snapshot_restore(body),
+    "/pause": lambda server, body: server.pause_runtime(str(body.get("reason", "http"))),
+    "/resume": lambda server, body: server.resume_runtime(str(body.get("reason", "http"))),
+    "/step": lambda server, body: server.step_runtime(),
+    "/events": lambda server, body: server.service_call("inject", str(body["event_type"]), dict(body.get("payload", {})), body.get("actor_id")),
+}
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -294,208 +325,185 @@ class _Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         try:
             body = self._read_json()
-            idem_token = self._token()
-            idem_key = "" if path == "/session" else self.server._idem_key_value(body, self.headers)
-            if idem_key:
-                stored = self.server.idem_lookup(idem_token, idem_key)
-                if stored is not None:
-                    return self._write(stored["status"], stored["value"])
-
-                captured: dict[str, Any] = {}
-                _original_write = self._write
-
-                def _capturing_write(status: int, value: dict[str, Any]):  # type: ignore[no-redef]
-                    if "done" not in captured:
-                        captured["done"] = True
-                        self.server.idem_store(idem_token, idem_key, status, value)
-                    return _original_write(status, value)
-
-                self._write = _capturing_write  # type: ignore[method-assign]
-            if path == "/session":
-                role = str(body.get("role") or "observer")
-                if role == "operator":
-                    supplied = str(body.get("operator_token") or "")
-                    if not secrets.compare_digest(supplied, self.server.operator_token):
-                        return self._forbidden("operator token is invalid")
-                    token = self.server.issue_session("operator")
-                    return self._write(200, {"status": "ok", "role": "operator", "session_token": token})
-                if role != "observer":
-                    return self._forbidden("only observer sessions may be created without a player")
-                token = self.server.issue_session("observer")
-                return self._write(200, {"status": "ok", "role": "observer", "session_token": token})
-            if path.startswith("/authoring/"):
-                if not self._require("operator"):
-                    return None
-            if path == "/authoring/open":
-                return self._write(200, self.server.service_call("authoring_open", body))
-            if path == "/authoring/create":
-                return self._write(200, self.server.create_instance(body))
-            if path == "/authoring/build":
-                return self._write(200, self.server.service_call("authoring_build", body))
-            if path == "/authoring/compile":
-                return self._write(200, self.server.service_call("authoring_compile", body))
-            if path == "/authoring/smoke":
-                return self._write(200, self.server.service_call("authoring_smoke", body))
-            if path == "/authoring/export":
-                return self._write(200, self.server.service_call("authoring_export", body))
-            if path == "/authoring/validate":
-                return self._write(200, self.server.service_call("authoring_validate", body))
-            if path == "/authoring/describe":
-                return self._write(200, self.server.service_call("authoring_describe", body))
-            if path == "/authoring/build-world":
-                return self._write(200, self.server.service_call("authoring_build_world", body))
-            if path == "/instances":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.create_instance(body))
-            if path == "/instances/init":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.init_instance(body))
-            if path == "/instances/activate":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.activate_instance(body))
-            if path == "/runtime/start":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.start_runtime(body))
-            if path == "/runtime/pause":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.pause_runtime(str(body.get("reason", "web"))))
-            if path == "/runtime/resume":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.resume_runtime(str(body.get("reason", "web"))))
-            if path == "/runtime/stop":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.stop_runtime(str(body.get("reason", "web-stop"))))
-            if path == "/runtime/step":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.step_runtime())
-            if path == "/decide":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.decide(body))
-            if path == "/simulate":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.simulate(body))
-            if path == "/snapshots":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.snapshot_create(body))
-            if path == "/restore":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.snapshot_restore(body))
-            if path == "/pause":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.pause_runtime(str(body.get("reason", "http"))))
-            if path == "/resume":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.resume_runtime(str(body.get("reason", "http"))))
-            if path == "/step":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.step_runtime())
-            if path == "/events":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.service_call("inject", str(body["event_type"]), dict(body.get("payload", {})), body.get("actor_id")))
-            if path == "/players":
-                return self._write(200, self.server.enter_player(body))
-            if path == "/player/act":
-                player_id = self.server.resolve_agent_id(str(body.get("player_id") or ""))
-                body = {**body, "player_id": player_id}
-                return self._write(200, self.server.service_call(
-                    "player_act",
-                    body,
-                    authorize_role="player",
-                    authorize_token=self._token(),
-                    authorize_player_id=player_id,
-                ))
-            if path == "/player/wait":
-                return self._write(200, self.server.player_wait(
-                    str(body.get("player_id") or ""),
-                    minutes=int(body.get("minutes", 1) or 1),
-                    provider_name=body.get("provider"),
-                    authorize_token=self._token(),
-                ))
-            if path == "/dialogue":
-                raw_speaker_id = str(body.get("speaker_id") or "")
-                speaker_id = self.server.resolve_agent_id(raw_speaker_id) or raw_speaker_id
-                listener_id = self.server.resolve_agent_id(str(body.get("listener_id") or "")) or str(body.get("listener_id") or "")
-                role = "operator" if raw_speaker_id.strip().casefold() == "god" else "player"
-                return self._write(200, self.server.service_call(
-                    "dialogue",
-                    speaker_id,
-                    listener_id,
-                    str(body.get("topic", "general")),
-                    str(body["message"]),
-                    authorize_role=role,
-                    authorize_token=self._token(),
-                    authorize_player_id=speaker_id,
-                ))
-            if path == "/trade/offers":
-                offerer_id = self.server.resolve_agent_id(str(body.get("offerer_id") or "")) or str(body.get("offerer_id") or "")
-                recipient_raw = str(body.get("recipient_id") or "")
-                recipient_id = self.server.resolve_agent_id(recipient_raw) or recipient_raw
-                return self._write(200, self.server.service_call(
-                    "trade_offer",
-                    offerer_id,
-                    recipient_id,
-                    dict(body.get("give", {})),
-                    dict(body.get("want", {})),
-                    authorize_role="player",
-                    authorize_token=self._token(),
-                    authorize_player_id=offerer_id,
-                ))
-            if path == "/trade/accept":
-                recipient_id = self.server.resolve_agent_id(str(body.get("recipient_id") or "")) or str(body.get("recipient_id") or "")
-                return self._write(200, self.server.service_call(
-                    "trade_accept",
-                    recipient_id,
-                    str(body["offer_id"]),
-                    authorize_role="player",
-                    authorize_token=self._token(),
-                    authorize_player_id=recipient_id,
-                ))
-            if path == "/trade/counter":
-                counterparty_raw = str(body.get("counterparty_id") or body.get("recipient_id") or "")
-                counterparty_id = self.server.resolve_agent_id(counterparty_raw) or counterparty_raw
-                return self._write(200, self.server.service_call(
-                    "trade_counter",
-                    counterparty_id,
-                    str(body["offer_id"]),
-                    dict(body.get("give", {})),
-                    dict(body.get("want", {})),
-                    authorize_role="player",
-                    authorize_token=self._token(),
-                    authorize_player_id=counterparty_id,
-                ))
-            if path == "/trade/reject":
-                recipient_id = self.server.resolve_agent_id(str(body.get("recipient_id") or "")) or str(body.get("recipient_id") or "")
-                return self._write(200, self.server.service_call(
-                    "trade_reject",
-                    recipient_id,
-                    str(body["offer_id"]),
-                    authorize_role="player",
-                    authorize_token=self._token(),
-                    authorize_player_id=recipient_id,
-                ))
-            return self._write(404, {"status": "not_found"})
+            if self._replay_idempotent_post(path, body):
+                return None
+            return self._route_post(path, body)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return self._write(400, {"status": "bad_request", "message": str(exc)})
         except PermissionError as exc:
             return self._forbidden(str(exc))
         except Exception as exc:
             return self._write(500, {"status": "error", "message": str(exc)})
+
+    def _replay_idempotent_post(self, path: str, body: dict[str, Any]) -> bool:
+        """Answer a repeated request from its stored response, or remember the first response of this one."""
+
+        idem_token = self._token()
+        idem_key = "" if path == "/session" else self.server._idem_key_value(body, self.headers)
+        if not idem_key:
+            return False
+        stored = self.server.idem_lookup(idem_token, idem_key)
+        if stored is not None:
+            self._write(stored["status"], stored["value"])
+            return True
+
+        captured: dict[str, Any] = {}
+        _original_write = self._write
+
+        def _capturing_write(status: int, value: dict[str, Any]):  # type: ignore[no-redef]
+            if "done" not in captured:
+                captured["done"] = True
+                self.server.idem_store(idem_token, idem_key, status, value)
+            return _original_write(status, value)
+
+        self._write = _capturing_write  # type: ignore[method-assign]
+        return False
+
+    def _route_post(self, path: str, body: dict[str, Any]) -> None:
+        """Dispatch a POST: the session, an operator call, a player action or not found."""
+
+        if path == "/session":
+            return self._post_session(body)
+        operator_call = _OPERATOR_POSTS.get(path)
+        if (operator_call is not None or path.startswith("/authoring/")) and not self._require("operator"):
+            return None
+        if operator_call is not None:
+            return self._write(200, operator_call(self.server, body))
+        player_post = self._PLAYER_POSTS.get(path)
+        if player_post is not None:
+            return player_post(self, body)
+        return self._write(404, {"status": "not_found"})
+
+    def _post_session(self, body: dict[str, Any]) -> None:
+        """Create an observer session, or an operator session for the operator token."""
+
+        role = str(body.get("role") or "observer")
+        if role == "operator":
+            supplied = str(body.get("operator_token") or "")
+            if not secrets.compare_digest(supplied, self.server.operator_token):
+                return self._forbidden("operator token is invalid")
+            token = self.server.issue_session("operator")
+            return self._write(200, {"status": "ok", "role": "operator", "session_token": token})
+        if role != "observer":
+            return self._forbidden("only observer sessions may be created without a player")
+        token = self.server.issue_session("observer")
+        return self._write(200, {"status": "ok", "role": "observer", "session_token": token})
+
+    def _post_enter_player(self, body: dict[str, Any]) -> None:
+        """Enter a player into the world and hand back its session."""
+
+        return self._write(200, self.server.enter_player(body))
+
+    def _post_player_act(self, body: dict[str, Any]) -> None:
+        """Submit a player action for the authorized player."""
+
+        player_id = self.server.resolve_agent_id(str(body.get("player_id") or ""))
+        body = {**body, "player_id": player_id}
+        return self._write(200, self.server.service_call(
+            "player_act",
+            body,
+            authorize_role="player",
+            authorize_token=self._token(),
+            authorize_player_id=player_id,
+        ))
+
+    def _post_player_wait(self, body: dict[str, Any]) -> None:
+        """Advance the world by hand for the minutes a player waits."""
+
+        return self._write(200, self.server.player_wait(
+            str(body.get("player_id") or ""),
+            minutes=int(body.get("minutes", 1) or 1),
+            provider_name=body.get("provider"),
+            authorize_token=self._token(),
+        ))
+
+    def _post_dialogue(self, body: dict[str, Any]) -> None:
+        """Say something to another character as a player, or as God for an operator."""
+
+        raw_speaker_id = str(body.get("speaker_id") or "")
+        speaker_id = self.server.resolve_agent_id(raw_speaker_id) or raw_speaker_id
+        listener_id = self.server.resolve_agent_id(str(body.get("listener_id") or "")) or str(body.get("listener_id") or "")
+        role = "operator" if raw_speaker_id.strip().casefold() == "god" else "player"
+        return self._write(200, self.server.service_call(
+            "dialogue",
+            speaker_id,
+            listener_id,
+            str(body.get("topic", "general")),
+            str(body["message"]),
+            authorize_role=role,
+            authorize_token=self._token(),
+            authorize_player_id=speaker_id,
+        ))
+
+    def _post_trade_offer(self, body: dict[str, Any]) -> None:
+        """Offer a trade to another character."""
+
+        offerer_id = self.server.resolve_agent_id(str(body.get("offerer_id") or "")) or str(body.get("offerer_id") or "")
+        recipient_raw = str(body.get("recipient_id") or "")
+        recipient_id = self.server.resolve_agent_id(recipient_raw) or recipient_raw
+        return self._write(200, self.server.service_call(
+            "trade_offer",
+            offerer_id,
+            recipient_id,
+            dict(body.get("give", {})),
+            dict(body.get("want", {})),
+            authorize_role="player",
+            authorize_token=self._token(),
+            authorize_player_id=offerer_id,
+        ))
+
+    def _post_trade_accept(self, body: dict[str, Any]) -> None:
+        """Accept a trade offer."""
+
+        recipient_id = self.server.resolve_agent_id(str(body.get("recipient_id") or "")) or str(body.get("recipient_id") or "")
+        return self._write(200, self.server.service_call(
+            "trade_accept",
+            recipient_id,
+            str(body["offer_id"]),
+            authorize_role="player",
+            authorize_token=self._token(),
+            authorize_player_id=recipient_id,
+        ))
+
+    def _post_trade_counter(self, body: dict[str, Any]) -> None:
+        """Counter a trade offer."""
+
+        counterparty_raw = str(body.get("counterparty_id") or body.get("recipient_id") or "")
+        counterparty_id = self.server.resolve_agent_id(counterparty_raw) or counterparty_raw
+        return self._write(200, self.server.service_call(
+            "trade_counter",
+            counterparty_id,
+            str(body["offer_id"]),
+            dict(body.get("give", {})),
+            dict(body.get("want", {})),
+            authorize_role="player",
+            authorize_token=self._token(),
+            authorize_player_id=counterparty_id,
+        ))
+
+    def _post_trade_reject(self, body: dict[str, Any]) -> None:
+        """Reject a trade offer."""
+
+        recipient_id = self.server.resolve_agent_id(str(body.get("recipient_id") or "")) or str(body.get("recipient_id") or "")
+        return self._write(200, self.server.service_call(
+            "trade_reject",
+            recipient_id,
+            str(body["offer_id"]),
+            authorize_role="player",
+            authorize_token=self._token(),
+            authorize_player_id=recipient_id,
+        ))
+
+    _PLAYER_POSTS: dict[str, Callable[[Any, dict[str, Any]], None]] = {
+        "/players": _post_enter_player,
+        "/player/act": _post_player_act,
+        "/player/wait": _post_player_wait,
+        "/dialogue": _post_dialogue,
+        "/trade/offers": _post_trade_offer,
+        "/trade/accept": _post_trade_accept,
+        "/trade/counter": _post_trade_counter,
+        "/trade/reject": _post_trade_reject,
+    }
 
 
 class ControlHTTPServer(ThreadingHTTPServer):
