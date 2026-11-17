@@ -581,6 +581,21 @@ on an otherwise idle machine. The 200 ms target therefore cannot be claimed as
 met on this machine today; the code from before the session sits at the same
 edge.
 
+Verification of the cooldown hold (`e3dda33`) and the CLI split (`cef2091`),
+run on `cef2091`: `python -m pytest -q` finished with 1,269 passed in 387 s
+(two cores, lowest priority; 1,128 passed before, plus the 29 tests of the
+cooldown hold and the 112 of the CLI); `python -m compileall -q src scripts`
+and `git diff --check` were clean. The official benchmark command printed a
+p95 of 168.787 ms (samples 154.1 to 171.0 ms). The benchmark times
+`Platform.step()` only (`scripts/benchmark_platform.py:50`, `:56`), the
+single-tick primitive; `SimulationRunner` is reached through `Platform.run`
+(`platform/api_service.py:97`), the CLI, the TUI and `RuntimeSupervisor`, and
+none of them is on that path. The figure therefore measures the load of the
+machine at that moment, not these two changes, and the earlier p95 range of
+174 to 218 ms still describes how far one measurement moves. The cooldown hold
+was exercised with scripted providers; no real provider was called, so the
+30-second cooldown cap is taken from `llm/gateway.py`, not from a live outage.
+
 ### Execution order for the remaining work
 
 The following is the concrete plan for this development cycle. Each stage
