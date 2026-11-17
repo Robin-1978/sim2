@@ -171,7 +171,8 @@ remote provider, two character decision sessions on `starter_village` ended
 connection (no local model server was running), so the local decision check
 is not evidence either way.
 
-Still above 200 lines and not part of this pass: `submit_definition_proposal`
+Still above 200 lines and not part of this pass (the "Remaining function-size
+pass" below splits them): `submit_definition_proposal`
 (350), `AgentEngine.run` (317), `_validate_definition_proposal` (296),
 `submit_behavior` (295), `api/cli.py:main` (291), `submit_world_change` (257),
 `submit_entity_proposal` (230), `evaluate_turn` (228), `do_POST` (207) and
@@ -207,6 +208,32 @@ imports `compiler.py`.
 Other modules the plan names as concentrated (`platform/activity.py`,
 `definition_runtime.py`, `social.py`, `agents/engine.py`) are not part of
 this pass.
+
+### Remaining function-size pass (2026-11-17)
+
+The ten functions that stayed above 200 lines in the first pass are split one
+at a time, each in its own commit and each compared with the code it replaces.
+
+| Entry point | Before | Now |
+|---|---:|---|
+| `AgentEngine.run` | 317 lines in `agents/engine.py` | 24 lines. `run` skips a busy or incapacitated character, compiles the task context (`_compile_task_context` over `_attach_evolution_trigger`, `_attach_triggering_evidence` and `_select_session_tools`), starts a `ReactSession` (`agents/session.py`, which holds the counters and messages that were loop locals) and calls `_react_step` once per iteration. `_react_step` asks the model (`_request_model`) and then submits the final Intent (`_submit_intent`) or runs the tool calls (`_run_tool_calls` over `_collect_calls`, `_execute_calls` and `_record_tool_result`). The guard chain for tool requests is `agents/tool_guards.py:screen_tool_call` (49 lines, fixed order). The longest new method is 44 lines |
+
+`AgentEngine.run` equivalence: 887 scripted ReAct sessions on the five shipped
+worlds produced the same `AgentTurn`, provider usage and database content as
+the previous implementation, including sessions that raise. The scripts
+covered every role, plain and native tool calls (several per response, with
+and without call ids), malformed arguments, every guard in the chain, batched
+intents, provider failures and non-object replies, busy and incapacitated
+characters, trigger and event-group tasks, and an invalid AgentView. The new
+code is 99% line-covered by that run; the three uncovered lines are early
+returns in helpers this change did not touch. `tests/test_tool_guards.py` is
+the permanent guard for the order and wording contract of the guard chain.
+
+Still above 200 lines: `submit_definition_proposal` (350),
+`_validate_definition_proposal` (296), `submit_behavior` (295),
+`api/cli.py:main` (291), `submit_world_change` (257),
+`submit_entity_proposal` (230), `evaluate_turn` (228), `do_POST` (207) and
+`_build_story_view` (203).
 
 ### Execution order for the remaining work
 

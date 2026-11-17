@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 import json
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .tool_executor import AgentToolExecutor
 
 # State every character has regardless of the world's attribute schema.
 STRUCTURAL_STATE_KEYS = frozenset({"status", "location_id", "active_behavior", "active_action", "remaining_minutes"})
@@ -19,6 +22,76 @@ class AgentTurn:
     transcript: list[dict[str, Any]] = field(default_factory=list)
     initial_context: dict[str, Any] = field(default_factory=dict)
     prompt_history: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class TaskContext:
+    """The AgentView and tool allow-lists compiled for one task, before its session starts."""
+
+    context: dict[str, Any]
+    state_attributes: list[str]
+    event_ids: list[int]
+    trigger_contract: Any
+    interaction_tools: list[str] | None
+    session_tools: list[str] | None
+
+
+def call_key(tool_name: str, arguments: dict[str, Any]) -> str:
+    """Identify one tool request by name and exact arguments."""
+
+    return f"{tool_name}:{repr(sorted(arguments.items()))}"
+
+
+@dataclass
+class ReactSession:
+    """The state one bounded ReAct session mutates; ``AgentEngine.run`` creates exactly one.
+
+    The limits are copied from the engine when the session starts, so the tool
+    guards and counters read this object instead of a dozen loop locals.
+    """
+
+    role: str
+    actor_id: str
+    task_type: str
+    task: str
+    system_policy: str
+    context: dict[str, Any]
+    initial_context: dict[str, Any]
+    executor: AgentToolExecutor
+    event_ids: list[int]
+    state_attributes: list[str]
+    interaction_tools: list[str] | None
+    session_tools: list[str] | None
+    messages: list[dict[str, Any]]
+    max_tool_calls: int
+    max_repeated_tool_calls: int
+    read_budget: int
+    last_response: dict[str, Any] = field(default_factory=dict)
+    last_result: dict[str, Any] = field(default_factory=lambda: {"status": "no_result"})
+    transcript: list[dict[str, Any]] = field(default_factory=list)
+    prompt_history: list[str] = field(default_factory=list)
+    repeated: dict[str, int] = field(default_factory=dict)
+    read_signatures: set[str] = field(default_factory=set)
+    tool_calls_used: int = 0
+    read_tool_calls: int = 0
+
+    def register_call(self, tool_name: str, arguments: dict[str, Any], *, is_read_tool: bool) -> int:
+        """Count one requested tool call and return how often this exact request was made."""
+
+        self.tool_calls_used += 1
+        if is_read_tool:
+            self.read_tool_calls += 1
+        key = call_key(tool_name, arguments)
+        self.repeated[key] = self.repeated.get(key, 0) + 1
+        return self.repeated[key]
+
+    def finish(self, result: dict[str, Any], *, iterations: int, response: dict[str, Any] | None = None) -> AgentTurn:
+        """Close the session with ``result``; the response defaults to the last readable one."""
+
+        return AgentTurn(
+            self.role, self.task_type, self.last_response if response is None else response,
+            result, iterations, self.transcript, self.initial_context, self.prompt_history,
+        )
 
 
 def model_tool_result(tool_name: str, result: dict[str, Any], *, state_attributes: Iterable[str] = ()) -> dict[str, Any]:

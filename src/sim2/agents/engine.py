@@ -17,8 +17,15 @@ from ..agent_view.policies import task_text
 from .intent_gateway import AgentIntentGateway
 from .audit import AgentAudit
 from .protocol import ProviderProtocol, normalize_provider_intent, readable_model_response
-from .session import AgentTurn, model_tool_result, trim_conversation_messages
+from .session import AgentTurn, ReactSession, TaskContext, model_tool_result, trim_conversation_messages
+from .tool_guards import read_signature, screen_tool_call
 from .tools import AgentToolExecutor, TOOL_DEFINITIONS, parse_tool_call
+
+
+def _closed_turn(role: str, task_type: str, step: str, result: dict[str, Any]) -> AgentTurn:
+    """A turn that ended before any model call, recorded as a single transcript step."""
+
+    return AgentTurn(role, task_type, {}, result, 0, [{"step": step, "result": result}], {}, [])
 
 
 class AgentEngine:
@@ -72,26 +79,6 @@ class AgentEngine:
 
 
 
-    @staticmethod
-    def _read_signature(tool_name: str, arguments: dict[str, Any]) -> str:
-        """Normalize a read request so reworded repeats are visible to the guard."""
-
-        name = str(tool_name)
-        if name in {"observe_nearby", "listen"}:
-            return name
-        if name == "inspect_entity":
-            return f"{name}:{str(arguments.get('entity') or '').casefold().strip()}"
-        if name == "read_public_record":
-            return f"{name}:{str(arguments.get('record') or '').casefold().strip()}"
-        if name == "preview_behavior":
-            return f"{name}:{str(arguments.get('choice') or '').casefold().strip()}"
-        normalized = {
-            str(key): " ".join(str(value).casefold().split())
-            for key, value in sorted(arguments.items())
-            if key != "question"
-        }
-        return f"{name}:{json.dumps(normalized, ensure_ascii=False, sort_keys=True)}"
-
     def run(
         self,
         *,
@@ -104,20 +91,68 @@ class AgentEngine:
     ) -> AgentTurn:
         if role not in ROLE_NAMES:
             raise ValueError(f"unknown agent role: {role}")
-        if role == "agent_decision" and not str(task_type).startswith("instant:"):
-            try:
-                state = self.platform.store.repositories.entities.get_agent(actor_id).get("initial_state", {})
-            except KeyError:
-                state = {}
-            if state.get("status") in BUSY_STATUSES:
-                result = {"status": "skipped", "reason": "active_behavior", "message": "Platform is already executing a behavior; wait for completion or an interrupt."}
-                return AgentTurn(role, task_type, {}, result, 0, [{"step": "skipped", "result": result}], {}, [])
-            if is_inactive(state):
-                result = {"status": "skipped", "reason": "incapacitated", "message": "The character is unconscious or dead and cannot act."}
-                return AgentTurn(role, task_type, {}, result, 0, [{"step": "skipped", "result": result}], {}, [])
+        skipped = self._skip_unavailable_character(role, actor_id, task_type)
+        if skipped is not None:
+            return skipped
+        compiled = self._compile_task_context(role, actor_id, task_type, interaction, source_event_id, source_events)
+        unprepared = self._reflection_without_evidence(role, task_type, compiled.context)
+        if unprepared is not None:
+            return unprepared
+        session = self._start_session(role, actor_id, task_type, compiled)
+        for iteration in range(1, self.max_iterations + 1):
+            turn = self._react_step(session, iteration)
+            if turn is not None:
+                return turn
+        return self._exhausted_turn(session)
+
+    def _skip_unavailable_character(self, role: str, actor_id: str, task_type: str) -> AgentTurn | None:
+        """Skip the decision turn of a character that is busy or incapacitated; Platform advances it."""
+
+        if role != "agent_decision" or str(task_type).startswith("instant:"):
+            return None
+        try:
+            state = self.platform.store.repositories.entities.get_agent(actor_id).get("initial_state", {})
+        except KeyError:
+            state = {}
+        if state.get("status") in BUSY_STATUSES:
+            result = {"status": "skipped", "reason": "active_behavior", "message": "Platform is already executing a behavior; wait for completion or an interrupt."}
+            return _closed_turn(role, task_type, "skipped", result)
+        if is_inactive(state):
+            result = {"status": "skipped", "reason": "incapacitated", "message": "The character is unconscious or dead and cannot act."}
+            return _closed_turn(role, task_type, "skipped", result)
+        return None
+
+    def _compile_task_context(
+        self,
+        role: str,
+        actor_id: str,
+        task_type: str,
+        interaction: dict[str, Any] | None,
+        source_event_id: int | None,
+        source_events: list[dict[str, Any]] | None,
+    ) -> TaskContext:
+        """Build the AgentView for one task: trigger contract, validated evidence and tool allow-list."""
+
         state_attributes = self.platform.attribute_schema.state_ids()
         context = self.view.build_decision_view(actor_id, role=role, source_event_id=source_event_id)
         context["role"] = role
+        trigger_contract = self._attach_evolution_trigger(context, task_type)
+        event_ids = self._attach_triggering_evidence(context, source_event_id, source_events)
+        if interaction:
+            context["interaction"] = dict(interaction)
+        interaction_tools, session_tools = self._select_session_tools(context, role, task_type, trigger_contract)
+        # Event tasks carry the exact validated source. They still may read a
+        # small, budgeted amount of related world state: a God reviewer often
+        # needs one read to see what the world lacks before choosing a
+        # declarative proposal. The read budget below is the only cap.
+        view_errors = validate_agent_view(context, role=role)
+        if view_errors:
+            raise ValueError("invalid AgentView: " + "; ".join(view_errors))
+        return TaskContext(context, state_attributes, event_ids, trigger_contract, interaction_tools, session_tools)
+
+    def _attach_evolution_trigger(self, context: dict[str, Any], task_type: str) -> Any:
+        """Add the configured trigger or evidence-group contract to the view; return the contract."""
+
         trigger_config = configured_evolution_trigger(self.platform, task_type)
         group_contract = configured_evolution_group(self.platform, task_type)
         trigger_contract = ((trigger_config or {}).get("agent_contract") if isinstance(trigger_config, dict) else None) or group_contract
@@ -129,6 +164,16 @@ class AgentEngine:
             }
             if trigger_contract.get("evidence_sources"):
                 context["evolution_trigger"]["observed_evidence"] = self.platform.count_verified_evidence(trigger_contract.get("evidence_sources"))
+        return trigger_contract
+
+    def _attach_triggering_evidence(
+        self,
+        context: dict[str, Any],
+        source_event_id: int | None,
+        source_events: list[dict[str, Any]] | None,
+    ) -> list[int]:
+        """Show the validated source events once as evidence; return their ids."""
+
         event_refs = list(source_events or [])
         if source_event_id is not None and not any(
             int(item.get("event_id", -1) or -1) == int(source_event_id)
@@ -164,8 +209,22 @@ class AgentEngine:
                 context["triggering_evidence"].append(evidence)
             if verified_events:
                 context["last_platform_result"] = verified_events[-1]
-        if interaction:
-            context["interaction"] = dict(interaction)
+        return event_ids
+
+    def _select_session_tools(
+        self,
+        context: dict[str, Any],
+        role: str,
+        task_type: str,
+        trigger_contract: Any,
+    ) -> tuple[list[str] | None, list[str] | None]:
+        """Pick the tools the session exposes and cut the view's tool list to them.
+
+        Returns ``(interaction_tools, session_tools)``: an instant interaction
+        exposes only its direct reply tools, a trigger its configured
+        ``allowed_tools``, anything else the role's configured tools.
+        """
+
         interaction_tools = self._interaction_tools(task_type)
         role_tools = configured_role_tools(self.platform, role)
         trigger_tools = None
@@ -176,230 +235,270 @@ class AgentEngine:
         session_tools = interaction_tools if interaction_tools is not None else trigger_tools if trigger_tools is not None else role_tools
         if session_tools is not None:
             context["tools"] = [item for item in (context.get("tools") or []) if item.get("name") in set(session_tools)]
-        # Event tasks carry the exact validated source. They still may read a
-        # small, budgeted amount of related world state: a God reviewer often
-        # needs one read to see what the world lacks before choosing a
-        # declarative proposal. The read budget below is the only cap.
-        view_errors = validate_agent_view(context, role=role)
-        if view_errors:
-            raise ValueError("invalid AgentView: " + "; ".join(view_errors))
+        return interaction_tools, session_tools
+
+    def _reflection_without_evidence(self, role: str, task_type: str, context: dict[str, Any]) -> AgentTurn | None:
+        """A scheduled reflection needs a completed outcome or meaningful event; without one it waits."""
+
         if role == "agent_reflection" and task_type in {"daily_reflection", "integration_verification"} and not self.intent_gateway.reflection_has_evidence(context):
             result = {"status": "wait", "reason": "No completed outcome or meaningful event is available for reflection."}
-            return AgentTurn(role, task_type, {}, result, 0, [{"step": "guard", "result": result}], {}, [])
+            return _closed_turn(role, task_type, "guard", result)
+        return None
+
+    def _start_session(self, role: str, actor_id: str, task_type: str, compiled: TaskContext) -> ReactSession:
+        context = compiled.context
         task = task_text(role, task_type)
         executor = AgentToolExecutor(
             self.platform,
             role=role,
             actor_id=actor_id,
-            source_event_ids=event_ids,
+            source_event_ids=compiled.event_ids,
             observed_world_revision=context.get("world_revision"),
             observed_agent_revision=context.get("agent_revision"),
-            evolution_contract=trigger_contract if isinstance(trigger_contract, dict) else None,
+            evolution_contract=compiled.trigger_contract if isinstance(compiled.trigger_contract, dict) else None,
         )
-        last_response: dict[str, Any] = {}
-        last_result: dict[str, Any] = {"status": "no_result"}
-        transcript: list[dict[str, Any]] = []
         initial_context = copy.deepcopy(context)
-        prompt_history: list[str] = []
-        repeated: dict[str, int] = {}
-        read_signatures: set[str] = set()
-        tool_calls_used = 0
-        read_tool_calls = 0
-        # World-level reviewers must make a bounded decision after a small
-        # evidence sample.  Without a role-specific cap, remote models can
-        # spend all six ReAct turns reading the same event from different
-        # projections and leave the evolution task unresolved.
-        # The read budget is role configuration. A bounded world reviewer may
-        # need several focused reads before its final typed proposal.
-        read_budget = self.max_read_tool_calls
         system_policy = role_policy(self.platform, role)
-        conversation_messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system_policy},
-            {"role": "user", "content": render_context(context, task)},
-        ]
+        return ReactSession(
+            role=role,
+            actor_id=actor_id,
+            task_type=task_type,
+            task=task,
+            system_policy=system_policy,
+            context=context,
+            initial_context=initial_context,
+            executor=executor,
+            event_ids=compiled.event_ids,
+            state_attributes=compiled.state_attributes,
+            interaction_tools=compiled.interaction_tools,
+            session_tools=compiled.session_tools,
+            messages=[
+                {"role": "system", "content": system_policy},
+                {"role": "user", "content": render_context(context, task)},
+            ],
+            max_tool_calls=self.max_tool_calls,
+            max_repeated_tool_calls=self.max_repeated_tool_calls,
+            # The read budget is role configuration. A bounded world reviewer
+            # may need several focused reads before its final typed proposal;
+            # without a cap, remote models can spend all ReAct turns reading
+            # the same event from different projections and leave the
+            # evolution task unresolved.
+            read_budget=self.max_read_tool_calls,
+        )
 
-        for iteration in range(1, self.max_iterations + 1):
-            prompt = render_context(context, task)
-            prompt_history.append(prompt)
-            try:
-                self._last_usage = {}
-                call_tools = session_tools
-                if role == "agent_decision" and not str(task_type).startswith("instant:") and read_tool_calls >= read_budget:
-                    available = session_tools if session_tools is not None else [str(item.get("name")) for item in (context.get("tools") or [])]
-                    call_tools = [name for name in available if TOOL_DEFINITIONS.get(name, {}).get("kind") != "read"]
-                response = self._complete(
-                    role=role,
-                    system=system_policy,
-                    context=prompt,
-                    messages=conversation_messages,
-                    allowed_tools=call_tools,
-                )
-                if not isinstance(response, dict):
-                    raise ValueError("LLM response must be a JSON object")
-            except Exception as exc:
-                self._last_usage = dict(getattr(exc, "usage", {}) or self._last_usage)
-                last_result = {"status": "rejected", "failed_check": "llm_response", "message": str(exc)}
-                context["last_platform_result"] = last_result
-                transcript.append({"step": "llm_error", "error": str(exc)})
-                context.setdefault("interaction_history", []).append({"kind": "llm_error", "error": str(exc)})
-                self.audit.record(actor_id, role, task_type, iteration, prompt, {"error": str(exc)}, "llm_error", usage=self._last_usage)
-                # A provider/configuration failure is outside the model's
-                # ReAct loop. Retrying it immediately six times creates an
-                # error storm; the scheduler will retry after backoff.
-                return AgentTurn(role, task_type, last_response, last_result, iteration, transcript, initial_context, prompt_history)
-            last_response = response
-            readable_response = self._readable_model_response(response)
-            last_response = readable_response
-            transcript.append({"step": "llm", "response": readable_response})
-            self.audit.record(actor_id, role, task_type, iteration, prompt, readable_response, "response", usage=self._last_usage)
+    def _react_step(self, session: ReactSession, iteration: int) -> AgentTurn | None:
+        """Run one ReAct iteration; return the finished turn, or ``None`` to continue the session."""
 
-            try:
-                call = parse_tool_call(response)
-            except (TypeError, ValueError) as exc:
-                call = None
-                last_result = {"status": "rejected", "failed_check": "tool_arguments", "message": str(exc)}
-                context["last_platform_result"] = last_result
-                transcript.append({"step": "tool_error", "error": str(exc)})
-                continue
+        prompt = render_context(session.context, session.task)
+        session.prompt_history.append(prompt)
+        try:
+            response = self._request_model(session, prompt)
+        except Exception as exc:
+            return self._llm_error_turn(session, iteration, prompt, exc)
+        readable_response = self._readable_model_response(response)
+        session.last_response = readable_response
+        session.transcript.append({"step": "llm", "response": readable_response})
+        self.audit.record(session.actor_id, session.role, session.task_type, iteration, prompt, readable_response, "response", usage=self._last_usage)
+        try:
+            call = parse_tool_call(response)
+        except (TypeError, ValueError) as exc:
+            session.last_result = {"status": "rejected", "failed_check": "tool_arguments", "message": str(exc)}
+            session.context["last_platform_result"] = session.last_result
+            session.transcript.append({"step": "tool_error", "error": str(exc)})
+            return None
+        if call is None:
+            return self._submit_intent(session, iteration, response)
+        return self._run_tool_calls(session, iteration, response, call)
 
-            if call is not None:
-                native_tool_calls = response.get("tool_calls") if isinstance(response.get("tool_calls"), list) else None
-                calls: list[tuple[str, dict[str, Any], dict[str, Any] | None]] = []
-                if native_tool_calls:
-                    normalized_native_calls: list[dict[str, Any]] = []
-                    for native_call in native_tool_calls:
-                        native_call = dict(native_call)
-                        # A malformed compatible endpoint may omit the native
-                        # correlation id. Generate a session-local protocol
-                        # id so multiple results cannot collide. This is not a
-                        # world/entity id and is never used for Platform state.
-                        if not str(native_call.get("id") or "").strip():
-                            native_call["id"] = f"platform-tool-{iteration}-{len(normalized_native_calls)}"
-                        normalized_native_calls.append(native_call)
-                        parsed = parse_tool_call({"tool_calls": [native_call]})
-                        if parsed is not None:
-                            calls.append((parsed[0], parsed[1], native_call))
-                    conversation_messages.append({"role": "assistant", "tool_calls": normalized_native_calls})
-                else:
-                    calls.append((call[0], call[1], None))
-                accepted_result: dict[str, Any] | None = None
-                intent_results: list[dict[str, Any]] = []
-                for tool_name, arguments, native_call in calls:
-                    tool_calls_used += 1
-                    is_read_tool = TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "read"
-                    if is_read_tool:
-                        read_tool_calls += 1
-                    signature_key = f"{tool_name}:{repr(sorted(arguments.items()))}"
-                    repeated[signature_key] = repeated.get(signature_key, 0) + 1
-                    if tool_calls_used > self.max_tool_calls:
-                        tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "tool_budget", "message": "Tool-call budget exhausted; submit one final Intent now."}
-                    elif is_read_tool and read_tool_calls > read_budget:
-                        tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "read_budget", "message": "Read budget exhausted; use the facts already collected and submit one final Intent."}
-                    elif is_read_tool and self._read_signature(tool_name, arguments) in read_signatures:
-                        tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "repeated_read", "retryable": True, "message": "This scene, entity or behavior was already read in this session. Use the existing result and submit a behavior or wait."}
-                    elif repeated[signature_key] > self.max_repeated_tool_calls:
-                        tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "repeated_tool_call", "message": "The same tool request was repeated; use the previous result or choose the previous result."}
-                    elif interaction_tools is not None and tool_name not in interaction_tools:
-                        tool_result = {
-                            "status": "rejected",
-                            "tool": tool_name,
-                            "failed_check": "interaction_tool",
-                            "retryable": True,
-                            "message": "This interaction exposes only its direct reply or trade decision tools; return wait or use one listed tool.",
-                        }
-                    elif session_tools is not None and tool_name not in session_tools:
-                        tool_result = {
-                            "status": "rejected",
-                            "tool": tool_name,
-                            "failed_check": "task_tool",
-                            "retryable": True,
-                            "message": "This event task already includes its validated evidence. Use one listed submission tool or return wait.",
-                        }
-                    elif role == "god" and (str(task_type).startswith("trigger:") or str(task_type).startswith("event:")) and tool_name == "propose_world_change" and arguments.get("change_type") == "event" and not arguments.get("property"):
-                        tool_result = {"status": "rejected", "tool": tool_name, "failed_check": "event_already_recorded", "retryable": True, "message": "The triggering event is already recorded. Do not add a narrative acknowledgement; return wait or submit one typed rule, progress, entity, relationship, or faction proposal grounded in the observed result."}
-                    else:
-                        tool_result = executor.execute(tool_name, arguments)
-                    if is_read_tool and tool_result.get("status") == "ok":
-                        read_signatures.add(self._read_signature(tool_name, arguments))
-                        if role == "agent_decision":
-                            context["decision_guidance"] = f"{read_tool_calls} focused read(s) completed. Use those results now; choose one listed behavior or wait."
-                    model_result = model_tool_result(tool_name, tool_result, state_attributes=state_attributes)
-                    internal_tool_result = self._restore_internal_tool_result(tool_name, arguments, tool_result)
-                    transcript.append({
-                        "step": "tool",
-                        "name": tool_name,
-                        "arguments": arguments,
-                        # ``result`` is private Platform output; the model
-                        # receives only ``model_result`` below.  Keep one raw
-                        # copy for provenance instead of duplicating it under
-                        # two transcript keys in every audit artifact.
-                        "model_result": model_result,
-                        "result": internal_tool_result,
-                    })
-                    context.setdefault("interaction_history", []).extend([
-                        {"kind": "assistant_tool_call", "name": tool_name, "arguments": arguments},
-                        {"kind": "tool_result", "name": tool_name, "result": model_result},
-                    ])
-                    context.setdefault("tool_results", []).append({"tool": tool_name, "result": model_result})
-                    context["last_platform_result"] = model_result
-                    last_result = internal_tool_result
-                    if native_call is not None:
-                        conversation_messages.append({"role": "tool", "tool_call_id": native_call.get("id", "tool_call"), "name": tool_name, "content": json.dumps(model_result, ensure_ascii=False)})
-                    if TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "intent" and model_result.get("status") in {"accepted", "wait"}:
-                        # A provider may return several deliberately ordered
-                        # intents in one native response.  Execute each exactly
-                        # once in that order so a fact proposal precedes the
-                        # narrative/rule that references it.  The batch remains
-                        # a single bounded Agent turn.
-                        accepted_result = internal_tool_result
-                        intent_results.append(internal_tool_result)
-                        if not is_read_tool and not (native_tool_calls and len(calls) > 1):
-                            break
-                if native_tool_calls:
-                    # Native tool messages already contain every result.  An
-                    # extra user copy is redundant and can invalidate strict
-                    # providers when a response contains multiple calls.
-                    pass
-                else:
-                    conversation_messages.append({"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
-                    conversation_messages.append({"role": "user", "content": f"Tool results: {json.dumps(model_result, ensure_ascii=False)}"})
-                # Keep the stable system prompt and initial snapshot, plus a
-                # bounded tail of the current ReAct exchange.  Without this
-                # cap every read result is resent on every iteration, so a
-                # short choice can accumulate a large prompt and latency.
-                if len(conversation_messages) > 8:
-                    conversation_messages = trim_conversation_messages(conversation_messages, max_tail=6)
-                if accepted_result is not None:
-                    if len(intent_results) > 1:
-                        accepted_result = {
-                            **intent_results[-1],
-                            "status": "accepted",
-                            "submission_results": intent_results,
-                            "submission_count": len(intent_results),
-                        }
-                    return AgentTurn(role, task_type, last_response, accepted_result, iteration, transcript, initial_context, prompt_history)
-                continue
+    def _request_model(self, session: ReactSession, prompt: str) -> dict[str, Any]:
+        """Ask the provider for the next tool request or final Intent."""
 
-            result = self.intent_gateway.submit(
-                role,
-                actor_id,
-                response,
-                context=context,
-                task_type=task_type,
-                source_event_ids=event_ids,
-            )
-            transcript.append({"step": "intent", "response": response, "result": result})
-            conversation_messages.append({"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
-            conversation_messages.append({"role": "user", "content": f"Platform result: {json.dumps(result, ensure_ascii=False)}"})
-            context.setdefault("interaction_history", []).extend([
-                {"kind": "assistant_intent", "intent": response},
-                {"kind": "platform_result", "result": result},
-            ])
-            context["last_platform_result"] = result
-            last_result = result
-            if result.get("status") in {"accepted", "wait"}:
-                return AgentTurn(role, task_type, response, result, iteration, transcript, initial_context, prompt_history)
+        self._last_usage = {}
+        call_tools = session.session_tools
+        if session.role == "agent_decision" and not str(session.task_type).startswith("instant:") and session.read_tool_calls >= session.read_budget:
+            available = session.session_tools if session.session_tools is not None else [str(item.get("name")) for item in (session.context.get("tools") or [])]
+            call_tools = [name for name in available if TOOL_DEFINITIONS.get(name, {}).get("kind") != "read"]
+        response = self._complete(
+            role=session.role,
+            system=session.system_policy,
+            context=prompt,
+            messages=session.messages,
+            allowed_tools=call_tools,
+        )
+        if not isinstance(response, dict):
+            raise ValueError("LLM response must be a JSON object")
+        return response
 
+    def _llm_error_turn(self, session: ReactSession, iteration: int, prompt: str, exc: Exception) -> AgentTurn:
+        """End the session after a provider failure, which the scheduler retries after backoff."""
+
+        self._last_usage = dict(getattr(exc, "usage", {}) or self._last_usage)
+        session.last_result = {"status": "rejected", "failed_check": "llm_response", "message": str(exc)}
+        session.context["last_platform_result"] = session.last_result
+        session.transcript.append({"step": "llm_error", "error": str(exc)})
+        session.context.setdefault("interaction_history", []).append({"kind": "llm_error", "error": str(exc)})
+        self.audit.record(session.actor_id, session.role, session.task_type, iteration, prompt, {"error": str(exc)}, "llm_error", usage=self._last_usage)
+        # A provider/configuration failure is outside the model's
+        # ReAct loop. Retrying it immediately six times creates an
+        # error storm; the scheduler will retry after backoff.
+        return session.finish(session.last_result, iterations=iteration)
+
+    def _run_tool_calls(self, session: ReactSession, iteration: int, response: dict[str, Any], call: tuple[str, dict[str, Any]]) -> AgentTurn | None:
+        """Execute the tool call(s) of one model response; finish the turn once an Intent is accepted."""
+
+        native_tool_calls = response.get("tool_calls") if isinstance(response.get("tool_calls"), list) else None
+        calls = self._collect_calls(session, iteration, call, native_tool_calls)
+        batched = bool(native_tool_calls) and len(calls) > 1
+        accepted_result, intent_results, model_result = self._execute_calls(session, calls, batched=batched)
+        if not native_tool_calls:
+            # Native tool messages already contain every result. An extra
+            # user copy is redundant and can invalidate strict providers when
+            # a response contains multiple calls.
+            session.messages.append({"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
+            session.messages.append({"role": "user", "content": f"Tool results: {json.dumps(model_result, ensure_ascii=False)}"})
+        # Keep the stable system prompt and initial snapshot, plus a
+        # bounded tail of the current ReAct exchange.  Without this
+        # cap every read result is resent on every iteration, so a
+        # short choice can accumulate a large prompt and latency.
+        if len(session.messages) > 8:
+            session.messages = trim_conversation_messages(session.messages, max_tail=6)
+        if accepted_result is None:
+            return None
+        if len(intent_results) > 1:
+            accepted_result = {
+                **intent_results[-1],
+                "status": "accepted",
+                "submission_results": intent_results,
+                "submission_count": len(intent_results),
+            }
+        return session.finish(accepted_result, iterations=iteration)
+
+    @staticmethod
+    def _collect_calls(
+        session: ReactSession,
+        iteration: int,
+        call: tuple[str, dict[str, Any]],
+        native_tool_calls: list[dict[str, Any]] | None,
+    ) -> list[tuple[str, dict[str, Any], dict[str, Any] | None]]:
+        """List the ``(tool, arguments, native call)`` triples of a response, declaring native calls in the messages."""
+
+        if not native_tool_calls:
+            return [(call[0], call[1], None)]
+        calls: list[tuple[str, dict[str, Any], dict[str, Any] | None]] = []
+        normalized_native_calls: list[dict[str, Any]] = []
+        for native_call in native_tool_calls:
+            native_call = dict(native_call)
+            # A malformed compatible endpoint may omit the native
+            # correlation id. Generate a session-local protocol
+            # id so multiple results cannot collide. This is not a
+            # world/entity id and is never used for Platform state.
+            if not str(native_call.get("id") or "").strip():
+                native_call["id"] = f"platform-tool-{iteration}-{len(normalized_native_calls)}"
+            normalized_native_calls.append(native_call)
+            parsed = parse_tool_call({"tool_calls": [native_call]})
+            if parsed is not None:
+                calls.append((parsed[0], parsed[1], native_call))
+        session.messages.append({"role": "assistant", "tool_calls": normalized_native_calls})
+        return calls
+
+    def _execute_calls(
+        self,
+        session: ReactSession,
+        calls: list[tuple[str, dict[str, Any], dict[str, Any] | None]],
+        *,
+        batched: bool,
+    ) -> tuple[dict[str, Any] | None, list[dict[str, Any]], dict[str, Any]]:
+        """Run the calls in order; return the last accepted Intent result, all Intent results and the last model result."""
+
+        accepted_result: dict[str, Any] | None = None
+        intent_results: list[dict[str, Any]] = []
+        model_result: dict[str, Any] = {}
+        for tool_name, arguments, native_call in calls:
+            is_read_tool = TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "read"
+            repeats = session.register_call(tool_name, arguments, is_read_tool=is_read_tool)
+            tool_result = screen_tool_call(session, tool_name, arguments, is_read_tool=is_read_tool, repeats=repeats)
+            if tool_result is None:
+                tool_result = session.executor.execute(tool_name, arguments)
+            model_result, internal_tool_result = self._record_tool_result(session, tool_name, arguments, native_call, tool_result, is_read_tool)
+            if TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "intent" and model_result.get("status") in {"accepted", "wait"}:
+                # A provider may return several deliberately ordered
+                # intents in one native response.  Execute each exactly
+                # once in that order so a fact proposal precedes the
+                # narrative/rule that references it.  The batch remains
+                # a single bounded Agent turn.
+                accepted_result = internal_tool_result
+                intent_results.append(internal_tool_result)
+                if not is_read_tool and not batched:
+                    break
+        return accepted_result, intent_results, model_result
+
+    def _record_tool_result(
+        self,
+        session: ReactSession,
+        tool_name: str,
+        arguments: dict[str, Any],
+        native_call: dict[str, Any] | None,
+        tool_result: dict[str, Any],
+        is_read_tool: bool,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Record one tool result in the session; return ``(model_result, internal_tool_result)``."""
+
+        if is_read_tool and tool_result.get("status") == "ok":
+            session.read_signatures.add(read_signature(tool_name, arguments))
+            if session.role == "agent_decision":
+                session.context["decision_guidance"] = f"{session.read_tool_calls} focused read(s) completed. Use those results now; choose one listed behavior or wait."
+        model_result = model_tool_result(tool_name, tool_result, state_attributes=session.state_attributes)
+        internal_tool_result = self._restore_internal_tool_result(tool_name, arguments, tool_result)
+        session.transcript.append({
+            "step": "tool",
+            "name": tool_name,
+            "arguments": arguments,
+            # ``result`` is private Platform output; the model
+            # receives only ``model_result`` below.  Keep one raw
+            # copy for provenance instead of duplicating it under
+            # two transcript keys in every audit artifact.
+            "model_result": model_result,
+            "result": internal_tool_result,
+        })
+        session.context.setdefault("interaction_history", []).extend([
+            {"kind": "assistant_tool_call", "name": tool_name, "arguments": arguments},
+            {"kind": "tool_result", "name": tool_name, "result": model_result},
+        ])
+        session.context.setdefault("tool_results", []).append({"tool": tool_name, "result": model_result})
+        session.context["last_platform_result"] = model_result
+        session.last_result = internal_tool_result
+        if native_call is not None:
+            session.messages.append({"role": "tool", "tool_call_id": native_call.get("id", "tool_call"), "name": tool_name, "content": json.dumps(model_result, ensure_ascii=False)})
+        return model_result, internal_tool_result
+
+    def _submit_intent(self, session: ReactSession, iteration: int, response: dict[str, Any]) -> AgentTurn | None:
+        """Submit a response without a tool call as the final Intent; it ends the session when accepted or a wait."""
+
+        result = self.intent_gateway.submit(
+            session.role,
+            session.actor_id,
+            response,
+            context=session.context,
+            task_type=session.task_type,
+            source_event_ids=session.event_ids,
+        )
+        session.transcript.append({"step": "intent", "response": response, "result": result})
+        session.messages.append({"role": "assistant", "content": json.dumps(response, ensure_ascii=False)})
+        session.messages.append({"role": "user", "content": f"Platform result: {json.dumps(result, ensure_ascii=False)}"})
+        session.context.setdefault("interaction_history", []).extend([
+            {"kind": "assistant_intent", "intent": response},
+            {"kind": "platform_result", "result": result},
+        ])
+        session.context["last_platform_result"] = result
+        session.last_result = result
+        if result.get("status") in {"accepted", "wait"}:
+            return session.finish(result, iterations=iteration, response=response)
+        return None
+
+    def _exhausted_turn(self, session: ReactSession) -> AgentTurn:
+        """End a session whose iterations ran out before a valid final Intent."""
+
+        last_result = session.last_result
         if last_result.get("status") not in {"accepted", "wait", "skipped"}:
             last_result = {
                 **last_result,
@@ -408,7 +507,7 @@ class AgentEngine:
                 "retryable": True,
                 "message": "The ReAct session reached its iteration limit before a valid final Intent.",
             }
-        return AgentTurn(role, task_type, last_response, last_result, self.max_iterations, transcript, initial_context, prompt_history)
+        return session.finish(last_result, iterations=self.max_iterations)
 
     def _visible_actor_name(self, actor_id: Any) -> str:
         if not actor_id:
