@@ -47,12 +47,13 @@ def interaction_lines(context: dict[str, Any]) -> list[str]:
     lines: list[str] = []
     interaction = context.get("interaction") or {}
     if interaction:
+        player_message = str(interaction.get("origin") or "") == "player"
         lines.extend([
             "<incoming_interaction>",
             f"  from: {line(interaction.get('from'))}",
             f"  topic: {line(interaction.get('topic'))}",
             f"  message: {line(interaction.get('message'))}",
-            "  Reply only if this adds information, asks a question, or needs a decision; otherwise return wait.",
+            "  This is a direct player message; always acknowledge it in one short reply, even when the answer is that the detail is unknown." if player_message else "  Reply only if this adds information, asks a question, or needs a decision; otherwise return wait.",
             "</incoming_interaction>",
         ])
 

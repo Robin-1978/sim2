@@ -187,6 +187,19 @@ class RuntimeApiService(PlatformService):
             existing = None
         if existing is not None and str(existing.get("role") or "") != "player":
             return {"status": "rejected", "message": "That id belongs to a world character, not a player.", "failed_check": "player_id"}
+        if existing is None:
+            players = [
+                agent for agent in self.store.repositories.entities.list_agents()
+                if str(agent.get("role") or "").casefold() == "player"
+            ]
+            if players:
+                current = players[0]
+                return {
+                    "status": "rejected",
+                    "message": f"This world instance already has one player: {current.get('name') or current.get('id')}. Resume that player instead of creating a second uncontrolled character.",
+                    "failed_check": "player_limit",
+                    "player_id": str(current.get("id") or ""),
+                }
         try:
             template = parse_player_template(
                 self.store.repositories.metadata.get("player_template", {}),

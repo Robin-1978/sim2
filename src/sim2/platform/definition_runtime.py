@@ -251,6 +251,19 @@ class DefinitionRuntimeMixin:
 
         resolved_agents: list[tuple[str, str]] = []
         for name_or_id in names:
+            if str(name_or_id or "").strip().casefold() in {"player", "active_player"}:
+                players = [
+                    agent for agent in self.store.repositories.entities.list_agents()
+                    if str(agent.get("role") or "").casefold() == "player"
+                ]
+                if len(players) == 1:
+                    player = players[0]
+                    resolved_agents.append((str(player["id"]), str(player.get("name") or player["id"])))
+                elif not players:
+                    errors.append(f"no active player exists for {label}: {name_or_id}")
+                else:
+                    errors.append(f"multiple players exist for {label}: use the exact player name")
+                continue
             resolved = self.targets.canonical_id(name_or_id)
             try:
                 agent = self.store.repositories.entities.get_agent(str(resolved or name_or_id))

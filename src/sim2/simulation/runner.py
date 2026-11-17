@@ -286,11 +286,13 @@ class SimulationRunner:
                 "from": self._visible_name(actor_id),
                 "topic": topic,
                 "message": message or "The other participant opened this topic without a written message.",
+                "origin": "player" if explicit_player_message else "agent",
             }
+            interaction_task = "instant:player_dialogue.completed" if explicit_player_message and interaction_kind == "dialogue" else f"instant:{event['event_type']}"
             turn = AgentEngine(self.platform, provider).run(
                 role="agent_decision",
                 actor_id=recipient_id,
-                task_type=f"instant:{event['event_type']}",
+                task_type=interaction_task,
                 interaction=interaction,
             )
             self._observe_turn(turn, recipient_id)

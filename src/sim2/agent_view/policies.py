@@ -131,6 +131,11 @@ def task_text(role: str, task_type: str) -> str:
     task_type = str(task_type)
     if role == "agent_decision":
         if task_type.startswith("instant:"):
+            if task_type == "instant:player_dialogue.completed":
+                return (
+                    f"Task type: {task_type}. This is a direct player message. Always send one short, grounded acknowledgement or reply, "
+                    "even when you have no new information; state what is unknown instead of returning wait. Do not start a behavior or advance world time."
+                )
             if task_type == "instant:dialogue.completed":
                 return (
                     f"Task type: {task_type}. Reply to the incoming message only when it adds new information, "

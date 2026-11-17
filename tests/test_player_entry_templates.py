@@ -58,6 +58,19 @@ def test_tidebound_canonical_origins_can_enter_the_world(tmp_path: Path):
         platform.close()
 
 
+def test_world_instance_allows_only_one_manual_player(tmp_path: Path):
+    db_path = create_instance(WORLDS / "tidebound_commons", "single-player-world", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        assert platform.enter_player("player_one", "forager", name="Ari")["status"] == "accepted"
+        second = platform.enter_player("player_two", "steward", name="Bo")
+        assert second["status"] == "rejected"
+        assert second["failed_check"] == "player_limit"
+        assert second["player_id"] == "player_one"
+    finally:
+        platform.close()
+
+
 def test_tidebound_player_gets_configured_capabilities_and_supplies(tmp_path: Path):
     db_path = create_instance(WORLDS / "tidebound_commons", "tidebound-player-profile", tmp_path / "runtime")
     platform = Platform(db_path)
