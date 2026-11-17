@@ -520,6 +520,24 @@ Left for a decision, each with its evidence:
   (`platform/story_runtime.py:134`); the Platform also marks its own source
   events with `wake="story_source"` (`platform/activity.py:952`).
 
+Verification of the pass, run on `21285cc`: `python -m pytest -q` finished
+with 1,128 passed in 840 s (two cores, lowest priority);
+`python -m compileall -q src scripts` and `git diff --check` were clean.
+
+Benchmark. The three versions `00be0f5` (before the session), `10f5ccd`
+(before this pass) and `21285cc` (after it) were measured with the same
+measurement as `scripts/benchmark_platform.py` (1,000 agents, three warm-up
+ticks, five timed ticks), alternating the versions for five rounds on two
+cores at the lowest priority. The median tick took 178 ms, 180 ms and 177 ms
+(median of the five per-round medians), so neither the session nor this pass
+slowed the tick. The p95 of five samples is close to the slowest sample and is
+not stable: it ranged from 192 to 208 ms before the session and from 174 to
+202 ms after this pass. The official command printed 1161.991 ms in a run that
+coincided with another program's build starting on the machine, and 218.373 ms
+on an otherwise idle machine. The 200 ms target therefore cannot be claimed as
+met on this machine today; the code from before the session sits at the same
+edge.
+
 ### Execution order for the remaining work
 
 The following is the concrete plan for this development cycle. Each stage
