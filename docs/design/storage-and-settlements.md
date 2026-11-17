@@ -65,7 +65,8 @@ projection only when a global trigger genuinely needs one.
 
 The validated proposal executor remains under `platform` on purpose. Its
 responsibilities are now split into focused modules:
-`definition_runtime.py` validates and registers declarative definitions,
+`definition_validation.py` validates declarative definitions against the
+instance, `definition_runtime.py` registers them,
 `entity_proposals.py` creates structural entities,
 `story_runtime.py` commits Story beats, and `world_changes.py` applies generic
 world changes and templates. They share the Platform transaction boundary and

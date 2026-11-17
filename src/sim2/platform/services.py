@@ -4,6 +4,7 @@ from typing import Any
 
 from .activity import ActivityRuntimeMixin
 from .definition_runtime import DefinitionRuntimeMixin
+from .definition_validation import DefinitionValidationMixin
 from .entity_proposals import EntityProposalRuntimeMixin
 from .learning import LearningRuntimeMixin
 from .social import SocialRuntimeMixin
@@ -135,7 +136,7 @@ class ActivityService(PlatformService, ActivityRuntimeMixin):
     """Long-running BT and Action execution service."""
 
 
-class DefinitionService(PlatformService, DefinitionRuntimeMixin):
+class DefinitionService(PlatformService, DefinitionValidationMixin, DefinitionRuntimeMixin):
     """Declarative Action, BT, Recipe, Capability and Attribute registry."""
 
 

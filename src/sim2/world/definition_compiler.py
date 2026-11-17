@@ -5,7 +5,7 @@ live world: accepted definition kinds, declarative fields, basic value shapes,
 Action result contracts, effect names and the normalized shorthand accepted
 from a model. Platform semantic validation (references, reachability,
 resource conservation and duplicate definitions) remains in
-``platform.definition_runtime`` because it needs the instance repositories.
+``platform.definition_validation`` because it needs the instance repositories.
 """
 
 from __future__ import annotations
