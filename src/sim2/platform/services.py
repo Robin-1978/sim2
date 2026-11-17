@@ -10,6 +10,7 @@ from .learning import LearningRuntimeMixin
 from .social import SocialRuntimeMixin
 from .stagnation import StagnationRuntimeMixin
 from .story_runtime import StoryRuntimeMixin
+from .world_change_validation import WorldChangeValidationMixin
 from .world_changes import WorldChangesRuntimeMixin
 
 
@@ -160,7 +161,7 @@ class StoryService(PlatformService, StoryRuntimeMixin):
     """Evidence-grounded Story beat service."""
 
 
-class WorldChangesService(PlatformService, WorldChangesRuntimeMixin):
+class WorldChangesService(PlatformService, WorldChangeValidationMixin, WorldChangesRuntimeMixin):
     """Generic world change and template proposal service."""
 
 

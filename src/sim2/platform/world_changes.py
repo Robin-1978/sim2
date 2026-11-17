@@ -1,274 +1,178 @@
+"""World change commit: apply an admitted change, publish its event and store the proposal.
+
+``submit_world_change`` validates through ``WorldChangeValidationMixin`` and
+commits the change in one transaction.  World templates live here too: they
+are validated and recorded the same way but only seed new instances.
+"""
+
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from ..actions.conditions import ConditionEngine
 from ..evolution.memory import remember_role
+from .world_change_validation import WorldChangeSubmission
+
+
+class _ChangeRejected(Exception):
+    """A change found unusable while it is applied, before anything was written."""
+
+    def __init__(self, result: dict[str, Any]) -> None:
+        super().__init__(result["message"])
+        self.result = result
 
 
 class WorldChangesRuntimeMixin:
-    """Validate and commit generic world-level changes and templates."""
+    """Commit validated world-level changes and manage world templates."""
 
     def submit_world_change(self, actor_id: str, proposal: dict[str, Any], *, origin_role: str | None = None) -> dict[str, Any]:
-        intent_id = str(uuid4())
-        if not proposal.get("change_type") or not proposal.get("summary"):
-            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "change_type and summary are required.", "retryable": True})
-        change_type = str(proposal["change_type"])
-        if change_type not in {"world_property", "rule", "relationship", "route", "faction", "event"}:
-            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "Unsupported world change type.", "failed_check": "change_type", "retryable": True})
-        if change_type in {"world_property", "event"} and proposal.get("property"):
-            current_properties = self.store.repositories.metadata.get("world_properties", {}) or {}
-            proposal = {**proposal, "property": self._canonical_world_property(str(proposal["property"]), current_properties)}
-            property_id = str(proposal["property"])
-            if actor_id == "god" and not self._god_property_change_allowed(property_id):
-                return self._context.services["intent"].reject_intent(
-                    intent_id,
-                    actor_id,
-                    "propose_world_change",
-                    proposal,
-                    {
-                        "status": "rejected",
-                        "message": "God cannot directly change a world property. Submit a rule, entity, faction, or narrative proposal; world behavior must produce the state change.",
-                        "failed_check": "god_direct_property_change",
-                        "retryable": True,
-                    },
-                )
-        if change_type == "world_property" and not proposal.get("property"):
-            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "property is required for a world_property change.", "failed_check": "property", "retryable": True})
-        if change_type == "rule" and not isinstance(proposal.get("rule"), dict):
-            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "rule object is required for a rule change.", "failed_check": "rule", "retryable": True})
-        if change_type == "rule" and isinstance(proposal.get("rule"), dict):
-            valid, message = self.rule_compiler.validate(dict(proposal["rule"]))
-            if not valid:
-                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": message, "failed_check": "rule_schema", "retryable": True})
-            conditions_valid, conditions_message = self.rule_compiler.validate_declared_conditions(
-                dict(proposal["rule"]), list(proposal.get("conditions") or [])
-            )
-            if not conditions_valid:
-                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": conditions_message, "failed_check": "rule_condition_semantics", "retryable": True})
-            declared_valid, declared_message = self.rule_compiler.validate_declared_effects(
-                dict(proposal["rule"]),
-                list(proposal.get("effects") or []) + list(proposal.get("expected_effects") or []),
-            )
-            if not declared_valid:
-                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": declared_message, "failed_check": "rule_effect_semantics", "retryable": True})
-            proposed_id = str(proposal["rule"].get("id") or proposal["rule"].get("name") or "").strip()
-            compiled_rule = self.rule_compiler.compile(dict(proposal["rule"]))
-            wake_roles = {str(item).strip() for item in (compiled_rule.get("wake") or []) if str(item).strip()}
-            if origin_role and str(origin_role) in wake_roles:
-                return self._context.services["intent"].reject_intent(
-                    intent_id,
-                    actor_id,
-                    "propose_world_change",
-                    proposal,
-                    {
-                        "status": "rejected",
-                        "message": "A dynamic signal cannot wake the same role that proposed it. Use a different consumer, an executable follow-up, or wait for new evidence.",
-                        "failed_check": "rule_self_wake",
-                        "retryable": True,
-                    },
-                )
-            existing_rules = (self.store.repositories.metadata.get("rules", {}) or {}).get("world_rules", []) or []
-            signal_conflict = self.rule_compiler.signal_conflict(dict(proposal["rule"]), existing_rules)
-            if signal_conflict:
-                conflict_type, conflict_name = signal_conflict
-                if conflict_type == "cycle":
-                    message = "A signal rule cannot wake the same consumer from another signal rule. Use the behavior result as the next state change, or wait for a new world event."
-                    failed_check = "rule_signal_cycle"
-                else:
-                    message = f"A signal for this event and follow-up already exists ({conflict_name}); review its outcome instead of adding another signal."
-                    failed_check = "rule_duplicate"
-                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": message, "failed_check": failed_check, "retryable": True})
-            if proposed_id and any(str(item.get("id") or item.get("name") or "").strip() == proposed_id for item in existing_rules if isinstance(item, dict)):
-                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "A world rule with this name is already registered; review its existing outcome instead of adding a duplicate.", "failed_check": "rule_duplicate", "retryable": True})
-        if change_type == "route":
-            route = proposal.get("route") if isinstance(proposal.get("route"), dict) else {}
-            source = self.targets.canonical_id(str(route.get("from") or ""))
-            target = self.targets.canonical_id(str(route.get("to") or ""))
-            distance = route.get("distance")
-            locations = {str(item.get("id")): item for item in self.store.repositories.entities.entities_of_type("location")}
-            if not source or source not in locations or not target or target not in locations:
-                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "route.from and route.to must name existing locations.", "failed_check": "route_endpoint", "retryable": True})
-            if source == target:
-                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "A route must connect two different locations.", "failed_check": "route_cycle", "retryable": True})
-            if isinstance(distance, bool) or not isinstance(distance, (int, float)) or float(distance) <= 0:
-                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "route.distance must be positive.", "failed_check": "route_distance", "retryable": True})
-            source_data = self.store.repositories.entities.get_entity(source)
-            target_data = self.store.repositories.entities.get_entity(target)
-            if str(target) in {str(item) for item in (source_data.get("routes") or [])} and str(source) in {str(item) for item in (target_data.get("routes") or [])}:
-                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "That route is already registered.", "failed_check": "route_duplicate", "retryable": True})
-            proposal = {**proposal, "route": {"from": source, "to": target, "distance": float(distance)}}
-        if change_type == "relationship" and not isinstance(proposal.get("relationship"), dict):
-            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "relationship object is required for a relationship change.", "failed_check": "relationship", "retryable": True})
-        if change_type == "faction" and not isinstance(proposal.get("faction"), dict):
-            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "faction object is required for a faction change.", "failed_check": "faction", "retryable": True})
-        if change_type == "event" and not proposal.get("property"):
-            structured_mutation_types = {"state_delta", "need_delta", "attribute_delta", "attribute_set", "inventory_add", "inventory_remove", "world_property_delta", "relationship_delta", "entity_state_set"}
-            structured_mutation = [item.get("type") or item.get("op") for item in (proposal.get("effects") or []) if isinstance(item, dict) and str(item.get("type") or item.get("op") or "") in structured_mutation_types]
-            if structured_mutation:
-                return self._context.services["intent"].reject_intent(
-                    intent_id,
-                    actor_id,
-                    "propose_world_change",
-                    proposal,
-                    {
-                        "status": "rejected",
-                        "message": "Event effects must be narrative only: remove typed state-mutating effects. Use a world_property, relationship, faction, or rule proposal for structured change, or let a behavior outcome change state.",
-                        "failed_check": "event_effects",
-                        "retryable": True,
-                    },
-                )
-        if change_type in {"world_property", "event"} and proposal.get("property"):
-            property_name = str(proposal["property"])
-            current_properties = self.store.repositories.metadata.get("world_properties", {}) or {}
-            before_value = current_properties.get(property_name)
-            value = proposal.get("value")
-            if isinstance(before_value, bool):
-                if not isinstance(value, bool):
-                    return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {
-                        "status": "rejected", "message": f"World property {property_name} is boolean; value must be true or false.", "failed_check": "property_type", "retryable": True,
-                    })
-            elif isinstance(before_value, (int, float)):
-                if isinstance(value, bool):
-                    return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {
-                        "status": "rejected", "message": f"World property {property_name} is numeric; value must be a number.", "failed_check": "property_type", "retryable": True,
-                    })
-                if isinstance(value, str):
-                    try:
-                        value = float(value.strip())
-                    except ValueError:
-                        return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {
-                            "status": "rejected", "message": f"World property {property_name} is numeric; value must be a number.", "failed_check": "property_type", "retryable": True,
-                        })
-                elif not isinstance(value, (int, float)):
-                    return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {
-                        "status": "rejected", "message": f"World property {property_name} is numeric; value must be a number.", "failed_check": "property_type", "retryable": True,
-                    })
-                if isinstance(before_value, float):
-                    value = float(value)
-                elif isinstance(value, float) and value.is_integer():
-                    value = int(value)
-            proposal = {**proposal, "value": value}
-            if change_type in {"world_property", "event"} and property_name in current_properties and current_properties.get(property_name) == value:
-                return self._context.services["intent"].reject_intent(
-                    intent_id,
-                    actor_id,
-                    "propose_world_change",
-                    proposal,
-                    {
-                        "status": "rejected",
-                        "message": "The proposed world property already has this value; submit a real state change or a narrative event without a property.",
-                        "failed_check": "no_state_change",
-                        "retryable": True,
-                    },
-                )
+        submission = WorldChangeSubmission(str(uuid4()), actor_id, proposal, origin_role)
+        rejection = self._validate_world_change(submission)
+        if rejection is not None:
+            return rejection
+        return self._commit_world_change(submission)
+
+    def _commit_world_change(self, submission: WorldChangeSubmission) -> dict[str, Any]:
+        proposal = submission.proposal
+        intent_id = submission.intent_id
         world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         evaluation_window = max(1, min(int(proposal.get("evaluation_window_minutes", 1440) or 1440), 43200))
         evaluation_due_minute = world_minute + evaluation_window
         with self.store.transaction():
-            self.store.repositories.evolution.create_intent(intent_id, actor_id, "propose_world_change", proposal, world_minute)
-            effect: dict[str, Any] = {}
-            if change_type == "world_property":
-                effect = self._context.services["tick"].set_world_property(str(proposal["property"]), proposal.get("value"))
-            elif change_type == "rule":
-                rules = dict(self.store.repositories.metadata.get("rules", {}) or {})
-                world_rules = list(rules.get("world_rules", []))
-                world_rules.append(dict(proposal["rule"]))
-                rules["world_rules"] = world_rules
-                self.store.repositories.metadata.set("rules", rules)
-                self._context.set_dependency("conditions", ConditionEngine(rules))
-                self._context.set_dependency("rule_compiler", self._context.services["api"].new_rule_compiler())
-                effect = {"rule_added": dict(proposal["rule"]), "rule_count": len(world_rules)}
-            elif change_type == "route":
-                route = dict(proposal["route"])
-                source = str(route["from"])
-                target = str(route["to"])
-                distance = float(route["distance"])
-                source_data = self.store.repositories.entities.get_entity(source)
-                target_data = self.store.repositories.entities.get_entity(target)
-                source_routes = list(source_data.get("routes") or [])
-                target_routes = list(target_data.get("routes") or [])
-                if target not in source_routes:
-                    source_routes.append(target)
-                if source not in target_routes:
-                    target_routes.append(source)
-                source_distances = dict(source_data.get("route_distances") or {})
-                target_distances = dict(target_data.get("route_distances") or {})
-                source_distances[target] = distance
-                target_distances[source] = distance
-                source_data["routes"] = source_routes
-                source_data["route_distances"] = source_distances
-                target_data["routes"] = target_routes
-                target_data["route_distances"] = target_distances
-                self.store.repositories.entities.put_entity(source, "location", source_data.get("name", source), {key: value for key, value in source_data.items() if key not in {"id", "entity_type", "name"}})
-                self.store.repositories.entities.put_entity(target, "location", target_data.get("name", target), {key: value for key, value in target_data.items() if key not in {"id", "entity_type", "name"}})
-                effect = {"route_added": {"from": source, "to": target, "distance": distance}}
-            elif change_type == "relationship":
-                relation = dict(proposal["relationship"])
-                source = relation.pop("from", relation.pop("from_id", ""))
-                target = relation.pop("to", relation.pop("to_id", ""))
-                # God and Story use visible names at the model boundary. Keep
-                # the persisted relationship graph canonical so later views
-                # and effects can resolve both directions reliably.
-                participants = relation.pop("participants", None)
-                if (not source or not target) and isinstance(participants, list) and len(participants) >= 2:
-                    source, target = participants[0], participants[1]
-                source = self.targets.canonical_id(str(source)) if source else None
-                target = self.targets.canonical_id(str(target)) if target else None
-                relation_type = str(relation.pop("type", "related"))
-                if not source or not target:
-                    self.store.repositories.evolution.finish_intent(intent_id, "rejected", {"status": "rejected", "message": "relationship from and to are required.", "failed_check": "relationship", "retryable": True})
-                    return {"status": "rejected", "message": "relationship from and to are required.", "failed_check": "relationship", "retryable": True}
-                self.store.repositories.entities.put_relationship(str(source), str(target), relation_type, relation)
-                effect = {"relationship": {"from": str(source), "to": str(target), "type": relation_type, **relation}}
-            elif change_type == "faction":
-                faction = dict(proposal["faction"])
-                faction_id = str(faction.pop("id", faction.pop("faction_id", "")))
-                if not faction_id:
-                    self.store.repositories.evolution.finish_intent(intent_id, "rejected", {"status": "rejected", "message": "faction id is required.", "failed_check": "faction.id", "retryable": True})
-                    return {"status": "rejected", "message": "faction id is required.", "failed_check": "faction.id", "retryable": True}
-                try:
-                    current = self.store.repositories.entities.get_entity(faction_id)
-                except KeyError:
-                    self.store.repositories.evolution.finish_intent(intent_id, "rejected", {"status": "rejected", "message": "faction does not exist.", "failed_check": "faction.id", "retryable": True})
-                    return {"status": "rejected", "message": "faction does not exist.", "failed_check": "faction.id", "retryable": True}
-                current.update(faction)
-                self.store.repositories.entities.put_entity(faction_id, "faction", current.get("name", faction_id), {key: value for key, value in current.items() if key not in {"id", "entity_type", "name"}})
-                effect = {"faction_id": faction_id, "changed_fields": sorted(faction), "after": {key: current.get(key) for key in faction}}
-            elif change_type == "event" and proposal.get("property"):
-                effect = self._context.services["tick"].set_world_property(str(proposal["property"]), proposal.get("value"))
-            else:
-                effect = {"event_recorded": True, "state_changed": False}
-            event_data = {
-                "intent_id": intent_id,
-                "change_type": change_type,
-                "summary": str(proposal.get("summary", "")),
-                "scope": str(proposal.get("scope", "world")),
-                "conditions": list(proposal.get("conditions") or []),
-                "effects": list(proposal.get("effects") or []),
-                "expected_effects": list(proposal.get("expected_effects") or proposal.get("effects") or []),
-                "effect": effect,
-                "proposal_id": intent_id,
-                "evaluation_due_minute": evaluation_due_minute,
+            self.store.repositories.evolution.create_intent(intent_id, submission.actor_id, "propose_world_change", proposal, world_minute)
+            try:
+                effect = self._apply_change(submission)
+            except _ChangeRejected as rejected:
+                # Nothing was written yet: keep the intent and its rejection together.
+                self.store.repositories.evolution.finish_intent(intent_id, "rejected", rejected.result)
+                return rejected.result
+            event_id, expected_effects = self._record_world_proposal(submission, effect, world_minute, evaluation_due_minute)
+            result = {
+                "status": "accepted", "intent_id": intent_id, "proposal_id": intent_id, "event_id": event_id,
+                "evaluation_status": "pending_evaluation", "evaluation_due_minute": evaluation_due_minute,
+                "applied": True, "applied_effects": bool(effect.get("state_changed", True)),
+                "change_type": submission.change_type, "effect": effect, "expected_effects": expected_effects,
             }
-            expected = self._world_proposal_expectation(change_type, proposal, effect)
-            event_data["expected_state"] = expected
-            event_id = self._context.services["events"].append(f"world.change.{change_type}", actor_id, world_minute, event_data)
-            self.store.repositories.evolution.put_world_proposal(intent_id, intent_id, actor_id, change_type, "pending_evaluation", world_minute, evaluation_due_minute, {"effects": event_data["expected_effects"], "summary": event_data["summary"], "state": expected}, {"event_id": event_id, "effect": effect})
-            if actor_id == "god":
-                remember_role(self.store, "god", "world_proposal", {
-                    "summary": str(proposal.get("summary", "")),
-                    "change_type": change_type,
-                    "expected_effects": list(event_data["expected_effects"]),
-                    "status": "pending_evaluation",
-                    "evaluation_due_minute": evaluation_due_minute,
-                }, memory_key=f"god:proposal:{intent_id}", source_event_id=event_id)
-            result = {"status": "accepted", "intent_id": intent_id, "proposal_id": intent_id, "event_id": event_id, "evaluation_status": "pending_evaluation", "evaluation_due_minute": evaluation_due_minute, "applied": True, "applied_effects": bool(effect.get("state_changed", True)), "change_type": change_type, "effect": effect, "expected_effects": event_data["expected_effects"]}
             self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
         return result
+
+    def _apply_change(self, submission: WorldChangeSubmission) -> dict[str, Any]:
+        """Write the change and return its effect summary."""
+
+        change_type = submission.change_type
+        proposal = submission.proposal
+        if change_type == "rule":
+            return self._apply_rule(proposal)
+        if change_type == "route":
+            return self._apply_route(proposal)
+        if change_type == "relationship":
+            return self._apply_relationship(proposal)
+        if change_type == "faction":
+            return self._apply_faction(proposal)
+        if self._changes_property(submission):
+            return self._context.services["tick"].set_world_property(str(proposal["property"]), proposal.get("value"))
+        return {"event_recorded": True, "state_changed": False}
+
+    def _apply_rule(self, proposal: dict[str, Any]) -> dict[str, Any]:
+        rules = dict(self.store.repositories.metadata.get("rules", {}) or {})
+        world_rules = list(rules.get("world_rules", []))
+        world_rules.append(dict(proposal["rule"]))
+        rules["world_rules"] = world_rules
+        self.store.repositories.metadata.set("rules", rules)
+        self._context.set_dependency("conditions", ConditionEngine(rules))
+        self._context.set_dependency("rule_compiler", self._context.services["api"].new_rule_compiler())
+        return {"rule_added": dict(proposal["rule"]), "rule_count": len(world_rules)}
+
+    def _apply_route(self, proposal: dict[str, Any]) -> dict[str, Any]:
+        route = dict(proposal["route"])
+        source = str(route["from"])
+        target = str(route["to"])
+        distance = float(route["distance"])
+        source_data = self.store.repositories.entities.get_entity(source)
+        target_data = self.store.repositories.entities.get_entity(target)
+        source_routes = list(source_data.get("routes") or [])
+        target_routes = list(target_data.get("routes") or [])
+        if target not in source_routes:
+            source_routes.append(target)
+        if source not in target_routes:
+            target_routes.append(source)
+        source_distances = dict(source_data.get("route_distances") or {})
+        target_distances = dict(target_data.get("route_distances") or {})
+        source_distances[target] = distance
+        target_distances[source] = distance
+        source_data["routes"] = source_routes
+        source_data["route_distances"] = source_distances
+        target_data["routes"] = target_routes
+        target_data["route_distances"] = target_distances
+        self.store.repositories.entities.put_entity(source, "location", source_data.get("name", source), {key: value for key, value in source_data.items() if key not in {"id", "entity_type", "name"}})
+        self.store.repositories.entities.put_entity(target, "location", target_data.get("name", target), {key: value for key, value in target_data.items() if key not in {"id", "entity_type", "name"}})
+        return {"route_added": {"from": source, "to": target, "distance": distance}}
+
+    def _apply_relationship(self, proposal: dict[str, Any]) -> dict[str, Any]:
+        relation = dict(proposal["relationship"])
+        source = relation.pop("from", relation.pop("from_id", ""))
+        target = relation.pop("to", relation.pop("to_id", ""))
+        # God and Story use visible names at the model boundary. Keep
+        # the persisted relationship graph canonical so later views
+        # and effects can resolve both directions reliably.
+        participants = relation.pop("participants", None)
+        if (not source or not target) and isinstance(participants, list) and len(participants) >= 2:
+            source, target = participants[0], participants[1]
+        source = self.targets.canonical_id(str(source)) if source else None
+        target = self.targets.canonical_id(str(target)) if target else None
+        relation_type = str(relation.pop("type", "related"))
+        if not source or not target:
+            raise _ChangeRejected({"status": "rejected", "message": "relationship from and to are required.", "failed_check": "relationship", "retryable": True})
+        self.store.repositories.entities.put_relationship(str(source), str(target), relation_type, relation)
+        return {"relationship": {"from": str(source), "to": str(target), "type": relation_type, **relation}}
+
+    def _apply_faction(self, proposal: dict[str, Any]) -> dict[str, Any]:
+        faction = dict(proposal["faction"])
+        faction_id = str(faction.pop("id", faction.pop("faction_id", "")))
+        if not faction_id:
+            raise _ChangeRejected({"status": "rejected", "message": "faction id is required.", "failed_check": "faction.id", "retryable": True})
+        try:
+            current = self.store.repositories.entities.get_entity(faction_id)
+        except KeyError:
+            raise _ChangeRejected({"status": "rejected", "message": "faction does not exist.", "failed_check": "faction.id", "retryable": True}) from None
+        current.update(faction)
+        self.store.repositories.entities.put_entity(faction_id, "faction", current.get("name", faction_id), {key: value for key, value in current.items() if key not in {"id", "entity_type", "name"}})
+        return {"faction_id": faction_id, "changed_fields": sorted(faction), "after": {key: current.get(key) for key in faction}}
+
+    def _record_world_proposal(self, submission: WorldChangeSubmission, effect: dict[str, Any], world_minute: int, evaluation_due_minute: int) -> tuple[int, list[Any]]:
+        """Publish ``world.change.*``, store the pending proposal and, for God, remember it."""
+
+        proposal = submission.proposal
+        change_type = submission.change_type
+        intent_id = submission.intent_id
+        actor_id = submission.actor_id
+        event_data = {
+            "intent_id": intent_id,
+            "change_type": change_type,
+            "summary": str(proposal.get("summary", "")),
+            "scope": str(proposal.get("scope", "world")),
+            "conditions": list(proposal.get("conditions") or []),
+            "effects": list(proposal.get("effects") or []),
+            "expected_effects": list(proposal.get("expected_effects") or proposal.get("effects") or []),
+            "effect": effect,
+            "proposal_id": intent_id,
+            "evaluation_due_minute": evaluation_due_minute,
+        }
+        expected = self._world_proposal_expectation(change_type, proposal, effect)
+        event_data["expected_state"] = expected
+        event_id = self._context.services["events"].append(f"world.change.{change_type}", actor_id, world_minute, event_data)
+        self.store.repositories.evolution.put_world_proposal(intent_id, intent_id, actor_id, change_type, "pending_evaluation", world_minute, evaluation_due_minute, {"effects": event_data["expected_effects"], "summary": event_data["summary"], "state": expected}, {"event_id": event_id, "effect": effect})
+        if actor_id == "god":
+            remember_role(self.store, "god", "world_proposal", {
+                "summary": str(proposal.get("summary", "")),
+                "change_type": change_type,
+                "expected_effects": list(event_data["expected_effects"]),
+                "status": "pending_evaluation",
+                "evaluation_due_minute": evaluation_due_minute,
+            }, memory_key=f"god:proposal:{intent_id}", source_event_id=event_id)
+        return event_id, event_data["expected_effects"]
 
     def _world_proposal_expectation(self, change_type: str, proposal: dict[str, Any], effect: dict[str, Any]) -> dict[str, Any]:
         """Compile the small machine-checkable expectation for God review.
@@ -296,37 +200,6 @@ class WorldChangesRuntimeMixin:
         elif change_type == "faction":
             expected.update({"mode": "faction_state", "faction_id": effect.get("faction_id"), "fields": dict(effect.get("after") or {})})
         return expected
-
-    @staticmethod
-    def _canonical_world_property(value: str, properties: dict[str, Any]) -> str:
-        """Map a readable property label to its configured storage key."""
-
-        def normalized(text: str) -> str:
-            return re.sub(r"_+", "_", re.sub(r"[^a-z0-9]+", "_", str(text).casefold())).strip("_")
-
-        candidate = normalized(value)
-        for key in properties:
-            if normalized(str(key)) == candidate:
-                return str(key)
-        return candidate or str(value).strip()
-
-    def _god_property_change_allowed(self, property_id: str) -> bool:
-        """Return whether the package explicitly permits God to set a property.
-
-        The default is deny. Shared resources and personal/social outcomes must
-        be changed by configured behaviors; a package may opt in to a narrow
-        world property only when it has a documented reason.
-        """
-
-        try:
-            entity = self.store.repositories.entities.get_entity(property_id)
-        except KeyError:
-            entity = None
-        if entity and entity.get("entity_type") == "resource":
-            return False
-        policy = self.store.repositories.metadata.get("rules", {}).get("world_change_policy", {}) or {}
-        allowed = policy.get("god_direct_properties", []) if isinstance(policy, dict) else []
-        return property_id in {str(item) for item in (allowed or [])}
 
     def validate_world_template(self, template: dict[str, Any]) -> dict[str, Any]:
         from ..bootstrap.service import validate_world_template
