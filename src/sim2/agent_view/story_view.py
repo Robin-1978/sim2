@@ -51,11 +51,63 @@ class StoryViewMixin:
         return threads[: max(1, int(limit))]
 
     def _build_story_view(self, actor_id: str, role: str, *, source_event_id: int | None = None) -> dict[str, Any]:
+        """Build the Story view from the recent validated events, the source event and the eligible beats."""
+
         minute = int(self.store.repositories.metadata.get("world_minute", 0))
         story_root = self.store.repositories.metadata.get("story", {}) or {}
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
         story_state = self.store.repositories.metadata.get("story_state", {}) or {}
         recent_events = self.events_repo.recent_events(limit=80)
+        source_event = self._story_source_event(recent_events, source_event_id)
+        story_memory_query = self._story_memory_query(source_event, story_state)
+        story_memories = [self._humanize_record(item) for item in role_memory_query(self.store, "story", story_memory_query, limit=6)]
+        validated_source: dict[str, Any] = {}
+        if source_event:
+            validated_source = self._validated_story_source(source_event)
+            # The view reports the source event's actor as ``self.id``; with no source event it keeps the requested id.
+            actor_id = source_event.get("actor_id")
+        audience_candidates = self._story_audience_candidates(recent_events)
+        observed_events = {str(item.get("event_type", "")) for item in recent_events}
+        fact_rows = self.store.connection.execute("SELECT fact_key,data_json FROM knowledge_fact ORDER BY id DESC").fetchall()
+        observed_facts = {str(row["fact_key"]) for row in fact_rows}
+        choices = self._story_beat_choices(story_root, story_state, source_event, observed_events, observed_facts)
+        prompt_protocol, platform_rules = self._prompt_sections(role)
+        known_facts = self._story_known_facts(fact_rows)
+        return {
+            "context_version": "1", "role": role,
+            "prompt_protocol": prompt_protocol, "platform_rules": platform_rules,
+            "world_time": self._world_time(minute),
+            "self": {"id": actor_id, "name": "Story Agent", "role": role, "status": "ready", "location": "world", "goal": "Turn validated discoveries into coherent continuing story beats."},
+            "identity": {"traits": {}, "beliefs": [], "capabilities": {"story_scope": True}},
+            "needs": {}, "inventory": {}, "injuries": [], "drives": [],
+            "observation": {"facts": [self._visible_text(str(item.get("event_type", "event")) + ": " + str(item.get("summary") or item.get("fact") or item.get("result") or "validated world result")) for item in recent_events[:10]], "source": "validated_world_events"},
+            "validated_source": validated_source,
+            "nearby_entities": [], "known_facts": [{"fact": fact, "source_type": "world_knowledge", "confidence": 1.0} for fact in known_facts],
+            "audience_candidates": audience_candidates,
+            "recent_actions": recent_events[:8], "recent_story_events": [item for item in recent_events if str(item.get("event_type", "")).startswith("story.")][:8],
+            "recent_history": self._recent_history_view(16),
+            "knowledge_gaps": self._knowledge_gap_view(status="active", limit=8),
+            "research_sources": self._research_source_view(limit=12),
+            "memories": story_memories,
+            "long_term_memories": story_memories,
+            "short_term_memories": [],
+            "memory_query": story_memory_query,
+            "recent_world_changes": [], "recent_agent_outcomes": [], "direct_relationships": [],
+            "active_task": {"bt": None, "action": None, "remaining_minutes": 0},
+            "executable_behaviors": [], "story_beats": choices[:12],
+            "world_progress_candidates": self._world_progress_candidates(),
+            "active_world_rules": self.rule_compiler.model_view(
+                self._world_rule_labels(),
+                context={"recent_event_types": self._recent_event_types()},
+                world=self.store.repositories.metadata.get("world_properties", {}) or {},
+            ),
+            "last_platform_result": recent_events[0] if recent_events else None,
+            "tools": self._role_tools(role),
+        }
+
+    def _story_source_event(self, recent_events: list[dict[str, Any]], source_event_id: int | None) -> dict[str, Any] | None:
+        """Find the event the Story session is about: the one named by ``source_event_id`` or the latest validated one."""
+
         # Prefer the validated information event over the later wrapper
         # ``behavior.completed`` row.  The wrapper often says only
         # ``research_progressed``; using it as the source hides the completed
@@ -84,7 +136,12 @@ class StoryViewMixin:
                 ),
                 None,
             )
-        story_memory_query = " ".join(
+        return source_event
+
+    def _story_memory_query(self, source_event: dict[str, Any] | None, story_state: dict[str, Any]) -> str:
+        """Build the query that recalls Story memories from the thread keywords, the source event and the latest beats."""
+
+        return " ".join(
             str(item) for item in (
                 "story narrative thread",
                 (source_event or {}).get("event_type") if isinstance(source_event, dict) else "",
@@ -92,82 +149,101 @@ class StoryViewMixin:
                 " ".join(str(item.get("summary") or "") for item in (story_state.get("emergent_beats", []) or [])[-3:] if isinstance(item, dict)),
             ) if item
         )
-        story_memories = [self._humanize_record(item) for item in role_memory_query(self.store, "story", story_memory_query, limit=6)]
-        validated_source: dict[str, Any] = {}
-        if source_event:
-            outcome = source_event.get("outcome") if isinstance(source_event.get("outcome"), dict) else {}
-            actual = outcome.get("actual") if isinstance(outcome.get("actual"), dict) else {}
-            actor_id = source_event.get("actor_id")
+
+    def _validated_story_source(self, source_event: dict[str, Any]) -> dict[str, Any]:
+        """Describe the source event for Story: who did what where, its result and the matching public fact."""
+
+        outcome = source_event.get("outcome") if isinstance(source_event.get("outcome"), dict) else {}
+        actual = outcome.get("actual") if isinstance(outcome.get("actual"), dict) else {}
+        actor_id = source_event.get("actor_id")
+        try:
+            actor_name = self.entities_repo.get_entity(str(actor_id)).get("name", actor_id) if actor_id else "The world"
+        except KeyError:
+            actor_name = actor_id or "The world"
+        location_id = actual.get("location") or source_event.get("location_id")
+        try:
+            location_name = self.entities_repo.get_entity(str(location_id)).get("name", location_id) if location_id else "unknown"
+        except KeyError:
+            location_name = location_id or "unknown"
+        validated_source = {
+            "event_type": source_event.get("event_type"),
+            "actor": actor_name,
+            "location": location_name,
+            "result": self._visible_text(outcome.get("result") or source_event.get("result") or source_event.get("fact") or "recorded"),
+            "fact": self._humanize_fact(source_event.get("fact") or (outcome.get("expected") or {}).get("summary") or ""),
+            "world_minute": source_event.get("world_minute"),
+        }
+        source_id = source_event.get("source_id")
+        if source_id:
             try:
-                actor_name = self.entities_repo.get_entity(str(actor_id)).get("name", actor_id) if actor_id else "The world"
+                validated_source["research_source"] = self.entities_repo.get_entity(str(source_id)).get("name", source_id)
             except KeyError:
-                actor_name = actor_id or "The world"
-            location_id = actual.get("location") or source_event.get("location_id")
-            try:
-                location_name = self.entities_repo.get_entity(str(location_id)).get("name", location_id) if location_id else "unknown"
-            except KeyError:
-                location_name = location_id or "unknown"
-            validated_source = {
-                "event_type": source_event.get("event_type"),
-                "actor": actor_name,
-                "location": location_name,
-                "result": self._visible_text(outcome.get("result") or source_event.get("result") or source_event.get("fact") or "recorded"),
-                "fact": self._humanize_fact(source_event.get("fact") or (outcome.get("expected") or {}).get("summary") or ""),
-                "world_minute": source_event.get("world_minute"),
+                validated_source["research_source"] = str(source_id)
+        if str(source_event.get("event_type")) == "institution.allocation_completed":
+            self._describe_allocation(validated_source, source_event)
+        self._attach_source_fact(validated_source, source_event, actor_id)
+        return validated_source
+
+    def _describe_allocation(self, validated_source: dict[str, Any], source_event: dict[str, Any]) -> None:
+        """Replace the generic result with what an institution allocation handed out."""
+
+        consumed = source_event.get("consumed")
+        remaining = source_event.get("remaining")
+        allocations = source_event.get("allocations") or []
+        item = str(source_event.get("item") or "resource")
+        validated_source["result"] = (
+            f"Allocated {consumed} {item}; {remaining} remains in the shared pool."
+        )
+        validated_source["allocation_summary"] = [
+            {
+                "subject": self._visible_text(str(row.get("subject", "a character"))),
+                "amount": row.get("total"),
             }
-            source_id = source_event.get("source_id")
-            if source_id:
-                try:
-                    validated_source["research_source"] = self.entities_repo.get_entity(str(source_id)).get("name", source_id)
-                except KeyError:
-                    validated_source["research_source"] = str(source_id)
-            if str(source_event.get("event_type")) == "institution.allocation_completed":
-                consumed = source_event.get("consumed")
-                remaining = source_event.get("remaining")
-                allocations = source_event.get("allocations") or []
-                item = str(source_event.get("item") or "resource")
-                validated_source["result"] = (
-                    f"Allocated {consumed} {item}; {remaining} remains in the shared pool."
-                )
-                validated_source["allocation_summary"] = [
-                    {
-                        "subject": self._visible_text(str(row.get("subject", "a character"))),
-                        "amount": row.get("total"),
-                    }
-                    for row in allocations[:12]
-                    if isinstance(row, dict)
-                ]
-            # Information facts are persisted separately from the event
-            # envelope.  Include the matching public fact in the source view
-            # so Story never has to guess a key or query a private record.
-            source_minute = int(source_event.get("world_minute", -1) or -1)
-            expected_source_types = {
-                "research.completed": {"research"},
-                "exploration.completed": {"exploration"},
-                "object.recovered": {"recovery"},
-                "entity.installed": {"deployment"},
-            }.get(str(source_event.get("event_type") or ""), set())
-            fact_rows = self.store.connection.execute("SELECT agent_id,fact_key,data_json FROM knowledge_fact ORDER BY id DESC LIMIT 64").fetchall()
-            for row in fact_rows:
-                try:
-                    fact_data = json.loads(row["data_json"] or "{}")
-                except (TypeError, json.JSONDecodeError):
-                    continue
-                fact_source_type = str(fact_data.get("source_type") or "")
-                if expected_source_types and fact_source_type not in expected_source_types:
-                    continue
-                if not expected_source_types and fact_source_type not in {"research", "exploration", "recovery", "deployment"}:
-                    continue
-                if str(row["agent_id"] or "") != str(actor_id) or fact_data.get("observed_at") not in {source_minute, str(source_minute)}:
-                    continue
-                if fact_data.get("fact"):
-                    validated_source["fact"] = self._humanize_fact(str(fact_data["fact"]))
-                    validated_source["fact_key"] = str(row["fact_key"] or fact_data.get("source_id") or "")
-                    break
-        audience_candidates = self._story_audience_candidates(recent_events)
-        observed_events = {str(item.get("event_type", "")) for item in recent_events}
-        fact_rows = self.store.connection.execute("SELECT fact_key,data_json FROM knowledge_fact ORDER BY id DESC").fetchall()
-        observed_facts = {str(row["fact_key"]) for row in fact_rows}
+            for row in allocations[:12]
+            if isinstance(row, dict)
+        ]
+
+    def _attach_source_fact(self, validated_source: dict[str, Any], source_event: dict[str, Any], actor_id: Any) -> None:
+        """Add the public fact the source event's actor recorded at the same minute, matched by source type."""
+
+        # Information facts are persisted separately from the event
+        # envelope.  Include the matching public fact in the source view
+        # so Story never has to guess a key or query a private record.
+        source_minute = int(source_event.get("world_minute", -1) or -1)
+        expected_source_types = {
+            "research.completed": {"research"},
+            "exploration.completed": {"exploration"},
+            "object.recovered": {"recovery"},
+            "entity.installed": {"deployment"},
+        }.get(str(source_event.get("event_type") or ""), set())
+        fact_rows = self.store.connection.execute("SELECT agent_id,fact_key,data_json FROM knowledge_fact ORDER BY id DESC LIMIT 64").fetchall()
+        for row in fact_rows:
+            try:
+                fact_data = json.loads(row["data_json"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                continue
+            fact_source_type = str(fact_data.get("source_type") or "")
+            if expected_source_types and fact_source_type not in expected_source_types:
+                continue
+            if not expected_source_types and fact_source_type not in {"research", "exploration", "recovery", "deployment"}:
+                continue
+            if str(row["agent_id"] or "") != str(actor_id) or fact_data.get("observed_at") not in {source_minute, str(source_minute)}:
+                continue
+            if fact_data.get("fact"):
+                validated_source["fact"] = self._humanize_fact(str(fact_data["fact"]))
+                validated_source["fact_key"] = str(row["fact_key"] or fact_data.get("source_id") or "")
+                break
+
+    def _story_beat_choices(
+        self,
+        story_root: dict[str, Any],
+        story_state: dict[str, Any],
+        source_event: dict[str, Any] | None,
+        observed_events: set[str],
+        observed_facts: set[str],
+    ) -> list[dict[str, Any]]:
+        """List the configured and emergent beats the evidence supports, as choices the Story model can name."""
+
         choices: list[dict[str, Any]] = []
         scoped_beats = eligible_story_beats(
             list(story_root.get("beats", []) or []) + list(story_state.get("emergent_beats", []) or []),
@@ -190,7 +266,11 @@ class StoryViewMixin:
                 "followup_behaviors": [self._visible_text(str(item)) for item in (beat.get("followup_behaviors", []) or [])],
                 "impact": ["Platform records the beat, informs its configured audience, and unlocks only configured behaviors."],
             })
-        prompt_protocol, platform_rules = self._prompt_sections(role)
+        return choices
+
+    def _story_known_facts(self, fact_rows: list[Any]) -> list[str]:
+        """Turn the newest knowledge facts into at most twelve distinct sentences."""
+
         known_facts: list[str] = []
         seen_fact_keys: set[str] = set()
         seen_fact_text: set[str] = set()
@@ -211,48 +291,23 @@ class StoryViewMixin:
             known_facts.append(text)
             if len(known_facts) >= 12:
                 break
-        return {
-            "context_version": "1", "role": role,
-            "prompt_protocol": prompt_protocol, "platform_rules": platform_rules,
-            "world_time": self._world_time(minute),
-            "self": {"id": actor_id, "name": "Story Agent", "role": role, "status": "ready", "location": "world", "goal": "Turn validated discoveries into coherent continuing story beats."},
-            "identity": {"traits": {}, "beliefs": [], "capabilities": {"story_scope": True}},
-            "needs": {}, "inventory": {}, "injuries": [], "drives": [],
-            "observation": {"facts": [self._visible_text(str(item.get("event_type", "event")) + ": " + str(item.get("summary") or item.get("fact") or item.get("result") or "validated world result")) for item in recent_events[:10]], "source": "validated_world_events"},
-            "validated_source": validated_source,
-            "nearby_entities": [], "known_facts": [{"fact": fact, "source_type": "world_knowledge", "confidence": 1.0} for fact in known_facts],
-            "audience_candidates": audience_candidates,
-            "recent_actions": recent_events[:8], "recent_story_events": [item for item in recent_events if str(item.get("event_type", "")).startswith("story.")][:8],
-            "recent_history": self._recent_history_view(16),
-            "knowledge_gaps": self._knowledge_gap_view(status="active", limit=8),
-            "research_sources": self._research_source_view(limit=12),
-            "memories": story_memories,
-            "long_term_memories": story_memories,
-            "short_term_memories": [],
-            "memory_query": story_memory_query,
-            "recent_world_changes": [], "recent_agent_outcomes": [], "direct_relationships": [],
-            "active_task": {"bt": None, "action": None, "remaining_minutes": 0},
-            "executable_behaviors": [], "story_beats": choices[:12],
-            "world_progress_candidates": [
-                {
-                    "progress_key": str(key),
-                    "required": float((value or {}).get("required", 1) or 1),
-                    "description": str((value or {}).get("description") or ""),
-                    "evidence_event_types": [str(item) for item in ((value or {}).get("evidence_event_types") or [])],
-                    "evidence_behaviors": [str(item) for item in ((value or {}).get("evidence_behaviors") or [])],
-                    "evidence_sources": list((value or {}).get("evidence_sources") or []),
-                }
-                for key, value in ((self.store.repositories.metadata.get("rules", {}) or {}).get("civilization_progress", {}) or {}).items()
-                if isinstance(value, dict)
-            ],
-            "active_world_rules": self.rule_compiler.model_view(
-                self._world_rule_labels(),
-                context={"recent_event_types": self._recent_event_types()},
-                world=self.store.repositories.metadata.get("world_properties", {}) or {},
-            ),
-            "last_platform_result": recent_events[0] if recent_events else None,
-            "tools": self._role_tools(role),
-        }
+        return known_facts
+
+    def _world_progress_candidates(self) -> list[dict[str, Any]]:
+        """List the configured civilization progress tracks and the evidence that advances them."""
+
+        return [
+            {
+                "progress_key": str(key),
+                "required": float((value or {}).get("required", 1) or 1),
+                "description": str((value or {}).get("description") or ""),
+                "evidence_event_types": [str(item) for item in ((value or {}).get("evidence_event_types") or [])],
+                "evidence_behaviors": [str(item) for item in ((value or {}).get("evidence_behaviors") or [])],
+                "evidence_sources": list((value or {}).get("evidence_sources") or []),
+            }
+            for key, value in ((self.store.repositories.metadata.get("rules", {}) or {}).get("civilization_progress", {}) or {}).items()
+            if isinstance(value, dict)
+        ]
 
     def _story_audience_candidates(self, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Expose exact character names found in recent validated events.

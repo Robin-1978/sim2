@@ -223,6 +223,7 @@ at a time, each in its own commit and each compared with the code it replaces.
 | `submit_entity_proposal` | 230 lines in `platform/entity_proposals.py` | 10 lines. Validation moved to `platform/entity_proposal_validation.py`: `EntityProposalValidationMixin` is composed with `EntityProposalRuntimeMixin` in `EntityProposalService`. `submit_entity_proposal` opens an `EntitySubmission` (the intent and entity ids, the proposal as received, the proposal as it is normalized and the errors found so far), runs `_collect_entity_errors` and rejects once with every reason it found; `entity_failed_check` names the rejection after the most specific reason. `_collect_entity_errors` runs the steps in a fixed order (`_check_entity_label`, `_normalize_location_routes`, `_check_god_limits`, `_check_location_reference`, `_check_research_state`, `_check_research_assignees`, `_check_entity_id_free`), each appending to `submission.errors`; only `_normalize_location_routes` changes the proposal, by storing route neighbors and distances under their canonical ids. `_plan_entity` turns the validated proposal into an `EntityPlan` (the state to store, the structure promoted out of a location's state, and the character from `_normalize_god_agent_state`, which moved unchanged and rejects with `agent_schema`). `_commit_entity` creates the intent, writes the character (`_write_agent`) or the entity (`_write_structure`: `_join_neighbors`, `_record_research_gap` and the reachability check that raises `_UnreachableProposal`), publishes `entity.created`, remembers it for God and finishes the intent in one transaction; an unreachable research source rolls all of it back and is rejected with `entity_unreachable`. The longest new function is 29 lines, not counting `_normalize_god_agent_state` (118 lines, unchanged) |
 | `evaluate_turn` | 228 lines in `agents/quality.py` | 26 lines. `evaluate_turn` collects the checks every role shares (`_protocol_checks`), returns the `provider_error` grade as soon as the provider gave no usable response, reads the final submission (`_final_submission`, unchanged) and runs one function per role: `_decision_checks`, `_reflection_checks`, `_god_checks` or `_story_checks`. Each appends its checks in the order the inline branches did. A decision turn returns a `_DecisionChoice` (the candidates and their refs, whether the turn waited, was guarded or interacted, the institution intent, the candidate matched by label and the selected ref) built by `_select_decision`; `_grounding_checks` adds the goal and drive alignment to it, and `_decision_grade` or `_role_grade` turns the checks into the grade. The branches that were inline are functions of their own: `_institution_checks`, `_experience_checks`, `_capability_update_checks`, `_definition_checks`, `_world_change_checks` (over `_narrative_event_checks` and `_rule_checks`, which calls `_declared_condition_checks`) and `_story_beat_checks`. Two locals that were assigned and never read (a `tokens` lambda and `effect_is_gate`) are gone. The longest new function is 37 lines |
 | `_Handler.do_POST` | 207 lines in `api/http.py` | 14 lines. `do_POST` reads the JSON body, lets `_replay_idempotent_post` answer a repeated request from its stored response (or install the write that stores the first response of a new one) and hands the rest to `_route_post`; the mapping of errors to 400, 403 and 500 stayed in `do_POST`. `_route_post` serves `/session` (`_post_session`), then the operator calls, then the player routes. `_OPERATOR_POSTS` lists the 25 operator paths (the `/authoring/*` routes and the runtime, instance, snapshot, decide, simulate and event routes) with the server call behind each; one guard requires an operator session for them and for every other path under `/authoring/`, so an unknown authoring path is still refused before it is reported as not found. `_PLAYER_POSTS` maps the player paths to `_post_enter_player`, `_post_player_act`, `_post_player_wait`, `_post_dialogue` and the four `_post_trade_*` methods, whose bodies moved unchanged. The longest new function is 23 lines |
+| `StoryViewMixin._build_story_view` | 203 lines in `agent_view/story_view.py` | 54 lines, most of it the returned view. `_build_story_view` reads the world, picks the source event (`_story_source_event`), builds the memory query (`_story_memory_query`) and the Story memories, describes the source (`_validated_story_source`, over `_describe_allocation` for an institution allocation and `_attach_source_fact` for the public fact the actor recorded), collects the audience candidates, the observed events and the facts, offers the beats (`_story_beat_choices`) and the facts the Story model knows (`_story_known_facts`), and returns the view; `_world_progress_candidates` builds the progress tracks that were a comprehension inside the returned literal. The calls are made in the order the inline code made them. The longest new helper is 33 lines |
 
 `AgentEngine.run` equivalence: 887 scripted ReAct sessions on the five shipped
 worlds produced the same `AgentTurn`, provider usage and database content as
@@ -411,7 +412,63 @@ for every other session, unknown routes, the sessions that may be created, the
 authorization of player actions, waits, dialogues and trade calls, idempotent
 replay and what it stores, and the mapping of errors.
 
-Still above 200 lines: `api/cli.py:main` (291) and `_build_story_view` (203).
+`_build_story_view` equivalence: the previous mixin was kept outside the
+package and the Story view of both versions was built side by side on the
+same database, through `build_decision_view` for an id that is not a
+character. 16,541 views on the five shipped worlds (16,218 with the audience
+candidates replaced by one shared stub, 323 with the real ones) were compared.
+The worlds were driven by decisions and ticks and then given events of every
+information type and of Story, God, unknown and missing actors; unknown and
+missing locations and research sources; outcomes of every shape; allocation
+events with and without rows; public facts that match or miss by actor,
+minute (also as text) and source type; fact rows that are not JSON objects;
+configured and emergent beats in every state, up to fourteen at once; more
+than twelve known facts; progress tracks of every shape; and role memories.
+The source was the default, an event named by id, an unknown id, an id
+given as text and an id that is not a number. The view (key order included),
+the exception, the ordered log of every call the view makes on its
+collaborators (the memory query, the beat check, the prompt sections, the
+world time, history, gaps, sources, rule labels, tools and the text
+humanizers) and the number of database writes were identical for every
+view. Every line of `_build_story_view` and its helpers ran in both versions;
+the lines the run does not reach are in `_story_audience_candidates`, which
+the stub replaces and which ran unchanged in the 323 real views, and in
+`_active_story_threads`, which the Story view does not call. Fifty-four
+deliberate mutations (the event an id selects, the actors and event types
+the default source skips or accepts, the fallback to the behavior wrapper,
+the memory query parts and window, the name and location fallbacks, the
+result and fact precedence, the allocation summary, the public fact match by
+actor, minute, source type and the sixty-four row window, the first match,
+the beat check inputs, the cap of twelve choices and of twelve facts, both
+kinds of duplicate fact, the progress defaults and filter, the memory limit
+and the eighty-event window) were each caught by the comparison (the last
+four once cases for them were added to it), and 53 of them also by the
+permanent tests. The statements of every helper are
+AST-identical to the statements they replaced, and the only string the new
+code has more of is `"actor_id"` (one more `source_event.get("actor_id")` in
+`_build_story_view`). `tests/test_story_view.py` is the permanent guard (it
+also passes on the previous implementation): which event is the source, the
+memory query and the memories asked for, the names, location, result, fact
+and research source of the validated source, the allocation summary, the
+public fact and its matching rules, the beats on offer and how a choice is
+worded, the known facts, the progress tracks, and the order of the sections
+and of the source's fields.
+
+Two behaviors of the Story view were kept as they were. This pass does not
+fix them:
+
+- The view reports the source event's actor as `self.id`
+  (`agent_view/story_view.py:68` rebinds `actor_id`, which the fact lookup
+  needs); the id the view was asked for survives only when there is no source
+  event. A search of `src/sim2` finds no reader of it: Story prompts drop the
+  `self` section (`prompting/compaction.py:71`) and
+  `agent_view/validator.py:28` only checks that it is an object. The
+  permanent tests do not pin it; the comparison with the previous code does.
+- A source event at world minute 0 never gets its public fact:
+  `agent_view/story_view.py:212` turns `0` into `-1` (`int(... or -1)`),
+  which matches no `observed_at`.
+
+Still above 200 lines: `api/cli.py:main` (291).
 
 ### Execution order for the remaining work
 
