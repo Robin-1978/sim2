@@ -77,15 +77,21 @@ registered definitions, NPC choices, Story beats, resource quantities and
 the retained story state. The SQLite file and `evolution-audit.jsonl` stay
 under the supplied runtime directory.
 
-The probe's temporary world declares no `cadence` or `stagnation` window
-(`worlds/aster_relay/evolution.yaml` does), so it checks only the model-driven
-loop God → NPC → Story → NPC.  It cannot show whether the Platform's own
-liveness signal keeps a quiet world evolving; that check is recorded under
-"Stagnation signal with a real model" below.  The final audit fails a run
-whose last three rounds added no new object, Action, BT, or accepted Story
-beat, whatever the NPC chose (a waiting round and alternating inspections
-count as no progress).  The judgement is deferred when Story or God work is
-still queued at the end of the window, and skipped after a failed turn.
+The probe's temporary world declares a `stagnation` window (`3h`, repeated at
+doubling spacing up to `1d`) and a `god_on_stagnation` wake, but no `cadence`
+(`worlds/aster_relay/evolution.yaml` declares both).  When the NPC has nothing
+to do, the harness passes world time, at most 2,880 minutes, until Story or God
+work is queued, so a quiet world is woken the way it is in play.
+`--no-fallback` is the control without the window and the idle time: it tests
+only the model-driven loop God → NPC → Story → NPC, where a single God `wait`
+ends the evolution.  Why that control stalls and what changed is recorded under
+"Root cause of the probe stall and its fix" below; the stagnation signal on the
+shipped world is recorded under "Stagnation signal with a real model".  The
+final audit fails a run whose last three rounds added no new object, Action,
+BT, or accepted Story beat, whatever the NPC chose (a waiting round and
+alternating inspections count as no progress).  The judgement is deferred when
+Story or God work is still queued at the end of the window, and skipped after
+a failed turn.
 
 ## Recent architecture-convergence verification
 
@@ -743,3 +749,157 @@ shipped `1d` configuration was not run with a real model. From this run's
 average of 3,686 prompt tokens per call, 2.5 world days of the shipped
 configuration would need about 190 calls and 0.7M prompt tokens (an estimate,
 not a measurement).
+
+### Root cause of the probe stall and its fix
+
+**Question (2026-11-17).** The probe stalls in 12 of 27 kept runs (previous
+section; the runs come from different code and prompt versions).  Is the engine
+at fault, or the world's wake text?  Every check below used the real provider
+(`remote`, `deepseek-v4.1-flash`) on a copy of a stalled instance with one
+variable changed.  The scratch scripts lived under `/tmp` and are not kept in
+the repository.
+
+**Root cause.** The probe world is driven by event counts only; nothing in it
+is driven by time.  The loop continues while three things hold, and each can
+fail on its own:
+
+1. The source God creates yields enough research outcomes.
+   `research_synthesis` wakes God once 2 matching events were counted since its
+   previous wake (`count: 2`, `scripts/audit_dynamic_evolution_loop.py:125`;
+   counter and consumption in `src/sim2/evolution/wakes.py:140-175`).  One study
+   adds one `research.progressed` or `research.completed` event, and a source
+   yields the sum of its stages' required counts: the stage's own `required`,
+   else the source's `research_required`, else `rules.research_default_required`,
+   else 1 (`src/sim2/platform/activity.py:857-893`; the probe's study Action has
+   `amount: 1`).  A one-stage source with `research_required: 1` yields one
+   outcome and cannot wake God by itself.
+2. God answers the wake with a proposal and not `wait`.
+3. The review wake fires once.  `relay.stability_review` is an edge-triggered
+   world-rule signal (`src/sim2/platform/evolution_service.py:58-59`).  Its
+   condition `world.relay_stability >= 0.55` stays true because the template's
+   only effect on that property raises it, and `inspect_archive` requires `< 0.55`
+   (`scripts/audit_dynamic_evolution_loop.py:92,111-114`).  One `wait` at that
+   wake leaves nothing that asks God again.
+
+Without a time-based signal, one failure of (1) or (2) ends the evolution.  The
+two endings observed are a God `wait` at the review wake (`refactor-check` and
+`long-30` in the table above) and a source with one outcome (set 1, run 2
+below).  No engine defect was found: in `long-30` the `research_synthesis`
+counter state (`last_event_id` 309, `observed_count` 2, read from
+`instance_meta['god:event_wake_group_state']`) agrees with the event log, which
+holds one further matching event (id 385) that no wake has consumed.  The
+engine's own fallback, the stagnation signal, is opt-in world configuration
+(`src/sim2/platform/stagnation.py:56-64` returns no config without a positive
+window) and the probe world did not enable it.
+
+**What the model does with the threshold.** One God turn per trial on a copy of
+a real pre-wake state; only that wake's `agent_contract` was rewritten.  Review
+wake: the two pre-review states of `refactor-check-3` and `-4`, alternating.
+Synthesis wake: one state from a fresh 3-round probe.  "Outcomes" is the
+number of stages times the required count of each created source.
+
+| Wake | Variant | Trials | Source created | Outcomes per created source |
+| --- | --- | ---: | ---: | --- |
+| review | A: text as it was | 5 | 3 (2 `wait`) | 1, 1, 1 |
+| review | D: tools and wording of the stagnation wake | 5 | 5 | 1, 1, 1, 1, 1 |
+| review | R: A plus the outcome sentence | 5 | 4 (1 `wait`) | 2, 4, 2, 4 |
+| review | F: shipped text (A plus the sentence, `because` for the colon) | 5 | 5 | 2, 2, 4, 2, 4 |
+| synthesis | S0: text as it was | 5 | 5 | 3, 6, 2, 2, 6 |
+| synthesis | S1: plus "set `research_required` to at least 2" | 5 | 5 | 6, 6, 4, 4, 4 |
+| synthesis | S2: plus the wake rule as facts, no instruction | 5 | 5 | 2, 1, 1, 2, 1 |
+| synthesis | S3: shipped text (S0 plus the sentence) | 5 | 5 | 6, 4, 4, 4, 6 |
+
+Variants B (wording only) and C (tools only) are defined in the scratch script
+but were not run.  At the review wake, God created a source in 8 of 10 trials
+without the sentence (A, D) and all 8 sources yielded one outcome: wording and
+tools moved how often God proposed (3 of 5 against 5 of 5; Fisher exact,
+two-sided, p = 0.44) and did not move the outcomes per source.  With the
+sentence, all 9 created sources (R, F) yielded at least 2.  At the synthesis
+wake the model already chose at least 2 outcomes in 5 of 5 trials (S0).  Facts
+without an instruction (S2) gave 2 of 5 with at least 2 outcomes (against 5 of
+5 for S0; p = 0.17).  The explicit instruction (S1) and the shipped text (S3)
+gave 5 of 5.
+
+**Fix: configuration and harness, no engine change.**
+
+- `research_synthesis` and `relay_stability_review` in the probe template
+  (`OUTCOME_NOTE`, `scripts/audit_dynamic_evolution_loop.py:37-42`) and in
+  `worlds/aster_relay/evolution.yaml` now end with: "The new source must yield
+  at least 2 verified research outcomes (its number of stages times its
+  research_required must be at least 2) because this world wakes you again only
+  after 2 verified research outcomes."
+  `test_wakes_that_create_sources_state_the_outcome_threshold` in
+  `tests/test_evolution_audit.py` reads the number from the synthesis wake's
+  `count` in both files, so changing the count without the sentence fails.
+- The probe world declares `stagnation: {window: 3h, max_interval: 1d}` and a
+  `god_on_stagnation` wake by default.  When the NPC has nothing to do,
+  `_advance_idle` passes world time until Story or God work is queued, and the
+  run ends only if none appears within 2,880 minutes.  `--no-fallback` keeps
+  the control.  Deterministic tests:
+  `test_idle_probe_world_wakes_god_through_the_stagnation_fallback`,
+  `test_idle_probe_control_without_the_fallback_stays_absorbed`, and four more
+  in `tests/test_evolution_audit.py`.
+
+**End to end, 10 rounds, default probe (fallback on).** Per run: the audit gate
+verdict, the God-created sources with their outcome counts, and the number of
+`world.stagnation` events.
+
+| Set | Wakes with the sentence | Run | Gate | God-created sources (round: outcomes) | `world.stagnation` |
+| --- | --- | --- | --- | --- | ---: |
+| 1 | review only | 1 | passed | 4: 2, 6: 3, 8: 2, 10: 3 | 0 |
+| 1 | review only | 2 | failed: `absorbing_state:three_rounds_without_structural_or_story_progress` | 4: 2, 6: 1 | 0 |
+| 2 | review and synthesis (shipped) | 1 | passed | 4: 4, 6: 4, 8: 4; God `wait` in round 10 | 0 |
+| 2 | review and synthesis (shipped) | 2 | passed | 4: 4, 7: 2, 9: 4 | 0 |
+
+Set 1, run 2 is the stall the root cause predicts: the source created in round
+6 yielded one outcome, the NPC studied it, then chose `Inspect Archive` in
+rounds 7-10, and the synthesis counter did not reach 2, so God was not woken.
+The sentence was added to the synthesis wake after this run, and set 2 repeated
+the measurement: all 6 God-created sources yielded at least 2 outcomes and both
+runs passed.  The fallback never fired in these four runs: the NPC completed a
+behavior in all 40 rounds, so `_advance_idle` never ran, and set 1 run 2 ended
+76 world minutes after the NPC finished the last source (minute 330 to 406),
+shorter than one 3 h stagnation window.  Cost: set 1, 59 calls, 230,197 prompt
+tokens (120,832 cached), 14,227 completion tokens; set 2, 58 calls, 233,352
+prompt tokens (103,552 cached), 13,564 completion tokens.
+
+**Rescue of an absorbed world.** A 10-round window ends before the fallback can
+act after a lull, so the fallback was tested on the stalled `long-30` instance
+itself.  Criteria written before the run: (R1) at least one `world.stagnation`
+within 6 rounds; (R2) God accepts at least one proposal after it; (R3) a
+`research.*` event follows it.  A copy of the instance (world minute 429, no
+ready God or Story task, no `stagnation` in its stored config) had only its
+stored `evolution` config replaced by the probe template's current one; the
+rounds then ran with the harness's own `_run_task`, `_complete_behavior`,
+`_can_continue` and `_advance_idle` (scratch script, not kept).
+
+| Round | World minute | God | NPC | New source (outcomes) |
+| --- | ---: | --- | --- | --- |
+| 1 | 429 | none | `no_npc_behavior` | none |
+| 2 | 783 | `god_on_stagnation`, `propose_entity` accepted | studied | Relay Reissue Witness Slate (1) |
+| 3 | 846 | `research_synthesis`, accepted | studied | Relay Reissue Seed Register (4) |
+| 4 | 909 | none | studied | none |
+| 5 | 972 | `research_synthesis`, accepted | studied | Relay Reissue Reuse Log (3) |
+| 6 | 1035 | none | studied | none |
+
+After round 1, `_advance_idle` passed world time from minute 429 until
+`world.stagnation` (event 857) was published at minute 720.  Five `research.*`
+events followed, at minutes 780, 843, 906, 969 and 1032.  R1, R2 and R3 held.
+Cost: 23 calls, 108,697 prompt tokens (62,080 cached), 4,358 completion
+tokens.
+
+The source God created under `god_on_stagnation` yielded one outcome.  Round 3
+woke (task `god:event_group:research_synthesis:922`) because
+`research_synthesis` had already counted one outcome from minute 322 (event
+385, after its `last_event_id` 309) that the absorbed instance never consumed,
+and the new source's outcome made 2.  Without that leftover event the world
+would have waited for the next `world.stagnation` (repeated at doubling spacing
+up to `max_interval`) instead of re-entering the synthesis loop at once.
+`god_on_stagnation` does not carry the outcome sentence.
+
+**Limits.** Single-decision trials have 5 per cell, each end-to-end set 2
+runs, and the rescue is one run from one absorbed state, so these are samples,
+not rates.  The sentence's effect at the synthesis wake cannot be measured with
+them: without it, 1 of 11 sources observed at that wake (set 1: 6, S0: 5)
+yielded one outcome.  The shipped `aster_relay` configuration with its 1-day
+window was not run with a real model (estimate above).
