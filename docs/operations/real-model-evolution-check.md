@@ -903,3 +903,99 @@ not rates.  The sentence's effect at the synthesis wake cannot be measured with
 them: without it, 1 of 11 sources observed at that wake (set 1: 6, S0: 5)
 yielded one outcome.  The shipped `aster_relay` configuration with its 1-day
 window was not run with a real model (estimate above).
+
+### Deterministic seven-day liveness check
+
+**Question (2026-11-17).**  Does the engine keep a world evolving for seven
+world days, and what does it do when God keeps refusing?  A real-model week
+costs millions of tokens (Tidebound Commons above: 909 provider calls,
+4,022,318 prompt tokens), so this check drives the same `Platform` and
+`SimulationRunner` path with scripted agents: no model calls, about two minutes
+of wall time for the three scenarios.
+
+```bash
+python scripts/verify_week_liveness.py            # worlds/aster_relay, 10080 minutes
+python scripts/verify_week_liveness.py --config <world package> --minutes <n>
+```
+
+The exit code is 1 when any verdict fails.  `tests/test_week_liveness.py`
+(15 tests, about 20 s) covers the scripted agents, the verdict rules and one
+four-day run on the real engine.
+
+**What is real and what is scripted.**  Real: wake groups, the stagnation
+signal, cadence, the Platform's proposal checks and the SQLite event log
+(`run_week` in `scripts/verify_week_liveness.py`).  Scripted
+(`ScriptedAgents`): the character takes the first behavior it is
+offered and fills required parameters from `parameter_options`; God proposes a
+new research source made of words of its own unless the scenario tells it to
+decline or the wake does not offer `propose_entity`, and then answers `wait`;
+reflection and Story answer `wait`.  A proposed source has two
+`research_discoveries` (each a stage,
+`src/sim2/persistence/repositories/memory.py:119-120`) and
+`research_required: 1`, so it yields two research outcomes, the `count: 2` of
+the `research_synthesis` wake (`worlds/aster_relay/evolution.yaml:15`).
+
+**Scenarios and verdicts** (`problems`).  A progress event is one of
+the world's `progress_event_types`, else `DEFAULT_PROGRESS_EVENTS`
+(`src/sim2/platform/stagnation.py:32-42`).
+
+| Scenario | God | The verdict requires |
+| --- | --- | --- |
+| `accepts` | proposes at every ask | a progress event on each of the seven days |
+| `declines_two` | waits at the first two asks, then proposes | a `world.stagnation` event, a source accepted at or after the first one, progress on the last day |
+| `declines_all` | waits at every ask | at least two `world.stagnation` events at spacing that never shrinks and never exceeds the configured `max_interval` |
+
+**Result on `worlds/aster_relay` at `HEAD`.**  "God turns" counts the first
+model call of each God turn, cadence turns included.
+
+| Scenario | Progress events per day (1-7) | `world.stagnation` at minute | God turns | Sources accepted / rejected | Time | Verdict |
+| --- | --- | --- | ---: | --- | ---: | --- |
+| God accepts every ask | 14, 9, 5, 10, 10, 8, 8 | none | 45 | 31 / 56 | 43 s | pass |
+| God declines the first two asks | 2, 0, 16, 10, 5, 9, 10 | 2880 | 36 | 25 / 36 | 39 s | pass |
+| God declines every ask | 2, 0, 0, 0, 0, 0, 0 | 2880, 4320, 7200 | 7 | 0 / 0 | 27 s | pass |
+
+- Every rejected proposal has one reason, `entity_unreachable`: the Platform
+  applies the proposal inside a transaction, asks each assignee's own view of
+  the world whether a research option exists, and rolls the whole proposal back
+  if not (`src/sim2/platform/entity_proposals.py:156-162`).  Nothing of a
+  rejected proposal remains.
+- When God declines every ask, progress stops after day 1 by construction: the
+  engine cannot create a source itself.  What it does is keep asking.  The 7
+  God turns, read from `llm_call`, are minute 121 `research_synthesis`, 196
+  `relay_stability_review`, 2880, 4320 and 7200 `god_on_stagnation`, and 4320
+  and 8640 `god_local`, the cadence task (`cadence.god: 3d`).  The stagnation
+  asks are 1 and 2 windows apart (1440 and 2880 minutes), the doubling in
+  `src/sim2/platform/stagnation.py:151-158`.
+- The progress, stagnation, accepted and rejected columns were identical in
+  three consecutive full runs and in an earlier prototype run.
+
+**Does the check fail when the mechanism is broken?**  Two mutations, both
+reverted after the run:
+
+| Mutation | Output |
+| --- | --- |
+| World copy without the `stagnation` window and the `god_on_stagnation` wake, cadence kept | `declines_two`: `no world.stagnation event`; `declines_all`: `fewer than two stagnation events in the week`; `accepts` passes; exit code 1 |
+| Engine publishes the signal once (`next_emit_at = windows + gap` in `src/sim2/platform/stagnation.py` replaced by `10**9`; restored with `git checkout`) | `declines_all`: `fewer than two stagnation events in the week`; the other two scenarios pass; exit code 1 |
+
+In the first mutation the `declines_two` world is silent on days 2 and 3 and
+resumes on day 4 (16 progress events), when the cadence task asks God at minute
+4320; with the signal it resumes on day 3 (minute 2880).  Cadence is therefore
+a second time-based path, and that is why the verdicts require the stagnation
+event itself: late progress alone would not show that the signal works.
+
+**Limits.**
+
+- Scripted agents test the engine's path (wake groups, stagnation, cadence,
+  proposal intake), not the model.  A model that proposes unreachable or
+  repeated sources is not simulated here; the real-model evidence is the
+  Tidebound Commons week above.
+- The stagnation signal resets on any configured progress event, so a loop that
+  keeps producing one (for example repeated `capability.updated`) would keep it
+  silent.  This check does not model such a loop (not verified).
+- In seven days the stagnation spacing reaches 2 days.  The `max_interval` cap
+  (7 days in `aster_relay`) is covered by
+  `test_stagnation_spacing_is_capped_by_max_interval`
+  (`tests/test_evolution_liveness.py:243`), not by this run.
+- Only `aster_relay` has been run through it.  `--config` accepts any world
+  package; `tests/test_world_liveness_contract.py` checks the stagnation window
+  and God wake of every shipped world.
