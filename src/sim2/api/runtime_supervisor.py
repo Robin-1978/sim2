@@ -405,6 +405,23 @@ class RuntimeSupervisor:
             }
         return {"status": "accepted", "report": report.as_dict(), **self.status()}
 
+    def resolve_pending_interactions(self, provider_name: str | None = None) -> dict[str, Any]:
+        """Resolve zero-minute dialogue/trade replies without advancing the clock."""
+
+        with self._lock:
+            if self.running:
+                return {"status": "queued", "message": "The running world will resolve this interaction.", **self.status()}
+            selected = str(provider_name).strip() if provider_name else self._provider_name
+            try:
+                providers = self._providers_for(selected)
+            except Exception as exc:
+                self._last_error = str(exc)
+                return {"status": "rejected", "failed_check": "provider", "message": str(exc), **self.status()}
+            if selected:
+                self._provider_name = selected
+        report = SimulationRunner(self.service.platform, providers).resolve_pending_interactions()
+        return {"status": "accepted", "report": report.as_dict(), **self.status()}
+
     def close(self) -> None:
         self.stop("web-server-close", wait_seconds=30.0)
 

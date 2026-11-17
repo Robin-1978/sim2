@@ -1029,10 +1029,12 @@
           listener_id: target,
           topic: "general",
           message,
+          provider: selectedProvider() || undefined,
         });
         if (result.status !== "accepted") throw new Error(result.message || "对话未发送");
         $("talk-message").value = "";
-        toast("对话已记录。", "ok");
+        const reply = result.reply || {};
+        toast(reply.status === "rejected" ? "消息已记录，但 NPC 回复暂不可用。" : "对话已发送。", reply.status === "rejected" ? "error" : "ok");
         await Promise.allSettled([loadView(), loadDialogue(), loadFeed()]);
       } catch (error) {
         toast(describeError(error, "对话未发送"), "error");

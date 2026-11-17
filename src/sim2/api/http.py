@@ -425,7 +425,7 @@ class _Handler(BaseHTTPRequestHandler):
         speaker_id = self.server.resolve_agent_id(raw_speaker_id) or raw_speaker_id
         listener_id = self.server.resolve_agent_id(str(body.get("listener_id") or "")) or str(body.get("listener_id") or "")
         role = "operator" if raw_speaker_id.strip().casefold() == "god" else "player"
-        return self._write(200, self.server.service_call(
+        result = self.server.service_call(
             "dialogue",
             speaker_id,
             listener_id,
@@ -434,7 +434,17 @@ class _Handler(BaseHTTPRequestHandler):
             authorize_role=role,
             authorize_token=self._token(),
             authorize_player_id=speaker_id,
-        ))
+        )
+        if result.get("status") == "accepted" and role == "player":
+            result = {
+                **result,
+                "reply": self.server.resolve_dialogue_reply(
+                    speaker_id,
+                    provider_name=body.get("provider"),
+                    token=self._token(),
+                ),
+            }
+        return self._write(200, result)
 
     def _post_trade_offer(self, body: dict[str, Any]) -> None:
         """Offer a trade to another character."""
@@ -738,6 +748,14 @@ class ControlHTTPServer(ThreadingHTTPServer):
                     "message": "The autonomous world is already advancing; pause or stop it before using manual wait.",
                 }
             return self.runtime.advance_manual(minutes, provider_name=provider_name, reason="web-player-wait")
+
+    def resolve_dialogue_reply(self, player_id: str, *, provider_name: str | None = None, token: str | None = None) -> dict[str, Any]:
+        with self._control_lock:
+            resolved = self._resolve_agent_id_locked(player_id)
+            allowed, message = self.authorize_session(str(token or ""), "player", player_id=resolved)
+            if not allowed:
+                raise PermissionError(message)
+            return self.runtime.resolve_pending_interactions(provider_name)
 
     def trade_offers(self, agent_id: str, *, include_closed: bool = False, token: str | None = None) -> dict[str, Any]:
         with self._control_lock:
