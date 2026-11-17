@@ -177,6 +177,37 @@ Still above 200 lines and not part of this pass: `submit_definition_proposal`
 `submit_entity_proposal` (230), `evaluate_turn` (228), `do_POST` (207) and
 `_build_story_view` (203). `world_template_schema` (332) is a schema literal.
 
+### Module split pass (2026-11-17)
+
+The two largest projection modules were split by responsibility. Method and
+function bodies moved verbatim; only names that now cross a module boundary
+lost their underscore.
+
+| Before | After |
+|---|---|
+| `prompting/renderer.py`, 1,113 lines | `renderer.py` (64 lines, `render_context` only) over `formatting.py` (144, one-line value renderers), `sections_common.py` (142), `sections_character.py` (278), `sections_story.py` (132), `sections_god.py` (246) and `compaction.py` (167, background removal and the size limit) |
+| `agent_view/compiler.py`, 2,305 lines, one class | `compiler.py` (284): `AgentViewCompiler` keeps the constructor, shared lookups and `build_decision_view`, composed from the same `*Mixin` pattern the Platform services use: `behavior_view.py` (464), `action_availability.py` (168), `character_view.py` (196), `progress_view.py` (235), `choices.py` (152), `visible_text.py` (136), `story_view.py` (312) and `world_view.py` (284). `action_text.py` (145) holds the wording functions and `decision_frame.py` (64) the three frame dataclasses |
+
+The public surface is unchanged: `render_context` and `AgentViewCompiler`
+keep their import paths. The one test that imported a private helper now
+imports `action_text.predicate_text`.
+
+Equivalence evidence: the 38 renderer definitions and the 12 module-level
+definitions and 54 methods of the compiler are AST-identical to the previous
+code once the renamed names are mapped. On the five shipped worlds the
+previous implementation and the split one produced the same output on 38,586
+rendered prompts (including inputs that raise and prompts that were
+compacted) and 2,268 decision, Story and God views; there was no difference
+in results or exceptions. The previous copies were kept outside the package
+for the comparison. `tests/test_agent_view_modules.py` stays as the guard for
+the mixin composition: every `self.<name>` a view module reads is defined by
+the composed class, no method is defined by two view classes, and no mixin
+imports `compiler.py`.
+
+Other modules the plan names as concentrated (`platform/activity.py`,
+`definition_runtime.py`, `social.py`, `agents/engine.py`) are not part of
+this pass.
+
 ### Execution order for the remaining work
 
 The following is the concrete plan for this development cycle. Each stage
