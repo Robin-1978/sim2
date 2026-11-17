@@ -202,6 +202,12 @@ h1, h2, h3 { font-weight: 650; }
   overflow: visible;
 }
 
+/* Keep the world feed and map controls reachable on short screens too. */
+.right-rail {
+  max-height: none;
+  overflow: visible;
+}
+
 .center-stage { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
 .panel {

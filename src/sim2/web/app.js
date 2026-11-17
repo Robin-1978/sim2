@@ -88,10 +88,16 @@
 
   async function request(path, options = {}) {
     const token = tokenFor(path);
+    const method = String(options.method || "GET").toUpperCase();
+    const isGet = method === "GET";
+    path = isGet
+      ? `${path}${path.includes("?") ? "&" : "?"}_sim2_ts=${Date.now()}`
+      : path;
     let response;
     try {
       response = await fetch(path, {
         ...options,
+        cache: isGet ? "no-store" : options.cache,
         headers: {
           "content-type": "application/json",
           ...(token ? { "x-sim2-session": token } : {}),
