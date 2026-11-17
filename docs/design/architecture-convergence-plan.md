@@ -221,6 +221,7 @@ at a time, each in its own commit and each compared with the code it replaces.
 | `BehaviorIntentService.submit_behavior` | 295 lines in `platform/behavior_service.py` | 13 lines. `BehaviorIntentService` moved to `platform/behavior_intent.py`; `behavior_service.py` keeps `BehaviorExecutionService`. `submit_behavior` returns the stored result of a known intent, rejects an unknown actor, opens a `BehaviorSubmission` (the intent, the actor record, the parameters as they change and the values read on the way) and calls `_admit`. `_admit` runs the admission steps in their fixed order: resolve the behavior, apply BT defaults, then one check method per rejection (`_check_available`, `_check_parameters`, `_check_actor_free`, `_resolve_targets`, `_check_entry_conditions`, `_check_cooldown`, `_check_catalog`, `_check_agent_revision`), each returning the rejection result or `None`. The first rejection is stored with the intent by one `reject_intent` call. `_start_behavior` commits the intent, the actor state, the BT instance and the `behavior.started` event in one transaction. The longest new function is 38 lines |
 | `submit_world_change` | 257 lines in `platform/world_changes.py` | 6 lines. Validation moved to `platform/world_change_validation.py`: `WorldChangeValidationMixin` is composed with `WorldChangesRuntimeMixin` in `WorldChangesService`. `submit_world_change` opens a `WorldChangeSubmission` (the proposal as it is normalized on the way), runs `_validate_world_change` and commits through `_commit_world_change`. `_validate_world_change` runs the gates in their fixed order (required fields, change type, property key, property presence, payload object, rule, route, event effects, property value), each returning the rejection that `reject_intent` stored or `None`; the property key, the route endpoints and the property value are normalized into `submission.proposal`, so a rejection stores the proposal as it stood at that gate. `_commit_world_change` creates the intent, applies the change (`_apply_rule`, `_apply_route`, `_apply_relationship`, `_apply_faction` or the world property setter), publishes the `world.change.*` event, stores the pending proposal, remembers it for God and finishes the intent in one transaction. A relationship or faction change that is unusable while it is applied raises `_ChangeRejected` before anything is written; the intent and its rejection are committed together, as before. The longest new function is 32 lines |
 | `submit_entity_proposal` | 230 lines in `platform/entity_proposals.py` | 10 lines. Validation moved to `platform/entity_proposal_validation.py`: `EntityProposalValidationMixin` is composed with `EntityProposalRuntimeMixin` in `EntityProposalService`. `submit_entity_proposal` opens an `EntitySubmission` (the intent and entity ids, the proposal as received, the proposal as it is normalized and the errors found so far), runs `_collect_entity_errors` and rejects once with every reason it found; `entity_failed_check` names the rejection after the most specific reason. `_collect_entity_errors` runs the steps in a fixed order (`_check_entity_label`, `_normalize_location_routes`, `_check_god_limits`, `_check_location_reference`, `_check_research_state`, `_check_research_assignees`, `_check_entity_id_free`), each appending to `submission.errors`; only `_normalize_location_routes` changes the proposal, by storing route neighbors and distances under their canonical ids. `_plan_entity` turns the validated proposal into an `EntityPlan` (the state to store, the structure promoted out of a location's state, and the character from `_normalize_god_agent_state`, which moved unchanged and rejects with `agent_schema`). `_commit_entity` creates the intent, writes the character (`_write_agent`) or the entity (`_write_structure`: `_join_neighbors`, `_record_research_gap` and the reachability check that raises `_UnreachableProposal`), publishes `entity.created`, remembers it for God and finishes the intent in one transaction; an unreachable research source rolls all of it back and is rejected with `entity_unreachable`. The longest new function is 29 lines, not counting `_normalize_god_agent_state` (118 lines, unchanged) |
+| `evaluate_turn` | 228 lines in `agents/quality.py` | 26 lines. `evaluate_turn` collects the checks every role shares (`_protocol_checks`), returns the `provider_error` grade as soon as the provider gave no usable response, reads the final submission (`_final_submission`, unchanged) and runs one function per role: `_decision_checks`, `_reflection_checks`, `_god_checks` or `_story_checks`. Each appends its checks in the order the inline branches did. A decision turn returns a `_DecisionChoice` (the candidates and their refs, whether the turn waited, was guarded or interacted, the institution intent, the candidate matched by label and the selected ref) built by `_select_decision`; `_grounding_checks` adds the goal and drive alignment to it, and `_decision_grade` or `_role_grade` turns the checks into the grade. The branches that were inline are functions of their own: `_institution_checks`, `_experience_checks`, `_capability_update_checks`, `_definition_checks`, `_world_change_checks` (over `_narrative_event_checks` and `_rule_checks`, which calls `_declared_condition_checks`) and `_story_beat_checks`. Two locals that were assigned and never read (a `tokens` lambda and `effect_is_gate`) are gone. The longest new function is 37 lines |
 
 `AgentEngine.run` equivalence: 887 scripted ReAct sessions on the five shipped
 worlds produced the same `AgentTurn`, provider usage and database content as
@@ -344,8 +345,39 @@ the order of agent errors, the defaults a character receives, knowledge
 seeds and the rollback of a failing one, the intent, event and God memory of
 an accepted proposal, and the knowledge gap and focus of a research source.
 
-Still above 200 lines: `api/cli.py:main` (291), `evaluate_turn` (228),
-`do_POST` (207) and `_build_story_view` (203).
+`evaluate_turn` equivalence: the previous module was kept outside the package
+and run side by side with the new one on 150,000 generated turns and their
+views (three runs of 50,000). The turns covered every role and an unknown one,
+provider failures, every status, iteration counts around the bound, decisions
+whose candidates are executable or only available, labels and refs (bare,
+prefixed, unknown), interactions, waits, institution proposals, goal and drive
+alignment, advisory and absent reasons, filled execution costs, lessons that
+cite or ignore a recent outcome, capability, goal, belief and behavior
+updates, God progress, institutions, entities, definitions and world changes
+(events with and without a property, rules with every effect and enforcement
+shape and declared conditions) and Story progress, waits and beats, submitted
+as tool calls or as intent responses. About 1.7% of the turns were malformed
+on purpose (missing or wrongly typed fields) and raise in both versions. The
+grade, every check with its detail and its position, and the exception were
+identical for every turn, and neither version changed its inputs. The run
+reached all 11 grades and all 56 check names, and both modules are 100%
+line-covered by it. Twenty-six deliberate mutations (the forced-choice
+threshold, the order of the grades, a role routed to another role's checks, a
+skipped role, a dropped condition check, the candidate lists swapped, a lost
+alignment, a moved institution check, the iteration bound, a rule dispatched
+for events, a view or payload not passed on, and others) were each caught by
+the same run, and 25 of them by the permanent tests; the last one, a
+candidate without a `ref`, can only be told apart on a malformed view because
+`agent_view/behavior_view.py` always projects one. `tests/test_turn_quality.py`
+is the permanent guard (it also passes on the previous implementation): the
+shared session checks and the provider failure, each decision grade, the
+reason grounding details, how a choice resolves to an offered ref, institution
+decisions, every reflection submission, every God submission (progress,
+institutions, entities, definitions, narrative events and rules with their
+enforcement and declared conditions) and Story progress, waits and beats.
+
+Still above 200 lines: `api/cli.py:main` (291), `do_POST` (207) and
+`_build_story_view` (203).
 
 ### Execution order for the remaining work
 
