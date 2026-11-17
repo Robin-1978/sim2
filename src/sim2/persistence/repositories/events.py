@@ -56,13 +56,16 @@ class EventsRepository:
             for row in rows
         ]
 
-    def timeline_events(self, *, after_event_id: int = 0, limit: int = 100, include_ticks: bool = False) -> list[dict[str, Any]]:
+    def timeline_events(self, *, after_event_id: int = 0, limit: int = 100, include_ticks: bool = False, latest: bool = False) -> list[dict[str, Any]]:
         event_filter = "" if include_ticks else " AND event_type <> 'world_minute.advanced'"
+        order = "DESC" if latest else "ASC"
         rows = self.store.connection.execute(
             "SELECT event_id,event_type,actor_id,world_minute,data_json FROM event_log "
-            f"WHERE event_id>?{event_filter} ORDER BY event_id LIMIT ?",
+            f"WHERE event_id>?{event_filter} ORDER BY event_id {order} LIMIT ?",
             (max(0, int(after_event_id)), max(1, min(int(limit), 500))),
         ).fetchall()
+        if latest:
+            rows = list(reversed(rows))
         return [{"event_id": row["event_id"], "event_type": row["event_type"], "actor_id": row["actor_id"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
 
     def event_type_counts(self) -> dict[str, int]:

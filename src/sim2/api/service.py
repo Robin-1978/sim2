@@ -294,9 +294,9 @@ class ControlService:
         with self.platform.store.read_transaction():
             return self.platform.map_view(viewer_id=viewer_id, observer=observer)
 
-    def timeline(self, event_limit: int = 100, after_event_id: int = 0, include_ticks: bool = False) -> dict[str, Any]:
+    def timeline(self, event_limit: int = 100, after_event_id: int = 0, include_ticks: bool = False, latest: bool = False) -> dict[str, Any]:
         with self.platform.store.read_transaction():
-            return self.platform.timeline(limit=event_limit, after_event_id=after_event_id, include_ticks=include_ticks)
+            return self.platform.timeline(limit=event_limit, after_event_id=after_event_id, include_ticks=include_ticks, latest=latest)
 
     @staticmethod
     def _clip(text: Any, size: int = 140) -> str:

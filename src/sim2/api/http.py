@@ -246,7 +246,8 @@ class _Handler(BaseHTTPRequestHandler):
                 limit = int(query.get("limit", [100])[0])
                 after = int(query.get("after", [0])[0])
                 ticks = query.get("ticks", ["0"])[0].lower() in {"1", "true", "yes"}
-                return self._write(200, self.server.service_call("timeline", limit, after, ticks))
+                latest = query.get("latest", ["0"])[0].lower() in {"1", "true", "yes"}
+                return self._write(200, self.server.service_call("timeline", limit, after, ticks, latest))
             if path == "/map":
                 query = parse_qs(urlparse(self.path).query)
                 viewer_id = query.get("viewer_id", [None])[0]

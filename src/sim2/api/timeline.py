@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 
-def build_timeline(store: Any, *, limit: int = 100, after_event_id: int = 0, include_ticks: bool = False) -> dict[str, Any]:
+def build_timeline(store: Any, *, limit: int = 100, after_event_id: int = 0, include_ticks: bool = False, latest: bool = False) -> dict[str, Any]:
     """Return a public, chronological third-person event projection."""
 
     def clip(text: Any, size: int = 140) -> str:
@@ -34,7 +34,7 @@ def build_timeline(store: Any, *, limit: int = 100, after_event_id: int = 0, inc
             return "nothing"
         return ", ".join(f"{key}×{value:g}" if isinstance(value, (int, float)) else str(key) for key, value in bundle.items())
 
-    events = store.repositories.events.timeline_events(after_event_id=after_event_id, limit=limit, include_ticks=include_ticks)
+    events = store.repositories.events.timeline_events(after_event_id=after_event_id, limit=limit, include_ticks=include_ticks, latest=latest)
     behavior_labels = {
         str(item.get("id")): str(item.get("agent_label") or item.get("summary") or item.get("description") or item.get("id"))
         for item in store.repositories.entities.get_definitions("bt_def")

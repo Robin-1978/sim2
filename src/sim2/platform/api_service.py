@@ -417,10 +417,10 @@ class RuntimeApiService(PlatformService):
 
         return build_map_view(self.store, viewer_id=viewer_id, observer=observer)
 
-    def timeline(self, *, limit: int = 100, after_event_id: int = 0, include_ticks: bool = False) -> dict[str, Any]:
+    def timeline(self, *, limit: int = 100, after_event_id: int = 0, include_ticks: bool = False, latest: bool = False) -> dict[str, Any]:
         from ..api.timeline import build_timeline
 
-        return build_timeline(self.store, limit=limit, after_event_id=after_event_id, include_ticks=include_ticks)
+        return build_timeline(self.store, limit=limit, after_event_id=after_event_id, include_ticks=include_ticks, latest=latest)
 
     def tick_snapshot(self) -> dict[str, Any]:
         """Expose the current read-only boundary for schedulers and audits."""

@@ -4384,6 +4384,19 @@ def test_observer_timeline_is_chronological_and_public(tmp_path: Path):
         platform.close()
 
 
+def test_latest_timeline_window_returns_newest_events_in_chronological_order(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(config, "latest-timeline-world", tmp_path / "runtime"))
+    try:
+        for index in range(5):
+            platform.inject_event("observer.signal", {"summary": f"signal {index}"})
+        latest = platform.timeline(limit=2, latest=True)
+        assert [item["public"]["summary"] for item in latest["events"]] == ["signal 3", "signal 4"]
+        assert [item["event_id"] for item in latest["events"]] == sorted(item["event_id"] for item in latest["events"])
+    finally:
+        platform.close()
+
+
 def test_same_config_and_intent_replay_same_event_sequence(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     first_db = create_instance(config, "replay-a", tmp_path / "runtime")

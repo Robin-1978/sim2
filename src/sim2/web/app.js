@@ -1175,7 +1175,7 @@
 
   async function loadFeed(force = false) {
     try {
-      const response = await request("/timeline?limit=80&after=0");
+      const response = await request("/timeline?limit=80&after=0&latest=1");
       const events = (response.events || []).filter((event) => !SKIP_EVENTS.has(String(event.event_type || "")));
       state.feedEvents = events.slice().reverse();
       renderFeed();
