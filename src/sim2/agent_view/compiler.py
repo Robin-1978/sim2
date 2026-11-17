@@ -10,8 +10,6 @@ from ..actions.capacity import check_action_capacity
 from ..actions.resources import ResourceLedger
 from ..actions.institutions import allocation_preflight, describe_institution_terms
 from ..actions.targets import TargetResolver
-from ..agents.tools import tools_for_role
-from ..agents.policies import default_platform_rules, default_protocol
 from ..behavior.estimator import BehaviorDurationEstimator
 from ..behavior.recovery import failure_block_recovered
 from ..evolution.story import eligible_story_beats, story_evidence_event_types
@@ -24,6 +22,8 @@ from ..world.rules import RuleCompiler
 from ..world.schema import AttributeSchema
 from ..world.context import configured_context_values
 from ..world.time import world_time_view
+from .policies import default_platform_rules, default_protocol
+from .tool_registry import tools_for_role
 
 
 # Bookkeeping events that fill the newest-first history window without telling

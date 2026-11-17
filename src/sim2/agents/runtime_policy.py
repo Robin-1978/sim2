@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..platform.runtime import Platform
-from .policies import default_role_policy
+from ..agent_view.policies import default_role_policy
 
 
 ROLE_NAMES = {"agent_decision", "agent_reflection", "god", "story", "world_builder"}

@@ -57,9 +57,9 @@ class Platform:
             "proposal_evaluator": None,
         })
         self._services = build_platform_services(self._service_context)
-        self.rule_compiler = self._services["api"]._new_rule_compiler()
+        self.rule_compiler = self._services["api"].new_rule_compiler()
         self._service_context.set_dependency("rule_compiler", self.rule_compiler)
-        self.wakes = WakeService(self.uow, self._services["api"]._resolve_evolution_consumer)
+        self.wakes = WakeService(self.uow, self._services["api"].resolve_evolution_consumer)
         self._service_context.set_dependency("wakes", self.wakes)
         self.snapshots = SnapshotService(self.store)
         self._service_context.set_dependency("snapshots", self.snapshots)

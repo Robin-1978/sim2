@@ -82,7 +82,7 @@ class StoryRuntimeMixin:
         if not matches and not all_matches and not scoped_beats and emergent_summary:
             summary = emergent_summary
             if len(summary) < 8 or len(summary) > 500:
-                return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "An emergent story beat summary must be 8 to 500 characters.", "failed_check": "story_summary", "retryable": True})
+                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "An emergent story beat summary must be 8 to 500 characters.", "failed_check": "story_summary", "retryable": True})
             proposal.setdefault("summary", summary)
             beat = {
                 "id": f"emergent:{uuid4().hex[:12]}",
@@ -105,7 +105,7 @@ class StoryRuntimeMixin:
             matches = [beat]
             emergent = True
         if len(matches) != 1:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {
                 "status": "rejected", "message": "Choose one exact configured story beat from the current story view.", "failed_check": "story_beat_choice", "retryable": True,
                 "available_choices": [str(beat.get("agent_label") or beat.get("summary") or beat.get("id", "")) for beat in scoped_beats if isinstance(beat, dict)],
             })
@@ -113,9 +113,9 @@ class StoryRuntimeMixin:
         beat_id = str(beat.get("id", ""))
         current = state.get(beat_id) if isinstance(state.get(beat_id), dict) else {}
         if current.get("status") in {"active", "completed"}:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "This story beat is already active or completed.", "failed_check": "story_beat_state", "retryable": False})
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "This story beat is already active or completed.", "failed_check": "story_beat_state", "retryable": False})
         if emergent and source_event is None:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "An emergent beat needs a recent discovery, research, recovery, or relationship result.", "failed_check": "story_evidence", "retryable": True})
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "An emergent beat needs a recent discovery, research, recovery, or relationship result.", "failed_check": "story_evidence", "retryable": True})
         if emergent and source_event:
             prior_emergent = list(state.get("emergent_beats", []) or [])
             if any(int(item.get("source_event_id", -1)) == int(source_event.get("event_id", -2)) for item in prior_emergent if isinstance(item, dict)):
@@ -157,7 +157,7 @@ class StoryRuntimeMixin:
             narrative_numbers = set(re.findall(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?", narrative))
             source_numbers = set(re.findall(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?", source_text))
             if not narrative_numbers <= source_numbers:
-                return self._context.services["intent"]._reject_intent(
+                return self._context.services["intent"].reject_intent(
                     intent_id,
                     actor_id,
                     "propose_story_beat",
@@ -201,7 +201,7 @@ class StoryRuntimeMixin:
                     None,
                 )
                 if followup is None:
-                    return self._context.services["intent"]._reject_intent(
+                    return self._context.services["intent"].reject_intent(
                         intent_id,
                         actor_id,
                         "propose_story_beat",
@@ -217,7 +217,7 @@ class StoryRuntimeMixin:
         if requested_research_source and source_event:
             requested_source_id = str(self.targets.canonical_id(requested_research_source) or "")
             if not requested_source_id or not self.store.repositories.memory.research_discoveries(requested_source_id):
-                return self._context.services["intent"]._reject_intent(
+                return self._context.services["intent"].reject_intent(
                     intent_id,
                     actor_id,
                     "propose_story_beat",
@@ -236,7 +236,7 @@ class StoryRuntimeMixin:
             # not retell one research result as if it came from another
             # object. This is a causal check, not a vocabulary check.
             if source_event_type == "research.completed" and (not source_event_id or requested_source_id != source_event_id):
-                return self._context.services["intent"]._reject_intent(
+                return self._context.services["intent"].reject_intent(
                     intent_id,
                     actor_id,
                     "propose_story_beat",
@@ -250,11 +250,11 @@ class StoryRuntimeMixin:
                 )
         trigger_events = {str(item) for item in (beat.get("trigger_events", []) or [])}
         if trigger_events and not trigger_events & observed_events:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "The configured story beat has no observed trigger event yet.", "failed_check": "story_trigger", "retryable": True})
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "The configured story beat has no observed trigger event yet.", "failed_check": "story_trigger", "retryable": True})
         required_facts = {str(item) for item in (beat.get("trigger_facts", []) or [])}
         if required_facts:
             if not required_facts <= observed_facts:
-                return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "The configured story beat is missing one or more required facts.", "failed_check": "story_facts", "retryable": True, "missing_facts": sorted(required_facts - observed_facts)})
+                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "The configured story beat is missing one or more required facts.", "failed_check": "story_facts", "retryable": True, "missing_facts": sorted(required_facts - observed_facts)})
         minute = int(self.store.repositories.metadata.get("world_minute", 0))
         raw_audience = [str(item) for item in (beat.get("audience", []) or [])]
         resolved_audience: list[str] = []
@@ -263,7 +263,7 @@ class StoryRuntimeMixin:
             if canonical and self.store.connection.execute("SELECT 1 FROM agent_state WHERE id=?", (canonical,)).fetchone():
                 resolved_audience.append(canonical)
         if raw_audience and not resolved_audience:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "An emergent beat needs at least one exact visible character audience.", "failed_check": "story_audience", "retryable": True})
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_story_beat", proposal, {"status": "rejected", "message": "An emergent beat needs at least one exact visible character audience.", "failed_check": "story_audience", "retryable": True})
         audience = resolved_audience
         if emergent:
             beat["audience"] = list(audience)
@@ -272,7 +272,7 @@ class StoryRuntimeMixin:
         if requested_source:
             research_source_id = str(self.targets.canonical_id(requested_source) or "")
             if not research_source_id or not self.store.repositories.memory.research_discoveries(research_source_id):
-                return self._context.services["intent"]._reject_intent(
+                return self._context.services["intent"].reject_intent(
                     intent_id,
                     actor_id,
                     "propose_story_beat",
@@ -296,7 +296,7 @@ class StoryRuntimeMixin:
             if "".join(char for char in value.casefold() if char.isalnum()) not in labels
         ]
         if unresolved_unlocks:
-            return self._context.services["intent"]._reject_intent(
+            return self._context.services["intent"].reject_intent(
                 intent_id,
                 actor_id,
                 "propose_story_beat",
@@ -334,7 +334,7 @@ class StoryRuntimeMixin:
                         "audience": list(audience),
                     })
             if unavailable_followups:
-                return self._context.services["intent"]._reject_intent(
+                return self._context.services["intent"].reject_intent(
                     intent_id,
                     actor_id,
                     "propose_story_beat",

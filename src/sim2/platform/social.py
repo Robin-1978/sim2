@@ -146,7 +146,7 @@ class SocialRuntimeMixin:
 
         intent_id = str(uuid4())
         if str(actor_id) != "god":
-            return self._context.services["intent"]._reject_intent(
+            return self._context.services["intent"].reject_intent(
                 intent_id,
                 actor_id,
                 "propose_institution",
@@ -161,12 +161,12 @@ class SocialRuntimeMixin:
         name = str(proposal.get("name") or "").strip()
         purpose = str(proposal.get("purpose") or "").strip()
         if len(name) < 2 or len(name) > 120:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "Institution name must be 2 to 120 characters.", "failed_check": "name", "retryable": True})
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "Institution name must be 2 to 120 characters.", "failed_check": "name", "retryable": True})
         if len(purpose) < 12 or len(purpose) > 500:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "Institution purpose must be 12 to 500 characters.", "failed_check": "purpose", "retryable": True})
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "Institution purpose must be 12 to 500 characters.", "failed_check": "purpose", "retryable": True})
         term_errors = institution_term_errors(proposal.get("policy") or None, proposal.get("ledger") or None)
         if term_errors:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_institution", proposal, {
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_institution", proposal, {
                 "status": "rejected",
                 "message": "The institution's policy or ledger could not be settled as written.",
                 "failed_check": "institution_terms",
@@ -204,7 +204,7 @@ class SocialRuntimeMixin:
                     matched_evidence_ids.add(int(row["event_id"]))
             evidence_count = len(matched_evidence_ids)
         if not evidence_sources or evidence_count < minimum_evidence:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_institution", proposal, {
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_institution", proposal, {
                 "status": "rejected",
                 "message": "An institution needs configured evidence sources and the required number of verified events.",
                 "failed_check": "institution_evidence",
@@ -214,7 +214,7 @@ class SocialRuntimeMixin:
             })
         existing = self.store.repositories.social.list_institutions(limit=200)
         if any(str(item.get("name", "")).casefold() == name.casefold() and item.get("status") in {"proposed", "active"} for item in existing):
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "An institution with this name is already proposed or active.", "failed_check": "duplicate_institution", "retryable": False})
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_institution", proposal, {"status": "rejected", "message": "An institution with this name is already proposed or active.", "failed_check": "duplicate_institution", "retryable": False})
         institution_id = f"institution:{uuid4().hex[:16]}"
         minute = int(self.store.repositories.metadata.get("world_minute", 0))
         data = {
@@ -248,7 +248,7 @@ class SocialRuntimeMixin:
 
         intent_id = str(uuid4())
         if str(actor_id) != "god":
-            return self._context.services["intent"]._reject_intent(
+            return self._context.services["intent"].reject_intent(
                 intent_id,
                 actor_id,
                 "approve_institution",
@@ -263,7 +263,7 @@ class SocialRuntimeMixin:
         choice = str(institution or "").strip()
         candidates = [item for item in self.store.repositories.social.list_institutions(status="proposed", limit=200) if str(item.get("name", "")).casefold() == choice.casefold() or str(item.get("institution_id", "")) == choice]
         if len(candidates) != 1:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "activate_institution", {"institution": choice, "reason": reason}, {"status": "rejected", "message": "Choose one exact pending institution name.", "failed_check": "institution_choice", "retryable": True, "available_choices": [str(item.get("name", "")) for item in self.store.repositories.social.list_institutions(status="proposed", limit=20)]})
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "activate_institution", {"institution": choice, "reason": reason}, {"status": "rejected", "message": "Choose one exact pending institution name.", "failed_check": "institution_choice", "retryable": True, "available_choices": [str(item.get("name", "")) for item in self.store.repositories.social.list_institutions(status="proposed", limit=20)]})
         selected = candidates[0]
         minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
@@ -333,7 +333,7 @@ class SocialRuntimeMixin:
         choice = str(institution or "").strip()
         data = {"institution": choice, "policy": policy, "ledger": ledger, "reason": reason}
         if str(actor_id) != "god":
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "revise_institution", data, {
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "revise_institution", data, {
                 "status": "rejected",
                 "message": "Only God may revise a world institution.",
                 "failed_check": "institution_authority",
@@ -345,7 +345,7 @@ class SocialRuntimeMixin:
             if str(item.get("name", "")).casefold() == choice.casefold() or str(item.get("institution_id", "")) == choice
         ]
         if len(candidates) != 1:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "revise_institution", data, {
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "revise_institution", data, {
                 "status": "rejected",
                 "message": "Choose one exact active institution name.",
                 "failed_check": "institution_choice",
@@ -355,14 +355,14 @@ class SocialRuntimeMixin:
         selected = candidates[0]
         reason_text = str(reason or "").strip()
         if len(reason_text) < 12 or len(reason_text) > 500:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "revise_institution", data, {
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "revise_institution", data, {
                 "status": "rejected",
                 "message": "Revision reason must cite the recorded result in 12 to 500 characters.",
                 "failed_check": "reason",
                 "retryable": True,
             })
         if not policy and not ledger:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "revise_institution", data, {
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "revise_institution", data, {
                 "status": "rejected",
                 "message": "Provide a replacement policy, replacement ledger selectors, or both.",
                 "failed_check": "institution_terms",
@@ -387,7 +387,7 @@ class SocialRuntimeMixin:
                 new_ledger["period"] = ledger["period"]
             new_ledger.pop("evidence", None)
         if errors:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "revise_institution", data, {
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "revise_institution", data, {
                 "status": "rejected",
                 "message": "The revised terms could not be settled as written.",
                 "failed_check": "institution_terms",
@@ -395,7 +395,7 @@ class SocialRuntimeMixin:
                 "retryable": True,
             })
         if new_policy == old_policy and new_ledger == old_ledger:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "revise_institution", data, {
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "revise_institution", data, {
                 "status": "rejected",
                 "message": "The revision does not change the institution's current terms.",
                 "failed_check": "institution_unchanged",
@@ -403,7 +403,7 @@ class SocialRuntimeMixin:
             })
         operations = self._institution_operations_since_revision(selected)
         if operations < 1:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "revise_institution", data, {
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "revise_institution", data, {
                 "status": "rejected",
                 "message": "An institution can be revised only after it has settled or recorded something under its current terms.",
                 "failed_check": "institution_evidence",
@@ -640,7 +640,7 @@ class SocialRuntimeMixin:
             return []
         return sorted(str(item.get("id")) for item in agents if item.get("id"))[:max(1, int(limit))]
 
-    def _testimony_metadata(self, speaker: dict[str, Any], listener: dict[str, Any]) -> dict[str, Any]:
+    def testimony_metadata(self, speaker: dict[str, Any], listener: dict[str, Any]) -> dict[str, Any]:
         """Attach a configured credibility prior without deciding truth."""
 
         rules = self.store.repositories.metadata.get("rules", {}) or {}
@@ -717,7 +717,7 @@ class SocialRuntimeMixin:
         if not self._available_for_instant_interaction(speaker_agent) or not self._available_for_instant_interaction(listener_agent):
             return {"status": "rejected", "message": "A participant is busy with an action that does not allow instant interaction.", "failed_check": "participant_busy", "retryable": True}
         minute = int(self.store.repositories.metadata.get("world_minute", 0))
-        testimony = self._testimony_metadata(speaker_agent, listener_agent)
+        testimony = self.testimony_metadata(speaker_agent, listener_agent)
         # Runtime loop protection may suppress repeated NPC-to-NPC messages.
         # An explicit player message is a deliberate command, so preserve that
         # origin separately and let the recipient's Agent decide how to answer.
@@ -729,7 +729,7 @@ class SocialRuntimeMixin:
             self.store.repositories.memory.put_memory(listener, "testimony", {"topic": topic, "message": message, "speaker_id": speaker, "world_minute": minute, "dialogue_id": exchange_id, "importance": 0.45, "pending_decision": True, "claim_status": "reported", "source_type": "testimony", **testimony})
             self._apply_configured_need_effect(speaker_agent, "dialogue.completed")
             self._apply_configured_need_effect(listener_agent, "dialogue.completed")
-            self._apply_configured_relationship_effect(speaker_agent, listener_agent, "dialogue.completed", minute)
+            self.apply_configured_relationship_effect(speaker_agent, listener_agent, "dialogue.completed", minute)
             self.store.repositories.entities.update_agent(speaker, speaker_agent)
             self.store.repositories.entities.update_agent(listener, listener_agent)
             event_id = self._context.services["events"].append("dialogue.completed", speaker, minute, {"dialogue_id": exchange_id, "target_id": listener, "topic": topic, "summary": "A direct exchange was recorded as unverified testimony.", "activation": "recipient_next_decision_or_reflection", "duration_minutes": 0, "priority": "normal", **testimony})
@@ -747,7 +747,7 @@ class SocialRuntimeMixin:
         for effect in effects or []:
             self.effects.apply(agent, dict(effect))
 
-    def _apply_configured_relationship_effect(self, source: dict[str, Any], target: dict[str, Any], event_type: str, minute: int) -> None:
+    def apply_configured_relationship_effect(self, source: dict[str, Any], target: dict[str, Any], event_type: str, minute: int) -> None:
         """Apply package-declared relationship changes for completed interactions."""
 
         rules = self.store.repositories.metadata.get("rules", {}) or {}
@@ -755,7 +755,7 @@ class SocialRuntimeMixin:
         if isinstance(effects, dict):
             effects = [effects]
         for effect in effects or []:
-            self._context.services["activity"]._apply_relationship_effect(source, target, dict(effect), minute)
+            self._context.services["activity"].apply_relationship_effect(source, target, dict(effect), minute)
 
     def create_trade_offer(self, offerer_id: str, recipient_id: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
         """Create a two-phase item offer; no inventory moves until acceptance."""
@@ -833,7 +833,7 @@ class SocialRuntimeMixin:
                 offerer.setdefault("inventory", {})[item] = offerer["inventory"].get(item, 0) + quantity
             self._apply_configured_need_effect(offerer, "trade.completed")
             self._apply_configured_need_effect(recipient, "trade.completed")
-            self._apply_configured_relationship_effect(offerer, recipient, "trade.completed", minute)
+            self.apply_configured_relationship_effect(offerer, recipient, "trade.completed", minute)
             self.store.repositories.entities.update_agent(offerer_id := offer["offerer_id"], offerer)
             self.store.repositories.entities.update_agent(recipient_id, recipient)
             result = {"status": "accepted", "offer_id": offer_id, "trade_status": "completed", "give": offer["give"], "want": offer["want"]}

@@ -103,8 +103,9 @@ or world configuration.
   world state/event, and the God projection includes bounded active Story
   threads. This closes the previously missing Story → God causal input that
   caused a real ten-round run to wait while the NPC repeated inspection.
-- Agent task wording now lives with role policies (`policies.py`); the bounded
-  session engine schedules and executes it without owning role semantics.
+- Agent task wording now lives with role policies (`agent_view/policies.py`);
+  the bounded session engine schedules and executes it without owning role
+  semantics.
 - The bounded model-facing tool-result projection now lives in `agents/session.py`;
   AgentEngine retains only scheduling, protocol calls and private provenance.
 - Final Intent normalization, role permissions and Platform submission now live
@@ -319,7 +320,7 @@ event IDs and revisions.
 
 **Files:** `src/sim2/world/schema.py`,
 `src/sim2/platform/definition_runtime.py`,
-`src/sim2/agent_view/compiler.py`, `src/sim2/agents/tool_registry.py`, and
+`src/sim2/agent_view/compiler.py`, `src/sim2/agent_view/tool_registry.py`, and
 schema tests. If a dedicated compiler module is needed, create it beside the
 existing schema owner rather than adding another parallel schema source.
 
@@ -351,8 +352,8 @@ the model-facing schema and Platform.
 #### Package 5 — finish AgentEngine boundaries and prompt projections
 
 **Files:** `src/sim2/agents/engine.py`, `session.py`, `protocol.py`,
-`tool_registry.py`, `tool_executor.py`, `runtime_policy.py`, `audit.py`,
-`src/sim2/agent_view/compiler.py`.
+`tool_executor.py`, `runtime_policy.py`, `audit.py`,
+`src/sim2/agent_view/compiler.py`, `tool_registry.py`, `policies.py`.
 
 - Keep the bounded ReAct loop in the session owner.
 - Keep provider response normalization and tool-call IDs in the protocol
@@ -649,9 +650,13 @@ Exit criteria:
 
 ## Phase 4: Unify AgentView, tools and validation
 
-**Status:** tool ownership is split into `agents/tool_registry.py`,
+**Status:** tool ownership is split into `agent_view/tool_registry.py`,
 `agents/tool_executor.py`, and `agents/tool_protocol.py`; `agents/tools.py` is
-only the public import façade. `AgentTurn` and role/evolution routing policy
+only the public import façade. The registry and `agent_view/policies.py` sit
+below the runtime: the projection imports them, and `agents` (which imports
+`platform`) is never imported by `agent_view`, so `platform` → `agent_view` →
+`agents` → `platform` no longer closes a package cycle
+(`tests/test_architecture_layers.py` guards it). `AgentTurn` and role/evolution routing policy
 now live in `agents/session.py` and `agents/runtime_policy.py`. The remaining
 work is to make the definition compiler the sole source for model schemas and
 Platform validation, then separate the bounded session/audit implementation
@@ -672,9 +677,9 @@ Split the Agent layer into:
 
 - `session.py`: bounded ReAct loop and message history.
 - `protocol.py`: provider response normalization and tool-call envelopes.
-- `tool_registry.py`: schemas and role permissions.
+- `agent_view/tool_registry.py`: schemas and role permissions.
 - `audit.py`: prompt, response and usage persistence.
-- `policies.py`: role instructions only.
+- `agent_view/policies.py`: role instructions only.
 
 `AgentViewCompiler` becomes a projection service. It must not contain
 Platform mutation rules or hidden world-specific fallback behavior.
@@ -833,8 +838,8 @@ causation IDs remain stable across replay.
 
 Create one definition compiler that emits the persisted normalized definition,
 the model JSON Schema, and the AgentView projection. Then split Agent code
-into `session.py`, `protocol.py`, `tool_registry.py`, `audit.py`, and
-`policies.py`.
+into `session.py`, `protocol.py`, `audit.py`, and the projection-owned
+`agent_view/tool_registry.py` and `agent_view/policies.py`.
 
 Remove legacy aliases and role-specific mutation checks after all callers use
 the canonical schema. Keep world history and role memory bounded projections;

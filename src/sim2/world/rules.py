@@ -9,9 +9,17 @@ the configured behavior that follows the signal owns that mutation.
 """
 
 import re
-from typing import Any
+from typing import Any, Protocol
 
-from ..actions.conditions import ConditionEngine
+
+class ConditionEvaluator(Protocol):
+    """The part of the condition language rule evaluation needs.
+
+    ``actions.conditions.ConditionEngine`` implements it; the caller supplies
+    the engine so the world package does not depend on the actions package.
+    """
+
+    def evaluate(self, expression: str, *, agent: dict[str, Any], target: dict[str, Any] | None = None, world: dict[str, Any] | None = None, context: dict[str, Any] | None = None) -> bool: ...
 
 
 class RuleCompiler:
@@ -22,15 +30,15 @@ class RuleCompiler:
 
     def __init__(
         self,
-        rules: dict[str, Any] | None = None,
-        conditions: ConditionEngine | None = None,
+        rules: dict[str, Any] | None,
+        conditions: ConditionEvaluator,
         aliases: dict[str, str] | None = None,
         known_behaviors: list[dict[str, Any]] | None = None,
         known_actions: list[dict[str, Any]] | None = None,
         world_keys: set[str] | None = None,
     ):
         self.rules = rules or {}
-        self.conditions = conditions or ConditionEngine(self.rules)
+        self.conditions = conditions
         self.aliases = {str(key): str(value) for key, value in (aliases or {}).items() if str(key) and str(value)}
         self.known_behaviors = list(known_behaviors or [])
         self.known_actions = list(known_actions or [])

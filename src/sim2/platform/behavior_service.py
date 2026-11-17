@@ -28,7 +28,7 @@ from .services import PlatformService
 class BehaviorIntentService(PlatformService):
     """Behavior intent validation and activity admission."""
 
-    def _reject_intent(self, intent_id: str, actor_id: str, intent_type: str, data: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    def reject_intent(self, intent_id: str, actor_id: str, intent_type: str, data: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
         world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
             self.store.repositories.evolution.create_intent(intent_id, actor_id, intent_type, data, world_minute)
@@ -163,7 +163,7 @@ class BehaviorIntentService(PlatformService):
             if registered is not None:
                 available_defs[behavior_id] = registered
         if behavior_id not in available_defs:
-            return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+            return self.reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                 "status": "rejected", "message": "The selected behavior is not registered.", "failed_check": "behavior_ref", "retryable": True,
             })
         # A package may provide an opening source as a default while the same
@@ -185,22 +185,22 @@ class BehaviorIntentService(PlatformService):
             # travel_to's route.known / destination.reachable preconditions.
             allowed.add("travel")
         if behavior_id not in allowed:
-            return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+            return self.reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                 "status": "rejected", "message": "This behavior is not available to this character.", "failed_check": "capability", "retryable": True,
             })
         parameter_errors = self._validate_behavior_parameters(behavior_id, normalized_parameters)
         if parameter_errors:
-            return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+            return self.reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                 "status": "rejected", "message": "Behavior parameters must match the registered Action schema.", "failed_check": "parameters", "errors": parameter_errors, "retryable": True,
             })
         state = dict(agent.get("initial_state", {}))
         if state.get("status") in {"executing", "paused"}:
-            return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+            return self.reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                 "status": "rejected", "message": "The actor already has an active behavior; wait for its result or an interrupt.", "failed_check": "active_behavior", "retryable": False,
             })
         blocked = (state.get("blocked_behaviors") or {}).get(str(behavior_id)) if isinstance(state, dict) else None
         if isinstance(blocked, dict) and not failure_block_recovered(self.store, blocked):
-            return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+            return self.reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                 "status": "rejected",
                 "message": "This behavior is blocked after its last failed result; wait for a configured recovery event.",
                 "failed_check": "failed_behavior_blocked",
@@ -220,7 +220,7 @@ class BehaviorIntentService(PlatformService):
                 if runtime_parameters.get(key) and str(runtime_parameters.get(key)) not in visible_ids
             ]
             if hidden_targets:
-                return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+                return self.reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                     "status": "rejected", "message": "Choose one exact visible participant from the current target list.", "failed_check": "target_visibility", "retryable": True,
                     "available_targets": [str(item.get("name", "participant")) for item in visible_participants],
                 })
@@ -229,14 +229,14 @@ class BehaviorIntentService(PlatformService):
             if visible_name:
                 canonical = self.targets.canonical_id(visible_name)
                 if canonical is None or not any(str(item.get("id")) == str(canonical) for item in visible_participants):
-                    return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+                    return self.reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                         "status": "rejected", "message": "Choose one exact visible participant from the current target list.", "failed_check": "target_choice", "retryable": True,
                         "available_targets": [str(item.get("name", "participant")) for item in visible_participants],
                     })
                 runtime_parameters[next(iter(target_keys))] = canonical
                 normalized_parameters[next(iter(target_keys))] = canonical
             elif len(visible_participants) > 1:
-                return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+                return self.reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                     "status": "rejected", "message": "This behavior requires one explicit visible participant.", "failed_check": "target_required", "retryable": True,
                     "available_targets": [str(item.get("name", "participant")) for item in visible_participants],
                 })
@@ -271,7 +271,7 @@ class BehaviorIntentService(PlatformService):
             if source_location:
                 runtime_parameters.setdefault("source_location_id", source_location)
         intent_data["parameters"] = {**normalized_parameters, **runtime_parameters}
-        entry_context = self._context.services["execution"]._behavior_condition_context(agent, runtime_parameters, intent.target)
+        entry_context = self._context.services["execution"].behavior_condition_context(agent, runtime_parameters, intent.target)
         entry_target = {**runtime_parameters, **intent.target, **(entry_context.get("target") or {})}
         for predicate in bt.get("entry_conditions", []) or []:
             if not self.conditions.evaluate(
@@ -281,7 +281,7 @@ class BehaviorIntentService(PlatformService):
                 context=entry_context,
                 world=self.store.repositories.metadata.get("world_properties", {}) or {},
             ):
-                return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+                return self.reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                     "status": "rejected",
                     "message": "The selected behavior is no longer executable in the current state.",
                     "failed_check": "entry_condition",
@@ -293,7 +293,7 @@ class BehaviorIntentService(PlatformService):
         if cooldown_minutes:
             last_minute = self.store.repositories.activity.last_behavior_minute(intent.actor_id, behavior_id)
             if last_minute is not None and world_minute - last_minute < cooldown_minutes:
-                return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+                return self.reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                     "status": "rejected", "message": "This behavior is cooling down after its last completion.", "failed_check": "cooldown", "retryable": True,
                     "retry_after_minute": last_minute + cooldown_minutes,
                 })
@@ -314,14 +314,14 @@ class BehaviorIntentService(PlatformService):
         if catalog_check_required and not (intent.observed_agent_revision is None and allocation_effect):
             current_view = self.view.build_decision_view(intent.actor_id, role="agent_decision")
             if behavior_id not in {str(item.get("ref", "")).removeprefix("behavior:") for item in current_view.get("executable_behaviors", [])}:
-                return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+                return self.reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                     "status": "rejected", "message": "The selected behavior is no longer executable in the current state.", "failed_check": "behavior_unavailable", "retryable": True,
                 })
         estimator = BehaviorDurationEstimator(
             {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")},
             available_defs,
             {item["id"]: item for item in self.store.repositories.entities.get_definitions("recipe_def")},
-            self._context.services["execution"]._route_distance,
+            self._context.services["execution"].route_distance,
             capabilities=agent.get("capabilities", {}),
             capability_modifiers=(self.store.repositories.metadata.get("rules", {}) or {}).get("capability_modifiers", {}),
             travel_speed=lambda values: movement_speed(self.store, agent, values),
@@ -345,7 +345,7 @@ class BehaviorIntentService(PlatformService):
             intent.observed_agent_revision is not None
             and int(intent.observed_agent_revision) != current_agent_revision
         ):
-            return self._reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
+            return self.reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, intent_data, {
                 "status": "rejected",
                 "message": "This character changed after the decision view was read; refresh the current behavior list and choose again.",
                 "failed_check": "stale_agent_revision",
@@ -384,11 +384,11 @@ class BehaviorIntentService(PlatformService):
                 {
                     "target": intent.target,
                     "parameters": runtime_parameters,
-                    "actions": self._context.services["execution"]._compile_behavior_actions(behavior_id),
+                    "actions": self._context.services["execution"].compile_behavior_actions(behavior_id),
                     "behavior_version": int(bt.get("definition_version", bt.get("version", 1)) or 1),
                     "expected": expected,
                     "decision": {"reason": intent.reason, "confidence": intent.confidence},
-                    "before": self._context.services["execution"]._execution_snapshot(agent),
+                    "before": self._context.services["execution"].execution_snapshot(agent),
                 },
                 world_minute,
                 world_minute,
@@ -412,7 +412,7 @@ class BehaviorIntentService(PlatformService):
 class BehaviorExecutionService(PlatformService):
     """Action parameter resolution, progress and interruption."""
 
-    def _behavior_condition_context(self, agent: dict[str, Any], parameters: dict[str, Any], target: dict[str, Any] | None = None) -> dict[str, Any]:
+    def behavior_condition_context(self, agent: dict[str, Any], parameters: dict[str, Any], target: dict[str, Any] | None = None) -> dict[str, Any]:
         """Build the small declarative context used to recheck BT entry rules."""
 
         state = agent.get("initial_state", {}) or {}
@@ -447,7 +447,7 @@ class BehaviorExecutionService(PlatformService):
             "object_id": parameters.get("object_id"),
             "inventory": agent.get("inventory", {}) or {},
             "current_location": location,
-            "current_object": self._entity_for_context(parameters.get("object_id")),
+            "current_object": self.entity_for_context(parameters.get("object_id")),
             "mapped_areas": self.store.repositories.memory.explored_areas(agent["id"]),
             "researched_sources": self.store.repositories.memory.researched_sources(agent["id"]),
             "known_fact_keys": [item.get("fact_key") for item in self.store.repositories.memory.list_knowledge_facts(agent["id"], limit=1000) if item.get("fact_key")],
@@ -455,14 +455,14 @@ class BehaviorExecutionService(PlatformService):
             "target.visible": bool((resolved_target or {}).get("visible", False)),
             "target.available": bool((resolved_target or {}).get("available", False)),
             "known_route_destinations": reachable_locations(self.store, location_id),
-            "recent_event_types": self._context.services["evolution"]._recent_event_types(),
+            "recent_event_types": self._context.services["evolution"].recent_event_types(),
             "day_phase": world_time_view(self.store).get("day_phase"),
             "conflict": {"available": conflict_available},
         }
         result.update(configured_context_values(self.store.repositories.metadata.get("rules", {}) or {}, agent))
         return result
 
-    def _entity_for_context(self, entity_id: Any) -> dict[str, Any]:
+    def entity_for_context(self, entity_id: Any) -> dict[str, Any]:
         """Return a configured entity for a declarative condition context."""
 
         if not entity_id:
@@ -472,7 +472,7 @@ class BehaviorExecutionService(PlatformService):
         except KeyError:
             return {}
 
-    def _compile_behavior_actions(self, behavior_id: str, seen: set[str] | None = None) -> list[dict[str, Any]]:
+    def compile_behavior_actions(self, behavior_id: str, seen: set[str] | None = None) -> list[dict[str, Any]]:
         seen = set(seen or set())
         if behavior_id in seen:
             return []
@@ -491,7 +491,7 @@ class BehaviorExecutionService(PlatformService):
                     action = next((item for item in self.store.repositories.entities.get_definitions("action_def") if item.get("id") == node["action_id"]), {})
                     result.append({"action_id": node["action_id"], "action_version": int(action.get("definition_version", action.get("version", 1)) or 1), "parameters": dict(node.get("parameters") or {}), "parallel_group": parallel_group})
                 elif node_type in {"behavior", "subtree"} and node.get("behavior_id"):
-                    nested = self._compile_behavior_actions(str(node["behavior_id"]), seen)
+                    nested = self.compile_behavior_actions(str(node["behavior_id"]), seen)
                     if parallel_group:
                         for item in nested:
                             item["parallel_group"] = parallel_group
@@ -515,7 +515,7 @@ class BehaviorExecutionService(PlatformService):
         return visit(behavior.get("nodes", []))
 
     @staticmethod
-    def _execution_snapshot(agent: dict[str, Any]) -> dict[str, Any]:
+    def execution_snapshot(agent: dict[str, Any]) -> dict[str, Any]:
         """Return a small, JSON-safe state projection for outcome review."""
 
         state = dict(agent.get("initial_state") or {})
@@ -537,7 +537,7 @@ class BehaviorExecutionService(PlatformService):
         }
 
     @staticmethod
-    def _execution_delta(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+    def execution_delta(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
         """Describe only changed values so the next Agent sees consequences."""
 
         delta: dict[str, Any] = {}
@@ -583,7 +583,7 @@ class BehaviorExecutionService(PlatformService):
 
         return {key: resolve(value) for key, value in parameters.items()}
 
-    def _resolve_activity_parameters(self, parameters: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
+    def resolve_activity_parameters(self, parameters: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
         context = dict(state)
         context.update(state.get("active_parameters") or {})
         source_id = context.get("source_id")
@@ -597,7 +597,7 @@ class BehaviorExecutionService(PlatformService):
 
         return self._resolve_parameters(parameters, context)
 
-    def _route_distance(self, origin: str | None, destination: str | None) -> int:
+    def route_distance(self, origin: str | None, destination: str | None) -> int:
         """Return baseline minutes for a weighted route.
 
         Actor-specific speed is applied by ``BehaviorDurationEstimator`` so
@@ -606,19 +606,19 @@ class BehaviorExecutionService(PlatformService):
 
         return route_minutes(self.store, origin, destination)
 
-    def _action_duration(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], origin_location: str | None = None) -> int:
+    def action_duration(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], origin_location: str | None = None) -> int:
         estimator = BehaviorDurationEstimator(
             {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")},
             {},
             {item["id"]: item for item in self.store.repositories.entities.get_definitions("recipe_def")},
-            self._route_distance,
+            self.route_distance,
             capabilities=agent.get("capabilities", {}),
             capability_modifiers=(self.store.repositories.metadata.get("rules", {}) or {}).get("capability_modifiers", {}),
             travel_speed=lambda values: movement_speed(self.store, agent, values),
         )
         return estimator._action_minutes(action, parameters, origin_location)
 
-    def _apply_action_parameter_defaults(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any]) -> dict[str, Any]:
+    def apply_action_parameter_defaults(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any]) -> dict[str, Any]:
         """Resolve declarative defaults without making the LLM fill hidden plumbing."""
 
         result = dict(parameters)
@@ -635,7 +635,7 @@ class BehaviorExecutionService(PlatformService):
                 rules = self.store.repositories.metadata.get("rules", {}) or {}
                 entity_types = {str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])}
                 protected_key = str(rules.get("resource_protected_state", "protected"))
-                source = next((item for item in sources if item.get("entity_type") in entity_types and not (item.get("initial_state") or {}).get(protected_key) and self._entity_quantity(item) > 0), None)
+                source = next((item for item in sources if item.get("entity_type") in entity_types and not (item.get("initial_state") or {}).get(protected_key) and self.entity_quantity(item) > 0), None)
                 result[key] = source.get("id") if source else value
             elif isinstance(default, str) and default in configured_context:
                 # A package may name a configured context value directly;
@@ -646,20 +646,20 @@ class BehaviorExecutionService(PlatformService):
         return result
 
     @staticmethod
-    def _entity_quantity(entity: dict[str, Any]) -> float:
+    def entity_quantity(entity: dict[str, Any]) -> float:
         state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
         value = entity.get("amount")
         if value is None:
             value = state.get("quantity", state.get("amount", 0))
         return float(value or 0)
 
-    def _reserve_action_costs(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], *, commit: bool = True) -> tuple[bool, str, list[dict[str, Any]]]:
+    def reserve_action_costs(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], *, commit: bool = True) -> tuple[bool, str, list[dict[str, Any]]]:
         return self.resources.reserve(agent, action, parameters, commit=commit)
 
-    def _check_action_capacity(self, agent: dict[str, Any], action: dict[str, Any], duration: int) -> tuple[bool, str]:
+    def check_action_capacity(self, agent: dict[str, Any], action: dict[str, Any], duration: int) -> tuple[bool, str]:
         return check_action_capacity(agent, action, duration, self.store.repositories.metadata.get("attributes", []) or [])
 
-    def _apply_action_progress(self, agent: dict[str, Any], action: dict[str, Any]) -> None:
+    def apply_action_progress(self, agent: dict[str, Any], action: dict[str, Any]) -> None:
         state = dict(agent.get("initial_state") or {})
         needs = dict(agent.get("needs") or {})
         for key, value in (action.get("costs", {}).get("per_minute", {}) or {}).items():
@@ -705,8 +705,8 @@ class BehaviorExecutionService(PlatformService):
                 "status": status,
                 "result": reason,
                 "expected": dict(bt_data.get("expected") or {}),
-                "actual": self._execution_snapshot(agent),
-                "delta": self._execution_delta(before, self._execution_snapshot(agent)) if before else {},
+                "actual": self.execution_snapshot(agent),
+                "delta": self.execution_delta(before, self.execution_snapshot(agent)) if before else {},
                 "decision": dict(bt_data.get("decision") or {}),
             }
             action_instance_id = state.get("active_action_instance")

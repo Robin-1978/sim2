@@ -27,7 +27,7 @@ from .services import PlatformService
 class RuntimeApiService(PlatformService):
     """Public runtime API and shared rule/consumer resolution."""
 
-    def _new_rule_compiler(self) -> RuleCompiler:
+    def new_rule_compiler(self) -> RuleCompiler:
         rules = self.store.repositories.metadata.get("rules", {}) or {}
         aliases = {}
         for key in (self.store.repositories.metadata.get("world_properties", {}) or {}):
@@ -48,7 +48,7 @@ class RuntimeApiService(PlatformService):
             world_keys=set((self.store.repositories.metadata.get("world_properties", {}) or {}).keys()),
         )
 
-    def _resolve_evolution_consumer(self, consumer: str, actor_id: str | None = None) -> tuple[str, str | None]:
+    def resolve_evolution_consumer(self, consumer: str, actor_id: str | None = None) -> tuple[str, str | None]:
         """Resolve a configured wake target into a runtime role and actor.
 
         World packages use visible names at the model/configuration boundary.

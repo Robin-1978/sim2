@@ -81,7 +81,7 @@ class WorldTickService(PlatformService):
                         target={},
                         context={
                             **static_context_values,
-                            "current_location": self._context.services["execution"]._entity_for_context(state.get("location_id")),
+                            "current_location": self._context.services["execution"].entity_for_context(state.get("location_id")),
                         },
                         world=world_properties,
                     ):
@@ -128,7 +128,7 @@ class WorldTickService(PlatformService):
                     if definition.get("maximum") is not None:
                         after = min(float(definition["maximum"]), after)
                     if abs(after - before) > 1e-12:
-                        self._set_world_property(str(key), after)
+                        self.set_world_property(str(key), after)
             elif scope == "relationship":
                 relation_delta = float(definition.get("relation_strength", definition.get("delta", 0)))
                 for relation in self.store.repositories.entities.list_relationships():
@@ -164,7 +164,7 @@ class WorldTickService(PlatformService):
                 entity = self.store.repositories.entities.get_entity(resource_id)
             except KeyError:
                 continue
-            quantity = self._context.services["execution"]._entity_quantity(entity)
+            quantity = self._context.services["execution"].entity_quantity(entity)
             floor = float(raw.get("minimum_reserve", raw.get("reserve_floor", 0)) or 0)
             active = quantity <= floor
             previous_state = state.get(resource_id, False)
@@ -225,7 +225,7 @@ class WorldTickService(PlatformService):
             if isinstance(item, dict)
         )
         location = (
-            self._context.services["execution"]._entity_for_context((agent.get("initial_state") or {}).get("location_id"))
+            self._context.services["execution"].entity_for_context((agent.get("initial_state") or {}).get("location_id"))
             if "location." in conditions or "current_location" in conditions
             else {}
         )
@@ -278,7 +278,7 @@ class WorldTickService(PlatformService):
                 changed_state = True
         return changed_state
 
-    def _set_world_property(self, key: str, value: Any) -> dict[str, Any]:
+    def set_world_property(self, key: str, value: Any) -> dict[str, Any]:
         """Update one world property and its shared-resource projection atomically.
 
         A resource may also be exposed as a world property, for example
@@ -350,7 +350,7 @@ class WorldTickService(PlatformService):
                 before = agent.get("initial_state", {}).get("active_bt_instance")
                 if not before:
                     continue
-                self._context.services["activity"]._progress_agent(agent, minute)
+                self._context.services["activity"].progress_agent(agent, minute)
                 after = self.store.repositories.entities.get_agent(agent["id"]).get("initial_state", {})
                 result = after.get("last_platform_result") or {}
                 if result.get("status") == "completed" and result.get("behavior_ref"):
@@ -359,12 +359,12 @@ class WorldTickService(PlatformService):
                     failed.append(agent["id"])
             self.store.repositories.metadata.set("world_minute", minute)
             self._context.services["events"].append("world_minute.advanced", None, minute, {"minute": minute})
-            self._context.services["evolution"]._emit_world_rule_signals(minute, agent_ids=agent_ids)
+            self._context.services["evolution"].emit_world_rule_signals(minute, agent_ids=agent_ids)
             self._emit_resource_safety_signals(minute)
             self.proposal_evaluator.evaluate_due(minute)
-            self._context.services["evolution"]._emit_evolution_triggers(minute, agent_ids=agent_ids)
-            self._context.services["stagnation"]._emit_stagnation_signal(minute, agents=agents)
-            self._context.services["evolution"]._emit_due_evolution_tasks(minute)
+            self._context.services["evolution"].emit_evolution_triggers(minute, agent_ids=agent_ids)
+            self._context.services["stagnation"].emit_stagnation_signal(minute, agents=agents)
+            self._context.services["evolution"].emit_due_evolution_tasks(minute)
         return {
             "status": "advanced",
             "from_minute": start,

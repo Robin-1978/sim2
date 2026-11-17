@@ -85,7 +85,7 @@ class StagnationRuntimeMixin:
         start = (window_index * size) % len(active)
         return [active[(start + offset) % len(active)] for offset in range(size)]
 
-    def _emit_stagnation_signal(self, minute: int, *, agents: list[dict[str, Any]] | None = None) -> int | None:
+    def emit_stagnation_signal(self, minute: int, *, agents: list[dict[str, Any]] | None = None) -> int | None:
         """Evaluate one window boundary and return the published event id, if any.
 
         Growth means a character gained an executable option it never had

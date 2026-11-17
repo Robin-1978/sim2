@@ -3,15 +3,11 @@ from __future__ import annotations
 import copy
 import json
 import re
-from typing import Any, TYPE_CHECKING
+from typing import Any
 from uuid import uuid4
 
-from ..intents.models import BehaviorIntent
 from ..bootstrap.service import world_template_schema
 from ..world.definition_schema import propose_definition_schema
-
-if TYPE_CHECKING:  # pragma: no cover - imports are only for type checkers
-    from ..platform.runtime import Platform
 
 
 # Tools are model-facing requests. Collecting, crafting, travelling and

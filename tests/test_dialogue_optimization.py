@@ -421,7 +421,7 @@ def test_registered_world_rules_show_current_condition_status(tmp_path: Path):
         assert "currently inactive" in prompt
         assert "<active_world_rules>" not in prompt
 
-        platform._services["tick"]._set_world_property("village_food", 100)
+        platform._services["tick"].set_world_property("village_food", 100)
         changed = platform.decision_view("liang_he")
         ration = next(item for item in changed["active_world_rules"] if "food" in item["condition"].casefold())
         assert ration["current_status"] == "active"

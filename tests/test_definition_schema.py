@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sim2.agents.tool_registry import tool_schemas_for_role
+from sim2.agent_view.tool_registry import tool_schemas_for_role
 from sim2.world.definition_compiler import DEFINITION_TYPES, compile_definition_shape
 from sim2.world.definition_schema import propose_definition_schema
 

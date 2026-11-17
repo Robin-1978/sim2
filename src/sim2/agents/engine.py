@@ -12,7 +12,7 @@ from .runtime_policy import (
     ROLE_INTENTS, ROLE_NAMES, configured_evolution_group, configured_evolution_trigger,
     configured_role_tools, role_policy,
 )
-from .policies import task_text
+from ..agent_view.policies import task_text
 from .intent_gateway import AgentIntentGateway
 from .audit import AgentAudit
 from .protocol import ProviderProtocol, normalize_provider_intent, readable_model_response

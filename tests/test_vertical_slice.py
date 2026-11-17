@@ -172,7 +172,7 @@ def test_configured_food_action_default_resolves_to_carried_item(tmp_path: Path)
         agent = platform.store.repositories.entities.get_agent("lin_bo")
         action = next(item for item in platform.store.repositories.entities.get_definitions("action_def") if item.get("id") == "consume_food")
         action["parameter_defaults"] = {"item_id": {"resolver": "context_value", "key": "item_id"}}
-        assert platform._services["execution"]._apply_action_parameter_defaults(agent, action, {"item_id": None})["item_id"] == "rations"
+        assert platform._services["execution"].apply_action_parameter_defaults(agent, action, {"item_id": None})["item_id"] == "rations"
     finally:
         platform.close()
 
@@ -4600,7 +4600,7 @@ def test_unused_invented_behavior_can_be_constrained_by_rule(tmp_path: Path):
         rules["world_rules"] = world_rules
         with platform.store.transaction():
             platform.store.repositories.metadata.set("rules", rules)
-        platform.rule_compiler = platform._services["api"]._new_rule_compiler()
+        platform.rule_compiler = platform._services["api"].new_rule_compiler()
         fresh = Platform(platform.store.db_path) if hasattr(platform.store, "db_path") else platform
         view = platform.decision_view("luo_shan")
         assert all(item.get("choice") != "Useless Routine" for item in view["executable_behaviors"])

@@ -15,16 +15,16 @@ class WorldChangesRuntimeMixin:
     def submit_world_change(self, actor_id: str, proposal: dict[str, Any], *, origin_role: str | None = None) -> dict[str, Any]:
         intent_id = str(uuid4())
         if not proposal.get("change_type") or not proposal.get("summary"):
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "change_type and summary are required.", "retryable": True})
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "change_type and summary are required.", "retryable": True})
         change_type = str(proposal["change_type"])
         if change_type not in {"world_property", "rule", "relationship", "route", "faction", "event"}:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "Unsupported world change type.", "failed_check": "change_type", "retryable": True})
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "Unsupported world change type.", "failed_check": "change_type", "retryable": True})
         if change_type in {"world_property", "event"} and proposal.get("property"):
             current_properties = self.store.repositories.metadata.get("world_properties", {}) or {}
             proposal = {**proposal, "property": self._canonical_world_property(str(proposal["property"]), current_properties)}
             property_id = str(proposal["property"])
             if actor_id == "god" and not self._god_property_change_allowed(property_id):
-                return self._context.services["intent"]._reject_intent(
+                return self._context.services["intent"].reject_intent(
                     intent_id,
                     actor_id,
                     "propose_world_change",
@@ -37,29 +37,29 @@ class WorldChangesRuntimeMixin:
                     },
                 )
         if change_type == "world_property" and not proposal.get("property"):
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "property is required for a world_property change.", "failed_check": "property", "retryable": True})
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "property is required for a world_property change.", "failed_check": "property", "retryable": True})
         if change_type == "rule" and not isinstance(proposal.get("rule"), dict):
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "rule object is required for a rule change.", "failed_check": "rule", "retryable": True})
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "rule object is required for a rule change.", "failed_check": "rule", "retryable": True})
         if change_type == "rule" and isinstance(proposal.get("rule"), dict):
             valid, message = self.rule_compiler.validate(dict(proposal["rule"]))
             if not valid:
-                return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": message, "failed_check": "rule_schema", "retryable": True})
+                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": message, "failed_check": "rule_schema", "retryable": True})
             conditions_valid, conditions_message = self.rule_compiler.validate_declared_conditions(
                 dict(proposal["rule"]), list(proposal.get("conditions") or [])
             )
             if not conditions_valid:
-                return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": conditions_message, "failed_check": "rule_condition_semantics", "retryable": True})
+                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": conditions_message, "failed_check": "rule_condition_semantics", "retryable": True})
             declared_valid, declared_message = self.rule_compiler.validate_declared_effects(
                 dict(proposal["rule"]),
                 list(proposal.get("effects") or []) + list(proposal.get("expected_effects") or []),
             )
             if not declared_valid:
-                return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": declared_message, "failed_check": "rule_effect_semantics", "retryable": True})
+                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": declared_message, "failed_check": "rule_effect_semantics", "retryable": True})
             proposed_id = str(proposal["rule"].get("id") or proposal["rule"].get("name") or "").strip()
             compiled_rule = self.rule_compiler.compile(dict(proposal["rule"]))
             wake_roles = {str(item).strip() for item in (compiled_rule.get("wake") or []) if str(item).strip()}
             if origin_role and str(origin_role) in wake_roles:
-                return self._context.services["intent"]._reject_intent(
+                return self._context.services["intent"].reject_intent(
                     intent_id,
                     actor_id,
                     "propose_world_change",
@@ -81,9 +81,9 @@ class WorldChangesRuntimeMixin:
                 else:
                     message = f"A signal for this event and follow-up already exists ({conflict_name}); review its outcome instead of adding another signal."
                     failed_check = "rule_duplicate"
-                return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": message, "failed_check": failed_check, "retryable": True})
+                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": message, "failed_check": failed_check, "retryable": True})
             if proposed_id and any(str(item.get("id") or item.get("name") or "").strip() == proposed_id for item in existing_rules if isinstance(item, dict)):
-                return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "A world rule with this name is already registered; review its existing outcome instead of adding a duplicate.", "failed_check": "rule_duplicate", "retryable": True})
+                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "A world rule with this name is already registered; review its existing outcome instead of adding a duplicate.", "failed_check": "rule_duplicate", "retryable": True})
         if change_type == "route":
             route = proposal.get("route") if isinstance(proposal.get("route"), dict) else {}
             source = self.targets.canonical_id(str(route.get("from") or ""))
@@ -91,25 +91,25 @@ class WorldChangesRuntimeMixin:
             distance = route.get("distance")
             locations = {str(item.get("id")): item for item in self.store.repositories.entities.entities_of_type("location")}
             if not source or source not in locations or not target or target not in locations:
-                return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "route.from and route.to must name existing locations.", "failed_check": "route_endpoint", "retryable": True})
+                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "route.from and route.to must name existing locations.", "failed_check": "route_endpoint", "retryable": True})
             if source == target:
-                return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "A route must connect two different locations.", "failed_check": "route_cycle", "retryable": True})
+                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "A route must connect two different locations.", "failed_check": "route_cycle", "retryable": True})
             if isinstance(distance, bool) or not isinstance(distance, (int, float)) or float(distance) <= 0:
-                return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "route.distance must be positive.", "failed_check": "route_distance", "retryable": True})
+                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "route.distance must be positive.", "failed_check": "route_distance", "retryable": True})
             source_data = self.store.repositories.entities.get_entity(source)
             target_data = self.store.repositories.entities.get_entity(target)
             if str(target) in {str(item) for item in (source_data.get("routes") or [])} and str(source) in {str(item) for item in (target_data.get("routes") or [])}:
-                return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "That route is already registered.", "failed_check": "route_duplicate", "retryable": True})
+                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "That route is already registered.", "failed_check": "route_duplicate", "retryable": True})
             proposal = {**proposal, "route": {"from": source, "to": target, "distance": float(distance)}}
         if change_type == "relationship" and not isinstance(proposal.get("relationship"), dict):
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "relationship object is required for a relationship change.", "failed_check": "relationship", "retryable": True})
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "relationship object is required for a relationship change.", "failed_check": "relationship", "retryable": True})
         if change_type == "faction" and not isinstance(proposal.get("faction"), dict):
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "faction object is required for a faction change.", "failed_check": "faction", "retryable": True})
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {"status": "rejected", "message": "faction object is required for a faction change.", "failed_check": "faction", "retryable": True})
         if change_type == "event" and not proposal.get("property"):
             structured_mutation_types = {"state_delta", "need_delta", "attribute_delta", "attribute_set", "inventory_add", "inventory_remove", "world_property_delta", "relationship_delta", "entity_state_set"}
             structured_mutation = [item.get("type") or item.get("op") for item in (proposal.get("effects") or []) if isinstance(item, dict) and str(item.get("type") or item.get("op") or "") in structured_mutation_types]
             if structured_mutation:
-                return self._context.services["intent"]._reject_intent(
+                return self._context.services["intent"].reject_intent(
                     intent_id,
                     actor_id,
                     "propose_world_change",
@@ -128,23 +128,23 @@ class WorldChangesRuntimeMixin:
             value = proposal.get("value")
             if isinstance(before_value, bool):
                 if not isinstance(value, bool):
-                    return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {
+                    return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {
                         "status": "rejected", "message": f"World property {property_name} is boolean; value must be true or false.", "failed_check": "property_type", "retryable": True,
                     })
             elif isinstance(before_value, (int, float)):
                 if isinstance(value, bool):
-                    return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {
+                    return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {
                         "status": "rejected", "message": f"World property {property_name} is numeric; value must be a number.", "failed_check": "property_type", "retryable": True,
                     })
                 if isinstance(value, str):
                     try:
                         value = float(value.strip())
                     except ValueError:
-                        return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {
+                        return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {
                             "status": "rejected", "message": f"World property {property_name} is numeric; value must be a number.", "failed_check": "property_type", "retryable": True,
                         })
                 elif not isinstance(value, (int, float)):
-                    return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_world_change", proposal, {
+                    return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_world_change", proposal, {
                         "status": "rejected", "message": f"World property {property_name} is numeric; value must be a number.", "failed_check": "property_type", "retryable": True,
                     })
                 if isinstance(before_value, float):
@@ -153,7 +153,7 @@ class WorldChangesRuntimeMixin:
                     value = int(value)
             proposal = {**proposal, "value": value}
             if change_type in {"world_property", "event"} and property_name in current_properties and current_properties.get(property_name) == value:
-                return self._context.services["intent"]._reject_intent(
+                return self._context.services["intent"].reject_intent(
                     intent_id,
                     actor_id,
                     "propose_world_change",
@@ -172,7 +172,7 @@ class WorldChangesRuntimeMixin:
             self.store.repositories.evolution.create_intent(intent_id, actor_id, "propose_world_change", proposal, world_minute)
             effect: dict[str, Any] = {}
             if change_type == "world_property":
-                effect = self._context.services["tick"]._set_world_property(str(proposal["property"]), proposal.get("value"))
+                effect = self._context.services["tick"].set_world_property(str(proposal["property"]), proposal.get("value"))
             elif change_type == "rule":
                 rules = dict(self.store.repositories.metadata.get("rules", {}) or {})
                 world_rules = list(rules.get("world_rules", []))
@@ -180,7 +180,7 @@ class WorldChangesRuntimeMixin:
                 rules["world_rules"] = world_rules
                 self.store.repositories.metadata.set("rules", rules)
                 self._context.set_dependency("conditions", ConditionEngine(rules))
-                self._context.set_dependency("rule_compiler", self._context.services["api"]._new_rule_compiler())
+                self._context.set_dependency("rule_compiler", self._context.services["api"].new_rule_compiler())
                 effect = {"rule_added": dict(proposal["rule"]), "rule_count": len(world_rules)}
             elif change_type == "route":
                 route = dict(proposal["route"])
@@ -239,7 +239,7 @@ class WorldChangesRuntimeMixin:
                 self.store.repositories.entities.put_entity(faction_id, "faction", current.get("name", faction_id), {key: value for key, value in current.items() if key not in {"id", "entity_type", "name"}})
                 effect = {"faction_id": faction_id, "changed_fields": sorted(faction), "after": {key: current.get(key) for key in faction}}
             elif change_type == "event" and proposal.get("property"):
-                effect = self._context.services["tick"]._set_world_property(str(proposal["property"]), proposal.get("value"))
+                effect = self._context.services["tick"].set_world_property(str(proposal["property"]), proposal.get("value"))
             else:
                 effect = {"event_recorded": True, "state_changed": False}
             event_data = {

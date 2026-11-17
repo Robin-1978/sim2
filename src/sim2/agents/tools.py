@@ -4,7 +4,7 @@ Schemas, execution and provider-envelope parsing live in focused modules; this
 facade keeps the existing import path stable while development callers migrate.
 """
 
-from .tool_registry import (
+from ..agent_view.tool_registry import (
     ROLE_TOOLS,
     TOOL_DEFINITIONS,
     tools_for_role,

@@ -112,7 +112,7 @@ class DefinitionRuntimeMixin:
                     item["item"] = item_key(item.get("item"))
         return normalized
 
-    def _resolve_research_assignees(self, state: dict[str, Any]) -> tuple[list[tuple[str, str]], list[str]]:
+    def resolve_research_assignees(self, state: dict[str, Any]) -> tuple[list[tuple[str, str]], list[str]]:
         """Resolve ``research_assignees`` to ``(agent_id, visible_name)`` pairs."""
 
         raw = state.get("research_assignees")
@@ -136,7 +136,7 @@ class DefinitionRuntimeMixin:
             resolved.append((str(agent["id"]), str(agent.get("name") or agent["id"])))
         return resolved, errors
 
-    def _unreachable_research_assignees(self, source_name: str, assignees: list[tuple[str, str]]) -> list[str]:
+    def unreachable_research_assignees(self, source_name: str, assignees: list[tuple[str, str]]) -> list[str]:
         """Return why an assignee's own decision view does not offer ``source_name``.
 
         A research source that no assigned character can reach is dead content:
@@ -187,7 +187,7 @@ class DefinitionRuntimeMixin:
         return {token for token in tokens if token}
 
     @classmethod
-    def _research_focus(cls, state: dict[str, Any], description: Any = "") -> tuple[str, set[str]]:
+    def research_focus(cls, state: dict[str, Any], description: Any = "") -> tuple[str, set[str]]:
         values: list[str] = []
         for key in ("research_novelty_key", "research_question"):
             if state.get(key):
@@ -205,8 +205,8 @@ class DefinitionRuntimeMixin:
         focus = " ".join(values).strip()
         return focus, cls._research_focus_tokens(focus)
 
-    def _research_duplicate(self, state: dict[str, Any], description: Any, location_id: Any) -> dict[str, Any] | None:
-        focus, tokens = self._research_focus(state, description)
+    def research_duplicate(self, state: dict[str, Any], description: Any, location_id: Any) -> dict[str, Any] | None:
+        focus, tokens = self.research_focus(state, description)
         if not tokens:
             return None
         explicit_key = str(state.get("research_novelty_key") or "").strip().casefold()
@@ -216,7 +216,7 @@ class DefinitionRuntimeMixin:
             except KeyError:
                 continue
             existing_state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
-            existing_focus, existing_tokens = self._research_focus(existing_state, entity.get("description"))
+            existing_focus, existing_tokens = self.research_focus(existing_state, entity.get("description"))
             existing_key = str(existing_state.get("research_novelty_key") or "").strip().casefold()
             if explicit_key and existing_key and explicit_key == existing_key:
                 return {"name": source.get("name"), "reason": f"research novelty key already exists: {explicit_key}"}
@@ -259,7 +259,7 @@ class DefinitionRuntimeMixin:
     def _definition_name_key(value: Any) -> str:
         return "".join(char for char in str(value or "").casefold() if char.isalnum())
 
-    def _resolve_registered_definition(self, table: str, value: Any, *, extra: dict[str, Any] | None = None) -> tuple[str | None, list[str]]:
+    def resolve_registered_definition(self, table: str, value: Any, *, extra: dict[str, Any] | None = None) -> tuple[str | None, list[str]]:
         """Resolve a visible definition name without exposing registry IDs."""
 
         key = self._definition_name_key(value)
@@ -444,7 +444,7 @@ class DefinitionRuntimeMixin:
                 node_type = str(node_copy.get("type") or "action")
                 if node_type == "action":
                     ref = node_copy.get("action_id") or node_copy.get("action") or node_copy.get("name")
-                    resolved, matches = self._resolve_registered_definition("action_def", ref, extra=extra_action)
+                    resolved, matches = self.resolve_registered_definition("action_def", ref, extra=extra_action)
                     if not resolved:
                         errors.append(f"unknown or ambiguous action in node {path}: {ref}; matches={matches}")
                     else:
@@ -525,7 +525,7 @@ class DefinitionRuntimeMixin:
                     node_copy.pop("name", None)
                 elif node_type in {"behavior", "subtree"}:
                     ref = node_copy.get("behavior_id") or node_copy.get("behavior") or node_copy.get("name")
-                    resolved, matches = self._resolve_registered_definition("bt_def", ref)
+                    resolved, matches = self.resolve_registered_definition("bt_def", ref)
                     if not resolved:
                         errors.append(f"unknown or ambiguous behavior in node {path}: {ref}; matches={matches}")
                     else:
@@ -714,7 +714,7 @@ class DefinitionRuntimeMixin:
                 )
         data = {**proposal, "actor_id": actor_id, "definition": definition}
         if errors:
-            return self._context.services["intent"]._reject_intent(intent_id, actor_id, "propose_definition", data, {"status": "rejected", "message": "Definition proposal failed validation.", "failed_check": "definition_schema", "errors": errors, "retryable": True})
+            return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_definition", data, {"status": "rejected", "message": "Definition proposal failed validation.", "failed_check": "definition_schema", "errors": errors, "retryable": True})
         world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         table = {"action": "action_def", "behavior": "bt_def", "recipe": "recipe_def", "capability": "capability_def"}.get(definition_type)
         with self.store.transaction():
@@ -921,6 +921,6 @@ class DefinitionRuntimeMixin:
             self._context.set_dependency("attribute_schema", AttributeSchema(attributes, rules))
             self._context.set_dependency("effects", EffectPipeline(attributes))
             self._context.set_dependency("conditions", ConditionEngine(rules))
-            self._context.set_dependency("rule_compiler", self._context.services["api"]._new_rule_compiler())
+            self._context.set_dependency("rule_compiler", self._context.services["api"].new_rule_compiler())
         return result
 

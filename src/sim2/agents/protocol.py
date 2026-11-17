@@ -44,7 +44,7 @@ class ProviderProtocol:
         if "tools" in parameters:
             # Imported lazily to keep this low-level module independent from
             # tool execution and to avoid a registry/protocol import cycle.
-            from .tool_registry import tool_schemas_for_role
+            from ..agent_view.tool_registry import tool_schemas_for_role
 
             kwargs["tools"] = tool_schemas_for_role(role, allowed_tools)
         if "role" in parameters:

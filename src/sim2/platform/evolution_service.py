@@ -26,7 +26,7 @@ from .services import PlatformService
 class EvolutionService(PlatformService):
     """World signals and persisted evolution task lifecycle."""
 
-    def _world_trigger_context(self) -> dict[str, Any]:
+    def world_trigger_context(self) -> dict[str, Any]:
         context = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
         for resource in self.store.repositories.entities.entities_of_type("resource"):
             try:
@@ -39,18 +39,18 @@ class EvolutionService(PlatformService):
                 context[resource["id"]] = amount
         return context
 
-    def _recent_event_types(self, limit: int = 120) -> list[str]:
+    def recent_event_types(self, limit: int = 120) -> list[str]:
         rows = self.store.connection.execute(
             "SELECT DISTINCT event_type FROM event_log WHERE world_minute<=? ORDER BY event_id DESC LIMIT ?",
             (int(self.store.repositories.metadata.get("world_minute", 0)), max(1, min(int(limit), 500))),
         ).fetchall()
         return [str(row["event_type"]) for row in rows]
 
-    def _emit_world_rule_signals(self, minute: int, *, agent_ids: set[str] | None = None) -> None:
+    def emit_world_rule_signals(self, minute: int, *, agent_ids: set[str] | None = None) -> None:
         """Emit edge-triggered signals from active declarative world rules."""
 
-        world = self._world_trigger_context()
-        signals = self.rule_compiler.signal_specs(agent={}, context={"recent_event_types": self._recent_event_types()}, world=world)
+        world = self.world_trigger_context()
+        signals = self.rule_compiler.signal_specs(agent={}, context={"recent_event_types": self.recent_event_types()}, world=world)
         state = dict(self.store.repositories.metadata.get("world_rule_signal_state", {}) or {})
         for signal in signals:
             name = str(signal.get("name") or "world_rule")
@@ -81,12 +81,12 @@ class EvolutionService(PlatformService):
             state[state_key] = state_key in active_ids
         self.store.repositories.metadata.set("world_rule_signal_state", state)
 
-    def _emit_evolution_triggers(self, minute: int, *, agent_ids: set[str] | None = None) -> None:
+    def emit_evolution_triggers(self, minute: int, *, agent_ids: set[str] | None = None) -> None:
         evolution = self.store.repositories.metadata.get("evolution", {}) or {}
         config = evolution.get("evolution", evolution) if isinstance(evolution, dict) else {}
         triggers = config.get("triggers", []) if isinstance(config, dict) else []
         states = dict(self.store.repositories.metadata.get("evolution_trigger_state", {}) or {})
-        world = self._world_trigger_context()
+        world = self.world_trigger_context()
         known_agents = agent_ids if agent_ids is not None else {agent["id"] for agent in self.store.repositories.entities.list_agents()}
         for trigger in triggers:
             trigger_id = str(trigger.get("id", ""))
@@ -99,7 +99,7 @@ class EvolutionService(PlatformService):
                 self._context.services["events"].append("evolution.triggered", None, minute, {"trigger_id": trigger_id, "condition": expression, "invoke": trigger.get("invoke", [])})
                 for index, target in enumerate(trigger.get("invoke", []) or []):
                     target = str(target)
-                    role_target, resolved_actor = self._context.services["api"]._resolve_evolution_consumer(target)
+                    role_target, resolved_actor = self._context.services["api"].resolve_evolution_consumer(target)
                     if role_target == "agent_decision":
                         role, task_type, actor_id = role_target, f"trigger:{trigger_id}", resolved_actor
                     elif role_target == "god":
@@ -114,7 +114,7 @@ class EvolutionService(PlatformService):
             states[trigger_id] = active
         self.store.repositories.metadata.set("evolution_trigger_state", states)
 
-    def _emit_due_evolution_tasks(self, minute: int) -> None:
+    def emit_due_evolution_tasks(self, minute: int) -> None:
         for task in self.uow.evolution.due_tasks(minute):
             self.uow.evolution.mark_ready(task["task_id"])
             self._context.services["events"].append(

@@ -7,7 +7,7 @@ from typing import Any, TYPE_CHECKING
 from uuid import uuid4
 
 from ..intents.models import BehaviorIntent
-from .tool_registry import ROLE_TOOLS, TOOL_DEFINITIONS, validate_tool_arguments
+from ..agent_view.tool_registry import ROLE_TOOLS, TOOL_DEFINITIONS, validate_tool_arguments
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..platform.runtime import Platform
