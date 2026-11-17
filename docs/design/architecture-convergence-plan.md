@@ -220,6 +220,7 @@ at a time, each in its own commit and each compared with the code it replaces.
 | `submit_definition_proposal` and `_validate_definition_proposal` | 350 and 296 lines in `platform/definition_runtime.py` | 26 and 30 lines. Validation moved to `platform/definition_validation.py`: `DefinitionValidationMixin` is composed with `DefinitionRuntimeMixin` in `DefinitionService`. `_validate_definition_proposal` compiles the shape and dispatches to one `_validate_<kind>` method per definition kind. The behavior-tree walk is the `BehaviorNodeNormalizer` class, which owns the 32-node and 8-level limits that were closure state, and the resource-transfer and dynamic-inventory contracts are module functions. `submit_definition_proposal` validates through `_plan_definition` into a `DefinitionPlan` (the normalized definitions, the resolved characters and the errors), rejects when there are errors, and otherwise registers inside one transaction (`_register_definition`, `_publish_definition_events` returning `DefinitionEventIds`, `_assign_new_behavior`, `_definition_result`); the attribute-dependent services are rebuilt after commit. The longest new function is 43 lines |
 | `BehaviorIntentService.submit_behavior` | 295 lines in `platform/behavior_service.py` | 13 lines. `BehaviorIntentService` moved to `platform/behavior_intent.py`; `behavior_service.py` keeps `BehaviorExecutionService`. `submit_behavior` returns the stored result of a known intent, rejects an unknown actor, opens a `BehaviorSubmission` (the intent, the actor record, the parameters as they change and the values read on the way) and calls `_admit`. `_admit` runs the admission steps in their fixed order: resolve the behavior, apply BT defaults, then one check method per rejection (`_check_available`, `_check_parameters`, `_check_actor_free`, `_resolve_targets`, `_check_entry_conditions`, `_check_cooldown`, `_check_catalog`, `_check_agent_revision`), each returning the rejection result or `None`. The first rejection is stored with the intent by one `reject_intent` call. `_start_behavior` commits the intent, the actor state, the BT instance and the `behavior.started` event in one transaction. The longest new function is 38 lines |
 | `submit_world_change` | 257 lines in `platform/world_changes.py` | 6 lines. Validation moved to `platform/world_change_validation.py`: `WorldChangeValidationMixin` is composed with `WorldChangesRuntimeMixin` in `WorldChangesService`. `submit_world_change` opens a `WorldChangeSubmission` (the proposal as it is normalized on the way), runs `_validate_world_change` and commits through `_commit_world_change`. `_validate_world_change` runs the gates in their fixed order (required fields, change type, property key, property presence, payload object, rule, route, event effects, property value), each returning the rejection that `reject_intent` stored or `None`; the property key, the route endpoints and the property value are normalized into `submission.proposal`, so a rejection stores the proposal as it stood at that gate. `_commit_world_change` creates the intent, applies the change (`_apply_rule`, `_apply_route`, `_apply_relationship`, `_apply_faction` or the world property setter), publishes the `world.change.*` event, stores the pending proposal, remembers it for God and finishes the intent in one transaction. A relationship or faction change that is unusable while it is applied raises `_ChangeRejected` before anything is written; the intent and its rejection are committed together, as before. The longest new function is 32 lines |
+| `submit_entity_proposal` | 230 lines in `platform/entity_proposals.py` | 10 lines. Validation moved to `platform/entity_proposal_validation.py`: `EntityProposalValidationMixin` is composed with `EntityProposalRuntimeMixin` in `EntityProposalService`. `submit_entity_proposal` opens an `EntitySubmission` (the intent and entity ids, the proposal as received, the proposal as it is normalized and the errors found so far), runs `_collect_entity_errors` and rejects once with every reason it found; `entity_failed_check` names the rejection after the most specific reason. `_collect_entity_errors` runs the steps in a fixed order (`_check_entity_label`, `_normalize_location_routes`, `_check_god_limits`, `_check_location_reference`, `_check_research_state`, `_check_research_assignees`, `_check_entity_id_free`), each appending to `submission.errors`; only `_normalize_location_routes` changes the proposal, by storing route neighbors and distances under their canonical ids. `_plan_entity` turns the validated proposal into an `EntityPlan` (the state to store, the structure promoted out of a location's state, and the character from `_normalize_god_agent_state`, which moved unchanged and rejects with `agent_schema`). `_commit_entity` creates the intent, writes the character (`_write_agent`) or the entity (`_write_structure`: `_join_neighbors`, `_record_research_gap` and the reachability check that raises `_UnreachableProposal`), publishes `entity.created`, remembers it for God and finishes the intent in one transaction; an unreachable research source rolls all of it back and is rejected with `entity_unreachable`. The longest new function is 29 lines, not counting `_normalize_god_agent_state` (118 lines, unchanged) |
 
 `AgentEngine.run` equivalence: 887 scripted ReAct sessions on the five shipped
 worlds produced the same `AgentTurn`, provider usage and database content as
@@ -301,8 +302,50 @@ objects, the intents rejected while a change is applied, rule registration
 and its repeat guards, the evaluation window bounds and the rollback of a
 failure while the change is recorded.
 
-Still above 200 lines: `api/cli.py:main` (291), `submit_entity_proposal`
-(230), `evaluate_turn` (228), `do_POST` (207) and `_build_story_view` (203).
+`submit_entity_proposal` equivalence: the previous module was kept outside the
+package and run side by side with the new ones on fresh instances of four
+shipped worlds (6,300 operations over 90 scenarios). The operations were
+proposals for locations, characters, resources, materials, documents, research
+sources, objects, factions and machines from God, operators and other actors:
+route neighbors as ids, names, repeats, unknown places and non-locations;
+distances that are valid, zero, negative, text or boolean; stocked and empty
+resources; research sources with every shape of discoveries, assignees,
+required counts and novelty keys at reachable and unreachable places;
+characters with missing, clamped and unknown capabilities, needs, behaviors,
+factions and knowledge seeds (including a seed that fails midway); names that
+repeat another entity up to case and spacing or carry markup; existing and
+unusable entity ids; world ticks; and state changes that open the rare
+branches (seven shapes of `resource_entity_types`, an extra need, an unreadable
+world minute). Results, exceptions and a dump of every table were identical
+after each operation, including the operations that raise inside the
+transaction and roll back. Twenty-eight deliberate mutations (a swapped step
+order, an off-by-one stock limit, a name key that keeps its case, routes that
+are not deduplicated, a lost failed check, a changed research threshold,
+dropped assignee, location and id errors, a research location fallback, the
+God location checks applied to every actor, the event minute, the seed
+confidence default, the neighbor distance default, the gap actor, the stored
+research focus, God memory, the retryable flag, a promoted region, a distance
+that is not a float, the reachability check and its check name, an unrecorded
+gap, a duplicated neighbor route, an unwritten seed, an unset location and a
+rejection that stores the normalized proposal) were each caught: 26 by the
+same run at once, the world minute read after planning once the run gained a
+directed case with an unreadable minute, and the duplicated neighbor route by
+a permanent test. `entity_proposals.py` is 100% line-covered;
+`entity_proposal_validation.py` is covered except four lines of
+`_normalize_god_agent_state`, which is AST-identical to the previous one. All
+115 distinct strings of the previous function appear unchanged in the new
+modules. `tests/test_entity_proposal_validation.py` is the permanent guard (it
+also passes on the previous implementation): the step order and the whole
+error list, the proposal stored as received, name rules and duplicates, the
+most specific failed check, canonical and reciprocal routes with float
+distances, the God location and stocked-resource limits and the configured
+resource types, research discoveries, assignees and novelty at one place,
+the order of agent errors, the defaults a character receives, knowledge
+seeds and the rollback of a failing one, the intent, event and God memory of
+an accepted proposal, and the knowledge gap and focus of a research source.
+
+Still above 200 lines: `api/cli.py:main` (291), `evaluate_turn` (228),
+`do_POST` (207) and `_build_story_view` (203).
 
 ### Execution order for the remaining work
 
@@ -619,7 +662,7 @@ modules are:
 |---|---:|---|
 | `platform/runtime.py` | 98 lines | Public facade still exposes the migration dispatch surface; lifecycle ownership now lives in services |
 | `platform/activity.py` | 1,500 lines | Action/BT execution, research, Story completion, institutions and event wakeups are mixed |
-| `platform/definition_validation.py`, `definition_runtime.py`, `entity_proposals.py`, `story_runtime.py`, `world_change_validation.py`, `world_changes.py` | split modules | Definition validation, definition registration, entity proposals, Story beats, world change validation and world change commit now have separate owners |
+| `platform/definition_validation.py`, `definition_runtime.py`, `entity_proposal_validation.py`, `entity_proposals.py`, `story_runtime.py`, `world_change_validation.py`, `world_changes.py` | split modules | Definition validation, definition registration, entity proposal validation, entity proposal commit, Story beats, world change validation and world change commit now have separate owners |
 | `persistence/store.py` | 407 lines | SQLite connection, transaction and repository composition; metadata is owned by `MetadataRepository` |
 | `agent_view/compiler.py` | 1,900 lines | Decision, Story and God views share availability, parameter and rendering logic |
 | `agents/tools.py` | 1,200 lines | Schemas, dispatch, role policy, compatibility normalization and proposal rules are mixed |
@@ -650,7 +693,7 @@ The first convergence stages have now landed:
 | Behavior admission/execution | `platform/behavior_intent.py` (admission), `platform/behavior_service.py` (execution) | explicit services |
 | World minute | `platform/world_tick_service.py` | explicit service |
 | Evolution tasks | `platform/evolution_service.py` | explicit service and UoW task repository |
-| Definitions/entities/Story/world changes | `platform/definition_validation.py`, `definition_runtime.py`, `entity_proposals.py`, `story_runtime.py`, `world_change_validation.py`, `world_changes.py` | separate owners |
+| Definitions/entities/Story/world changes | `platform/definition_validation.py`, `definition_runtime.py`, `entity_proposal_validation.py`, `entity_proposals.py`, `story_runtime.py`, `world_change_validation.py`, `world_changes.py` | separate owners |
 | Persistence boundary | `persistence/uow.py`, `persistence/repositories/` | all SQL domains now have repository owners; the Store façade remains only as the migration surface |
 
 The table above is the authoritative starting point for the remaining work;

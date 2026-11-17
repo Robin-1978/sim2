@@ -33,7 +33,7 @@ Platform 不替 Agent 规划剧情，也不替 Agent 决定目标；它只执行
 | 配置与初始化 | `src/sim2/bootstrap` | Manifest、Schema、引用校验、新 SQLite 创建、初始导入 |
 | SQLite 持久化 | `src/sim2/persistence` | Schema、Repository、事务、事件日志、状态投影、快照、备份 |
 | 世界领域 | `src/sim2/world` | Entity、组件、资源、地点、关系、社会规则和领域约束 |
-| Platform 运行时 | `src/sim2/platform` | `runtime.py` 协调时间和事务，`activity.py` 推进长时活动，`learning.py` 处理经验与进度，`social.py` 处理制度与互动，`definition_validation.py` 校验定义、`definition_runtime.py` 注册定义，`entity_proposals.py`、`story_runtime.py`、`world_changes.py` 分别提交实体/Story/世界变更提案；`src/sim2/evolution` 只负责唤醒、Story 资格和提案评估策略 |
+| Platform 运行时 | `src/sim2/platform` | `runtime.py` 协调时间和事务，`activity.py` 推进长时活动，`learning.py` 处理经验与进度，`social.py` 处理制度与互动，`definition_validation.py` 校验定义、`definition_runtime.py` 注册定义，`entity_proposal_validation.py` 校验实体提案、`entity_proposals.py` 提交实体提案，`story_runtime.py` 提交 Story 提案，`world_change_validation.py` 校验世界变更、`world_changes.py` 提交世界变更；`src/sim2/evolution` 只负责唤醒、Story 资格和提案评估策略 |
 | 演化调度 | `src/sim2/evolution` | 通用事件消费者唤醒、累计证据门控和世界提案结果评估 |
 | Action 与效果 | `src/sim2/actions` | ActionDefinition、目标解析、条件引擎、成本和通用 Effect Pipeline |
 | 行为树 | `src/sim2/behavior` | BT 定义、实例、顺序、选择、并行、条件、结果和中断 |

@@ -5,6 +5,7 @@ from typing import Any
 from .activity import ActivityRuntimeMixin
 from .definition_runtime import DefinitionRuntimeMixin
 from .definition_validation import DefinitionValidationMixin
+from .entity_proposal_validation import EntityProposalValidationMixin
 from .entity_proposals import EntityProposalRuntimeMixin
 from .learning import LearningRuntimeMixin
 from .social import SocialRuntimeMixin
@@ -141,7 +142,7 @@ class DefinitionService(PlatformService, DefinitionValidationMixin, DefinitionRu
     """Declarative Action, BT, Recipe, Capability and Attribute registry."""
 
 
-class EntityProposalService(PlatformService, EntityProposalRuntimeMixin):
+class EntityProposalService(PlatformService, EntityProposalValidationMixin, EntityProposalRuntimeMixin):
     """Validated structural entity proposal service."""
 
 
