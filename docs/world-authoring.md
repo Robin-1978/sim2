@@ -634,6 +634,33 @@ example, a communication BT requires both a topic and the actual opening
 message. A recorded message is testimony only. Inventory and currency move
 only through an accepted transaction intent.
 
+### Location tag groups
+
+Conditions such as `location.safe` and `location.health_service`, and the BT
+parameter bindings `nearest_safe_location` and `nearest_health_service`, ask
+whether a location carries a tag. Tag names are world content, so the engine
+assumes none: `rules.location_tag_groups` declares them, and a group a world
+leaves out is empty.
+
+```yaml
+location_tag_groups:
+  safe: [safe]
+  resource_node: [resource, water]
+  health_service: [clinic]
+```
+
+| Group | Read by |
+| --- | --- |
+| `safe` | `location.safe` and `nearest_safe_location`. A location's own `safe: true` flag, and a public location while `rules.public_locations_are_safe` is true (the default), count without any tag. |
+| `resource_node` | `location.resource_node` |
+| `health_service` | `location.health_service` and `nearest_health_service` |
+
+A world that wants characters treated at a place declares `health_service` and
+tags the place; without the group neither the condition nor the binding finds
+one, so a behavior bound to `nearest_health_service` resolves to nothing. A
+condition can also name a tag directly with `location.tag.<name>`. The shipped
+worlds declare the groups they use.
+
 ## Package files
 
 The compiler writes a stable package layout:

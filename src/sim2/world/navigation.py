@@ -6,11 +6,17 @@ import math
 from typing import Any
 
 
-def configured_location_tags(store: Any, group: str, default: set[str] | list[str] | tuple[str, ...]) -> set[str]:
-    """Read semantic location tag groups from the instance package."""
+def configured_location_tags(store: Any, group: str) -> set[str]:
+    """Read one semantic location tag group declared by the instance package.
+
+    Tag names are world content, so a group the world does not declare is empty:
+    the engine never assumes a tag such as ``safe`` or ``clinic``.  The
+    ``location.*`` conditions read the same ``rules.location_tag_groups``, so a
+    resolver and the condition checked on arrival rest on one declaration.
+    """
 
     rules = store.repositories.metadata.get("rules", {}) or {}
-    configured = (rules.get("location_tag_groups", {}) or {}).get(group, default)
+    configured = (rules.get("location_tag_groups", {}) or {}).get(group, ())
     values = configured if isinstance(configured, (list, tuple, set)) else [configured]
     return {str(item) for item in values}
 
@@ -165,7 +171,7 @@ def nearest_safe_location(store: Any, origin_id: str | None) -> str | None:
             location = store.repositories.entities.get_entity(current_id)
         except KeyError:
             continue
-        safe_tags = configured_location_tags(store, "safe", {"safe"})
+        safe_tags = configured_location_tags(store, "safe")
         public_safe = bool((store.repositories.metadata.get("rules", {}) or {}).get("public_locations_are_safe", True))
         if bool(location.get("safe", False)) or (public_safe and location.get("public", False) is True) or set(location.get("tags", []) or []) & safe_tags:
             return current_id
@@ -221,7 +227,7 @@ def nearest_resource_node(store: Any, origin_id: str | None) -> dict[str, str] |
 def nearest_location_with_tag(store: Any, origin_id: str | None, tags: set[str]) -> str | None:
     """Return the nearest location carrying one of the configured service tags."""
 
-    if not origin_id:
+    if not origin_id or not tags:
         return None
     queue: deque[str] = deque([str(origin_id)])
     visited = {str(origin_id)}

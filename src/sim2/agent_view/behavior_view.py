@@ -46,7 +46,7 @@ class BehaviorViewMixin:
         location_id = state.get("location_id")
         safe_location_id = nearest_safe_location(self.store, location_id)
         resource_node = nearest_resource_node(self.store, location_id)
-        health_location_id = nearest_location_with_tag(self.store, location_id, configured_location_tags(self.store, "health_service", {"health", "clinic"}))
+        health_location_id = nearest_location_with_tag(self.store, location_id, configured_location_tags(self.store, "health_service"))
         known_route_destinations = reachable_locations(self.store, location_id)
         mapped_areas = self.memory_repo.explored_areas(agent_id)
         researched_sources = self.memory_repo.researched_sources(agent_id)

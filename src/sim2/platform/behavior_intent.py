@@ -354,7 +354,7 @@ class BehaviorIntentService(PlatformService):
                 resource = nearest_resource_node(self.store, state.get("location_id"))
                 value = (resource or {}).get("location_id" if resolver == "nearest_resource_node" else "resource_tag")
             elif resolver == "nearest_health_service":
-                value = nearest_location_with_tag(self.store, state.get("location_id"), configured_location_tags(self.store, "health_service", {"health", "clinic"}))
+                value = nearest_location_with_tag(self.store, state.get("location_id"), configured_location_tags(self.store, "health_service"))
             else:
                 value = None
             if value:
