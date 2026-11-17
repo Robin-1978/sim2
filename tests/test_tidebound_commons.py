@@ -256,6 +256,14 @@ def test_tidebound_evolution_is_automatic_and_keeps_generating(tmp_path: Path) -
     consumers = compiled["event_wake_policy"]["consumers"]
     assert consumers["story"]["manual_event_types"] == []
     assert consumers["god"]["manual_event_types"] == []
+    synthesis = next(
+        group for group in consumers["god"]["event_groups"]
+        if group.get("id") == "research_synthesis"
+    )
+    assert synthesis["event_types"] == ["research.completed"]
+    assert synthesis["minimum_events"] == 2
+    assert synthesis["distinct_by"] == ["source_id", "stage_id"]
+    assert {"propose_entity", "propose_world_change", "wait"} <= set(synthesis["agent_contract"]["allowed_tools"])
     assert any(
         "world.stagnation" in group["event_types"]
         for group in consumers["god"]["event_groups"]
@@ -271,5 +279,52 @@ def test_tidebound_evolution_is_automatic_and_keeps_generating(tmp_path: Path) -
         scheduled = platform.store.repositories.evolution.due_evolution_tasks(10**9)
         assert any(task["task_id"] == "god_local" for task in scheduled), scheduled
         assert any(task["task_id"] == "god_structural" for task in scheduled), scheduled
+    finally:
+        platform.close()
+
+
+def test_god_can_extend_tidebound_map_and_factions_through_generic_proposals(tmp_path: Path) -> None:
+    """New gameplay structures are reachable through the declarative God API."""
+
+    platform = Platform(create_instance(WORLD, "tidebound-structure-growth", tmp_path / "runtime"))
+    try:
+        location = platform.submit_entity_proposal(
+            "god",
+            {
+                "entity_type": "location",
+                "name": "外海信标礁",
+                "description": "A newly charted reef beacon beyond the drowned observatory.",
+                "state": {
+                    "routes": ["drowned_observatory"],
+                    "route_distances": {"drowned_observatory": 4},
+                    "tags": ["exploration", "signal"],
+                    "public": True,
+                    "safe": False,
+                    "map_position": {"x": 2, "y": 3},
+                },
+            },
+        )
+        assert location["status"] == "accepted", location
+        new_location = platform.store.repositories.entities.get_entity(location["entity_id"])
+        observatory = platform.store.repositories.entities.get_entity("drowned_observatory")
+        assert new_location["entity_type"] == "location"
+        assert observatory["routes"].count(location["entity_id"]) == 1
+        assert new_location["id"] in observatory["routes"]
+
+        faction = platform.submit_entity_proposal(
+            "god",
+            {
+                "entity_type": "faction",
+                "name": "外海守望者",
+                "description": "A coastal group that keeps the new beacon route open.",
+                "state": {
+                    "goals": ["keep the beacon route open"],
+                    "norms": ["share verified tide reports"],
+                    "strategy": "cooperate with the commons",
+                },
+            },
+        )
+        assert faction["status"] == "accepted", faction
+        assert platform.store.repositories.entities.get_entity(faction["entity_id"])["entity_type"] == "faction"
     finally:
         platform.close()

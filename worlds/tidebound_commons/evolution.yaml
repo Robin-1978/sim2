@@ -29,6 +29,26 @@ stagnation:
   - world.change.relationship
   - world.change.faction
 wakes:
+- id: research_synthesis
+  'on': research.completed
+  for: god
+  count: 2
+  every: 1d
+  distinct_by: [source_id, stage_id]
+  tools:
+  - query_history
+  - query_knowledge_gaps
+  - propose_entity
+  - propose_world_change
+  - wait
+  purpose: 两个不同研究阶段已经完成；把新的海图或潮汐证据转成可玩的外部地点、势力关系或公共结构。
+  result: >-
+    只提交一个有证据支持且能马上进入玩法的变化：如果海图证明了新的路线，优先用
+    propose_entity 创建一个连接到现有地点的 location（state.routes 至少包含一个现有
+    地点，并提供正的 route_distances）；如果证据显示新的合作或冲突，使用
+    propose_entity 创建一个 distinct faction 或 propose_world_change 更新真实关系。
+    新内容必须让现有角色拥有可执行的下一步；不能声称尚未走过的新地点已经到达，不能
+    重复已有地点、势力或研究问题。证据不足时 wait。
 - id: story_after_verified_change
   'on':
   - gate.inspected
