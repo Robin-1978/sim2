@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from ..intents.models import BehaviorIntent
 from ..agent_view.tool_registry import ROLE_TOOLS, TOOL_DEFINITIONS, validate_tool_arguments
+from .reflection_policy import MEANINGFUL_REFLECTION_EVENTS
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..platform.runtime import Platform
@@ -263,16 +264,10 @@ class AgentToolExecutor:
 
     def _record_experience(self, summary: str, event: str = "", confidence: float = 1.0, claim_status: str = "inferred") -> dict[str, Any]:
         if self.role == "agent_reflection":
-            meaningful_events = {
-                "behavior.completed", "behavior.failed", "behavior.interrupted",
-                "dialogue.completed", "trade.completed", "trade.offer_created",
-                "trade.countered", "exploration.completed", "research.completed",
-                "object.recovered", "relationship.changed", "world.change.world_property",
-            }
             has_outcome = bool(self.platform.store.repositories.events.recent_outcomes_for_actor(self.actor_id, limit=1))
             has_memory = bool(self.platform.store.repositories.memory.list_memories(self.actor_id, limit=1))
             has_event = any(
-                str(item.get("event_type", "")) in meaningful_events
+                str(item.get("event_type", "")) in MEANINGFUL_REFLECTION_EVENTS
                 for item in self.platform.store.repositories.events.recent_events_for_actor(self.actor_id, limit=20)
             )
             if not (has_outcome or has_memory or has_event):

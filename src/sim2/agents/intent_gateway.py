@@ -6,23 +6,9 @@ from typing import Any, Callable
 from ..intents.models import BehaviorIntent
 from ..platform.runtime import Platform
 from .protocol import normalize_provider_intent
+from .reflection_policy import MEANINGFUL_REFLECTION_EVENTS
 from .runtime_policy import ROLE_INTENTS
 
-# Reflection is allowed only when the view holds something observable.
-MEANINGFUL_REFLECTION_EVENTS = frozenset({
-    "behavior.completed",
-    "behavior.failed",
-    "behavior.interrupted",
-    "dialogue.completed",
-    "trade.completed",
-    "trade.offer_created",
-    "trade.countered",
-    "exploration.completed",
-    "research.completed",
-    "object.recovered",
-    "relationship.changed",
-    "world.change.world_property",
-})
 # Clear statements that no durable lesson is new; see ``reflection_reason_is_decline``.
 REFLECTION_DECLINE_MARKERS = (
     "no new lesson",
