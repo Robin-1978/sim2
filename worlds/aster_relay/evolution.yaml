@@ -26,7 +26,10 @@ wakes:
     source is exhausted, derive a distinct causal dimension such as effect, risk,
     intervention, provenance, or application from the verified result and use a new
     novelty key; do not wait merely because the words overlap, and do not rename the
-    same question. Otherwise wait.
+    same question. Otherwise wait. The new source must yield at least 2 verified
+    research outcomes (its number of stages times its research_required must be at
+    least 2) because this world wakes you again only after 2 verified research
+    outcomes.
 - id: resource_safety
   'on': resource.safety_low
   for: god
@@ -54,7 +57,10 @@ wakes:
   purpose: Repeated verified archive inspections have raised relay stability enough
     for a new world-level research question.
   result: Create one genuinely new research source only if the stability evidence
-    supports a distinct unanswered question; otherwise wait.
+    supports a distinct unanswered question; otherwise wait. The new source must
+    yield at least 2 verified research outcomes (its number of stages times its
+    research_required must be at least 2) because this world wakes you again only
+    after 2 verified research outcomes.
 - 'on': research.completed
   for: story
 - 'on': resource.replenished

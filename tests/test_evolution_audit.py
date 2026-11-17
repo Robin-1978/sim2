@@ -2,9 +2,22 @@
 
 from __future__ import annotations
 
-import pytest
+from pathlib import Path
 
-from scripts.audit_dynamic_evolution_loop import _pending_structural_tasks, _quality_flags, _ready
+import pytest
+import yaml
+
+from scripts.audit_dynamic_evolution_loop import (
+    IDLE_LIMIT_MINUTES,
+    _advance_idle,
+    _can_continue,
+    _pending_structural_tasks,
+    _probe_template,
+    _quality_flags,
+    _ready,
+)
+from sim2.bootstrap.service import create_instance_from_template
+from sim2.platform.runtime import Platform
 
 ABSORBING = "absorbing_state:three_rounds_without_structural_or_story_progress"
 
@@ -183,3 +196,113 @@ def test_incomplete_runs_are_flagged() -> None:
     rows = [_round(objects=1), _round(story=("accepted",))]
 
     assert _flags(rows, requested=10) == ["incomplete_rounds:2/10"]
+
+
+# --- the probe's liveness fallback and its outcome contract ---------------------------
+
+SHIPPED_EVOLUTION = Path(__file__).parents[1] / "worlds" / "aster_relay" / "evolution.yaml"
+
+
+def _wake(wakes: list[dict], wake_id: str) -> dict:
+    return next(item for item in wakes if item.get("id") == wake_id)
+
+
+@pytest.mark.parametrize("wake_id", ["research_synthesis", "relay_stability_review"])
+@pytest.mark.parametrize("source", ["probe", "shipped"])
+def test_wakes_that_create_sources_state_the_outcome_threshold(source: str, wake_id: str) -> None:
+    """A source God creates has to reach the wake that follows it.
+
+    Real runs: all 8 sources God created at the review, and the second source
+    one run created at a synthesis wake, had one stage and ``research_required``
+    1.  They produced one research outcome and never reached the synthesis wake
+    that needs two, so the world stopped evolving.
+    """
+
+    if source == "probe":
+        wakes = _probe_template()["evolution"]["wakes"]
+    else:
+        wakes = yaml.safe_load(SHIPPED_EVOLUTION.read_text(encoding="utf-8"))["wakes"]
+    threshold = _wake(wakes, "research_synthesis")["count"]
+
+    text = _wake(wakes, wake_id)["result"]
+
+    assert f"at least {threshold} verified research outcomes" in text
+    assert f"only after {threshold} verified research outcomes" in text
+
+
+def test_probe_declares_a_stagnation_fallback_unless_the_control_is_requested() -> None:
+    evolution = _probe_template()["evolution"]
+    wake = _wake(evolution["wakes"], "god_on_stagnation")
+
+    assert evolution["stagnation"]["window"] and evolution["stagnation"]["max_interval"]
+    assert wake["on"] == "world.stagnation" and wake["for"] == "god"
+    assert {"query_history", "propose_entity", "wait"} <= set(wake["tools"])
+
+    control = _probe_template(fallback=False)["evolution"]
+    assert "stagnation" not in control
+    assert all(item.get("on") != "world.stagnation" for item in control["wakes"])
+
+
+def _probe_platform(tmp_path: Path, *, fallback: bool) -> Platform:
+    name = "probe-fallback" if fallback else "probe-control"
+    return Platform(create_instance_from_template(_probe_template(fallback=fallback), name, tmp_path / "runtime"))
+
+
+def _minute(platform: Platform) -> int:
+    return int(platform.store.repositories.metadata.get("world_minute", 0))
+
+
+def test_idle_probe_world_wakes_god_through_the_stagnation_fallback(tmp_path: Path) -> None:
+    platform = _probe_platform(tmp_path, fallback=True)
+    try:
+        assert _pending_structural_tasks(platform) == []
+
+        assert _advance_idle(platform, limit_minutes=1440) is True
+
+        assert [item["task_type"] for item in _pending_structural_tasks(platform)] == ["event_group:god_on_stagnation"]
+    finally:
+        platform.close()
+
+
+def test_idle_probe_control_without_the_fallback_stays_absorbed(tmp_path: Path) -> None:
+    platform = _probe_platform(tmp_path, fallback=False)
+    try:
+        assert _advance_idle(platform, limit_minutes=1440) is False
+        assert _pending_structural_tasks(platform) == []
+    finally:
+        platform.close()
+
+
+def test_provider_failure_ends_the_run_even_when_a_fallback_exists(tmp_path: Path) -> None:
+    platform = _probe_platform(tmp_path, fallback=True)
+    try:
+        assert _can_continue(platform, {"status": "provider_failure"}, fallback=True) is False
+        assert _minute(platform) == 0
+    finally:
+        platform.close()
+
+
+def test_a_completed_npc_round_continues_without_passing_idle_time(tmp_path: Path) -> None:
+    platform = _probe_platform(tmp_path, fallback=True)
+    try:
+        assert _can_continue(platform, {"status": "completed"}, fallback=True) is True
+        assert _minute(platform) == 0
+    finally:
+        platform.close()
+
+
+def test_an_idle_npc_ends_the_control_run_but_passes_time_when_a_fallback_exists(tmp_path: Path) -> None:
+    control = _probe_platform(tmp_path, fallback=False)
+    try:
+        assert _can_continue(control, {"status": "no_npc_behavior"}, fallback=False) is False
+        assert _minute(control) == 0
+    finally:
+        control.close()
+
+    platform = _probe_platform(tmp_path, fallback=True)
+    try:
+        assert _can_continue(platform, {"status": "no_npc_behavior"}, fallback=True) is True
+        assert 0 < _minute(platform) <= IDLE_LIMIT_MINUTES
+        assert _pending_structural_tasks(platform)
+    finally:
+        platform.close()

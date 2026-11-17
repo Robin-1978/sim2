@@ -7,6 +7,11 @@ never inserts a new story, Action, BT, or world fact after initialization.
 
     bash -ic 'source ~/.bashrc && python scripts/audit_dynamic_evolution_loop.py \
       --provider remote --rounds 10 --runtime-dir /tmp/sim2-evolution-loop'
+
+By default the world also declares a stagnation window, and the harness passes
+idle world time when the NPC has nothing to do, so a quiet world is woken the
+way it is in play.  ``--no-fallback`` runs the control that tests only the
+event-driven loop, where one ``wait`` from God can end the evolution.
 """
 
 from __future__ import annotations
@@ -26,10 +31,26 @@ from sim2.llm.gateway import LLMRouter
 from sim2.platform.runtime import Platform
 
 
-def _probe_template() -> dict[str, Any]:
-    """Return a small declarative world with unrelated, non-village content."""
+# A source God creates yields (stages x research_required) research outcomes and
+# must reach the next threshold wake: in real runs a source with one outcome never
+# woke God again.  Every wake that lets God create a source states the threshold.
+SYNTHESIS_COUNT = 2
+OUTCOME_NOTE = (
+    f" The new source must yield at least {SYNTHESIS_COUNT} verified research outcomes (its number of stages times its "
+    f"research_required must be at least {SYNTHESIS_COUNT}) because this world wakes you again only after "
+    f"{SYNTHESIS_COUNT} verified research outcomes."
+)
 
-    return {
+
+def _probe_template(*, fallback: bool = True) -> dict[str, Any]:
+    """Return a small declarative world with unrelated, non-village content.
+
+    With ``fallback`` the world also declares a stagnation window and the God
+    wake that goes with it.  Without it (the control) the world is woken only
+    by event counts, so one ``wait`` ends its evolution.
+    """
+
+    template: dict[str, Any] = {
         "template_version": "evolution-probe-1",
         "world": {
             "id": "evolution_probe",
@@ -101,9 +122,9 @@ def _probe_template() -> dict[str, Any]:
         },
         "evolution": {
             "wakes": [
-                {"id": "research_synthesis", "on": ["research.progressed", "research.completed"], "for": "god", "count": 2, "every": 1, "external": True, "tools": ["propose_entity", "propose_definition", "wait"], "purpose": "Two verified research work outcomes justify one new unanswered relay question or a concrete structure that lets the next study happen.", "result": "Create at most one genuinely new source or executable continuation when the accumulated evidence leaves a distinct unanswered question. If every current source is exhausted, derive a distinct causal dimension such as effect, risk, intervention, provenance, or application from the verified result and use a new novelty key; do not wait merely because the words overlap, and do not rename the same question. Otherwise wait."},
+                {"id": "research_synthesis", "on": ["research.progressed", "research.completed"], "for": "god", "count": SYNTHESIS_COUNT, "every": 1, "external": True, "tools": ["propose_entity", "propose_definition", "wait"], "purpose": "Two verified research work outcomes justify one new unanswered relay question or a concrete structure that lets the next study happen.", "result": "Create at most one genuinely new source or executable continuation when the accumulated evidence leaves a distinct unanswered question. If every current source is exhausted, derive a distinct causal dimension such as effect, risk, intervention, provenance, or application from the verified result and use a new novelty key; do not wait merely because the words overlap, and do not rename the same question. Otherwise wait." + OUTCOME_NOTE},
                 {"id": "resource_safety", "on": "resource.safety_low", "for": "god", "count": 1, "every": 1, "external": True, "require_story_outcome": True, "tools": ["propose_definition", "wait"], "purpose": "The public energy reserve is below its floor and Mira carries a real source item.", "result": "Create one conserved supply Action and bound behavior when a real carried source exists; the behavior must wake Story after execution. Never mint public stock."},
-                {"id": "relay_stability_review", "on": "relay.stability_review", "for": "god", "count": 1, "every": 1, "external": True, "tools": ["propose_entity", "wait"], "purpose": "Repeated verified archive inspections have raised relay stability enough for a new world-level research question.", "result": "Create one genuinely new research source only if the stability evidence supports a distinct unanswered question; otherwise wait."},
+                {"id": "relay_stability_review", "on": "relay.stability_review", "for": "god", "count": 1, "every": 1, "external": True, "tools": ["propose_entity", "wait"], "purpose": "Repeated verified archive inspections have raised relay stability enough for a new world-level research question.", "result": "Create one genuinely new research source only if the stability evidence supports a distinct unanswered question; otherwise wait." + OUTCOME_NOTE},
                 {"on": "research.completed", "for": "story"},
                 {"on": "resource.replenished", "for": "story"},
                 {"on": "entity.created", "for": "story"},
@@ -115,6 +136,16 @@ def _probe_template() -> dict[str, Any]:
         "player_template": {},
         "initial_events": [{"id": "probe_started", "type": "probe.started", "world_minute": 0, "payload": {"summary": "The Aster Relay evolution probe begins with one unresolved archive and a depleted public reserve."}}],
     }
+    if fallback:
+        evolution = template["evolution"]
+        evolution["stagnation"] = {"window": "3h", "max_interval": "1d"}
+        evolution["wakes"].append({
+            "id": "god_on_stagnation", "on": "world.stagnation", "for": "god",
+            "tools": ["query_history", "query_knowledge_gaps", "propose_entity", "propose_definition", "wait"],
+            "purpose": "Mira gained no new executable option for a full window, so the relay may be repeating a closed loop.",
+            "result": "Create one genuinely new research source or executable continuation that is reachable from her current state, or wait only when the diagnostics show none is justified.",
+        })
+    return template
 
 
 def _summary(turn: AgentTurn | None) -> dict[str, Any] | None:
@@ -153,6 +184,43 @@ def _pending_structural_tasks(platform: Platform) -> list[dict[str, Any]]:
         item for item in platform.ready_evolution_tasks()
         if str(item.get("role") or "") in {"story", "god"}
     ]
+
+
+# World minutes one idle stretch may pass: the template's stagnation signal
+# repeats at most once a day, so two days always include another signal.
+IDLE_LIMIT_MINUTES = 2880
+
+
+def _advance_idle(platform: Platform, limit_minutes: int = IDLE_LIMIT_MINUTES) -> bool:
+    """Pass world time until Story or God work is queued; say whether any appeared.
+
+    A character with no executable option leaves the world quiet.  In play the
+    clock keeps running and the derived stagnation signal asks God again; the
+    harness passes the same time instead of ending the run.
+    """
+
+    for _ in range(max(0, int(limit_minutes))):
+        if _pending_structural_tasks(platform):
+            return True
+        platform.step()
+    return bool(_pending_structural_tasks(platform))
+
+
+def _can_continue(platform: Platform, npc: dict[str, Any], *, fallback: bool) -> bool:
+    """Whether another round can run after the NPC turn.
+
+    A provider failure always ends the run.  An NPC with nothing to do ends it
+    too, unless the world declares a fallback: then idle time passes until
+    work appears.  The control (no fallback) ends there, which is the
+    absorbing state it exists to show.
+    """
+
+    status = npc.get("status")
+    if status == "provider_failure":
+        return False
+    if status == "no_npc_behavior":
+        return fallback and _advance_idle(platform)
+    return True
 
 
 def _run_task(platform: Platform, provider: Any, task: dict[str, Any]) -> AgentTurn:
@@ -230,7 +298,13 @@ def main() -> int:
     parser.add_argument("--rounds", type=int, default=10)
     parser.add_argument("--runtime-dir", default=None)
     parser.add_argument("--max-completion-tokens", type=int, default=None)
+    parser.add_argument(
+        "--no-fallback",
+        action="store_true",
+        help="control run: no stagnation window and no idle time, so only the event-driven loop is tested",
+    )
     args = parser.parse_args()
+    fallback = not args.no_fallback
 
     router = LLMRouter(LLMConfig.load())
     providers = {
@@ -240,7 +314,7 @@ def main() -> int:
     temporary = tempfile.TemporaryDirectory(prefix="sim2-evolution-probe-") if args.runtime_dir is None else None
     runtime_root = Path(args.runtime_dir) if args.runtime_dir else Path(temporary.name)
     instance_id = f"evolution-probe-{uuid4().hex[:8]}"
-    db_path = create_instance_from_template(_probe_template(), instance_id, runtime_root)
+    db_path = create_instance_from_template(_probe_template(fallback=fallback), instance_id, runtime_root)
     platform = Platform(db_path)
     log_path = runtime_root / "evolution-audit.jsonl"
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -303,7 +377,7 @@ def main() -> int:
             with log_path.open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
             print(json.dumps(row, ensure_ascii=False, default=str), flush=True)
-            if npc.get("status") in {"no_npc_behavior", "provider_failure"}:
+            if not _can_continue(platform, npc, fallback=fallback):
                 break
             # Every subsequent round is driven by the actual previous result.
             # Ready God work is selected from the configured wake graph on the
@@ -319,6 +393,7 @@ def main() -> int:
         )
         summary = {
             "status": "passed" if not quality_flags else "failed",
+            "fallback": fallback,
             "flags": quality_flags,
             "rounds": len(rows),
             "requested_rounds": requested_rounds,
