@@ -260,7 +260,7 @@ def test_tidebound_evolution_is_automatic_and_keeps_generating(tmp_path: Path) -
         group for group in consumers["god"]["event_groups"]
         if group.get("id") == "research_synthesis"
     )
-    assert synthesis["event_types"] == ["research.completed"]
+    assert synthesis["event_types"] == ["research.progressed", "research.completed"]
     assert synthesis["minimum_events"] == 2
     assert synthesis["distinct_by"] == ["source_id", "stage_id"]
     assert {"propose_entity", "propose_world_change", "wait"} <= set(synthesis["agent_contract"]["allowed_tools"])
@@ -279,6 +279,20 @@ def test_tidebound_evolution_is_automatic_and_keeps_generating(tmp_path: Path) -
         scheduled = platform.store.repositories.evolution.due_evolution_tasks(10**9)
         assert any(task["task_id"] == "god_local" for task in scheduled), scheduled
         assert any(task["task_id"] == "god_structural" for task in scheduled), scheduled
+
+        # A two-stage source emits progress events before its single terminal
+        # completion event.  Both stages must count toward the structural wake.
+        for minute, stage_id in ((20, "shoreline"), (40, "open_water")):
+            event_id = platform.store.repositories.events.append_event(
+                "research.progressed", "selene", minute,
+                {"source_id": "drowned_chart", "stage_id": stage_id},
+            )
+            platform.wakes.configured(event_id, "research.progressed", "selene", minute)
+        synthesis_tasks = [
+            task for task in platform.ready_evolution_tasks()
+            if task["role"] == "god" and task["task_type"].startswith("event_group:research_synthesis")
+        ]
+        assert len(synthesis_tasks) == 1, synthesis_tasks
     finally:
         platform.close()
 

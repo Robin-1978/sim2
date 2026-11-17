@@ -30,11 +30,12 @@ stagnation:
   - world.change.faction
 wakes:
 - id: research_synthesis
-  'on': research.completed
+  'on': [research.progressed, research.completed]
   for: god
   count: 2
   every: 1d
   distinct_by: [source_id, stage_id]
+  external: true
   tools:
   - query_history
   - query_knowledge_gaps
