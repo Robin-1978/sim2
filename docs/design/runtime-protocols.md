@@ -211,6 +211,17 @@ world-minute execution remain resumable. A process restart also requeues any
 due evolution task left in transient `claimed` status and records an
 `evolution.tasks_recovered` event.
 
+The web runtime (`api/runtime_supervisor.py`) waits out a provider cooldown
+instead of pausing the world. It holds world time for the cooldown (at least
+0.25 s and at most 30 s, the longest cooldown the gateway sets), ends the wait
+at once on a pause or stop request, and goes on; the state stays `running` and
+`last_error` names the wait. Only `MAX_COOLDOWN_STALLS` (10) cooldown stops in a
+row that advanced no world minute pause the world, with the reason
+`web-provider-cooldown` and the state `cooldown`; the operator resumes it
+explicitly. The LLM-call budget and the target minute are checked on every
+pass, and a failed call is an `llm_error` record that counts as a call, so a
+provider that keeps failing also meets the budget.
+
 Evolution task failures retain their source evidence and a retry count. A
 semantic or tool rejection uses increasing simulated-minute backoff; a
 `budget_exhausted` world review starts with a one-day delay and backs off up to

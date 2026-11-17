@@ -103,6 +103,10 @@ stopped → starting → running → pausing → paused
 - 接收 start/pause/resume/stop 命令；
 - 把页面提交的玩家和管理操作送入同一写入协调队列；
 - 记录最近错误、当前 provider、调用次数、token 用量和停止原因；
+- 服务商冷却（最长 30 秒，见 `llm/gateway.py`）不暂停世界：后台线程保持世界时间不动，
+  等冷却结束后继续，状态仍为 `running`，`last_error` 显示等待提示；暂停或停止请求立即结束等待。
+  连续 10 次冷却都没有推进世界分钟，才暂停世界并进入 `cooldown`，等用户显式继续。
+  LLM 调用次数上限和目标分钟数每一轮都重新检查，失败的调用也计入次数；
 - 进程重启时将“DB 标记为 running 但无运行线程”的状态校正为 `interrupted`，
   要求用户显式继续，不能伪装成仍在运行。
 

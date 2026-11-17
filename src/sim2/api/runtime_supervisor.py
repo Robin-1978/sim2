@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from datetime import datetime, timezone
 from typing import Any, Callable
 from uuid import uuid4
@@ -23,6 +24,13 @@ class RuntimeSupervisor:
     """
 
     ACTIVE_STATES = {"starting", "running", "pausing", "stopping"}
+    # A provider cooldown lasts seconds (``llm/gateway.py`` caps it at 30), so
+    # the loop holds world time for it and goes on.  Only a run of cooldown
+    # stops that advanced no world minute is read as an outage and left to the
+    # operator.  The LLM-call and target-minute limits are checked on every pass.
+    MAX_COOLDOWN_STALLS = 10
+    COOLDOWN_MIN_WAIT_SECONDS = 0.25
+    COOLDOWN_MAX_WAIT_SECONDS = 30.0
 
     def __init__(self, service: ControlService, *, provider_factory: ProviderFactory | None = None):
         self.service = service
@@ -287,9 +295,24 @@ class RuntimeSupervisor:
     def _calls_this_run(self) -> int:
         return max(0, int(self._usage().get("calls", 0)) - self._llm_calls_at_start)
 
+    def _cooldown_wait_seconds(self, runner: SimulationRunner) -> float:
+        remaining = runner.provider_cooldown_seconds()
+        return min(self.COOLDOWN_MAX_WAIT_SECONDS, max(self.COOLDOWN_MIN_WAIT_SECONDS, remaining))
+
+    def _wait_out_cooldown(self, seconds: float) -> None:
+        """Hold world time for a provider cooldown; a pause or stop request ends the wait."""
+
+        deadline = time.monotonic() + seconds
+        while not self._stop_event.is_set() and not self._pause_requested:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return
+            self._stop_event.wait(min(0.25, left))
+
     def _run(self) -> None:
         runner = self._runner
         platform = self.service.platform
+        stalls = 0
         try:
             with self._lock:
                 self._state = "running"
@@ -311,10 +334,18 @@ class RuntimeSupervisor:
                 report = runner.run(1)
                 reason = str(report.stop_reason or "")
                 if reason.startswith("provider_cooldown"):
-                    self._last_error = reason
-                    self.service.pause("web-provider-cooldown")
-                    self._state = "cooldown"
-                    break
+                    stalls = 0 if report.end_minute > report.start_minute else stalls + 1
+                    if stalls >= self.MAX_COOLDOWN_STALLS:
+                        self._last_error = reason
+                        self.service.pause("web-provider-cooldown")
+                        self._state = "cooldown"
+                        break
+                    seconds = self._cooldown_wait_seconds(runner)
+                    self._last_error = f"{reason}: world time is held for {seconds:.1f}s"
+                    self._wait_out_cooldown(seconds)
+                    self._last_error = ""
+                    continue
+                stalls = 0
                 if reason == "runtime_not_running":
                     self._state = "paused"
                     break

@@ -214,6 +214,11 @@ class SimulationRunner:
     def _cooling_provider_roles(self) -> list[str]:
         return sorted(role for role, provider in self.providers.items() if self._provider_cooling_down(provider))
 
+    def provider_cooldown_seconds(self) -> float:
+        """Longest cooldown left on any provider, for callers that wait it out."""
+
+        return max((self._cooldown_seconds(provider) for provider in self.providers.values()), default=0.0)
+
     def _run_instant_interactions(self, report: SimulationReport) -> bool:
         """Dispatch zero-minute dialogue/trade events as bounded micro-turns."""
 
@@ -601,15 +606,19 @@ class SimulationRunner:
                 return
 
     @staticmethod
-    def _provider_cooling_down(provider: Any) -> bool:
-        """Avoid issuing more calls while a provider circuit breaker is open."""
-
+    def _cooldown_seconds(provider: Any) -> float:
         value = getattr(provider, "cooldown_remaining", 0.0)
         try:
             remaining = value() if callable(value) else value
-            return float(remaining or 0.0) > 0.0
+            return max(0.0, float(remaining or 0.0))
         except (TypeError, ValueError):
-            return False
+            return 0.0
+
+    @classmethod
+    def _provider_cooling_down(cls, provider: Any) -> bool:
+        """Avoid issuing more calls while a provider circuit breaker is open."""
+
+        return cls._cooldown_seconds(provider) > 0.0
 
     def _llm_not_before(self, agent_id: str) -> int:
         return self._llm_retry_until.get(agent_id, 0)
