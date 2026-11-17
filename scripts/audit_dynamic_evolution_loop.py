@@ -181,6 +181,49 @@ def _complete_behavior(platform: Platform, behavior_id: str, provider: Any, roun
     return {"decision": _summary(decision), "status": "completed", "behavior": behavior_id, "remaining_minutes": started.get("remaining_minutes"), "last_outcome": platform.store.repositories.entities.get_agent("mira").get("initial_state", {}).get("last_outcome")}
 
 
+STALL_WINDOW = 3
+
+
+def _made_progress(row: dict[str, Any]) -> bool:
+    """Whether a round added an object, Action, BT, or accepted Story beat."""
+
+    if row.get("new_objects") or row.get("registered_actions") or row.get("registered_behaviors"):
+        return True
+    return any(isinstance(story, dict) and story.get("status") == "accepted" for story in row.get("story") or [])
+
+
+def _stalled_tail(rows: list[dict[str, Any]], window: int = STALL_WINDOW) -> bool:
+    return len(rows) >= window and not any(_made_progress(row) for row in rows[-window:])
+
+
+def _quality_flags(
+    rows: list[dict[str, Any]],
+    *,
+    requested_rounds: int,
+    turn_failures: list[str],
+    pending_structural_tasks: list[dict[str, Any]],
+) -> list[str]:
+    """Return the reasons a finished run is not a pass.
+
+    A model-backed evolution probe is a quality gate, not a transport smoke
+    test.  The last ``STALL_WINDOW`` rounds must add an object, Action, BT, or
+    accepted Story beat whatever the NPC chose: a waiting round carries no
+    ``choice`` argument, and alternating between two inspections is as
+    absorbing as repeating one.  The judgement is deferred while Story or God
+    work is still queued, because the window may have ended before the next
+    consumer turn ran, and skipped after a failed turn, which is reported on
+    its own.
+    """
+
+    flags: list[str] = []
+    if not turn_failures and not pending_structural_tasks and _stalled_tail(rows):
+        flags.append("absorbing_state:three_rounds_without_structural_or_story_progress")
+    if len(rows) != requested_rounds:
+        flags.append(f"incomplete_rounds:{len(rows)}/{requested_rounds}")
+    flags.extend(dict.fromkeys(turn_failures))
+    return flags
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--provider", default="remote")
@@ -266,36 +309,14 @@ def main() -> int:
             # Ready God work is selected from the configured wake graph on the
             # next iteration; the harness never assumes which event family is
             # responsible for the continuation.
-        # A model-backed evolution probe is a quality gate, not a transport
-        # smoke test. If the last three rounds repeat the same NPC behavior
-        # without a new object, Action, BT, or Story beat, the world has
-        # reached an unexplained absorbing state and the probe must fail.
-        quality_flags: list[str] = []
         pending_structural_tasks = _pending_structural_tasks(platform)
-        if len(rows) >= 3 and not turn_failures:
-            tail = rows[-3:]
-            structural_changes = sum(
-                len(row.get("new_objects") or [])
-                + len(row.get("registered_actions") or [])
-                + len(row.get("registered_behaviors") or [])
-                for row in tail
-            )
-            choices = [
-                str((((row.get("npc") or {}).get("decision") or {}).get("calls") or [{}])[0].get("arguments", {}).get("choice", ""))
-                for row in tail
-            ]
-            accepted_story = sum(
-                1
-                for row in tail
-                for story in (row.get("story") or [])
-                if isinstance(story, dict) and story.get("status") == "accepted"
-            )
-            if structural_changes == 0 and accepted_story == 0 and len(set(choices)) <= 1 and not pending_structural_tasks:
-                quality_flags.append("absorbing_state:three_rounds_without_structural_or_story_progress")
         requested_rounds = max(1, int(args.rounds))
-        if len(rows) != requested_rounds:
-            quality_flags.append(f"incomplete_rounds:{len(rows)}/{requested_rounds}")
-        quality_flags.extend(dict.fromkeys(turn_failures))
+        quality_flags = _quality_flags(
+            rows,
+            requested_rounds=requested_rounds,
+            turn_failures=turn_failures,
+            pending_structural_tasks=pending_structural_tasks,
+        )
         summary = {
             "status": "passed" if not quality_flags else "failed",
             "flags": quality_flags,
