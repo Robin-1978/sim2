@@ -9,6 +9,7 @@ from typing import Any, Callable
 from ..agents.engine import AgentEngine, AgentTurn
 from ..intents.models import BehaviorIntent
 from ..platform.runtime import Platform
+from ..world.lifecycle import BUSY_STATUSES, is_inactive
 from ..world.time import minutes_until_next_day_phase
 
 
@@ -374,7 +375,8 @@ class SimulationRunner:
                 return
             agent_id = agent["id"]
             state = agent.get("initial_state", {}) or {}
-            if state.get("status") in {"executing", "paused"} or minute < max(self._decision_not_before.get(agent_id, 0), self._llm_not_before(agent_id), self._interaction_not_before.get(agent_id, 0)):
+            # An unconscious or dead character cannot act, so it is not asked for a turn.
+            if state.get("status") in BUSY_STATUSES or is_inactive(state) or minute < max(self._decision_not_before.get(agent_id, 0), self._llm_not_before(agent_id), self._interaction_not_before.get(agent_id, 0)):
                 continue
             outcomes = self.platform.store.repositories.events.recent_outcomes_for_actor(agent_id, limit=1)
             if outcomes and outcomes[0].get("event_type") == "behavior.failed":
@@ -422,7 +424,7 @@ class SimulationRunner:
         """
         agent_id = str(agent.get("id") or "")
         state = agent.get("initial_state", {}) or {}
-        if not agent_id or state.get("status") in {"executing", "paused"}:
+        if not agent_id or state.get("status") in BUSY_STATUSES or is_inactive(state):
             return True
         if minute < int(self._decision_not_before.get(agent_id, 0) or 0):
             return True

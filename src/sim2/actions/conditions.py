@@ -12,6 +12,7 @@ from ..dsl.expressions import (
     UnaryExpression,
     parse_expression,
 )
+from ..world.lifecycle import INACTIVE_STATUSES, INCAPACITATED_CONDITION, is_inactive
 
 
 _UNKNOWN = object()
@@ -208,10 +209,10 @@ class ConditionEngine:
         if path == "actor.alive":
             if self.vital_attribute:
                 return float(state.get(self.vital_attribute, 0) or 0) > 0
-            return str(state.get("status", "alive")).casefold() not in {"dead", "unconscious", "incapacitated"}
+            return str(state.get("status", "alive")).casefold() not in INACTIVE_STATUSES | {INCAPACITATED_CONDITION}
         if path == "actor.incapacitated":
             vital_zero = self.vital_attribute and float(state.get(self.vital_attribute, 0) or 0) <= 0
-            return bool(vital_zero or "incapacitated" in state.get("conditions", []) or str(state.get("status", "")).casefold() in {"dead", "unconscious"})
+            return bool(vital_zero or INCAPACITATED_CONDITION in state.get("conditions", []) or is_inactive(state))
         if path == "actor.role":
             return agent.get("role")
         if path.startswith("actor.need."):

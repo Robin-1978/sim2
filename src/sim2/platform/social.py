@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from ..actions.institutions import describe_institution_terms, entity_quantity
 from ..evolution.memory import remember_role
+from ..world.lifecycle import is_inactive
 
 _ALLOCATION_FIELDS = frozenset({"minimum_per_subject", "contribution_share", "category"})
 _LEDGER_FIELDS = frozenset({"period", "selectors"})
@@ -597,7 +598,7 @@ class SocialRuntimeMixin:
         """Check interaction eligibility without interrupting an active BT."""
 
         state = agent.get("initial_state", {}) or {}
-        if state.get("status", "idle") in {"unconscious", "dead"}:
+        if is_inactive(state):
             return False
         if state.get("status") != "executing":
             return True

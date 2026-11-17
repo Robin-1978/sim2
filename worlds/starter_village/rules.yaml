@@ -1,6 +1,12 @@
 vital_attribute: health
 capacity_attribute: energy
 research_default_required: 2
+# A character whose health reaches 0 is unconscious; without this section the
+# state would never end and a village of incapacitated people stops evolving.
+incapacitation:
+  recovery:
+    after_minutes: 720
+    vital_fraction: 0.25
 perception:
   visible_fields: [role, type, summary, description, public]
   visible_state_fields: [status, quantity, durability, created, readable, recovered, installed]

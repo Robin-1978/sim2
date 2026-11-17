@@ -1138,6 +1138,23 @@ class ActivityRuntimeMixin:
                     # hard-code any institution or quota semantics.
                     self._context.services["events"].wake(ledger_event_id, "institution.ledger_entry", actor_id, minute, wake="configured")
 
+    def abort_active_behavior(self, agent: dict[str, Any], reason: str, minute: int) -> bool:
+        """Fail the behavior the character is executing, if any.
+
+        Used when the character can no longer act (for example on
+        incapacitation): the in-flight reservations are released and the
+        outcome is recorded as a failure instead of leaving a behavior that
+        no tick will ever progress.  Returns whether a behavior was active.
+        """
+
+        state = agent.get("initial_state") or {}
+        execution_id = state.get("active_bt_instance")
+        behavior_id = state.get("active_behavior_id")
+        if not execution_id or not behavior_id:
+            return False
+        self._finish_behavior(agent, str(execution_id), str(behavior_id), "failed", reason, minute)
+        return True
+
     def _finish_behavior(self, agent: dict[str, Any], execution_id: str, behavior_id: str, status: str, result: str, minute: int) -> None:
         state = dict(agent.get("initial_state") or {})
         bt_row = self.store.connection.execute("SELECT data_json FROM bt_instance WHERE execution_id=?", (execution_id,)).fetchone()

@@ -1,3 +1,11 @@
+# Without a cadence or a stagnation window this world could only evolve while
+# Mira keeps producing wake events; both keep God reachable once research ends.
+cadence:
+  reflection: 1d
+  god: 3d
+stagnation:
+  window: 1d
+  max_interval: 7d
 wakes:
 - id: research_synthesis
   'on':
@@ -53,3 +61,14 @@ wakes:
   for: story
 - 'on': entity.created
   for: story
+- id: god_on_stagnation
+  'on': world.stagnation
+  for: god
+  tools:
+  - query_history
+  - query_knowledge_gaps
+  - propose_entity
+  - propose_definition
+  - wait
+  purpose: Mira gained no new executable option for a full window, so the relay may be repeating a closed loop.
+  result: Create one genuinely new research source or executable continuation that is reachable from her current state, or wait only when the diagnostics show none is justified.

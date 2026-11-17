@@ -11,6 +11,7 @@ import yaml
 from ..actions.conditions import ConditionEngine
 from ..evolution.config import normalize_evolution_config
 from ..persistence.store import WorldStore, config_hash
+from ..world.lifecycle import validate_incapacitation_rule
 from ..world.player_template import PlayerTemplateError, parse_player_template
 from ..world.schema import AttributeSchema
 
@@ -253,6 +254,22 @@ def world_template_schema() -> dict[str, Any]:
                     "required": ["id", "scope", "every_minutes", "effect"],
                     "additionalProperties": True,
                 },
+            },
+            "incapacitation": {
+                "type": "object",
+                "description": "Optional way out of unconsciousness; without it a character whose vital attribute reaches its minimum stays unconscious.",
+                "properties": {
+                    "recovery": {
+                        "type": "object",
+                        "properties": {
+                            "after_minutes": {"type": "integer", "minimum": 1},
+                            "vital_fraction": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+                        },
+                        "required": ["after_minutes", "vital_fraction"],
+                        "additionalProperties": False,
+                    },
+                },
+                "additionalProperties": False,
             },
             "fallback_behavior_ids": {"type": "array", "items": {"type": "string"}},
             "route_minutes_per_hop": {"type": "number", "exclusiveMinimum": 0},
@@ -785,6 +802,7 @@ def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
         errors.append("rules.vital_attribute must name a declared state attribute")
     if capacity not in state_ids:
         errors.append("rules.capacity_attribute must name a declared state attribute")
+    errors.extend(validate_incapacitation_rule(rules))
     raw_need_rules = rules.get("needs")
     if not isinstance(raw_need_rules, list):
         errors.append("rules.needs must be a list of objects with id, target, minimum, gamma, critical_threshold and critical_gain")
@@ -1203,6 +1221,7 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
             errors.append(f"relationship references unknown target {relation.get('to')}")
 
     rules = load_yaml(config_dir, "rules.yaml", {}) or {}
+    errors.extend(validate_incapacitation_rule(rules))
     try:
         evolution = normalize_evolution_config(load_yaml(config_dir, "evolution.yaml", {}) or {})
     except (TypeError, ValueError) as exc:

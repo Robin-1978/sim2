@@ -1,6 +1,10 @@
 vital_attribute: integrity
 capacity_attribute: vigor
 research_default_required: 2
+incapacitation:
+  recovery:
+    after_minutes: 720
+    vital_fraction: 0.25
 perception:
   visible_fields:
   - role

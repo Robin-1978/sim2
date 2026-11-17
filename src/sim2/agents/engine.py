@@ -8,6 +8,7 @@ from ..agent_view.validator import validate_agent_view
 from ..intents.models import BehaviorIntent
 from ..platform.runtime import Platform
 from ..prompting.renderer import render_context
+from ..world.lifecycle import BUSY_STATUSES, is_inactive
 from .runtime_policy import (
     ROLE_INTENTS, ROLE_NAMES, configured_evolution_group, configured_evolution_trigger,
     configured_role_tools, role_policy,
@@ -108,8 +109,11 @@ class AgentEngine:
                 state = self.platform.store.repositories.entities.get_agent(actor_id).get("initial_state", {})
             except KeyError:
                 state = {}
-            if state.get("status") in {"executing", "paused"}:
+            if state.get("status") in BUSY_STATUSES:
                 result = {"status": "skipped", "reason": "active_behavior", "message": "Platform is already executing a behavior; wait for completion or an interrupt."}
+                return AgentTurn(role, task_type, {}, result, 0, [{"step": "skipped", "result": result}], {}, [])
+            if is_inactive(state):
+                result = {"status": "skipped", "reason": "incapacitated", "message": "The character is unconscious or dead and cannot act."}
                 return AgentTurn(role, task_type, {}, result, 0, [{"step": "skipped", "result": result}], {}, [])
         context = self.view.build_decision_view(actor_id, role=role, source_event_id=source_event_id)
         context["role"] = role

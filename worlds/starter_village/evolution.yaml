@@ -24,6 +24,23 @@ limits:
   agent_innovation_calls_per_week: 1
   god_local_candidates_per_week: 3
   god_structural_candidates_per_month: 1
+# Safety net for a closed loop: when no character gains a new executable option
+# for a whole window and none of these durable-progress events were recorded,
+# Platform publishes world.stagnation and God is asked to evolve the world.
+stagnation:
+  window: 1d
+  max_interval: 7d
+  progress_event_types:
+  - research.progressed
+  - research.completed
+  - exploration.completed
+  - capability.updated
+  - institution.revised
+  - civilization.milestone
+  - world.change.world_property
+  - world.change.rule
+  - world.change.relationship
+  - world.change.faction
 wakes:
 - "on": civilization.milestone
   for: god
@@ -52,3 +69,9 @@ wakes:
   result: Submit one grounded rule, relationship, faction or progress change, or wait when no durable change is justified.
 - "on": 'rule:*'
   for: god
+- id: god_on_stagnation
+  "on": world.stagnation
+  for: god
+  tools: [query_history, query_knowledge_gaps, propose_entity, propose_definition, wait]
+  purpose: No character has gained a new executable option for a full window, so the village may be repeating a closed loop.
+  result: Propose one grounded, reachable structure or definition that opens a distinct next step, or wait only when the diagnostics show none is justified.

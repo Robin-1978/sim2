@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..world.lifecycle import is_inactive
+
 STAGNATION_STATE_KEY = "stagnation_state"
 EVENT_CHARACTER_LIMIT = 12
 # The event lists at most EVENT_CHARACTER_LIMIT characters, so evaluating that
@@ -27,7 +29,6 @@ DEFAULT_COHORT_SIZE = EVENT_CHARACTER_LIMIT
 EVENT_OPTION_LIMIT = 8
 EVENT_BLOCKED_LIMIT = 4
 SUMMARY_LIMIT = 1100
-INACTIVE_STATUSES = {"dead", "unconscious"}
 DEFAULT_PROGRESS_EVENTS = (
     "research.progressed",
     "research.completed",
@@ -108,7 +109,7 @@ class StagnationRuntimeMixin:
         active = sorted(
             (
                 agent for agent in roster
-                if str((agent.get("initial_state") or {}).get("status", "idle")) not in INACTIVE_STATUSES
+                if not is_inactive(agent.get("initial_state"))
             ),
             key=lambda agent: str(agent["id"]),
         )

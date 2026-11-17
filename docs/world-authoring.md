@@ -484,6 +484,30 @@ them. A science-fiction world can use `integrity` and `charge`; a biological
 world can use different terms. Platform does not inject `health`, `energy`,
 `satiety`, food or village concepts.
 
+A character whose vital attribute reaches its minimum becomes `unconscious`
+and Platform publishes `agent.incapacitated`. The behavior it was executing
+fails with the result `incapacitated` (its reservations are released), it is
+not asked for decision turns, and it is left out of the stagnation evaluation.
+Without further configuration the state never ends, so a world whose
+characters are all unconscious stops evolving. `rules.incapacitation.recovery`
+ends it:
+
+```yaml
+incapacitation:
+  recovery:
+    after_minutes: 720     # how long a character stays unconscious
+    vital_fraction: 0.25   # share of the vital attribute's range regained on waking
+```
+
+Platform then sets the status back to `idle`, removes the `incapacitated`
+condition, raises the vital attribute to that share of its range (never below
+its current value) and publishes `agent.recovered`. Validation rejects unknown
+fields, a non-positive `after_minutes`, a `vital_fraction` outside (0, 1] and a
+recovery rule without `rules.vital_attribute`. A character that is incapacitated
+again simply restarts the clock. Every shipped world declares a recovery rule;
+a world that wants permanent incapacitation omits the section, and `dead` is a
+status only a world rule or Action can set.
+
 Rules may expose package-owned constants through `context_values` and generic
 inventory selection through `item_groups` plus `context_resolvers`. For
 example, Starter Village defines its eating threshold as a context value and

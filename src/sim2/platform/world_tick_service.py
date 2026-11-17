@@ -9,6 +9,14 @@ from ..behavior.estimator import BehaviorDurationEstimator
 from ..behavior.recovery import failure_block_recovered
 from ..intents.models import BehaviorIntent
 from ..world.context import configured_context_values
+from ..world.lifecycle import (
+    BUSY_STATUSES,
+    INACTIVE_STATUSES,
+    INCAPACITATED_CONDITION,
+    INCAPACITATED_SINCE_KEY,
+    UNCONSCIOUS,
+    recovery_rule,
+)
 from ..world.navigation import (
     configured_location_tags,
     nearest_location_with_tag,
@@ -73,7 +81,7 @@ class WorldTickService(PlatformService):
                     before_state = dict(state)
                     before_needs = dict(agent.get("needs") or {})
                     condition = str(effect.get("condition") or "").strip()
-                    if condition == "action.none" and state.get("status") in {"executing", "paused"}:
+                    if condition == "action.none" and state.get("status") in BUSY_STATUSES:
                         continue
                     if condition and condition != "action.none" and not self.conditions.evaluate(
                         condition,
@@ -102,11 +110,17 @@ class WorldTickService(PlatformService):
                         ) or minute_event_state_changed
                     state = dict(agent.get("initial_state") or {})
                     vital_value = float(state.get(vital, 1) or 0) if vital else 1
-                    if vital and vital_value <= vital_minimum and state.get("status") not in {"unconscious", "dead"}:
-                        state["status"] = "unconscious"
+                    if vital and vital_value <= vital_minimum and state.get("status") not in INACTIVE_STATUSES:
+                        # An unconscious character is never progressed again, so the
+                        # behavior in flight fails now (its Actions declare
+                        # ``actor.incapacitated`` as a failure condition).
+                        self._context.services["activity"].abort_active_behavior(agent, "incapacitated", minute)
+                        state = dict(agent.get("initial_state") or {})
+                        state["status"] = UNCONSCIOUS
+                        state[INCAPACITATED_SINCE_KEY] = minute
                         conditions = list(state.get("conditions") or [])
-                        if "incapacitated" not in conditions:
-                            conditions.append("incapacitated")
+                        if INCAPACITATED_CONDITION not in conditions:
+                            conditions.append(INCAPACITATED_CONDITION)
                         state["conditions"] = conditions
                         agent["initial_state"] = state
                         self._context.services["events"].append("agent.incapacitated", agent["id"], minute, {"reason": effect.get("id", "minute_effect")})
@@ -140,6 +154,50 @@ class WorldTickService(PlatformService):
             # growing map after every agent/effect made a 1,000-agent tick
             # encode and decode the same JSON thousands of times.
             self.store.repositories.metadata.set("minute_effect_event_state", minute_event_state)
+
+    def _recover_incapacitated(self, minute: int, agents: list[dict[str, Any]]) -> None:
+        """Wake unconscious characters once the configured recovery period has elapsed.
+
+        Without ``rules.incapacitation.recovery`` the state stays absorbing.  A
+        character that became unconscious through a path which did not stamp
+        the minute starts its recovery clock when first seen here.
+        """
+
+        rule = recovery_rule(self.store.repositories.metadata.get("rules", {}) or {})
+        vital = self.attribute_schema.vital_attribute()
+        if rule is None or not vital:
+            return
+        minimum = self.attribute_schema.minimum(vital)
+        maximum = self.attribute_schema.maximum(vital)
+        changed: list[dict[str, Any]] = []
+        for agent in agents:
+            if (agent.get("initial_state") or {}).get("status") != UNCONSCIOUS:
+                continue
+            state = dict(agent["initial_state"])
+            since = state.get(INCAPACITATED_SINCE_KEY)
+            if isinstance(since, bool) or not isinstance(since, (int, float)):
+                state[INCAPACITATED_SINCE_KEY] = minute
+                agent["initial_state"] = state
+                changed.append(agent)
+                continue
+            elapsed = minute - int(since)
+            if elapsed < rule.after_minutes:
+                continue
+            self._context.services["activity"].abort_active_behavior(agent, "incapacitated", minute)
+            state = dict(agent.get("initial_state") or {})
+            restored = rule.restored_vital(minimum, maximum, float(state.get(vital) or minimum))
+            state[vital] = restored
+            state["status"] = "idle"
+            state["conditions"] = [item for item in (state.get("conditions") or []) if item != INCAPACITATED_CONDITION]
+            state.pop(INCAPACITATED_SINCE_KEY, None)
+            agent["initial_state"] = state
+            changed.append(agent)
+            self._context.services["events"].append(
+                "agent.recovered", agent["id"], minute,
+                {"after_minutes": elapsed, "attribute": vital, "value": restored},
+            )
+        if changed:
+            self.store.repositories.entities.update_agents_bulk(changed)
 
     def _emit_resource_safety_signals(self, minute: int) -> None:
         """Publish configured stock-safety signals at a crossing or repeat interval.
@@ -345,6 +403,7 @@ class WorldTickService(PlatformService):
             minute = start + 1
             agents = self.store.repositories.entities.list_agents()
             agent_ids = {str(agent["id"]) for agent in agents}
+            self._recover_incapacitated(minute, agents)
             self._apply_minute_effects(minute, agents=agents)
             for agent in agents:
                 before = agent.get("initial_state", {}).get("active_bt_instance")
