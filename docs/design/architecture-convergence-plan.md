@@ -135,6 +135,48 @@ wrong. Adding another adapter or another special case would make the debt
 permanent. The target is a smaller set of owners with one causal path, not a
 larger framework.
 
+### Function-size pass (2026-11-17)
+
+Five functions of 440–740 lines each mixed independent concerns. They were
+split behind their existing public entry points without changing behavior:
+
+| Entry point | Before (HEAD) | Now |
+|---|---:|---|
+| `validate_world_template` | 491 lines in `bootstrap/service.py` | `bootstrap/template_validation.py`: `_TemplateChecks.run()` calls one check per template section; the longest check is 51 lines |
+| `AgentIntentGateway.submit` | 516 lines | 29 lines; intent-type resolution is a chain of small steps and every intent type has a registered handler |
+| `submit_story_beat` | 444 lines | 31 lines; ten gates that return a rejection or `None`, then `_commit_beat` |
+| `AgentViewCompiler.build_decision_view` | 603 lines | 106 lines; `_decision_frame`, `_compile_behavior` (`_behavior_gates`, `_simulate_behavior`, `_target_guidance`, `_behavior_entry`) and one method per remaining view section; the longest new method is 87 lines |
+| `render_context` | 735 lines | 35-line orchestrator over 24 section functions plus `_strip_world_scaffolding` and `_fit_to_limit`; the longest section is 58 lines |
+
+Equivalence was checked before each old copy was deleted. The pre-change
+function was kept as a temporary module and compared with the new one on
+randomized and directed inputs, including inputs that raise: 27k template
+variants, 180k intent responses, about 1,000 story-beat submissions and, on
+the five shipped worlds, 3,780 decision views and 93k rendered prompts showed
+no difference in results or exceptions. The temporary modules are deleted.
+The permanent guards are focused tests beside each protocol:
+`tests/test_story_beat_gates.py`, `tests/test_decision_view_gates.py` (every
+reason a behavior is not offered) and `tests/test_prompt_render_sections.py`
+(section order per role and the compaction contract). The last two also
+pass on the pre-change implementation, so they describe existing behavior.
+
+Verification after the pass: `python -m pytest -q` **566 passed**;
+`python -m compileall -q src scripts` passed; the 1,000-agent benchmark
+completed five runs with p95 tick time **180.551 ms** and no failed agents;
+the deterministic week reached minute `10080` with 1,393 decisions, zero LLM
+errors, zero rejected turns and no degeneration flag. With the configured
+remote provider, two character decision sessions on `starter_village` ended
+`accepted` with grade `comparative_grounded_choice`, and one God session ended
+`wait` with grade `grounded`. The configured `local` provider refused the
+connection (no local model server was running), so the local decision check
+is not evidence either way.
+
+Still above 200 lines and not part of this pass: `submit_definition_proposal`
+(350), `AgentEngine.run` (317), `_validate_definition_proposal` (296),
+`submit_behavior` (295), `api/cli.py:main` (291), `submit_world_change` (257),
+`submit_entity_proposal` (230), `evaluate_turn` (228), `do_POST` (207) and
+`_build_story_view` (203). `world_template_schema` (332) is a schema literal.
+
 ### Execution order for the remaining work
 
 The following is the concrete plan for this development cycle. Each stage

@@ -199,16 +199,9 @@ def _compact_world_prompt(rendered: str, max_chars: int) -> str | None:
     return head[:budget].rsplit("\n", 1)[0] + marker + preserved + tail
 
 
-def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000) -> str:
-    """Render a stable XML-like prefix followed by dynamic Agent state.
+def _protocol_lines(context: dict[str, Any]) -> list[str]:
+    """Stable protocol, platform rules, and tool names; they precede the dynamic state so a provider can reuse the prefix."""
 
-    The system policy and native tool schemas are stable.  This user message
-    puts static protocol/tool explanations first, dynamic world state next,
-    the current decision at the end, and appends ReAct history last.
-    """
-
-    role = context.get("role", "agent_decision")
-    self_state = context.get("self", {})
     lines = ["<protocol>"]
     lines.extend(f"    - {item}" for item in (context.get("prompt_protocol") or []))
     lines.extend(["</protocol>"])
@@ -222,10 +215,13 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             if isinstance(tool, dict) and tool.get("name"):
                 lines.append(f"  - {tool['name']}")
         lines.append("</allowed_intents_and_tools>")
+    return lines
 
-    # Keep all stable protocol, rule, and tool-name text before the dynamic
-    # snapshot. Providers can then reuse the prefix across world minutes and
-    # only reprocess the changing state suffix.
+
+def _world_state_lines(context: dict[str, Any]) -> list[str]:
+    """Current world time."""
+
+    lines: list[str] = []
     world_time = context.get("world_time") or {}
     lines.extend([
         "",
@@ -234,7 +230,13 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         f"  minute: {world_time.get('minute', 'unknown')}",
         "</world_state>",
     ])
+    return lines
 
+
+def _interaction_lines(context: dict[str, Any]) -> list[str]:
+    """The incoming interaction and the evidence that woke this turn."""
+
+    lines: list[str] = []
     interaction = context.get("interaction") or {}
     if interaction:
         lines.extend([
@@ -255,60 +257,78 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 f"actor={_line(item.get('actor'))}; {_line(item.get('summary'))}"
             )
         lines.append("</triggering_evidence>")
+    return lines
 
-    if role in {"story", "god"}:
-        lines.append("<world_history>")
-        lines.append("  Recent validated history is causal context. Continue from it; do not restate a completed step or recreate an existing entity.")
-        history = context.get("recent_history") or []
-        for item in history[:20]:
-            lines.append(
-                f"  - minute {item.get('world_minute', 'unknown')}; {item.get('event_type', 'event')}; "
-                f"actor={_line(item.get('actor'))}; {_plain(item.get('details') or {})}"
-            )
-        if not history:
-            lines.append("  - no other recent validated history" if triggering_evidence else "  - no recent validated history")
-        lines.append("  Use query_history for an older or narrower causal slice before proposing a continuation.")
-        lines.append("</world_history>")
 
-        threads = context.get("active_story_threads") or []
-        lines.append("<active_story_threads>")
-        lines.append("  These are active audience-facing continuations already grounded in validated events. Use them as world evidence; do not treat a narrative summary as a new state change.")
-        for thread in threads[:6]:
-            audience = ", ".join(str(item) for item in (thread.get("audience") or [])) or "unspecified audience"
-            source = f"; source={_line(thread.get('research_source'))}" if thread.get("research_source") else ""
-            goal = f"; next={_line(thread.get('goal_hint'))}" if thread.get("goal_hint") else ""
-            lines.append(f"  - audience={audience}; {_line(thread.get('summary'))}{source}{goal}")
-        if not threads:
-            lines.append("  - none active")
-        lines.append("</active_story_threads>")
+def _recent_history_lines(context: dict[str, Any]) -> list[str]:
+    """Recent validated history for the world-level roles."""
 
-        gaps = context.get("knowledge_gaps") or []
-        lines.append("<knowledge_gaps>")
-        lines.append("  These are current research questions, not historical events. Continue an active question; do not create a duplicate of a resolved or already open question.")
-        for gap in gaps[:12]:
-            detail = f"; source={_line(gap.get('source'))}" if gap.get("source") else ""
-            stages = f"; stages={_line(gap.get('stages'))}" if gap.get("stages") else ""
-            finding = f"; last_finding={_line(gap.get('last_finding'))}" if gap.get("last_finding") else ""
-            lines.append(f"  - {_line(gap.get('question'))}; status={_line(gap.get('status'))}{detail}{stages}{finding}")
-        if not gaps:
-            lines.append("  - no active knowledge gap is recorded")
-        lines.append("  Use query_knowledge_gaps for the bounded current projection; use query_history for the event evidence behind it.")
-        lines.append("</knowledge_gaps>")
+    triggering_evidence = context.get("triggering_evidence") or []
+    lines: list[str] = []
+    lines.append("<world_history>")
+    lines.append("  Recent validated history is causal context. Continue from it; do not restate a completed step or recreate an existing entity.")
+    history = context.get("recent_history") or []
+    for item in history[:20]:
+        lines.append(
+            f"  - minute {item.get('world_minute', 'unknown')}; {item.get('event_type', 'event')}; "
+            f"actor={_line(item.get('actor'))}; {_plain(item.get('details') or {})}"
+        )
+    if not history:
+        lines.append("  - no other recent validated history" if triggering_evidence else "  - no recent validated history")
+    lines.append("  Use query_history for an older or narrower causal slice before proposing a continuation.")
+    lines.append("</world_history>")
+    return lines
 
-        sources = context.get("research_sources") or []
-        lines.append("<research_sources>")
-        lines.append("  This is the current status of every configured research source. A resolved source has no pending stage; an old historical sentence does not reopen it.")
-        for source in sources[:16]:
-            question = f"; next={_line(source.get('next_question'))}" if source.get("next_question") else ""
-            finding = f"; last={_line(source.get('last_finding'))}" if source.get("last_finding") else ""
-            lines.append(
-                f"  - {_line(source.get('name'))}; status={_line(source.get('status'))}; "
-                f"stages={_line(source.get('stages'))}; remaining={_line(source.get('remaining_stages'))}{question}{finding}"
-            )
-        if not sources:
-            lines.append("  - no configured research source")
-        lines.append("</research_sources>")
 
+def _open_question_lines(context: dict[str, Any]) -> list[str]:
+    """Active story threads, knowledge gaps and research sources for the world-level roles."""
+
+    lines: list[str] = []
+    threads = context.get("active_story_threads") or []
+    lines.append("<active_story_threads>")
+    lines.append("  These are active audience-facing continuations already grounded in validated events. Use them as world evidence; do not treat a narrative summary as a new state change.")
+    for thread in threads[:6]:
+        audience = ", ".join(str(item) for item in (thread.get("audience") or [])) or "unspecified audience"
+        source = f"; source={_line(thread.get('research_source'))}" if thread.get("research_source") else ""
+        goal = f"; next={_line(thread.get('goal_hint'))}" if thread.get("goal_hint") else ""
+        lines.append(f"  - audience={audience}; {_line(thread.get('summary'))}{source}{goal}")
+    if not threads:
+        lines.append("  - none active")
+    lines.append("</active_story_threads>")
+
+    gaps = context.get("knowledge_gaps") or []
+    lines.append("<knowledge_gaps>")
+    lines.append("  These are current research questions, not historical events. Continue an active question; do not create a duplicate of a resolved or already open question.")
+    for gap in gaps[:12]:
+        detail = f"; source={_line(gap.get('source'))}" if gap.get("source") else ""
+        stages = f"; stages={_line(gap.get('stages'))}" if gap.get("stages") else ""
+        finding = f"; last_finding={_line(gap.get('last_finding'))}" if gap.get("last_finding") else ""
+        lines.append(f"  - {_line(gap.get('question'))}; status={_line(gap.get('status'))}{detail}{stages}{finding}")
+    if not gaps:
+        lines.append("  - no active knowledge gap is recorded")
+    lines.append("  Use query_knowledge_gaps for the bounded current projection; use query_history for the event evidence behind it.")
+    lines.append("</knowledge_gaps>")
+
+    sources = context.get("research_sources") or []
+    lines.append("<research_sources>")
+    lines.append("  This is the current status of every configured research source. A resolved source has no pending stage; an old historical sentence does not reopen it.")
+    for source in sources[:16]:
+        question = f"; next={_line(source.get('next_question'))}" if source.get("next_question") else ""
+        finding = f"; last={_line(source.get('last_finding'))}" if source.get("last_finding") else ""
+        lines.append(
+            f"  - {_line(source.get('name'))}; status={_line(source.get('status'))}; "
+            f"stages={_line(source.get('stages'))}; remaining={_line(source.get('remaining_stages'))}{question}{finding}"
+        )
+    if not sources:
+        lines.append("  - no configured research source")
+    lines.append("</research_sources>")
+    return lines
+
+
+def _world_rule_lines(context: dict[str, Any]) -> list[str]:
+    """Active world rules."""
+
+    lines: list[str] = []
     world_rules = context.get("active_world_rules") or []
     if world_rules:
         lines.append("<world_rules>")
@@ -321,7 +341,14 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 f"the platform applies {rule.get('effect', 'configured effect')}{applies}{description}"
             )
         lines.append("</world_rules>")
+    return lines
 
+
+def _character_lines(context: dict[str, Any]) -> list[str]:
+    """The character's own state, identity, needs and drives."""
+
+    self_state = context.get("self", {})
+    lines: list[str] = []
     lines.extend([
         "<self>",
         f"  name: {_line(self_state.get('name'))}",
@@ -363,7 +390,13 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append(f"  model: {model.get('family', 'configured hybrid')}; needs are parallel, not a fixed hierarchy")
     lines.append("  Use the highest relevant drive with the goal and executable behavior descriptions to choose one behavior.")
     lines.append("</drives>")
+    return lines
 
+
+def _scene_lines(context: dict[str, Any]) -> list[str]:
+    """The local scene, nearby entities and relationships."""
+
+    lines: list[str] = []
     observation = context.get("observation") or {}
     lines.extend(["  <scene>"])
     lines.extend([f"    - {fact}" for fact in (observation.get("facts") or [])[:8]] or ["    - no new local observation"])
@@ -387,7 +420,13 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         )
     lines.extend(relationship_lines or ["    - none relevant"])
     lines.append("  </relationships>")
+    return lines
 
+
+def _knowledge_lines(context: dict[str, Any], role: str) -> list[str]:
+    """Known facts, memories and staged research tracks."""
+
+    lines: list[str] = []
     lines.extend(["  <knowledge_and_memory>"])
     facts = context.get("known_facts") or []
     lines.extend([f"    fact: {_fact_line(item)}" for item in facts[:8]] or ["    fact: none relevant"])
@@ -417,6 +456,13 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
             location = f" at {track.get('location')}" if track.get('location') else ""
             lines.append(f"    - {track.get('source')}{location}: {stages or 'no stage metadata'}")
         lines.append("  </research_tracks>")
+    return lines
+
+
+def _directive_lines(context: dict[str, Any]) -> list[str]:
+    """Story directives and configured progression stages."""
+
+    lines: list[str] = []
     assignments = context.get("behavior_assignments") or []
     story_goals = context.get("story_goals") or []
     active_beats = context.get("active_story_beats") or []
@@ -451,6 +497,13 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 f"target={targets}; support={support}; missing={missing}{progress_text}"
             )
         lines.append("  </progression>")
+    return lines
+
+
+def _activity_lines(context: dict[str, Any]) -> list[str]:
+    """Recent actions, open trade offers and decision constraints."""
+
+    lines: list[str] = []
     lines.append("<recent_actions>")
     recent_actions = context.get("recent_actions") or []
     recent_lines = []
@@ -474,287 +527,342 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         lines.append("<decision_constraints>")
         lines.extend([f"  - {item}" for item in constraints[:5]])
         lines.append("</decision_constraints>")
+    return lines
 
-    if role == "agent_reflection":
-        lines.append("<capability_updates>")
-        candidates = context.get("capability_update_candidates") or []
-        for item in candidates[:8]:
-            lines.append(f"  - {item.get('capability')}: {item.get('completed_outcomes')}/{item.get('required_outcomes')} completed outcomes; maximum update={_number(item.get('max_delta'))}")
-        if not candidates:
-            lines.append("  - no capability update is currently supported by the configured evidence threshold")
-        lines.append("</capability_updates>")
-        lines.append("<outcome_review>")
-        outcomes = context.get("recent_outcomes") or []
-        if outcomes:
-            for item in outcomes[:3]:
-                outcome = item.get("outcome") or {}
-                expected = outcome.get("expected") or {}
-                delta = outcome.get("delta") or {}
-                lines.append(
-                    f"  - {item.get('behavior_choice') or item.get('behavior_name') or 'behavior'}: {outcome.get('status', item.get('event_type', 'unknown'))}; "
-                    f"result={outcome.get('result', 'unknown')}; expected={expected.get('summary', 'not stated')}; "
-                    f"observed_changes={_plain(delta) if delta else 'none'}"
-                )
-        else:
-            lines.append("  - no completed or interrupted behavior needs review")
-        lines.append("  Keep an experience only when it is new, durable, and useful for a future decision; otherwise return wait. Never treat a topic, report, or promise as a confirmed fact. Set claim_status: observed, confirmed, reported, promised, inferred, disputed, false, or failed. Use disputed or false only when event evidence contradicts the claim. Write one to three concise sentences, under 500 characters.")
-        lines.append("</outcome_review>")
 
-    if role == "story":
-        source = context.get("validated_source") or {}
-        lines.append("<validated_source>")
-        if source:
-            lines.append(f"  event: {source.get('event_type', 'validated event')} at world minute {source.get('world_minute', 'unknown')}")
-            lines.append(f"  actor: {_line(source.get('actor'))}; recorded location: {_line(source.get('location'))}")
-            lines.append(f"  result: {_line(source.get('result'))}")
-            if source.get("fact"):
-                lines.append(f"  fact: {_line(source.get('fact'))}")
-            if source.get("research_source"):
-                lines.append(f"  research source: {_line(source.get('research_source'))}")
-            if source.get("allocation_summary"):
-                lines.append(f"  allocations: {_plain(source.get('allocation_summary'))}")
-            lines.append("  Narrative must not add an unrecorded move, delivery, public reading, or gathering.")
-        else:
-            lines.append("  no validated source event; return wait")
-        lines.append("</validated_source>")
-        lines.append("<story_state>")
-        lines.append("  Choose one configured beat whose evidence is present. If none is listed, propose an emergent beat using only the latest validated event's fact, actor, location, and result; do not add numbers, measurements, causes, or details from an unrelated memory. The beat must carry a concrete next goal or decision and name an exact executable follow-up from the audience when one is shown; do not merely repeat the event summary. Research always uses the existing generic research behavior with a selected source parameter.")
-        candidates = context.get("audience_candidates") or []
-        lines.append("  <audience_candidates>")
-        if candidates:
-            for item in candidates[:12]:
-                lines.append(f"    - exact character name: {item.get('name')}; {item.get('reason', 'recent validated participant')}")
-                choices = item.get("executable_behaviors") or []
-                if choices:
-                    lines.append("      executable follow-ups:")
-                    for choice in choices[:6]:
-                        lines.append(f"        - {choice.get('choice')}: {choice.get('purpose') or 'configured behavior'}")
-                        options = choice.get("parameter_options") or {}
-                        if options.get("source_id"):
-                            lines.append("          research sources: " + "; ".join(str(option.get("name")) for option in options["source_id"][:8]))
-        else:
-            lines.append("    - none available; return wait instead of inventing a character name")
-        lines.append("  </audience_candidates>")
-        progress_candidates = context.get("world_progress_candidates") or []
-        if progress_candidates:
-            lines.append("  Configured public progress (submit only when the validated source matches):")
-            for item in progress_candidates[:8]:
-                evidence = list(item.get("evidence_sources") or []) or (list(item.get("evidence_event_types") or []) + list(item.get("evidence_behaviors") or []))
-                lines.append(f"  - {item.get('progress_key')}: {item.get('description') or 'configured progress'}; accepted evidence={_plain(evidence) or 'any validated outcome'}")
-        beats = context.get("story_beats") or []
-        for beat in beats[:12]:
-            lines.append("  <story_beat>")
-            for label in ("choice", "summary", "when", "requires", "audience", "followup_behaviors", "impact"):
-                value = beat.get(label)
-                if value:
-                    if isinstance(value, list):
-                        value = "; ".join(str(item) for item in value)
-                    lines.append(f"    {label}: {value}")
-            lines.append("  </story_beat>")
-        if not beats:
-            lines.append("  - no configured continuation is currently unlocked; propose a short evidence-grounded emergent beat or wait")
-        lines.append("</story_state>")
+def _reflection_lines(context: dict[str, Any]) -> list[str]:
+    """Capability update candidates and the outcome review for a reflection turn."""
 
-    if role == "god":
-        trigger = context.get("evolution_trigger") or {}
-        if trigger:
-            lines.append("<evolution_trigger>")
-            lines.append(f"  id: {trigger.get('id', 'configured trigger')}")
-            lines.append(f"  condition: {trigger.get('condition', 'configured condition')}")
-            if trigger.get("purpose"):
-                lines.append(f"  purpose: {trigger.get('purpose')}")
-            if trigger.get("required_result"):
-                lines.append(f"  required result: {trigger.get('required_result')}")
-            if trigger.get("required_definition_type"):
-                lines.append(f"  required definition type: {trigger.get('required_definition_type')}")
-            if trigger.get("assign_to"):
-                lines.append(f"  assign the new behavior to: {_plain(trigger.get('assign_to'))}")
-            if trigger.get("evidence_sources"):
-                lines.append(f"  evidence selectors: {_plain(trigger.get('evidence_sources'))}")
-            if trigger.get("minimum_evidence") is not None:
-                lines.append(f"  minimum matching events: {trigger.get('minimum_evidence')}; observed: {trigger.get('observed_evidence', 'unknown')}")
-            if trigger.get("require_story_outcome"):
-                lines.append("  required handoff: an Action followup_behavior must include one outcome_events entry with wake ['story'] so Story receives the real completed result.")
-            # The submission format of a research source is shown to wakes that
-            # review research evidence. Matching the wording of the required
-            # result instead pulled every wake that merely listed a research
-            # source among its options toward proposing one.
-            evidence_types = {
-                str(event_type)
-                for source in (trigger.get("evidence_sources") or []) if isinstance(source, dict)
-                for event_type in (source.get("event_types") or [])
-            }
-            if evidence_types & {"research.completed", "research.progressed"}:
-                lines.append("  Research continuation: propose one reachable source with a new novelty key, question and discovery. When sources are exhausted, shift to a distinct causal dimension (effect, risk, intervention, provenance or application) and key; never rename a duplicate or wait only on word overlap.")
-            lines.append("  Use only the configured trigger tools. A rule signal or narrative acknowledgement is not a substitute for the required result.")
-            lines.append("</evolution_trigger>")
-        lines.append("<world_proposal_contract>")
-        lines.append("  - Create any missing world content the validated situation needs: agent, location, faction, object, empty resource node, institution, relationship, rule, attribute, world property, capability, Action, behavior, recipe, or narrative event.")
-        lines.append("  - For a research source, put research_discoveries, research_required/required, and any research_assignees in the proposed entity data. Reuse the registered generic research behavior; do not create one BT per source.")
-        lines.append("  - Use the smallest supported content type that makes the next character decision possible. Platform still validates names, references, conservation, executable behavior, and consequences.")
-        lines.append("  - rule.behavior_names must use exact BT names from world_behavior_catalog.")
-        lines.append("  - In a behavior_constraint, every listed BT is blocked; list only the blocked BT, never the desired follow-up BT.")
-        lines.append("  - rule.action_names must use exact Action names from world_action_catalog; a BT name is not an Action name.")
-        lines.append("  - A typed signal records or wakes work; prose descriptions never enforce policy. To block behavior, use effect type behavior_constraint or a denial effect.")
-        lines.append("  - Use the exact machine field in rule_condition_fields, including underscores inside world[\"...\"]. A God proposal must not wake God itself; use a character/follow-up behavior or wait.")
-        lines.append("  - A behavior proposal must use definition.nodes: [{type: action, action_id: exact registered Action name, parameters: {...}}], plus entry_conditions, success_results and failure_results. Do not invent steps, trigger, outcomes, action_names or free-form action objects.")
-        lines.append("  - A new Action cannot be submitted alone: include followup_behavior {name, assign_to, definition} in the same propose_definition call. If its duration is recipe_duration or its reserve uses recipe_inputs, include followup_recipe {name, definition} in that same call. The BT must reference the new Action by visible name and be executable for the assigned NPC immediately.")
-        lines.append("  - Recipe Action shape: parameters:{recipe_id:'string'}, duration:{mode:'recipe_duration'}, costs:{reserve:{recipe_inputs:1}}; put recipe_inputs under costs.reserve. Include followup_recipe with positive duration_minutes, inputs and outputs; existing resource names are resolved to registry keys.")
-        lines.append("  - Action success/failure each need {condition?, result}; Travel To uses location_id. Copy parameter names from world_action_catalog. A dynamic parameter such as item_id is not an inventory key; omit the condition or use the literal visible item name.")
-        lines.append("  - A new Action must have a real observable result: declare effects, information or capability/progress effects, or bind a Recipe with outputs. A success label or outcome_events field alone never changes resources or state; do not call a resource refill successful without a configured effect that performs it.")
-        lines.append("  - To move carried material into an existing world resource, use costs.reserve:{item_parameter:<item parameter>, item_quantity_parameter:<quantity parameter>} and effect:{type:'resource_transfer', resource_id:<existing visible resource>, source_item_parameter:<same item parameter>, quantity_parameter:<same quantity parameter>}; omit item_quantity_parameter only for one item with quantity:1. The transfer must equal the reserved amount and cannot mint stock or target a missing resource.")
-        lines.append("  - A resource_transfer reserves the carried item before the success condition is checked. Its success condition must not inspect actor.inventory.<item>; use actor.alive or an observable destination/world result instead.")
-        lines.append("  - Action parameters whose names end in _entity or _id must use exact visible entity names from the world view and parameter names from the Action catalog. A behavior is rejected unless its assigned character can execute the whole sequence now.")
-        visible_names = ", ".join(str(item.get("name")) for item in (context.get("visible_entities") or [])[:48] if item.get("name"))
-        lines.append(f"  - Exact visible entities (use these names): {visible_names or 'none'}.")
-        examples = context.get("condition_examples") or {}
-        if examples:
-            lines.append("  - Machine condition examples: " + "; ".join(f"{label}={example}" for label, example in examples.items()) + ". A bare world property is not a condition; compare it with a number or true/false, or use [] when no durable condition is needed.")
-        lines.append("  - Reusable behavior entry_conditions must use durable actor, capability, inventory, location, relationship or world state. Do not use event.recent.*, which would make the behavior disappear immediately after the current event.")
-        lines.append("  - Research is open-ended: when validated results leave a concrete unanswered question, you may propose one new declarative research source or behavior. Do not invent a result; let a character perform the next research.")
-        lines.append("  - A newer verified research fact may supersede an older one. Preserve the old fact for audit and use the configured lifecycle status instead of silently deleting it.")
-        lines.append("  - If the assigned actor is not already at the required place, include a Travel node before the destination Action; Platform must be able to execute the complete sequence from current state. If no durable condition is needed, use entry_conditions: [] rather than prose.")
-        lines.append("  - After a read-budget warning, use the facts already collected. Do not re-read the same source and exhaust the session.")
-        lines.append("</world_proposal_contract>")
-        progress_candidates = context.get("world_progress_candidates") or []
-        lines.append("<configured_public_progress>")
-        if progress_candidates:
-            for item in progress_candidates[:12]:
-                evidence = list(item.get("evidence_sources") or []) or (list(item.get("evidence_event_types") or []) + list(item.get("evidence_behaviors") or []))
-                lines.append(
-                    f"  - {item.get('progress_key')} target={_number(item.get('required', 1))}: "
-                    f"{item.get('description') or 'configured progress'}; accepted evidence={_plain(evidence) or 'any validated outcome'}"
-                )
-            lines.append("  Submit progress only when the triggering evidence matches the named progress definition; otherwise wait.")
-        else:
-            lines.append("  none configured; do not invent a progress key")
-        lines.append("</configured_public_progress>")
-        lines.append("<rule_condition_fields>")
-        fields = context.get("rule_condition_fields") or []
-        for field in fields[:20]:
-            lines.append(f"  - {field.get('condition')}: {field.get('meaning', 'configured world value')}")
-        if not fields:
-            lines.append("  - none")
-        lines.append("</rule_condition_fields>")
-        lines.append("<world_behavior_catalog>")
-        catalog = context.get("registered_behaviors") or []
-        for behavior in catalog[:24]:
-            success = f"; success={_plain(behavior.get('success'))}" if behavior.get("success") else ""
-            lines.append(f"  - BT: {behavior.get('name', 'behavior')}: {behavior.get('purpose', 'configured behavior')}{success}")
-        if not catalog:
-            lines.append("  - none")
-        lines.append("</world_behavior_catalog>")
-        lines.append("<world_action_catalog>")
-        actions = context.get("registered_actions") or []
-        # God needs the registered action vocabulary and outcome, but not the
-        # full parameter schema for every action during a world review. The
-        # detailed schema remains in character/BT views where it is used to
-        # execute a behavior.
-        action_limit = 16 if role == "god" else 24
-        for action in actions[:action_limit]:
-            parameters = "; ".join(str(item) for item in (action.get("parameters") or []))
-            schema = action.get("parameter_schema") or {}
-            entity_requirements = "; ".join(
-                f"{key} must be a visible {value.get('entity_type')}"
-                for key, value in schema.items()
-                if isinstance(value, dict) and value.get("entity_type")
-            )
-            defaults = _plain(action.get("parameter_defaults") or {})
-            success = _plain(action.get("success") or [])
-            if role == "god":
-                costs = action.get("costs") if isinstance(action.get("costs"), dict) else {}
-                reserve = _plain((costs or {}).get("reserve") or {})
-                duration_value = action.get("duration") if isinstance(action.get("duration"), dict) else {}
-                recipe_like = duration_value.get("mode") == "recipe_duration" or "recipe_inputs" in ((costs or {}).get("reserve") or {})
-                detail = f"parameters={parameters or 'none'}"
-                if recipe_like:
-                    detail += f"; defaults={defaults or 'none'}; duration={_plain(duration_value) or 'not stated'}; reserve={reserve or 'none'}"
-                lines.append(
-                    f"  - Action: {action.get('name', 'action')}: {action.get('purpose', 'configured action')}; "
-                    f"{detail}; result={success or 'not stated'}"
-                )
-            else:
-                lines.append(
-                    f"  - Action: {action.get('name', 'action')}: {action.get('purpose', 'configured action')}; "
-                    f"parameters={parameters or 'none'}; entity requirements={entity_requirements or 'none'}; "
-                    f"defaults={defaults or 'none'}; result={success or 'not stated'}"
-                )
-        if not actions:
-            lines.append("  - none")
-        lines.append("</world_action_catalog>")
-        lines.append("<world_trends>")
-        trends = context.get("world_trends") or {}
-        resource_labels = trends.get("resource_labels") or {}
-
-        def resource_changes(values: Any) -> str:
-            if not isinstance(values, dict) or not values:
-                return "none"
-            return "; ".join(f"{resource_labels.get(str(key), str(key))}={_plain(value)}" for key, value in values.items())
-
-        current_resources = trends.get("current_resources") or []
-        lines.append("  Current resources: " + ("; ".join(f"{item.get('name', 'resource')}={_plain(item.get('current', 'unknown'))}" for item in current_resources[:8]) if current_resources else "none") + ".")
-        configured_regeneration = context.get("configured_resource_regeneration") or []
-        if configured_regeneration:
+    lines: list[str] = []
+    lines.append("<capability_updates>")
+    candidates = context.get("capability_update_candidates") or []
+    for item in candidates[:8]:
+        lines.append(f"  - {item.get('capability')}: {item.get('completed_outcomes')}/{item.get('required_outcomes')} completed outcomes; maximum update={_number(item.get('max_delta'))}")
+    if not candidates:
+        lines.append("  - no capability update is currently supported by the configured evidence threshold")
+    lines.append("</capability_updates>")
+    lines.append("<outcome_review>")
+    outcomes = context.get("recent_outcomes") or []
+    if outcomes:
+        for item in outcomes[:3]:
+            outcome = item.get("outcome") or {}
+            expected = outcome.get("expected") or {}
+            delta = outcome.get("delta") or {}
             lines.append(
-                "  Configured regeneration (future world rule, do not confuse with the current observation window): "
-                + "; ".join(
-                    f"{item.get('resource')} +{_plain(item.get('amount'))} every {item.get('every_minutes')} minutes"
-                    + (f" up to {_plain(item.get('cap'))}" if item.get('cap') is not None else "")
-                    for item in configured_regeneration[:8]
-                )
-                + "."
+                f"  - {item.get('behavior_choice') or item.get('behavior_name') or 'behavior'}: {outcome.get('status', item.get('event_type', 'unknown'))}; "
+                f"result={outcome.get('result', 'unknown')}; expected={expected.get('summary', 'not stated')}; "
+                f"observed_changes={_plain(delta) if delta else 'none'}"
             )
-        else:
-            lines.append("  Configured regeneration: none declared.")
-        for period in ("weekly", "monthly"):
-            item = trends.get(period) or {}
-            goal = item.get("goal_trends") or {}
-            relationship = item.get("relationship_trends") or []
-            lines.append(
-                f"  {period}: resource regeneration={resource_changes(item.get('resources_regenerated') or {})}; "
-                f"resource net change={resource_changes(item.get('resource_deltas') or {})}; "
-                f"relationship change={_plain(relationship) if relationship else 'none'}; "
-                f"goal progress={_plain(goal.get('progress_by_tag') or {})}; "
-                f"completed={goal.get('completed_behaviors', 0)}, failed_or_interrupted={goal.get('failed_or_interrupted_behaviors', 0)}."
-            )
-        progress = context.get("civilization_progress") or []
-        lines.append("  Civilization progress: " + ("; ".join(f"{item.get('progress_key')}={_plain(item.get('current', 0))}/{_plain(item.get('required', 0))}" for item in progress[:8]) if progress else "none") + ".")
-        lines.append("</world_trends>")
-        lines.append("<world_outcomes>")
-        changes = context.get("recent_world_changes") or []
-        if changes:
-            for item in changes[:6]:
-                effect = item.get("effect") or {}
-                expected = item.get("expected_effects") or item.get("effects") or []
-                lines.append(
-                    f"  - {item.get('event_type', 'world.change')}: {item.get('summary', 'proposal applied')}; "
-                    f"expected={_plain(expected) if expected else 'not stated'}; "
-                    f"observed={_plain(effect) if effect else 'event recorded'} at minute {item.get('world_minute', 'unknown')}"
-                )
-        else:
-            lines.append("  - no recent world proposal result")
-        pending = [item for item in (context.get("world_proposals") or []) if item.get("status") == "pending_evaluation"]
-        if pending:
-            lines.append("  Pending proposal evaluations:")
-            for item in pending[:6]:
-                # Proposal/intent IDs are audit-only identifiers.  They add no
-                # meaning to a model decision and make prompt cache/content
-                # checks noisy, so expose the typed change and due time only.
-                expected = item.get("expected") if isinstance(item.get("expected"), dict) else {}
-                state = expected.get("state") if isinstance(expected, dict) else {}
-                label = expected.get("summary") or item.get("change_type") or "world proposal"
-                lines.append(f"  - {label}; due={item.get('evaluation_due_minute')}; expected={_plain(state or expected)}")
-        else:
-            lines.append("  Pending proposal evaluations: none.")
-        outcomes = context.get("recent_agent_outcomes") or []
-        if outcomes:
-            lines.append("  Recent character outcomes:")
-            for item in outcomes[:6]:
-                outcome = item.get("outcome") or {}
-                lines.append(f"  - {item.get('actor_name') or 'a character'}: {item.get('behavior_choice') or item.get('behavior_name') or 'a behavior'} -> {outcome.get('status', item.get('event_type', 'unknown'))}; {outcome.get('result', 'no result')}")
-        lines.append("  Compare expected and observed effects before proposing one next world change.")
-        lines.append("</world_outcomes>")
+    else:
+        lines.append("  - no completed or interrupted behavior needs review")
+    lines.append("  Keep an experience only when it is new, durable, and useful for a future decision; otherwise return wait. Never treat a topic, report, or promise as a confirmed fact. Set claim_status: observed, confirmed, reported, promised, inferred, disputed, false, or failed. Use disputed or false only when event evidence contradicts the claim. Write one to three concise sentences, under 500 characters.")
+    lines.append("</outcome_review>")
+    return lines
 
+
+def _story_lines(context: dict[str, Any]) -> list[str]:
+    """The validated source event and the beats a story turn may choose from."""
+
+    lines: list[str] = []
+    source = context.get("validated_source") or {}
+    lines.append("<validated_source>")
+    if source:
+        lines.append(f"  event: {source.get('event_type', 'validated event')} at world minute {source.get('world_minute', 'unknown')}")
+        lines.append(f"  actor: {_line(source.get('actor'))}; recorded location: {_line(source.get('location'))}")
+        lines.append(f"  result: {_line(source.get('result'))}")
+        if source.get("fact"):
+            lines.append(f"  fact: {_line(source.get('fact'))}")
+        if source.get("research_source"):
+            lines.append(f"  research source: {_line(source.get('research_source'))}")
+        if source.get("allocation_summary"):
+            lines.append(f"  allocations: {_plain(source.get('allocation_summary'))}")
+        lines.append("  Narrative must not add an unrecorded move, delivery, public reading, or gathering.")
+    else:
+        lines.append("  no validated source event; return wait")
+    lines.append("</validated_source>")
+    lines.append("<story_state>")
+    lines.append("  Choose one configured beat whose evidence is present. If none is listed, propose an emergent beat using only the latest validated event's fact, actor, location, and result; do not add numbers, measurements, causes, or details from an unrelated memory. The beat must carry a concrete next goal or decision and name an exact executable follow-up from the audience when one is shown; do not merely repeat the event summary. Research always uses the existing generic research behavior with a selected source parameter.")
+    candidates = context.get("audience_candidates") or []
+    lines.append("  <audience_candidates>")
+    if candidates:
+        for item in candidates[:12]:
+            lines.append(f"    - exact character name: {item.get('name')}; {item.get('reason', 'recent validated participant')}")
+            choices = item.get("executable_behaviors") or []
+            if choices:
+                lines.append("      executable follow-ups:")
+                for choice in choices[:6]:
+                    lines.append(f"        - {choice.get('choice')}: {choice.get('purpose') or 'configured behavior'}")
+                    options = choice.get("parameter_options") or {}
+                    if options.get("source_id"):
+                        lines.append("          research sources: " + "; ".join(str(option.get("name")) for option in options["source_id"][:8]))
+    else:
+        lines.append("    - none available; return wait instead of inventing a character name")
+    lines.append("  </audience_candidates>")
+    progress_candidates = context.get("world_progress_candidates") or []
+    if progress_candidates:
+        lines.append("  Configured public progress (submit only when the validated source matches):")
+        for item in progress_candidates[:8]:
+            evidence = list(item.get("evidence_sources") or []) or (list(item.get("evidence_event_types") or []) + list(item.get("evidence_behaviors") or []))
+            lines.append(f"  - {item.get('progress_key')}: {item.get('description') or 'configured progress'}; accepted evidence={_plain(evidence) or 'any validated outcome'}")
+    beats = context.get("story_beats") or []
+    for beat in beats[:12]:
+        lines.append("  <story_beat>")
+        for label in ("choice", "summary", "when", "requires", "audience", "followup_behaviors", "impact"):
+            value = beat.get(label)
+            if value:
+                if isinstance(value, list):
+                    value = "; ".join(str(item) for item in value)
+                lines.append(f"    {label}: {value}")
+        lines.append("  </story_beat>")
+    if not beats:
+        lines.append("  - no configured continuation is currently unlocked; propose a short evidence-grounded emergent beat or wait")
+    lines.append("</story_state>")
+    return lines
+
+
+def _evolution_trigger_lines(context: dict[str, Any]) -> list[str]:
+    """The configured trigger that woke the world reviewer."""
+
+    lines: list[str] = []
+    trigger = context.get("evolution_trigger") or {}
+    if trigger:
+        lines.append("<evolution_trigger>")
+        lines.append(f"  id: {trigger.get('id', 'configured trigger')}")
+        lines.append(f"  condition: {trigger.get('condition', 'configured condition')}")
+        if trigger.get("purpose"):
+            lines.append(f"  purpose: {trigger.get('purpose')}")
+        if trigger.get("required_result"):
+            lines.append(f"  required result: {trigger.get('required_result')}")
+        if trigger.get("required_definition_type"):
+            lines.append(f"  required definition type: {trigger.get('required_definition_type')}")
+        if trigger.get("assign_to"):
+            lines.append(f"  assign the new behavior to: {_plain(trigger.get('assign_to'))}")
+        if trigger.get("evidence_sources"):
+            lines.append(f"  evidence selectors: {_plain(trigger.get('evidence_sources'))}")
+        if trigger.get("minimum_evidence") is not None:
+            lines.append(f"  minimum matching events: {trigger.get('minimum_evidence')}; observed: {trigger.get('observed_evidence', 'unknown')}")
+        if trigger.get("require_story_outcome"):
+            lines.append("  required handoff: an Action followup_behavior must include one outcome_events entry with wake ['story'] so Story receives the real completed result.")
+        # The submission format of a research source is shown to wakes that
+        # review research evidence. Matching the wording of the required
+        # result instead pulled every wake that merely listed a research
+        # source among its options toward proposing one.
+        evidence_types = {
+            str(event_type)
+            for source in (trigger.get("evidence_sources") or []) if isinstance(source, dict)
+            for event_type in (source.get("event_types") or [])
+        }
+        if evidence_types & {"research.completed", "research.progressed"}:
+            lines.append("  Research continuation: propose one reachable source with a new novelty key, question and discovery. When sources are exhausted, shift to a distinct causal dimension (effect, risk, intervention, provenance or application) and key; never rename a duplicate or wait only on word overlap.")
+        lines.append("  Use only the configured trigger tools. A rule signal or narrative acknowledgement is not a substitute for the required result.")
+        lines.append("</evolution_trigger>")
+    return lines
+
+
+def _proposal_contract_lines(context: dict[str, Any]) -> list[str]:
+    """What a world proposal may contain and how Platform validates it."""
+
+    lines: list[str] = []
+    lines.append("<world_proposal_contract>")
+    lines.append("  - Create any missing world content the validated situation needs: agent, location, faction, object, empty resource node, institution, relationship, rule, attribute, world property, capability, Action, behavior, recipe, or narrative event.")
+    lines.append("  - For a research source, put research_discoveries, research_required/required, and any research_assignees in the proposed entity data. Reuse the registered generic research behavior; do not create one BT per source.")
+    lines.append("  - Use the smallest supported content type that makes the next character decision possible. Platform still validates names, references, conservation, executable behavior, and consequences.")
+    lines.append("  - rule.behavior_names must use exact BT names from world_behavior_catalog.")
+    lines.append("  - In a behavior_constraint, every listed BT is blocked; list only the blocked BT, never the desired follow-up BT.")
+    lines.append("  - rule.action_names must use exact Action names from world_action_catalog; a BT name is not an Action name.")
+    lines.append("  - A typed signal records or wakes work; prose descriptions never enforce policy. To block behavior, use effect type behavior_constraint or a denial effect.")
+    lines.append("  - Use the exact machine field in rule_condition_fields, including underscores inside world[\"...\"]. A God proposal must not wake God itself; use a character/follow-up behavior or wait.")
+    lines.append("  - A behavior proposal must use definition.nodes: [{type: action, action_id: exact registered Action name, parameters: {...}}], plus entry_conditions, success_results and failure_results. Do not invent steps, trigger, outcomes, action_names or free-form action objects.")
+    lines.append("  - A new Action cannot be submitted alone: include followup_behavior {name, assign_to, definition} in the same propose_definition call. If its duration is recipe_duration or its reserve uses recipe_inputs, include followup_recipe {name, definition} in that same call. The BT must reference the new Action by visible name and be executable for the assigned NPC immediately.")
+    lines.append("  - Recipe Action shape: parameters:{recipe_id:'string'}, duration:{mode:'recipe_duration'}, costs:{reserve:{recipe_inputs:1}}; put recipe_inputs under costs.reserve. Include followup_recipe with positive duration_minutes, inputs and outputs; existing resource names are resolved to registry keys.")
+    lines.append("  - Action success/failure each need {condition?, result}; Travel To uses location_id. Copy parameter names from world_action_catalog. A dynamic parameter such as item_id is not an inventory key; omit the condition or use the literal visible item name.")
+    lines.append("  - A new Action must have a real observable result: declare effects, information or capability/progress effects, or bind a Recipe with outputs. A success label or outcome_events field alone never changes resources or state; do not call a resource refill successful without a configured effect that performs it.")
+    lines.append("  - To move carried material into an existing world resource, use costs.reserve:{item_parameter:<item parameter>, item_quantity_parameter:<quantity parameter>} and effect:{type:'resource_transfer', resource_id:<existing visible resource>, source_item_parameter:<same item parameter>, quantity_parameter:<same quantity parameter>}; omit item_quantity_parameter only for one item with quantity:1. The transfer must equal the reserved amount and cannot mint stock or target a missing resource.")
+    lines.append("  - A resource_transfer reserves the carried item before the success condition is checked. Its success condition must not inspect actor.inventory.<item>; use actor.alive or an observable destination/world result instead.")
+    lines.append("  - Action parameters whose names end in _entity or _id must use exact visible entity names from the world view and parameter names from the Action catalog. A behavior is rejected unless its assigned character can execute the whole sequence now.")
+    visible_names = ", ".join(str(item.get("name")) for item in (context.get("visible_entities") or [])[:48] if item.get("name"))
+    lines.append(f"  - Exact visible entities (use these names): {visible_names or 'none'}.")
+    examples = context.get("condition_examples") or {}
+    if examples:
+        lines.append("  - Machine condition examples: " + "; ".join(f"{label}={example}" for label, example in examples.items()) + ". A bare world property is not a condition; compare it with a number or true/false, or use [] when no durable condition is needed.")
+    lines.append("  - Reusable behavior entry_conditions must use durable actor, capability, inventory, location, relationship or world state. Do not use event.recent.*, which would make the behavior disappear immediately after the current event.")
+    lines.append("  - Research is open-ended: when validated results leave a concrete unanswered question, you may propose one new declarative research source or behavior. Do not invent a result; let a character perform the next research.")
+    lines.append("  - A newer verified research fact may supersede an older one. Preserve the old fact for audit and use the configured lifecycle status instead of silently deleting it.")
+    lines.append("  - If the assigned actor is not already at the required place, include a Travel node before the destination Action; Platform must be able to execute the complete sequence from current state. If no durable condition is needed, use entry_conditions: [] rather than prose.")
+    lines.append("  - After a read-budget warning, use the facts already collected. Do not re-read the same source and exhaust the session.")
+    lines.append("</world_proposal_contract>")
+    return lines
+
+
+def _public_progress_lines(context: dict[str, Any]) -> list[str]:
+    """Configured public progress definitions."""
+
+    lines: list[str] = []
+    progress_candidates = context.get("world_progress_candidates") or []
+    lines.append("<configured_public_progress>")
+    if progress_candidates:
+        for item in progress_candidates[:12]:
+            evidence = list(item.get("evidence_sources") or []) or (list(item.get("evidence_event_types") or []) + list(item.get("evidence_behaviors") or []))
+            lines.append(
+                f"  - {item.get('progress_key')} target={_number(item.get('required', 1))}: "
+                f"{item.get('description') or 'configured progress'}; accepted evidence={_plain(evidence) or 'any validated outcome'}"
+            )
+        lines.append("  Submit progress only when the triggering evidence matches the named progress definition; otherwise wait.")
+    else:
+        lines.append("  none configured; do not invent a progress key")
+    lines.append("</configured_public_progress>")
+    return lines
+
+
+def _catalog_lines(context: dict[str, Any]) -> list[str]:
+    """Rule condition fields and the registered behavior and action catalogs."""
+
+    lines: list[str] = []
+    lines.append("<rule_condition_fields>")
+    fields = context.get("rule_condition_fields") or []
+    for field in fields[:20]:
+        lines.append(f"  - {field.get('condition')}: {field.get('meaning', 'configured world value')}")
+    if not fields:
+        lines.append("  - none")
+    lines.append("</rule_condition_fields>")
+    lines.append("<world_behavior_catalog>")
+    catalog = context.get("registered_behaviors") or []
+    for behavior in catalog[:24]:
+        success = f"; success={_plain(behavior.get('success'))}" if behavior.get("success") else ""
+        lines.append(f"  - BT: {behavior.get('name', 'behavior')}: {behavior.get('purpose', 'configured behavior')}{success}")
+    if not catalog:
+        lines.append("  - none")
+    lines.append("</world_behavior_catalog>")
+    lines.append("<world_action_catalog>")
+    actions = context.get("registered_actions") or []
+    # God needs the registered action vocabulary and outcome, but not the
+    # full parameter schema for every action during a world review. The
+    # detailed schema remains in character/BT views where it is used to
+    # execute a behavior.
+    for action in actions[:16]:
+        parameters = "; ".join(str(item) for item in (action.get("parameters") or []))
+        defaults = _plain(action.get("parameter_defaults") or {})
+        success = _plain(action.get("success") or [])
+        costs = action.get("costs") if isinstance(action.get("costs"), dict) else {}
+        reserve = _plain((costs or {}).get("reserve") or {})
+        duration_value = action.get("duration") if isinstance(action.get("duration"), dict) else {}
+        recipe_like = duration_value.get("mode") == "recipe_duration" or "recipe_inputs" in ((costs or {}).get("reserve") or {})
+        detail = f"parameters={parameters or 'none'}"
+        if recipe_like:
+            detail += f"; defaults={defaults or 'none'}; duration={_plain(duration_value) or 'not stated'}; reserve={reserve or 'none'}"
+        lines.append(
+            f"  - Action: {action.get('name', 'action')}: {action.get('purpose', 'configured action')}; "
+            f"{detail}; result={success or 'not stated'}"
+        )
+    if not actions:
+        lines.append("  - none")
+    lines.append("</world_action_catalog>")
+    return lines
+
+
+def _world_trend_lines(context: dict[str, Any]) -> list[str]:
+    """Resource, relationship and goal trends over the review windows."""
+
+    lines: list[str] = []
+    lines.append("<world_trends>")
+    trends = context.get("world_trends") or {}
+    resource_labels = trends.get("resource_labels") or {}
+
+    def resource_changes(values: Any) -> str:
+        if not isinstance(values, dict) or not values:
+            return "none"
+        return "; ".join(f"{resource_labels.get(str(key), str(key))}={_plain(value)}" for key, value in values.items())
+
+    current_resources = trends.get("current_resources") or []
+    lines.append("  Current resources: " + ("; ".join(f"{item.get('name', 'resource')}={_plain(item.get('current', 'unknown'))}" for item in current_resources[:8]) if current_resources else "none") + ".")
+    configured_regeneration = context.get("configured_resource_regeneration") or []
+    if configured_regeneration:
+        lines.append(
+            "  Configured regeneration (future world rule, do not confuse with the current observation window): "
+            + "; ".join(
+                f"{item.get('resource')} +{_plain(item.get('amount'))} every {item.get('every_minutes')} minutes"
+                + (f" up to {_plain(item.get('cap'))}" if item.get('cap') is not None else "")
+                for item in configured_regeneration[:8]
+            )
+            + "."
+        )
+    else:
+        lines.append("  Configured regeneration: none declared.")
+    for period in ("weekly", "monthly"):
+        item = trends.get(period) or {}
+        goal = item.get("goal_trends") or {}
+        relationship = item.get("relationship_trends") or []
+        lines.append(
+            f"  {period}: resource regeneration={resource_changes(item.get('resources_regenerated') or {})}; "
+            f"resource net change={resource_changes(item.get('resource_deltas') or {})}; "
+            f"relationship change={_plain(relationship) if relationship else 'none'}; "
+            f"goal progress={_plain(goal.get('progress_by_tag') or {})}; "
+            f"completed={goal.get('completed_behaviors', 0)}, failed_or_interrupted={goal.get('failed_or_interrupted_behaviors', 0)}."
+        )
+    progress = context.get("civilization_progress") or []
+    lines.append("  Civilization progress: " + ("; ".join(f"{item.get('progress_key')}={_plain(item.get('current', 0))}/{_plain(item.get('required', 0))}" for item in progress[:8]) if progress else "none") + ".")
+    lines.append("</world_trends>")
+    return lines
+
+
+def _world_outcome_lines(context: dict[str, Any]) -> list[str]:
+    """Recent world changes, pending evaluations and character outcomes."""
+
+    lines: list[str] = []
+    lines.append("<world_outcomes>")
+    changes = context.get("recent_world_changes") or []
+    if changes:
+        for item in changes[:6]:
+            effect = item.get("effect") or {}
+            expected = item.get("expected_effects") or item.get("effects") or []
+            lines.append(
+                f"  - {item.get('event_type', 'world.change')}: {item.get('summary', 'proposal applied')}; "
+                f"expected={_plain(expected) if expected else 'not stated'}; "
+                f"observed={_plain(effect) if effect else 'event recorded'} at minute {item.get('world_minute', 'unknown')}"
+            )
+    else:
+        lines.append("  - no recent world proposal result")
+    pending = [item for item in (context.get("world_proposals") or []) if item.get("status") == "pending_evaluation"]
+    if pending:
+        lines.append("  Pending proposal evaluations:")
+        for item in pending[:6]:
+            # Proposal/intent IDs are audit-only identifiers.  They add no
+            # meaning to a model decision and make prompt cache/content
+            # checks noisy, so expose the typed change and due time only.
+            expected = item.get("expected") if isinstance(item.get("expected"), dict) else {}
+            state = expected.get("state") if isinstance(expected, dict) else {}
+            label = expected.get("summary") or item.get("change_type") or "world proposal"
+            lines.append(f"  - {label}; due={item.get('evaluation_due_minute')}; expected={_plain(state or expected)}")
+    else:
+        lines.append("  Pending proposal evaluations: none.")
+    outcomes = context.get("recent_agent_outcomes") or []
+    if outcomes:
+        lines.append("  Recent character outcomes:")
+        for item in outcomes[:6]:
+            outcome = item.get("outcome") or {}
+            lines.append(f"  - {item.get('actor_name') or 'a character'}: {item.get('behavior_choice') or item.get('behavior_name') or 'a behavior'} -> {outcome.get('status', item.get('event_type', 'unknown'))}; {outcome.get('result', 'no result')}")
+    lines.append("  Compare expected and observed effects before proposing one next world change.")
+    lines.append("</world_outcomes>")
+    return lines
+
+
+def _god_lines(context: dict[str, Any]) -> list[str]:
+    """Sections only the world reviewer receives."""
+
+    lines: list[str] = []
+    lines.extend(_evolution_trigger_lines(context))
+    lines.extend(_proposal_contract_lines(context))
+    lines.extend(_public_progress_lines(context))
+    lines.extend(_catalog_lines(context))
+    lines.extend(_world_trend_lines(context))
+    lines.extend(_world_outcome_lines(context))
+    return lines
+
+
+def _institution_lines(context: dict[str, Any], role: str) -> list[str]:
+    """Pending and active institutions and their verified ledgers."""
+
+    lines: list[str] = []
     pending_institutions = context.get("pending_institutions") or []
     active_institutions = context.get("active_institutions") or []
     institution_ledgers = context.get("institution_ledgers") or []
@@ -775,57 +883,72 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
                 lines.append(f"    - {ledger.get('name')}: {_plain(ledger.get('entries') or [])}")
         lines.append("  A proposal is only a recorded suggestion. It changes the world only after an authorized activation.")
         lines.append("</social_institutions>")
+    return lines
 
-    if role == "agent_decision":
-        active = context.get("active_task") or {}
-        lines.extend([
-            "  <active_execution>",
-            f"    behavior: {_line(active.get('bt'))}",
-            f"    action: {_line(active.get('action'))}",
-            f"    remaining_minutes: {_line(active.get('remaining_minutes'))}",
-            "  </active_execution>",
-            "  <executable_behaviors>",
-        ])
-        behaviors = context.get("executable_behaviors") or context.get("available_behaviors") or []
-        # The view already contains only Platform-validated executable BTs.
-        # Reflection receives outcomes and the registered Action vocabulary,
-        # not an unrelated planning catalog or a misleading instruction to
-        # wait because no behavior is currently executable.
-        for behavior in behaviors:
-            lines.append("    <behavior>")
-            previous_values: dict[str, str] = {}
-            for label in ("name", "summary", "purpose", "when", "requires", "target", "parameters", "parameter_options", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "cooldown_minutes", "tags", "goal_tags", "drive_tags", "supports_drive_tags"):
-                value = behavior.get(label)
-                if value:
-                    if isinstance(value, list):
-                        value = "; ".join(str(item) for item in value)
-                    value_text = str(value)
-                    # Purpose commonly repeats summary and requires commonly
-                    # repeats when. Keep one authoritative sentence in the
-                    # model view instead of charging tokens for duplication.
-                    if label == "purpose" and value_text == previous_values.get("summary"):
-                        continue
-                    if label == "requires" and value_text == previous_values.get("when"):
-                        continue
-                    previous_values[label] = value_text
-                    lines.append(f"      {label}: {value_text}")
-            lines.append(f"      choice: {behavior.get('choice') or behavior.get('name') or 'unnamed behavior'}")
-            lines.append("    </behavior>")
-        if not behaviors:
-            lines.append("    - none; return wait")
-        lines.append("  </executable_behaviors>")
 
-    if role == "agent_reflection":
-        lines.append("  <registered_actions>")
-        actions = context.get("available_actions") or []
-        lines.extend([f"    - choice: {item.get('choice')}; {item.get('summary', 'configured action')}" for item in actions[:24]] or ["    - none"])
-        lines.append("  </registered_actions>")
+def _executable_behavior_lines(context: dict[str, Any]) -> list[str]:
+    """The active execution and the Platform-validated behaviors a character may choose."""
 
+    lines: list[str] = []
+    active = context.get("active_task") or {}
+    lines.extend([
+        "  <active_execution>",
+        f"    behavior: {_line(active.get('bt'))}",
+        f"    action: {_line(active.get('action'))}",
+        f"    remaining_minutes: {_line(active.get('remaining_minutes'))}",
+        "  </active_execution>",
+        "  <executable_behaviors>",
+    ])
+    behaviors = context.get("executable_behaviors") or context.get("available_behaviors") or []
+    # The view already contains only Platform-validated executable BTs.
+    # Reflection receives outcomes and the registered Action vocabulary,
+    # not an unrelated planning catalog or a misleading instruction to
+    # wait because no behavior is currently executable.
+    for behavior in behaviors:
+        lines.append("    <behavior>")
+        previous_values: dict[str, str] = {}
+        for label in ("name", "summary", "purpose", "when", "requires", "target", "parameters", "parameter_options", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "cooldown_minutes", "tags", "goal_tags", "drive_tags", "supports_drive_tags"):
+            value = behavior.get(label)
+            if value:
+                if isinstance(value, list):
+                    value = "; ".join(str(item) for item in value)
+                value_text = str(value)
+                # Purpose commonly repeats summary and requires commonly
+                # repeats when. Keep one authoritative sentence in the
+                # model view instead of charging tokens for duplication.
+                if label == "purpose" and value_text == previous_values.get("summary"):
+                    continue
+                if label == "requires" and value_text == previous_values.get("when"):
+                    continue
+                previous_values[label] = value_text
+                lines.append(f"      {label}: {value_text}")
+        lines.append(f"      choice: {behavior.get('choice') or behavior.get('name') or 'unnamed behavior'}")
+        lines.append("    </behavior>")
+    if not behaviors:
+        lines.append("    - none; return wait")
+    lines.append("  </executable_behaviors>")
+    return lines
+
+
+def _registered_action_lines(context: dict[str, Any]) -> list[str]:
+    """The registered action vocabulary shown to a reflection turn."""
+
+    lines: list[str] = []
+    lines.append("  <registered_actions>")
+    actions = context.get("available_actions") or []
+    lines.extend([f"    - choice: {item.get('choice')}; {item.get('summary', 'configured action')}" for item in actions[:24]] or ["    - none"])
+    lines.append("  </registered_actions>")
+    return lines
+
+
+def _session_lines(context: dict[str, Any], task: str, role: str) -> list[str]:
+    """ReAct history, platform correction, and the current task."""
+
+    lines: list[str] = []
     lines.extend(["  <interaction_history>"])
     history = context.get("interaction_history") or []
     if history:
         for item in history[-8:]:
-            kind = item.get("kind", "event")
             lines.append(f"    - {_history_line(item)}")
     else:
         lines.append("    - none in this session")
@@ -843,7 +966,12 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     if role == "agent_decision" and context.get("decision_guidance"):
         lines.append(f"  Decision guidance: {context['decision_guidance']}")
     lines.append("</decision>")
-    rendered = "\n".join(lines)
+    return lines
+
+
+def _strip_world_scaffolding(rendered: str, role: str) -> str:
+    """Drop the empty character scaffolding a world-level prompt does not use."""
+
     if role in {"god", "story"}:
         # World-level roles have projections rather than a character body,
         # inventory, personal drives, or an executable BT catalog. Keep the
@@ -857,12 +985,12 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         role_empty_sections = ("knowledge_and_memory",) if role == "god" else ()
         for tag in shared_empty_sections + role_empty_sections:
             rendered, _ = _remove_block(rendered, tag)
-    if len(rendered) <= max_chars:
-        return rendered
-    omitted: list[str] = []
-    # Preserve the current task, executable choices, active execution and
-    # latest tool result. Remove only retrievable background sections first;
-    # cutting the middle of the behavior catalog can leave an unusable prompt.
+    return rendered
+
+
+def _background_order(rendered: str) -> list[str]:
+    """Order in which an over-long prompt gives up its background sections."""
+
     background_sections = list(_BACKGROUND_SECTIONS)
     # An empty outcome scaffold is less useful than the resource/trend
     # projection. Once a proposal or outcome exists, preserve that causal
@@ -909,7 +1037,19 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
     if trends and not meaningful_outcomes and not has_active_institution:
         background_sections.remove("world_trends")
         background_sections.append("world_trends")
-    for tag in background_sections:
+    return background_sections
+
+
+def _fit_to_limit(rendered: str, role: str, max_chars: int) -> str:
+    """Compact a rendered prompt to ``max_chars`` while keeping the task and executable choices."""
+
+    if len(rendered) <= max_chars:
+        return rendered
+    omitted: list[str] = []
+    # Preserve the current task, executable choices, active execution and
+    # latest tool result. Remove only retrievable background sections first;
+    # cutting the middle of the behavior catalog can leave an unusable prompt.
+    for tag in _background_order(rendered):
         rendered, removed = _remove_block(rendered, tag)
         if removed:
             omitted.append(tag)
@@ -934,3 +1074,40 @@ def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000
         if compacted is not None:
             return compacted
     return rendered[: max_chars - 100] + "\n<context_limit>Context was compacted; use a read tool if needed.</context_limit>"
+
+
+def render_context(context: dict[str, Any], task: str, *, max_chars: int = 16000) -> str:
+    """Render a stable XML-like prefix followed by dynamic Agent state.
+
+    The system policy and native tool schemas are stable.  This user message
+    puts static protocol/tool explanations first, dynamic world state next,
+    the current decision at the end, and appends ReAct history last.
+    """
+
+    role = context.get("role", "agent_decision")
+    lines = _protocol_lines(context)
+    lines.extend(_world_state_lines(context))
+    lines.extend(_interaction_lines(context))
+    if role in {"story", "god"}:
+        lines.extend(_recent_history_lines(context))
+        lines.extend(_open_question_lines(context))
+    lines.extend(_world_rule_lines(context))
+    lines.extend(_character_lines(context))
+    lines.extend(_scene_lines(context))
+    lines.extend(_knowledge_lines(context, role))
+    lines.extend(_directive_lines(context))
+    lines.extend(_activity_lines(context))
+    if role == "agent_reflection":
+        lines.extend(_reflection_lines(context))
+    if role == "story":
+        lines.extend(_story_lines(context))
+    if role == "god":
+        lines.extend(_god_lines(context))
+    lines.extend(_institution_lines(context, role))
+    if role == "agent_decision":
+        lines.extend(_executable_behavior_lines(context))
+    if role == "agent_reflection":
+        lines.extend(_registered_action_lines(context))
+    lines.extend(_session_lines(context, task, role))
+    rendered = _strip_world_scaffolding("\n".join(lines), role)
+    return _fit_to_limit(rendered, role, max_chars)

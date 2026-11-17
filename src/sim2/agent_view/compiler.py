@@ -3,7 +3,8 @@ from __future__ import annotations
 import copy
 import json
 import re
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, NamedTuple
 
 from ..actions.conditions import ConditionEngine
 from ..actions.capacity import check_action_capacity
@@ -168,6 +169,62 @@ def _action_view(action: dict[str, Any], recipe: dict[str, Any] | None = None, p
         "failure": [str(failure.get("result", "configured failure")).replace("_", " ")],
         "interrupt": action.get("interrupt_policy", "cancel"),
     }
+
+
+@dataclass
+class _DecisionFrame:
+    """What one decision view derives from the agent and the current world."""
+
+    agent_id: str
+    agent: dict[str, Any]
+    rules: dict[str, Any]
+    configured_context: dict[str, Any]
+    bt_defs: dict[str, dict[str, Any]]
+    action_defs: dict[str, dict[str, Any]]
+    recipe_defs: dict[str, dict[str, Any]]
+    estimator: BehaviorDurationEstimator
+    catalog_ids: list[Any]
+    state: dict[str, Any]
+    location_id: Any
+    safe_location_id: Any
+    resource_node: dict[str, str] | None
+    health_location_id: Any
+    known_route_destinations: Any
+    mapped_areas: Any
+    researched_sources: Any
+    known_fact_keys: list[Any]
+    research_sources: list[dict[str, Any]]
+    current_location: dict[str, Any]
+    participants: list[dict[str, Any]]
+    validation_target: dict[str, Any] | None
+    available: list[dict[str, Any]] = field(default_factory=list)
+    diagnostics: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class _Simulation:
+    """A behavior replayed step by step against a copy of the agent."""
+
+    agent: dict[str, Any]
+    location: dict[str, Any]
+    steps: list[str] = field(default_factory=list)
+    costs: list[str] = field(default_factory=list)
+    impacts: list[str] = field(default_factory=list)
+    successes: list[str] = field(default_factory=list)
+    failures: list[str] = field(default_factory=list)
+    unavailable: bool = False
+    unavailable_action: str = ""
+    unavailable_reason: str | None = None
+
+
+class _Guidance(NamedTuple):
+    """How the model is told to choose targets and parameters for one behavior."""
+
+    text: str
+    required: bool
+    options: list[dict[str, Any]]
+    parameter_options: dict[str, list[dict[str, Any]]]
+    source_parameter: Any
 
 
 class AgentViewCompiler:
@@ -787,12 +844,7 @@ class AgentViewCompiler:
         source_event_id: int | None = None,
         include_diagnostics: bool = False,
     ) -> dict[str, Any]:
-        rules = self.store.repositories.metadata.get("rules", {}) or {}
-        revision = int(self.store.repositories.metadata.get("world_revision", 0) or 0)
-        if revision != self._rule_compiler_revision:
-            self.conditions = ConditionEngine(rules)
-            self.rule_compiler = self._new_rule_compiler()
-            self._rule_compiler_revision = revision
+        rules = self._refresh_rule_compiler()
         try:
             agent = self.entities_repo.get_agent(agent_id)
         except KeyError:
@@ -801,6 +853,108 @@ class AgentViewCompiler:
                     return self._build_story_view(agent_id, role, source_event_id=source_event_id)
                 return self._build_world_view(agent_id, role)
             raise
+        frame = self._decision_frame(agent_id, agent, rules)
+        for bt_id in frame.catalog_ids:
+            entry = self._compile_behavior(frame, bt_id)
+            if entry is not None:
+                frame.available.append(entry)
+        available, diagnostics = frame.available, frame.diagnostics
+        state, location_id, current_location = frame.state, frame.location_id, frame.current_location
+        bt_defs, action_defs = frame.bt_defs, frame.action_defs
+        # Long-term goal tags are context only.  They must not promote a
+        # behavior whose current drive, need, or resource conditions are weak.
+        nearby = [item for item in (self.entities_repo.entities_at_location(location_id) if location_id else []) if item.get("id") != agent_id]
+        known_routes = []
+        for route_id in (current_location.get("routes", []) if isinstance(current_location, dict) else []):
+            try:
+                known_routes.append(self.entities_repo.get_entity(str(route_id)).get("name", str(route_id)))
+            except KeyError:
+                known_routes.append(str(route_id))
+        active_behavior_id = state.get("active_behavior_id")
+        active_action_id = state.get("active_action")
+        active_behavior = next((item for item in bt_defs.values() if item.get("id") == active_behavior_id), {})
+        active_action = next((item for item in action_defs.values() if item.get("id") == active_action_id), {})
+        available_actions = [
+            {"choice": action.get("agent_label") or _label(str(action.get("id", "action"))), "name": action.get("agent_label") or _label(str(action.get("id", "action"))), "summary": action.get("agent_summary") or _label(str(action.get("id", "action")))}
+            for action in action_defs.values()
+        ]
+        needs = agent.get("needs", {})
+        drives = DriveCalculator(self.store.repositories.metadata.get("rules", {})).calculate(agent)
+        drive_model = (self.store.repositories.metadata.get("rules", {}) or {}).get("motivation_model", {})
+        memory_query, memories, short_term_memories, long_term_memories, known_facts = self._memory_context(frame, available, drives)
+        research_tracks = self._research_tracks(frame)
+        relationships = self._relationship_view(agent_id)
+        recent_actions, recent_outcomes = self._recent_activity(agent_id, bt_defs)
+        observation_facts = []
+        if current_location:
+            observation_facts.append(f"You are at {current_location.get('name', location_id)}.")
+        observation_facts.extend(
+            f"{item.get('name', item.get('id', 'Someone'))} is nearby."
+            for item in nearby[:4]
+        )
+        prompt_protocol, platform_rules = self._prompt_sections(role)
+        decision_constraints = self._decision_constraints(frame, needs)
+        capability_update_candidates = self._capability_update_candidates(agent_id, agent, rules)
+        pending_institutions, active_institutions, institution_ledgers = self._institution_view()
+        story_goals, behavior_assignments, active_story_beats, active_story_threads = self._agent_story_view(agent_id, agent)
+        result = {
+            "context_version": "1", "role": role,
+            "world_revision": int(self.store.repositories.metadata.get("world_revision", 0) or 0),
+            "agent_revision": int(agent.get("agent_revision", 0) or 0),
+            "prompt_protocol": prompt_protocol,
+            "platform_rules": platform_rules,
+            "world_time": self._world_time(),
+            "self": {"id": agent_id, "name": agent.get("name", agent_id), "role": agent.get("role", "agent"), "status": state.get("status", "idle"), "location": current_location.get("name", location_id) if isinstance(current_location, dict) else location_id, "known_routes": known_routes, "attributes": self._attribute_values(agent, state), "goal": agent.get("ultimate_goal")},
+            "identity": {"traits": agent.get("traits", {}), "beliefs": agent.get("beliefs", []), "capabilities": agent.get("capabilities", {})},
+            "goal_tags": agent.get("goal_tags", []),
+            "capability_history": self.activity_repo.list_capability_progress(agent_id, limit=5),
+            "capability_update_candidates": capability_update_candidates,
+            "needs": needs, "inventory": agent.get("inventory", {}), "injuries": state.get("injuries", []),
+            "drives": drives[:5], "drive_model": drive_model, "observation": {"facts": observation_facts[:6], "source": "current_state"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "research_tracks": research_tracks[:8], "memories": memories, "short_term_memories": short_term_memories, "long_term_memories": long_term_memories, "memory_query": memory_query, "recent_actions": recent_actions, "recent_outcomes": recent_outcomes, "direct_relationships": relationships,
+            "active_task": {"bt": active_behavior.get("summary") or ("in progress" if active_behavior_id else None), "action": active_action.get("description") or (_label(str(active_action_id)) if active_action_id else None), "remaining_minutes": state.get("remaining_minutes", 0)},
+            "open_trade_offers": self._trade_offer_view(agent_id),
+            "available_actions": available_actions if role == "agent_reflection" else [],
+            "active_world_rules": self.rule_compiler.model_view(
+                self._world_rule_labels(),
+                agent=agent,
+                context={
+                    "location_id": location_id,
+                    "current_location": current_location,
+                    "recent_event_types": self._recent_event_types(),
+                },
+                world=self.store.repositories.metadata.get("world_properties", {}) or {},
+            ),
+            "pending_institutions": pending_institutions,
+            "active_institutions": active_institutions,
+            "institution_ledgers": institution_ledgers,
+            "story_goals": story_goals,
+            "progression_goals": self._progression_goals(agent, available=available, diagnostics=diagnostics, bt_defs=bt_defs),
+            "behavior_assignments": behavior_assignments,
+            "active_story_beats": active_story_beats,
+            "active_story_threads": active_story_threads,
+            "executable_behaviors": self._assign_choices(available) if role == "agent_decision" else [],
+            "decision_constraints": decision_constraints if role == "agent_decision" else [],
+            "last_platform_result": self._with_behavior_choice(
+                self._humanize_record(state.get("last_platform_result")), bt_defs
+            ),
+            "tools": self._role_tools(role),
+        }
+        if include_diagnostics:
+            result["unavailable_behavior_diagnostics"] = diagnostics
+        return result
+
+    def _refresh_rule_compiler(self) -> dict[str, Any]:
+        """Rebuild the rule engine when a world change bumped the revision."""
+
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
+        revision = int(self.store.repositories.metadata.get("world_revision", 0) or 0)
+        if revision != self._rule_compiler_revision:
+            self.conditions = ConditionEngine(rules)
+            self.rule_compiler = self._new_rule_compiler()
+            self._rule_compiler_revision = revision
+        return rules
+
+    def _decision_frame(self, agent_id: str, agent: dict[str, Any], rules: dict[str, Any]) -> _DecisionFrame:
         configured_context = configured_context_values(rules, agent)
         bt_defs = {x["id"]: x for x in self._definitions("bt_def")}
         action_defs = {x["id"]: x for x in self._definitions("action_def")}
@@ -813,8 +967,6 @@ class AgentViewCompiler:
             capability_modifiers=(self.store.repositories.metadata.get("rules", {}) or {}).get("capability_modifiers", {}),
             travel_speed=lambda values: movement_speed(self.store, agent, values),
         )
-        available = []
-        diagnostics: list[dict[str, Any]] = []
         fallback_ids = (self.store.repositories.metadata.get("rules", {}) or {}).get("fallback_behavior_ids", [])
         catalog_ids = list(dict.fromkeys(
             list(agent.get("initial_bt_ids", []))
@@ -858,286 +1010,331 @@ class AgentViewCompiler:
         # Agent must submit an explicit visible target.
         default_target = participants[0] if len(participants) == 1 else None
         validation_target = default_target or (participants[0] if participants else None)
-        for bt_id in catalog_ids:
-            bt = bt_defs.get(bt_id)
-            if not bt:
-                diagnostics.append({"behavior_id": bt_id, "failed": ["behavior definition is not registered"]})
-                continue
-            blocked = (state.get("blocked_behaviors") or {}).get(str(bt_id)) if isinstance(state, dict) else None
-            if isinstance(blocked, dict) and not failure_block_recovered(self.store, blocked):
-                diagnostics.append({
-                    "behavior_id": bt_id,
-                    "failed": [f"blocked after the last failed result ({blocked.get('result', 'failed')}); wait for a configured recovery event"],
-                })
-                continue
-            rules = self.store.repositories.metadata.get("rules", {}) or {}
-            behavior_context = dict(configured_context)
-            uses_source_parameter = any(
-                value == "context.source_id"
-                for node in self._iter_behavior_actions(bt_id)
-                for value in (node.get("parameters") or {}).values()
-            )
-            if uses_source_parameter and research_sources:
-                selected_source = research_sources[0]
-                behavior_context.update({
-                    "source_id": selected_source["id"],
-                    "source_location_id": selected_source.get("location_id"),
-                })
-            condition_context = {
-                "current_location": current_location,
-                "location_id": location_id,
-                "safe_location_id": safe_location_id,
-                "resource_location_id": (resource_node or {}).get("location_id"),
-                "resource_tag": (resource_node or {}).get("resource_tag"),
-                "health_location_id": health_location_id,
-                "known_route_destinations": known_route_destinations,
-                "mapped_areas": mapped_areas,
-                "researched_sources": researched_sources,
-                "known_fact_keys": known_fact_keys,
-                "inventory": agent.get("inventory", {}) or {},
-                "recent_event_types": self._recent_event_types(),
-                "day_phase": self._world_time().get("day_phase"),
-                "target": {"id": validation_target.get("id"), "available": True} if validation_target else {"available": False},
-            }
-            condition_context.update(behavior_context)
-            condition_context.update(self._interaction_context(agent, participants))
-            failed_conditions = [
-                str(predicate)
-                for predicate in bt.get("entry_conditions", []) or []
-                if not self.conditions.evaluate(
-                    str(predicate), agent=agent, target=condition_context["target"],
-                    context=condition_context,
-                    world=self.store.repositories.metadata.get("world_properties", {}) or {},
-                )
-            ]
-            if failed_conditions:
-                diagnostics.append({"behavior_id": bt_id, "failed": failed_conditions})
-                continue
-            denial = self.rule_compiler.behavior_denial(
-                behavior=bt,
-                agent=agent,
+        return _DecisionFrame(
+            agent_id=agent_id, agent=agent, rules=rules, configured_context=configured_context,
+            bt_defs=bt_defs, action_defs=action_defs, recipe_defs=recipe_defs, estimator=estimator,
+            catalog_ids=catalog_ids, state=state, location_id=location_id, safe_location_id=safe_location_id,
+            resource_node=resource_node, health_location_id=health_location_id,
+            known_route_destinations=known_route_destinations, mapped_areas=mapped_areas,
+            researched_sources=researched_sources, known_fact_keys=known_fact_keys,
+            research_sources=research_sources, current_location=current_location,
+            participants=participants, validation_target=validation_target,
+        )
+
+    def _compile_behavior(self, frame: _DecisionFrame, bt_id: Any) -> dict[str, Any] | None:
+        """Return the executable view of one catalog behavior, or record why it is not."""
+
+        bt = frame.bt_defs.get(bt_id)
+        if not bt:
+            frame.diagnostics.append({"behavior_id": bt_id, "failed": ["behavior definition is not registered"]})
+            return None
+        gates = self._behavior_gates(frame, bt_id, bt)
+        if gates is None:
+            return None
+        behavior_context, cooldown_minutes = gates
+        simulation = self._simulate_behavior(frame, bt_id, behavior_context)
+        if simulation is None:
+            return None
+        return self._behavior_entry(frame, bt_id, bt, simulation, self._target_guidance(frame, bt), cooldown_minutes)
+
+    def _behavior_gates(self, frame: _DecisionFrame, bt_id: Any, bt: dict[str, Any]) -> tuple[dict[str, Any], int] | None:
+        """Blocked, entry-condition, rule-denial and cooldown checks; None records a diagnostic."""
+
+        agent_id, agent, state = frame.agent_id, frame.agent, frame.state
+        diagnostics = frame.diagnostics
+        configured_context = frame.configured_context
+        research_sources = frame.research_sources
+        current_location, location_id = frame.current_location, frame.location_id
+        safe_location_id, resource_node, health_location_id = frame.safe_location_id, frame.resource_node, frame.health_location_id
+        known_route_destinations, mapped_areas, researched_sources = frame.known_route_destinations, frame.mapped_areas, frame.researched_sources
+        known_fact_keys = frame.known_fact_keys
+        participants, validation_target = frame.participants, frame.validation_target
+        blocked = (state.get("blocked_behaviors") or {}).get(str(bt_id)) if isinstance(state, dict) else None
+        if isinstance(blocked, dict) and not failure_block_recovered(self.store, blocked):
+            diagnostics.append({
+                "behavior_id": bt_id,
+                "failed": [f"blocked after the last failed result ({blocked.get('result', 'failed')}); wait for a configured recovery event"],
+            })
+            return None
+        behavior_context = dict(configured_context)
+        uses_source_parameter = any(
+            value == "context.source_id"
+            for node in self._iter_behavior_actions(bt_id)
+            for value in (node.get("parameters") or {}).values()
+        )
+        if uses_source_parameter and research_sources:
+            selected_source = research_sources[0]
+            behavior_context.update({
+                "source_id": selected_source["id"],
+                "source_location_id": selected_source.get("location_id"),
+            })
+        condition_context = {
+            "current_location": current_location,
+            "location_id": location_id,
+            "safe_location_id": safe_location_id,
+            "resource_location_id": (resource_node or {}).get("location_id"),
+            "resource_tag": (resource_node or {}).get("resource_tag"),
+            "health_location_id": health_location_id,
+            "known_route_destinations": known_route_destinations,
+            "mapped_areas": mapped_areas,
+            "researched_sources": researched_sources,
+            "known_fact_keys": known_fact_keys,
+            "inventory": agent.get("inventory", {}) or {},
+            "recent_event_types": self._recent_event_types(),
+            "day_phase": self._world_time().get("day_phase"),
+            "target": {"id": validation_target.get("id"), "available": True} if validation_target else {"available": False},
+        }
+        condition_context.update(behavior_context)
+        condition_context.update(self._interaction_context(agent, participants))
+        failed_conditions = [
+            str(predicate)
+            for predicate in bt.get("entry_conditions", []) or []
+            if not self.conditions.evaluate(
+                str(predicate), agent=agent, target=condition_context["target"],
                 context=condition_context,
                 world=self.store.repositories.metadata.get("world_properties", {}) or {},
             )
-            if denial:
-                diagnostics.append({"behavior_id": bt_id, "failed": [str(denial.get("message") or "denied by an active rule")]})
-                continue
-            cooldown_minutes = max(0, int(bt.get("cooldown_minutes", 0) or 0))
-            if cooldown_minutes:
-                last_minute = self.activity_repo.last_behavior_minute(agent_id, bt_id)
-                current_minute = int(self.store.repositories.metadata.get("world_minute", 0))
-                if last_minute is not None and current_minute - last_minute < cooldown_minutes:
-                    diagnostics.append({"behavior_id": bt_id, "failed": [f"cooldown until world minute {last_minute + cooldown_minutes}"]})
-                    continue
-            steps = []
-            costs = []
-            impacts = []
-            action_successes = []
-            action_failures = []
-            action_unavailable = False
-            unavailable_action = ""
-            unavailable_reason: str | None = None
-            simulated_agent = copy.deepcopy(agent)
-            estimator.capabilities = simulated_agent.get("capabilities", {}) or {}
-            simulated_location = dict(current_location)
-            for node in self._iter_behavior_actions(bt_id):
-                action = action_defs.get(node.get("action_id"))
-                if not action:
-                    continue
-                simulated_state = simulated_agent.setdefault("initial_state", {})
-                parameters = self._view_action_parameters(node.get("parameters") or {}, simulated_state, behavior_context, safe_location_id=safe_location_id, resource_node=resource_node, health_location_id=health_location_id, default_target_id=(validation_target or {}).get("id"))
-                # A configured destination Action is complete when the actor
-                # is already there. It contributes no visible step to the
-                # surrounding BT, while the remaining steps stay executable.
-                if (
-                    action.get("requires_destination")
-                    and action.get("completion", {}).get("if_already_at_destination")
-                    and parameters.get("location_id") == simulated_state.get("location_id")
-                ):
-                    continue
-                action_minutes = estimator._action_minutes(action, parameters, simulated_state.get("location_id"))
-                unavailable_reason = self._action_unavailable_reason(simulated_agent, action, parameters, simulated_location, action_minutes)
-                if unavailable_reason is not None:
-                    action_unavailable = True
-                    unavailable_action = str(action.get("id") or "unknown action")
-                    break
-                recipe_action = (
-                    action.get("duration", {}).get("mode") == "recipe_duration"
-                    or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
-                )
-                recipe = recipe_defs.get(str(parameters.get("recipe_id"))) if recipe_action else None
-                action_for_view = action
-                progress_definition = action.get("progress") if isinstance(action.get("progress"), dict) else {}
-                if progress_definition.get("key") and "{source_id}" in str(progress_definition.get("key")) and parameters.get("source_id"):
-                    try:
-                        research_source = self.entities_repo.get_entity(str(parameters["source_id"]))
-                    except KeyError:
-                        research_source = {}
-                    source_state = research_source.get("initial_state") if isinstance(research_source.get("initial_state"), dict) else {}
-                    discoveries = self.memory_repo.research_discoveries(str(parameters["source_id"]))
-                    known = set(known_fact_keys)
-                    current_stage = next((item for item in discoveries if str(item.get("id")) not in known and str(item.get("status") or "active").casefold() not in {"obsolete", "disabled"}), None)
-                    required = (current_stage or {}).get("required")
-                    if required is None:
-                        required = research_source.get("research_required", source_state.get("research_required"))
-                    if required is None:
-                        required = (self.store.repositories.metadata.get("rules", {}) or {}).get("research_default_required")
-                    if required is not None:
-                        action_for_view = copy.deepcopy(action)
-                        action_for_view.setdefault("progress", {})["required"] = required
-                view = _action_view(action_for_view, recipe, parameters)
-                steps.append(view["name"])
-                costs.extend(view["cost"])
-                impacts.extend(view["impact"][:3])
-                action_successes.extend(view["success"])
-                action_failures.extend(view["failure"])
-                schema = self._attribute_schema()
-                for cost_key, rate in (action.get("costs", {}).get("per_minute", {}) or {}).items():
-                    if cost_key == "time" or not isinstance(rate, (int, float)) or rate <= 0:
-                        continue
-                    target_state = simulated_state if cost_key in simulated_state else simulated_agent.get("needs", {})
-                    if cost_key not in target_state:
-                        continue
-                    current = float(target_state.get(cost_key, schema.default(str(cost_key), 0)) or 0)
-                    delta = current + float(rate) * action_minutes if schema.cost_mode(str(cost_key)) == "increase" else current - float(rate) * action_minutes
-                    target_state[cost_key] = schema.clamp(str(cost_key), delta)
-                # Validate a sequential BT against the state produced by its
-                # earlier configured steps. This keeps a travel-then-service
-                # behavior executable without adding action-specific code.
-                moves_actor = any(
-                    str(effect.get("type") or effect.get("op") or "") == "location_set"
-                    for effect in (action.get("effects") or [])
-                    if isinstance(effect, dict)
-                )
-                if moves_actor and parameters.get("location_id"):
-                    simulated_state["location_id"] = str(parameters["location_id"])
-                    try:
-                        simulated_location = self.entities_repo.get_entity(str(parameters["location_id"]))
-                    except KeyError:
-                        simulated_location = {}
-            if action_unavailable:
-                diagnostics.append({"behavior_id": bt_id, "failed": [f"Action {unavailable_action} cannot start: {unavailable_reason}"]})
-                continue
-            if not steps:
-                diagnostics.append({"behavior_id": bt_id, "failed": ["behavior has no executable Action steps"]})
-                continue
-            target_text = "Platform resolves permitted targets from the current view."
-            target_keys = self._target_parameter_keys(bt, bt_defs)
-            target_required = bool(target_keys) and len(participants) > 1
-            target_options = [{"id": str(item.get("id", "")), "name": str(item.get("name", item.get("id", "participant")))} for item in participants[:8]]
-            parameter_options: dict[str, list[dict[str, Any]]] = {}
-            source_parameter = (bt.get("agent_parameters", {}) or {}).get("source_id")
-            if source_parameter is not None and research_sources:
-                parameter_options["source_id"] = [
-                    {
-                        "name": str(item.get("name") or item.get("id")),
-                        "location": str(item.get("location_name") or item.get("location_id") or "configured source"),
-                        "remaining_stages": int(item.get("remaining_stages", 0) or 0),
-                    }
-                    for item in research_sources[:12]
-                ]
-                target_text = "Choose one configured research source: " + "; ".join(
-                    f"{item['name']} ({item['remaining_stages']} stage(s) remaining at {item['location']})"
-                    for item in parameter_options["source_id"]
-                )
-            bindings = bt.get("parameter_bindings", {}) or {}
-            binding_values = {
-                "nearest_safe_location": safe_location_id,
-                "nearest_health_service": health_location_id,
-                "nearest_resource_node": (resource_node or {}).get("location_id"),
-                "nearest_resource_tag": (resource_node or {}).get("resource_tag"),
-            }
-            bound_value = next((binding_values.get(str(resolver)) for resolver in bindings.values() if binding_values.get(str(resolver))), None)
-            if bound_value and any(str(resolver) == "nearest_safe_location" for resolver in bindings.values()):
-                try:
-                    target_text = f"Configured safe location: {self.entities_repo.get_entity(bound_value).get('name', bound_value)}."
-                except KeyError:
-                    target_text = "Configured safe location is available."
-            elif bound_value and any(str(resolver) == "nearest_health_service" for resolver in bindings.values()):
-                try:
-                    target_text = f"Health service: {self.entities_repo.get_entity(bound_value).get('name', bound_value)}."
-                except KeyError:
-                    target_text = "Configured health service is available."
-            elif resource_node and any(str(resolver) == "nearest_resource_node" for resolver in bindings.values()):
-                try:
-                    resource = self.entities_repo.get_entity(resource_node["resource_tag"])
-                    location = self.entities_repo.get_entity(resource_node["location_id"])
-                    target_text = (
-                        f"Collect {resource.get('name', resource_node['resource_tag'])} from "
-                        f"{location.get('name', resource_node['location_id'])}. "
-                        "Source stock decreases and carried inventory increases."
-                    )
-                except KeyError:
-                    target_text = "Collect the configured resource from the nearest known node; source stock decreases."
-            elif resource_node and any(
-                node.get("type") == "action"
-                and any(value == "context.resource_tag" for value in (node.get("parameters") or {}).values())
-                for node in bt.get("nodes", []) or []
-            ):
-                try:
-                    resource = self.entities_repo.get_entity(resource_node["resource_tag"])
-                    location = self.entities_repo.get_entity(resource_node["location_id"])
-                    target_text = f"Resource: {resource.get('name', resource_node['resource_tag'])} at {location.get('name', resource_node['location_id'])}. Platform reserves the configured amount."
-                except KeyError:
-                    target_text = "A configured resource is available at the nearest known node."
-            elif target_keys and participants:
-                names = ", ".join(str(item.get("name", item.get("id"))) for item in participants[:8])
-                if target_required:
-                    target_text = f"Choose one participant explicitly: {names}. Platform will reject a missing or ambiguous target."
-                else:
-                    target_text = f"Participant: {names}. Platform uses this participant unless another permitted target is supplied."
-            available.append({
-                "ref": f"behavior:{bt_id}",
-                "registration": "platform_validated",
-                "catalog_source": bt.get("kind", "configured"),
-                "name": bt.get("summary") or _label(bt_id),
-                "choice": bt.get("agent_label") or bt.get("summary") or _label(bt_id),
-                "summary": bt.get("description") or bt.get("summary") or _label(bt_id),
-                "purpose": bt.get("purpose") or bt.get("description") or bt.get("summary") or _label(bt_id),
-                "when": bt.get("when") or bt.get("entry_descriptions") or [_predicate_text(item) for item in bt.get("entry_conditions", [])] or ["The current goal makes this useful."],
-                "requires": bt.get("requirements") or bt.get("requirement_descriptions") or [_predicate_text(item) for item in bt.get("entry_conditions", [])] or ["Platform confirms all step requirements."],
-                "target": target_text,
-                "target_required": target_required,
-                "target_options": target_options if target_required else [],
-                "parameters": [
-                    f"{name} ({'required' if spec.get('required', False) else 'optional'} {spec.get('type', 'value')}): {spec.get('description', 'configured input')}"
-                    for name, raw_spec in (bt.get("agent_parameters", {}) or {}).items()
-                    for spec in [raw_spec if isinstance(raw_spec, dict) else {"type": str(raw_spec)}]
-                ],
-                "steps": steps[:5],
-                "time": f"{estimator.behavior_minutes(bt_id, ({'safe_location_id': safe_location_id} if safe_location_id else {}) | ({'source_id': research_sources[0]['id'], 'source_location_id': research_sources[0].get('location_id')} if source_parameter is not None and research_sources else {}), location_id)} minutes",
-                "parameter_options": parameter_options,
-                "cost": list(dict.fromkeys(costs))[:6] or ["Costs are defined by the selected steps."],
-                "impact": list(dict.fromkeys(impacts))[:3] or ["Platform applies configured effects and records events."],
-                "success": [str(item).replace("_", " ") for item in bt.get("success_results", [])] or list(dict.fromkeys(action_successes))[:4] or ["Platform reports the configured success result."],
-                "failure": [str(item).replace("_", " ") for item in bt.get("failure_results", [])] or list(dict.fromkeys(action_failures))[:4] or ["Platform reports a failed or interrupted step."],
-                "interrupt": bt.get("interrupt_policy", "cancel"),
-                "cooldown_minutes": cooldown_minutes,
-                "tags": bt.get("tags", []),
-                "goal_tags": bt.get("goal_tags", []),
-                "drive_tags": bt.get("drive_tags", []),
-                "supports_drive_tags": bt.get("supports_drive_tags", []),
-            })
-        # Long-term goal tags are context only.  They must not promote a
-        # behavior whose current drive, need, or resource conditions are weak.
-        nearby = [item for item in (self.entities_repo.entities_at_location(location_id) if location_id else []) if item.get("id") != agent_id]
-        known_routes = []
-        for route_id in (current_location.get("routes", []) if isinstance(current_location, dict) else []):
-            try:
-                known_routes.append(self.entities_repo.get_entity(str(route_id)).get("name", str(route_id)))
-            except KeyError:
-                known_routes.append(str(route_id))
-        active_behavior_id = state.get("active_behavior_id")
-        active_action_id = state.get("active_action")
-        active_behavior = next((item for item in bt_defs.values() if item.get("id") == active_behavior_id), {})
-        active_action = next((item for item in action_defs.values() if item.get("id") == active_action_id), {})
-        available_actions = [
-            {"choice": action.get("agent_label") or _label(str(action.get("id", "action"))), "name": action.get("agent_label") or _label(str(action.get("id", "action"))), "summary": action.get("agent_summary") or _label(str(action.get("id", "action")))}
-            for action in action_defs.values()
         ]
-        needs = agent.get("needs", {})
-        drives = DriveCalculator(self.store.repositories.metadata.get("rules", {})).calculate(agent)
-        drive_model = (self.store.repositories.metadata.get("rules", {}) or {}).get("motivation_model", {})
+        if failed_conditions:
+            diagnostics.append({"behavior_id": bt_id, "failed": failed_conditions})
+            return None
+        denial = self.rule_compiler.behavior_denial(
+            behavior=bt,
+            agent=agent,
+            context=condition_context,
+            world=self.store.repositories.metadata.get("world_properties", {}) or {},
+        )
+        if denial:
+            diagnostics.append({"behavior_id": bt_id, "failed": [str(denial.get("message") or "denied by an active rule")]})
+            return None
+        cooldown_minutes = max(0, int(bt.get("cooldown_minutes", 0) or 0))
+        if cooldown_minutes:
+            last_minute = self.activity_repo.last_behavior_minute(agent_id, bt_id)
+            current_minute = int(self.store.repositories.metadata.get("world_minute", 0))
+            if last_minute is not None and current_minute - last_minute < cooldown_minutes:
+                diagnostics.append({"behavior_id": bt_id, "failed": [f"cooldown until world minute {last_minute + cooldown_minutes}"]})
+                return None
+        return behavior_context, cooldown_minutes
+
+    def _simulate_behavior(self, frame: _DecisionFrame, bt_id: Any, behavior_context: dict[str, Any]) -> _Simulation | None:
+        """Replay every step against a copy of the agent so later steps see earlier effects."""
+
+        sim = _Simulation(agent=copy.deepcopy(frame.agent), location=dict(frame.current_location))
+        frame.estimator.capabilities = sim.agent.get("capabilities", {}) or {}
+        for node in self._iter_behavior_actions(bt_id):
+            if not self._simulate_action(frame, sim, node, behavior_context):
+                break
+        if sim.unavailable:
+            frame.diagnostics.append({"behavior_id": bt_id, "failed": [f"Action {sim.unavailable_action} cannot start: {sim.unavailable_reason}"]})
+            return None
+        if not sim.steps:
+            frame.diagnostics.append({"behavior_id": bt_id, "failed": ["behavior has no executable Action steps"]})
+            return None
+        return sim
+
+    def _simulate_action(self, frame: _DecisionFrame, sim: _Simulation, node: dict[str, Any], behavior_context: dict[str, Any]) -> bool:
+        """Apply one Action step to the simulation; False when that Action cannot start."""
+
+        action_defs, recipe_defs, estimator = frame.action_defs, frame.recipe_defs, frame.estimator
+        known_fact_keys = frame.known_fact_keys
+        safe_location_id, resource_node, health_location_id = frame.safe_location_id, frame.resource_node, frame.health_location_id
+        validation_target = frame.validation_target
+        simulated_agent, simulated_location = sim.agent, sim.location
+        steps, costs, impacts = sim.steps, sim.costs, sim.impacts
+        action_successes, action_failures = sim.successes, sim.failures
+        action = action_defs.get(node.get("action_id"))
+        if not action:
+            return True
+        simulated_state = simulated_agent.setdefault("initial_state", {})
+        parameters = self._view_action_parameters(node.get("parameters") or {}, simulated_state, behavior_context, safe_location_id=safe_location_id, resource_node=resource_node, health_location_id=health_location_id, default_target_id=(validation_target or {}).get("id"))
+        # A configured destination Action is complete when the actor
+        # is already there. It contributes no visible step to the
+        # surrounding BT, while the remaining steps stay executable.
+        if (
+            action.get("requires_destination")
+            and action.get("completion", {}).get("if_already_at_destination")
+            and parameters.get("location_id") == simulated_state.get("location_id")
+        ):
+            return True
+        action_minutes = estimator._action_minutes(action, parameters, simulated_state.get("location_id"))
+        unavailable_reason = self._action_unavailable_reason(simulated_agent, action, parameters, simulated_location, action_minutes)
+        if unavailable_reason is not None:
+            sim.unavailable = True
+            sim.unavailable_action = str(action.get("id") or "unknown action")
+            sim.unavailable_reason = unavailable_reason
+            return False
+        recipe_action = (
+            action.get("duration", {}).get("mode") == "recipe_duration"
+            or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
+        )
+        recipe = recipe_defs.get(str(parameters.get("recipe_id"))) if recipe_action else None
+        action_for_view = action
+        progress_definition = action.get("progress") if isinstance(action.get("progress"), dict) else {}
+        if progress_definition.get("key") and "{source_id}" in str(progress_definition.get("key")) and parameters.get("source_id"):
+            try:
+                research_source = self.entities_repo.get_entity(str(parameters["source_id"]))
+            except KeyError:
+                research_source = {}
+            source_state = research_source.get("initial_state") if isinstance(research_source.get("initial_state"), dict) else {}
+            discoveries = self.memory_repo.research_discoveries(str(parameters["source_id"]))
+            known = set(known_fact_keys)
+            current_stage = next((item for item in discoveries if str(item.get("id")) not in known and str(item.get("status") or "active").casefold() not in {"obsolete", "disabled"}), None)
+            required = (current_stage or {}).get("required")
+            if required is None:
+                required = research_source.get("research_required", source_state.get("research_required"))
+            if required is None:
+                required = (self.store.repositories.metadata.get("rules", {}) or {}).get("research_default_required")
+            if required is not None:
+                action_for_view = copy.deepcopy(action)
+                action_for_view.setdefault("progress", {})["required"] = required
+        view = _action_view(action_for_view, recipe, parameters)
+        steps.append(view["name"])
+        costs.extend(view["cost"])
+        impacts.extend(view["impact"][:3])
+        action_successes.extend(view["success"])
+        action_failures.extend(view["failure"])
+        schema = self._attribute_schema()
+        for cost_key, rate in (action.get("costs", {}).get("per_minute", {}) or {}).items():
+            if cost_key == "time" or not isinstance(rate, (int, float)) or rate <= 0:
+                continue
+            target_state = simulated_state if cost_key in simulated_state else simulated_agent.get("needs", {})
+            if cost_key not in target_state:
+                continue
+            current = float(target_state.get(cost_key, schema.default(str(cost_key), 0)) or 0)
+            delta = current + float(rate) * action_minutes if schema.cost_mode(str(cost_key)) == "increase" else current - float(rate) * action_minutes
+            target_state[cost_key] = schema.clamp(str(cost_key), delta)
+        # Validate a sequential BT against the state produced by its
+        # earlier configured steps. This keeps a travel-then-service
+        # behavior executable without adding action-specific code.
+        moves_actor = any(
+            str(effect.get("type") or effect.get("op") or "") == "location_set"
+            for effect in (action.get("effects") or [])
+            if isinstance(effect, dict)
+        )
+        if moves_actor and parameters.get("location_id"):
+            simulated_state["location_id"] = str(parameters["location_id"])
+            try:
+                simulated_location = self.entities_repo.get_entity(str(parameters["location_id"]))
+            except KeyError:
+                simulated_location = {}
+        sim.location = simulated_location
+        return True
+
+    def _target_guidance(self, frame: _DecisionFrame, bt: dict[str, Any]) -> _Guidance:
+        bt_defs, participants, research_sources = frame.bt_defs, frame.participants, frame.research_sources
+        safe_location_id, resource_node, health_location_id = frame.safe_location_id, frame.resource_node, frame.health_location_id
+        target_text = "Platform resolves permitted targets from the current view."
+        target_keys = self._target_parameter_keys(bt, bt_defs)
+        target_required = bool(target_keys) and len(participants) > 1
+        target_options = [{"id": str(item.get("id", "")), "name": str(item.get("name", item.get("id", "participant")))} for item in participants[:8]]
+        parameter_options: dict[str, list[dict[str, Any]]] = {}
+        source_parameter = (bt.get("agent_parameters", {}) or {}).get("source_id")
+        if source_parameter is not None and research_sources:
+            parameter_options["source_id"] = [
+                {
+                    "name": str(item.get("name") or item.get("id")),
+                    "location": str(item.get("location_name") or item.get("location_id") or "configured source"),
+                    "remaining_stages": int(item.get("remaining_stages", 0) or 0),
+                }
+                for item in research_sources[:12]
+            ]
+            target_text = "Choose one configured research source: " + "; ".join(
+                f"{item['name']} ({item['remaining_stages']} stage(s) remaining at {item['location']})"
+                for item in parameter_options["source_id"]
+            )
+        bindings = bt.get("parameter_bindings", {}) or {}
+        binding_values = {
+            "nearest_safe_location": safe_location_id,
+            "nearest_health_service": health_location_id,
+            "nearest_resource_node": (resource_node or {}).get("location_id"),
+            "nearest_resource_tag": (resource_node or {}).get("resource_tag"),
+        }
+        bound_value = next((binding_values.get(str(resolver)) for resolver in bindings.values() if binding_values.get(str(resolver))), None)
+        if bound_value and any(str(resolver) == "nearest_safe_location" for resolver in bindings.values()):
+            try:
+                target_text = f"Configured safe location: {self.entities_repo.get_entity(bound_value).get('name', bound_value)}."
+            except KeyError:
+                target_text = "Configured safe location is available."
+        elif bound_value and any(str(resolver) == "nearest_health_service" for resolver in bindings.values()):
+            try:
+                target_text = f"Health service: {self.entities_repo.get_entity(bound_value).get('name', bound_value)}."
+            except KeyError:
+                target_text = "Configured health service is available."
+        elif resource_node and any(str(resolver) == "nearest_resource_node" for resolver in bindings.values()):
+            try:
+                resource = self.entities_repo.get_entity(resource_node["resource_tag"])
+                location = self.entities_repo.get_entity(resource_node["location_id"])
+                target_text = (
+                    f"Collect {resource.get('name', resource_node['resource_tag'])} from "
+                    f"{location.get('name', resource_node['location_id'])}. "
+                    "Source stock decreases and carried inventory increases."
+                )
+            except KeyError:
+                target_text = "Collect the configured resource from the nearest known node; source stock decreases."
+        elif resource_node and any(
+            node.get("type") == "action"
+            and any(value == "context.resource_tag" for value in (node.get("parameters") or {}).values())
+            for node in bt.get("nodes", []) or []
+        ):
+            try:
+                resource = self.entities_repo.get_entity(resource_node["resource_tag"])
+                location = self.entities_repo.get_entity(resource_node["location_id"])
+                target_text = f"Resource: {resource.get('name', resource_node['resource_tag'])} at {location.get('name', resource_node['location_id'])}. Platform reserves the configured amount."
+            except KeyError:
+                target_text = "A configured resource is available at the nearest known node."
+        elif target_keys and participants:
+            names = ", ".join(str(item.get("name", item.get("id"))) for item in participants[:8])
+            if target_required:
+                target_text = f"Choose one participant explicitly: {names}. Platform will reject a missing or ambiguous target."
+            else:
+                target_text = f"Participant: {names}. Platform uses this participant unless another permitted target is supplied."
+        return _Guidance(target_text, target_required, target_options, parameter_options, source_parameter)
+
+    def _behavior_entry(
+        self, frame: _DecisionFrame, bt_id: Any, bt: dict[str, Any], sim: _Simulation, guidance: _Guidance, cooldown_minutes: int
+    ) -> dict[str, Any]:
+        estimator, research_sources, location_id = frame.estimator, frame.research_sources, frame.location_id
+        safe_location_id = frame.safe_location_id
+        steps, costs, impacts = sim.steps, sim.costs, sim.impacts
+        action_successes, action_failures = sim.successes, sim.failures
+        target_text, target_required, target_options = guidance.text, guidance.required, guidance.options
+        parameter_options, source_parameter = guidance.parameter_options, guidance.source_parameter
+        return {
+            "ref": f"behavior:{bt_id}",
+            "registration": "platform_validated",
+            "catalog_source": bt.get("kind", "configured"),
+            "name": bt.get("summary") or _label(bt_id),
+            "choice": bt.get("agent_label") or bt.get("summary") or _label(bt_id),
+            "summary": bt.get("description") or bt.get("summary") or _label(bt_id),
+            "purpose": bt.get("purpose") or bt.get("description") or bt.get("summary") or _label(bt_id),
+            "when": bt.get("when") or bt.get("entry_descriptions") or [_predicate_text(item) for item in bt.get("entry_conditions", [])] or ["The current goal makes this useful."],
+            "requires": bt.get("requirements") or bt.get("requirement_descriptions") or [_predicate_text(item) for item in bt.get("entry_conditions", [])] or ["Platform confirms all step requirements."],
+            "target": target_text,
+            "target_required": target_required,
+            "target_options": target_options if target_required else [],
+            "parameters": [
+                f"{name} ({'required' if spec.get('required', False) else 'optional'} {spec.get('type', 'value')}): {spec.get('description', 'configured input')}"
+                for name, raw_spec in (bt.get("agent_parameters", {}) or {}).items()
+                for spec in [raw_spec if isinstance(raw_spec, dict) else {"type": str(raw_spec)}]
+            ],
+            "steps": steps[:5],
+            "time": f"{estimator.behavior_minutes(bt_id, ({'safe_location_id': safe_location_id} if safe_location_id else {}) | ({'source_id': research_sources[0]['id'], 'source_location_id': research_sources[0].get('location_id')} if source_parameter is not None and research_sources else {}), location_id)} minutes",
+            "parameter_options": parameter_options,
+            "cost": list(dict.fromkeys(costs))[:6] or ["Costs are defined by the selected steps."],
+            "impact": list(dict.fromkeys(impacts))[:3] or ["Platform applies configured effects and records events."],
+            "success": [str(item).replace("_", " ") for item in bt.get("success_results", [])] or list(dict.fromkeys(action_successes))[:4] or ["Platform reports the configured success result."],
+            "failure": [str(item).replace("_", " ") for item in bt.get("failure_results", [])] or list(dict.fromkeys(action_failures))[:4] or ["Platform reports a failed or interrupted step."],
+            "interrupt": bt.get("interrupt_policy", "cancel"),
+            "cooldown_minutes": cooldown_minutes,
+            "tags": bt.get("tags", []),
+            "goal_tags": bt.get("goal_tags", []),
+            "drive_tags": bt.get("drive_tags", []),
+            "supports_drive_tags": bt.get("supports_drive_tags", []),
+        }
+
+    def _memory_context(self, frame: _DecisionFrame, available: list[dict[str, Any]], drives: list[dict[str, Any]]) -> tuple[str, list[Any], list[Any], list[Any], list[Any]]:
+        agent_id, agent = frame.agent_id, frame.agent
+        current_location, location_id = frame.current_location, frame.location_id
         memory_query_parts = [str(agent.get("ultimate_goal", ""))]
         if current_location:
             memory_query_parts.append(str(current_location.get("name", location_id)))
@@ -1167,6 +1364,10 @@ class AgentViewCompiler:
         ])[:8]
         if not known_facts:
             known_facts = [{"fact": self._humanize_fact(fact), "source_type": "config_seed", "confidence": 1.0} for fact in agent.get("knowledge_seed", [])[:8]]
+        return memory_query, memories, short_term_memories, long_term_memories, known_facts
+
+    def _research_tracks(self, frame: _DecisionFrame) -> list[dict[str, Any]]:
+        research_sources, known_fact_keys, catalog_ids = frame.research_sources, frame.known_fact_keys, frame.catalog_ids
         research_tracks: list[dict[str, Any]] = []
         known_fact_set = set(known_fact_keys)
         seen_sources: set[str] = set()
@@ -1218,6 +1419,9 @@ class AgentViewCompiler:
                         for item in discoveries
                     ],
                 })
+        return research_tracks
+
+    def _relationship_view(self, agent_id: str) -> list[dict[str, Any]]:
         relationships = self.entities_repo.get_related_relationships(agent_id, limit=5)
         for relationship in relationships:
             person_id = relationship.get("person")
@@ -1228,6 +1432,9 @@ class AgentViewCompiler:
                     relationship["person"] = self.entities_repo.get_entity(person_id).get("name", person_id)
                 except KeyError:
                     pass
+        return relationships
+
+    def _recent_activity(self, agent_id: str, bt_defs: dict[str, dict[str, Any]]) -> tuple[list[Any], list[Any]]:
         actor_events = self.events_repo.recent_events_for_actor(agent_id, limit=8)
         recent_actions = [
             self._with_behavior_choice(self._humanize_record(item), bt_defs)
@@ -1242,14 +1449,11 @@ class AgentViewCompiler:
                 continue
             behavior = bt_defs.get(str(outcome.get("behavior_id", "")), {})
             outcome["behavior_choice"] = behavior.get("agent_label") or behavior.get("summary") or behavior.get("description") or "a behavior"
-        observation_facts = []
-        if current_location:
-            observation_facts.append(f"You are at {current_location.get('name', location_id)}.")
-        observation_facts.extend(
-            f"{item.get('name', item.get('id', 'Someone'))} is nearby."
-            for item in nearby[:4]
-        )
-        prompt_protocol, platform_rules = self._prompt_sections(role)
+        return recent_actions, recent_outcomes
+
+    def _decision_constraints(self, frame: _DecisionFrame, needs: dict[str, Any]) -> list[str]:
+        rules, state, available = frame.rules, frame.state, frame.available
+        location_id, safe_location_id = frame.location_id, frame.safe_location_id
         decision_constraints: list[str] = []
         labels = {str(item.get("id")): str(item.get("label") or item.get("id")) for item in (self.store.repositories.metadata.get("attributes", []) or []) if isinstance(item, dict) and item.get("id")}
         for signal in rules.get("decision_signals", []) or []:
@@ -1278,6 +1482,9 @@ class AgentViewCompiler:
             decision_constraints.append("Exactly one BT is executable in this state; choose it only if its stated purpose fits the current goal.")
         elif not available:
             decision_constraints.append("No BT is executable in this state; return wait.")
+        return decision_constraints
+
+    def _capability_update_candidates(self, agent_id: str, agent: dict[str, Any], rules: dict[str, Any]) -> list[dict[str, Any]]:
         capability_update_candidates = []
         progression_rules = rules.get("capability_progression", {}) or {}
         capability_defs = {str(item.get("id")): item for item in self._definitions("capability_def")}
@@ -1293,6 +1500,9 @@ class AgentViewCompiler:
             required = int((definition or {}).get("minimum_completed_outcomes", 3) or 3)
             if int(completed or 0) >= required:
                 capability_update_candidates.append({"capability": capability, "completed_outcomes": int(completed), "required_outcomes": required, "max_delta": float((definition or {}).get("max_delta", 0.1) or 0.1), "evidence_sources": list(dict.fromkeys(str(item.get("source") or "configured result") for item in evidence_events))})
+        return capability_update_candidates
+
+    def _institution_view(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
         pending_institutions = [
             {"name": str(item.get("name", "")), "purpose": str(item.get("purpose", "")), "scope": str(item.get("scope", "world")), "status": "proposed"}
             for item in self.social_repo.list_institutions(status="proposed", limit=12)
@@ -1307,6 +1517,9 @@ class AgentViewCompiler:
                 "name": str(item.get("name", "")),
                 "entries": self.social_repo.institution_ledger_totals(str(item.get("institution_id")), None)[:12],
             })
+        return pending_institutions, active_institutions, institution_ledgers
+
+    def _agent_story_view(self, agent_id: str, agent: dict[str, Any]) -> tuple[list[Any], list[Any], list[dict[str, Any]], list[dict[str, Any]]]:
         story_goals = list(agent.get("story_goals", []) or [])[-3:]
         behavior_assignments = [
             item for item in (agent.get("behavior_assignments", []) or [])
@@ -1337,51 +1550,7 @@ class AgentViewCompiler:
         active_story_beats.sort(key=lambda item: item["world_minute"], reverse=True)
         active_story_beats = active_story_beats[:3]
         active_story_threads = self._active_story_threads()
-        result = {
-            "context_version": "1", "role": role,
-            "world_revision": int(self.store.repositories.metadata.get("world_revision", 0) or 0),
-            "agent_revision": int(agent.get("agent_revision", 0) or 0),
-            "prompt_protocol": prompt_protocol,
-            "platform_rules": platform_rules,
-            "world_time": self._world_time(),
-            "self": {"id": agent_id, "name": agent.get("name", agent_id), "role": agent.get("role", "agent"), "status": state.get("status", "idle"), "location": current_location.get("name", location_id) if isinstance(current_location, dict) else location_id, "known_routes": known_routes, "attributes": self._attribute_values(agent, state), "goal": agent.get("ultimate_goal")},
-            "identity": {"traits": agent.get("traits", {}), "beliefs": agent.get("beliefs", []), "capabilities": agent.get("capabilities", {})},
-            "goal_tags": agent.get("goal_tags", []),
-            "capability_history": self.activity_repo.list_capability_progress(agent_id, limit=5),
-            "capability_update_candidates": capability_update_candidates,
-            "needs": needs, "inventory": agent.get("inventory", {}), "injuries": state.get("injuries", []),
-            "drives": drives[:5], "drive_model": drive_model, "observation": {"facts": observation_facts[:6], "source": "current_state"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "research_tracks": research_tracks[:8], "memories": memories, "short_term_memories": short_term_memories, "long_term_memories": long_term_memories, "memory_query": memory_query, "recent_actions": recent_actions, "recent_outcomes": recent_outcomes, "direct_relationships": relationships,
-            "active_task": {"bt": active_behavior.get("summary") or ("in progress" if active_behavior_id else None), "action": active_action.get("description") or (_label(str(active_action_id)) if active_action_id else None), "remaining_minutes": state.get("remaining_minutes", 0)},
-            "open_trade_offers": self._trade_offer_view(agent_id),
-            "available_actions": available_actions if role == "agent_reflection" else [],
-            "active_world_rules": self.rule_compiler.model_view(
-                self._world_rule_labels(),
-                agent=agent,
-                context={
-                    "location_id": location_id,
-                    "current_location": current_location,
-                    "recent_event_types": self._recent_event_types(),
-                },
-                world=self.store.repositories.metadata.get("world_properties", {}) or {},
-            ),
-            "pending_institutions": pending_institutions,
-            "active_institutions": active_institutions,
-            "institution_ledgers": institution_ledgers,
-            "story_goals": story_goals,
-            "progression_goals": self._progression_goals(agent, available=available, diagnostics=diagnostics, bt_defs=bt_defs),
-            "behavior_assignments": behavior_assignments,
-            "active_story_beats": active_story_beats,
-            "active_story_threads": active_story_threads,
-            "executable_behaviors": self._assign_choices(available) if role == "agent_decision" else [],
-            "decision_constraints": decision_constraints if role == "agent_decision" else [],
-            "last_platform_result": self._with_behavior_choice(
-                self._humanize_record(state.get("last_platform_result")), bt_defs
-            ),
-            "tools": self._role_tools(role),
-        }
-        if include_diagnostics:
-            result["unavailable_behavior_diagnostics"] = diagnostics
-        return result
+        return story_goals, behavior_assignments, active_story_beats, active_story_threads
 
     @staticmethod
     def _view_action_parameters(parameters: dict[str, Any], state: dict[str, Any], context_values: dict[str, Any], *, safe_location_id: str | None = None, resource_node: dict[str, str] | None = None, health_location_id: str | None = None, default_target_id: str | None = None) -> dict[str, Any]:
