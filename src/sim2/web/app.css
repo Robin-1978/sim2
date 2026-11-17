@@ -194,6 +194,14 @@ h1, h2, h3 { font-weight: 650; }
   scrollbar-color: rgba(101, 216, 194, 0.27) transparent;
 }
 
+/* The character rail contains the identity, inventory and capability panels.
+   Let the document carry its height so a laptop viewport never hides the
+   lower panels inside a barely visible nested scrollbar. */
+.left-rail {
+  max-height: none;
+  overflow: visible;
+}
+
 .center-stage { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
 .panel {
