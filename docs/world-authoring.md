@@ -661,6 +661,27 @@ one, so a behavior bound to `nearest_health_service` resolves to nothing. A
 condition can also name a tag directly with `location.tag.<name>`. The shipped
 worlds declare the groups they use.
 
+### Failure recovery events
+
+A behavior whose last run did not complete is blocked for that actor: its choice
+is not offered (the view says to wait for a configured recovery event) and a
+direct submission is rejected as `failed_behavior_blocked`. The block lifts when
+an event from the recovery list is recorded at a later world minute.
+`rules.failure_recovery_events` is that list, written as event types:
+
+```yaml
+failure_recovery_events: [resource.regenerated, entity.created, gate.repaired]
+```
+
+When the key is absent or empty, the engine's default list applies:
+`resource.regenerated`, `resource.changed`, `entity.created`,
+`definition.registered`, `behavior.registered`, `institution.activated`,
+`institution.allocation_completed`, `story.beat.activated`, `research.completed`
+and `exploration.completed`. A list in the rules replaces the default instead of
+extending it, so repeat any default event the world still wants. A world whose
+own actions record the event that should unblock a behavior, such as a repaired
+gate, lists it here.
+
 ## Package files
 
 The compiler writes a stable package layout:

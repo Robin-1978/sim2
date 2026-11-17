@@ -470,6 +470,56 @@ fix them:
 
 Still above 200 lines: `api/cli.py:main` (291).
 
+### Hardcode leftovers pass (2026-11-17)
+
+This pass looked for world vocabulary that the engine, the prompts or the web
+client still carried. The rule it applied: engine code may name what the
+Platform itself publishes or defines (event types it records, role and intent
+names, the condition and resolver vocabulary, lifecycle statuses); it must not
+name what a world authors (tag names, titles, genres, seasons, phrases of one
+language). Three changes followed, each with its own regression test:
+
+| Commit | Change | Evidence |
+| --- | --- | --- |
+| `c4fff3e` | Location tag groups come from `rules.location_tag_groups` only. The health service and safe-location resolvers fell back to `{"health", "clinic"}` and `{"safe"}` while the `location.*` conditions had no default (`actions/conditions.py:346`, `:359`), so a world that tagged a clinic but declared no group was sent there and refused on arrival. | On the previous code, with the treatment behavior reduced to its travel step, the character reached the clinic from an undeclared group; now she stays. `tests/test_location_tag_groups.py` fails on the previous code and 7 of 8 mutations are caught (the eighth, an early return for an empty group, is equivalent). Every shipped world already declares the groups it uses. |
+| `96a3a7a` | One `MEANINGFUL_REFLECTION_EVENTS` (`agents/reflection_policy.py`) replaces the two copies in `agents/intent_gateway.py` and `agents/tool_executor.py`. | `tests/test_reflection_evidence.py` passes on the previous code and on the new code, and catches 10 of 10 mutations, including a drift of either old copy. |
+| `ccb2290` | The static web pages carry no world name: placeholders are neutral, the map dialog heading is filled from the world's title (it used to read "潮汐公社" for every world), and the empty-scene line is neutral. | `tests/test_web_assets_world_neutral.py` fails on the previous assets and catches 7 of 7 mutations. |
+
+`rules.location_tag_groups` and `rules.failure_recovery_events` are now
+documented in `docs/world-authoring.md`; the second one already existed but had
+no entry.
+
+Kept in code on purpose, because the Platform defines the vocabulary:
+
+- Event types the Platform publishes (`platform/activity.py:644`, `:839`,
+  `:897`, `:952`, `:972`, `:1004`) and the lists that name them:
+  `agent_view/story_view.py:123`, `behavior/recovery.py:6` (the world can
+  replace it with `rules.failure_recovery_events`), `platform/stagnation.py:32`
+  and `evolution/config.py:20`.
+- Role and intent names (`agents/runtime_policy.py:9`, `:61`), the condition
+  vocabulary (`actions/conditions.py:172`), the lifecycle statuses
+  (`world/lifecycle.py:28`) and the formula roots of the combat effect
+  (`actions/effects.py:111`, `platform/activity.py:526`).
+
+Left for a decision, each with its evidence:
+
+- `random_seed` is declared by every world manifest, validated and stored
+  (`bootstrap/service.py:326`, `:764`), but nothing in `src/` reads it and
+  `src/` imports no `random` module.
+- Predicates handled at `actions/conditions.py:356` default to true when the
+  context holds no value (`:361`, `context.get(path, True)`).
+- The `propose_world_change` condition example names starter-village
+  vocabulary (`agent_view/tool_registry.py:381`); changing it changes a prompt
+  every God sees, so it needs a real-provider check first.
+- The reflection decline phrases cover English and Chinese only
+  (`agents/intent_gateway.py:13`).
+- The web client labels a fixed set of tags and drops the others
+  (`web/app.js:483`, `:588`, two copies of one table).
+- The Story view's default source events (`agent_view/story_view.py:123`) are
+  a different list from the world's `story.emergent_source_event_types`
+  (`platform/story_runtime.py:134`); the Platform also marks its own source
+  events with `wake="story_source"` (`platform/activity.py:952`).
+
 ### Execution order for the remaining work
 
 The following is the concrete plan for this development cycle. Each stage
