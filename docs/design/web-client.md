@@ -49,6 +49,12 @@ Browser
 `rules.item_labels`，世界数值名来自 `rules.world_property_labels`，饮水/进食
 警戒线来自 `rules.context_values.*_threshold`。代码不包含世界专用 ID 分支。
 
+静态页面（`index.html`、`app.js`、`admin.html`、`admin.js`）不写任何世界的名称、
+类型或季节：HUD、入口卡和地图弹窗的世界名来自世界投影的 `title`（入口卡和
+地图弹窗缺省显示“世界”，HUD 先退回世界 ID），入口卡的类型和季节来自 `genre`、
+`season`（缺省显示“世界模拟”和“—”）。地点没有描述时显示中性的“这里没有更多
+描述。”。
+
 ### 玩家循环
 
 ```text
@@ -164,6 +170,8 @@ Browser
 
 - `tests/test_web_client.py`：游戏页面与管理页面资源、玩家恢复、世界投影、
   对话/交易、手动同步推进、会话头、Operator 解锁。
+- `tests/test_web_assets_world_neutral.py`：静态页面不含任何已交付世界的名称、
+  类型或季节，地图弹窗标题取自世界标题。
 - `tests/test_player_entry_templates.py`：玩家模板、恢复补齐、文本客户端和
   行动目标。
 - `tests/test_tidebound_commons.py`：世界配置、资源/配方、公开目标、自动

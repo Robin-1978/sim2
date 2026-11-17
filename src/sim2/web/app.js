@@ -581,7 +581,7 @@
     const art = $("scene-art");
     art.dataset.scene = sceneTheme(location);
     $("scene-title").textContent = location.name || player.location || "未知地点";
-    $("scene-description").textContent = location.description || "四周只有潮声和风。";
+    $("scene-description").textContent = location.description || "这里没有更多描述。";
     $("scene-eyebrow").textContent = player.location_safe ? "安全地点" : "你在这里";
     const tags = $("scene-tags");
     tags.replaceChildren();
@@ -1222,6 +1222,7 @@
   }
 
   function renderMap() {
+    $("map-world-title").textContent = state.world?.title || "世界";
     const canvas = $("map-canvas");
     canvas.replaceChildren();
     const nodes = Array.isArray(state.map?.nodes) ? state.map.nodes : [];
