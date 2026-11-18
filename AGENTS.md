@@ -1,5 +1,13 @@
 # Repository Guidelines
 
+## Current Goal (must read)
+
+The active goal and open-issue ledger is
+[`docs/design/social-authority-loop-goal.md`](docs/design/social-authority-loop-goal.md).
+Read it before planning or changing code. Update the ledger after every verified
+fix; never mark an issue fixed without a focused test or a recorded
+remote-provider probe.
+
 ## Project Structure
 
 - `src/sim2/` contains the Python package. Keep platform state changes in `platform/`, persistence in `persistence/`, Agent/ReAct logic in `agents/`, prompt projection in `agent_view/` and `prompting/`, and provider adapters in `llm/`.
