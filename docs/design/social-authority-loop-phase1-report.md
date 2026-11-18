@@ -97,6 +97,13 @@ Each valid run observed: the denial in Tomas's view, Tomas choosing
 The probe start is deterministic: Platform first records a real
 `behavior.denied` for Tomas. It does not use a model to create the denial.
 
+The probe was re-run after the generic-operation rename in `3a145d1`. Platform
+now recognizes `open_access_request`, `decide_access_request` and
+`revoke_access`; the probe world keeps its `request_access`,
+`approve_withdrawal` and `revoke_delegation` behavior IDs as content. The
+re-run produced the same result: 5 valid probes, 5/5 request, 5/5 causal
+reference, 5/5 approval and 5/5 withdrawal.
+
 ## 4. Negative-space evidence
 
 The deterministic tests assert, at the relevant checkpoints:
@@ -152,6 +159,7 @@ The following remain `NOT_PROVEN` by design:
 | Full suite | `python -m pytest -q` | `1367 passed` |
 | Platform benchmark | `python scripts/benchmark_platform.py --agents 1000 --runs 5` | p95 `182.03 ms`; elapsed `[164.279, 178.723, 163.391, 182.856, 166.447]` ms |
 | Remote probe | `python scripts/verify_social_authority.py --provider remote --runs 5` | 5 valid, 5/5 request, 5/5 causal reference, 5/5 approval, 5/5 withdrawal |
+| Remote probe after generic-operation rename (`3a145d1`) | same command | 5 valid, 5/5 request, 5/5 causal reference, 5/5 approval, 5/5 withdrawal |
 
 The benchmark p95 remains below the frozen `250 ms` bound. The full-suite
 result includes the 18 deterministic contract tests and the existing test
