@@ -24,3 +24,13 @@ contracts:
       resource_withdrawal/resource_take effect needs a positive amount and a
       scope, and resource_take needs mode covert. If the world already supports
       the target cell, wait.
+    required_content:
+      entities: [Water Plant, Water Reserve]
+      behavior_effects: [world_resource_delta, resource_withdrawal, resource_take]
+      behavior_operations:
+        - open_access_request
+        - decide_access_request:approve
+        - decide_access_request:reject
+        - revoke_access
+        - review_violation
+      authorization_modes: [resource_access, request_decision, delegation_revocation, violation_review]

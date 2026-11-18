@@ -405,11 +405,18 @@ class AgentEngine:
             and str(session.task_type) == "god_structural"
         )
 
-    def _required_content_missing(self, session: ReactSession) -> list[str]:
-        """Return contract-required entities, behaviors or rules that do not exist yet."""
+    def _required_content_missing(self, session: ReactSession, required: dict[str, Any] | None = None) -> list[str]:
+        """Return contract-required content that does not exist yet.
 
-        contract = session.context.get("evolution_trigger")
-        required = contract.get("required_content") if isinstance(contract, dict) else None
+        Exact ids are supported, but the preferred contract uses semantic
+        requirements: an effect family, an authorization operation, or an
+        authorization rule mode.  Content may then choose its own visible
+        names without failing the structural gate.
+        """
+
+        if required is None:
+            contract = session.context.get("evolution_trigger")
+            required = contract.get("required_content") if isinstance(contract, dict) else None
         if not isinstance(required, dict):
             return []
         entities = self.platform.store.repositories.entities
@@ -427,7 +434,8 @@ class AgentEngine:
             if not found:
                 missing.append(f"entity: {name}")
         behavior_values: set[str] = set()
-        for item in entities.get_definitions("bt_def"):
+        behaviors = list(entities.get_definitions("bt_def"))
+        for item in behaviors:
             behavior_values.update({
                 str(item.get("id") or "").casefold(),
                 str(item.get("agent_label") or "").casefold(),
@@ -436,13 +444,44 @@ class AgentEngine:
         for raw in required.get("behaviors") or []:
             if str(raw).casefold() not in behavior_values:
                 missing.append(f"behavior: {raw}")
+        action_defs = list(entities.get_definitions("action_def"))
+        effect_types: set[str] = set()
+        for action in action_defs:
+            for effect in action.get("effects") or []:
+                if isinstance(effect, dict):
+                    effect_types.add(str(effect.get("type") or effect.get("op") or "").casefold())
+        for raw in required.get("behavior_effects") or []:
+            if str(raw).casefold() not in effect_types:
+                missing.append(f"effect: {raw}")
+        operations: set[tuple[str, str]] = set()
+        for behavior in behaviors:
+            operation = str(behavior.get("authorization_operation") or "").casefold()
+            decision = str(behavior.get("authorization_decision") or "").casefold()
+            operations.add((operation, decision))
+            operations.add((operation, ""))
+        for raw in required.get("behavior_operations") or []:
+            value = str(raw)
+            if ":" in value:
+                operation, decision = value.split(":", 1)
+                found = (operation.casefold(), decision.casefold()) in operations
+            else:
+                found = (value.casefold(), "") in operations
+            if not found:
+                missing.append(f"operation: {value}")
         rules = (self.platform.store.repositories.metadata.get("rules", {}) or {}).get("world_rules", []) or []
         rule_values: set[str] = set()
+        authorization_modes: set[str] = set()
         for item in rules:
             rule_values.update({str(item.get("id") or "").casefold(), str(item.get("name") or "").casefold()})
+            effect = item.get("effect") if isinstance(item.get("effect"), dict) else {}
+            if str(effect.get("type") or "") == "authorization":
+                authorization_modes.add(str(effect.get("mode") or "resource_access").casefold())
         for raw in required.get("rules") or []:
             if str(raw).casefold() not in rule_values:
                 missing.append(f"rule: {raw}")
+        for raw in required.get("authorization_modes") or []:
+            if str(raw).casefold() not in authorization_modes:
+                missing.append(f"authorization mode: {raw}")
         return missing
 
     def _contract_correction(self, session: ReactSession) -> dict[str, Any] | None:
