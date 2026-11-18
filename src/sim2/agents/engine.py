@@ -381,6 +381,23 @@ class AgentEngine:
         # error storm; the scheduler will retry after backoff.
         return session.finish(session.last_result, iterations=iteration)
 
+    def _multi_proposal(self, session: ReactSession, result: dict[str, Any] | None) -> bool:
+        """Whether an accepted structural God proposal should continue the same turn.
+
+        The broad structural contract allows several proposals in one turn.  A
+        God turn therefore keeps the ReAct session open after an accepted
+        proposal so the model can submit the next one, instead of stopping at
+        the first Intent.  Other roles and tasks retain the one-final-Intent
+        contract.
+        """
+
+        return bool(
+            result
+            and str(result.get("status")) == "accepted"
+            and session.role == "god"
+            and str(session.task_type) == "god_structural"
+        )
+
     def _run_tool_calls(self, session: ReactSession, iteration: int, response: dict[str, Any], call: tuple[str, dict[str, Any]]) -> AgentTurn | None:
         """Execute the tool call(s) of one model response; finish the turn once an Intent is accepted."""
 
@@ -409,6 +426,8 @@ class AgentEngine:
                 "submission_results": intent_results,
                 "submission_count": len(intent_results),
             }
+        if not batched and self._multi_proposal(session, accepted_result):
+            return None
         return session.finish(accepted_result, iterations=iteration)
 
     @staticmethod
@@ -530,6 +549,8 @@ class AgentEngine:
         session.context["last_platform_result"] = result
         session.last_result = result
         if result.get("status") in {"accepted", "wait"}:
+            if self._multi_proposal(session, result):
+                return None
             return session.finish(result, iterations=iteration, response=response)
         return None
 

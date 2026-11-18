@@ -256,7 +256,17 @@ def _stage_ready(platform: Platform, stage_key: str) -> bool:
             "revoke": "revoke_delegation",
             "review": "review_water_violation",
         }[stage_key]
-        return _has_action(platform, action_id) and _has_behavior(platform, action_id)
+        operation = {
+            "request": ("open_access_request", None),
+            "approve": ("decide_access_request", "approve"),
+            "reject": ("decide_access_request", "reject"),
+            "revoke": ("revoke_access", None),
+            "review": ("review_violation", None),
+        }.get(stage_key)
+        ready = _has_action(platform, action_id) and _has_behavior(platform, action_id)
+        if ready and operation is not None:
+            ready = _behavior_with_operation(platform, operation[0], decision=operation[1]) is not None
+        return ready
     return _has_rule(platform, {
         "resource_rule": "water_reserve_stewardship",
         "approval_rule": "water_approval_authority",
@@ -305,8 +315,8 @@ def run_probe(platform: Platform, router: LLMRouter, provider: str, model: str |
                     str(task["task_type"]),
                     task.get("source_events") or [],
                     current_instruction,
-                    max_iterations=12 if broad else 3,
-                    max_tool_calls=30 if broad else 4,
+                    max_iterations=24 if broad else 3,
+                    max_tool_calls=40 if broad else 4,
                     max_read_tool_calls=2 if broad else 1,
                 )
             except Exception as exc:

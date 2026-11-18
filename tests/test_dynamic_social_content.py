@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from sim2.agents.engine import AgentEngine
 from sim2.bootstrap.service import create_instance
 from sim2.intents.models import BehaviorIntent
 from sim2.platform.runtime import Platform
@@ -687,3 +688,58 @@ def test_da_13_third_resource_has_independent_scope(platform: Platform) -> None:
     assert platform.store.repositories.contested.active_restriction("tomas", "coolant_reserve", "coolant_withdrawal") is None
     assert behavior_entry(platform, "tomas", "withdraw_coolant")["eligibility"]["available"] is True
     assert submit(platform, "tomas", "withdraw_coolant", "coolant-after-forgive")["status"] == "accepted"
+
+
+class _SequenceProvider:
+    """Return one scripted model response per ReAct iteration."""
+
+    def __init__(self, responses: list[dict[str, Any]]) -> None:
+        self.responses = list(responses)
+        self.calls = 0
+
+    def complete_json(self, *, system, context, tools=None, messages=None):
+        self.calls += 1
+        return dict(self.responses.pop(0))
+
+
+def test_god_structural_accepts_multiple_proposals_in_one_turn(platform: Platform) -> None:
+    """The broad structural contract may submit several proposals without ending at the first."""
+
+    provider = _SequenceProvider([
+        {
+            "intent_type": "propose_entity",
+            "entity_type": "faction",
+            "name": "Multi Proposal Faction A",
+            "description": "A faction created in a multi-proposal God turn.",
+        },
+        {
+            "intent_type": "propose_entity",
+            "entity_type": "faction",
+            "name": "Multi Proposal Faction B",
+            "description": "A second faction created in the same God turn.",
+        },
+        {"intent_type": "wait", "reason": "Both structural proposals are submitted."},
+    ])
+    turn = AgentEngine(platform, provider, max_iterations=5).run(
+        role="god",
+        actor_id="god",
+        task_type="god_structural",
+    )
+    assert turn.result["status"] == "wait", turn.result
+    factions = {
+        str(item.get("name"))
+        for item in platform.store.repositories.entities.entities_of_type("faction")
+    }
+    assert {"Multi Proposal Faction A", "Multi Proposal Faction B"} <= factions
+    assert provider.calls == 3
+
+
+def test_behavior_with_social_parameters_requires_authorization_operation(platform: Platform) -> None:
+    """An inert administrative behavior must not pass only because the field is optional."""
+
+    payload = copy.deepcopy(REQUEST)
+    payload["followup_behavior"]["definition"].pop("authorization_operation", None)
+    result = platform.submit_definition_proposal("god", payload)
+    assert result["status"] == "rejected", result
+    errors = " ".join(str(item) for item in result.get("errors") or [])
+    assert "authorization_operation" in errors

@@ -309,6 +309,23 @@ class DefinitionValidationMixin:
             nodes = []
         definition["nodes"] = BehaviorNodeNormalizer(self, errors, extra_action).normalize_tree(nodes)
         definition.pop("actions", None)
+        if not operation:
+            social_parameters = {"based_on_event", "violation_id"}
+            action_defs = {str(item.get("id")): item for item in self.store.repositories.entities.get_definitions("action_def")}
+            if isinstance(extra_action, dict) and extra_action.get("id"):
+                action_defs[str(extra_action["id"])] = extra_action
+            for node in definition["nodes"]:
+                if not isinstance(node, dict) or str(node.get("type") or "") != "action":
+                    continue
+                action = action_defs.get(str(node.get("action_id") or ""))
+                parameters = action.get("parameters") if isinstance(action, dict) and isinstance(action.get("parameters"), dict) else {}
+                if social_parameters & set(parameters):
+                    errors.append(
+                        "behavior requires authorization_operation because its Action declares "
+                        + "/".join(sorted(social_parameters & set(parameters)))
+                        + " parameters"
+                    )
+                    break
         definition.update({"id": definition_id, "version": 1, "definition_version": 1, "summary": definition.get("summary") or definition.get("description") or str(name), "agent_label": definition.get("agent_label") or name, "definition_source": "god_proposal", "kind": "proposed", "validation_status": "validated"})
 
     def _normalize_inventory_condition(self, condition: Any) -> str:

@@ -145,7 +145,7 @@ class ContestedService(PlatformService):
         )
         self._remember_take(agent, violation, witnesses, resource)
         if witnesses:
-            self._context.services["events"].append(
+            self._context.services["events"].publish(
                 "violation.observed",
                 actor_id,
                 minute,
@@ -157,6 +157,7 @@ class ContestedService(PlatformService):
                     "witnesses": witnesses,
                     "minute": int(minute),
                 },
+                wake="configured",
             )
             self._apply_witness_consequences(agent, violation, witnesses, minute)
         return []

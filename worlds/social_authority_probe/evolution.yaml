@@ -1,3 +1,6 @@
 cadence: {}
-wakes: []
+wakes:
+  - id: violation_review
+    "on": violation.observed
+    for: mira
 triggers: []

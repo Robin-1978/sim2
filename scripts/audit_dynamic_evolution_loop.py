@@ -42,7 +42,7 @@ OUTCOME_NOTE = (
 )
 
 
-def _probe_template(*, fallback: bool = True) -> dict[str, Any]:
+def _probe_template(*, fallback: bool = True, director: bool = False) -> dict[str, Any]:
     """Return a small declarative world with unrelated, non-village content.
 
     With ``fallback`` the world also declares a stagnation window and the God
@@ -136,6 +136,24 @@ def _probe_template(*, fallback: bool = True) -> dict[str, Any]:
         "player_template": {},
         "initial_events": [{"id": "probe_started", "type": "probe.started", "world_minute": 0, "payload": {"summary": "The Aster Relay evolution probe begins with one unresolved archive and a depleted public reserve."}}],
     }
+    if director:
+        evolution = template["evolution"]
+        evolution["director"] = {
+            "cadence": "20m",
+            "window": "2h",
+            "targets": ["social", "rule", "verb", "resource", "place"],
+        }
+        evolution["contracts"] = {
+            "god_structural": {
+                "tools": ["query_history", "query_knowledge_gaps", "propose_entity", "propose_definition", "propose_world_change", "wait"],
+                "purpose": "Fill the Director's target structural cell with one concrete, reachable growth unit.",
+                "result": (
+                    "Read the season plan target_cell and submit exactly one new entity, definition or world change "
+                    "that increases that cell and is reachable from Mira's current state. Do not duplicate existing "
+                    "content. If the target cell is already supported and no distinct extension exists, wait."
+                ),
+            }
+        }
     if fallback:
         evolution = template["evolution"]
         evolution["stagnation"] = {"window": "3h", "max_interval": "1d"}
@@ -303,6 +321,11 @@ def main() -> int:
         action="store_true",
         help="control run: no stagnation window and no idle time, so only the event-driven loop is tested",
     )
+    parser.add_argument(
+        "--director",
+        action="store_true",
+        help="add a Director cadence and a generic god_structural contract to the probe template",
+    )
     args = parser.parse_args()
     fallback = not args.no_fallback
 
@@ -314,7 +337,7 @@ def main() -> int:
     temporary = tempfile.TemporaryDirectory(prefix="sim2-evolution-probe-") if args.runtime_dir is None else None
     runtime_root = Path(args.runtime_dir) if args.runtime_dir else Path(temporary.name)
     instance_id = f"evolution-probe-{uuid4().hex[:8]}"
-    db_path = create_instance_from_template(_probe_template(fallback=fallback), instance_id, runtime_root)
+    db_path = create_instance_from_template(_probe_template(fallback=fallback, director=args.director), instance_id, runtime_root)
     platform = Platform(db_path)
     log_path = runtime_root / "evolution-audit.jsonl"
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -342,7 +365,7 @@ def main() -> int:
             # exercise the world's declared wake graph; selecting a named
             # event group here would make a different configured continuation
             # invisible and falsely report an absorbing state.
-            god_task = _ready(
+            god_task = _ready(platform, role="god", task_prefix="god_structural") or _ready(
                 platform,
                 role="god",
                 task_prefix="event_group:resource_safety" if round_no == 1 else None,

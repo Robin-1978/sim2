@@ -380,7 +380,11 @@ def test_pa_12_negative_space(platform: Platform) -> None:
     assert "attack" not in event_types
     assert "combat" not in event_types
     assert platform.store.repositories.authorization.list_delegations() == []
-    assert int(platform.store.connection.execute("SELECT COUNT(*) FROM evolution_task").fetchone()[0]) == 0
+    tasks = platform.ready_evolution_tasks()
+    assert len(tasks) == 1
+    assert tasks[0]["role"] == "agent_decision"
+    assert tasks[0]["actor_id"] == "mira"
+    assert tasks[0]["task_type"] == "event:violation.observed"
     assert len(violations(platform)) == 1
 
 
@@ -533,3 +537,18 @@ def test_pb_07_restriction_does_not_block_steward(platform: Platform) -> None:
 
     denied = submit(platform, "tomas", "withdraw_energy", "withdraw-restricted")
     assert denied["failed_check"] == "access_restricted"
+
+
+def test_pa_13_observed_violation_wakes_the_steward(platform: Platform) -> None:
+    """A witnessed take creates a configured review task for the steward, not only a memory."""
+
+    take_and_complete(platform)
+    tasks = platform.ready_evolution_tasks()
+    review_tasks = [
+        item for item in tasks
+        if item.get("role") == "agent_decision"
+        and item.get("actor_id") == "mira"
+        and item.get("task_type") == "event:violation.observed"
+    ]
+    assert review_tasks, tasks
+    assert review_tasks[0]["source_event_type"] == "violation.observed"
