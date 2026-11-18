@@ -300,7 +300,7 @@ class AgentEngine:
                 "role": "user",
                 "content": f"Structural stage 1/{len(stages)}: {instruction}",
             })
-        return ReactSession(
+        session = ReactSession(
             role=role,
             actor_id=actor_id,
             task_type=task_type,
@@ -324,6 +324,81 @@ class AgentEngine:
             # evolution task unresolved.
             read_budget=self.max_read_tool_calls,
         )
+        self._restore_structural_progress(session)
+        return session
+
+    def _structural_progress_key(self, session: ReactSession) -> str:
+        """Identify one structural plan across retries of the same God task."""
+
+        if session.role != "god" or str(session.task_type) != "god_structural":
+            return ""
+        plan = session.context.get("season_plan") if isinstance(session.context.get("season_plan"), dict) else {}
+        plan_id = str(plan.get("plan_id") or plan.get("target_cell") or "no-plan")
+        return f"{session.actor_id}:{session.task_type}:{plan_id}"
+
+    def _restore_structural_progress(self, session: ReactSession) -> None:
+        """Resume the persisted stage boundary after an interrupted session.
+
+        Stage instructions tell the model what to propose next; accepted facts
+        remain in SQLite and are re-checked semantically.  Persisting only the
+        stage index and a short accepted summary therefore keeps the prompt
+        bounded while avoiding a full replay of old proposals.
+        """
+
+        key = self._structural_progress_key(session)
+        stages = self._structural_stages(session)
+        if not key or not stages:
+            return
+        progress = (self.platform.store.repositories.metadata.get("structural_progress", {}) or {}).get(key)
+        if not isinstance(progress, dict):
+            return
+        stage_index = max(0, int(progress.get("stage_index", 0) or 0))
+        if stage_index >= len(stages):
+            return
+        session.stage_index = stage_index
+        if stage_index > 0:
+            stage = stages[stage_index] if isinstance(stages[stage_index], dict) else {}
+            if session.messages:
+                session.messages[-1] = {
+                    "role": "user",
+                    "content": f"Structural stage {stage_index + 1}/{len(stages)}: {stage.get('instruction') or ''}",
+                }
+        accepted = [str(item) for item in (progress.get("accepted") or []) if str(item)]
+        if accepted:
+            session.messages.append({
+                "role": "user",
+                "content": "Structural progress already accepted: " + ", ".join(accepted[-12:]) + ". Continue from the current stage.",
+            })
+
+    def _save_structural_progress(self, session: ReactSession, result: dict[str, Any] | None = None, *, status: str = "") -> None:
+        """Persist the stage boundary and a bounded accepted-proposal summary."""
+
+        key = self._structural_progress_key(session)
+        if not key:
+            return
+        with self.platform.store.transaction():
+            progress = dict(self.platform.store.repositories.metadata.get("structural_progress", {}) or {})
+            entry = dict(progress.get(key) or {})
+            entry["stage_index"] = int(session.stage_index)
+            entry["updated_minute"] = int(self.platform.store.repositories.metadata.get("world_minute", 0) or 0)
+            if status:
+                entry["status"] = status
+            else:
+                entry.setdefault("status", "in_progress")
+            if isinstance(result, dict) and str(result.get("status")) == "accepted":
+                label = (
+                    result.get("name")
+                    or result.get("choice")
+                    or result.get("definition_type")
+                    or result.get("kind")
+                    or result.get("summary")
+                    or "accepted proposal"
+                )
+                accepted = [str(item) for item in (entry.get("accepted") or [])]
+                accepted.append(str(label)[:120])
+                entry["accepted"] = accepted[-30:]
+            progress[key] = entry
+            self.platform.store.repositories.metadata.set("structural_progress", progress)
 
     def _react_step(self, session: ReactSession, iteration: int) -> AgentTurn | None:
         """Run one ReAct iteration; return the finished turn, or ``None`` to continue the session."""
@@ -564,6 +639,7 @@ class AgentEngine:
             })
             return "continue"
         session.stage_index += 1
+        self._save_structural_progress(session)
         if session.stage_index >= len(stages):
             return "finish"
         next_stage = stages[session.stage_index] if isinstance(stages[session.stage_index], dict) else {}
@@ -610,8 +686,10 @@ class AgentEngine:
                 "submission_count": len(intent_results),
             }
         if self._structural_stages(session):
+            self._save_structural_progress(session, accepted_result)
             transition = self._advance_structural_stage(session)
             if transition == "finish":
+                self._save_structural_progress(session, status="completed")
                 return session.finish(accepted_result, iterations=iteration)
             return None
         if not batched and self._multi_proposal(session, accepted_result):
@@ -714,25 +792,79 @@ class AgentEngine:
             "model_result": model_result,
             "result": internal_tool_result,
         })
+        structural = session.role == "god" and str(session.task_type) == "god_structural"
+        history_result = self._structural_history_result(tool_name, model_result) if structural else model_result
+        history_arguments = self._structural_history_arguments(tool_name, arguments) if structural else arguments
         history = session.context.setdefault("interaction_history", [])
         history.extend([
-            {"kind": "assistant_tool_call", "name": tool_name, "arguments": arguments},
-            {"kind": "tool_result", "name": tool_name, "result": model_result},
+            {"kind": "assistant_tool_call", "name": tool_name, "arguments": history_arguments},
+            {"kind": "tool_result", "name": tool_name, "result": history_result},
         ])
         tool_results = session.context.setdefault("tool_results", [])
-        tool_results.append({"tool": tool_name, "result": model_result})
-        if session.role == "god" and str(session.task_type) == "god_structural":
+        tool_results.append({"tool": tool_name, "result": history_result})
+        if structural:
             # A structural session may submit many proposals; keep only the
-            # recent exchange plus the compact progress message.  Without the
-            # cap the same large proposal results are re-rendered on every
-            # iteration.
-            session.context["interaction_history"] = history[-12:]
-            session.context["tool_results"] = tool_results[-6:]
+            # recent exchange plus the compact progress message.  The latest
+            # tool result stays in the native message tail, so old index pages
+            # and definition trees need only a name-level summary here.
+            session.context["interaction_history"] = history[-8:]
+            session.context["tool_results"] = tool_results[-3:]
         session.context["last_platform_result"] = model_result
         session.last_result = internal_tool_result
         if native_call is not None:
             session.messages.append({"role": "tool", "tool_call_id": native_call.get("id", "tool_call"), "name": tool_name, "content": json.dumps(model_result, ensure_ascii=False)})
         return model_result, internal_tool_result
+
+    @staticmethod
+    def _structural_history_arguments(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Summarize a submitted proposal instead of resending its full definition.
+
+        The accepted content already lives in SQLite and the immediate tool
+        message carries the exact platform result.  Re-rendering every earlier
+        Action tree on each later stage is the largest avoidable source of
+        structural prompt growth.
+        """
+
+        if tool_name not in {
+            "propose_entity", "propose_definition", "propose_world_change",
+            "propose_institution", "approve_institution", "revise_institution",
+        }:
+            return arguments
+        summary: dict[str, Any] = {}
+        for key in ("entity_type", "name", "definition_type", "change_type", "summary", "property", "reason"):
+            value = arguments.get(key)
+            if value not in (None, "", [], {}):
+                summary[key] = value if not isinstance(value, str) else value[:160]
+        for key in ("definition", "followup_behavior", "followup_recipe", "rule", "route", "relationship", "faction", "event"):
+            value = arguments.get(key)
+            if not isinstance(value, dict):
+                continue
+            label = value.get("name") or value.get("id") or value.get("label") or value.get("summary")
+            summary[key] = {"name": str(label)[:160]} if label else {"submitted": True}
+        return summary or {"submitted": tool_name}
+
+    @staticmethod
+    def _structural_history_result(tool_name: str, result: dict[str, Any]) -> dict[str, Any]:
+        """Keep structural read history small; the full result is in the tool message."""
+
+        if tool_name == "query_world_index":
+            items = result.get("items") if isinstance(result.get("items"), list) else []
+            return {
+                "status": result.get("status"),
+                "cell": result.get("cell"),
+                "total": result.get("total"),
+                "names": [str(item.get("name") or "") for item in items[:6] if isinstance(item, dict)],
+                "next_offset": result.get("next_offset"),
+            }
+        if tool_name == "inspect_definition":
+            definition = result.get("definition") if isinstance(result.get("definition"), dict) else {}
+            return {
+                "status": result.get("status"),
+                "found": result.get("found"),
+                "kind": definition.get("kind"),
+                "name": definition.get("name") or result.get("name"),
+            }
+        return result
 
     def _submit_intent(self, session: ReactSession, iteration: int, response: dict[str, Any]) -> AgentTurn | None:
         """Submit a response without a tool call as the final Intent; it ends the session when accepted or a wait."""
@@ -756,8 +888,10 @@ class AgentEngine:
         session.last_result = result
         if result.get("status") in {"accepted", "wait"}:
             if self._structural_stages(session):
+                self._save_structural_progress(session, result)
                 transition = self._advance_structural_stage(session)
                 if transition == "finish":
+                    self._save_structural_progress(session, status="completed")
                     return session.finish(result, iterations=iteration, response=response)
                 return None
             if self._multi_proposal(session, result):

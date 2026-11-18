@@ -92,6 +92,9 @@ def context_metrics(
         "max_tokens": int(max_tokens) if max_tokens is not None else None,
         "compacted": fitted != rendered,
         "sections": dict(sorted(after.items())),
+        # The source inventory lets a caller distinguish a section that never
+        # existed from one that compaction removed.
+        "source_sections": dict(sorted(before.items())),
         "omitted": omitted,
         "static_prefix_chars": len(static_prefix),
         "dynamic_chars": max(0, len(fitted) - len(static_prefix)),

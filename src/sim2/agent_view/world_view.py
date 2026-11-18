@@ -7,6 +7,7 @@ from typing import Any
 from ..actions.institutions import describe_institution_terms
 from ..evolution.memory import role_memory_query
 from ..world.growth import build_growth_ledger
+from ..world.index import build_world_index
 from .action_text import _display_number, label
 
 
@@ -239,6 +240,16 @@ class WorldViewMixin:
                 name = str(item.get("name") or "").strip()
                 if name:
                     visible_entities.append({"name": name, "type": entity_type})
+        season_plan = self.store.repositories.metadata.get("season_plan", {}) or {}
+        target_cell = (
+            str(season_plan.get("target_cell") or "")
+            if isinstance(season_plan, dict) and str(season_plan.get("status") or "") == "active"
+            else ""
+        )
+        # A structural God prompt receives a relevance-scoped index instead of
+        # every entity, Action, behavior and rule.  Story and character roles
+        # keep their own evidence projections.
+        world_index = build_world_index(self.store, target_cell=target_cell) if role == "god" else {}
         return {
             "context_version": "1",
             "role": role,
@@ -257,7 +268,8 @@ class WorldViewMixin:
             "recent_actions": recent_world_events,
             "recent_history": self._recent_history_view(20),
             "world_growth_ledger": self._world_growth_ledger(),
-            "season_plan": self.store.repositories.metadata.get("season_plan", {}) or {},
+            "world_index": world_index,
+            "season_plan": season_plan,
             "active_story_threads": active_story_threads,
             "knowledge_gaps": self._knowledge_gap_view(status="active", limit=12),
             "research_sources": self._research_source_view(limit=16),

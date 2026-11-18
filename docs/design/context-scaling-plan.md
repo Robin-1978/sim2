@@ -1,6 +1,6 @@
 # Context Scaling for a Growing World
 
-Status: **design accepted, implementation pending (G-08)**
+Status: **implemented and verified (G-08)**
 Related ledger: [social-authority-loop-goal.md](social-authority-loop-goal.md)
 
 ## 1. Observed problem
@@ -21,6 +21,39 @@ Compaction keeps latency bounded, but as the world grows it hides more of the
 catalog God needs to avoid duplicate or contradictory proposals. Increasing
 the character limit is not a scalable answer: it raises cost and latency and
 eventually exceeds any model window.
+
+### Implemented result
+
+The contract-driven broad probe was rerun on the remote provider after the
+projection change:
+
+| Metric | Before | After |
+| --- | --- | --- |
+| Complete core | 1/1 | 1/1 |
+| Legal / violation chain | 1/1 / 1/1 | 1/1 / 1/1 |
+| Accepted / rejected proposals | 15 / 0 | 15 / 0 |
+| Prompt characters | about 15,900 | 14,423 to 15,396 |
+| Estimated prompt tokens | 3,983 | 3,606 to 3,849 |
+| Omitted sections | action/behavior catalogs and four reference sections | none |
+| `omitted_required` | not recorded | `[]` |
+
+The rendered catalog tags are retained for prompt-order compatibility, but they
+now contain a bounded inventory plus the target neighborhood, not the full
+catalog. A test with 100 Actions, 100 behaviors and 100 legacy catalog entries
+stays under 16,000 characters and does not render the distant entries.
+
+Additional implementation details:
+
+- `query_world_index` pages by cell, keyword and offset with a hard 20-item cap.
+- `inspect_definition` returns one Action, behavior tree or rule and reports
+  ambiguous shorthand instead of guessing.
+- `structural_progress` in instance metadata stores the stage boundary and a
+  bounded accepted-proposal summary, so a retry resumes at the right stage.
+- Structural history keeps proposal names, not full definitions, and keeps
+  only the last eight exchanges; the immediate native tool message still
+  carries the exact result.
+- `context_metrics` records `source_sections`, `required_sections` and
+  `omitted_required` for audit.
 
 ## 2. Design goals
 

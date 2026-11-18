@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from ..intents.models import BehaviorIntent
 from ..agent_view.tool_registry import ROLE_TOOLS, TOOL_DEFINITIONS, validate_tool_arguments
+from ..world.index import inspect_definition, query_world_index
 from .reflection_policy import MEANINGFUL_REFLECTION_EVENTS
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -219,6 +220,26 @@ class AgentToolExecutor:
             limit=limit,
             global_scope=self.role in {"god", "story"},
         )
+
+    def _query_world_index(self, cell: str = "", query: str = "", limit: int = 12, offset: int = 0) -> dict[str, Any]:
+        if self.role != "god":
+            return {
+                "status": "rejected",
+                "failed_check": "world_index_scope",
+                "retryable": False,
+                "message": "Only a world-level God session may query the structural index.",
+            }
+        return query_world_index(self.platform.store, cell=cell, query=query, limit=limit, offset=offset)
+
+    def _inspect_definition(self, name: str, kind: str = "any") -> dict[str, Any]:
+        if self.role != "god":
+            return {
+                "status": "rejected",
+                "failed_check": "definition_scope",
+                "retryable": False,
+                "message": "Only a world-level God session may inspect registered definitions.",
+            }
+        return inspect_definition(self.platform.store, name=name, kind=kind)
 
     def _recall_memory(self, question: str = "", limit: int = 8, scope: str = "all") -> dict[str, Any]:
         return self.platform.memory.recall(self.actor_id, question, limit, scope=scope)

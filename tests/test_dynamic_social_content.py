@@ -872,6 +872,83 @@ def test_structural_stages_advance_automatically(platform: Platform) -> None:
     names = {item.get("name") for item in platform.store.repositories.entities.entities_of_type("location")}
     assert {"Required Stage Place A", "Required Stage Place B"} <= names
     assert provider.calls == 2
+    progress = platform.store.repositories.metadata.get("structural_progress", {}) or {}
+    entry = progress.get("god:god_structural:no-plan") or {}
+    assert entry.get("status") == "completed"
+    assert entry.get("stage_index") == 2
+    assert len(entry.get("accepted") or []) == 2
+
+
+class _ProgressAwareProvider:
+    """Record each prompt so a resumed session can assert its stage boundary."""
+
+    def __init__(self, responses: list[dict[str, Any]]) -> None:
+        self.responses = list(responses)
+        self.calls = 0
+        self.prompts: list[str] = []
+        self.messages: list[list[dict[str, Any]]] = []
+
+    def complete_json(self, *, system, context, tools=None, messages=None):
+        self.calls += 1
+        self.prompts.append(str(context))
+        self.messages.append(list(messages or []))
+        return dict(self.responses.pop(0))
+
+
+def test_structural_progress_resumes_at_the_persisted_stage(platform: Platform) -> None:
+    """An interrupted structural session continues at its saved stage, not stage 1."""
+
+    stages = [
+        {
+            "instruction": "Create Resumed Place A.",
+            "required_content": {"entities": ["Resumed Place A"]},
+        },
+        {
+            "instruction": "Create Resumed Place B.",
+            "required_content": {"entities": ["Resumed Place B"]},
+        },
+    ]
+    _set_stages(platform, stages)
+    # Stage A is already committed and recorded; only stage B remains.
+    with platform.store.transaction():
+        entities = platform.store.repositories.entities
+        entities.put_entity(
+            "resumed_place_a", "location", "Resumed Place A",
+            {"description": "The first resumed stage.", "initial_state": {"routes": ["relay_station"], "route_distances": {"relay_station": 1}}},
+        )
+        platform.store.repositories.metadata.set("structural_progress", {
+            "god:god_structural:no-plan": {
+                "stage_index": 1,
+                "status": "in_progress",
+                "accepted": ["Resumed Place A"],
+            },
+        })
+    provider = _ProgressAwareProvider([
+        {
+            "intent_type": "propose_entity",
+            "entity_type": "location",
+            "name": "Resumed Place B",
+            "description": "The second resumed stage.",
+            "state": {"routes": ["relay_station"], "route_distances": {"relay_station": 1}},
+        },
+    ])
+    turn = AgentEngine(platform, provider, max_iterations=5).run(
+        role="god",
+        actor_id="god",
+        task_type="god_structural",
+    )
+    assert turn.result["status"] == "accepted", turn.result
+    assert provider.calls == 1
+    joined_messages = "\n".join(
+        str(item.get("content"))
+        for message in provider.messages
+        for item in message
+        if isinstance(item, dict)
+    )
+    assert "Structural stage 2/2: Create Resumed Place B." in joined_messages
+    assert "Structural progress already accepted: Resumed Place A." in joined_messages
+    names = {item.get("name") for item in platform.store.repositories.entities.entities_of_type("location")}
+    assert "Resumed Place B" in names
 
 
 def test_access_request_publishes_the_configured_story_wake(platform: Platform) -> None:

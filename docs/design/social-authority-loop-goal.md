@@ -1,7 +1,7 @@
 # Social Authority Loop — Current Goal and Open Issues
 
 Status: **ACTIVE**
-Last updated: 2026-11-18
+Last updated: 2026-11-19
 
 ## 1. User goal (verbatim)
 
@@ -43,7 +43,7 @@ new status instead.
 | Phase 2 directed remote | 2/2 take, 1/2 witnessed, 1/1 observed sanction |
 | Tension multi-round | 3 runs × 4 rounds: 0 take, 0 sanction, 0 violation; cooperative equilibrium |
 | Phase 3 decomposed remote | Latest fresh run: 1/1 complete core, 1/1 legal, 1/1 violation; 15 accepted / 6 rejected. Original 3-run sample: 3/3 core, 3/3 violation, 2/3 legal |
-| Phase 3 broad remote | Free-form one-shot remains 0/3; **contract-driven staged broad** now 1/1 complete core, 1/1 legal and 1/1 violation, with 15 accepted / 0 rejected and no failed checks |
+| Phase 3 broad remote | Free-form one-shot remains 0/3; **contract-driven staged broad** now 1/1 complete core, 1/1 legal and 1/1 violation, with 15 accepted / 0 rejected and no failed checks. With the relevance-scoped index the prompt stayed at 14,423 to 15,396 chars and omitted no required section |
 | Minimal evolution loop | `audit_dynamic_evolution_loop.py --provider remote --rounds 3`: passed, `flags: []`; round 1 God created a Deposit Energy Cell Action/BT, Mira executed it and the reserve moved 0→1, Story created an emergent beat; rounds 2-3 completed research and another emergent beat |
 | LLM Director | Separate `roles.director` remote role (`1024` tokens, 4 iterations, 2 reads); actual call chose `resource` and wrote `plan:5:resource` plus a `god_structural` task |
 | Full one-cycle loop | LLM Director → 15-stage God → LLM NPCs → Story: plan completed, next plan opened at `baseline: 1`; Story produced two accepted beats and one wait; God 18 calls / 17 iterations |
@@ -60,14 +60,14 @@ new status instead.
 | G-05 | Long-term autonomous growth is unproven | Minimal 3-round God→NPC→Story loop passed. Full one-cycle loop: LLM Director chose resource, God completed the 15-stage pack, Mira filled, Tomas requested, Story produced two accepted beats, and the Director completed the plan and opened `resource, baseline: 1`. No second pack or multi-season run yet | Run the next Director cycle through God, then a multi-season free loop; record gap → creation → execution → next gap | A free run creates and executes a new pack, then a new Director gap appears and is handled without stage injection across seasons | PARTIAL |
 | G-06 | Read budget and schema adherence reduce God reliability | Contract-driven broad is now 15 accepted / 0 rejected; decomposed fresh run still has 6 rejected calls (`definition_schema`, `read_budget`); Director structural turn previously hit `budget_exhausted` | Role config gives God 24 iterations / 4096 tokens / 4 reads; engine keeps sessions open and returns missing-content corrections; still need the decomposed rejection rate under 2 | Fewer than 2 rejected calls per decomposed run; no read-budget or budget-exhausted stop before the final proposal | IN_PROGRESS (broad fixed; decomposed reliability pending) |
 | G-07 | The first tension aggregate undercounted direct intents | Mira’s direct `behavior_ref: behavior:withdraw_energy` was not a `request_behavior` tool call | Script fixed to read `turn.response`; rerun needed to publish corrected counts | Corrected probe rerun completed; docs updated | IN_PROGRESS |
-| G-08 | Context grows with the world and the 16k-char compaction omits action/behavior catalogs | Broad God prompt: ~15.9k chars / ~4k tokens, `compacted: true`; omitted includes `world_action_catalog`, `world_behavior_catalog`, `world_outcomes`, `world_trends` | Implement the relevance-scoped projection, hierarchical index, bounded retrieval and omission telemetry in [context-scaling-plan.md](context-scaling-plan.md) | A larger world keeps the structural prompt bounded while the model can still see the current target's relevant content and does not duplicate existing definitions | OPEN |
+| G-08 | Context grows with the world and the 16k-char compaction omits action/behavior catalogs | Before: ~15.9k chars, `compacted: true`, catalogs omitted. After the relevance index: broad staged run 1/1 complete core, legal and violation chains, 15 accepted / 0 rejected, prompt 14,423 to 15,396 chars, `omitted_required: []`, `omitted: []` | Implemented a relevance-scoped `world_index`, paged `query_world_index`, one-definition `inspect_definition`, persisted stage progress and structural history summaries | A larger world keeps the structural prompt bounded while the model can still see the current target's relevant content and does not duplicate existing definitions | FIXED / VERIFIED (broad remote 1/1; 100-entry prompt test) |
 
 ### 5.1 Status summary
 
 | Status | Count | IDs |
 | --- | --- | --- |
-| Fixed / verified | 2 | G-02, G-03 |
-| Open / partial / in progress | 6 | G-01, G-04, G-05, G-06, G-07, G-08 |
+| Fixed / verified | 3 | G-02, G-03, G-08 |
+| Open / partial / in progress | 5 | G-01, G-04, G-05, G-06, G-07 |
 
 The unresolved items are not all the same kind:
 
@@ -92,10 +92,15 @@ The local role values and the separate Director configuration are recorded in
 6. **G-05** free multi-season run.
 7. **G-06** reliability tuning after the structural fixes.
 
+Completed architectural prerequisite: **G-08** relevance-scoped context, bounded
+index reads, persisted stage progress and omission telemetry. The next structural
+run should use the new index instead of expanding the old catalogs.
+
 ## 7. Progress log
 
 ### 2026-11-19
 
+- G-08 implemented and verified: relevance-scoped `world_index`, bounded `query_world_index` and `inspect_definition`, persisted stage progress, structural history summaries and omission telemetry. Broad remote: 1/1 complete core, 1/1 legal, 1/1 violation, 15 accepted / 0 rejected, prompt 14,423 to 15,396 chars, no omitted section. A 100-Action/100-behavior render test stays under 16k and omits no required section.
 - Contract-driven broad: 1/1 complete core, legal and violation chains; 15 accepted / 0 rejected.
 - Decomposed fresh: 1/1 complete core, legal and violation chains; 15 accepted / 6 rejected.
 - Full loop: LLM Director + 15-stage God + LLM NPCs; Director completed the plan and opened `baseline: 1`; three Story tasks were queued.

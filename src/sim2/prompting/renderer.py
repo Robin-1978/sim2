@@ -74,13 +74,27 @@ def render_context_with_metrics(
         max_chars = 20000 if role in {"god", "story"} else 16000
     rendered = _render_sections(context, task)
     fitted = fit_to_limit(rendered, role, max_chars, max_tokens=max_tokens)
-    return fitted, context_metrics(
+    metrics = context_metrics(
         rendered,
         fitted,
         role=role,
         max_chars=max_chars,
         max_tokens=max_tokens,
     )
+    if role == "god" and isinstance(context.get("world_index"), dict) and context.get("world_index"):
+        # These sections carry the current target and the machine fields a
+        # structural proposal needs.  Their loss is not harmless reference
+        # compaction, so make it visible in the audit record.
+        required = {
+            tag for tag in (
+                "evolution_trigger", "season_plan", "world_growth_ledger",
+                "world_behavior_catalog", "world_action_catalog",
+            )
+            if tag in (metrics.get("source_sections") or {})
+        }
+        metrics["required_sections"] = sorted(required)
+        metrics["omitted_required"] = sorted(required & set(metrics.get("omitted") or []))
+    return fitted, metrics
 
 
 def render_context(

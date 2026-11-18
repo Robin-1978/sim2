@@ -419,16 +419,17 @@ The broad staged run used 16 God LLM calls and completed the pack with 15
 accepted proposals and 0 rejected calls. The observed prompt stayed within the
 16,000-character budget:
 
-| Metric | Broad staged run |
-| --- | --- |
-| God calls | 16 |
-| Estimated prompt tokens | 3,540 to 3,989 |
-| Prompt characters | about 15,900 (compacted) |
-| `world_proposal_contract` | about 4,876 chars |
-| `interaction_history` | about 3,953 chars |
-| Accepted / rejected | 15 / 0 |
+| Metric | Before G-08 | After G-08 |
+| --- | --- | --- |
+| God calls | 16 | 16 |
+| Estimated prompt tokens | 3,983 | 3,606 to 3,849 |
+| Prompt characters | about 15,900 (compacted) | 14,423 to 15,396 |
+| `world_proposal_contract` | about 4,876 chars | about 5,044 chars |
+| `interaction_history` | about 3,953 chars | 74 to 1,047 chars |
+| Omitted sections | action/behavior catalogs, outcomes, trends | none |
+| Accepted / rejected | 15 / 0 | 15 / 0 |
 
-Four engine changes made this possible:
+Five engine changes made this possible:
 
 1. A structural God session stays open after an accepted proposal instead of
    ending at the first final intent.
@@ -437,7 +438,10 @@ Four engine changes made this possible:
 3. The completion gate accepts effects, authorization operations and rule
    modes, and finishes immediately when the last stage is complete.
 4. After the read budget is exhausted, God's read tools are hidden; structural
-   interaction history is capped at 12 entries and 6 tool results.
+   interaction history is capped at 8 entries and 3 tool results.
+5. A relevance-scoped `world_index` replaces the full catalogs, and old
+   proposal arguments are summarized to names. `query_world_index` and
+   `inspect_definition` provide bounded detail on demand.
 
 The free-form one-shot prompt still does not complete the pack. The supported
 broad path is the contract-driven stage sequence.

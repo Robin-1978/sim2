@@ -115,37 +115,73 @@ def _catalog_lines(context: dict[str, Any]) -> list[str]:
     if not fields:
         lines.append("  - none")
     lines.append("</rule_condition_fields>")
+    index = context.get("world_index") if isinstance(context.get("world_index"), dict) else {}
+    indexed = bool(index.get("totals"))
     lines.append("<world_behavior_catalog>")
-    catalog = context.get("registered_behaviors") or []
-    for behavior in catalog[:24]:
-        success = f"; success={plain(behavior.get('success'))}" if behavior.get("success") else ""
-        lines.append(f"  - BT: {behavior.get('name', 'behavior')}: {behavior.get('purpose', 'configured behavior')}{success}")
-    if not catalog:
-        lines.append("  - none")
+    if indexed:
+        totals = index.get("totals") or {}
+        counts = index.get("counts") or {}
+        lines.append(
+            "  - Indexed inventory: "
+            + ", ".join(f"{cell}={int(counts.get(cell, 0) or 0)}" for cell in ("place", "verb", "social", "rule", "resource"))
+            + f"; behaviors={int(totals.get('behaviors', 0) or 0)}, actions={int(totals.get('actions', 0) or 0)}."
+        )
+        lines.append(
+            f"  - Current target cell: {index.get('target_cell') or 'none'}. "
+            "Only target-related entries are rendered; use query_world_index for another name or cell and inspect_definition for one full tree."
+        )
+        for entity in (index.get("entities") or [])[:6]:
+            kind = str(entity.get("entity_type") or entity.get("cell") or "content")
+            lines.append(f"  - {kind}: {entity.get('name', 'content')}: {entity.get('summary', 'configured content')}")
+        for behavior in (index.get("behaviors") or [])[:6]:
+            operations = behavior.get("operations") or []
+            detail = f"; operations={', '.join(str(item) for item in operations)}" if operations else ""
+            lines.append(f"  - BT: {behavior.get('name', 'behavior')}: {behavior.get('summary', 'configured behavior')}{detail}")
+        for rule in (index.get("rules") or [])[:4]:
+            mode = f"; mode={rule.get('mode')}" if rule.get("mode") else ""
+            lines.append(f"  - rule: {rule.get('name', 'rule')}: {rule.get('summary', 'configured rule')}{mode}")
+    else:
+        # Backward-compatible projection for a context built without an index.
+        catalog = context.get("registered_behaviors") or []
+        for behavior in catalog[:24]:
+            success = f"; success={plain(behavior.get('success'))}" if behavior.get("success") else ""
+            lines.append(f"  - BT: {behavior.get('name', 'behavior')}: {behavior.get('purpose', 'configured behavior')}{success}")
+        if not catalog:
+            lines.append("  - none")
     lines.append("</world_behavior_catalog>")
     lines.append("<world_action_catalog>")
-    actions = context.get("registered_actions") or []
-    # God needs the registered action vocabulary and outcome, but not the
-    # full parameter schema for every action during a world review. The
-    # detailed schema remains in character/BT views where it is used to
-    # execute a behavior.
-    for action in actions[:16]:
-        parameters = "; ".join(str(item) for item in (action.get("parameters") or []))
-        defaults = plain(action.get("parameter_defaults") or {})
-        success = plain(action.get("success") or [])
-        costs = action.get("costs") if isinstance(action.get("costs"), dict) else {}
-        reserve = plain((costs or {}).get("reserve") or {})
-        duration_value = action.get("duration") if isinstance(action.get("duration"), dict) else {}
-        recipe_like = duration_value.get("mode") == "recipe_duration" or "recipe_inputs" in ((costs or {}).get("reserve") or {})
-        detail = f"parameters={parameters or 'none'}"
-        if recipe_like:
-            detail += f"; defaults={defaults or 'none'}; duration={plain(duration_value) or 'not stated'}; reserve={reserve or 'none'}"
-        lines.append(
-            f"  - Action: {action.get('name', 'action')}: {action.get('purpose', 'configured action')}; "
-            f"{detail}; result={success or 'not stated'}"
-        )
-    if not actions:
-        lines.append("  - none")
+    if indexed:
+        for action in (index.get("actions") or [])[:6]:
+            effects = action.get("effects") or []
+            parameters = action.get("parameters") or []
+            detail = f"parameters={', '.join(str(item) for item in parameters) or 'none'}"
+            if effects:
+                detail += f"; effects={', '.join(str(item) for item in effects)}"
+            lines.append(f"  - Action: {action.get('name', 'action')}: {action.get('summary', 'configured action')}; {detail}")
+        lines.append("  - Exact names and full schemas are available through query_world_index and inspect_definition; never rename an existing verb.")
+    else:
+        actions = context.get("registered_actions") or []
+        # God needs the registered action vocabulary and outcome, but not the
+        # full parameter schema for every action during a world review. The
+        # detailed schema remains in character/BT views where it is used to
+        # execute a behavior.
+        for action in actions[:16]:
+            parameters = "; ".join(str(item) for item in (action.get("parameters") or []))
+            defaults = plain(action.get("parameter_defaults") or {})
+            success = plain(action.get("success") or [])
+            costs = action.get("costs") if isinstance(action.get("costs"), dict) else {}
+            reserve = plain((costs or {}).get("reserve") or {})
+            duration_value = action.get("duration") if isinstance(action.get("duration"), dict) else {}
+            recipe_like = duration_value.get("mode") == "recipe_duration" or "recipe_inputs" in ((costs or {}).get("reserve") or {})
+            detail = f"parameters={parameters or 'none'}"
+            if recipe_like:
+                detail += f"; defaults={defaults or 'none'}; duration={plain(duration_value) or 'not stated'}; reserve={reserve or 'none'}"
+            lines.append(
+                f"  - Action: {action.get('name', 'action')}: {action.get('purpose', 'configured action')}; "
+                f"{detail}; result={success or 'not stated'}"
+            )
+        if not actions:
+            lines.append("  - none")
     lines.append("</world_action_catalog>")
     return lines
 

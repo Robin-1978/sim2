@@ -155,6 +155,34 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "additionalProperties": False,
         },
     },
+    "query_world_index": {
+        "purpose": "Page the bounded structural index by growth cell and keyword instead of rereading every entity, Action, behavior or rule.",
+        "kind": "read",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "cell": {"type": "string", "enum": ["place", "verb", "social", "rule", "resource"], "description": "Optional structural cell to list."},
+                "query": {"type": "string", "description": "Optional word or phrase from a visible name, summary, effect or operation."},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                "offset": {"type": "integer", "minimum": 0, "maximum": 500},
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
+    "inspect_definition": {
+        "purpose": "Read one exact Action, behavior tree or world rule by its visible name before revising or reusing it.",
+        "kind": "read",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "The exact visible Action, behavior tree or rule name."},
+                "kind": {"type": "string", "enum": ["any", "action", "behavior", "rule"]},
+            },
+            "required": ["name"],
+            "additionalProperties": False,
+        },
+    },
     "recall_memory": {
         "purpose": "Recall the agent's own retained experiences and knowledge.",
         "kind": "read",
@@ -475,7 +503,7 @@ ROLE_TOOLS: dict[str, list[str]] = {
     # Story receives the validated source and recent history in its world view;
     # query_history is the bounded read path for an older causal thread.
     "story": ["query_history", "query_knowledge_gaps", "record_world_progress", "propose_story_beat", "wait"],
-    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "query_history", "query_knowledge_gaps", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "propose_institution", "approve_institution", "revise_institution", "wait"],
+    "god": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "query_history", "query_knowledge_gaps", "query_world_index", "inspect_definition", "recall_memory", "preview_behavior", "record_world_progress", "propose_entity", "propose_definition", "propose_world_change", "propose_institution", "approve_institution", "revise_institution", "wait"],
     "world_builder": ["validate_world_template", "submit_world_template", "wait"],
 }
 
