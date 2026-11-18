@@ -1,5 +1,13 @@
 cadence: {}
-wakes: []
+wakes:
+  - id: story_social
+    "on":
+      - violation.observed
+      - resource.taken
+      - access.approved
+      - access.rejected
+      - resource.withdrawal.completed
+    for: story
 triggers: []
 director:
   cadence: 5m

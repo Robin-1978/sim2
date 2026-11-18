@@ -516,8 +516,15 @@ def test_da_09_negative_space(platform: Platform) -> None:
     assert "stealth" not in event_types
     assert platform.store.repositories.authorization.list_delegations() == []
     tasks = platform.ready_evolution_tasks()
-    assert not [task for task in tasks if task.get("role") in {"story", "god"}]
-    assert all(str(task.get("task_type") or "").startswith("behavior_assigned:") for task in tasks)
+    story_tasks = [task for task in tasks if task.get("role") == "story"]
+    assert len(story_tasks) == 1
+    assert story_tasks[0]["source_event_type"] == "violation.observed"
+    assert not [task for task in tasks if task.get("role") == "god"]
+    assert all(
+        str(task.get("task_type") or "").startswith("behavior_assigned:")
+        for task in tasks
+        if task.get("role") != "story"
+    )
 
 
 def test_da_11_visible_resource_names_are_canonicalized(platform: Platform) -> None:

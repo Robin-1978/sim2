@@ -1,2 +1,7 @@
 beats: []
-emergent_source_event_types: []
+emergent_source_event_types:
+  - violation.observed
+  - resource.taken
+  - access.approved
+  - access.rejected
+  - resource.withdrawal.completed

@@ -220,8 +220,11 @@ The model spent its small read budget on `observe_nearby`, `query_history` and
 engine's one-final-intent contract and the model's read budget, not a missing
 Platform primitive, prevent a single broad turn from completing the pack.
 
-The supported Phase 3B path is therefore the 15-stage decomposition. The broad
-prompt is improved but remains `NOT_PROVEN` for one-turn completion.
+The supported Phase 3B path is therefore contract-driven decomposition. A
+free-form one-turn broad prompt remains `NOT_PROVEN`; a broad task whose
+contract declares ordered atomic stages now completes the full pack in one
+God session: 1/1 complete core, 1/1 legal chain, 1/1 violation chain, 15
+accepted proposals and 0 rejected calls.
 
 ## 7. Phase 3C DSL gap ledger
 
@@ -273,6 +276,7 @@ contract that the current DSL cannot express.
 | Full suite (release gate only) | `python -m pytest -q` | last full run `1400 passed`; not repeated for every iteration |
 | Platform benchmark | `python scripts/benchmark_platform.py --agents 1000 --runs 5` | p95 `199.715 ms`; elapsed `[180.596, 200.504, 196.560, 193.607, 187.069]` ms |
 | Phase 3B God probe (original) | `python scripts/verify_dynamic_social_content.py --provider remote --runs 3` | decomposed 15-stage probe: 3/3 complete cores, 3/3 legal, 3/3 violation; 45 accepted / 5 rejected |
+| Phase 3B contract-driven broad | `python scripts/verify_dynamic_social_content.py --provider remote --runs 1 --broad` | 1/1 complete core, 1/1 legal, 1/1 violation; 15 accepted / 0 rejected; no failed checks |
 | Phase 3B God probe (fresh rerun) | same command | 3/3 complete cores, 2/3 legal, 3/3 violation; 45 accepted / 6 rejected; one run omitted `authorization_operation` |
 
 ### 9.1 Test duration and selection
