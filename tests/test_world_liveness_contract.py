@@ -22,7 +22,19 @@ from sim2.platform.runtime import Platform
 from sim2.world.lifecycle import recovery_rule
 
 WORLDS = Path(__file__).parents[1] / "worlds"
-SHIPPED = sorted(path for path in WORLDS.iterdir() if (path / "manifest.yaml").is_file())
+
+
+def _manifest(world: Path) -> dict:
+    return yaml.safe_load((world / "manifest.yaml").read_text(encoding="utf-8")) or {}
+
+
+# Deterministic contract probes intentionally disable Story/God/Director
+# consumers so a test observes only the frozen behavior under test.  They are
+# not playable liveness worlds and must not inherit the liveness contract.
+SHIPPED = sorted(
+    path for path in WORLDS.iterdir()
+    if (path / "manifest.yaml").is_file() and _manifest(path).get("kind") != "probe"
+)
 STAGNATION_SUMMARY = "No character gained a new executable option for 2 days (last growth at minute 1)."
 
 

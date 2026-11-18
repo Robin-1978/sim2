@@ -33,6 +33,10 @@
 
 能力成长、发现、文明进度和规则的因果链见 [进步与文明设计](design/progression-and-civilization.md)。
 
+社会关系授权、拒绝事实和资源流动的 Phase 1 冻结契约与实现计划见
+[Social Authority Loop](design/social-authority-loop-phase1.md)，实现证据见
+[Phase 1 实现报告](design/social-authority-loop-phase1-report.md)。
+
 属性由世界包导入，Platform 只保留执行信封；实例创建后，SQLite 作为唯一事实来源，God 可通过声明式定义提案动态注册属性、世界属性、能力、Action、BT 和 Recipe，Platform 校验后写回 SQLite。动态社会制度、账本和完全不同属性世界的边界见 [动态世界 Schema](design/dynamic-world-schema.md)。
 
 - ReAct 采用“工具反馈修正计划”，但副作用由 Platform 控制。

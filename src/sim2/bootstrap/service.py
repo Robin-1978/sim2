@@ -831,6 +831,11 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
                     initial_state.setdefault(attribute_id, value)
                 state["initial_state"] = initial_state
                 store.repositories.entities.put_agent(agent["id"], state, agent.get("name", agent["id"]))
+                for target_id in agent.get("stewardship", []) or []:
+                    store.repositories.entities.put_relationship(
+                        agent["id"], str(target_id), "stewardship",
+                        {"scope": "stewardship", "source": "configured"},
+                    )
                 for knowledge in agent.get("knowledge_seed", []):
                     if isinstance(knowledge, dict):
                         fact_key = str(knowledge.get("id") or knowledge.get("fact_key") or "").strip()

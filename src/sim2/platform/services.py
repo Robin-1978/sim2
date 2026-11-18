@@ -179,6 +179,7 @@ def build_platform_services(context: PlatformContext) -> dict[str, PlatformServi
     # PlatformService as their base class. Keeping the factory import local
     # avoids a module cycle while preserving one construction point.
     from .api_service import RuntimeApiService
+    from .authorization import AuthorizationService
     from .behavior_intent import BehaviorIntentService
     from .behavior_service import BehaviorExecutionService
     from .events import EventService
@@ -189,6 +190,7 @@ def build_platform_services(context: PlatformContext) -> dict[str, PlatformServi
         "events": EventService(context),
         "api": RuntimeApiService(context),
         "intent": BehaviorIntentService(context),
+        "authorization": AuthorizationService(context),
         "execution": BehaviorExecutionService(context),
         "tick": WorldTickService(context),
         "evolution": EvolutionService(context),

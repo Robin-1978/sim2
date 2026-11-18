@@ -9,6 +9,7 @@ from ..actions.resources import ResourceLedger
 from ..actions.targets import TargetResolver
 from ..memory.service import MemoryService
 from ..persistence.store import WorldStore
+from ..world.authorization import stewardship_targets
 from ..world.drives import DriveCalculator
 from ..world.navigation import route_minutes
 from ..world.rules import RuleCompiler
@@ -120,6 +121,18 @@ class AgentViewCompiler(
         names = policy.get(role) if isinstance(policy, dict) else None
         return tools_for_role(role, names if isinstance(names, list) else None)
 
+    def _authorization_stewardships(self, agent_id: str) -> list[str]:
+        return stewardship_targets(self.store, agent_id)
+
+    def _entity_name(self, value: Any) -> str:
+        identifier = str(value or "")
+        if not identifier:
+            return ""
+        try:
+            return str(self.entities_repo.get_entity(identifier).get("name") or identifier)
+        except KeyError:
+            return identifier.replace("_", " ")
+
     def _world_rule_labels(self) -> dict[str, str]:
         """Map package storage keys to visible names for model-facing policy text."""
 
@@ -175,8 +188,12 @@ class AgentViewCompiler(
         frame = self._decision_frame(agent_id, agent, rules)
         for bt_id in frame.catalog_ids:
             entry = self._compile_behavior(frame, bt_id)
-            if entry is not None:
+            if entry is None:
+                continue
+            if entry.get("eligibility", {}).get("available", True):
                 frame.available.append(entry)
+            else:
+                frame.blocked.append(entry)
         available, diagnostics = frame.available, frame.diagnostics
         state, location_id, current_location = frame.state, frame.location_id, frame.current_location
         bt_defs, action_defs = frame.bt_defs, frame.action_defs
@@ -203,6 +220,37 @@ class AgentViewCompiler(
         memory_query, memories, short_term_memories, long_term_memories, known_facts = self._memory_context(frame, available, drives)
         research_tracks = self._research_tracks(frame)
         relationships = self._relationship_view(agent_id)
+        denial_memories = [
+            item for item in self.memory_repo.list_memories(agent_id, limit=60)
+            if str(item.get("type") or "") == "denial"
+        ][:3]
+        pending_access_requests = [
+            {
+                "request_id": item.get("request_id"),
+                "requester": self._entity_name(item.get("requester")),
+                "behavior": item.get("behavior"),
+                "target": self._entity_name(item.get("target")),
+                "scope": item.get("scope"),
+                "reason": item.get("reason"),
+                "created_minute": item.get("created_minute"),
+            }
+            for item in self.store.repositories.authorization.list_requests(status="pending", limit=8)
+            if str(item.get("target") or "") in set(self._authorization_stewardships(agent_id))
+            or str(item.get("requester") or "") == agent_id
+        ][:6]
+        active_delegations = [
+            {
+                "delegation_id": item.get("delegation_id"),
+                "source": self._entity_name(item.get("source")),
+                "target": self._entity_name(item.get("target")),
+                "scope": item.get("scope"),
+                "granted_by": self._entity_name(item.get("granted_by")),
+                "granted_at": item.get("granted_at"),
+            }
+            for item in self.store.repositories.authorization.list_delegations(status="active", limit=50)
+            if str(item.get("target") or "") in set(self._authorization_stewardships(agent_id))
+            or str(item.get("source") or "") == agent_id
+        ][:6]
         recent_actions, recent_outcomes = self._recent_activity(agent_id, bt_defs)
         observation_facts = []
         if current_location:
@@ -230,6 +278,9 @@ class AgentViewCompiler(
             "capability_update_candidates": capability_update_candidates,
             "needs": needs, "inventory": agent.get("inventory", {}), "injuries": state.get("injuries", []),
             "drives": drives[:5], "drive_model": drive_model, "observation": {"facts": observation_facts[:6], "source": "current_state"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "research_tracks": research_tracks[:8], "memories": memories, "short_term_memories": short_term_memories, "long_term_memories": long_term_memories, "memory_query": memory_query, "recent_actions": recent_actions, "recent_outcomes": recent_outcomes, "direct_relationships": relationships,
+            "denial_memories": denial_memories,
+            "pending_access_requests": pending_access_requests,
+            "active_delegations": active_delegations,
             "active_task": {"bt": active_behavior.get("summary") or ("in progress" if active_behavior_id else None), "action": active_action.get("description") or (label(str(active_action_id)) if active_action_id else None), "remaining_minutes": state.get("remaining_minutes", 0)},
             "open_trade_offers": self._trade_offer_view(agent_id),
             "available_actions": available_actions if role == "agent_reflection" else [],
@@ -252,6 +303,7 @@ class AgentViewCompiler(
             "active_story_beats": active_story_beats,
             "active_story_threads": active_story_threads,
             "executable_behaviors": self._assign_choices(available) if role == "agent_decision" else [],
+            "blocked_behaviors": self._assign_choices(frame.blocked) if role == "agent_decision" else [],
             "decision_constraints": decision_constraints if role == "agent_decision" else [],
             "last_platform_result": self._with_behavior_choice(
                 self._humanize_record(state.get("last_platform_result")), bt_defs

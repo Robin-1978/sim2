@@ -21,6 +21,8 @@ from ..world.navigation import (
     nearest_resource_node,
     nearest_safe_location,
 )
+from ..world.authorization import behavior_authorization_spec
+from .authorization import AuthorizationRejected, withdrawal_effect
 from .services import PlatformService
 
 
@@ -47,17 +49,89 @@ class BehaviorSubmission:
     world_revision: int = 0
     agent_revision: int = 0
     stale_observation: bool = False
+    authorization: dict[str, Any] = field(default_factory=dict)
+    authorization_operation: str | None = None
+    withdrawal: dict[str, Any] | None = None
 
 
 class BehaviorIntentService(PlatformService):
     """Behavior intent validation and activity admission."""
 
-    def reject_intent(self, intent_id: str, actor_id: str, intent_type: str, data: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    def reject_intent(
+        self,
+        intent_id: str,
+        actor_id: str,
+        intent_type: str,
+        data: dict[str, Any],
+        result: dict[str, Any],
+        *,
+        submission: BehaviorSubmission | None = None,
+    ) -> dict[str, Any]:
         world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         with self.store.transaction():
             self.store.repositories.evolution.create_intent(intent_id, actor_id, intent_type, data, world_minute)
             self.store.repositories.evolution.finish_intent(intent_id, "rejected", result)
+            if submission is not None and submission.authorization.get("gated"):
+                self._record_authorization_rejection(submission, result, world_minute)
         return result
+
+    def _record_authorization_rejection(self, submission: BehaviorSubmission, result: dict[str, Any], minute: int) -> None:
+        """One denied authority attempt is a fact, even though no state changed."""
+
+        decision = submission.authorization
+        reasons = list(decision.get("reasons") or [])
+        if not reasons:
+            return
+        reason = reasons[0]
+        behavior_id = str(submission.behavior_id)
+        behavior_label = str(submission.behavior.get("agent_label") or submission.behavior.get("summary") or behavior_id)
+        request = decision.get("request") or {}
+        target = str(
+            (request or {}).get("target")
+            or submission.parameters.get("target")
+            or ""
+        )
+        spec = behavior_authorization_spec(self._dependency("rule_compiler"), submission.behavior) or {}
+        if not target:
+            target = str(spec.get("target") or "")
+        event = {
+            "intent_id": str(submission.intent.intent_id),
+            "actor": str(submission.intent.actor_id),
+            "behavior": behavior_label,
+            "behavior_id": behavior_id,
+            "target": target,
+            "scope": str(spec.get("scope") or ""),
+        }
+        self._context.services["events"].append("behavior.requested", submission.intent.actor_id, minute, {**event, "minute": minute})
+        denial_event_id = self._context.services["events"].append(
+            "behavior.denied",
+            submission.intent.actor_id,
+            minute,
+            {
+                **event,
+                "rule_id": str(reason.get("rule_id") or ""),
+                "reason": str(reason.get("type") or ""),
+                "authority": dict(reason.get("authority") or {}),
+                "minute": minute,
+            },
+        )
+        self.store.repositories.memory.put_memory(
+            str(submission.intent.actor_id),
+            "denial",
+            {
+                "summary": f"{behavior_label} was denied: {reason.get('message') or reason.get('type')}",
+                "event_id": denial_event_id,
+                "behavior": behavior_label,
+                "behavior_id": behavior_id,
+                "rule": str(reason.get("rule_id") or ""),
+                "reason": str(reason.get("type") or ""),
+                "authority": dict(reason.get("authority") or {}),
+                "target": target,
+                "scope": str(spec.get("scope") or ""),
+                "minute": int(minute),
+            },
+            tier="short_term",
+        )
 
     def _validate_behavior_parameters(self, behavior_id: str, parameters: dict[str, Any]) -> list[str]:
         bt = next((item for item in self.store.repositories.entities.get_definitions("bt_def") if item.get("id") == behavior_id), None)
@@ -149,7 +223,12 @@ class BehaviorIntentService(PlatformService):
         submission = self._open_submission(intent, agent)
         rejection = self._admit(submission)
         if rejection is not None:
-            return self.reject_intent(intent.intent_id, intent.actor_id, intent.intent_type, submission.intent_data, rejection)
+            return self.reject_intent(
+                intent.intent_id, intent.actor_id, intent.intent_type,
+                submission.intent_data, rejection, submission=submission,
+            )
+        if submission.authorization_operation:
+            return self._start_authorization_behavior(submission)
         return self._start_behavior(submission)
 
     def _open_submission(self, intent: BehaviorIntent, agent: dict[str, Any]) -> BehaviorSubmission:
@@ -174,6 +253,7 @@ class BehaviorIntentService(PlatformService):
         parameters as they were when the submission was rejected.
         """
 
+        submission.world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         rejection = self._resolve_behavior(submission)
         if rejection is not None:
             return rejection
@@ -182,6 +262,10 @@ class BehaviorIntentService(PlatformService):
             rejection = check(submission)
             if rejection is not None:
                 return rejection
+        submission.authorization_operation = self._context.services["authorization"].operation_of(submission.behavior)
+        rejection = self._check_authorization(submission)
+        if rejection is not None:
+            return rejection
         submission.runtime_parameters = dict(submission.parameters)
         rejection = self._resolve_targets(submission)
         if rejection is not None:
@@ -190,7 +274,6 @@ class BehaviorIntentService(PlatformService):
         rejection = self._check_entry_conditions(submission)
         if rejection is not None:
             return rejection
-        submission.world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         for check in (self._check_cooldown, self._check_catalog):
             rejection = check(submission)
             if rejection is not None:
@@ -300,6 +383,32 @@ class BehaviorIntentService(PlatformService):
                 "failed_check": "failed_behavior_blocked",
                 "retryable": True,
                 "failure_result": blocked.get("result"),
+            }
+        return None
+
+    def _check_authorization(self, submission: BehaviorSubmission) -> dict[str, Any] | None:
+        """Re-evaluate authority against the current state, never a stale view."""
+
+        service = self._context.services["authorization"]
+        decision = str(submission.behavior.get("authorization_decision") or "") or None
+        authorization = service.eligibility(
+            submission.agent,
+            submission.behavior,
+            submission.parameters,
+            decision=decision,
+        )
+        submission.authorization = authorization
+        action_defs = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
+        submission.withdrawal = withdrawal_effect(submission.behavior, action_defs)
+        if authorization.get("gated") and not authorization.get("available"):
+            reason = (authorization.get("reasons") or [{}])[0]
+            return {
+                "status": "rejected",
+                "message": str(reason.get("message") or "Authorization is not available."),
+                "failed_check": str(reason.get("type") or "missing_delegation"),
+                "rule_id": str(reason.get("rule_id") or ""),
+                "authority": dict(reason.get("authority") or {}),
+                "retryable": True,
             }
         return None
 
@@ -426,7 +535,11 @@ class BehaviorIntentService(PlatformService):
         catalog_check_required = intent.observed_agent_revision is not None or (not intent.target and not intent.parameters)
         if catalog_check_required and not (intent.observed_agent_revision is None and allocation_effect):
             current_view = self.view.build_decision_view(intent.actor_id, role="agent_decision")
-            if behavior_id not in {str(item.get("ref", "")).removeprefix("behavior:") for item in current_view.get("executable_behaviors", [])}:
+            attemptable = list(current_view.get("executable_behaviors", [])) + [
+                item for item in (current_view.get("blocked_behaviors", []) or [])
+                if item.get("attemptable", False)
+            ]
+            if behavior_id not in {str(item.get("ref", "")).removeprefix("behavior:") for item in attemptable}:
                 return {
                     "status": "rejected", "message": "The selected behavior is no longer executable in the current state.", "failed_check": "behavior_unavailable", "retryable": True,
                 }
@@ -480,6 +593,170 @@ class BehaviorIntentService(PlatformService):
             }
         return None
 
+    @staticmethod
+    def _authorization_target(submission: BehaviorSubmission) -> str:
+        if submission.withdrawal:
+            return str(submission.withdrawal.get("resource_id") or "")
+        request = submission.authorization.get("request") or {}
+        return str(request.get("target") or submission.parameters.get("target") or "")
+
+    def _start_authorization_behavior(self, submission: BehaviorSubmission) -> dict[str, Any]:
+        """Execute one instant administrative decision in the admission commit.
+
+        Approval, rejection and revocation are decisions, not physical work.
+        Their request/delegation/event writes commit in the same transaction as
+        the behavior envelope, so a retry cannot observe a half-applied
+        institutional result.
+        """
+
+        intent = submission.intent
+        service = self._context.services["authorization"]
+        minute = submission.world_minute
+        operation = str(submission.authorization_operation)
+        try:
+            with self.store.transaction():
+                self.store.repositories.evolution.create_intent(
+                    intent.intent_id, intent.actor_id, intent.intent_type, submission.intent_data, minute,
+                )
+                self._mark_executing(submission)
+                self._open_bt_instance(submission, self._expected_outcome(submission))
+                if submission.authorization.get("gated"):
+                    self._context.services["events"].append(
+                        "behavior.requested",
+                        intent.actor_id,
+                        minute,
+                        {
+                            "intent_id": intent.intent_id,
+                            "actor": intent.actor_id,
+                            "behavior": str(submission.behavior.get("agent_label") or submission.behavior_id),
+                            "behavior_id": submission.behavior_id,
+                            "target": self._authorization_target(submission),
+                            "minute": minute,
+                        },
+                    )
+                self._context.services["events"].append(
+                    "behavior.started",
+                    intent.actor_id,
+                    minute,
+                    {
+                        "intent_id": intent.intent_id,
+                        "behavior_id": submission.behavior_id,
+                        "target": intent.target,
+                        "expected": self._expected_outcome(submission),
+                        "decision": {"reason": intent.reason, "confidence": intent.confidence},
+                    },
+                )
+                domain = self._execute_authorization_operation(submission, operation, service, minute)
+                state = dict(submission.agent.get("initial_state") or {})
+                state.update({
+                    "status": "idle",
+                    "active_bt_instance": None,
+                    "active_behavior_id": None,
+                    "active_action": None,
+                    "active_action_instance": None,
+                    "active_parameters": {},
+                    "active_action_index": 0,
+                    "action_progress": 0.0,
+                    "active_action_duration": 0,
+                    "remaining_minutes": 0,
+                    "last_platform_result": {
+                        "status": "completed",
+                        "behavior_ref": intent.behavior_ref,
+                        "result": "authorization_completed",
+                        "authorization_result": domain,
+                    },
+                })
+                submission.agent["initial_state"] = state
+                self.store.repositories.entities.update_agent(intent.actor_id, submission.agent)
+                self.store.repositories.activity.update_bt_instance(
+                    intent.intent_id, status="completed", current_node=0,
+                    data={"domain_result": domain}, updated_minute=minute,
+                )
+                self._context.services["events"].append(
+                    "behavior.completed",
+                    intent.actor_id,
+                    minute,
+                    {
+                        "execution_id": intent.intent_id,
+                        "behavior_id": submission.behavior_id,
+                        "result": "authorization_completed",
+                        "domain_result": domain,
+                    },
+                )
+                result = {
+                    "status": "accepted",
+                    "intent_id": intent.intent_id,
+                    "execution_id": intent.intent_id,
+                    "behavior_ref": intent.behavior_ref,
+                    "remaining_minutes": 0,
+                    "authorization_result": domain,
+                    **{key: value for key, value in domain.items() if key in {"request_id", "delegation_id"}},
+                }
+                self.store.repositories.evolution.finish_intent(intent.intent_id, "accepted", result)
+                return result
+        except AuthorizationRejected as exc:
+            return self.reject_intent(
+                intent.intent_id, intent.actor_id, intent.intent_type, submission.intent_data, exc.result(),
+            )
+
+    def _execute_authorization_operation(
+        self,
+        submission: BehaviorSubmission,
+        operation: str,
+        service: Any,
+        minute: int,
+    ) -> dict[str, Any]:
+        parameters = {**submission.parameters, **submission.runtime_parameters}
+        agent = submission.agent
+        if operation == "request_access":
+            created = service.create_request(
+                agent,
+                {
+                    "request_id": parameters.get("request_id"),
+                    "behavior": parameters.get("behavior") or parameters.get("denied_behavior"),
+                    "behavior_id": parameters.get("behavior_id"),
+                    "target": parameters.get("target") or parameters.get("target_id"),
+                    "scope": parameters.get("scope"),
+                    "reason": parameters.get("reason") or submission.intent.reason,
+                    "based_on_event": parameters.get("based_on_event") or parameters.get("denial_event"),
+                },
+                minute=minute,
+                validate_causal=True,
+            )
+            request = created["request"]
+            return {"request_id": request["request_id"], "status": request["status"], "created": created["created"]}
+        if operation in {"approve_withdrawal", "reject_withdrawal"}:
+            request = submission.authorization.get("request")
+            if not request:
+                raise AuthorizationRejected("request_not_found", "No pending access request is available to decide.")
+            if operation == "approve_withdrawal":
+                decided = service.approve(
+                    agent, request, minute=minute,
+                    delegation_id=parameters.get("delegation_id"),
+                )
+                return {
+                    "request_id": decided["request"]["request_id"],
+                    "delegation_id": decided["delegation"]["delegation_id"],
+                    "status": decided["request"]["status"],
+                }
+            decided = service.reject(
+                agent, request,
+                reason=str(parameters.get("reason") or submission.intent.reason or "rejected"),
+                minute=minute,
+            )
+            return {"request_id": decided["request"]["request_id"], "status": decided["request"]["status"]}
+        if operation == "revoke_delegation":
+            delegation = submission.authorization.get("delegation")
+            if not delegation:
+                raise AuthorizationRejected("delegation_not_found", "No active delegation is available to revoke.")
+            decided = service.revoke(
+                agent, delegation,
+                reason=str(parameters.get("reason") or submission.intent.reason or "revoked"),
+                minute=minute,
+            )
+            return {"delegation_id": decided["delegation"]["delegation_id"], "status": decided["delegation"]["status"]}
+        raise AuthorizationRejected("unsupported_authorization_operation", f"Unsupported authorization operation: {operation}")
+
     def _start_behavior(self, submission: BehaviorSubmission) -> dict[str, Any]:
         """Open the activity: intent, actor state, BT instance and ``behavior.started`` commit together."""
 
@@ -489,6 +766,37 @@ class BehaviorIntentService(PlatformService):
             self.store.repositories.evolution.create_intent(intent.intent_id, intent.actor_id, intent.intent_type, submission.intent_data, submission.world_minute)
             self._mark_executing(submission)
             self._open_bt_instance(submission, expected)
+            if submission.authorization.get("gated"):
+                self._context.services["events"].append(
+                    "behavior.requested",
+                    intent.actor_id,
+                    submission.world_minute,
+                    {
+                        "intent_id": intent.intent_id,
+                        "actor": intent.actor_id,
+                        "behavior": str(submission.behavior.get("agent_label") or submission.behavior_id),
+                        "behavior_id": submission.behavior_id,
+                        "target": self._authorization_target(submission),
+                        "minute": submission.world_minute,
+                    },
+                )
+            if submission.withdrawal:
+                submission.state["active_resource_withdrawal"] = dict(submission.withdrawal)
+                submission.state["active_resource_authorization"] = submission.authorization.get("authorization")
+                submission.agent["initial_state"] = submission.state
+                self.store.repositories.entities.update_agent(intent.actor_id, submission.agent)
+                self._context.services["events"].append(
+                    "resource.withdrawal.started",
+                    intent.actor_id,
+                    submission.world_minute,
+                    {
+                        "intent_id": intent.intent_id,
+                        "actor": intent.actor_id,
+                        "target": str(submission.withdrawal.get("resource_id") or ""),
+                        "authorization": submission.authorization.get("authorization"),
+                        "minute": submission.world_minute,
+                    },
+                )
             self._context.services["events"].append(
                 "behavior.started", intent.actor_id, submission.world_minute,
                 {"intent_id": intent.intent_id, "behavior_id": submission.behavior_id, "target": intent.target, "expected": expected, "decision": {"reason": intent.reason, "confidence": intent.confidence}},

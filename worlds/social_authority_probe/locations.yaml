@@ -1,0 +1,20 @@
+locations:
+- id: relay_station
+  name: Relay Station
+  public: true
+  safe: true
+  tags:
+  - public
+  - facility
+  routes: []
+  map_position:
+    x: 0
+    y: 0
+resources:
+- id: energy_reserve
+  type: resource
+  name: Energy Reserve
+  location_id: relay_station
+  initial_state:
+    location_id: relay_station
+    quantity: 10

@@ -23,6 +23,9 @@ _PINNED_SECTIONS = frozenset({
     "active_execution",
     "outcome_review",
     "executable_behaviors",
+    "blocked_behaviors",
+    "access_authority",
+    "denial_memory",
     # God cannot submit a valid rule or world-property change without the
     # exact machine field names this section carries.
     "rule_condition_fields",

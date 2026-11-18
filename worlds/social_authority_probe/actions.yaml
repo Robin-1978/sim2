@@ -1,0 +1,134 @@
+actions:
+- id: withdraw_energy
+  version: 1
+  description: Withdraw one unit of energy from the shared reserve.
+  parameters: {}
+  preconditions:
+  - actor.alive
+  duration:
+    minutes: 2
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: resource_withdrawal
+    resource_id: energy_reserve
+    amount: 1
+  success:
+    condition: actor.alive
+    result: energy_withdrawn
+  failure:
+    condition: actor.incapacitated
+    result: withdrawal_failed
+  interrupt_policy: pause
+  interaction_policy: deny
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: request_access
+  version: 1
+  description: Request scoped access to the shared reserve after a denial.
+  parameters: {}
+  preconditions:
+  - actor.alive
+  duration:
+    minutes: 0
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects: []
+  success:
+    condition: actor.alive
+    result: access_requested
+  failure:
+    condition: actor.incapacitated
+    result: request_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: approve_withdrawal
+  version: 1
+  description: Approve one pending access request and grant a scoped delegation.
+  parameters: {}
+  preconditions:
+  - actor.alive
+  duration:
+    minutes: 0
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects: []
+  success:
+    condition: actor.alive
+    result: access_approved
+  failure:
+    condition: actor.incapacitated
+    result: approval_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: reject_withdrawal
+  version: 1
+  description: Reject one pending access request without creating a delegation.
+  parameters: {}
+  preconditions:
+  - actor.alive
+  duration:
+    minutes: 0
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects: []
+  success:
+    condition: actor.alive
+    result: access_rejected
+  failure:
+    condition: actor.incapacitated
+    result: rejection_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: revoke_delegation
+  version: 1
+  description: Revoke one active delegation while retaining its history.
+  parameters: {}
+  preconditions:
+  - actor.alive
+  duration:
+    minutes: 0
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects: []
+  success:
+    condition: actor.alive
+    result: delegation_revoked
+  failure:
+    condition: actor.incapacitated
+    result: revocation_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline

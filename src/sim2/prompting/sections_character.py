@@ -107,6 +107,18 @@ def knowledge_lines(context: dict[str, Any], role: str) -> list[str]:
         lines.extend([f"      {memory_line(item)}" for item in (long_memories or [])[:4]] or ["      memory: none"])
         lines.append("    </long_term_memory>")
     lines.append("  </knowledge_and_memory>")
+    denial_memories = context.get("denial_memories") or []
+    if denial_memories and role != "story":
+        lines.append("  <denial_memory>")
+        for item in denial_memories[:3]:
+            lines.append(
+                f"    denial_event: {item.get('event_id')}; behavior: {item.get('behavior')}; "
+                f"reason: {item.get('reason')}; rule: {item.get('rule')}; "
+                f"target: {item.get('target')}; minute: {item.get('minute')}; "
+                f"authority: {item.get('authority')}"
+            )
+        lines.append("    A denial is a fact you may cite as based_on_event when requesting access.")
+        lines.append("  </denial_memory>")
     tracks = context.get("research_tracks") or []
     if tracks:
         lines.append("  <research_tracks>")
@@ -264,6 +276,39 @@ def executable_behavior_lines(context: dict[str, Any]) -> list[str]:
     if not behaviors:
         lines.append("    - none; return wait")
     lines.append("  </executable_behaviors>")
+    blocked = context.get("blocked_behaviors") or []
+    if blocked:
+        lines.append("  <blocked_behaviors>")
+        lines.append("    A blocked behavior is visible so you can understand the obstacle. Attempt it only when attemptable is true; Platform will record a real denial.")
+        for behavior in blocked:
+            eligibility = behavior.get("eligibility") or {}
+            reasons = eligibility.get("reasons") or []
+            reason_text = "; ".join(
+                f"{item.get('type')} ({item.get('message', '')})"
+                for item in reasons
+            ) or "authorization unavailable"
+            lines.append(
+                f"    - choice: {behavior.get('choice') or behavior.get('name')}; "
+                f"attemptable: {str(bool(behavior.get('attemptable'))).lower()}; "
+                f"reasons: {reason_text}"
+            )
+        lines.append("  </blocked_behaviors>")
+    pending = context.get("pending_access_requests") or []
+    delegations = context.get("active_delegations") or []
+    if pending or delegations:
+        lines.append("  <access_authority>")
+        for item in pending[:6]:
+            lines.append(
+                f"    pending_request: {item.get('request_id')}; requester: {item.get('requester')}; "
+                f"behavior: {item.get('behavior')}; target: {item.get('target')}; scope: {item.get('scope')}; "
+                f"reason: {item.get('reason')}"
+            )
+        for item in delegations[:6]:
+            lines.append(
+                f"    active_delegation: {item.get('delegation_id')}; source: {item.get('source')}; "
+                f"target: {item.get('target')}; scope: {item.get('scope')}; granted_by: {item.get('granted_by')}"
+            )
+        lines.append("  </access_authority>")
     return lines
 
 

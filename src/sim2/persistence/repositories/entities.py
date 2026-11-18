@@ -94,6 +94,13 @@ class EntitiesRepository:
             result.append({"person": other, "relation": row["relation_type"], "direction": "outgoing" if row["from_id"] == entity_id else "incoming", **relation})
         return result
 
+    def stewardship_targets(self, from_id: str) -> list[str]:
+        rows = self.store.connection.execute(
+            "SELECT to_id FROM relationship WHERE from_id=? AND relation_type='stewardship' ORDER BY to_id",
+            (str(from_id),),
+        ).fetchall()
+        return [str(row["to_id"]) for row in rows if row["to_id"]]
+
     def list_relationships(self) -> list[dict[str, Any]]:
         rows = self.store.connection.execute("SELECT from_id,to_id,relation_type,data_json FROM relationship ORDER BY from_id,to_id").fetchall()
         return [{"from": row["from_id"], "to": row["to_id"], "type": row["relation_type"], **json.loads(row["data_json"])} for row in rows]

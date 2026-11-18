@@ -111,6 +111,37 @@ CREATE TABLE IF NOT EXISTS relationship (
   data_json TEXT NOT NULL,
   PRIMARY KEY (from_id, to_id, relation_type)
 );
+CREATE TABLE IF NOT EXISTS access_request (
+  request_id TEXT PRIMARY KEY,
+  requester_id TEXT NOT NULL,
+  behavior_id TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  status TEXT NOT NULL,
+  based_on_event INTEGER,
+  created_minute INTEGER NOT NULL,
+  resolved_minute INTEGER,
+  resolved_by TEXT,
+  data_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS access_request_status_idx ON access_request(status,created_minute);
+CREATE TABLE IF NOT EXISTS delegation (
+  delegation_id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  granted_by TEXT NOT NULL,
+  status TEXT NOT NULL,
+  granted_minute INTEGER NOT NULL,
+  expires_minute INTEGER,
+  revoked_minute INTEGER,
+  revoked_by TEXT,
+  request_id TEXT,
+  data_json TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS delegation_active_tuple
+  ON delegation(source_id,target_id,scope) WHERE status='active';
+CREATE INDEX IF NOT EXISTS delegation_status_idx ON delegation(status,source_id);
 CREATE TABLE IF NOT EXISTS prompt_def (
   id TEXT PRIMARY KEY,
   data_json TEXT NOT NULL
@@ -302,6 +333,7 @@ class WorldStore:
         from .repositories.events import EventsRepository
         from .repositories.evolution import EvolutionRepository
         from .repositories.llm import LlmRepository
+        from .repositories.authorization import AuthorizationRepository
         from .repositories.metadata import MetadataRepository
         self.repositories = SimpleNamespace(
             metadata=MetadataRepository(self),
@@ -312,6 +344,7 @@ class WorldStore:
             events=EventsRepository(self),
             evolution=EvolutionRepository(self),
             llm=LlmRepository(self),
+            authorization=AuthorizationRepository(self),
         )
 
     @contextmanager

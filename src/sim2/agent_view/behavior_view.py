@@ -15,6 +15,7 @@ from ..world.navigation import (
     nearest_safe_location,
     reachable_locations,
 )
+from ..world.authorization import authorization_for_behavior
 from ..world.context import configured_context_values
 from .action_text import action_view, label, predicate_text
 from .decision_frame import DecisionFrame, Guidance, Simulation
@@ -104,7 +105,28 @@ class BehaviorViewMixin:
         simulation = self._simulate_behavior(frame, bt_id, behavior_context)
         if simulation is None:
             return None
-        return self._behavior_entry(frame, bt_id, bt, simulation, self._target_guidance(frame, bt), cooldown_minutes)
+        entry = self._behavior_entry(frame, bt_id, bt, simulation, self._target_guidance(frame, bt), cooldown_minutes)
+        decision = authorization_for_behavior(
+            self.store,
+            frame.agent,
+            bt,
+            {},
+            rule_compiler=self.rule_compiler,
+            decision=str(bt.get("authorization_decision") or "") or None,
+        )
+        entry["eligibility"] = {
+            "available": bool(decision.get("available")),
+            "reasons": list(decision.get("reasons") or []),
+            "rule_id": decision.get("rule_id"),
+            "mode": decision.get("mode"),
+            "authorization": decision.get("authorization"),
+        }
+        if decision.get("gated") and not decision.get("available"):
+            reasons = list(decision.get("reasons") or [])
+            entry["attemptable"] = bool(reasons) and all(bool(item.get("attemptable")) for item in reasons)
+            entry["blocked_reason"] = reasons[0].get("message") if reasons else "Authorization is not available."
+            entry["blocked_code"] = reasons[0].get("type") if reasons else None
+        return entry
 
     def _behavior_gates(self, frame: DecisionFrame, bt_id: Any, bt: dict[str, Any]) -> tuple[dict[str, Any], int] | None:
         """Blocked, entry-condition, rule-denial and cooldown checks; None records a diagnostic."""

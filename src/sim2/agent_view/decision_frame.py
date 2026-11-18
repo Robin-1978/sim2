@@ -35,6 +35,7 @@ class DecisionFrame:
     participants: list[dict[str, Any]]
     validation_target: dict[str, Any] | None
     available: list[dict[str, Any]] = field(default_factory=list)
+    blocked: list[dict[str, Any]] = field(default_factory=list)
     diagnostics: list[dict[str, Any]] = field(default_factory=list)
 
 

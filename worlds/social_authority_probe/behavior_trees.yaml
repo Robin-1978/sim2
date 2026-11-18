@@ -1,0 +1,132 @@
+behavior_trees:
+- id: withdraw_energy
+  version: 1
+  summary: Withdraw Energy
+  description: Withdraw one unit of shared reserve energy. Stewardship or an active delegation is required.
+  agent_label: Withdraw Energy
+  entry_conditions:
+  - actor.alive
+  estimated_minutes: 2
+  goal_tags: [maintenance, power]
+  drive_tags: [purpose]
+  success_results: [energy_withdrawn]
+  failure_results: [withdrawal_failed]
+  nodes:
+  - type: action
+    action_id: withdraw_energy
+  definition_source: config
+  kind: base
+- id: request_access
+  version: 1
+  authorization_operation: request_access
+  summary: Request Access
+  description: Ask a steward for scoped access to a shared resource, citing the denial that blocked you.
+  agent_label: Request Access
+  entry_conditions:
+  - actor.alive
+  estimated_minutes: 1
+  agent_parameters:
+    based_on_event: {type: string, required: false, max_length: 40, description: The denial event id from your denial memory; Platform rejects a missing or mismatched reference.}
+    reason: {type: string, required: false, max_length: 300, description: Why you need access now.}
+    behavior: {type: string, required: false, max_length: 120, description: The blocked behavior label; omit to use the cited denial.}
+    target: {type: string, required: false, max_length: 120, description: The resource target; omit to use the cited denial.}
+    scope: {type: string, required: false, max_length: 120, description: The requested scope; omit to use the denied behavior's configured scope.}
+    request_id: {type: string, required: false, max_length: 80, description: Optional stable request id for an idempotent retry.}
+  goal_tags: [access, power]
+  drive_tags: [purpose]
+  success_results: [access_requested]
+  failure_results: [request_failed]
+  nodes:
+  - type: action
+    action_id: request_access
+    parameters:
+      based_on_event: context.based_on_event
+      reason: context.reason
+      behavior: context.behavior
+      target: context.target
+      scope: context.scope
+      request_id: context.request_id
+  definition_source: config
+  kind: base
+- id: approve_withdrawal
+  version: 1
+  authorization_operation: approve_withdrawal
+  authorization_decision: approve
+  summary: Approve Withdrawal
+  description: Approve a pending access request and create a scoped delegation for the requester.
+  agent_label: Approve Withdrawal
+  entry_conditions:
+  - actor.alive
+  estimated_minutes: 1
+  agent_parameters:
+    request_id: {type: string, required: false, max_length: 80, description: The pending request to approve; omit when exactly one pending request is visible.}
+    delegation_id: {type: string, required: false, max_length: 80, description: Optional stable delegation id for an idempotent retry.}
+    subject: {type: string, required: false, max_length: 80, description: The requester the approval is for.}
+    target: {type: string, required: false, max_length: 120, description: The resource target the approval is for.}
+    scope: {type: string, required: false, max_length: 120, description: The authorization scope the approval is for.}
+    reason: {type: string, required: false, max_length: 300, description: Why the request is approved.}
+  goal_tags: [authority, stewardship]
+  drive_tags: [purpose, belonging]
+  success_results: [access_approved]
+  failure_results: [approval_failed]
+  nodes:
+  - type: action
+    action_id: approve_withdrawal
+    parameters:
+      request_id: context.request_id
+      delegation_id: context.delegation_id
+      subject: context.subject
+      target: context.target
+      scope: context.scope
+      reason: context.reason
+  definition_source: config
+  kind: base
+- id: reject_withdrawal
+  version: 1
+  authorization_operation: reject_withdrawal
+  authorization_decision: reject
+  summary: Reject Withdrawal
+  description: Reject a pending access request without creating a delegation or moving a resource.
+  agent_label: Reject Withdrawal
+  entry_conditions:
+  - actor.alive
+  estimated_minutes: 1
+  agent_parameters:
+    request_id: {type: string, required: false, max_length: 80, description: The pending request to reject; omit when exactly one pending request is visible.}
+    reason: {type: string, required: false, max_length: 300, description: Why the request is rejected.}
+  goal_tags: [authority, stewardship]
+  drive_tags: [purpose, belonging]
+  success_results: [access_rejected]
+  failure_results: [rejection_failed]
+  nodes:
+  - type: action
+    action_id: reject_withdrawal
+    parameters:
+      request_id: context.request_id
+      reason: context.reason
+  definition_source: config
+  kind: base
+- id: revoke_delegation
+  version: 1
+  authorization_operation: revoke_delegation
+  summary: Revoke Delegation
+  description: Revoke an active delegation while retaining the delegation record as history.
+  agent_label: Revoke Delegation
+  entry_conditions:
+  - actor.alive
+  estimated_minutes: 1
+  agent_parameters:
+    delegation_id: {type: string, required: false, max_length: 80, description: The active delegation to revoke; omit when exactly one active delegation is visible.}
+    reason: {type: string, required: false, max_length: 300, description: Why the delegation is revoked.}
+  goal_tags: [authority, stewardship]
+  drive_tags: [purpose, belonging]
+  success_results: [delegation_revoked]
+  failure_results: [revocation_failed]
+  nodes:
+  - type: action
+    action_id: revoke_delegation
+    parameters:
+      delegation_id: context.delegation_id
+      reason: context.reason
+  definition_source: config
+  kind: base

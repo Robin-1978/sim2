@@ -27,6 +27,7 @@ class RuleCompiler:
 
     _DENY_EFFECTS = {"deny", "deny_access", "deny_action", "forbid", "behavior_constraint"}
     _SIGNAL_EFFECTS = {"signal", "event", "notify", "wake"}
+    _AUTHORIZATION_EFFECTS = {"authorization"}
 
     def __init__(
         self,
@@ -99,8 +100,18 @@ class RuleCompiler:
         raw_effect = rule.get("effect", rule.get("enforcement"))
         if isinstance(raw_effect, str) and (behavior_selectors or action_selectors) and not re.fullmatch(r"[A-Za-z0-9_.-]+", raw_effect.strip()):
             return False, "A rule with a behavior follow-up needs one supported effect name without spaces (for example policy.review_signal) or a typed effect object such as {type: signal, message: ...}."
-        if normalized["effect"].get("type") not in self._DENY_EFFECTS | self._SIGNAL_EFFECTS | {"policy", "behavior_constraint"}:
+        if normalized["effect"].get("type") not in self._DENY_EFFECTS | self._SIGNAL_EFFECTS | self._AUTHORIZATION_EFFECTS | {"policy", "behavior_constraint"}:
             return False, "Rule effect type is not supported."
+        if str(normalized["effect"].get("type", "")).casefold() in self._AUTHORIZATION_EFFECTS:
+            mode = str(normalized["effect"].get("mode") or "resource_access")
+            if mode not in {"resource_access", "request_decision", "delegation_revocation"}:
+                return False, f"Unknown authorization mode: {mode}."
+            if not behavior_selectors:
+                return False, "An authorization rule must name the behavior it governs."
+            if mode == "resource_access" and not str(normalized["effect"].get("target") or "").strip():
+                return False, "A resource_access authorization rule needs a target."
+            if mode == "resource_access" and not str(normalized["effect"].get("scope") or "").strip():
+                return False, "A resource_access authorization rule needs a scope."
         unknown_behaviors = [value for value in behavior_selectors if not self._known_behavior(value)]
         if unknown_behaviors:
             return False, f"Unknown behavior follow-up: {', '.join(unknown_behaviors)}."

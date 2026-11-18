@@ -589,6 +589,42 @@ class ActivityRuntimeMixin:
                     target_amount - float(current.get("amount", 0) or 0),
                     actor_id=agent.get("id"),
                 )
+            elif effect_type == "resource_withdrawal":
+                # Two-phase shared-resource withdrawal.  The admission
+                # transaction already recorded resource.withdrawal.started;
+                # this completion transaction owns the single stock change and
+                # its completed fact.  A later completion failure never erases
+                # the committed start.
+                resource_ref = resolved_effect.get("resource_id") or resolved_effect.get("resource")
+                resource_id = str(self.targets.canonical_id(str(resource_ref or "")) or resource_ref or "")
+                amount = float(resolved_effect.get("amount", resolved_effect.get("quantity", 1)) or 0)
+                current = self.resources._world_resource(resource_id) if resource_id else None
+                if not resource_id or current is None:
+                    errors.append("resource_withdrawal target must be an existing world resource")
+                elif amount <= 0:
+                    errors.append("resource_withdrawal amount must be positive")
+                elif float(current.get("amount", 0) or 0) < amount:
+                    errors.append("the shared resource has insufficient stock")
+                else:
+                    before = float(current.get("amount", 0) or 0)
+                    self.resources._change_world_resource(resource_id, -amount, actor_id=agent.get("id"))
+                    after = before - amount
+                    state = agent.get("initial_state") or {}
+                    self._context.services["events"].append(
+                        "resource.withdrawal.completed",
+                        agent["id"],
+                        minute,
+                        {
+                            "intent_id": str(state.get("active_bt_instance") or ""),
+                            "actor": str(agent["id"]),
+                            "target": resource_id,
+                            "authorization": state.get("active_resource_authorization"),
+                            "amount": amount,
+                            "before": before,
+                            "after": after,
+                            "minute": int(minute),
+                        },
+                    )
             elif effect_type == "resource_transfer":
                 # ResourceLedger has already reserved/removed any carried
                 # source item before success effects run.  This primitive
@@ -858,11 +894,22 @@ class ActivityRuntimeMixin:
             information_result = self._record_information_result(agent, action, parameters, minute)
             self.store.connection.execute(f"RELEASE SAVEPOINT {savepoint}")
             return None, information_result
-        except Exception:
+        except Exception as exc:
             self.store.connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
             self.store.connection.execute(f"RELEASE SAVEPOINT {savepoint}")
             agent.clear()
             agent.update(original_agent)
+            # A withdrawal is a two-phase transaction.  The stock change and
+            # its completed fact roll back together, while the already
+            # committed started fact remains.  Convert the failure into a
+            # normal failed outcome so the failed fact and the actor's failed
+            # terminal state can commit.
+            if any(
+                isinstance(effect, dict)
+                and str(effect.get("type") or effect.get("op") or "") == "resource_withdrawal"
+                for effect in (action.get("effects") or [])
+            ):
+                return f"resource.withdrawal.failed: {exc}", None
             raise
 
     def apply_relationship_effect(self, agent: dict[str, Any], target: dict[str, Any], effect: dict[str, Any], minute: int) -> None:
@@ -1345,6 +1392,24 @@ class ActivityRuntimeMixin:
             assignment_changed = True
         if assignment_changed:
             agent["behavior_assignments"] = assignments[-8:]
+        withdrawal = state.get("active_resource_withdrawal") if isinstance(state.get("active_resource_withdrawal"), dict) else None
+        withdrawal_authorization = state.get("active_resource_authorization")
+        if status != "completed" and withdrawal:
+            self._context.services["events"].append(
+                "resource.withdrawal.failed",
+                agent["id"],
+                minute,
+                {
+                    "intent_id": str(execution_id),
+                    "actor": str(agent["id"]),
+                    "target": str(withdrawal.get("resource_id") or ""),
+                    "reason": str(result),
+                    "authorization": withdrawal_authorization,
+                    "minute": int(minute),
+                },
+            )
+        state.pop("active_resource_withdrawal", None)
+        state.pop("active_resource_authorization", None)
         state["active_bt_instance"] = None
         state["active_behavior_id"] = None
         state["active_action"] = None

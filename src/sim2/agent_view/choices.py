@@ -102,7 +102,12 @@ class ChoiceMixin:
 
         value = str(choice or "").strip()
         view = self.build_decision_view(agent_id, role="agent_decision")
-        behaviors = view.get("executable_behaviors", [])
+        # An authority-blocked behavior remains a real attemptable choice.
+        # Hiding it would turn a policy denial into a capability error.
+        behaviors = list(view.get("executable_behaviors", [])) + [
+            item for item in (view.get("blocked_behaviors", []) or [])
+            if item.get("attemptable", False)
+        ]
         if value.startswith("behavior:"):
             matches = [item for item in behaviors if item.get("ref") == value]
         else:

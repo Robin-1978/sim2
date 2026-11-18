@@ -1,0 +1,3 @@
+world_state:
+  properties:
+    energy_reserve: 10

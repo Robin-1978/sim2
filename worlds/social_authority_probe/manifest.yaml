@@ -1,0 +1,24 @@
+config_version: social-authority-probe-0.1.0
+world_id: social_authority_probe
+kind: probe
+name: Social Authority Probe
+random_seed: 41017
+time_unit: minute
+start_world_minute: 0
+files:
+- setting.yaml
+- world_state.yaml
+- locations.yaml
+- objects.yaml
+- factions.yaml
+- capabilities.yaml
+- attributes.yaml
+- recipes.yaml
+- agents.yaml
+- actions.yaml
+- behavior_trees.yaml
+- rules.yaml
+- opening_events.yaml
+- player_template.yaml
+- evolution.yaml
+- story.yaml

@@ -1,0 +1,55 @@
+agents:
+- id: mira
+  name: Mira
+  role: reserve_steward
+  stewardship:
+  - energy_reserve
+  ultimate_goal: Keep the relay powered without surrendering control of the reserve.
+  traits:
+    responsible: 0.9
+    cautious: 0.8
+  beliefs:
+  - id: stewardship_is_accountable
+    statement: Shared power is released only through an accountable decision.
+    confidence: 0.9
+  needs:
+    purpose: 70
+    belonging: 60
+  initial_bt_ids:
+  - withdraw_energy
+  - request_access
+  - approve_withdrawal
+  - reject_withdrawal
+  - revoke_delegation
+  initial_state:
+    location_id: relay_station
+    status: idle
+    integrity: 100
+    energy: 90
+  inventory: {}
+- id: tomas
+  name: Tomas
+  role: relay_technician
+  ultimate_goal: Restore the relay using the shared energy reserve.
+  traits:
+    practical: 0.85
+    persistent: 0.75
+  beliefs:
+  - id: maintenance_needs_power
+    statement: The relay cannot be repaired without reserve energy.
+    confidence: 0.85
+  needs:
+    purpose: 75
+    belonging: 55
+  initial_bt_ids:
+  - withdraw_energy
+  - request_access
+  - approve_withdrawal
+  - reject_withdrawal
+  - revoke_delegation
+  initial_state:
+    location_id: relay_station
+    status: idle
+    integrity: 100
+    energy: 90
+  inventory: {}

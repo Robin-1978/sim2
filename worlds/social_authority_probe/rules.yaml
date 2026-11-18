@@ -1,0 +1,51 @@
+vital_attribute: integrity
+capacity_attribute: energy
+incapacitation:
+  recovery:
+    after_minutes: 720
+    vital_fraction: 0.25
+perception:
+  visible_fields: [role, type, summary, description, public]
+  visible_state_fields: [status, quantity, amount]
+  global:
+    fields: [role, type, summary, description, public]
+    state_fields: [status, location_id, quantity, amount]
+world_rules:
+- id: energy_reserve_stewardship
+  name: Energy Reserve Stewardship
+  condition: "true"
+  description: Shared reserve energy may be withdrawn only by a steward of the reserve or by an active scoped delegation.
+  effect:
+    type: authorization
+    mode: resource_access
+    target: energy_reserve
+    scope: energy_withdrawal
+    behavior_ids: [withdraw_energy]
+- id: approval_authority
+  name: Approval Authority
+  condition: "true"
+  description: Only a current steward of the request target may decide a pending access request, and never the requester.
+  effect:
+    type: authorization
+    mode: request_decision
+    authority:
+      type: institution
+      id: approval_authority
+    behavior_ids: [approve_withdrawal, reject_withdrawal]
+- id: revocation_authority
+  name: Revocation Authority
+  condition: "true"
+  description: Any current steward of the delegation target may revoke an active delegation.
+  effect:
+    type: authorization
+    mode: delegation_revocation
+    authority:
+      type: institution
+      id: revocation_authority
+    behavior_ids: [revoke_delegation]
+fallback_behavior_ids:
+- withdraw_energy
+- request_access
+- approve_withdrawal
+- reject_withdrawal
+- revoke_delegation
