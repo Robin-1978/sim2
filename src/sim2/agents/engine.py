@@ -360,7 +360,7 @@ class AgentEngine:
 
         self._last_usage = {}
         call_tools = session.session_tools
-        if session.role == "agent_decision" and not str(session.task_type).startswith("instant:") and session.read_tool_calls >= session.read_budget:
+        if session.role in {"agent_decision", "god"} and not str(session.task_type).startswith("instant:") and session.read_tool_calls >= session.read_budget:
             available = session.session_tools if session.session_tools is not None else [str(item.get("name")) for item in (session.context.get("tools") or [])]
             call_tools = [name for name in available if TOOL_DEFINITIONS.get(name, {}).get("kind") != "read"]
         response = self._complete(
@@ -507,6 +507,17 @@ class AgentEngine:
         session.context["contract_missing"] = list(correction.get("missing") or [])
         session.messages.append({"role": "user", "content": str(correction["message"])})
 
+    def _structural_required(self, session: ReactSession) -> bool:
+        contract = session.context.get("evolution_trigger")
+        return bool(isinstance(contract, dict) and isinstance(contract.get("required_content"), dict) and contract.get("required_content"))
+
+    def _append_structural_progress(self, session: ReactSession, missing: list[str]) -> None:
+        session.context["contract_missing"] = list(missing)
+        session.messages.append({
+            "role": "user",
+            "content": "Structural progress: still missing " + ", ".join(missing) + ". Submit the next proposal.",
+        })
+
     def _run_tool_calls(self, session: ReactSession, iteration: int, response: dict[str, Any], call: tuple[str, dict[str, Any]]) -> AgentTurn | None:
         """Execute the tool call(s) of one model response; finish the turn once an Intent is accepted."""
 
@@ -525,7 +536,8 @@ class AgentEngine:
         # cap every read result is resent on every iteration, so a
         # short choice can accumulate a large prompt and latency.
         if len(session.messages) > 8:
-            session.messages = trim_conversation_messages(session.messages, max_tail=6)
+            max_tail = 4 if session.role == "god" and str(session.task_type) == "god_structural" else 6
+            session.messages = trim_conversation_messages(session.messages, max_tail=max_tail)
         if accepted_result is None:
             return None
         if len(intent_results) > 1:
@@ -536,6 +548,11 @@ class AgentEngine:
                 "submission_count": len(intent_results),
             }
         if not batched and self._multi_proposal(session, accepted_result):
+            if self._structural_required(session):
+                missing = self._required_content_missing(session)
+                if not missing:
+                    return session.finish(accepted_result, iterations=iteration)
+                self._append_structural_progress(session, missing)
             return None
         correction = self._contract_correction(session) if str(accepted_result.get("status")) == "wait" or batched else None
         if correction is not None:
@@ -630,11 +647,20 @@ class AgentEngine:
             "model_result": model_result,
             "result": internal_tool_result,
         })
-        session.context.setdefault("interaction_history", []).extend([
+        history = session.context.setdefault("interaction_history", [])
+        history.extend([
             {"kind": "assistant_tool_call", "name": tool_name, "arguments": arguments},
             {"kind": "tool_result", "name": tool_name, "result": model_result},
         ])
-        session.context.setdefault("tool_results", []).append({"tool": tool_name, "result": model_result})
+        tool_results = session.context.setdefault("tool_results", [])
+        tool_results.append({"tool": tool_name, "result": model_result})
+        if session.role == "god" and str(session.task_type) == "god_structural":
+            # A structural session may submit many proposals; keep only the
+            # recent exchange plus the compact progress message.  Without the
+            # cap the same large proposal results are re-rendered on every
+            # iteration.
+            session.context["interaction_history"] = history[-12:]
+            session.context["tool_results"] = tool_results[-6:]
         session.context["last_platform_result"] = model_result
         session.last_result = internal_tool_result
         if native_call is not None:
@@ -663,6 +689,11 @@ class AgentEngine:
         session.last_result = result
         if result.get("status") in {"accepted", "wait"}:
             if self._multi_proposal(session, result):
+                if self._structural_required(session):
+                    missing = self._required_content_missing(session)
+                    if not missing:
+                        return session.finish(result, iterations=iteration, response=response)
+                    self._append_structural_progress(session, missing)
                 return None
             correction = self._contract_correction(session) if result.get("status") == "wait" else None
             if correction is not None:

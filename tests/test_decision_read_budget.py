@@ -73,3 +73,36 @@ def test_reason_only_no_behavior_response_closes_as_wait(tmp_path: Path) -> None
     finally:
         platform.close()
 
+
+
+class GodReadProvider:
+    max_agent_iterations = 3
+    max_read_tool_calls = 1
+
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+        self.responses = [
+            {"tool_call": {"name": "observe_nearby", "arguments": {"question": "What is visible?"}}},
+            {"intent_type": "wait", "reason": "The structural evidence is not ready."},
+        ]
+
+    def complete_json(self, *, system, context, tools=None, messages=None):
+        self.calls.append({"context": context, "tools": tools or []})
+        return self.responses.pop(0)
+
+
+def test_god_read_budget_hides_read_tools_before_the_final_intent(tmp_path: Path) -> None:
+    world = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+    platform = Platform(create_instance(world, "god-read-budget", tmp_path / "runtime"))
+    try:
+        provider = GodReadProvider()
+        AgentEngine(platform, provider).run(role="god", actor_id="god", task_type="god_structural")
+        assert len(provider.calls) == 2
+        first_tools = {item["function"]["name"] for item in provider.calls[0]["tools"]}
+        second_tools = {item["function"]["name"] for item in provider.calls[1]["tools"]}
+        assert "observe_nearby" in first_tools
+        assert "observe_nearby" not in second_tools
+        assert "query_history" not in second_tools
+        assert "propose_entity" in second_tools
+    finally:
+        platform.close()

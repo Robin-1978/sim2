@@ -777,7 +777,38 @@ def test_god_structural_wait_is_rejected_when_required_content_is_missing(platfo
         actor_id="god",
         task_type="god_structural",
     )
-    assert turn.result["status"] == "wait", turn.result
+    assert turn.result["status"] == "accepted", turn.result
     locations = [item for item in platform.store.repositories.entities.entities_of_type("location") if item.get("name") == "Required Test Place"]
     assert locations
-    assert provider.calls == 3
+    assert provider.calls == 2
+
+
+def test_structural_progress_finishes_when_the_required_pack_is_complete(platform: Platform) -> None:
+    """The engine stops as soon as the semantic pack is complete, without a final wait call."""
+
+    _set_required_content(platform, {"entities": ["Required Place A", "Required Place B"]})
+    provider = _SequenceProvider([
+        {
+            "intent_type": "propose_entity",
+            "entity_type": "location",
+            "name": "Required Place A",
+            "description": "The first required place.",
+            "state": {"routes": ["relay_station"], "route_distances": {"relay_station": 1}},
+        },
+        {
+            "intent_type": "propose_entity",
+            "entity_type": "location",
+            "name": "Required Place B",
+            "description": "The second required place.",
+            "state": {"routes": ["relay_station"], "route_distances": {"relay_station": 1}},
+        },
+    ])
+    turn = AgentEngine(platform, provider, max_iterations=5).run(
+        role="god",
+        actor_id="god",
+        task_type="god_structural",
+    )
+    assert turn.result["status"] == "accepted", turn.result
+    names = {item.get("name") for item in platform.store.repositories.entities.entities_of_type("location")}
+    assert {"Required Place A", "Required Place B"} <= names
+    assert provider.calls == 2
