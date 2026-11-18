@@ -65,6 +65,10 @@ class SimulationRunner:
         interaction_policy = (self.platform.store.repositories.metadata.get("rules", {}) or {}).get("interaction_policy", {}) or {}
         self.wait_cooldown_minutes = max(1, int(wait_cooldown_minutes))
         self.llm_error_cooldown_minutes = max(1, int(llm_error_cooldown_minutes))
+        evolution = (self.platform.store.repositories.metadata.get("evolution", {}) or {})
+        evolution = evolution.get("evolution", evolution) if isinstance(evolution, dict) else {}
+        limits = evolution.get("limits") if isinstance(evolution, dict) else {}
+        self.max_ready_god_tasks = max(1, int((limits or {}).get("max_ready_god_tasks", 4) or 4))
         self.max_interaction_rounds = max(1, int(interaction_policy.get("max_rounds", 3) if max_interaction_rounds is None else max_interaction_rounds))
         self.interaction_cooldown_minutes = max(1, int(interaction_policy.get("reply_cooldown_minutes", 120) if interaction_cooldown_minutes is None else interaction_cooldown_minutes))
         self.interaction_thread_window_minutes = max(self.interaction_cooldown_minutes, int(interaction_policy.get("thread_window_minutes", 360) if interaction_thread_window_minutes is None else interaction_thread_window_minutes))
@@ -544,8 +548,14 @@ class SimulationRunner:
                 self._wait_streak.pop(actor_id, None)
 
     def _run_due_evolution(self, report: SimulationReport) -> None:
+        god_runs = 0
         for task in list(self.platform.ready_evolution_tasks()):
             role = task.get("role")
+            if role == "god" and god_runs >= self.max_ready_god_tasks:
+                # Bound one scheduler pass.  The remaining ready tasks stay
+                # queued for the next minute instead of fanning out an
+                # unbounded number of provider calls at once.
+                continue
             provider = self.providers.get(role)
             actor_id = task.get("actor_id") or (
                 "god" if role == "god" else "story" if role == "story" else None
@@ -561,6 +571,8 @@ class SimulationRunner:
             claimed = self.platform.claim_evolution_task(task["task_id"])
             if claimed is None:
                 continue
+            if role == "god":
+                god_runs += 1
             task_type = str(task.get("task_type", "evolution"))
             if task.get("trigger_id"):
                 task_type = f"trigger:{task.get('trigger_id')}"

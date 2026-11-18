@@ -106,6 +106,43 @@ def _stagnation(value: Any) -> dict[str, Any]:
     return compiled
 
 
+def _director(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("director must be an object")
+    unknown = sorted(str(key) for key in value if key not in {"cadence", "window", "targets"})
+    if unknown:
+        raise ValueError("unknown director field(s): " + ", ".join(unknown) + "; use cadence, window, targets")
+    cadence = duration_minutes(value.get("cadence", "1d"))
+    window = duration_minutes(value.get("window", "3d"))
+    if cadence <= 0 or window < cadence:
+        raise ValueError("director.window must be at least one cadence")
+    raw_targets = value.get("targets", ["place", "verb", "social", "rule"])
+    if isinstance(raw_targets, str):
+        raw_targets = [raw_targets]
+    if not isinstance(raw_targets, (list, tuple)) or not raw_targets:
+        raise ValueError("director.targets must be a non-empty list")
+    targets = [str(item).strip().casefold() for item in raw_targets]
+    allowed = {"place", "verb", "social", "rule"}
+    unknown_targets = sorted(set(targets) - allowed)
+    if unknown_targets:
+        raise ValueError("director.targets has unknown targets: " + ", ".join(unknown_targets))
+    return {"cadence_minutes": cadence, "window_minutes": window, "targets": list(dict.fromkeys(targets))}
+
+
+def _limits(value: Any) -> dict[str, Any]:
+    """Validate the limits this runtime consumes and preserve author metadata."""
+
+    if not isinstance(value, dict):
+        raise ValueError("limits must be an object")
+    compiled = {str(key): item for key, item in value.items()}
+    if value.get("max_ready_god_tasks") is not None:
+        count = value["max_ready_god_tasks"]
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 64:
+            raise ValueError("limits.max_ready_god_tasks must be an integer from 1 to 64")
+        compiled["max_ready_god_tasks"] = count
+    return compiled
+
+
 def _distinct_keys(value: Any, index: int) -> list[str]:
     """Normalize ``distinct_by`` into a list of event payload keys."""
 
@@ -179,12 +216,16 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
             "evolution uses retired fields " + ", ".join(legacy)
             + "; use top-level cadence and wakes instead"
         )
-    known = {"cadence", "wakes", "triggers", "limits", "stagnation", "contracts"}
+    known = {"cadence", "wakes", "triggers", "limits", "stagnation", "contracts", "director"}
     unknown = sorted(str(key) for key in root if key not in known)
     if unknown:
         raise ValueError("unknown evolution field(s): " + ", ".join(unknown))
     if "stagnation" in root:
         root["stagnation"] = _stagnation(root["stagnation"])
+    if "director" in root:
+        root["director"] = _director(root["director"])
+    if "limits" in root:
+        root["limits"] = _limits(root["limits"])
     if "contracts" in root:
         contracts = root.get("contracts")
         if not isinstance(contracts, dict):

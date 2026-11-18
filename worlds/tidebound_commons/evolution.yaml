@@ -29,6 +29,12 @@ stagnation:
   - world.change.rule
   - world.change.relationship
   - world.change.faction
+director:
+  cadence: 1d
+  window: 3d
+  targets: [place, verb, social, rule]
+limits:
+  max_ready_god_tasks: 4
 contracts:
   # A cadence task has no event trigger, so it needs an explicit contract.
   # This is the structural review: add one new playable dimension, not one
@@ -37,15 +43,17 @@ contracts:
     tools:
     - query_history
     - query_knowledge_gaps
+    - propose_entity
     - propose_definition
+    - propose_world_change
     - wait
-    purpose: 周期结构审查：给世界增加一个新的可玩维度，而不是再写一个研究源。
+    purpose: 周期结构审查：按 season_plan 的目标 cell 增加一个新的可玩维度，而不是再写一个研究源。
     result: >-
-      只提交一个 growth unit：一个非研究 Action 和它的绑定行为树，分配给玛拉，在现有
-      可达地点执行，产生一个新的成功结果和一个新的结果事件类型。不要提交研究源、档案、
-      账本、表格或任何只能用于 study_source 的对象。新行为必须现在就可执行；证据不足
-      时 wait。
-    required_definition_type: action
+      读取 <season_plan> 的 target cell 和 <world_growth_ledger> 的空格。只提交一个
+      growth unit：如果目标是 place，创建一个可达新地点；如果是 verb，创建一个非研究
+      Action 和绑定行为树；如果是 social，创建一个势力/关系并让它改变一个决定；如果是
+      rule，创建一条会改变结果的规则。不要提交研究源、档案、账本、表格或任何只能用于
+      study_source 的对象。新内容必须让现有角色现在就能执行；证据不足时 wait。
     assign_to:
     - 玛拉
 wakes:

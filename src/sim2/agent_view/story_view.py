@@ -86,6 +86,7 @@ class StoryViewMixin:
             "audience_candidates": audience_candidates,
             "recent_actions": recent_events[:8], "recent_story_events": [item for item in recent_events if str(item.get("event_type", "")).startswith("story.")][:8],
             "recent_history": self._recent_history_view(16),
+            "season_plan": self.store.repositories.metadata.get("season_plan", {}) or {},
             "knowledge_gaps": self._knowledge_gap_view(status="active", limit=8),
             "research_sources": self._research_source_view(limit=12),
             "memories": story_memories,

@@ -5,6 +5,7 @@ from typing import Any
 from .activity import ActivityRuntimeMixin
 from .definition_runtime import DefinitionRuntimeMixin
 from .definition_validation import DefinitionValidationMixin
+from .director import DirectorRuntimeMixin
 from .entity_proposal_validation import EntityProposalValidationMixin
 from .entity_proposals import EntityProposalRuntimeMixin
 from .learning import LearningRuntimeMixin
@@ -158,6 +159,10 @@ class StagnationService(PlatformService, StagnationRuntimeMixin):
     """Configured liveness and stagnation signal service."""
 
 
+class DirectorService(PlatformService, DirectorRuntimeMixin):
+    """Deterministic structural-target planner; it never writes world content."""
+
+
 class StoryService(PlatformService, StoryRuntimeMixin):
     """Evidence-grounded Story beat service."""
 
@@ -193,6 +198,7 @@ def build_platform_services(context: PlatformContext) -> dict[str, PlatformServi
         "learning": LearningService(context),
         "social": SocialService(context),
         "stagnation": StagnationService(context),
+        "director": DirectorService(context),
         "story": StoryService(context),
         "world_changes": WorldChangesService(context),
     }

@@ -222,6 +222,17 @@ class DefinitionValidationMixin:
                     continue
                 if str(entity.get("entity_type") or "") not in resource_types:
                     errors.append(f"{field}[{index}].world_resource_delta target {ref} is not a resource or material")
+                    continue
+                delta = effect.get("delta", effect.get("value"))
+                if isinstance(delta, (int, float)) and not isinstance(delta, bool) and float(delta) > 0:
+                    caps = (rules.get("resource_caps", {}) or {})
+                    cap = caps.get(resource_id) or caps.get(str(entity.get("name") or "")) or {}
+                    cap = cap if isinstance(cap, dict) else {}
+                    if effect.get("maximum") is None and cap.get("max") is None:
+                        errors.append(
+                            f"{field}[{index}].world_resource_delta adds to {ref} without a maximum; "
+                            "set maximum or rules.resource_caps max so production cannot inflate the stock"
+                        )
 
     @staticmethod
     def _validate_action(name: str, definition: dict[str, Any], definition_id: str, errors: list[str]) -> None:

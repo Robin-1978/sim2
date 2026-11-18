@@ -209,6 +209,17 @@ class WorldTickService(PlatformService):
                 after = max(float(definition["minimum"]), after)
             if definition.get("maximum") is not None:
                 after = min(float(definition["maximum"]), after)
+            caps = ((self.store.repositories.metadata.get("rules", {}) or {}).get("resource_caps", {}) or {})
+            try:
+                resource_entity = self.store.repositories.entities.get_entity(resource_id)
+            except KeyError:
+                resource_entity = {}
+            cap = caps.get(resource_id) or caps.get(str(resource_entity.get("name") or "")) or {}
+            if isinstance(cap, dict):
+                if isinstance(cap.get("min"), (int, float)):
+                    after = max(float(cap["min"]), after)
+                if isinstance(cap.get("max"), (int, float)):
+                    after = min(float(cap["max"]), after)
             delta = after - before
             if abs(delta) > 1e-12:
                 resources._change_world_resource(resource_id, delta, actor_id=None)
@@ -506,6 +517,7 @@ class WorldTickService(PlatformService):
             self.proposal_evaluator.evaluate_due(minute)
             self._context.services["evolution"].emit_evolution_triggers(minute, agent_ids=agent_ids)
             self._context.services["stagnation"].emit_stagnation_signal(minute, agents=agents)
+            self._context.services["director"].tick(minute)
             self._context.services["evolution"].emit_due_evolution_tasks(minute)
         return {
             "status": "advanced",

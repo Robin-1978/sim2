@@ -1340,3 +1340,34 @@ def test_created_place_and_resource_emit_typed_followup_events(tmp_path: Path) -
         assert "Followup Test Stock" in resource_event["data_json"]
     finally:
         platform.close()
+
+
+def test_god_queue_is_bounded_per_scheduler_pass(tmp_path: Path) -> None:
+    from sim2.simulation.runner import SimulationReport, SimulationRunner
+
+    platform = _town(tmp_path, "god-queue-bound")
+    try:
+        with platform.store.transaction():
+            platform.store.repositories.metadata.set("evolution", normalize_evolution_config({
+                "limits": {"max_ready_god_tasks": 4},
+            }))
+            for index in range(6):
+                platform.store.repositories.evolution.put_evolution_task(
+                    f"god:test:{index}", "god", "god", "test_god", 0, 0, status="ready"
+                )
+        runner = SimulationRunner(platform, {"god": WaitProvider()})
+        report = SimulationReport(1, 1)
+        runner._run_due_evolution(report)
+        assert report.god_sessions == 4
+        ready = [item for item in platform.ready_evolution_tasks() if item["role"] == "god"]
+        assert len(ready) == 2
+    finally:
+        platform.close()
+
+
+def test_limits_config_rejects_bad_values() -> None:
+    assert normalize_evolution_config({"limits": {"max_ready_god_tasks": 2}})["limits"]["max_ready_god_tasks"] == 2
+    with pytest.raises(ValueError, match="max_ready_god_tasks must be an integer"):
+        normalize_evolution_config({"limits": {"max_ready_god_tasks": 0}})
+    preserved = normalize_evolution_config({"limits": {"legacy_weekly_calls": 2}})
+    assert preserved["limits"]["legacy_weekly_calls"] == 2

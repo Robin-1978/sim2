@@ -28,6 +28,7 @@ _PINNED_SECTIONS = frozenset({
     "rule_condition_fields",
     # Structural review must see which growth cells are empty.
     "world_growth_ledger",
+    "season_plan",
 })
 
 _SECTION_TAG = re.compile(r"^\s*<([a-z_]+)>\s*$", re.MULTILINE)

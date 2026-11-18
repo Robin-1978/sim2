@@ -76,6 +76,13 @@ def story_lines(context: dict[str, Any]) -> list[str]:
     """The validated source event and the beats a story turn may choose from."""
 
     lines: list[str] = []
+    plan = context.get("season_plan") or {}
+    if isinstance(plan, dict) and str(plan.get("status") or "") == "active":
+        lines.append("<season_plan>")
+        lines.append(f"  target cell: {plan.get('target_cell', 'unspecified')}")
+        lines.append(f"  reason: {plan.get('reason', 'configured coverage target')}")
+        lines.append("  Use this as the arc's growth direction; do not claim a structural change the world has not made.")
+        lines.append("</season_plan>")
     source = context.get("validated_source") or {}
     lines.append("<validated_source>")
     if source:

@@ -1,0 +1,103 @@
+"""The deterministic Director chooses structural targets; it never writes content."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from sim2.bootstrap.service import create_instance
+from sim2.evolution.config import normalize_evolution_config
+from sim2.platform.runtime import Platform
+from sim2.prompting.renderer import render_context
+from sim2.world.growth import build_growth_ledger
+
+WORLD = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+
+
+def _town(tmp_path: Path, name: str) -> Platform:
+    return Platform(create_instance(WORLD, name, tmp_path / "runtime"))
+
+
+def _director_config(platform: Platform, *, targets: list[str], cadence: str = "1m", window: str = "10m") -> None:
+    with platform.store.transaction():
+        platform.store.repositories.metadata.set("evolution", normalize_evolution_config({
+            "director": {"cadence": cadence, "window": window, "targets": targets},
+        }))
+
+
+def test_director_selects_a_target_and_queues_a_structural_task(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "director-plan")
+    try:
+        _director_config(platform, targets=["place"])
+        before = build_growth_ledger(platform.store)["cells"]["place"]["count"]
+        with platform.store.transaction():
+            plan = platform._services["director"].tick(1)
+        assert plan and plan["status"] == "active"
+        assert plan["target_cell"] == "place"
+        assert plan["baseline"] == before
+        assert plan["reason"].startswith("place=")
+        tasks = [item for item in platform.ready_evolution_tasks() if item["task_type"] == "god_structural"]
+        assert tasks, platform.ready_evolution_tasks()
+    finally:
+        platform.close()
+
+
+def test_director_completes_the_plan_when_the_target_cell_grows(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "director-advance")
+    try:
+        _director_config(platform, targets=["place"])
+        with platform.store.transaction():
+            first = platform._services["director"].tick(1)
+        assert first and first["status"] == "active"
+        place = platform.submit_entity_proposal("god", {
+            "entity_type": "location",
+            "name": "Director Test Place",
+            "description": "A place created after the Director asked for one.",
+            "state": {"routes": ["lantern_square"], "route_distances": {"lantern_square": 2}},
+        })
+        assert place["status"] == "accepted", place
+        with platform.store.transaction():
+            second = platform._services["director"].tick(2)
+        assert second and second["status"] == "active"
+        assert second["plan_id"] != first["plan_id"]
+        assert second["baseline"] == first["baseline"] + 1
+        completed = platform.store.repositories.metadata.get("season_plan")
+        assert completed["status"] == "active"
+    finally:
+        platform.close()
+
+
+def test_active_season_plan_is_visible_to_god_and_story(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "director-prompt")
+    try:
+        with platform.store.transaction():
+            platform.store.repositories.metadata.set("season_plan", {
+                "plan_id": "plan:1:social",
+                "target_cell": "social",
+                "baseline": 0,
+                "created_minute": 1,
+                "expires_minute": 100,
+                "reason": "place=4, verb=6, social=0, rule=2",
+                "status": "active",
+            })
+        god_prompt = render_context(platform.view.build_decision_view("god", role="god"), "Review structural growth.")
+        story_prompt = render_context(platform.view.build_decision_view("story", role="story"), "Continue the story.")
+        for prompt in (god_prompt, story_prompt):
+            assert "<season_plan>" in prompt
+            assert "target cell: social" in prompt
+        assert "Fill this cell with one reachable, executable growth unit" in god_prompt
+        assert "do not claim a structural change" in story_prompt
+    finally:
+        platform.close()
+
+
+def test_director_config_is_validated() -> None:
+    compiled = normalize_evolution_config({"director": {"cadence": "1d", "window": "3d", "targets": ["place", "rule"]}})
+    assert compiled["director"]["cadence_minutes"] == 1440
+    assert compiled["director"]["window_minutes"] == 4320
+    assert compiled["director"]["targets"] == ["place", "rule"]
+    with pytest.raises(ValueError, match="unknown targets"):
+        normalize_evolution_config({"director": {"targets": ["economy"]}})
+    with pytest.raises(ValueError, match="window must be at least one cadence"):
+        normalize_evolution_config({"director": {"cadence": "2d", "window": "1d"}})

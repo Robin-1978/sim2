@@ -250,6 +250,11 @@ emergent 来源；真正的章节由 Story Agent 在事件唤醒时提出（零�
   `god_after_place`、`god_after_resource`：新地点补一个可执行活动，新资源补
   一个真正改变它的行为。新资源用 `world_resource_delta` 改变，不能由 God
   直接灌库存。这样动态地点和库存不会变成“死内容”。
+- `director` 每 1 天读一次 growth ledger，把最空的结构 cell（地点/动词/社会/
+  规则）写成 `season_plan`，并排队一次 `god_structural`。Story 和 God 都能看到
+  `<season_plan>`；Director 只写计划，不写内容。`limits.max_ready_god_tasks: 4`
+  限制单次调度最多跑几个 God，避免多后续事件同时扇出。资源上限由
+  `rules.resource_caps` 与 `world_resource_delta.maximum` 共同约束。
 - 自动运行和玩家手动同步推进都会执行这些 Story/God 任务；不要把演化源标成
   `manual_only`，除非确实需要管理员触发。
 - 演化任务使用玩家在网页设置里选择的 provider。若默认 `local` 模型失败，

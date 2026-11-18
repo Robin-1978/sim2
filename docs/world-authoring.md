@@ -307,6 +307,39 @@ source. `assign_to` accepts the bound `followup_behavior.assign_to` for an
 Action, so the contract enforces the executor without asking an Action to carry
 an invalid top-level assignment.
 
+### Director and season plan
+
+`evolution.director` turns the growth ledger into one bounded intent:
+
+```yaml
+director:
+  cadence: 1d
+  window: 3d
+  targets: [place, verb, social, rule]
+```
+
+At each cadence the deterministic Director selects the least-covered target
+cell (or rotates when all cells are equal), records an active `season_plan`
+with the target, baseline and expiry, and queues a `god_structural` task. It
+never creates an entity, definition, rule or event itself. Story and God both
+receive the active plan as `<season_plan>`; God must fill that cell, and a
+research source is not a substitute. When the target cell count grows above
+the baseline, or the plan expires, the next cadence advances the plan.
+
+`limits.max_ready_god_tasks` (default 4) bounds how many ready God tasks one
+scheduler pass may execute. Excess tasks stay queued for the next minute, so
+one event with several follow-ups cannot fan out into an unbounded batch of
+provider calls.
+
+The roles are intentionally separate:
+
+| Role | Owns | Must not |
+| --- | --- | --- |
+| Director | the next structural target and pacing | write content or state |
+| Story | the meaning, chapter and audience-facing continuation | create structure or numeric state |
+| God | a place, verb, faction, rule or other structural proposal | narrate the player chapter or bypass Platform |
+| Platform | legality, conservation, transactions and execution | invent content |
+
 ### Growth events
 
 Creating a location emits `world.location.created`; creating a resource or
@@ -629,7 +662,9 @@ An Action is executable mechanics. It declares:
 behavior's declared outcome; `resource_transfer` moves a reserved carried item
 into a stock. Use the former when the behavior itself produces or consumes
 public stock, and give it a non-zero numeric `delta` plus optional
-`minimum`/`maximum` bounds. Platform rejects an unknown target.
+`minimum`/`maximum` bounds. Platform rejects an unknown target. A positive
+delta must declare `maximum` or a `rules.resource_caps.<id>.max`; execution
+clamps to the configured cap so production cannot inflate a stock.
 
 Recipe inputs default to `scope: agent`, which means the material must be in
 the individual's carried inventory. Use `scope: world` only for an explicitly

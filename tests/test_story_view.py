@@ -543,7 +543,7 @@ def test_the_view_keeps_its_sections_in_order(platform: Platform) -> None:
     assert list(_view(platform)) == [
         "context_version", "role", "prompt_protocol", "platform_rules", "world_time", "self", "identity", "needs",
         "inventory", "injuries", "drives", "observation", "validated_source", "nearby_entities", "known_facts",
-        "audience_candidates", "recent_actions", "recent_story_events", "recent_history", "knowledge_gaps",
+        "audience_candidates", "recent_actions", "recent_story_events", "recent_history", "season_plan", "knowledge_gaps",
         "research_sources", "memories", "long_term_memories", "short_term_memories", "memory_query",
         "recent_world_changes", "recent_agent_outcomes", "direct_relationships", "active_task",
         "executable_behaviors", "story_beats", "world_progress_candidates", "active_world_rules",

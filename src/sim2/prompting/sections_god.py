@@ -236,6 +236,21 @@ def _world_outcome_lines(context: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _season_plan_lines(context: dict[str, Any]) -> list[str]:
+    """The Director's current intent, if one is active."""
+
+    plan = context.get("season_plan") or {}
+    if not isinstance(plan, dict) or str(plan.get("status") or "") != "active":
+        return []
+    lines = ["<season_plan>"]
+    lines.append(f"  target cell: {plan.get('target_cell', 'unspecified')}")
+    lines.append(f"  reason: {plan.get('reason', 'configured coverage target')}")
+    lines.append(f"  expires at world minute: {plan.get('expires_minute', 'unknown')}")
+    lines.append("  Fill this cell with one reachable, executable growth unit. Do not substitute another research source or relabel an existing verb.")
+    lines.append("</season_plan>")
+    return lines
+
+
 def _growth_ledger_lines(context: dict[str, Any]) -> list[str]:
     """Read-only coverage of the world's structural surface."""
 
@@ -265,6 +280,7 @@ def god_lines(context: dict[str, Any]) -> list[str]:
 
     lines: list[str] = []
     lines.extend(_evolution_trigger_lines(context))
+    lines.extend(_season_plan_lines(context))
     lines.extend(_growth_ledger_lines(context))
     lines.extend(_proposal_contract_lines(context))
     lines.extend(_public_progress_lines(context))

@@ -573,6 +573,17 @@ class ActivityRuntimeMixin:
                     target_amount = max(float(effect["minimum"]), target_amount)
                 if isinstance(effect.get("maximum"), (int, float)):
                     target_amount = min(float(effect["maximum"]), target_amount)
+                caps = ((self.store.repositories.metadata.get("rules", {}) or {}).get("resource_caps", {}) or {})
+                try:
+                    resource_entity = self.store.repositories.entities.get_entity(resource_id)
+                except KeyError:
+                    resource_entity = {}
+                cap = caps.get(resource_id) or caps.get(str(resource_entity.get("name") or "")) or {}
+                if isinstance(cap, dict):
+                    if isinstance(cap.get("min"), (int, float)):
+                        target_amount = max(float(cap["min"]), target_amount)
+                    if isinstance(cap.get("max"), (int, float)):
+                        target_amount = min(float(cap["max"]), target_amount)
                 self.resources._change_world_resource(
                     resource_id,
                     target_amount - float(current.get("amount", 0) or 0),

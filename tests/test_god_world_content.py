@@ -194,6 +194,8 @@ def test_god_can_create_a_behavior_that_changes_a_world_resource(tmp_path: Path)
             "state": {"quantity": 0},
         })
         assert stock["status"] == "accepted", stock
+        ledger_before = platform.view.build_decision_view("god", role="god")["world_growth_ledger"]
+        assert any("Test Local Stock" in item for item in ledger_before["dead_content"])
 
         action = platform.submit_definition_proposal("god", {
             "definition_type": "action",
@@ -239,6 +241,8 @@ def test_god_can_create_a_behavior_that_changes_a_world_resource(tmp_path: Path)
             platform.step()
         after = platform.store.repositories.entities.get_entity(stock["entity_id"])
         assert after["initial_state"]["quantity"] == 1
+        ledger_after = platform.view.build_decision_view("god", role="god")["world_growth_ledger"]
+        assert not any("Test Local Stock" in item for item in ledger_after["dead_content"])
     finally:
         platform.close()
 
@@ -256,7 +260,7 @@ def test_god_growth_ledger_counts_structure_and_flags_a_dead_place(tmp_path: Pat
         ledger = platform.view.build_decision_view("god", role="god")["world_growth_ledger"]
         assert ledger["cells"]["place"]["count"] >= 1
         assert ledger["cells"]["verb"]["count"] >= 1
-        assert "Ledger Test Place" in ledger["dead_content"]
+        assert any("Ledger Test Place" in item for item in ledger["dead_content"])
         assert ledger["last_structural_change"] is not None
     finally:
         platform.close()
@@ -270,5 +274,79 @@ def test_god_prompt_shows_the_growth_ledger_and_empty_cells(tmp_path: Path):
         assert "empty cells:" in prompt
         assert "A new research source does not fill a structural cell" in prompt
         assert "dead content" in prompt
+    finally:
+        platform.close()
+
+
+def test_positive_world_resource_delta_needs_a_cap_and_respects_it(tmp_path: Path):
+    platform = _town(tmp_path, "god-resource-cap")
+    try:
+        stock = platform.submit_entity_proposal("god", {
+            "entity_type": "resource",
+            "name": "Test Capped Stock",
+            "description": "A stock used to verify production caps.",
+            "location": "三灯广场",
+            "state": {"quantity": 0},
+        })
+        assert stock["status"] == "accepted", stock
+
+        def action(maximum: int | None):
+            effect = {"type": "world_resource_delta", "resource_id": "Test Capped Stock", "delta": 10}
+            if maximum is not None:
+                effect["maximum"] = maximum
+            return platform.submit_definition_proposal("god", {
+                "definition_type": "action",
+                "name": "Add Capped Stock",
+                "definition": {
+                    "description": "Add to the capped stock.",
+                    "duration": {"minutes": 5},
+                    "costs": {"reserve": {}, "per_minute": {}, "on_success": {}, "on_failure": {}, "refund": {}},
+                    "preconditions": ["actor.alive"],
+                    "effects": [effect],
+                    "success": {"condition": "actor.alive", "result": "capped stock added"},
+                    "failure": {"result": "capped stock failed"},
+                    "success_results": ["capped stock added"],
+                    "failure_results": ["capped stock failed"],
+                },
+                "followup_behavior": {
+                    "name": "Add Capped Stock",
+                    "assign_to": ["梅岚"],
+                    "definition": {
+                        "summary": "Walk to the square and add capped stock.",
+                        "entry_conditions": ["actor.alive"],
+                        "nodes": [
+                            {"type": "action", "action_id": "travel_to", "parameters": {"location_id": "三灯广场"}},
+                            {"type": "action", "action_id": "Add Capped Stock", "parameters": {}},
+                        ],
+                        "success_results": ["capped stock added"],
+                        "failure_results": ["capped stock failed"],
+                    },
+                },
+            })
+
+        uncapped = action(None)
+        assert uncapped["status"] == "rejected", uncapped
+        assert any("without a maximum" in item for item in uncapped["errors"])
+
+        with platform.store.transaction():
+            rules = dict(platform.store.repositories.metadata.get("rules", {}) or {})
+            rules["resource_caps"] = {"Test Capped Stock": {"max": 1, "min": 0}}
+            platform.store.repositories.metadata.set("rules", rules)
+
+        accepted = action(10)
+        assert accepted["status"] == "accepted", accepted
+        behavior = next(
+            item for item in platform.store.repositories.entities.get_definitions("bt_def")
+            if item.get("agent_label") == "Add Capped Stock"
+        )
+        started = platform.submit_behavior(BehaviorIntent(
+            "mei_lan", f"behavior:{behavior['id']}", {}, {},
+            "Verify the configured resource cap.", 0.9, "resource-cap-1",
+        ))
+        assert started["status"] == "accepted", started
+        for _ in range(int(started.get("remaining_minutes", 1) or 1) + 3):
+            platform.step()
+        after = platform.store.repositories.entities.get_entity(stock["entity_id"])
+        assert after["initial_state"]["quantity"] == 1
     finally:
         platform.close()

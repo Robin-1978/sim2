@@ -103,6 +103,11 @@ resource_safety:
   minimum_reserve: 8
   repeat_every_minutes: 360
   event_type: resource.safety_low
+resource_caps:
+  fresh_water: {max: 30, min: 0}
+  shellfish: {max: 36, min: 0}
+  marsh_reed: {max: 30, min: 0}
+  driftwood: {max: 60, min: 0}
 resource_property_projections:
   fresh_water: fresh_water_reserve
 world_rules:

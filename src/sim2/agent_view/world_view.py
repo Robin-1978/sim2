@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from ..actions.institutions import describe_institution_terms
 from ..evolution.memory import role_memory_query
+from ..world.growth import build_growth_ledger
 from .action_text import _display_number, label
 
 
@@ -125,77 +125,9 @@ class WorldViewMixin:
         return result
 
     def _world_growth_ledger(self) -> dict[str, Any]:
-        """A read-only coverage map of the world's structural surface.
+        """A read-only coverage map shared with the Director and audits."""
 
-        The ledger is deliberately content-neutral: places, executable verbs,
-        social structure, rules and resource nodes are counted from what is
-        actually persisted.  A research source is not a cell here; adding one
-        must not look like structural growth.
-        """
-
-        locations = self.entities_repo.entities_of_type("location")
-        factions = self.entities_repo.entities_of_type("faction")
-        resources = self.entities_repo.entities_of_type("resource") + self.entities_repo.entities_of_type("material")
-        behaviors = self._definitions("bt_def")
-        rules = (self.store.repositories.metadata.get("rules", {}) or {}).get("world_rules", []) or []
-        relationships = self.store.connection.execute("SELECT COUNT(*) AS count FROM relationship").fetchone()
-        relationship_count = int(relationships["count"] if relationships else 0)
-        institutions = self.store.connection.execute(
-            "SELECT COUNT(*) AS count FROM institution_definition WHERE status='active'"
-        ).fetchone()
-        institution_count = int(institutions["count"] if institutions else 0)
-        action_defs = {str(item.get("id")): item for item in self._definitions("action_def")}
-        targeted_locations: set[str] = set()
-        for behavior in behaviors:
-            for node in behavior.get("nodes") or []:
-                if not isinstance(node, dict) or str(node.get("type") or "") != "action":
-                    continue
-                action = action_defs.get(str(node.get("action_id") or ""))
-                if not action:
-                    continue
-                if not any(isinstance(effect, dict) and str(effect.get("type") or "") == "location_set" for effect in (action.get("effects") or [])):
-                    continue
-                raw = (node.get("parameters") or {}).get("location_id")
-                if raw and not str(raw).startswith("context."):
-                    targeted_locations.add(str(self.targets.canonical_id(str(raw)) or raw))
-        dynamic_location_ids: set[str] = set()
-        for row in self.store.connection.execute(
-            "SELECT data_json FROM event_log WHERE event_type='entity.created' ORDER BY event_id"
-        ).fetchall():
-            try:
-                payload = json.loads(row["data_json"] or "{}")
-            except (TypeError, ValueError):
-                payload = {}
-            if str(payload.get("entity_type") or "") == "location" and payload.get("entity_id"):
-                dynamic_location_ids.add(str(payload["entity_id"]))
-        dead = [
-            str(location.get("name") or location.get("id"))
-            for location in locations
-            if str(location.get("id")) in dynamic_location_ids
-            and str(location.get("id")) not in targeted_locations
-        ]
-        cells = {
-            "place": {"count": len(locations)},
-            "verb": {"count": len(behaviors)},
-            "social": {"count": len(factions) + relationship_count + institution_count},
-            "rule": {"count": len(rules)},
-            "resource": {"count": len(resources)},
-        }
-        empty_cells = [name for name, cell in cells.items() if int(cell.get("count", 0) or 0) <= 0]
-        last = self.store.connection.execute(
-            "SELECT MAX(world_minute) AS minute FROM event_log WHERE event_type IN "
-            "('definition.registered','entity.created','world.change.rule','world.change.faction','world.change.relationship','institution.created','institution.revised')"
-        ).fetchone()
-        evolution = self.store.repositories.metadata.get("evolution", {}) or {}
-        evolution = evolution.get("evolution", evolution) if isinstance(evolution, dict) else {}
-        stagnation = evolution.get("stagnation") if isinstance(evolution, dict) else {}
-        return {
-            "cells": cells,
-            "empty_cells": empty_cells,
-            "dead_content": dead,
-            "last_structural_change": int(last["minute"]) if last and last["minute"] is not None else None,
-            "growth_mode": str((stagnation or {}).get("growth") or "option"),
-        }
+        return build_growth_ledger(self.store)
 
     def world_structure_signature(self) -> list[str]:
         """Return the persisted structural surface used by structural stagnation.
@@ -325,6 +257,7 @@ class WorldViewMixin:
             "recent_actions": recent_world_events,
             "recent_history": self._recent_history_view(20),
             "world_growth_ledger": self._world_growth_ledger(),
+            "season_plan": self.store.repositories.metadata.get("season_plan", {}) or {},
             "active_story_threads": active_story_threads,
             "knowledge_gaps": self._knowledge_gap_view(status="active", limit=12),
             "research_sources": self._research_source_view(limit=16),
