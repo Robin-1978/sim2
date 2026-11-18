@@ -101,3 +101,34 @@ def test_director_config_is_validated() -> None:
         normalize_evolution_config({"director": {"targets": ["economy"]}})
     with pytest.raises(ValueError, match="window must be at least one cadence"):
         normalize_evolution_config({"director": {"cadence": "2d", "window": "1d"}})
+
+def test_world_change_dispatches_the_configured_story_wake(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "director-world-change-wake")
+    try:
+        with platform.store.transaction():
+            platform.store.repositories.metadata.set("evolution", normalize_evolution_config({
+                "wakes": [{
+                    "id": "story_growth",
+                    "on": "world.change.rule",
+                    "for": "story",
+                    "external": True,
+                    "tools": ["propose_story_beat", "wait"],
+                    "result": "Narrate the new rule.",
+                }],
+            }))
+        result = platform.submit_world_change("god", {
+            "change_type": "rule",
+            "summary": "A test rule for the growth wake.",
+            "rule": {
+                "id": "director_test_rule",
+                "condition": "event.recent.cistern.reviewed == true",
+                "effect": "policy.director_test",
+                "behavior_names": ["Inspect Cistern"],
+                "wake": ["story"],
+            },
+        })
+        assert result["status"] == "accepted", result
+        tasks = [item for item in platform.ready_evolution_tasks() if item["role"] == "story"]
+        assert any(item["task_type"] == "event_group:story_growth" for item in tasks), tasks
+    finally:
+        platform.close()

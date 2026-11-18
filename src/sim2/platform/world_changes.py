@@ -162,7 +162,7 @@ class WorldChangesRuntimeMixin:
         }
         expected = self._world_proposal_expectation(change_type, proposal, effect)
         event_data["expected_state"] = expected
-        event_id = self._context.services["events"].append(f"world.change.{change_type}", actor_id, world_minute, event_data)
+        event_id = self._context.services["events"].publish(f"world.change.{change_type}", actor_id, world_minute, event_data, wake="configured")
         self.store.repositories.evolution.put_world_proposal(intent_id, intent_id, actor_id, change_type, "pending_evaluation", world_minute, evaluation_due_minute, {"effects": event_data["expected_effects"], "summary": event_data["summary"], "state": expected}, {"event_id": event_id, "effect": effect})
         if actor_id == "god":
             remember_role(self.store, "god", "world_proposal", {
