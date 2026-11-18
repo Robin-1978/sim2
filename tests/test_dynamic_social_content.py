@@ -58,7 +58,20 @@ def _set_required_content(platform: Platform, required: dict[str, list[str]]) ->
         evolution = dict(platform.store.repositories.metadata.get("evolution", {}) or {})
         contracts = dict(evolution.get("contracts", {}) or {})
         contract = dict(contracts.get("god_structural", {}) or {})
+        contract.pop("stages", None)
         contract["required_content"] = required
+        contracts["god_structural"] = contract
+        evolution["contracts"] = contracts
+        platform.store.repositories.metadata.set("evolution", evolution)
+
+
+def _set_stages(platform: Platform, stages: list[dict[str, Any]]) -> None:
+    with platform.store.transaction():
+        evolution = dict(platform.store.repositories.metadata.get("evolution", {}) or {})
+        contracts = dict(evolution.get("contracts", {}) or {})
+        contract = dict(contracts.get("god_structural", {}) or {})
+        contract["stages"] = stages
+        contract["required_content"] = {}
         contracts["god_structural"] = contract
         evolution["contracts"] = contracts
         platform.store.repositories.metadata.set("evolution", evolution)
@@ -811,4 +824,44 @@ def test_structural_progress_finishes_when_the_required_pack_is_complete(platfor
     assert turn.result["status"] == "accepted", turn.result
     names = {item.get("name") for item in platform.store.repositories.entities.entities_of_type("location")}
     assert {"Required Place A", "Required Place B"} <= names
+    assert provider.calls == 2
+
+
+def test_structural_stages_advance_automatically(platform: Platform) -> None:
+    """A contract can decompose one broad task into sequential atomic stages."""
+
+    _set_stages(platform, [
+        {
+            "instruction": "Create Required Stage Place A.",
+            "required_content": {"entities": ["Required Stage Place A"]},
+        },
+        {
+            "instruction": "Create Required Stage Place B.",
+            "required_content": {"entities": ["Required Stage Place B"]},
+        },
+    ])
+    provider = _SequenceProvider([
+        {
+            "intent_type": "propose_entity",
+            "entity_type": "location",
+            "name": "Required Stage Place A",
+            "description": "The first automatic stage.",
+            "state": {"routes": ["relay_station"], "route_distances": {"relay_station": 1}},
+        },
+        {
+            "intent_type": "propose_entity",
+            "entity_type": "location",
+            "name": "Required Stage Place B",
+            "description": "The second automatic stage.",
+            "state": {"routes": ["relay_station"], "route_distances": {"relay_station": 1}},
+        },
+    ])
+    turn = AgentEngine(platform, provider, max_iterations=5).run(
+        role="god",
+        actor_id="god",
+        task_type="god_structural",
+    )
+    assert turn.result["status"] == "accepted", turn.result
+    names = {item.get("name") for item in platform.store.repositories.entities.entities_of_type("location")}
+    assert {"Required Stage Place A", "Required Stage Place B"} <= names
     assert provider.calls == 2

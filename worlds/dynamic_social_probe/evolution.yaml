@@ -24,6 +24,87 @@ contracts:
       resource_withdrawal/resource_take effect needs a positive amount and a
       scope, and resource_take needs mode covert. If the world already supports
       the target cell, wait.
+    stages:
+    - id: location
+      instruction: 'Submit exactly one propose_entity: entity_type location, name ''Water Plant'', description ''A pump house with room for a shared reservoir.'', state.routes [''relay_station''], state.route_distances {''relay_station'': 1}.'
+      required_content:
+        entities:
+        - Water Plant
+    - id: resource
+      instruction: 'Submit exactly one propose_entity: entity_type resource, name ''Water Reserve'', description ''A shared water stock created empty by God.'', location ''Water Plant'', state {"quantity": 0}. Do not stock it.'
+      required_content:
+        entities:
+        - Water Reserve
+    - id: stewardship
+      instruction: 'Submit exactly one propose_world_change: change_type relationship, relationship.from ''mira'', relationship.to ''Water Reserve'', relationship.type ''stewardship''.'
+      required_content:
+        relationships:
+        - from: mira
+          to: Water Reserve
+          type: stewardship
+    - id: fill
+      instruction: 'Submit exactly one propose_definition for an Action named Fill Water Reserve. definition.id fill_water_reserve, parameters {}, preconditions [''actor.alive''], duration.minutes 1, effects [{''type'': ''world_resource_delta'', ''resource_id'': ''Water Reserve'', ''delta'': 10, ''maximum'': 10}], success {''condition'': ''actor.alive'', ''result'': ''water_filled''}, failure {''condition'': ''actor.incapacitated'', ''result'': ''fill_failed''}. followup_behavior name Fill Water Reserve, assign_to [''mira''], definition.id fill_water_reserve, agent_label Fill Water Reserve, entry_conditions [''actor.alive''], estimated_minutes 1, nodes [{''type'': ''action'', ''action_id'': ''fill_water_reserve''}].'
+      required_content:
+        behavior_effects:
+        - world_resource_delta
+    - id: withdraw
+      instruction: 'Submit exactly one propose_definition for an Action named Withdraw Water. definition.id withdraw_water, parameters {}, preconditions [''actor.alive''], duration.minutes 2, effects [{''type'': ''resource_withdrawal'', ''resource_id'': ''Water Reserve'', ''amount'': 1, ''scope'': ''water_withdrawal''}], success {''condition'': ''actor.alive'', ''result'': ''water_withdrawn''}, failure {''condition'': ''actor.incapacitated'', ''result'': ''withdrawal_failed''}. followup_behavior name Withdraw Water, assign_to [''mira'', ''tomas''], definition.id withdraw_water, agent_label Withdraw Water, entry_conditions [''actor.alive''], estimated_minutes 2, nodes [{''type'': ''action'', ''action_id'': ''withdraw_water''}].'
+      required_content:
+        behavior_effects:
+        - resource_withdrawal
+    - id: take
+      instruction: 'Submit exactly one propose_definition for an Action named Take Water. definition.id take_water, parameters {}, preconditions [''actor.alive''], duration.minutes 1, effects [{''type'': ''resource_take'', ''resource_id'': ''Water Reserve'', ''amount'': 1, ''scope'': ''water_withdrawal'', ''mode'': ''covert''}], success {''condition'': ''actor.alive'', ''result'': ''water_taken''}, failure {''condition'': ''actor.incapacitated'', ''result'': ''take_failed''}. followup_behavior name Take Water, assign_to [''tomas''], definition.id take_water, agent_label Take Water, entry_conditions [''actor.alive''], estimated_minutes 1, nodes [{''type'': ''action'', ''action_id'': ''take_water''}].'
+      required_content:
+        behavior_effects:
+        - resource_take
+    - id: request
+      instruction: 'Submit exactly one propose_definition for an Action named Request Water Access. definition.id request_access, parameters {''based_on_event'': ''string'', ''reason'': ''string'', ''behavior'': ''string'', ''target'': ''string'', ''scope'': ''string'', ''request_id'': ''string''}, preconditions [''actor.alive''], duration.minutes 1, effects [], success {''condition'': ''actor.alive'', ''result'': ''access_requested''}, failure {''condition'': ''actor.incapacitated'', ''result'': ''request_failed''}. followup_behavior name Request Water Access, assign_to [''mira'', ''tomas''], definition.id request_access, authorization_operation open_access_request, agent_label Request Water Access, entry_conditions [''actor.alive''], estimated_minutes 1, agent_parameters {''based_on_event'': {''type'': ''string'', ''required'': false, ''max_length'': 40}, ''reason'': {''type'': ''string'', ''required'': false, ''max_length'': 300}, ''behavior'': {''type'': ''string'', ''required'': false,
+        ''max_length'': 120}, ''target'': {''type'': ''string'', ''required'': false, ''max_length'': 120}, ''scope'': {''type'': ''string'', ''required'': false, ''max_length'': 120}, ''request_id'': {''type'': ''string'', ''required'': false, ''max_length'': 80}}, nodes [{''type'': ''action'', ''action_id'': ''request_access'', ''parameters'': {''based_on_event'': ''context.based_on_event'', ''reason'': ''context.reason'', ''behavior'': ''context.behavior'', ''target'': ''context.target'', ''scope'': ''context.scope'', ''request_id'': ''context.request_id''}}].'
+      required_content:
+        behavior_operations:
+        - open_access_request
+    - id: approve
+      instruction: 'Submit exactly one propose_definition for an Action named Approve Withdrawal. definition.id approve_withdrawal, parameters {''request_id'': ''string'', ''delegation_id'': ''string'', ''subject'': ''string'', ''target'': ''string'', ''scope'': ''string'', ''reason'': ''string''}, preconditions [''actor.alive''], duration.minutes 1, effects [], success {''condition'': ''actor.alive'', ''result'': ''access_approved''}, failure {''condition'': ''actor.incapacitated'', ''result'': ''approval_failed''}. followup_behavior name Approve Withdrawal, assign_to [''mira''], definition.id approve_withdrawal, authorization_operation decide_access_request, authorization_decision approve, agent_label Approve Withdrawal, entry_conditions [''actor.alive''], estimated_minutes 1, agent_parameters {''request_id'': {''type'': ''string'', ''required'': false, ''max_length'': 80}, ''delegation_id'': {''type'': ''string'', ''required'': false, ''max_length'': 80}, ''subject'': {''type'': ''string'',
+        ''required'': false, ''max_length'': 80}, ''target'': {''type'': ''string'', ''required'': false, ''max_length'': 120}, ''scope'': {''type'': ''string'', ''required'': false, ''max_length'': 120}, ''reason'': {''type'': ''string'', ''required'': false, ''max_length'': 300}}, nodes [{''type'': ''action'', ''action_id'': ''approve_withdrawal'', ''parameters'': {''request_id'': ''context.request_id'', ''delegation_id'': ''context.delegation_id'', ''subject'': ''context.subject'', ''target'': ''context.target'', ''scope'': ''context.scope'', ''reason'': ''context.reason''}}].'
+      required_content:
+        behavior_operations:
+        - decide_access_request:approve
+    - id: reject
+      instruction: 'Submit exactly one propose_definition for an Action named Reject Withdrawal. definition.id reject_withdrawal, parameters {''request_id'': ''string'', ''reason'': ''string''}, preconditions [''actor.alive''], duration.minutes 1, effects [], success {''condition'': ''actor.alive'', ''result'': ''access_rejected''}, failure {''condition'': ''actor.incapacitated'', ''result'': ''rejection_failed''}. followup_behavior name Reject Withdrawal, assign_to [''mira''], definition.id reject_withdrawal, authorization_operation decide_access_request, authorization_decision reject, agent_label Reject Withdrawal, entry_conditions [''actor.alive''], estimated_minutes 1, agent_parameters {''request_id'': {''type'': ''string'', ''required'': false, ''max_length'': 80}, ''reason'': {''type'': ''string'', ''required'': false, ''max_length'': 300}}, nodes [{''type'': ''action'', ''action_id'': ''reject_withdrawal'', ''parameters'': {''request_id'': ''context.request_id'', ''reason'': ''context.reason''}}].'
+      required_content:
+        behavior_operations:
+        - decide_access_request:reject
+    - id: revoke
+      instruction: 'Submit exactly one propose_definition for an Action named Revoke Delegation. definition.id revoke_delegation, parameters {''delegation_id'': ''string'', ''reason'': ''string''}, preconditions [''actor.alive''], duration.minutes 1, effects [], success {''condition'': ''actor.alive'', ''result'': ''delegation_revoked''}, failure {''condition'': ''actor.incapacitated'', ''result'': ''revocation_failed''}. followup_behavior name Revoke Delegation, assign_to [''mira''], definition.id revoke_delegation, authorization_operation revoke_access, agent_label Revoke Delegation, entry_conditions [''actor.alive''], estimated_minutes 1, agent_parameters {''delegation_id'': {''type'': ''string'', ''required'': false, ''max_length'': 80}, ''reason'': {''type'': ''string'', ''required'': false, ''max_length'': 300}}, nodes [{''type'': ''action'', ''action_id'': ''revoke_delegation'', ''parameters'': {''delegation_id'': ''context.delegation_id'', ''reason'': ''context.reason''}}].'
+      required_content:
+        behavior_operations:
+        - revoke_access
+    - id: review
+      instruction: 'Submit exactly one propose_definition for an Action named Review Water Violation. definition.id review_water_violation, parameters {''violation_id'': ''string'', ''decision'': ''string'', ''reason'': ''string''}, preconditions [''actor.alive''], duration.minutes 1, effects [], success {''condition'': ''actor.alive'', ''result'': ''violation_reviewed''}, failure {''condition'': ''actor.incapacitated'', ''result'': ''review_failed''}. followup_behavior name Review Water Violation, assign_to [''mira''], definition.id review_water_violation, authorization_operation review_violation, agent_label Review Water Violation, entry_conditions [''actor.alive''], estimated_minutes 1, agent_parameters {''violation_id'': {''type'': ''string'', ''required'': true, ''max_length'': 80}, ''decision'': {''type'': ''string'', ''required'': true, ''max_length'': 20}, ''reason'': {''type'': ''string'', ''required'': false, ''max_length'': 300}}, nodes [{''type'': ''action'', ''action_id'': ''review_water_violation'',
+        ''parameters'': {''violation_id'': ''context.violation_id'', ''decision'': ''context.decision'', ''reason'': ''context.reason''}}].'
+      required_content:
+        behavior_operations:
+        - review_violation
+    - id: resource_rule
+      instruction: 'Submit exactly one propose_world_change: change_type rule, rule.id water_reserve_stewardship, rule.condition ''true'', rule.description ''Only the water steward or an active delegation may withdraw water.'', rule.effect {''type'': ''authorization'', ''mode'': ''resource_access'', ''target'': ''Water Reserve'', ''scope'': ''water_withdrawal'', ''behavior_ids'': [''withdraw_water'']}.'
+      required_content:
+        authorization_modes:
+        - resource_access
+    - id: approval_rule
+      instruction: 'Submit exactly one propose_world_change: change_type rule, rule.id water_approval_authority, rule.condition ''true'', rule.effect {''type'': ''authorization'', ''mode'': ''request_decision'', ''authority'': {''type'': ''institution'', ''id'': ''water_approval_authority''}, ''behavior_ids'': [''approve_withdrawal'', ''reject_withdrawal'']}.'
+      required_content:
+        authorization_modes:
+        - request_decision
+    - id: revocation_rule
+      instruction: 'Submit exactly one propose_world_change: change_type rule, rule.id water_revocation_authority, rule.condition ''true'', rule.effect {''type'': ''authorization'', ''mode'': ''delegation_revocation'', ''authority'': {''type'': ''institution'', ''id'': ''water_revocation_authority''}, ''behavior_ids'': [''revoke_delegation'']}.'
+      required_content:
+        authorization_modes:
+        - delegation_revocation
+    - id: review_rule
+      instruction: 'Submit exactly one propose_world_change: change_type rule, rule.id water_violation_authority, rule.condition ''true'', rule.effect {''type'': ''authorization'', ''mode'': ''violation_review'', ''behavior_ids'': [''review_water_violation'']}.'
+      required_content:
+        authorization_modes:
+        - violation_review
     required_content:
       entities: [Water Plant, Water Reserve]
       behavior_effects: [world_resource_delta, resource_withdrawal, resource_take]

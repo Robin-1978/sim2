@@ -289,6 +289,17 @@ class AgentEngine:
         initial_context = copy.deepcopy(context)
         system_policy = role_policy(self.platform, role)
         prompt, metrics = self._render_prompt(context, task, role)
+        messages = [
+            {"role": "system", "content": system_policy},
+            {"role": "user", "content": prompt},
+        ]
+        stages = compiled.trigger_contract.get("stages") if isinstance(compiled.trigger_contract, dict) else None
+        if isinstance(stages, list) and stages:
+            instruction = str((stages[0] or {}).get("instruction") or "") if isinstance(stages[0], dict) else ""
+            messages.append({
+                "role": "user",
+                "content": f"Structural stage 1/{len(stages)}: {instruction}",
+            })
         return ReactSession(
             role=role,
             actor_id=actor_id,
@@ -302,10 +313,7 @@ class AgentEngine:
             state_attributes=compiled.state_attributes,
             interaction_tools=compiled.interaction_tools,
             session_tools=compiled.session_tools,
-            messages=[
-                {"role": "system", "content": system_policy},
-                {"role": "user", "content": prompt},
-            ],
+            messages=messages,
             context_metrics=[metrics],
             max_tool_calls=self.max_tool_calls,
             max_repeated_tool_calls=self.max_repeated_tool_calls,
@@ -468,6 +476,21 @@ class AgentEngine:
                 found = (value.casefold(), "") in operations
             if not found:
                 missing.append(f"operation: {value}")
+        relationships = list(entities.list_relationships())
+        for raw in required.get("relationships") or []:
+            if not isinstance(raw, dict):
+                continue
+            source = str(self.platform.targets.canonical_id(str(raw.get("from") or "")) or raw.get("from") or "")
+            target = str(self.platform.targets.canonical_id(str(raw.get("to") or "")) or raw.get("to") or "")
+            kind = str(raw.get("type") or "")
+            found = any(
+                str(item.get("from") or "") == source
+                and str(item.get("to") or "") == target
+                and str(item.get("type") or "") == kind
+                for item in relationships
+            )
+            if not found:
+                missing.append(f"relationship: {raw.get('from')} -> {raw.get('to')} ({kind})")
         rules = (self.platform.store.repositories.metadata.get("rules", {}) or {}).get("world_rules", []) or []
         rule_values: set[str] = set()
         authorization_modes: set[str] = set()
@@ -511,6 +534,45 @@ class AgentEngine:
         contract = session.context.get("evolution_trigger")
         return bool(isinstance(contract, dict) and isinstance(contract.get("required_content"), dict) and contract.get("required_content"))
 
+    def _structural_stages(self, session: ReactSession) -> list[dict[str, Any]] | None:
+        contract = session.context.get("evolution_trigger")
+        stages = contract.get("stages") if isinstance(contract, dict) else None
+        return stages if isinstance(stages, list) and stages else None
+
+    def _advance_structural_stage(self, session: ReactSession) -> str:
+        """Check the current atomic stage, advance when complete, and tell the caller whether to finish."""
+
+        stages = self._structural_stages(session)
+        if not stages:
+            return "none"
+        if session.stage_index >= len(stages):
+            return "finish"
+        stage = stages[session.stage_index] if isinstance(stages[session.stage_index], dict) else {}
+        required = stage.get("required_content") if isinstance(stage.get("required_content"), dict) else {}
+        missing = self._required_content_missing(session, required)
+        if missing:
+            self._apply_contract_correction(session, {
+                "status": "incomplete",
+                "failed_check": "required_content",
+                "missing": missing,
+                "message": (
+                    f"Structural stage {session.stage_index + 1}/{len(stages)}: "
+                    + str(stage.get("instruction") or "")
+                    + " Missing: " + ", ".join(missing)
+                    + ". Submit the next proposal for this stage."
+                ),
+            })
+            return "continue"
+        session.stage_index += 1
+        if session.stage_index >= len(stages):
+            return "finish"
+        next_stage = stages[session.stage_index] if isinstance(stages[session.stage_index], dict) else {}
+        session.messages.append({
+            "role": "user",
+            "content": f"Structural stage {session.stage_index + 1}/{len(stages)}: {next_stage.get('instruction') or ''}",
+        })
+        return "continue"
+
     def _append_structural_progress(self, session: ReactSession, missing: list[str]) -> None:
         session.context["contract_missing"] = list(missing)
         session.messages.append({
@@ -547,6 +609,11 @@ class AgentEngine:
                 "submission_results": intent_results,
                 "submission_count": len(intent_results),
             }
+        if self._structural_stages(session):
+            transition = self._advance_structural_stage(session)
+            if transition == "finish":
+                return session.finish(accepted_result, iterations=iteration)
+            return None
         if not batched and self._multi_proposal(session, accepted_result):
             if self._structural_required(session):
                 missing = self._required_content_missing(session)
@@ -688,6 +755,11 @@ class AgentEngine:
         session.context["last_platform_result"] = result
         session.last_result = result
         if result.get("status") in {"accepted", "wait"}:
+            if self._structural_stages(session):
+                transition = self._advance_structural_stage(session)
+                if transition == "finish":
+                    return session.finish(result, iterations=iteration, response=response)
+                return None
             if self._multi_proposal(session, result):
                 if self._structural_required(session):
                     missing = self._required_content_missing(session)

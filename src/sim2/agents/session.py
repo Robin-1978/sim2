@@ -69,6 +69,7 @@ class ReactSession:
     read_budget: int
     last_response: dict[str, Any] = field(default_factory=dict)
     last_result: dict[str, Any] = field(default_factory=lambda: {"status": "no_result"})
+    stage_index: int = 0
     transcript: list[dict[str, Any]] = field(default_factory=list)
     prompt_history: list[str] = field(default_factory=list)
     context_metrics: list[dict[str, Any]] = field(default_factory=list)
