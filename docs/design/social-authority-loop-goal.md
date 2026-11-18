@@ -42,10 +42,11 @@ new status instead.
 | Phase 2 neutral remote | 4/4 request, 2/4 accepted (two no-denial `invalid_causal_reference`), 0/4 take |
 | Phase 2 directed remote | 2/2 take, 1/2 witnessed, 1/1 observed sanction |
 | Tension multi-round | 3 runs × 4 rounds: 0 take, 0 sanction, 0 violation; cooperative equilibrium |
-| Phase 3 decomposed remote | 3/3 complete cores, 3/3 violation chains, 2/3 legal chains; 45 accepted / 6 rejected |
+| Phase 3 decomposed remote | Latest fresh run: 1/1 complete core, 1/1 legal, 1/1 violation; 15 accepted / 6 rejected. Original 3-run sample: 3/3 core, 3/3 violation, 2/3 legal |
 | Phase 3 broad remote | Free-form one-shot remains 0/3; **contract-driven staged broad** now 1/1 complete core, 1/1 legal and 1/1 violation, with 15 accepted / 0 rejected and no failed checks |
 | Minimal evolution loop | `audit_dynamic_evolution_loop.py --provider remote --rounds 3`: passed, `flags: []`; round 1 God created a Deposit Energy Cell Action/BT, Mira executed it and the reserve moved 0→1, Story created an emergent beat; rounds 2-3 completed research and another emergent beat |
 | LLM Director | Separate `roles.director` remote role (`1024` tokens, 4 iterations, 2 reads); actual call chose `resource` and wrote `plan:5:resource` plus a `god_structural` task |
+| Full one-cycle loop | LLM Director → 15-stage God → LLM NPCs → Story: plan completed, next plan opened at `baseline: 1`; Story produced two accepted beats and one wait; God 18 calls / 17 iterations |
 | Deterministic | Phase 1 `18 passed`, Phase 2 `19 passed`, Phase 3 `13 passed`, source guard `2 passed` |
 
 ## 5. Open issues
@@ -54,11 +55,12 @@ new status instead.
 | --- | --- | --- | --- | --- | --- |
 | G-01 | An administrative behavior can be accepted without `authorization_operation`, producing an inert legal path | Original fresh Phase 3: one `request_access` behavior had `authorization_operation: null`; legal chain `missing_admin_content`. After the validator and stage gate: decomposed fresh run 1/1 complete core, 1/1 legal, 1/1 violation, 15 accepted / 6 rejected | Generic validation rejects an Action with `based_on_event`/`violation_id` parameters without `authorization_operation`; Phase 3 stage readiness requires the exact operation and retries | A proposal with social operation parameters and no operation is rejected with a typed check; fresh decomposed legal chain 3/3 | IN_PROGRESS (single fresh legal 1/1; 3-run reliability sample pending) |
 | G-02 | One broad God task cannot finish the pack; model submits one proposal per turn and exhausts reads | Free-form broad 0/3; contract-driven staged broad 1/1 complete core, 1/1 legal, 1/1 violation, 15 accepted / 0 rejected | Engine keeps a structural session open across proposals, and contracts declare ordered stages. The engine injects the current atomic instruction, checks semantic completion, advances automatically and finishes on the last stage | `god_structural` completes one full pack from one task without harness-authored stage instructions; broad complete core 1/1 | FIXED / VERIFIED for contract-driven stages; free-form one-shot remains a documented limitation |
-| G-03 | A witnessed violation does not automatically wake the steward; review is harness-injected | Phase 2C and tension probes inject Mira’s review task | `violation.observed` now publishes through the configured wake path; `social_authority_probe` wakes `mira`; deterministic test asserts the queued review task | After a witnessed take, the steward receives a review task and can sanction without harness injection | IN_PROGRESS (wake + test pass; full runner path pending) |
+| G-03 | A witnessed violation does not automatically wake the steward; review is harness-injected | `violation.observed` wakes Mira; `access.requested` publishes through the configured wake path; the full loop ran three Story tasks, with two accepted beats and one wait | Keep the wake path on every relevant event append; the full-loop probe queues configured Story events whose append path predates the wake | After a witnessed take or request, the relevant consumer receives a task without harness injection and the role completes it | FIXED / VERIFIED (wake tests + full-loop Story beats) |
 | G-04 | Neutral NPCs do not spontaneously choose the coercive path | 0/4 neutral take; 0/3 multi-round take; model sees `observers/detection/consequence` and still requests/waits | Add a pressure scenario (scarcity, deadline, third claimant, persona) and measure; do not hard-code take | In N neutral pressure runs, at least one take/rejection/sanction occurs without a directed “you have decided” prompt; report the rate honestly | OPEN |
-| G-05 | Long-term autonomous growth is unproven | Minimal 3-round God→NPC→Story loop passed with no flags: God created a new Action/BT from a resource-safety event, Mira executed it, Story created an emergent beat, then research produced a second beat. No free multi-season run yet; Phase 3B is 15 harness-driven stages | Run a longer free loop after G-02/G-03; record gap → creation → execution → next gap across seasons | A free run creates and executes a new pack, then a new Director gap appears and is handled without stage injection | PARTIAL |
-| G-06 | Read budget and schema adherence reduce God reliability | 6 rejected Phase 3 tool calls; repeated read-budget stops; Director structural turn hit `budget_exhausted` | Role config now gives God 24 structural iterations, 4096 completion tokens and 4 reads; engine keeps structural sessions open and returns missing-content corrections; verify with fresh broad/structural runs | Fewer than 2 rejected calls per decomposed run; no read-budget or budget-exhausted stop before the final proposal | IN_PROGRESS (config + continuation + gate; fresh broad pending) |
+| G-05 | Long-term autonomous growth is unproven | Minimal 3-round God→NPC→Story loop passed. Full one-cycle loop: LLM Director chose resource, God completed the 15-stage pack, Mira filled, Tomas requested, Story produced two accepted beats, and the Director completed the plan and opened `resource, baseline: 1`. No second pack or multi-season run yet | Run the next Director cycle through God, then a multi-season free loop; record gap → creation → execution → next gap | A free run creates and executes a new pack, then a new Director gap appears and is handled without stage injection across seasons | PARTIAL |
+| G-06 | Read budget and schema adherence reduce God reliability | Contract-driven broad is now 15 accepted / 0 rejected; decomposed fresh run still has 6 rejected calls (`definition_schema`, `read_budget`); Director structural turn previously hit `budget_exhausted` | Role config gives God 24 iterations / 4096 tokens / 4 reads; engine keeps sessions open and returns missing-content corrections; still need the decomposed rejection rate under 2 | Fewer than 2 rejected calls per decomposed run; no read-budget or budget-exhausted stop before the final proposal | IN_PROGRESS (broad fixed; decomposed reliability pending) |
 | G-07 | The first tension aggregate undercounted direct intents | Mira’s direct `behavior_ref: behavior:withdraw_energy` was not a `request_behavior` tool call | Script fixed to read `turn.response`; rerun needed to publish corrected counts | Corrected probe rerun completed; docs updated | IN_PROGRESS |
+| G-08 | Context grows with the world and the 16k-char compaction omits action/behavior catalogs | Broad God prompt: ~15.9k chars / ~4k tokens, `compacted: true`; omitted includes `world_action_catalog`, `world_behavior_catalog`, `world_outcomes`, `world_trends` | Replace full catalogs with a relevance-scoped structural index: current target, stewards, related behaviors/rules, counts and recent changes; provide detail only through bounded reads | A larger world keeps the structural prompt bounded while the model can still see the current target's relevant content and does not duplicate existing definitions | OPEN |
 
 ## 6. Work order
 
@@ -71,6 +73,15 @@ new status instead.
 7. **G-06** reliability tuning after the structural fixes.
 
 ## 7. Progress log
+
+### 2026-11-19
+
+- Contract-driven broad: 1/1 complete core, legal and violation chains; 15 accepted / 0 rejected.
+- Decomposed fresh: 1/1 complete core, legal and violation chains; 15 accepted / 6 rejected.
+- Full loop: LLM Director + 15-stage God + LLM NPCs; Director completed the plan and opened `baseline: 1`; three Story tasks were queued.
+- Full one-cycle loop completed: Director plan `resource`; God 18 calls / 17 iterations; Mira filled twice; Tomas requested access; Story produced two accepted beats; Director plan completed and next plan opened at `baseline: 1`.
+- G-03 marked FIXED / VERIFIED for the wake and full-loop Story path.
+- New scalability issue G-08 recorded: the 16k-char cap hides catalogs as the world grows.
 
 ### 2026-11-18
 
