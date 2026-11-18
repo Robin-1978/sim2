@@ -362,6 +362,105 @@ FUEL_RULES = (
     ),
 )
 
+# -- third resource instance -------------------------------------------------
+# Same shape again; only the world content changes.
+
+COOLANT_SHED = {
+    "entity_type": "location",
+    "entity_id": "coolant_shed",
+    "name": "Coolant Shed",
+    "description": "A shed with a shared coolant tank.",
+    "state": {"routes": ["relay_station"], "route_distances": {"relay_station": 1}},
+}
+
+COOLANT_RESERVE = {
+    "entity_type": "resource",
+    "entity_id": "coolant_reserve",
+    "name": "Coolant Reserve",
+    "description": "A shared coolant stock created empty by God; a behavior must fill it.",
+    "location_id": "coolant_shed",
+    "state": {"quantity": 0},
+}
+
+COOLANT_STEWARDSHIP = {
+    "change_type": "relationship",
+    "summary": "Mira is accountable for the coolant reserve too.",
+    "relationship": {"participants": ["mira", "coolant_reserve"], "type": "stewardship"},
+}
+
+FILL_COOLANT = _action(
+    "Fill Coolant Reserve",
+    "fill_coolant_reserve",
+    ["mira"],
+    action={
+        "description": "Fill the shared coolant reserve from the shed.",
+        "effects": [{"type": "world_resource_delta", "resource_id": "coolant_reserve", "delta": 10, "maximum": 10}],
+        "success": {"condition": "actor.alive", "result": "coolant_filled"},
+        "failure": {"condition": "actor.incapacitated", "result": "fill_coolant_failed"},
+    },
+    behavior={"summary": "Fill the shared coolant reserve."},
+)
+
+WITHDRAW_COOLANT = _action(
+    "Withdraw Coolant",
+    "withdraw_coolant",
+    ["mira", "tomas"],
+    action={
+        "description": "Withdraw one unit of shared coolant with authorization.",
+        "duration": {"minutes": 2},
+        "effects": [{"type": "resource_withdrawal", "resource_id": "coolant_reserve", "amount": 1, "scope": "coolant_withdrawal"}],
+        "success": {"condition": "actor.alive", "result": "coolant_withdrawn"},
+        "failure": {"condition": "actor.incapacitated", "result": "coolant_withdrawal_failed"},
+    },
+    behavior={"summary": "Withdraw one unit of shared coolant with authorization."},
+)
+
+TAKE_COOLANT = _action(
+    "Take Coolant",
+    "take_coolant",
+    ["tomas"],
+    action={
+        "description": "Take one unit of shared coolant without authorization.",
+        "effects": [{"type": "resource_take", "resource_id": "coolant_reserve", "amount": 1, "scope": "coolant_withdrawal", "mode": "covert"}],
+        "success": {"condition": "actor.alive", "result": "coolant_taken"},
+        "failure": {"condition": "actor.incapacitated", "result": "coolant_take_failed"},
+    },
+    behavior={"summary": "Take one unit of shared coolant without authorization."},
+)
+
+REVIEW_COOLANT = _action(
+    "Review Coolant Violation",
+    "review_coolant_violation",
+    ["mira"],
+    action={"parameters": {"violation_id": "string", "decision": "string", "reason": "string"}},
+    behavior={
+        "authorization_operation": "review_violation",
+        "agent_parameters": {
+            "violation_id": {"type": "string", "required": True, "max_length": 80},
+            "decision": {"type": "string", "required": True, "max_length": 20},
+            "reason": {"type": "string", "required": False, "max_length": 300},
+        },
+        "nodes": [{
+            "type": "action",
+            "action_id": "review_coolant_violation",
+            "parameters": {"violation_id": "context.violation_id", "decision": "context.decision", "reason": "context.reason"},
+        }],
+    },
+)
+
+COOLANT_RULES = (
+    _rule(
+        "coolant_reserve_stewardship",
+        "Only the coolant steward or an active delegation may withdraw coolant.",
+        {"type": "authorization", "mode": "resource_access", "target": "coolant_reserve", "scope": "coolant_withdrawal", "behavior_ids": ["withdraw_coolant"]},
+    ),
+    _rule(
+        "coolant_violation_authority",
+        "Only the coolant steward may review an observed coolant violation.",
+        {"type": "authorization", "mode": "violation_review", "behavior_ids": ["review_coolant_violation"]},
+    ),
+)
+
 
 def install_social_content(platform: Any) -> dict[str, Any]:
     """Submit the frozen Phase 3A content sequence through Platform services."""
@@ -400,5 +499,22 @@ def install_second_resource(platform: Any) -> dict[str, Any]:
         "review_fuel": platform.submit_definition_proposal("god", REVIEW_FUEL),
     }
     for payload in FUEL_RULES:
+        results[payload["rule"]["id"]] = platform.submit_world_change("god", payload)
+    return results
+
+
+def install_third_resource(platform: Any) -> dict[str, Any]:
+    """Instantiate a third resource with the same primitives and admin content."""
+
+    results: dict[str, Any] = {
+        "coolant_shed": platform.submit_entity_proposal("god", COOLANT_SHED),
+        "coolant_reserve": platform.submit_entity_proposal("god", COOLANT_RESERVE),
+        "coolant_stewardship": platform.submit_world_change("god", COOLANT_STEWARDSHIP),
+        "fill_coolant": platform.submit_definition_proposal("god", FILL_COOLANT),
+        "withdraw_coolant": platform.submit_definition_proposal("god", WITHDRAW_COOLANT),
+        "take_coolant": platform.submit_definition_proposal("god", TAKE_COOLANT),
+        "review_coolant": platform.submit_definition_proposal("god", REVIEW_COOLANT),
+    }
+    for payload in COOLANT_RULES:
         results[payload["rule"]["id"]] = platform.submit_world_change("god", payload)
     return results

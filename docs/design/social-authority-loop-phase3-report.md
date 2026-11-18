@@ -71,6 +71,7 @@ definition contract requires an executable BT in the same transaction.
 | DA-10 | Duplicate and failed proposals leave content counts unchanged | `test_da_10_duplicate_and_failed_proposals_are_idempotent` | `PROVEN` |
 | DA-11 | Visible resource names in effects and authorization rules are canonicalized to stable ids | `test_da_11_visible_resource_names_are_canonicalized` | `PROVEN` |
 | DA-12 | A second resource (`fuel_reserve`) reuses the same primitives, rules, witnesses and review path with an independent restriction scope | `test_da_12_second_resource_reuses_same_primitives` | `PROVEN` |
+| DA-13 | A third resource (`coolant_reserve`) has an independent restriction scope and leaves water/fuel eligibility untouched | `test_da_13_third_resource_has_independent_scope` | `PROVEN` |
 
 ## 4. Chain evidence
 
@@ -115,6 +116,20 @@ The second-resource test proves:
 - Forgiving the fuel violation restores fuel withdrawal.
 
 No Platform resource-name branch was added.
+
+### 3.2 Third resource reuse
+
+`install_third_resource` repeats the same shape for `coolant_shed` and
+`coolant_reserve`, with `fill_coolant_reserve`, `withdraw_coolant`,
+`take_coolant`, `review_coolant_violation` and two coolant rules. It reuses
+the same generic administrative behaviors again.
+
+DA-13 proves three resources can coexist with independent restriction scopes:
+a coolant sanction blocks only coolant withdrawal; water and fuel stay
+eligible; forgiving coolant restores it.
+
+The same DSL now covers three resource instances without new primitives or
+Platform resource-name branches.
 
 ## 5. Director evidence
 
@@ -179,6 +194,28 @@ It is evidence that, with atomic task decomposition and the existing proposal
 DSL, God can generate content that Platform validates and the Phase 1/2
 runtime executes end to end.
 
+### 6.3 Improved broad-task prompt
+
+The `god_structural` contract now says that multiple proposals are allowed in
+one turn, lists the required effect fields, and gives a 15-step checklist. A
+focused broad probe still produced:
+
+| Metric | Result |
+| --- | --- |
+| Runs | 1 |
+| Complete core | 0/1 |
+| Accepted / rejected tool calls | 3 / 7 |
+| Failed checks | `entity_name_duplicate`, `read_budget` |
+| Chains | not runnable |
+
+The model spent its small read budget on `observe_nearby`, `query_history` and
+`inspect_entity`, then submitted one entity or definition per turn. The
+engine's one-final-intent contract and the model's read budget, not a missing
+Platform primitive, prevent a single broad turn from completing the pack.
+
+The supported Phase 3B path is therefore the 15-stage decomposition. The broad
+prompt is improved but remains `NOT_PROVEN` for one-turn completion.
+
 ## 7. Phase 3C DSL gap ledger
 
 | Gap | Requested content | Observed constraint | Workaround | Category | Phase 4 candidate |
@@ -222,11 +259,37 @@ contract that the current DSL cannot express.
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Phase 3 deterministic contract | `python -m pytest -q tests/test_dynamic_social_content.py` | `12 passed` (DA-01..DA-10 plus visible-name and second-resource reuse) |
+| Phase 3 deterministic contract | `python -m pytest -q tests/test_dynamic_social_content.py` | `13 passed` (DA-01..DA-10 plus visible-name and two reuse instances) |
 | Phase 1 and Phase 2 regression | `python -m pytest -q tests/test_social_authority_loop.py tests/test_contested_resource_actions.py` | `37 passed` |
-| Full suite | `python -m pytest -q` | `1400 passed` |
+| Changed-test gate | `python scripts/test_parallel.py --changed` | `15 passed` in `3.3 s` |
+| Targeted combined gate | `python -m pytest -q tests/test_social_authority_loop.py tests/test_contested_resource_actions.py tests/test_dynamic_social_content.py tests/test_architecture_content_neutral.py` | `52 passed` in `12.0 s` |
+| Full suite (release gate only) | `python -m pytest -q` | last full run `1400 passed`; not repeated for every iteration |
 | Platform benchmark | `python scripts/benchmark_platform.py --agents 1000 --runs 5` | p95 `199.715 ms`; elapsed `[180.596, 200.504, 196.560, 193.607, 187.069]` ms |
 | Phase 3B God probe | `python scripts/verify_dynamic_social_content.py --provider remote --runs 3` | decomposed 15-stage probe: 3/3 complete cores, 3/3 legal, 3/3 violation; 45 accepted / 5 rejected |
+
+### 9.1 Test duration and selection
+
+The sequential suite is about 10 minutes because it contains 1400 tests plus
+two HTTP/liveness outliers:
+
+| Test | Duration |
+| --- | --- |
+| `test_web_dialogue_accepts_names_and_reports_missing_participant` | 56.56 s |
+| `test_a_refusing_god_is_asked_again_and_the_world_resumes_when_it_accepts` | 21.07 s |
+| Next 28 slowest tests combined | about 90 s |
+
+Most of the remaining time is distributed across many small integration tests,
+so optimizing one test is not the main fix. Use selection instead:
+
+```bash
+python scripts/test_parallel.py --changed    # 2-5 seconds for the current diff
+python scripts/test_parallel.py --workers 4  # release/full gate in parallel
+python -m pytest -q --durations=10           # profile outliers when needed
+```
+
+`--changed` maps source packages to importing test files, world packages to
+tests naming that world, and changed test files to themselves. Platform-wide
+changes deliberately fall back to the full suite.
 
 ## 10. Not proven
 
@@ -242,9 +305,10 @@ contract that the current DSL cannot express.
 ## 11. Reproduction
 
 ```bash
+python scripts/test_parallel.py --changed
 python -m pytest -q tests/test_dynamic_social_content.py
 python -m pytest -q tests/test_social_authority_loop.py tests/test_contested_resource_actions.py
-python -m pytest -q
+python scripts/test_parallel.py --workers 4
 python scripts/benchmark_platform.py --agents 1000 --runs 5
 python scripts/verify_dynamic_social_content.py --provider remote --runs 3
 ```

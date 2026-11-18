@@ -14,12 +14,25 @@ Install the editable package once:
 python -m pip install -e .
 ```
 
-Run the normal checks before submitting changes:
+Run the full checks before a release or pull request:
 
 ```bash
-python -m pytest -q
+python scripts/test_parallel.py --workers 4
 python -m compileall -q src scripts
 python scripts/benchmark_platform.py --agents 1000 --runs 5
+```
+
+For iteration, do not launch the full sequential suite every time:
+
+```bash
+# 2-5 seconds for the tests affected by the current git diff
+python scripts/test_parallel.py --changed
+
+# Full suite split across isolated worker processes
+python scripts/test_parallel.py --workers 4
+
+# Profile the slowest tests
+python -m pytest -q --durations=10
 ```
 
 Use `python scripts/run_long_simulation.py --minutes 10080` for a deterministic one-week smoke run. Real-provider checks use `python scripts/verify_agent_models.py` or `sim2 simulate --provider remote`; both start the internal Platform runtime and require `~/.sim2/llm.json`, which stores provider metadata and environment-variable names only.

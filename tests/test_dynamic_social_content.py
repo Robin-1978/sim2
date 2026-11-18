@@ -21,6 +21,7 @@ from sim2.world.growth import build_growth_ledger
 from worlds.dynamic_social_probe.proposals import (
     APPROVE,
     FILL,
+    FILL_COOLANT,
     FILL_FUEL,
     FUEL_DEPOT,
     FUEL_RESERVE,
@@ -29,18 +30,22 @@ from worlds.dynamic_social_probe.proposals import (
     REJECT,
     REQUEST,
     REVIEW,
+    REVIEW_COOLANT,
     REVIEW_FUEL,
     REVOKE,
     RULES,
     STEWARDSHIP,
     TAKE,
+    TAKE_COOLANT,
     TAKE_FUEL,
     WATER_PLANT,
     WATER_RESERVE,
     WITHDRAW,
+    WITHDRAW_COOLANT,
     WITHDRAW_FUEL,
     install_social_content,
     install_second_resource,
+    install_third_resource,
 )
 
 WORLD = Path(__file__).parents[1] / "worlds" / "dynamic_social_probe"
@@ -137,6 +142,12 @@ def fill_fuel(platform: Platform, intent_id: str = "fill-fuel-1") -> None:
     result = submit(platform, "mira", "fill_fuel_reserve", intent_id)
     assert result["status"] == "accepted"
     advance_until(platform, lambda: resource_amount_of(platform, "fuel_reserve") >= 10)
+
+
+def fill_coolant(platform: Platform, intent_id: str = "fill-coolant-1") -> None:
+    result = submit(platform, "mira", "fill_coolant_reserve", intent_id)
+    assert result["status"] == "accepted"
+    advance_until(platform, lambda: resource_amount_of(platform, "coolant_reserve") >= 10)
 
 
 def grant_delegation_for(platform: Platform, behavior_id: str, suffix: str) -> str:
@@ -430,6 +441,14 @@ def test_da_07_platform_source_has_no_water_content(platform: Platform) -> None:
         "review_fuel_violation",
         "fuel_reserve_stewardship",
         "fuel_violation_authority",
+        "coolant_shed",
+        "coolant_reserve",
+        "fill_coolant_reserve",
+        "withdraw_coolant",
+        "take_coolant",
+        "review_coolant_violation",
+        "coolant_reserve_stewardship",
+        "coolant_violation_authority",
     )
     hits = []
     for path in sorted(SRC.rglob("*.py")):
@@ -606,3 +625,65 @@ def test_da_12_second_resource_reuses_same_primitives(platform: Platform) -> Non
     assert platform.store.repositories.contested.active_restriction("tomas", "fuel_reserve", "fuel_withdrawal") is None
     fuel_restored = submit(platform, "tomas", "withdraw_fuel", "fuel-after-forgive")
     assert fuel_restored["status"] == "accepted"
+
+
+def test_da_13_third_resource_has_independent_scope(platform: Platform) -> None:
+    """A third resource proves the same DSL scales without cross-resource leaks."""
+
+    results = {
+        **install_social_content(platform),
+        **install_second_resource(platform),
+        **install_third_resource(platform),
+    }
+    assert all(item["status"] == "accepted" for item in results.values())
+    fill_reserve(platform, "fill-water-third")
+    fill_fuel(platform)
+    fill_coolant(platform)
+    assert resource_amount(platform) == 10
+    assert resource_amount_of(platform, "fuel_reserve") == 10
+    assert resource_amount_of(platform, "coolant_reserve") == 10
+
+    grant_delegation_for(platform, "withdraw_water", "water-third")
+    grant_delegation_for(platform, "withdraw_fuel", "fuel-third")
+    grant_delegation_for(platform, "withdraw_coolant", "coolant-third")
+
+    move(platform, "mira", "coolant_shed")
+    move(platform, "tomas", "coolant_shed")
+    assert submit(platform, "tomas", "take_coolant", "take-coolant-1")["status"] == "accepted"
+    advance_until(platform, lambda: bool(platform.store.repositories.contested.list_violations()))
+    violation = platform.store.repositories.contested.list_violations()[0]
+    assert violation["target"] == "coolant_reserve"
+    assert violation["scope"] == "coolant_withdrawal"
+    assert violation["witnesses"] == ["mira"]
+
+    sanctioned = submit(
+        platform,
+        "mira",
+        "review_coolant_violation",
+        "sanction-coolant-1",
+        {"violation_id": violation["violation_id"], "decision": "sanction"},
+    )
+    assert sanctioned["status"] == "accepted"
+    assert platform.store.repositories.contested.active_restriction("tomas", "coolant_reserve", "coolant_withdrawal") is not None
+    assert platform.store.repositories.contested.active_restriction("tomas", "water_reserve", "water_withdrawal") is None
+    assert platform.store.repositories.contested.active_restriction("tomas", "fuel_reserve", "fuel_withdrawal") is None
+
+    water_entry = behavior_entry(platform, "tomas", "withdraw_water")
+    fuel_entry = behavior_entry(platform, "tomas", "withdraw_fuel")
+    coolant_entry = behavior_entry(platform, "tomas", "withdraw_coolant")
+    assert water_entry["eligibility"]["available"] is True
+    assert fuel_entry["eligibility"]["available"] is True
+    assert coolant_entry["eligibility"]["available"] is False
+    assert coolant_entry["eligibility"]["reasons"][0]["type"] == "access_restricted"
+
+    forgiven = submit(
+        platform,
+        "mira",
+        "review_coolant_violation",
+        "forgive-coolant-1",
+        {"violation_id": violation["violation_id"], "decision": "forgive"},
+    )
+    assert forgiven["status"] == "accepted"
+    assert platform.store.repositories.contested.active_restriction("tomas", "coolant_reserve", "coolant_withdrawal") is None
+    assert behavior_entry(platform, "tomas", "withdraw_coolant")["eligibility"]["available"] is True
+    assert submit(platform, "tomas", "withdraw_coolant", "coolant-after-forgive")["status"] == "accepted"

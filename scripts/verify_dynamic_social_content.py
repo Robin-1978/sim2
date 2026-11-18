@@ -128,8 +128,7 @@ def _steward(platform: Platform, resource_id: str, agents: list[str]) -> str | N
     return None
 
 
-STAGES = (
-    ("location", "Submit exactly one propose_entity: entity_type location, name 'Water Plant', description 'A pump house with room for a shared reservoir.', state.routes ['relay_station'], state.route_distances {'relay_station': 1}."),
+STAGES = (    ("location", "Submit exactly one propose_entity: entity_type location, name 'Water Plant', description 'A pump house with room for a shared reservoir.', state.routes ['relay_station'], state.route_distances {'relay_station': 1}."),
     ("resource", "Submit exactly one propose_entity: entity_type resource, name 'Water Reserve', description 'A shared water stock created empty by God.', location 'Water Plant', state {\"quantity\": 0}. Do not stock it."),
     ("stewardship", "Submit exactly one propose_world_change: change_type relationship, relationship.from 'mira', relationship.to 'Water Reserve', relationship.type 'stewardship'."),
     ("fill", "Submit exactly one propose_definition for an Action named Fill Water Reserve. definition.id fill_water_reserve, parameters {}, preconditions ['actor.alive'], duration.minutes 1, effects [{'type': 'world_resource_delta', 'resource_id': 'Water Reserve', 'delta': 10, 'maximum': 10}], success {'condition': 'actor.alive', 'result': 'water_filled'}, failure {'condition': 'actor.incapacitated', 'result': 'fill_failed'}. followup_behavior name Fill Water Reserve, assign_to ['mira'], definition.id fill_water_reserve, agent_label Fill Water Reserve, entry_conditions ['actor.alive'], estimated_minutes 1, nodes [{'type': 'action', 'action_id': 'fill_water_reserve'}]."),
@@ -146,6 +145,12 @@ STAGES = (
     ("review_rule", "Submit exactly one propose_world_change: change_type rule, rule.id water_violation_authority, rule.condition 'true', rule.effect {'type': 'authorization', 'mode': 'violation_review', 'behavior_ids': ['review_water_violation']}."),
 )
 
+BROAD_INSTRUCTION = (
+    "Create the complete water resource pack in this turn. You may submit multiple proposal calls. "
+    "Follow these steps exactly, using the ids and fields given:\n"
+    + "\n".join(f"{index}. {instruction}" for index, (_, instruction) in enumerate(STAGES, start=1))
+)
+
 
 
 def _run_turn(
@@ -156,13 +161,17 @@ def _run_turn(
     task_type: str,
     source_events: list[dict[str, Any]],
     instruction: str,
+    *,
+    max_iterations: int = 3,
+    max_tool_calls: int = 4,
+    max_read_tool_calls: int = 1,
 ) -> Any:
     return AgentEngine(
         platform,
         router.new_provider_for_name(provider, model=model, role="god"),
-        max_iterations=3,
-        max_tool_calls=4,
-        max_read_tool_calls=1,
+        max_iterations=max_iterations,
+        max_tool_calls=max_tool_calls,
+        max_read_tool_calls=max_read_tool_calls,
     ).run(
         role="god",
         actor_id="god",
@@ -212,6 +221,18 @@ def _has_rule(platform: Platform, rule_id: str) -> bool:
 
 
 def _stage_ready(platform: Platform, stage_key: str) -> bool:
+    if stage_key == "broad":
+        resource = _entity_by_name(platform, "resource", "Water Reserve")
+        if resource is None:
+            return False
+        resource_id = str(resource.get("id"))
+        return bool(
+            _behavior_with_effect(platform, "resource_take", resource_id)
+            and _behavior_with_effect(platform, "resource_withdrawal", resource_id)
+            and _behavior_with_operation(platform, "review_violation")
+            and _authorization_rule(platform, "resource_access", resource_id)
+            and _authorization_rule(platform, "violation_review")
+        )
     if stage_key == "location":
         return _entity_by_name(platform, "location", "Water Plant") is not None
     if stage_key == "resource":
@@ -244,7 +265,7 @@ def _stage_ready(platform: Platform, stage_key: str) -> bool:
     }.get(stage_key, ""))
 
 
-def run_probe(platform: Platform, router: LLMRouter, provider: str, model: str | None, run_index: int) -> dict[str, Any]:
+def run_probe(platform: Platform, router: LLMRouter, provider: str, model: str | None, run_index: int, *, broad: bool = False) -> dict[str, Any]:
     for _ in range(6):
         if any(item.get("task_type") == "god_structural" for item in platform.ready_evolution_tasks()):
             break
@@ -269,10 +290,11 @@ def run_probe(platform: Platform, router: LLMRouter, provider: str, model: str |
     task = tasks[-1]
     all_calls: list[dict[str, Any]] = []
     stage_reports: list[dict[str, Any]] = []
-    for stage_index, (stage_key, instruction) in enumerate(STAGES, start=1):
+    stages = (("broad", BROAD_INSTRUCTION),) if broad else STAGES
+    for stage_index, (stage_key, instruction) in enumerate(stages, start=1):
         stage_report: dict[str, Any] = {"stage": stage_key, "attempts": 0, "ready": False}
         current_instruction = instruction
-        for attempt in range(2):
+        for attempt in range(3 if broad else 2):
             stage_report["attempts"] = attempt + 1
             try:
                 turn = _run_turn(
@@ -283,6 +305,9 @@ def run_probe(platform: Platform, router: LLMRouter, provider: str, model: str |
                     str(task["task_type"]),
                     task.get("source_events") or [],
                     current_instruction,
+                    max_iterations=12 if broad else 3,
+                    max_tool_calls=30 if broad else 4,
+                    max_read_tool_calls=2 if broad else 1,
                 )
             except Exception as exc:
                 stage_report["error"] = f"{type(exc).__name__}: {exc}"
@@ -462,6 +487,7 @@ def main() -> int:
     parser.add_argument("--provider", default="remote")
     parser.add_argument("--model", default=None)
     parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument("--broad", action="store_true", help="Use one broad God task instead of the decomposed stages.")
     args = parser.parse_args()
     runs = max(1, min(int(args.runs), 5))
     config = LLMConfig.load()
@@ -481,11 +507,12 @@ def main() -> int:
         for index in range(runs):
             platform = Platform(create_instance(WORLD, f"dynamic-social-probe-{index}", Path(runtime)))
             try:
-                reports.append(run_probe(platform, router, args.provider, args.model, index + 1))
+                reports.append(run_probe(platform, router, args.provider, args.model, index + 1, broad=args.broad))
             finally:
                 platform.close()
     valid = [item for item in reports if item.get("valid_probe")]
     summary = {
+        "mode": "broad_task" if args.broad else "decomposed_stages",
         "provider": args.provider,
         "model": args.model or provider.model,
         "runs": runs,
