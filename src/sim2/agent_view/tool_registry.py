@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from ..bootstrap.service import world_template_schema
 from ..world.definition_schema import propose_definition_schema
+from ..world.schema_text import concise_schema, concise_text
 
 
 # Tools are model-facing requests. Collecting, crafting, travelling and
@@ -47,7 +48,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "send_message": {
-        "purpose": "Send words to a visible participant; this records testimony only, never transfers state, and must not add physical details absent from visible evidence.",
+        "purpose": "Send testimony to a visible participant; no state transfer.",
         "kind": "intent",
         "parameters": {
             "type": "object",
@@ -61,7 +62,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "create_trade_offer": {
-        "purpose": "Offer an item bundle for another participant's item bundle; no inventory changes until acceptance.",
+        "purpose": "Offer item bundles; transfer only on acceptance.",
         "kind": "intent",
         "parameters": {
             "type": "object",
@@ -75,7 +76,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "accept_trade_offer": {
-        "purpose": "Accept one open trade offer; Platform atomically transfers both item bundles.",
+        "purpose": "Accept one open offer.",
         "kind": "intent",
         "parameters": {
             "type": "object",
@@ -85,7 +86,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "counter_trade_offer": {
-        "purpose": "Replace an open offer with a counteroffer; no inventory changes until a later acceptance.",
+        "purpose": "Replace one open offer with a counteroffer.",
         "kind": "intent",
         "parameters": {
             "type": "object",
@@ -95,7 +96,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "reject_trade_offer": {
-        "purpose": "Reject one open trade offer without changing inventory.",
+        "purpose": "Reject one open offer.",
         "kind": "intent",
         "parameters": {
             "type": "object",
@@ -156,7 +157,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "query_world_index": {
-        "purpose": "Page the bounded structural index by growth cell and keyword instead of rereading every entity, Action, behavior or rule.",
+        "purpose": "Page the structural index by cell or keyword.",
         "kind": "read",
         "parameters": {
             "type": "object",
@@ -171,7 +172,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "inspect_definition": {
-        "purpose": "Read one exact Action, behavior tree or world rule by its visible name before revising or reusing it.",
+        "purpose": "Read one Action, behavior or rule by visible name.",
         "kind": "read",
         "parameters": {
             "type": "object",
@@ -211,7 +212,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "request_behavior": {
-        "purpose": "Ask Platform to start one offered behavior; set choice to the exact visible behavior name, never to the tool name request_behavior.",
+        "purpose": "Start one exact visible behavior.",
         "kind": "intent",
         "parameters": {
             "type": "object",
@@ -242,7 +243,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "update_capability": {
-        "purpose": "Propose a bounded personal capability improvement backed by completed outcomes.",
+        "purpose": "Propose a bounded capability gain with evidence.",
         "kind": "intent",
         "parameters": {
             "type": "object",
@@ -256,7 +257,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "record_world_progress": {
-        "purpose": "Assign the triggering result to one matching public progress category; Platform derives the configured contribution and wakes milestone consumers at the threshold.",
+        "purpose": "Assign one configured progress key.",
         "kind": "intent",
         "parameters": {
             "type": "object",
@@ -301,14 +302,14 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "revise_institution": {
-        "purpose": "Revise the allocation policy or the ledger selectors of one active institution after its recorded results show the current terms no longer fit.",
+        "purpose": "Revise one active institution's policy or ledger selectors.",
         "kind": "intent",
         "parameters": {
             "type": "object",
             "properties": {
                 "institution": {"type": "string", "description": "The exact visible active institution name."},
-                "policy": {"type": "object", "description": "Replacement allocation policy, for example {allocation:{minimum_per_subject:0.5, contribution_share:0.5, category:'civic_work'}}. Omit to keep the current policy."},
-                "ledger": {"type": "object", "description": "Replacement ledger selectors, for example {selectors:[{event_types:[...], behavior_ids:[...], category:'civic_work', points:1}]}. Every selector must name event_types, behavior_ids or action_ids; the ledger period cannot change. Omit to keep the current selectors."},
+                "policy": {"type": "object", "description": "Replacement allocation policy; omit to keep the current policy."},
+                "ledger": {"type": "object", "description": "Replacement ledger selectors; omit to keep the current selectors."},
                 "reason": {"type": "string", "description": "The recorded result that justifies the change, 12 to 500 characters."},
             },
             "required": ["institution", "reason"],
@@ -355,7 +356,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "summary": {"type": "string"},
                 "goal": {"type": "string"},
                 "actions": {"type": "array", "items": {"type": "string"}, "description": "Visible action names in execution order."},
-                "entry_conditions": {"type": "array", "items": {"type": "string"}, "description": "Optional durable machine predicates only, such as actor.alive, actor.can_research, actor.inventory.item > 0, actor.state.location_id == <visible location name>, or world[\"<property>\"] >= <number>. A bare world property is not a condition; compare it with a number or true/false. Do not write prose, goals, or claims like 'actor can reach the records'; use [] when Action preconditions and a Travel node are sufficient."},
+                "entry_conditions": {"type": "array", "items": {"type": "string"}, "description": "Durable predicates only, e.g. actor.alive; [] if none."},
                 "success_results": {"type": "array", "items": {"type": "string"}, "description": "Short observable result labels, not sentences that claim unperformed effects."},
                 "failure_results": {"type": "array", "items": {"type": "string"}, "description": "Short observable failure labels, not free-form conditions."},
             },
@@ -369,7 +370,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "parameters": {
             "type": "object",
             "properties": {
-                "entity_type": {"type": "string", "description": "Use agent for a new playable character; otherwise use a configured type such as location, faction, object, material, or resource."},
+                "entity_type": {"type": "string", "description": "agent, or configured type: location, faction, object, material, resource."},
                 "name": {"type": "string"},
                 "location": {"type": "string", "description": "A visible location name."},
                 "state": {"type": "object", "description": "Initial state. A location must include non-empty routes naming existing locations and may include positive route_distances; Platform creates reciprocal route links atomically. For an agent, include role, ultimate_goal, initial_bt_ids, capabilities, needs, inventory, and initial_state with a visible location and status. Platform initializes configured defaults and validates every reference."},
@@ -380,7 +381,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "propose_definition": {
-        "purpose": "Submit declarative world mechanics: an attribute, world property, capability, Action, behavior tree, or recipe. A new Action must include followup_behavior so one assigned NPC can execute it immediately; Platform validates and registers the bound pair atomically.",
+        "purpose": "Submit an attribute, property, capability, Action, behavior or recipe.",
         "kind": "intent",
         "parameters": propose_definition_schema(),
     },
@@ -401,7 +402,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                 "value": {},
                 "rule": {
                     "type": "object",
-                    "description": "Declarative policy. A typed signal wakes work; deny or behavior_constraint blocks a target. A rule never changes resources. Do not chain same-role signal rules.",
+                    "description": "Declarative policy: signal, deny or behavior_constraint.",
                     "properties": {
                         "id": {"type": "string", "description": "Short unique rule name."},
                         "label": {"type": "string", "description": "Visible policy name."},
@@ -446,7 +447,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "propose_story_beat": {
-        "purpose": "Activate one listed beat by exact visible choice, or submit one short evidence-grounded emergent beat.",
+        "purpose": "Activate or propose one grounded story beat.",
         "kind": "intent",
         "parameters": {
             "type": "object",
@@ -531,12 +532,24 @@ def _tool_for_role(role: str, name: str) -> dict[str, Any]:
         definition["purpose"] = "Propose a person, place, faction, object, or empty resource node needed by the verified storyline. Do not create stocked resources as a reward."
         definition["parameters"]["properties"]["state"]["description"] = "Initial structural state. A location must include non-empty routes naming existing locations and may include positive route_distances; Platform creates reciprocal links atomically. For an agent, include role, ultimate_goal, initial_bt_ids, capabilities, needs, inventory, and initial_state with a visible location and status. A positive resource quantity must come from a validated behavior result."
     if name == "propose_world_change" and role == "god":
-        definition["purpose"] = "Propose an evidence-backed rule, relationship, faction update, or narrative event. Existing world properties must be created through propose_definition, and behavior produces resource and personal/social values."
+        definition["purpose"] = "Propose a rule, relationship, route, faction change or event."
         change_type = definition["parameters"]["properties"]["change_type"]
         change_type["enum"] = ["rule", "relationship", "route", "faction", "event"]
-        change_type["description"] = "Choose exactly one: rule, relationship, route, faction, or event. Do not directly set a world property."
+        change_type["description"] = "One of rule, relationship, route, faction or event."
         definition["parameters"]["properties"].pop("property", None)
         definition["parameters"]["properties"].pop("value", None)
+    definition["purpose"] = concise_text(definition["purpose"])
+    definition["parameters"] = concise_schema(definition["parameters"])
+    if name == "propose_entity":
+        definition["parameters"]["properties"]["state"]["description"] = (
+            "Initial state. Location needs routes; agent needs role, goal, behaviors, needs, inventory and location."
+        )
+    if name == "propose_story_beat":
+        props = definition["parameters"]["properties"]
+        props["unlock_choices"]["description"] = "Exact executable follow-ups; do not invent a behavior."
+        props["audience"]["description"] = "Exact audience names from audience_candidates."
+        props["fact"]["description"] = "Verified fact for the audience."
+        props["research_source"]["description"] = "Optional exact research source."
     return {"name": name, **definition, "input": definition["parameters"]}
 
 

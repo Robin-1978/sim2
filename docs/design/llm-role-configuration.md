@@ -69,7 +69,10 @@ Actual verification run:
 Function schemas are part of the provider's cacheable prefix, not the dynamic
 prompt. Keep them stable per role and per task class so repeated calls hit the
 provider cache; do not rebuild the schema from changing context on every turn.
-The measured God contract schema is 12,793 chars (~3,198 tokens) after
+Every model-facing description is capped at 120 characters and contains no
+truncated `...` text; field names, types, enums and required lists carry the
+meaning instead of long prose.
+The measured God contract schema is 10,755 chars (~2,684 tokens) after
 compression, and real remote runs show a 79.5% cached-token share for God,
 55.1% for `agent_decision` and 47.7% for Story. Details and the schema-size
 audit are in [context-scaling-plan.md](context-scaling-plan.md).

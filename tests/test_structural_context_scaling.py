@@ -118,9 +118,29 @@ def test_god_contract_schema_stays_compact() -> None:
         ["query_history", "query_knowledge_gaps", "propose_entity", "propose_definition", "propose_world_change", "wait"],
     )
     text = json.dumps(contract, ensure_ascii=False)
-    assert len(text) < 13_500
+    assert len(text) < 11_000
     propose = next(item for item in contract if item["function"]["name"] == "propose_definition")
-    assert len(json.dumps(propose, ensure_ascii=False)) < 7_000
+    assert len(json.dumps(propose, ensure_ascii=False)) < 5_500
+
+
+def test_all_tool_descriptions_are_short_and_complete() -> None:
+    from sim2.agent_view.tool_registry import tool_schemas_for_role
+
+    def descriptions(value, path=""):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key in {"description", "purpose"} and isinstance(item, str):
+                    yield path, item
+                else:
+                    yield from descriptions(item, f"{path}/{key}")
+        elif isinstance(value, list):
+            for item in value:
+                yield from descriptions(item, path)
+
+    for role in ("god", "agent_decision", "story", "agent_reflection"):
+        for path, text in descriptions(tool_schemas_for_role(role)):
+            assert len(text) <= 120, (role, path, text)
+            assert not text.endswith("..."), (role, path, text)
 
 
 def test_omission_telemetry_marks_required_sections_lost_to_compaction() -> None:

@@ -425,11 +425,11 @@ within budget:
 | --- | --- | --- | --- |
 | God calls | 16 | 16 | 15 |
 | Prompt characters | about 15,900 | 14,423 to 15,396 | 7,615 to 8,577 |
-| Prompt tokens (including tools) | 7,737 to 9,666 | 7,737 to 9,666 | 5,209 to 7,767 |
+| Prompt tokens (including tools) | 7,737 to 9,666 | 7,737 to 9,666 | 4,731 to 7,161 |
 | `world_proposal_contract` | about 4,876 chars | about 5,044 chars | 641 chars |
 | `interaction_history` | about 3,953 chars | 74 to 1,047 chars | bounded |
-| Tool suffix schema | 20,321 chars | 20,321 chars | 12,793 chars |
-| Cached prompt tokens | 60.8% | 60.8% | 72.9% |
+| Tool suffix schema | 20,321 chars | 20,321 chars | 10,755 chars |
+| Cached prompt tokens | 60.8% | 60.8% | 71.5% |
 | Accepted / rejected | 15 / 0 | 15 / 0 | 15 / 0 |
 
 Seven engine changes made this possible:

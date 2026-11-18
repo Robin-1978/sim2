@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from .definition_compiler import DEFINITION_TYPES, EFFECT_TYPES, SCALAR_PARAMETER_TYPES
+from .schema_text import concise_schema
 
 
 def propose_definition_schema() -> dict[str, Any]:
@@ -50,22 +51,21 @@ def propose_definition_schema() -> dict[str, Any]:
             "description": "Action costs. Reserve carried inputs under costs.reserve; use item_parameter and optional item_quantity_parameter.",
         },
         "preconditions": {"type": "array", "items": {"type": "string"}, "description": "Optional machine predicates."},
-        "effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}, "op": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Observable Action effects."},
-        "progress_effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}, "op": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Observable effects while a long Action progresses."},
+        "effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Observable Action effects."},
+        "progress_effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Observable effects while a long Action progresses."},
         "success": {"type": "object", "description": "Action success: {condition?: machine predicate, result: short label}."},
         "failure": {"type": "object", "description": "Action failure: {condition?: machine predicate, result: short label}."},
         "entry_conditions": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "Durable machine predicates only, e.g. actor.alive, actor.can_research, actor.inventory.item > 0, actor.state.location_id == <visible place>, or world[\"<property>\"] >= <number>. Use [] when Action preconditions and Travel are sufficient.",
+            "description": "Durable predicates only, e.g. actor.alive; [] if none.",
         },
         "success_results": {"type": "array", "items": {"type": "string"}, "description": "Short observable result labels."},
         "failure_results": {"type": "array", "items": {"type": "string"}, "description": "Short observable failure labels."},
         "summary": {"type": "string"},
-        "goal": {"type": "string"},
         "outcome_events": {"type": "array", "items": {"type": "object", "description": "{event_type, summary, wake?: [story|god]}."}},
     }
-    return {
+    schema = {
         "type": "object",
         "properties": {
             "definition_type": {"type": "string", "enum": list(DEFINITION_TYPES)},
@@ -103,4 +103,5 @@ def propose_definition_schema() -> dict[str, Any]:
         "required": ["definition_type", "name", "definition"],
         "additionalProperties": False,
     }
+    return concise_schema(schema)
 

@@ -151,9 +151,13 @@ propose_world_change, wait`):
 
 | Schema | Before | After |
 | --- | --- | --- |
-| Full contract | 14,510 chars (~3,627 tokens) | 12,793 chars (~3,198 tokens) |
-| `propose_definition` | 7,264 chars | 6,543 chars |
+| Full contract | 14,510 chars (~3,627 tokens) | 10,755 chars (~2,684 tokens) |
+| `propose_definition` | 7,264 chars | 5,207 chars |
 | `propose_world_change` | 4,390 chars | 3,394 chars |
+
+All model-facing schema descriptions are now at most 120 characters, with no
+truncated `...` text. Field names, types, enums, required lists and nested
+structure remain unchanged; only explanatory prose was shortened.
 
 The staged-contract prompt projection was also reduced: in the 100-entry test
 world the proposal-contract section fell from 4,997 to 641 chars and the whole
@@ -172,7 +176,7 @@ prompt from 9,838 to 5,443 chars. A real audited staged God prompt fell from
 The same audit found that a raw contract used the author-facing `tools` key
 while the engine only read `allowed_tools`; the session therefore exposed the
 entire 19-tool catalog. Accepting both keys reduced the God suffix schema from
-20,321 to 12,793 chars. The NPC prompt also fell from 10,020 to 8,216 chars:
+20,321 to 10,755 chars. The NPC prompt also fell from 10,020 to 8,216 chars:
 behavior blocks 3,097→1,750, duplicate attribute rules removed and
 unconditional world rules compacted. These are role-specific projections, not
 global truncation.
@@ -183,10 +187,10 @@ Final remote contract-driven broad run after all projection changes:
 | --- | --- | --- |
 | God calls | 16 | 15 |
 | Prompt chars | 14,423–15,396 | 7,615–8,577 |
-| Prompt tokens | 7,737–9,666 | 5,209–7,767 |
+| Prompt tokens | 7,737–9,666 | 4,731–7,161 |
 | Accepted / rejected | 15 / 0 | 15 / 0 |
-| Cached prompt tokens | 60.8% | 72.9% |
-| Schema suffix | 20,321 chars | 12,793 chars |
+| Cached prompt tokens | 60.8% | 71.5% |
+| Schema suffix | 20,321 chars | 10,755 chars |
 
 The remaining prompt is mostly the exact stage instruction, current target
 index, recent history and the compact platform protocol. The remaining suffix
