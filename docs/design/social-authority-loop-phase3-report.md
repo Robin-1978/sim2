@@ -413,6 +413,35 @@ and completed the legal chain. The failure is model schema adherence, not a
 missing Platform primitive; it is the difference between the original 3/3 and
 the fresh 2/3 legal-chain result.
 
+#### Context and Agent Engine optimization
+
+The broad staged run used 16 God LLM calls and completed the pack with 15
+accepted proposals and 0 rejected calls. The observed prompt stayed within the
+16,000-character budget:
+
+| Metric | Broad staged run |
+| --- | --- |
+| God calls | 16 |
+| Estimated prompt tokens | 3,540 to 3,989 |
+| Prompt characters | about 15,900 (compacted) |
+| `world_proposal_contract` | about 4,876 chars |
+| `interaction_history` | about 3,953 chars |
+| Accepted / rejected | 15 / 0 |
+
+Four engine changes made this possible:
+
+1. A structural God session stays open after an accepted proposal instead of
+   ending at the first final intent.
+2. The contract drives ordered atomic stages; the engine injects the current
+   instruction and advances only when that stage's semantic content exists.
+3. The completion gate accepts effects, authorization operations and rule
+   modes, and finishes immediately when the last stage is complete.
+4. After the read budget is exhausted, God's read tools are hidden; structural
+   interaction history is capped at 12 entries and 6 tool results.
+
+The free-form one-shot prompt still does not complete the pack. The supported
+broad path is the contract-driven stage sequence.
+
 #### Verdict
 
 - **Phase 1: successful.** The denial, causal request, steward approval and

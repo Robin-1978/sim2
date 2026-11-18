@@ -160,7 +160,7 @@ class AuthorizationService(PlatformService):
         }
         with self.store.transaction():
             self.store.repositories.authorization.put_request(request)
-            self._context.services["events"].append(
+            self._context.services["events"].publish(
                 "access.requested",
                 requester,
                 minute,
@@ -175,6 +175,7 @@ class AuthorizationService(PlatformService):
                     "based_on_event": request["based_on_event"],
                     "minute": minute,
                 },
+                wake="configured",
             )
         return {"request": request, "created": True}
 

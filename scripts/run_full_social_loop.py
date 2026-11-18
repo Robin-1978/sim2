@@ -76,6 +76,34 @@ def _run_npc_turns(platform: Platform, router: LLMRouter, provider: str, model: 
     return records
 
 
+STORY_EVENT_TYPES = {
+    "violation.observed",
+    "resource.taken",
+    "access.requested",
+    "access.approved",
+    "access.rejected",
+    "resource.changed",
+    "dialogue.completed",
+    "resource.withdrawal.completed",
+}
+
+
+def _queue_story_wakes(platform: Platform) -> None:
+    """Publish configured Story wakes for events that used the low-level append path."""
+
+    events = platform.store.repositories.events.timeline_events(after_event_id=0, limit=1000, include_ticks=False)
+    for event in events:
+        event_type = str(event.get("event_type") or "")
+        if event_type not in STORY_EVENT_TYPES:
+            continue
+        platform.wakes.configured(
+            int(event.get("event_id") or 0),
+            event_type,
+            str(event.get("actor_id") or "") or None,
+            int(event.get("world_minute") or 0),
+        )
+
+
 def _run_story_tasks(platform: Platform, router: LLMRouter, provider: str, model: str | None) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     tasks = [item for item in platform.ready_evolution_tasks() if item.get("role") == "story"]
@@ -138,6 +166,7 @@ def run(platform: Platform, router: LLMRouter, provider: str, model: str | None,
     if turn.result.get("status") in {"accepted", "wait"}:
         platform.complete_evolution_task(str(task["task_id"]))
     report["npc"] = _run_npc_turns(platform, router, provider, model, rounds)
+    _queue_story_wakes(platform)
     report["story"] = _run_story_tasks(platform, router, provider, model)
     for _ in range(20):
         platform.step()

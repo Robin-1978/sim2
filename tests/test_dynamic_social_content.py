@@ -872,3 +872,28 @@ def test_structural_stages_advance_automatically(platform: Platform) -> None:
     names = {item.get("name") for item in platform.store.repositories.entities.entities_of_type("location")}
     assert {"Required Stage Place A", "Required Stage Place B"} <= names
     assert provider.calls == 2
+
+
+def test_access_request_publishes_the_configured_story_wake(platform: Platform) -> None:
+    """A validated access request can wake Story through the configured event path."""
+
+    install_social_content(platform)
+    fill_reserve(platform)
+    move(platform, "mira", "water_plant")
+    move(platform, "tomas", "water_plant")
+    denied = submit(platform, "tomas", "withdraw_water", "wake-denied")
+    assert denied["failed_check"] == "missing_delegation"
+    denial = latest(platform, "behavior.denied")
+    requested = submit(
+        platform,
+        "tomas",
+        "request_access",
+        "wake-request",
+        {"based_on_event": str(denial["event_id"])},
+    )
+    assert requested["status"] == "accepted"
+    story_tasks = [
+        item for item in platform.ready_evolution_tasks()
+        if item.get("role") == "story" and item.get("source_event_type") == "access.requested"
+    ]
+    assert story_tasks

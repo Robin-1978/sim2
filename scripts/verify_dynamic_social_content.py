@@ -298,6 +298,19 @@ def run_probe(platform: Platform, router: LLMRouter, provider: str, model: str |
         report["notes"].append("Director did not publish a god_structural task")
         return report
     task = tasks[-1]
+    if not broad:
+        # The decomposed probe supplies its own atomic stage instructions.
+        # Disable the contract-level stage driver so one probe turn remains
+        # one explicit stage, rather than letting the engine race ahead.
+        with platform.store.transaction():
+            evolution = dict(platform.store.repositories.metadata.get("evolution", {}) or {})
+            contracts = dict(evolution.get("contracts", {}) or {})
+            contract = dict(contracts.get("god_structural", {}) or {})
+            contract["stages"] = []
+            contract["required_content"] = {}
+            contracts["god_structural"] = contract
+            evolution["contracts"] = contracts
+            platform.store.repositories.metadata.set("evolution", evolution)
     all_calls: list[dict[str, Any]] = []
     stage_reports: list[dict[str, Any]] = []
     stages = (("broad", BROAD_INSTRUCTION),) if broad else STAGES

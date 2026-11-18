@@ -4,4 +4,7 @@ emergent_source_event_types:
   - resource.taken
   - access.approved
   - access.rejected
+  - access.requested
+  - resource.changed
+  - dialogue.completed
   - resource.withdrawal.completed
