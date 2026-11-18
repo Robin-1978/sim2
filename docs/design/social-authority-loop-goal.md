@@ -60,7 +60,27 @@ new status instead.
 | G-05 | Long-term autonomous growth is unproven | Minimal 3-round God→NPC→Story loop passed. Full one-cycle loop: LLM Director chose resource, God completed the 15-stage pack, Mira filled, Tomas requested, Story produced two accepted beats, and the Director completed the plan and opened `resource, baseline: 1`. No second pack or multi-season run yet | Run the next Director cycle through God, then a multi-season free loop; record gap → creation → execution → next gap | A free run creates and executes a new pack, then a new Director gap appears and is handled without stage injection across seasons | PARTIAL |
 | G-06 | Read budget and schema adherence reduce God reliability | Contract-driven broad is now 15 accepted / 0 rejected; decomposed fresh run still has 6 rejected calls (`definition_schema`, `read_budget`); Director structural turn previously hit `budget_exhausted` | Role config gives God 24 iterations / 4096 tokens / 4 reads; engine keeps sessions open and returns missing-content corrections; still need the decomposed rejection rate under 2 | Fewer than 2 rejected calls per decomposed run; no read-budget or budget-exhausted stop before the final proposal | IN_PROGRESS (broad fixed; decomposed reliability pending) |
 | G-07 | The first tension aggregate undercounted direct intents | Mira’s direct `behavior_ref: behavior:withdraw_energy` was not a `request_behavior` tool call | Script fixed to read `turn.response`; rerun needed to publish corrected counts | Corrected probe rerun completed; docs updated | IN_PROGRESS |
-| G-08 | Context grows with the world and the 16k-char compaction omits action/behavior catalogs | Broad God prompt: ~15.9k chars / ~4k tokens, `compacted: true`; omitted includes `world_action_catalog`, `world_behavior_catalog`, `world_outcomes`, `world_trends` | Replace full catalogs with a relevance-scoped structural index: current target, stewards, related behaviors/rules, counts and recent changes; provide detail only through bounded reads | A larger world keeps the structural prompt bounded while the model can still see the current target's relevant content and does not duplicate existing definitions | OPEN |
+| G-08 | Context grows with the world and the 16k-char compaction omits action/behavior catalogs | Broad God prompt: ~15.9k chars / ~4k tokens, `compacted: true`; omitted includes `world_action_catalog`, `world_behavior_catalog`, `world_outcomes`, `world_trends` | Implement the relevance-scoped projection, hierarchical index, bounded retrieval and omission telemetry in [context-scaling-plan.md](context-scaling-plan.md) | A larger world keeps the structural prompt bounded while the model can still see the current target's relevant content and does not duplicate existing definitions | OPEN |
+
+### 5.1 Status summary
+
+| Status | Count | IDs |
+| --- | --- | --- |
+| Fixed / verified | 2 | G-02, G-03 |
+| Open / partial / in progress | 6 | G-01, G-04, G-05, G-06, G-07, G-08 |
+
+The unresolved items are not all the same kind:
+
+- **G-01 / G-06** are reliability sampling and schema/read-budget work.
+- **G-04** is a model-policy and content-pressure question; the mechanism is
+  already proven under directed pressure.
+- **G-05** is a longer free-run question; one complete cycle is verified.
+- **G-07** is a corrected probe rerun.
+- **G-08** is the next architectural task; the design is in
+  [context-scaling-plan.md](context-scaling-plan.md).
+
+The local role values and the separate Director configuration are recorded in
+[llm-role-configuration.md](llm-role-configuration.md).
 
 ## 6. Work order
 

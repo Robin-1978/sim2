@@ -442,6 +442,27 @@ Four engine changes made this possible:
 The free-form one-shot prompt still does not complete the pack. The supported
 broad path is the contract-driven stage sequence.
 
+#### Full one-cycle Director -> God -> NPC -> Story
+
+`scripts/run_full_social_loop.py --provider remote --rounds 2` produced the
+first complete one-cycle loop on `dynamic_social_probe`:
+
+| Stage | Actual result |
+| --- | --- |
+| Director | Separate `roles.director` chose `resource`, wrote `plan:5:resource` and a `god_structural` task |
+| God | 18 calls, 17 iterations, accepted; created the full resource, fill/withdraw/take, request/approve/reject/revoke/review behaviors and four rules |
+| NPC | Mira filled the reserve twice; Tomas requested access; the request was eventually accepted |
+| Story | Three Story tasks; two accepted emergent beats about Tomas's request and Mira's approval decision; one duplicate wait |
+| Director next | The active plan completed and a new plan opened at `resource, baseline: 1` |
+
+This proves one bounded cycle with all four roles. It does **not** prove a
+second pack, a multi-season free run, or spontaneous adversarial tension.
+
+The context-growth design is recorded in
+[context-scaling-plan.md](context-scaling-plan.md); the active role values and
+separate Director configuration are in
+[llm-role-configuration.md](llm-role-configuration.md).
+
 #### Verdict
 
 - **Phase 1: successful.** The denial, causal request, steward approval and
