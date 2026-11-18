@@ -262,6 +262,106 @@ RULES = (
     ),
 )
 
+# -- second resource instance ------------------------------------------------
+# The same proposal shapes and the same administrative behaviors are reused.
+# Only the resource, location, action effects and two authorization rules differ.
+
+FUEL_DEPOT = {
+    "entity_type": "location",
+    "entity_id": "fuel_depot",
+    "name": "Fuel Depot",
+    "description": "A shed with a shared fuel tank.",
+    "state": {"routes": ["relay_station"], "route_distances": {"relay_station": 1}},
+}
+
+FUEL_RESERVE = {
+    "entity_type": "resource",
+    "entity_id": "fuel_reserve",
+    "name": "Fuel Reserve",
+    "description": "A shared fuel stock created empty by God; a behavior must fill it.",
+    "location_id": "fuel_depot",
+    "state": {"quantity": 0},
+}
+
+FUEL_STEWARDSHIP = {
+    "change_type": "relationship",
+    "summary": "Mira is accountable for the fuel reserve too.",
+    "relationship": {"participants": ["mira", "fuel_reserve"], "type": "stewardship"},
+}
+
+FILL_FUEL = _action(
+    "Fill Fuel Reserve",
+    "fill_fuel_reserve",
+    ["mira"],
+    action={
+        "description": "Fill the shared fuel reserve from the depot.",
+        "effects": [{"type": "world_resource_delta", "resource_id": "fuel_reserve", "delta": 10, "maximum": 10}],
+        "success": {"condition": "actor.alive", "result": "fuel_filled"},
+        "failure": {"condition": "actor.incapacitated", "result": "fill_fuel_failed"},
+    },
+    behavior={"summary": "Fill the shared fuel reserve."},
+)
+
+WITHDRAW_FUEL = _action(
+    "Withdraw Fuel",
+    "withdraw_fuel",
+    ["mira", "tomas"],
+    action={
+        "description": "Withdraw one unit of shared fuel with authorization.",
+        "duration": {"minutes": 2},
+        "effects": [{"type": "resource_withdrawal", "resource_id": "fuel_reserve", "amount": 1, "scope": "fuel_withdrawal"}],
+        "success": {"condition": "actor.alive", "result": "fuel_withdrawn"},
+        "failure": {"condition": "actor.incapacitated", "result": "fuel_withdrawal_failed"},
+    },
+    behavior={"summary": "Withdraw one unit of shared fuel with authorization."},
+)
+
+TAKE_FUEL = _action(
+    "Take Fuel",
+    "take_fuel",
+    ["tomas"],
+    action={
+        "description": "Take one unit of shared fuel without authorization.",
+        "effects": [{"type": "resource_take", "resource_id": "fuel_reserve", "amount": 1, "scope": "fuel_withdrawal", "mode": "covert"}],
+        "success": {"condition": "actor.alive", "result": "fuel_taken"},
+        "failure": {"condition": "actor.incapacitated", "result": "fuel_take_failed"},
+    },
+    behavior={"summary": "Take one unit of shared fuel without authorization."},
+)
+
+REVIEW_FUEL = _action(
+    "Review Fuel Violation",
+    "review_fuel_violation",
+    ["mira"],
+    action={"parameters": {"violation_id": "string", "decision": "string", "reason": "string"}},
+    behavior={
+        "authorization_operation": "review_violation",
+        "agent_parameters": {
+            "violation_id": {"type": "string", "required": True, "max_length": 80},
+            "decision": {"type": "string", "required": True, "max_length": 20},
+            "reason": {"type": "string", "required": False, "max_length": 300},
+        },
+        "nodes": [{
+            "type": "action",
+            "action_id": "review_fuel_violation",
+            "parameters": {"violation_id": "context.violation_id", "decision": "context.decision", "reason": "context.reason"},
+        }],
+    },
+)
+
+FUEL_RULES = (
+    _rule(
+        "fuel_reserve_stewardship",
+        "Only the fuel steward or an active delegation may withdraw fuel.",
+        {"type": "authorization", "mode": "resource_access", "target": "fuel_reserve", "scope": "fuel_withdrawal", "behavior_ids": ["withdraw_fuel"]},
+    ),
+    _rule(
+        "fuel_violation_authority",
+        "Only the fuel steward may review an observed fuel violation.",
+        {"type": "authorization", "mode": "violation_review", "behavior_ids": ["review_fuel_violation"]},
+    ),
+)
+
 
 def install_social_content(platform: Any) -> dict[str, Any]:
     """Submit the frozen Phase 3A content sequence through Platform services."""
@@ -283,5 +383,22 @@ def install_social_content(platform: Any) -> dict[str, Any]:
     ):
         results[name] = platform.submit_definition_proposal("god", payload)
     for payload in RULES:
+        results[payload["rule"]["id"]] = platform.submit_world_change("god", payload)
+    return results
+
+
+def install_second_resource(platform: Any) -> dict[str, Any]:
+    """Instantiate a second resource with the same primitives and admin content."""
+
+    results: dict[str, Any] = {
+        "fuel_depot": platform.submit_entity_proposal("god", FUEL_DEPOT),
+        "fuel_reserve": platform.submit_entity_proposal("god", FUEL_RESERVE),
+        "fuel_stewardship": platform.submit_world_change("god", FUEL_STEWARDSHIP),
+        "fill_fuel": platform.submit_definition_proposal("god", FILL_FUEL),
+        "withdraw_fuel": platform.submit_definition_proposal("god", WITHDRAW_FUEL),
+        "take_fuel": platform.submit_definition_proposal("god", TAKE_FUEL),
+        "review_fuel": platform.submit_definition_proposal("god", REVIEW_FUEL),
+    }
+    for payload in FUEL_RULES:
         results[payload["rule"]["id"]] = platform.submit_world_change("god", payload)
     return results

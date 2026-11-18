@@ -21,17 +21,26 @@ from sim2.world.growth import build_growth_ledger
 from worlds.dynamic_social_probe.proposals import (
     APPROVE,
     FILL,
+    FILL_FUEL,
+    FUEL_DEPOT,
+    FUEL_RESERVE,
+    FUEL_RULES,
+    FUEL_STEWARDSHIP,
     REJECT,
     REQUEST,
     REVIEW,
+    REVIEW_FUEL,
     REVOKE,
     RULES,
     STEWARDSHIP,
     TAKE,
+    TAKE_FUEL,
     WATER_PLANT,
     WATER_RESERVE,
     WITHDRAW,
+    WITHDRAW_FUEL,
     install_social_content,
+    install_second_resource,
 )
 
 WORLD = Path(__file__).parents[1] / "worlds" / "dynamic_social_probe"
@@ -88,7 +97,11 @@ def latest(platform: Platform, event_type: str) -> dict[str, Any]:
 
 
 def resource_amount(platform: Platform) -> float:
-    entity = platform.store.repositories.entities.get_entity("water_reserve")
+    return resource_amount_of(platform, "water_reserve")
+
+
+def resource_amount_of(platform: Platform, resource_id: str) -> float:
+    entity = platform.store.repositories.entities.get_entity(resource_id)
     state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
     return float(state.get("quantity", 0) or 0)
 
@@ -118,6 +131,29 @@ def fill_reserve(platform: Platform, intent_id: str = "fill-1") -> None:
     result = submit(platform, "mira", "fill_water_reserve", intent_id)
     assert result["status"] == "accepted"
     advance_until(platform, lambda: resource_amount(platform) >= 10)
+
+
+def fill_fuel(platform: Platform, intent_id: str = "fill-fuel-1") -> None:
+    result = submit(platform, "mira", "fill_fuel_reserve", intent_id)
+    assert result["status"] == "accepted"
+    advance_until(platform, lambda: resource_amount_of(platform, "fuel_reserve") >= 10)
+
+
+def grant_delegation_for(platform: Platform, behavior_id: str, suffix: str) -> str:
+    denied = submit(platform, "tomas", behavior_id, f"deny-{suffix}")
+    assert denied["failed_check"] == "missing_delegation"
+    denial = latest(platform, "behavior.denied")
+    requested = submit(
+        platform,
+        "tomas",
+        "request_access",
+        f"request-{suffix}",
+        {"based_on_event": str(denial["event_id"]), "reason": f"Need {suffix}"},
+    )
+    assert requested["status"] == "accepted"
+    approved = submit(platform, "mira", "approve_withdrawal", f"approve-{suffix}", {"request_id": requested["request_id"]})
+    assert approved["status"] == "accepted"
+    return str(approved["delegation_id"])
 
 
 def grant_delegation(platform: Platform) -> str:
@@ -386,6 +422,14 @@ def test_da_07_platform_source_has_no_water_content(platform: Platform) -> None:
         "water_approval_authority",
         "water_revocation_authority",
         "water_violation_authority",
+        "fuel_depot",
+        "fuel_reserve",
+        "fill_fuel_reserve",
+        "withdraw_fuel",
+        "take_fuel",
+        "review_fuel_violation",
+        "fuel_reserve_stewardship",
+        "fuel_violation_authority",
     )
     hits = []
     for path in sorted(SRC.rglob("*.py")):
@@ -505,3 +549,60 @@ def test_da_10_duplicate_and_failed_proposals_are_idempotent(platform: Platform)
     )
     assert failed["status"] == "rejected"
     assert content_counts(platform) == before
+
+
+def test_da_12_second_resource_reuses_same_primitives(platform: Platform) -> None:
+    """A second resource reuses the same actions, rules, witnesses and review path."""
+
+    water = install_social_content(platform)
+    fuel = install_second_resource(platform)
+    assert all(item["status"] == "accepted" for item in {**water, **fuel}.values())
+    assert resource_amount_of(platform, "water_reserve") == 0
+    assert resource_amount_of(platform, "fuel_reserve") == 0
+
+    fill_reserve(platform, "fill-water-second")
+    fill_fuel(platform)
+    assert resource_amount(platform) == 10
+    assert resource_amount_of(platform, "fuel_reserve") == 10
+
+    grant_delegation_for(platform, "withdraw_water", "water")
+    grant_delegation_for(platform, "withdraw_fuel", "fuel")
+
+    move(platform, "mira", "fuel_depot")
+    move(platform, "tomas", "fuel_depot")
+    assert submit(platform, "tomas", "take_fuel", "take-fuel-1")["status"] == "accepted"
+    advance_until(platform, lambda: bool(platform.store.repositories.contested.list_violations()))
+    violation = platform.store.repositories.contested.list_violations()[0]
+    assert violation["target"] == "fuel_reserve"
+    assert violation["witnesses"] == ["mira"]
+    assert violation["scope"] == "fuel_withdrawal"
+    assert resource_amount_of(platform, "fuel_reserve") == 9
+
+    sanctioned = submit(
+        platform,
+        "mira",
+        "review_fuel_violation",
+        "sanction-fuel-1",
+        {"violation_id": violation["violation_id"], "decision": "sanction"},
+    )
+    assert sanctioned["status"] == "accepted"
+    assert platform.store.repositories.contested.active_restriction("tomas", "fuel_reserve", "fuel_withdrawal") is not None
+    assert platform.store.repositories.contested.active_restriction("tomas", "water_reserve", "water_withdrawal") is None
+
+    water_allowed = submit(platform, "tomas", "withdraw_water", "water-after-fuel-sanction")
+    assert water_allowed["status"] == "accepted"
+    advance_until(platform, lambda: bool(events(platform, "resource.withdrawal.completed")))
+    fuel_blocked = submit(platform, "tomas", "withdraw_fuel", "fuel-after-sanction")
+    assert fuel_blocked["failed_check"] == "access_restricted"
+
+    forgiven = submit(
+        platform,
+        "mira",
+        "review_fuel_violation",
+        "forgive-fuel-1",
+        {"violation_id": violation["violation_id"], "decision": "forgive"},
+    )
+    assert forgiven["status"] == "accepted"
+    assert platform.store.repositories.contested.active_restriction("tomas", "fuel_reserve", "fuel_withdrawal") is None
+    fuel_restored = submit(platform, "tomas", "withdraw_fuel", "fuel-after-forgive")
+    assert fuel_restored["status"] == "accepted"

@@ -69,6 +69,8 @@ definition contract requires an executable BT in the same transaction.
 | DA-08 | Phase 1 denial/authorization and Phase 2 take/witness codes preserved | `test_da_08_phase_one_and_two_codes_are_preserved` | `PROVEN` |
 | DA-09 | No withdrawal from take, no delegation, no attack/combat/deception, no Story/God task | `test_da_09_negative_space` | `PROVEN` |
 | DA-10 | Duplicate and failed proposals leave content counts unchanged | `test_da_10_duplicate_and_failed_proposals_are_idempotent` | `PROVEN` |
+| DA-11 | Visible resource names in effects and authorization rules are canonicalized to stable ids | `test_da_11_visible_resource_names_are_canonicalized` | `PROVEN` |
+| DA-12 | A second resource (`fuel_reserve`) reuses the same primitives, rules, witnesses and review path with an independent restriction scope | `test_da_12_second_resource_reuses_same_primitives` | `PROVEN` |
 
 ## 4. Chain evidence
 
@@ -96,6 +98,23 @@ Mira leaves; Tomas take_water -> violation.undetected, absent from steward view
 
 The generated content uses the same Phase 1 and Phase 2 event families and
 error codes as the hand-written probe worlds.
+
+### 3.1 Second resource reuse
+
+`install_second_resource` creates `fuel_depot`, an empty `fuel_reserve`, a
+stewardship relationship, `fill_fuel_reserve`, `withdraw_fuel`, `take_fuel`,
+`review_fuel_violation`, and the two fuel authorization rules. It reuses the
+same generic administrative behaviors and rules created for water.
+
+The second-resource test proves:
+
+- Both resources can exist in one instance with independent stock.
+- Fuel take records an observed violation with scope `fuel_withdrawal`.
+- Sanctioning the fuel violation creates a fuel-only restriction.
+- Tomas's water delegation still works while the fuel delegation is restricted.
+- Forgiving the fuel violation restores fuel withdrawal.
+
+No Platform resource-name branch was added.
 
 ## 5. Director evidence
 
@@ -203,9 +222,9 @@ contract that the current DSL cannot express.
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Phase 3 deterministic contract | `python -m pytest -q tests/test_dynamic_social_content.py` | `11 passed` (DA-01..DA-10 plus visible-name canonicalization) |
+| Phase 3 deterministic contract | `python -m pytest -q tests/test_dynamic_social_content.py` | `12 passed` (DA-01..DA-10 plus visible-name and second-resource reuse) |
 | Phase 1 and Phase 2 regression | `python -m pytest -q tests/test_social_authority_loop.py tests/test_contested_resource_actions.py` | `37 passed` |
-| Full suite | `python -m pytest -q` | `1399 passed` |
+| Full suite | `python -m pytest -q` | `1400 passed` |
 | Platform benchmark | `python scripts/benchmark_platform.py --agents 1000 --runs 5` | p95 `199.715 ms`; elapsed `[180.596, 200.504, 196.560, 193.607, 187.069]` ms |
 | Phase 3B God probe | `python scripts/verify_dynamic_social_content.py --provider remote --runs 3` | decomposed 15-stage probe: 3/3 complete cores, 3/3 legal, 3/3 violation; 45 accepted / 5 rejected |
 
