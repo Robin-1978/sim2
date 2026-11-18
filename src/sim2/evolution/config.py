@@ -233,6 +233,7 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
         allowed = {
             "tools", "purpose", "result", "assign_to", "required_definition_type",
             "require_story_outcome", "evidence_sources", "continuation", "growth_kind",
+            "required_content",
         }
         for task_type, contract in contracts.items():
             if not isinstance(contract, dict):
@@ -246,6 +247,8 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
                 raise ValueError(f"contract {task_type}.tools must be a list")
             if contract.get("assign_to") is not None and not isinstance(contract.get("assign_to"), list):
                 raise ValueError(f"contract {task_type}.assign_to must be a list")
+            if contract.get("required_content") is not None and not isinstance(contract.get("required_content"), dict):
+                raise ValueError(f"contract {task_type}.required_content must be an object")
 
     cadence = root.get("cadence") if isinstance(root.get("cadence"), dict) else {}
     cadence_known = {"reflection", "innovation", "god", "god_structural"}
