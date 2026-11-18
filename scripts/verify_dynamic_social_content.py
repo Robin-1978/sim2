@@ -129,14 +129,23 @@ def _steward(platform: Platform, resource_id: str, agents: list[str]) -> str | N
 
 
 STAGES = (
-    "Create a connected water location and an empty water resource there. Do not stock the resource; a later behavior will fill it.",
-    "Create a stewardship relationship from Mira to the new water resource.",
-    "Create a controlled withdrawal action and its behavior for the water resource, so a steward or an active delegation can withdraw one unit.",
-    "Create a covert take action and its behavior for the water resource.",
-    "Create a violation review action, its behavior, and the authorization rule that only the water steward may review an observed violation.",
-    "Create the request, approve, reject and revoke administrative behaviors and the authorization rules they need.",
-    "Use propose_world_change with change_type rule to add two rules: a resource_access authorization rule for the controlled withdrawal behavior, and a violation_review authorization rule for the review behavior.",
+    ("location", "Submit exactly one propose_entity: entity_type location, name 'Water Plant', description 'A pump house with room for a shared reservoir.', state.routes ['relay_station'], state.route_distances {'relay_station': 1}."),
+    ("resource", "Submit exactly one propose_entity: entity_type resource, name 'Water Reserve', description 'A shared water stock created empty by God.', location 'Water Plant', state {\"quantity\": 0}. Do not stock it."),
+    ("stewardship", "Submit exactly one propose_world_change: change_type relationship, relationship.from 'mira', relationship.to 'Water Reserve', relationship.type 'stewardship'."),
+    ("fill", "Submit exactly one propose_definition for an Action named Fill Water Reserve. definition.id fill_water_reserve, parameters {}, preconditions ['actor.alive'], duration.minutes 1, effects [{'type': 'world_resource_delta', 'resource_id': 'Water Reserve', 'delta': 10, 'maximum': 10}], success {'condition': 'actor.alive', 'result': 'water_filled'}, failure {'condition': 'actor.incapacitated', 'result': 'fill_failed'}. followup_behavior name Fill Water Reserve, assign_to ['mira'], definition.id fill_water_reserve, agent_label Fill Water Reserve, entry_conditions ['actor.alive'], estimated_minutes 1, nodes [{'type': 'action', 'action_id': 'fill_water_reserve'}]."),
+    ("withdraw", "Submit exactly one propose_definition for an Action named Withdraw Water. definition.id withdraw_water, parameters {}, preconditions ['actor.alive'], duration.minutes 2, effects [{'type': 'resource_withdrawal', 'resource_id': 'Water Reserve', 'amount': 1, 'scope': 'water_withdrawal'}], success {'condition': 'actor.alive', 'result': 'water_withdrawn'}, failure {'condition': 'actor.incapacitated', 'result': 'withdrawal_failed'}. followup_behavior name Withdraw Water, assign_to ['mira', 'tomas'], definition.id withdraw_water, agent_label Withdraw Water, entry_conditions ['actor.alive'], estimated_minutes 2, nodes [{'type': 'action', 'action_id': 'withdraw_water'}]."),
+    ("take", "Submit exactly one propose_definition for an Action named Take Water. definition.id take_water, parameters {}, preconditions ['actor.alive'], duration.minutes 1, effects [{'type': 'resource_take', 'resource_id': 'Water Reserve', 'amount': 1, 'scope': 'water_withdrawal', 'mode': 'covert'}], success {'condition': 'actor.alive', 'result': 'water_taken'}, failure {'condition': 'actor.incapacitated', 'result': 'take_failed'}. followup_behavior name Take Water, assign_to ['tomas'], definition.id take_water, agent_label Take Water, entry_conditions ['actor.alive'], estimated_minutes 1, nodes [{'type': 'action', 'action_id': 'take_water'}]."),
+    ("request", "Submit exactly one propose_definition for an Action named Request Water Access. definition.id request_access, parameters {'based_on_event': 'string', 'reason': 'string', 'behavior': 'string', 'target': 'string', 'scope': 'string', 'request_id': 'string'}, preconditions ['actor.alive'], duration.minutes 1, effects [], success {'condition': 'actor.alive', 'result': 'access_requested'}, failure {'condition': 'actor.incapacitated', 'result': 'request_failed'}. followup_behavior name Request Water Access, assign_to ['mira', 'tomas'], definition.id request_access, authorization_operation open_access_request, agent_label Request Water Access, entry_conditions ['actor.alive'], estimated_minutes 1, agent_parameters {'based_on_event': {'type': 'string', 'required': false, 'max_length': 40}, 'reason': {'type': 'string', 'required': false, 'max_length': 300}, 'behavior': {'type': 'string', 'required': false, 'max_length': 120}, 'target': {'type': 'string', 'required': false, 'max_length': 120}, 'scope': {'type': 'string', 'required': false, 'max_length': 120}, 'request_id': {'type': 'string', 'required': false, 'max_length': 80}}, nodes [{'type': 'action', 'action_id': 'request_access', 'parameters': {'based_on_event': 'context.based_on_event', 'reason': 'context.reason', 'behavior': 'context.behavior', 'target': 'context.target', 'scope': 'context.scope', 'request_id': 'context.request_id'}}]."),
+    ("approve", "Submit exactly one propose_definition for an Action named Approve Withdrawal. definition.id approve_withdrawal, parameters {'request_id': 'string', 'delegation_id': 'string', 'subject': 'string', 'target': 'string', 'scope': 'string', 'reason': 'string'}, preconditions ['actor.alive'], duration.minutes 1, effects [], success {'condition': 'actor.alive', 'result': 'access_approved'}, failure {'condition': 'actor.incapacitated', 'result': 'approval_failed'}. followup_behavior name Approve Withdrawal, assign_to ['mira'], definition.id approve_withdrawal, authorization_operation decide_access_request, authorization_decision approve, agent_label Approve Withdrawal, entry_conditions ['actor.alive'], estimated_minutes 1, agent_parameters {'request_id': {'type': 'string', 'required': false, 'max_length': 80}, 'delegation_id': {'type': 'string', 'required': false, 'max_length': 80}, 'subject': {'type': 'string', 'required': false, 'max_length': 80}, 'target': {'type': 'string', 'required': false, 'max_length': 120}, 'scope': {'type': 'string', 'required': false, 'max_length': 120}, 'reason': {'type': 'string', 'required': false, 'max_length': 300}}, nodes [{'type': 'action', 'action_id': 'approve_withdrawal', 'parameters': {'request_id': 'context.request_id', 'delegation_id': 'context.delegation_id', 'subject': 'context.subject', 'target': 'context.target', 'scope': 'context.scope', 'reason': 'context.reason'}}]."),
+    ("reject", "Submit exactly one propose_definition for an Action named Reject Withdrawal. definition.id reject_withdrawal, parameters {'request_id': 'string', 'reason': 'string'}, preconditions ['actor.alive'], duration.minutes 1, effects [], success {'condition': 'actor.alive', 'result': 'access_rejected'}, failure {'condition': 'actor.incapacitated', 'result': 'rejection_failed'}. followup_behavior name Reject Withdrawal, assign_to ['mira'], definition.id reject_withdrawal, authorization_operation decide_access_request, authorization_decision reject, agent_label Reject Withdrawal, entry_conditions ['actor.alive'], estimated_minutes 1, agent_parameters {'request_id': {'type': 'string', 'required': false, 'max_length': 80}, 'reason': {'type': 'string', 'required': false, 'max_length': 300}}, nodes [{'type': 'action', 'action_id': 'reject_withdrawal', 'parameters': {'request_id': 'context.request_id', 'reason': 'context.reason'}}]."),
+    ("revoke", "Submit exactly one propose_definition for an Action named Revoke Delegation. definition.id revoke_delegation, parameters {'delegation_id': 'string', 'reason': 'string'}, preconditions ['actor.alive'], duration.minutes 1, effects [], success {'condition': 'actor.alive', 'result': 'delegation_revoked'}, failure {'condition': 'actor.incapacitated', 'result': 'revocation_failed'}. followup_behavior name Revoke Delegation, assign_to ['mira'], definition.id revoke_delegation, authorization_operation revoke_access, agent_label Revoke Delegation, entry_conditions ['actor.alive'], estimated_minutes 1, agent_parameters {'delegation_id': {'type': 'string', 'required': false, 'max_length': 80}, 'reason': {'type': 'string', 'required': false, 'max_length': 300}}, nodes [{'type': 'action', 'action_id': 'revoke_delegation', 'parameters': {'delegation_id': 'context.delegation_id', 'reason': 'context.reason'}}]."),
+    ("review", "Submit exactly one propose_definition for an Action named Review Water Violation. definition.id review_water_violation, parameters {'violation_id': 'string', 'decision': 'string', 'reason': 'string'}, preconditions ['actor.alive'], duration.minutes 1, effects [], success {'condition': 'actor.alive', 'result': 'violation_reviewed'}, failure {'condition': 'actor.incapacitated', 'result': 'review_failed'}. followup_behavior name Review Water Violation, assign_to ['mira'], definition.id review_water_violation, authorization_operation review_violation, agent_label Review Water Violation, entry_conditions ['actor.alive'], estimated_minutes 1, agent_parameters {'violation_id': {'type': 'string', 'required': true, 'max_length': 80}, 'decision': {'type': 'string', 'required': true, 'max_length': 20}, 'reason': {'type': 'string', 'required': false, 'max_length': 300}}, nodes [{'type': 'action', 'action_id': 'review_water_violation', 'parameters': {'violation_id': 'context.violation_id', 'decision': 'context.decision', 'reason': 'context.reason'}}]."),
+    ("resource_rule", "Submit exactly one propose_world_change: change_type rule, rule.id water_reserve_stewardship, rule.condition 'true', rule.description 'Only the water steward or an active delegation may withdraw water.', rule.effect {'type': 'authorization', 'mode': 'resource_access', 'target': 'Water Reserve', 'scope': 'water_withdrawal', 'behavior_ids': ['withdraw_water']}."),
+    ("approval_rule", "Submit exactly one propose_world_change: change_type rule, rule.id water_approval_authority, rule.condition 'true', rule.effect {'type': 'authorization', 'mode': 'request_decision', 'authority': {'type': 'institution', 'id': 'water_approval_authority'}, 'behavior_ids': ['approve_withdrawal', 'reject_withdrawal']}."),
+    ("revocation_rule", "Submit exactly one propose_world_change: change_type rule, rule.id water_revocation_authority, rule.condition 'true', rule.effect {'type': 'authorization', 'mode': 'delegation_revocation', 'authority': {'type': 'institution', 'id': 'water_revocation_authority'}, 'behavior_ids': ['revoke_delegation']}."),
+    ("review_rule", "Submit exactly one propose_world_change: change_type rule, rule.id water_violation_authority, rule.condition 'true', rule.effect {'type': 'authorization', 'mode': 'violation_review', 'behavior_ids': ['review_water_violation']}."),
 )
+
 
 
 def _run_turn(
@@ -151,9 +160,9 @@ def _run_turn(
     return AgentEngine(
         platform,
         router.new_provider_for_name(provider, model=model, role="god"),
-        max_iterations=10,
-        max_tool_calls=20,
-        max_read_tool_calls=4,
+        max_iterations=3,
+        max_tool_calls=4,
+        max_read_tool_calls=1,
     ).run(
         role="god",
         actor_id="god",
@@ -161,6 +170,78 @@ def _run_turn(
         interaction={"from": "director", "topic": "god_structural", "message": instruction},
         source_events=source_events,
     )
+
+
+def _has_entity(platform: Platform, entity_id: str) -> bool:
+    try:
+        platform.store.repositories.entities.get_entity(entity_id)
+        return True
+    except KeyError:
+        return False
+
+
+def _entity_by_name(platform: Platform, entity_type: str, name: str) -> dict[str, Any] | None:
+    for item in platform.store.repositories.entities.entities_of_type(entity_type):
+        if str(item.get("name") or "") == name:
+            try:
+                return platform.store.repositories.entities.get_entity(str(item["id"]))
+            except KeyError:
+                return None
+    return None
+
+
+def _has_action(platform: Platform, action_id: str) -> bool:
+    return any(
+        str(item.get("id")) == action_id or str(item.get("name") or "") == action_id.replace("_", " ").title()
+        for item in platform.store.repositories.entities.get_definitions("action_def")
+    )
+
+
+def _has_behavior(platform: Platform, behavior_id: str) -> bool:
+    return any(
+        str(item.get("id")) == behavior_id or str(item.get("agent_label") or "") == behavior_id.replace("_", " ").title()
+        for item in platform.store.repositories.entities.get_definitions("bt_def")
+    )
+
+
+def _has_rule(platform: Platform, rule_id: str) -> bool:
+    return any(
+        str(item.get("id") or item.get("name") or "") == rule_id
+        for item in (platform.store.repositories.metadata.get("rules", {}) or {}).get("world_rules", []) or []
+    )
+
+
+def _stage_ready(platform: Platform, stage_key: str) -> bool:
+    if stage_key == "location":
+        return _entity_by_name(platform, "location", "Water Plant") is not None
+    if stage_key == "resource":
+        return _entity_by_name(platform, "resource", "Water Reserve") is not None
+    if stage_key == "stewardship":
+        resource = _entity_by_name(platform, "resource", "Water Reserve")
+        return resource is not None and any(
+            str(item.get("type")) == "stewardship"
+            and str(item.get("from")) == "mira"
+            and str(item.get("to")) == str(resource.get("id"))
+            for item in platform.store.repositories.entities.list_relationships()
+        )
+    if stage_key in {"fill", "withdraw", "take", "request", "approve", "reject", "revoke", "review"}:
+        action_id = {
+            "fill": "fill_water_reserve",
+            "withdraw": "withdraw_water",
+            "take": "take_water",
+            "request": "request_access",
+            "approve": "approve_withdrawal",
+            "reject": "reject_withdrawal",
+            "revoke": "revoke_delegation",
+            "review": "review_water_violation",
+        }[stage_key]
+        return _has_action(platform, action_id) and _has_behavior(platform, action_id)
+    return _has_rule(platform, {
+        "resource_rule": "water_reserve_stewardship",
+        "approval_rule": "water_approval_authority",
+        "revocation_rule": "water_revocation_authority",
+        "review_rule": "water_violation_authority",
+    }.get(stage_key, ""))
 
 
 def run_probe(platform: Platform, router: LLMRouter, provider: str, model: str | None, run_index: int) -> dict[str, Any]:
@@ -187,30 +268,46 @@ def run_probe(platform: Platform, router: LLMRouter, provider: str, model: str |
         return report
     task = tasks[-1]
     all_calls: list[dict[str, Any]] = []
-    for stage_index, instruction in enumerate(STAGES, start=1):
-        try:
-            turn = _run_turn(
-                platform,
-                router,
-                provider,
-                model,
-                str(task["task_type"]),
-                task.get("source_events") or [],
-                instruction,
+    stage_reports: list[dict[str, Any]] = []
+    for stage_index, (stage_key, instruction) in enumerate(STAGES, start=1):
+        stage_report: dict[str, Any] = {"stage": stage_key, "attempts": 0, "ready": False}
+        current_instruction = instruction
+        for attempt in range(2):
+            stage_report["attempts"] = attempt + 1
+            try:
+                turn = _run_turn(
+                    platform,
+                    router,
+                    provider,
+                    model,
+                    str(task["task_type"]),
+                    task.get("source_events") or [],
+                    current_instruction,
+                )
+            except Exception as exc:
+                stage_report["error"] = f"{type(exc).__name__}: {exc}"
+                break
+            calls = _tool_calls(turn)
+            for call in calls:
+                call["stage"] = stage_key
+                call["attempt"] = attempt + 1
+            all_calls.extend(calls)
+            report["god_status"] = str((turn.result or {}).get("status") or report["god_status"])
+            if stage_index == 1 and attempt == 0 and report["god_status"] in {"accepted", "wait"}:
+                platform.complete_evolution_task(str(task["task_id"]))
+            stage_report["god_status"] = report["god_status"]
+            stage_report["ready"] = _stage_ready(platform, stage_key)
+            if stage_report["ready"]:
+                break
+            current_instruction = (
+                f"{instruction} The previous attempt did not create the exact expected definition. "
+                "Submit exactly one corrected proposal now, using the ids and fields above."
             )
-        except Exception as exc:
-            report["notes"].append(f"stage {stage_index} provider error: {type(exc).__name__}: {exc}")
+        stage_reports.append(stage_report)
+        if not stage_report["ready"]:
+            report["notes"].append(f"stage {stage_key} did not complete: {stage_report}")
             break
-        calls = _tool_calls(turn)
-        for call in calls:
-            call["stage"] = stage_index
-        all_calls.extend(calls)
-        report["god_status"] = str((turn.result or {}).get("status") or report["god_status"])
-        if stage_index == 1 and report["god_status"] in {"accepted", "wait"}:
-            platform.complete_evolution_task(str(task["task_id"]))
-        if report["god_status"] not in {"accepted", "wait"}:
-            report["notes"].append(f"stage {stage_index} ended with {report['god_status']}")
-            break
+    report["stages"] = stage_reports
     report["tool_calls"] = all_calls
     report["accepted_tools"] = sum(1 for call in all_calls if call.get("status") == "accepted")
     report["rejected_tools"] = sum(1 for call in all_calls if call.get("status") == "rejected")

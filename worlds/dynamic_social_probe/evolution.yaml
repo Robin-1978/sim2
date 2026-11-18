@@ -21,5 +21,3 @@ contracts:
       administrative request/approval/revocation behaviors and authorization
       rules they need. Use only the existing proposal tools. If the world
       already supports the target cell, wait.
-    assign_to:
-    - mira

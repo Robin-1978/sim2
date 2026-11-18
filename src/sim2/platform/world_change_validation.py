@@ -178,6 +178,8 @@ class WorldChangeValidationMixin:
             resource_types = {str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])}
             if str(target.get("entity_type") or "") not in resource_types:
                 return self._reject(submission, "A resource_access authorization rule must target a resource or material.", "rule_authorization_target")
+            effect["target"] = target_id
+            submission.proposal["rule"]["effect"]["target"] = target_id
             if not str(effect.get("scope") or "").strip():
                 return self._reject(submission, "A resource_access authorization rule needs a scope.", "rule_scope")
         if mode == "violation_review":

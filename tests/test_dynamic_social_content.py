@@ -8,6 +8,7 @@ the existing God proposal services.
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 from typing import Any
 
@@ -18,8 +19,14 @@ from sim2.intents.models import BehaviorIntent
 from sim2.platform.runtime import Platform
 from sim2.world.growth import build_growth_ledger
 from worlds.dynamic_social_probe.proposals import (
+    APPROVE,
     FILL,
+    REJECT,
+    REQUEST,
+    REVIEW,
+    REVOKE,
     RULES,
+    STEWARDSHIP,
     TAKE,
     WATER_PLANT,
     WATER_RESERVE,
@@ -423,6 +430,52 @@ def test_da_09_negative_space(platform: Platform) -> None:
     tasks = platform.ready_evolution_tasks()
     assert not [task for task in tasks if task.get("role") in {"story", "god"}]
     assert all(str(task.get("task_type") or "").startswith("behavior_assigned:") for task in tasks)
+
+
+def test_da_11_visible_resource_names_are_canonicalized(platform: Platform) -> None:
+    """A model may use the visible resource name in effects and authorization rules."""
+
+    platform.submit_entity_proposal("god", WATER_PLANT)
+    platform.submit_entity_proposal("god", WATER_RESERVE)
+    platform.submit_world_change("god", STEWARDSHIP)
+
+    def visible(payload: dict[str, Any]) -> dict[str, Any]:
+        value = copy.deepcopy(payload)
+        for effect in value["definition"].get("effects", []) or []:
+            if effect.get("resource_id") == "water_reserve":
+                effect["resource_id"] = "Water Reserve"
+        return value
+
+    for payload in (FILL, WITHDRAW, TAKE):
+        assert platform.submit_definition_proposal("god", visible(payload))["status"] == "accepted"
+    for payload in (REQUEST, APPROVE, REJECT, REVOKE, REVIEW):
+        assert platform.submit_definition_proposal("god", payload)["status"] == "accepted"
+    for payload in RULES:
+        value = copy.deepcopy(payload)
+        effect = value["rule"]["effect"]
+        if str(effect.get("target") or "") == "water_reserve":
+            effect["target"] = "Water Reserve"
+        assert platform.submit_world_change("god", value)["status"] == "accepted"
+
+    fill_reserve(platform)
+    denied = submit(platform, "tomas", "withdraw_water", "visible-deny")
+    assert denied["failed_check"] == "missing_delegation"
+    denial = latest(platform, "behavior.denied")
+    requested = submit(
+        platform,
+        "tomas",
+        "request_access",
+        "visible-request",
+        {"based_on_event": str(denial["event_id"])},
+    )
+    assert requested["status"] == "accepted"
+    approved = submit(platform, "mira", "approve_withdrawal", "visible-approve", {"request_id": requested["request_id"]})
+    assert approved["status"] == "accepted", approved
+    assert approved.get("delegation_id")
+    withdrawn = submit(platform, "tomas", "withdraw_water", "visible-withdraw")
+    assert withdrawn["status"] == "accepted"
+    advance_until(platform, lambda: bool(events(platform, "resource.withdrawal.completed")))
+    assert resource_amount(platform) == 9
 
 
 def test_da_10_duplicate_and_failed_proposals_are_idempotent(platform: Platform) -> None:

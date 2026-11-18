@@ -223,6 +223,7 @@ class DefinitionValidationMixin:
                 if str(entity.get("entity_type") or "") not in resource_types:
                     errors.append(f"{field}[{index}].world_resource_delta target {ref} is not a resource or material")
                     continue
+                effect["resource_id"] = resource_id
                 delta = effect.get("delta", effect.get("value"))
                 if isinstance(delta, (int, float)) and not isinstance(delta, bool) and float(delta) > 0:
                     caps = (rules.get("resource_caps", {}) or {})
@@ -251,6 +252,7 @@ class DefinitionValidationMixin:
                 if not ref:
                     errors.append(f"{field}[{index}].{effect_type} requires resource_id")
                 else:
+                    effect["resource_id"] = resource_id
                     try:
                         entity = self.store.repositories.entities.get_entity(resource_id)
                     except KeyError:

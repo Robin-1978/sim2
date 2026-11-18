@@ -18,7 +18,7 @@ new mechanisms, and it does not start the Phase 4 Mechanism DSL.
 | Controlled path | `withdraw_water` action/BT, `water_reserve_stewardship` rule, request/approve/reject/revoke administrative BTs and rules |
 | Contested path | `take_water` action/BT, `review_water_violation` action/BT, `water_violation_authority` rule |
 | Fill behavior | `fill_water_reserve` uses `world_resource_delta` with `maximum: 10`; this respects the existing guard that God cannot create a stocked resource directly |
-| Semantics | resource target/type, positive amount, non-empty scope, covert take mode, authorization operation vocabulary, review parameters, resource authorization target, review behavior operation |
+| Semantics | resource target/type, positive amount, non-empty scope, covert take mode, authorization operation vocabulary, review parameters, resource authorization target, review behavior operation, visible-name canonicalization for effects and authorization targets |
 | Director | `targets: [resource]`; the plan is created before the resource and completion is retained in `last_completed_season_plan` |
 | Tests | DA-01..DA-10 in `tests/test_dynamic_social_content.py` |
 | Probe | `scripts/verify_dynamic_social_content.py` |
@@ -110,51 +110,55 @@ water definition.
 Provider `remote`, model `deepseek-v4.1-flash`. This is observational, not a
 gate.
 
-Main probe: 3 runs, six staged God turns per run.
+Two probe shapes were run:
+
+1. A single broad God task (the original 3B shape): 0/3 complete cores.
+2. A decomposed 15-stage God task with explicit proposal schemas: 3/3 complete
+   cores, 3/3 legal chains, 3/3 violation chains.
+
+### 6.1 Broad-task observation
 
 | Metric | Result |
 | --- | --- |
+| Runs | 3 |
 | Valid complete probes | 0/3 |
 | God turn statuses | accepted in all three runs |
-| Accepted tool calls | 17 |
-| Rejected tool calls | 23 |
+| Accepted / rejected tool calls | 17 / 23 |
 | Failed checks | `definition_schema`, `entity_schema`, `read_budget` |
-| Resources created | 3/3 runs |
-| Complete core content | 0/3 runs |
-| Legal chain runnable | 0/3 |
-| Violation chain runnable | 0/3 |
+| Resources created | 3/3 |
+| Complete core content | 0/3 |
 
-Every run produced a new resource and several accepted action/behavior
-definitions, but none produced the complete authorization-rule and review
-surface needed for the two chains. The model repeatedly omitted a positive
-withdrawal amount, a scope, or the covert take mode on its first attempt; it
-also spent reads on inspection and did not reliably submit
-`propose_world_change` rules.
+The broad task asked for the whole social chain in one God turn. The model
+created a resource and several definitions, but did not reliably emit the
+authorization rules, review operation and administrative behaviors together.
 
-Focused diagnostic run: seven stages, explicitly asking for the two
-authorization rules at the end.
+### 6.2 Decomposed 15-stage observation
+
+The harness now gives God one atomic proposal per turn: location, empty
+resource, stewardship, fill, withdraw, take, request, approve, reject, revoke,
+review, and four authorization rules. Each instruction includes the exact
+field shape; a failed stage is retried once with the same schema.
 
 | Metric | Result |
 | --- | --- |
-| Accepted tool calls | 7 |
-| Rejected tool calls | 6 |
-| Failed checks | `definition_schema`, `read_budget` |
-| Generated take behavior | yes (`covertly_draw_cistern_water`) |
-| Generated withdraw behavior | yes (`draw_water_from_cistern`) |
-| Generated review authorization operation | no |
-| Generated resource/review rules | no |
-| Chains runnable | no |
+| Runs | 3 |
+| Complete core content | 3/3 |
+| Legal chain completed | 3/3 |
+| Violation chain sanctioned | 3/3 |
+| Accepted / rejected tool calls | 45 / 5 |
+| Failed checks | `definition_schema` (one request-parameter omission), `read_budget` |
+| God statuses | accepted in all three runs |
 
-The accepted content used the current primitives: `resource_take` with
-`mode: covert`, `resource_withdrawal` with a scope, `travel_to`, and visible
-resource names that Platform canonicalized. The failures were proposal schema
-and task completeness, not a missing lifecycle, transaction or event
-primitive.
+The accepted content used visible resource names (`Water Reserve`) in action
+effects and authorization rules. Platform canonicalized them to the generated
+entity id during validation, so stewardship, request, approval and delegation
+all compared the same target.
 
-Phase 3B therefore provides **no evidence that a remote God reliably
-instantiates the full social chain in one run**. It does provide evidence that
-God can create new entities and several action/behavior definitions, and that
-Platform validates and registers them. Phase 3A remains the deterministic gate.
+The decomposed probe is schema-explicit and therefore not evidence that a
+remote God will spontaneously generate the whole chain from one broad task.
+It is evidence that, with atomic task decomposition and the existing proposal
+DSL, God can generate content that Platform validates and the Phase 1/2
+runtime executes end to end.
 
 ## 7. Phase 3C DSL gap ledger
 
@@ -171,6 +175,7 @@ Platform validates and registers them. Phase 3A remains the deterministic gate.
 | gap_009 | Standalone travel choice | A parameterized `travel` BT has no visible destination option without a concrete value | Harness positions actors; travel remains a base definition | content/harness | no |
 | gap_010 | Completed Director plan audit | `season_plan` was overwritten by the next active plan | Added `last_completed_season_plan` | small audit fix | no |
 | gap_011 | Review visibility | View authorization had no concrete violation binding | Resolve the first reviewable violation for the steward | validator/view fix | no |
+| gap_012 | Visible resource names in effects and rules | Registration kept `Water Reserve` while stewardship used a generated entity id, so later approval compared different targets | Canonicalize effect `resource_id` and authorization-rule `target` during validation | validator fix | no |
 
 No gap requires a new lifecycle, transaction stage, event contract or
 visibility rule. Every workaround uses an existing primitive or a small
@@ -185,9 +190,10 @@ The frozen Phase 4 triggers are:
 2. The same new mechanism recurs in three or more world content requests.
    **Not met.**
 3. God's valid proposal rate is below 50% because of expressiveness rather than
-   validation. **The observed accepted tool rate is 17/40 (42.5%), but every
-   failure is a schema, completeness or read-budget failure; none requires a
-   new lifecycle, transaction or event primitive. This trigger is not met.**
+   validation. **The broad-task probe accepted 17/40 (42.5%) but the decomposed
+   probe accepted 45/50 (90%); the remaining failures are schema and
+   read-budget failures, not missing runtime semantics. This trigger is not
+   met.**
 
 Decision: **do not start Phase 4.** Fix the validator, content and probe
 scope. Revisit only if a later content request needs a new lifecycle or event
@@ -197,11 +203,11 @@ contract that the current DSL cannot express.
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Phase 3 deterministic contract | `python -m pytest -q tests/test_dynamic_social_content.py` | `10 passed` |
+| Phase 3 deterministic contract | `python -m pytest -q tests/test_dynamic_social_content.py` | `11 passed` (DA-01..DA-10 plus visible-name canonicalization) |
 | Phase 1 and Phase 2 regression | `python -m pytest -q tests/test_social_authority_loop.py tests/test_contested_resource_actions.py` | `37 passed` |
-| Full suite | `python -m pytest -q` | `1398 passed` |
-| Platform benchmark | `python scripts/benchmark_platform.py --agents 1000 --runs 5` | p95 `203.148 ms`; elapsed `[194.330, 204.594, 195.125, 197.362, 196.627]` ms |
-| Phase 3B God probe | `python scripts/verify_dynamic_social_content.py --provider remote --runs 3` | 0/3 complete cores; 17 accepted / 23 rejected tool calls; failed checks `definition_schema`, `entity_schema`, `read_budget` |
+| Full suite | `python -m pytest -q` | `1399 passed` |
+| Platform benchmark | `python scripts/benchmark_platform.py --agents 1000 --runs 5` | p95 `199.715 ms`; elapsed `[180.596, 200.504, 196.560, 193.607, 187.069]` ms |
+| Phase 3B God probe | `python scripts/verify_dynamic_social_content.py --provider remote --runs 3` | decomposed 15-stage probe: 3/3 complete cores, 3/3 legal, 3/3 violation; 45 accepted / 5 rejected |
 
 ## 10. Not proven
 
