@@ -148,6 +148,28 @@ completion path records the expected violation, and that the steward can select
 the take path spontaneously, and it does not prove automatic event routing or
 targeted wake.
 
+### 6.3 Fresh rerun and multi-round tension observation
+
+A fresh rerun of the neutral preference probe produced four valid runs:
+request 4/4, request accepted 2/4, take 0/4. The two rejections were the
+no-denial conditions, where Platform correctly returned
+`invalid_causal_reference`; they were not steward rejections. The directed
+rerun produced take 2/2, observed 1/2 and sanction 1/1.
+
+A separate multi-round probe (`scripts/verify_social_tension.py`) seeded one
+real denial and then let Tomas and Mira choose one available behavior per turn
+for four rounds. In three runs there were zero takes, zero rejections, zero
+sanctions and zero violations. Both characters withdrew from the shared
+reserve under the legitimate path and depleted it from 10 to 5/4/5.
+
+The model outputs explain the choice directly. Tomas saw the `Take Energy`
+option with `observers: Mira`, `detection: observed` and "A violation is
+recorded; witnesses lose trust", but chose to request or wait because a take
+"would record a violation" and "avoids the violation and lost trust that
+taking energy would cause". This is a cooperative policy, not a missing
+affordance. The Phase 2 mechanism supports tension; the neutral NPC policy
+does not spontaneously produce it.
+
 ## 7. Not proven
 
 The following remain `NOT_PROVEN` by design:
@@ -161,6 +183,8 @@ The following remain `NOT_PROVEN` by design:
 - Permanent death and full survival pressure.
 - Multi-agent resource competition, reservation, queueing and concurrent review.
 - A remote LLM necessarily choosing either the legal or the take path.
+- A neutral remote LLM spontaneously choosing the covert take, rejection or
+  sanction path without directed pressure.
 - Automatic event routing and targeted wake.
 - Complex information asymmetry; Phase 2A witnesses are deterministic, not belief estimates.
 
@@ -173,4 +197,5 @@ python -m pytest -q
 python scripts/benchmark_platform.py --agents 1000 --runs 5
 python scripts/verify_contested_actions.py --provider remote --runs 4
 python scripts/verify_contested_actions.py --provider remote --runs 2 --directed
+python scripts/verify_social_tension.py --provider remote --runs 3 --rounds 4
 ```

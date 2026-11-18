@@ -147,8 +147,15 @@ gate.
 Two probe shapes were run:
 
 1. A single broad God task (the original 3B shape): 0/3 complete cores.
-2. A decomposed 15-stage God task with explicit proposal schemas: 3/3 complete
-   cores, 3/3 legal chains, 3/3 violation chains.
+2. A decomposed 15-stage God task with explicit proposal schemas.
+
+The decomposed path was run twice. The original run produced 3/3 complete
+cores and 3/3 legal chains. A fresh rerun produced 3/3 complete cores and 3/3
+violation chains but only 2/3 legal chains: in one run God submitted
+`request_access` without `authorization_operation: open_access_request`, and
+the generic definition validator accepted the behavior because that field is
+optional. The affected run reports `missing_admin_content`; the other two runs
+included the operation and completed the legal chain.
 
 ### 6.1 Broad-task observation
 
@@ -173,15 +180,15 @@ resource, stewardship, fill, withdraw, take, request, approve, reject, revoke,
 review, and four authorization rules. Each instruction includes the exact
 field shape; a failed stage is retried once with the same schema.
 
-| Metric | Result |
-| --- | --- |
-| Runs | 3 |
-| Complete core content | 3/3 |
-| Legal chain completed | 3/3 |
-| Violation chain sanctioned | 3/3 |
-| Accepted / rejected tool calls | 45 / 5 |
-| Failed checks | `definition_schema` (one request-parameter omission), `read_budget` |
-| God statuses | accepted in all three runs |
+| Metric | Original run | Fresh rerun |
+| --- | --- | --- |
+| Runs | 3 | 3 |
+| Complete core content | 3/3 | 3/3 |
+| Legal chain completed | 3/3 | 2/3 |
+| Violation chain sanctioned | 3/3 | 3/3 |
+| Accepted / rejected tool calls | 45 / 5 | 45 / 6 |
+| Failed checks | `definition_schema` (one request-parameter omission), `read_budget` | `definition_schema` (request-parameter omission), `read_budget`; one accepted request behavior missing the admin operation |
+| God statuses | accepted in all three runs | accepted in all three runs |
 
 The accepted content used visible resource names (`Water Reserve`) in action
 effects and authorization rules. Platform canonicalized them to the generated
@@ -265,7 +272,8 @@ contract that the current DSL cannot express.
 | Targeted combined gate | `python -m pytest -q tests/test_social_authority_loop.py tests/test_contested_resource_actions.py tests/test_dynamic_social_content.py tests/test_architecture_content_neutral.py` | `52 passed` in `12.0 s` |
 | Full suite (release gate only) | `python -m pytest -q` | last full run `1400 passed`; not repeated for every iteration |
 | Platform benchmark | `python scripts/benchmark_platform.py --agents 1000 --runs 5` | p95 `199.715 ms`; elapsed `[180.596, 200.504, 196.560, 193.607, 187.069]` ms |
-| Phase 3B God probe | `python scripts/verify_dynamic_social_content.py --provider remote --runs 3` | decomposed 15-stage probe: 3/3 complete cores, 3/3 legal, 3/3 violation; 45 accepted / 5 rejected |
+| Phase 3B God probe (original) | `python scripts/verify_dynamic_social_content.py --provider remote --runs 3` | decomposed 15-stage probe: 3/3 complete cores, 3/3 legal, 3/3 violation; 45 accepted / 5 rejected |
+| Phase 3B God probe (fresh rerun) | same command | 3/3 complete cores, 2/3 legal, 3/3 violation; 45 accepted / 6 rejected; one run omitted `authorization_operation` |
 
 ### 9.1 Test duration and selection
 
@@ -291,10 +299,147 @@ python -m pytest -q --durations=10           # profile outliers when needed
 tests naming that world, and changed test files to themselves. Platform-wide
 changes deliberately fall back to the full suite.
 
+### 9.2 Fresh end-to-end LLM validation
+
+All probes below were run with `--provider remote`; the resolved model was
+`deepseek-v4.1-flash`. The local Qwen provider was not used.
+
+| Phase | Command | Result |
+| --- | --- | --- |
+| Phase 1 | `python scripts/verify_social_authority.py --provider remote --runs 5` | 5/5 valid; request 5/5; causal reference 5/5; approval 5/5; withdrawal 5/5 |
+| Phase 2 neutral | `python scripts/verify_contested_actions.py --provider remote --runs 4` | 4/4 valid; request 4/4; request accepted 2/4; take 0/4 |
+| Phase 2 directed | `python scripts/verify_contested_actions.py --provider remote --runs 2 --directed` | 2/2 valid; take 2/2; observed 1/2; sanction of observed violation 1/1 |
+| NPC tension | `python scripts/verify_social_tension.py --provider remote --runs 3 --rounds 4` | 3/3 valid; request 3/3; approval 3/3; take 0; sanction 0; adversarial tension 0/3 |
+| Phase 3 decomposed | `python scripts/verify_dynamic_social_content.py --provider remote --runs 3` | 3/3 complete cores; 2/3 legal chains; 3/3 violation chains; 45 accepted / 6 rejected |
+
+#### Phase 1 actual output
+
+The model saw the real denial, the blocked `Withdraw Energy`, and the
+executable `Request Access` behavior. It chose the legal path in every run:
+
+> "My withdrawal of reserve energy was denied for missing delegation; asking
+> steward Mira for scoped access is the proper way to get the energy needed to
+> restore the relay."
+
+Mira then approved with an accountable scope:
+
+> "Tomas's request is limited to energy withdrawal so he can restore the relay,
+> which serves keeping the relay powered while I retain stewardship of the
+> reserve."
+
+#### Phase 2 actual output
+
+In the neutral preference probe, Tomas saw `Take Energy` with
+`observers: Mira`, `detection: observed` and the consequence sentence
+"A violation is recorded; witnesses lose trust." He still chose
+`Request Access`. In the two no-denial conditions the request was correctly
+rejected with `invalid_causal_reference`; in one unobserved condition he
+explicitly waited:
+
+> "No denial event exists to cite for an access request, and taking reserve
+> energy without authorization would record a violation; waiting until a
+> proper route to the reserve is available."
+
+The directed exercise is separate. Tomas accepted the take decision and said:
+
+> "The relay cannot be repaired without reserve energy, and I have decided to
+> take one unit to restore it."
+
+The observed violation appeared in Mira's view with its `violation_id`,
+`witnesses: Mira` and `status: observed`. She chose `Review Violation` with
+`decision: sanction`:
+
+> "Tomas took a unit from the shared reserve without an accountable decision;
+> the reserve must be released only through proper authorization."
+
+The context projection, not just the aggregate choice, explains the decision:
+
+| Viewer and state | Actual context the model received |
+| --- | --- |
+| Tomas after denial | executable `Request Access`, `Take Energy`; blocked `Withdraw Energy` with `missing_delegation`; `denial_memory` event 2; `contested_actions` with `observers: Mira`, `detection: observed`, consequence "A violation is recorded; witnesses lose trust." |
+| Mira after observed take | executable `Withdraw Energy`, `Request Access`, `Patrol Relay`, `Review Violation`; `witnessed_violations` and `unresolved_violations` both contain the same `violation_id`, actor Tomas, witnesses Mira, status observed |
+
+Tomas therefore saw the coercive option and its consequence and still chose
+the request. Mira saw the specific violation and the review affordance and
+chose sanction rather than a generic or invented target.
+
+#### NPC tension observation
+
+The multi-round probe seeds one real denial, then lets each character choose
+one available behavior per turn for four rounds. No later denial, approval,
+rejection, take or sanction is scripted.
+
+| Run | Requests | Approvals | Take | Sanction | Final reserve | Tension |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 1 | 1 | 0 | 0 | 5 | cooperative |
+| 2 | 1 | 1 | 0 | 0 | 4 | cooperative |
+| 3 | 1 | 1 | 0 | 0 | 5 | cooperative |
+
+Both characters withdrew from the shared reserve, so the resource was depleted
+from 10 to 5/4/5, but neither violated the access rule. Tomas repeatedly gave
+the same reason:
+
+> "Mira granted me an active delegation for energy withdrawal, and the relay
+> cannot be repaired without reserve energy."
+
+Mira sometimes withdrew for herself under her own stewardship:
+
+> "As steward of the reserve, I keep the relay powered by drawing one unit of
+> shared energy through an accountable withdrawal rather than leaving the
+> reserve unattended."
+
+This is real goal divergence (Tomas wants access; Mira wants control) but not
+adversarial tension. The NPCs know the coercive option and its consequence and
+choose the legitimate path. Adversarial tension is realized only when the
+decision is directed or the world applies stronger pressure: 2/2 takes in the
+directed Phase 2 probe, 1/2 observed, 1/1 observed violation sanctioned.
+
+#### Phase 3 actual output
+
+The first God stage showed the Director plan (`target_cell: resource`,
+`reason: resource=0`), the `god_structural` contract and the proposal tools.
+God submitted a `Water Plant` location and Platform accepted it. Across three
+runs, all complete cores and all violation chains were executable.
+
+One fresh run submitted the `request_access` behavior without
+`authorization_operation: open_access_request`. The generic definition
+validator accepted it because the field is optional, but the legal chain then
+reported `missing_admin_content`. The other two runs included the operation
+and completed the legal chain. The failure is model schema adherence, not a
+missing Platform primitive; it is the difference between the original 3/3 and
+the fresh 2/3 legal-chain result.
+
+#### Verdict
+
+- **Phase 1: successful.** The denial, causal request, steward approval and
+  authorized withdrawal chain is correct in all five fresh runs.
+- **Phase 2: successful as a mechanism.** Deterministic tests, neutral
+  preferences and the directed take/review path all work. The neutral model
+  policy is cooperative; it does not spontaneously choose the covert path.
+- **Phase 3: successful on the decomposed path, with a reliability caveat.**
+  God creates valid resource, behavior, rule and review content and the
+  runtime executes it. One fresh run omitted an administrative operation, so
+  legal-chain reliability was 2/3 in this sample. The one-turn broad task
+  remains `NOT_PROVEN`.
+- **NPC tension: structurally present, not spontaneously dramatic.** The NPCs
+  have conflicting goals and understand the coercive option and its
+  consequences, but the remote model resolves the conflict through requests,
+  approvals and withdrawals. Directed pressure produces take, witness,
+  sanction and restriction. If the success bar is "NPCs automatically create
+  conflict", that is not proven; if it is "the world can represent and resolve
+  conflict", it is proven.
+- **Phase 4: still closed.** The fresh evidence adds no new lifecycle,
+  transaction or event requirement. The remaining gaps are content pressure,
+  persona/prompt design and schema adherence.
+
 ## 10. Not proven
 
 - God can generate arbitrary new lifecycle, transaction or event semantics.
 - God reliably generates a complete social chain in one turn.
+- God reliably includes `authorization_operation` for administrative behaviors
+  in every decomposed run (fresh sample: 2/3 legal chains).
+- A neutral remote LLM spontaneously choosing covert take, rejection or
+  sanction; neutral runs converge to a cooperative equilibrium.
 - Automatic event routing and targeted wake.
 - Attack, combat, death, deception and stealth.
 - Investigation and discovery of undetected violations.
@@ -310,5 +455,9 @@ python -m pytest -q tests/test_dynamic_social_content.py
 python -m pytest -q tests/test_social_authority_loop.py tests/test_contested_resource_actions.py
 python scripts/test_parallel.py --workers 4
 python scripts/benchmark_platform.py --agents 1000 --runs 5
+python scripts/verify_social_authority.py --provider remote --runs 5
+python scripts/verify_contested_actions.py --provider remote --runs 4
+python scripts/verify_contested_actions.py --provider remote --runs 2 --directed
+python scripts/verify_social_tension.py --provider remote --runs 3 --rounds 4
 python scripts/verify_dynamic_social_content.py --provider remote --runs 3
 ```
