@@ -26,6 +26,8 @@ _PINNED_SECTIONS = frozenset({
     # God cannot submit a valid rule or world-property change without the
     # exact machine field names this section carries.
     "rule_condition_fields",
+    # Structural review must see which growth cells are empty.
+    "world_growth_ledger",
 })
 
 _SECTION_TAG = re.compile(r"^\s*<([a-z_]+)>\s*$", re.MULTILINE)

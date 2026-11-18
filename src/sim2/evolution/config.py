@@ -72,9 +72,9 @@ def _stagnation(value: Any) -> dict[str, Any]:
 
     if not isinstance(value, dict):
         raise ValueError("stagnation must be an object with a window")
-    unknown = sorted(str(key) for key in value if key not in {"window", "max_interval", "max_characters", "progress_event_types"})
+    unknown = sorted(str(key) for key in value if key not in {"window", "max_interval", "max_characters", "progress_event_types", "growth"})
     if unknown:
-        raise ValueError("unknown stagnation field(s): " + ", ".join(unknown) + "; use window, max_interval, max_characters, progress_event_types")
+        raise ValueError("unknown stagnation field(s): " + ", ".join(unknown) + "; use window, max_interval, max_characters, progress_event_types, growth")
     if value.get("window") in (None, ""):
         raise ValueError("stagnation.window is required, for example 1d")
     window = duration_minutes(value["window"])
@@ -84,6 +84,10 @@ def _stagnation(value: Any) -> dict[str, Any]:
     if max_interval < window:
         raise ValueError("stagnation.max_interval must not be shorter than stagnation.window")
     compiled: dict[str, Any] = {"window_minutes": window, "max_interval_minutes": max_interval}
+    growth = str(value.get("growth") or "option").strip().casefold()
+    if growth not in {"option", "structural"}:
+        raise ValueError("stagnation.growth must be option or structural")
+    compiled["growth"] = growth
     if value.get("max_characters") not in (None, ""):
         count = value["max_characters"]
         if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= STAGNATION_CHARACTER_CAP:
@@ -175,12 +179,32 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
             "evolution uses retired fields " + ", ".join(legacy)
             + "; use top-level cadence and wakes instead"
         )
-    known = {"cadence", "wakes", "triggers", "limits", "stagnation"}
+    known = {"cadence", "wakes", "triggers", "limits", "stagnation", "contracts"}
     unknown = sorted(str(key) for key in root if key not in known)
     if unknown:
         raise ValueError("unknown evolution field(s): " + ", ".join(unknown))
     if "stagnation" in root:
         root["stagnation"] = _stagnation(root["stagnation"])
+    if "contracts" in root:
+        contracts = root.get("contracts")
+        if not isinstance(contracts, dict):
+            raise ValueError("contracts must be an object keyed by task type")
+        allowed = {
+            "tools", "purpose", "result", "assign_to", "required_definition_type",
+            "require_story_outcome", "evidence_sources", "continuation", "growth_kind",
+        }
+        for task_type, contract in contracts.items():
+            if not isinstance(contract, dict):
+                raise ValueError(f"contract {task_type} must be an object")
+            unknown_contract = sorted(str(key) for key in contract if key not in allowed)
+            if unknown_contract:
+                raise ValueError(
+                    f"contract {task_type} has unknown field(s): " + ", ".join(unknown_contract)
+                )
+            if contract.get("tools") is not None and not isinstance(contract.get("tools"), list):
+                raise ValueError(f"contract {task_type}.tools must be a list")
+            if contract.get("assign_to") is not None and not isinstance(contract.get("assign_to"), list):
+                raise ValueError(f"contract {task_type}.assign_to must be a list")
 
     cadence = root.get("cadence") if isinstance(root.get("cadence"), dict) else {}
     cadence_known = {"reflection", "innovation", "god", "god_structural"}

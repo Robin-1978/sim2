@@ -18,8 +18,8 @@ def _evolution_trigger_lines(context: dict[str, Any]) -> list[str]:
         lines.append(f"  condition: {trigger.get('condition', 'configured condition')}")
         if trigger.get("purpose"):
             lines.append(f"  purpose: {trigger.get('purpose')}")
-        if trigger.get("required_result"):
-            lines.append(f"  required result: {trigger.get('required_result')}")
+        if trigger.get("required_result") or trigger.get("result"):
+            lines.append(f"  required result: {trigger.get('required_result') or trigger.get('result')}")
         if trigger.get("required_definition_type"):
             lines.append(f"  required definition type: {trigger.get('required_definition_type')}")
         if trigger.get("assign_to"):
@@ -39,7 +39,10 @@ def _evolution_trigger_lines(context: dict[str, Any]) -> list[str]:
             for source in (trigger.get("evidence_sources") or []) if isinstance(source, dict)
             for event_type in (source.get("event_types") or [])
         }
-        if evidence_types & {"research.completed", "research.progressed"}:
+        if evidence_types & {"research.completed", "research.progressed"} and (
+            str(trigger.get("continuation") or "").casefold() == "research"
+            or str(trigger.get("required_definition_type") or "").casefold() == "research"
+        ):
             lines.append("  Research continuation: propose one reachable source with a new novelty key, question and discovery. When sources are exhausted, shift to a distinct causal dimension (effect, risk, intervention, provenance or application) and key; never rename a duplicate or wait only on word overlap.")
         lines.append("  Use only the configured trigger tools. A rule signal or narrative acknowledgement is not a substitute for the required result.")
         lines.append("</evolution_trigger>")
@@ -73,7 +76,7 @@ def _proposal_contract_lines(context: dict[str, Any]) -> list[str]:
     if examples:
         lines.append("  - Machine condition examples: " + "; ".join(f"{label}={example}" for label, example in examples.items()) + ". A bare world property is not a condition; compare it with a number or true/false, or use [] when no durable condition is needed.")
     lines.append("  - Reusable behavior entry_conditions must use durable actor, capability, inventory, location, relationship or world state. Do not use event.recent.*, which would make the behavior disappear immediately after the current event.")
-    lines.append("  - Research is open-ended: when validated results leave a concrete unanswered question, you may propose one new declarative research source or behavior. Do not invent a result; let a character perform the next research.")
+    lines.append("  - Research sources are content, not structural growth. Add one only when the active contract explicitly asks for research; never substitute a source for a place, verb, faction or rule.")
     lines.append("  - A newer verified research fact may supersede an older one. Preserve the old fact for audit and use the configured lifecycle status instead of silently deleting it.")
     lines.append("  - If the assigned actor is not already at the required place, include a Travel node before the destination Action; Platform must be able to execute the complete sequence from current state. If no durable condition is needed, use entry_conditions: [] rather than prose.")
     lines.append("  - After a read-budget warning, use the facts already collected. Do not re-read the same source and exhaust the session.")
@@ -233,11 +236,36 @@ def _world_outcome_lines(context: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _growth_ledger_lines(context: dict[str, Any]) -> list[str]:
+    """Read-only coverage of the world's structural surface."""
+
+    ledger = context.get("world_growth_ledger") or {}
+    if not isinstance(ledger, dict) or not ledger:
+        return []
+    lines = ["<world_growth_ledger>"]
+    cells = ledger.get("cells") or {}
+    if cells:
+        lines.append("  " + "; ".join(f"{name}={int(cell.get('count', 0) or 0)}" for name, cell in cells.items()))
+    empty = [str(item) for item in (ledger.get("empty_cells") or [])]
+    lines.append("  empty cells: " + (", ".join(empty) if empty else "none"))
+    last_change = ledger.get("last_structural_change")
+    lines.append(f"  last structural change: minute {last_change}" if last_change is not None else "  last structural change: none recorded")
+    dead = [str(item) for item in (ledger.get("dead_content") or [])]
+    if dead:
+        lines.append("  dead content (created but not usable by any behavior): " + ", ".join(dead[:8]))
+    else:
+        lines.append("  dead content: none")
+    lines.append("  A new research source does not fill a structural cell. Grow the emptiest cell with one reachable place, executable verb, social structure, or rule; never relabel an existing verb.")
+    lines.append("</world_growth_ledger>")
+    return lines
+
+
 def god_lines(context: dict[str, Any]) -> list[str]:
     """Sections only the world reviewer receives."""
 
     lines: list[str] = []
     lines.extend(_evolution_trigger_lines(context))
+    lines.extend(_growth_ledger_lines(context))
     lines.extend(_proposal_contract_lines(context))
     lines.extend(_public_progress_lines(context))
     lines.extend(_catalog_lines(context))

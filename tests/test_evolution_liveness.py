@@ -156,16 +156,40 @@ def test_distinct_by_counts_only_novel_keys_toward_the_minimum(tmp_path: Path) -
         platform.close()
 
 
+def test_all_wake_groups_for_the_same_event_queue_a_task(tmp_path: Path) -> None:
+    """Two follow-ups may subscribe to one fact; neither may be silently dropped."""
+
+    platform = _town(tmp_path, "multi-wake-groups")
+    try:
+        with platform.store.transaction():
+            platform.store.repositories.metadata.set("evolution", normalize_evolution_config({
+                "wakes": [
+                    {"id": "first", "on": "custom.event", "for": "god", "tools": ["wait"], "result": "First follow-up."},
+                    {"id": "second", "on": "custom.event", "for": "god", "tools": ["wait"], "result": "Second follow-up."},
+                ],
+            }))
+        event = platform.store.repositories.events.append_event("custom.event", "god", 1, {"summary": "A fact needs two follow-ups."})
+        platform.wakes.configured(event, "custom.event", "god", 1)
+        task_types = {item["task_type"] for item in platform.ready_evolution_tasks() if item["role"] == "god"}
+        assert {"event_group:first", "event_group:second"} <= task_types, task_types
+    finally:
+        platform.close()
+
+
 # --- derived stagnation signal ----------------------------------------------------
 
 
 def test_stagnation_config_compiles_and_rejects_bad_fields() -> None:
     compiled = normalize_evolution_config({"stagnation": {"window": "1d"}})
-    assert compiled["stagnation"] == {"window_minutes": 1440, "max_interval_minutes": 10080}
+    assert compiled["stagnation"] == {"window_minutes": 1440, "max_interval_minutes": 10080, "growth": "option"}
     compiled = normalize_evolution_config({"stagnation": {"window": "6h", "max_interval": "2d"}})
-    assert compiled["stagnation"] == {"window_minutes": 360, "max_interval_minutes": 2880}
+    assert compiled["stagnation"] == {"window_minutes": 360, "max_interval_minutes": 2880, "growth": "option"}
     compiled = normalize_evolution_config({"stagnation": {"window": "1d", "max_characters": 8}})
-    assert compiled["stagnation"] == {"window_minutes": 1440, "max_interval_minutes": 10080, "max_characters": 8}
+    assert compiled["stagnation"] == {"window_minutes": 1440, "max_interval_minutes": 10080, "max_characters": 8, "growth": "option"}
+    compiled = normalize_evolution_config({"stagnation": {"window": "1d", "growth": "structural"}})
+    assert compiled["stagnation"]["growth"] == "structural"
+    with pytest.raises(ValueError, match="growth must be option or structural"):
+        normalize_evolution_config({"stagnation": {"window": "1d", "growth": "unbounded"}})
     for bad, message in (
         ({"stagnation": {"max_interval": "1d"}}, "window is required"),
         ({"stagnation": {"window": "1d", "max_interval": "1h"}}, "must not be shorter"),
@@ -185,11 +209,12 @@ def test_stagnation_progress_event_types_are_configurable() -> None:
     assert compiled["stagnation"]["progress_event_types"] == ["finding.confirmed"]
 
 
-def _stagnation_world(platform: Platform, window: str = "1h", max_interval: str | None = None, max_characters: int | None = None) -> None:
+def _stagnation_world(platform: Platform, window: str = "1h", max_interval: str | None = None, max_characters: int | None = None, growth: str | None = None) -> None:
     spec = {
         "window": window,
         **({"max_interval": max_interval} if max_interval else {}),
         **({"max_characters": max_characters} if max_characters else {}),
+        **({"growth": growth} if growth else {}),
     }
     platform.store.repositories.metadata.set("evolution", normalize_evolution_config({
         "stagnation": spec,
@@ -246,6 +271,81 @@ def test_stagnation_spacing_is_capped_by_max_interval(tmp_path: Path) -> None:
         _stagnation_world(platform, window="1h", max_interval="1h")
         _step(platform, 240)
         assert _stagnation_minutes(platform) == [120, 180, 240]
+    finally:
+        platform.close()
+
+
+def test_structural_stagnation_ignores_a_new_research_source_and_accepts_a_new_place(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "stagnation-structural")
+    try:
+        _stagnation_world(platform, growth="structural")
+        _step(platform, 120)
+        assert _stagnation_minutes(platform) == [120]
+
+        # A new research source is content, not structural growth.  It must
+        # not reset the structural stagnation clock.
+        created = platform.submit_entity_proposal("god", {
+            "entity_type": "document",
+            "entity_id": "structural_marker",
+            "name": "结构测试记录",
+            "description": "A source introduced while the world needs structure.",
+            "location_id": "north_watch",
+            "state": {
+                "location_id": "north_watch",
+                "readable": True,
+                "research_assignees": ["luo_shan"],
+                "research_discoveries": [{"id": "fact:structural_marker:one", "fact": "The marker is readable.", "required": 1}],
+            },
+        })
+        assert created["status"] == "accepted", created
+        _step(platform, 60)
+        assert _stagnation_minutes(platform) == [120, 180]
+
+        # A reachable new place changes the persisted structural surface and
+        # resets the clock.
+        place = platform.submit_entity_proposal("god", {
+            "entity_type": "location",
+            "name": "结构测试新址",
+            "description": "A reachable place created after structural stagnation.",
+            "state": {"routes": ["lantern_square"], "route_distances": {"lantern_square": 2}},
+        })
+        assert place["status"] == "accepted", place
+        _step(platform, 60)
+        assert _stagnation_minutes(platform) == [120, 180]
+        state = platform.store.repositories.metadata.get("stagnation_state")
+        assert state["growth_mode"] == "structural"
+        assert state["stagnant_windows"] == 0
+        assert any(item.startswith("location:") for item in state["world_structure"])
+    finally:
+        platform.close()
+
+
+def test_cadence_contract_is_attached_to_god_structural(tmp_path: Path) -> None:
+    from sim2.agents.runtime_policy import configured_evolution_trigger
+
+    platform = _town(tmp_path, "cadence-contract")
+    try:
+        with platform.store.transaction():
+            platform.store.repositories.metadata.set("evolution", normalize_evolution_config({
+                "cadence": {"god_structural": "1d"},
+                "contracts": {
+                    "god_structural": {
+                        "tools": ["propose_definition", "wait"],
+                        "required_definition_type": "action",
+                        "assign_to": ["梅岚"],
+                        "result": "Add one non-research Action and its bound behavior.",
+                    },
+                },
+            }))
+        contract = configured_evolution_trigger(platform, "god_structural")
+        assert contract and contract["contract"] is True
+        assert contract["agent_contract"]["required_definition_type"] == "action"
+        provider = WaitProvider()
+        AgentEngine(platform, provider).run(role="god", actor_id="god", task_type="god_structural")
+        prompt = provider.calls[0]["context"]
+        assert "world architect" in prompt
+        assert "Add one non-research Action and its bound behavior." in prompt
+        assert "Research continuation" not in prompt
     finally:
         platform.close()
 
@@ -1153,7 +1253,7 @@ def test_god_history_skips_minute_ticks_and_does_not_repeat_the_trigger(tmp_path
         platform.close()
 
 
-def test_research_submission_note_follows_the_wake_evidence_not_its_wording(tmp_path: Path) -> None:
+def test_research_submission_note_is_contract_driven_not_evidence_driven(tmp_path: Path) -> None:
     platform = _town(tmp_path, "research-note")
     try:
         view = platform.view.build_decision_view("god", role="god")
@@ -1161,14 +1261,82 @@ def test_research_submission_note_follows_the_wake_evidence_not_its_wording(tmp_
             "id": "event_group:research_synthesis",
             "condition": "configured evidence group",
             "required_result": "Create one new research source for the researchers.",
+            "required_definition_type": "research",
             "evidence_sources": [{"event_types": ["research.completed"]}],
         }
         rendered = render_context(view, "Review the evidence.")
         assert "Research continuation" in rendered
         assert "distinct causal dimension" in rendered
 
-        # The same wording on a wake with other evidence lists the source as one lever among several.
-        view["evolution_trigger"]["evidence_sources"] = [{"event_types": ["world.stagnation"]}]
-        assert "For this research continuation" not in render_context(view, "Review the evidence.")
+        # Research evidence does not force a source when the contract asks for
+        # structural growth instead.
+        view["evolution_trigger"] = {
+            "id": "god_structural",
+            "condition": "configured cadence contract",
+            "result": "Add one new non-research Action and its bound behavior.",
+            "required_definition_type": "action",
+            "evidence_sources": [{"event_types": ["research.completed"]}],
+        }
+        structural = render_context(view, "Review the evidence.")
+        assert "Research continuation" not in structural
+        assert "Research sources are content, not structural growth" in structural
+    finally:
+        platform.close()
+
+
+def test_created_place_and_resource_emit_typed_followup_events(tmp_path: Path) -> None:
+    """A new place or stock gets a narrow follow-up wake, not a silent dead end."""
+
+    platform = _town(tmp_path, "growth-followup-events")
+    try:
+        with platform.store.transaction():
+            platform.store.repositories.metadata.set("evolution", normalize_evolution_config({
+                "wakes": [
+                    {
+                        "id": "place_followup",
+                        "on": "world.location.created",
+                        "for": "god",
+                        "external": True,
+                        "tools": ["propose_definition", "wait"],
+                        "result": "Add one activity at the new place.",
+                    },
+                    {
+                        "id": "resource_followup",
+                        "on": "world.resource.created",
+                        "for": "god",
+                        "external": True,
+                        "tools": ["propose_definition", "wait"],
+                        "result": "Add one action that changes the new stock.",
+                    },
+                ],
+            }))
+        place = platform.submit_entity_proposal("god", {
+            "entity_type": "location",
+            "name": "Followup Test Place",
+            "description": "A place that needs an activity.",
+            "state": {"routes": ["lantern_square"], "route_distances": {"lantern_square": 2}},
+        })
+        assert place["status"] == "accepted", place
+        tasks = [item for item in platform.ready_evolution_tasks() if item["role"] == "god"]
+        assert any(item["task_type"] == "event_group:place_followup" for item in tasks), tasks
+        place_event = platform.store.connection.execute(
+            "SELECT data_json FROM event_log WHERE event_type='world.location.created' ORDER BY event_id DESC LIMIT 1"
+        ).fetchone()
+        assert "Followup Test Place" in place_event["data_json"]
+
+        stock = platform.submit_entity_proposal("god", {
+            "entity_type": "resource",
+            "name": "Followup Test Stock",
+            "description": "An empty stock that needs an activity.",
+            "location": "三灯广场",
+            "state": {"quantity": 0},
+        })
+        assert stock["status"] == "accepted", stock
+        tasks = [item for item in platform.ready_evolution_tasks() if item["role"] == "god"]
+        assert any(item["task_type"] == "event_group:resource_followup" for item in tasks), tasks
+        resource_event = platform.store.connection.execute(
+            "SELECT data_json FROM event_log WHERE event_type='world.resource.created' ORDER BY event_id DESC LIMIT 1"
+        ).fetchone()
+        assert "Followup Test Stock" in resource_event["data_json"]
     finally:
         platform.close()

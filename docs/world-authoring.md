@@ -243,10 +243,13 @@ events:
   forever;
 - wake God on public works, resource pressure and `world.stagnation`, and add a
   periodic `cadence.god` / `cadence.god_structural` review;
-- configure `stagnation: {window: 1d, max_interval: 7d}`. Platform compares each
-  character's cumulative executable options; when the world stops producing
-  new options it publishes `world.stagnation`, which wakes God to evolve the
-  world instead of letting residents repeat a closed loop;
+- configure `stagnation: {window: 1d, max_interval: 7d, growth: structural}`.
+  Platform compares each character's cumulative executable options and the
+  persisted structural surface; when the world stops producing new places,
+  verbs, factions or rules it publishes `world.stagnation`, which wakes God to
+  evolve the world instead of letting residents repeat a closed loop. A new
+  research source is content, not structural growth, and does not reset the
+  structural clock;
 - do not mark evolution sources `manual_only` unless the world intentionally
   requires an operator to trigger them. Automatic runs and synchronized player
   waits execute the same Story/God tasks;
@@ -262,11 +265,12 @@ is required. For example, ledger review may require `definition_type: behavior`,
 which prevents God from substituting a signal rule or unrelated capability.
 An optional `assign_to: [梅岚]` makes the expected executor explicit and ensures
 the new behavior enters that character's next decision catalog.
-A wake that reviews `research.completed` (or `research.progressed`) evidence also shows
-the God how to submit a research source (`propose_entity` with a `document`,
-`research_discoveries`, `research_required` and `research_assignees`). The wording of
-`result` does not switch that note on, so a wake may list a research source next to
-other levers such as `revise_institution` without steering the choice.
+A wake that explicitly asks for research (`continuation: research` or
+`definition_type: research`) also shows the God how to submit a research source
+(`propose_entity` with a `document`, `research_discoveries`,
+`research_required` and `research_assignees`). Research evidence alone no longer
+injects that note, so a structural wake can review a discovery without being
+steered into adding another archive.
 These fields are optional
 guidance for that one wake. Bootstrap compiles this into the internal
 `schedule`, `event_wake_policy`, `event_groups`, and evidence selector fields.
@@ -277,6 +281,41 @@ Only events emitted by a runtime subsystem are treated as external by default.
 For an event supplied by an extension rather than an Action, BT, rule, or
 runtime subsystem, add `external: true` to that wake. A misspelled ordinary
 event therefore fails validation before the world is created.
+
+### Cadence contracts
+
+A periodic `cadence.god_structural` task has no event trigger, so it needs an
+explicit contract:
+
+```yaml
+contracts:
+  god_structural:
+    tools: [query_history, propose_definition, wait]
+    purpose: Add one new playable dimension.
+    result: >-
+      Add one non-research Action and its bound behavior at an existing
+      reachable place. Assign it to an existing character; the behavior must be
+      executable now and must produce a new result event.
+    definition_type: action
+    assign_to: [玛拉]
+```
+
+Platform attaches this contract exactly as it attaches an event-triggered
+contract. The task shows the required result, permitted tools, assignment and
+definition type; a model cannot silently replace it with another research
+source. `assign_to` accepts the bound `followup_behavior.assign_to` for an
+Action, so the contract enforces the executor without asking an Action to carry
+an invalid top-level assignment.
+
+### Growth events
+
+Creating a location emits `world.location.created`; creating a resource or
+material emits `world.resource.created`. Both carry the visible name and
+summary and use the normal configured wake policy. A world can therefore follow
+a new place with one narrow "add its activity" wake, and a new stock with one
+"add an action that changes it" wake, instead of leaving dynamic content dead.
+The generic `entity.created` event is still emitted for consumers that need the
+broader fact.
 
 `god` and `story` are configurable consumers, not mandatory background clocks:
 
@@ -338,17 +377,23 @@ no consumer notices:
   institution allocation it settled) is the automatic path and does not wake
   the consumer one event at a time. A manual-only event is not compiled into
   `direct_event_types`.
+- Every wake group whose event filter matches the same event queues its own
+  task. Two follow-ups can subscribe to one fact (for example a new place
+  needs both an activity and a local stock); neither is silently dropped.
 - `distinct_by: [source_id, stage_id]` makes `count` count only **novel**
   evidence. The listed keys (payload fields, or the `actor_id` and
   `event_type` columns) identify what is new; a combination already counted
   never counts again, so a repeated outcome needs no calendar `every`
   cooldown. The last 512 combinations are remembered per group. A wake with `distinct_by` carries its matching events
   as `<triggering_evidence>`, like any other contract wake.
-- `stagnation: {window: 1d, max_interval: 1w}` turns on the derived
-  `world.stagnation` event. Once per window Platform compares each living
-  character's cumulative set of executable options (behaviors plus parameter
-  options such as configured research sources) with the previous window; the
-  first window only records the baseline. Any growth resets the counter. When
+- `stagnation: {window: 1d, max_interval: 1w, growth: structural}` turns on the
+  derived `world.stagnation` event. `growth: option` (the default) compares
+  each living character's cumulative set of executable options, including
+  parameter options such as a new research source. `growth: structural`
+  compares behaviors, reachable places, factions and rules, plus a persisted
+  world-structure signature, so adding another parameter to an existing verb
+  does not reset the clock. The first window only records the baseline. Any
+  structural growth resets the counter. When
   nothing grew, the event is published after 1, 2, 4, ... stagnant windows,
   never farther apart than `max_interval`, and lists per character what they
   can do now and which conditions block the rest. A blocked Action names the
@@ -579,6 +624,12 @@ An Action is executable mechanics. It declares:
 - typed effects;
 - success and failure outcomes;
 - interruption and interaction policy.
+
+`world_resource_delta` changes an existing resource or material as the
+behavior's declared outcome; `resource_transfer` moves a reserved carried item
+into a stock. Use the former when the behavior itself produces or consumes
+public stock, and give it a non-zero numeric `delta` plus optional
+`minimum`/`maximum` bounds. Platform rejects an unknown target.
 
 Recipe inputs default to `scope: agent`, which means the material must be in
 the individual's carried inventory. Use `scope: world` only for an explicitly

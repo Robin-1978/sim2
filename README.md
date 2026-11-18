@@ -136,7 +136,12 @@ events, periodic cadence and the configured stagnation signal. Storm outcomes
 also close and reopen configured places and deplete resource nodes, so their
 consequences are spatial and material rather than only numeric. Opening-only
 situation anchors and onboarding hints expire after two world days; later
-content comes from Story and God. All of these mechanics live in YAML.
+content comes from Story and God. `stagnation.growth: structural` counts new
+places, verbs, factions and rules rather than new research parameters, and
+`god_structural` carries an explicit contract for one new playable unit.
+Creating a place or resource emits a typed follow-up event, so dynamic content
+gets an activity instead of becoming a dead room. All of these mechanics live
+in YAML.
 
 To add a world, provide a package with `manifest.yaml`, setting and world state, locations, objects, factions, agents, actions, behavior trees, rules, evolution schedule, player template, and optional prompts. `manifest.config_version` is recorded in the new SQLite instance. Reusing an instance ID is rejected; initialize a new ID for every world instance.
 

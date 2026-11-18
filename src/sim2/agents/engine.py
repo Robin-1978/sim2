@@ -159,7 +159,10 @@ class AgentEngine:
         if isinstance(trigger_contract, dict):
             context["evolution_trigger"] = {
                 "id": str((trigger_config or {}).get("id") or (task_type if group_contract else "")),
-                "condition": str((trigger_config or {}).get("when") or "configured evidence group"),
+                "condition": str(
+                    (trigger_config or {}).get("when")
+                    or ("configured cadence contract" if (trigger_config or {}).get("contract") else "configured evidence group")
+                ),
                 **dict(trigger_contract),
             }
             if trigger_contract.get("evidence_sources"):

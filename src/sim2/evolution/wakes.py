@@ -126,6 +126,7 @@ class EventWakeScheduler:
         if groups:
             state_key = f"{consumer}:event_wake_group_state"
             states = dict(self.store.repositories.metadata.get(state_key, {}) or {})
+            task_ids: list[str] = []
             for group in groups:
                 group_id = str(group.get("id") or "group")
                 group_state = states.get(group_id) or {}
@@ -192,8 +193,8 @@ class EventWakeScheduler:
                         "agent_contract": dict(group.get("agent_contract") or {}) if isinstance(group.get("agent_contract"), dict) else {},
                     },
                 )
-                return task_id
-            return None
+                task_ids.append(task_id)
+            return task_ids[-1] if task_ids else None
 
         # Once a consumer declares evidence groups, an unmatched event is not
         # silently promoted to a direct wake.  That fallback made a one-character

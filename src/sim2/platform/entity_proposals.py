@@ -115,7 +115,19 @@ class EntityProposalRuntimeMixin:
                     self._write_agent(entity_id, proposal, plan.agent_state)
                 else:
                     self._write_structure(submission, plan, world_minute)
-                event_id = self._context.services["events"].publish("entity.created", actor_id, world_minute, {"intent_id": intent_id, "entity_id": entity_id, "entity_type": plan.entity_type, "summary": proposal.get("description", "")}, wake="configured")
+                event_id = self._context.services["events"].publish("entity.created", actor_id, world_minute, {"intent_id": intent_id, "entity_id": entity_id, "entity_type": plan.entity_type, "name": proposal.get("name"), "summary": proposal.get("description", "")}, wake="configured")
+                if plan.entity_type == "location":
+                    self._context.services["events"].publish(
+                        "world.location.created", actor_id, world_minute,
+                        {"entity_id": entity_id, "name": proposal.get("name"), "location_id": proposal.get("location_id"), "summary": f"New location {proposal.get('name')}: {proposal.get('description', '')}"},
+                        wake="configured",
+                    )
+                elif plan.entity_type in {str(item) for item in ((self.store.repositories.metadata.get("rules", {}) or {}).get("resource_entity_types", ["resource", "material"]) or [])}:
+                    self._context.services["events"].publish(
+                        "world.resource.created", actor_id, world_minute,
+                        {"entity_id": entity_id, "name": proposal.get("name"), "location_id": proposal.get("location_id"), "summary": f"New resource {proposal.get('name')} at {proposal.get('location_id')}: {proposal.get('description', '')}"},
+                        wake="configured",
+                    )
                 if actor_id == "god":
                     remember_role(self.store, "god", "world_entity", {
                         "summary": f"Created {plan.entity_type}: {proposal.get('name', entity_id)}.",

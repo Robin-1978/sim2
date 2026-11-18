@@ -70,6 +70,7 @@ class StagnationRuntimeMixin:
             "max_interval": max(window, int(raw.get("max_interval_minutes", window) or window)),
             "max_characters": max(1, int(raw.get("max_characters", DEFAULT_COHORT_SIZE) or DEFAULT_COHORT_SIZE)),
             "progress_event_types": [str(item) for item in progress_events if str(item)],
+            "growth": str(raw.get("growth") or "option"),
         }
 
     @staticmethod
@@ -116,32 +117,46 @@ class StagnationRuntimeMixin:
         sampled = len(active) > config["max_characters"]
         cohort = self._stagnation_cohort(active, minute // window, config["max_characters"])
         state = dict(self.store.repositories.metadata.get(STAGNATION_STATE_KEY, {}) or {})
-        baseline = "frontier" not in state
+        mode = str(config.get("growth") or "option")
+        frontier_key = "frontier" if mode == "option" else "frontier_structural"
+        baseline = frontier_key not in state
         progress_cursor = int(state.get("progress_event_id", 0) or 0)
-        progress_types = list(config.get("progress_event_types") or DEFAULT_PROGRESS_EVENTS)
-        placeholders = ",".join("?" for _ in progress_types)
-        progress_rows = self.store.connection.execute(
-            f"SELECT event_id FROM event_log WHERE event_id>? AND event_type IN ({placeholders}) ORDER BY event_id",
-            (progress_cursor, *progress_types),
-        ).fetchall()
-        progressed = bool(progress_rows)
-        if progress_rows:
-            progress_cursor = int(progress_rows[-1]["event_id"])
-        frontier = {str(key): set(value) for key, value in (state.get("frontier") or {}).items()}
+        progressed = False
+        if mode == "option":
+            progress_types = list(config.get("progress_event_types") or DEFAULT_PROGRESS_EVENTS)
+            placeholders = ",".join("?" for _ in progress_types)
+            progress_rows = self.store.connection.execute(
+                f"SELECT event_id FROM event_log WHERE event_id>? AND event_type IN ({placeholders}) ORDER BY event_id",
+                (progress_cursor, *progress_types),
+            ).fetchall()
+            progressed = bool(progress_rows)
+            if progress_rows:
+                progress_cursor = int(progress_rows[-1]["event_id"])
+        frontier = {str(key): set(value) for key, value in (state.get(frontier_key) or {}).items()}
         bt_defs = {str(item["id"]): item for item in self.store.repositories.entities.get_definitions("bt_def")}
         snapshots = {str(agent["id"]): self.view.option_snapshot(str(agent["id"]), bt_defs=bt_defs) for agent in cohort}
         grew = False
         for agent_id, snapshot in snapshots.items():
-            options = set(snapshot["options"])
+            current = set(snapshot["structure"] if mode == "structural" else snapshot["options"])
             known = frontier.get(agent_id)
             if known is None:
                 # Sampling meets most characters long after the baseline, so
                 # the first sight only records them; a fully evaluated roster
                 # treats a newcomer as growth.
                 grew = grew or not sampled
-            elif options - known:
+            elif current - known:
                 grew = True
-            frontier[agent_id] = (known or set()) | options
+            frontier[agent_id] = (known or set()) | current
+        if mode == "structural":
+            # A new research source adds a parameter option to a known
+            # behavior, not a new place/verb/social structure/rule.  Structural
+            # stagnation therefore also compares the persisted world surface,
+            # so the treadmill cannot reset it.
+            known_world = set(state.get("world_structure") or [])
+            current_world = set(self.view.world_structure_signature())
+            if known_world and current_world - known_world:
+                grew = True
+            world_structure = sorted(current_world)
 
         windows = int(state.get("stagnant_windows", 0) or 0)
         next_emit_at = int(state.get("next_emit_at", 1) or 1)
@@ -153,11 +168,11 @@ class StagnationRuntimeMixin:
         else:
             windows += 1
             if windows >= next_emit_at:
-                event_id = self._publish_stagnation(minute, windows, window, last_novel, active, snapshots)
+                event_id = self._publish_stagnation(minute, windows, window, last_novel, active, snapshots, mode=mode)
                 next_emit_at = windows + gap
                 gap = min(gap * 2, cap)
-        self.store.repositories.metadata.set(STAGNATION_STATE_KEY, {
-            "frontier": {key: sorted(value) for key, value in frontier.items()},
+        next_state = {
+            frontier_key: {key: sorted(value) for key, value in frontier.items()},
             "stagnant_windows": windows,
             "next_emit_at": next_emit_at,
             "gap": gap,
@@ -165,7 +180,11 @@ class StagnationRuntimeMixin:
             "last_evaluated_minute": int(minute),
             "progress_event_id": progress_cursor,
             "progressed_last_window": progressed,
-        })
+            "growth_mode": mode,
+        }
+        if mode == "structural":
+            next_state["world_structure"] = world_structure
+        self.store.repositories.metadata.set(STAGNATION_STATE_KEY, next_state)
         return event_id
 
     def _publish_stagnation(
@@ -176,6 +195,8 @@ class StagnationRuntimeMixin:
         last_novel: int,
         active: list[dict[str, Any]],
         snapshots: dict[str, dict[str, Any]],
+        *,
+        mode: str = "option",
     ) -> int:
         names = {str(agent["id"]): str(agent.get("name") or agent["id"]) for agent in active}
         characters: list[dict[str, Any]] = []
@@ -206,6 +227,7 @@ class StagnationRuntimeMixin:
             "stagnant_windows": int(windows),
             "stagnant_minutes": int(windows * window),
             "last_novel_minute": int(last_novel),
+            "growth_mode": str(mode),
             "progress_event_types": list(self._stagnation_config().get("progress_event_types") or DEFAULT_PROGRESS_EVENTS) if self._stagnation_config() else [],
             "characters": characters,
             "omitted_characters": omitted,

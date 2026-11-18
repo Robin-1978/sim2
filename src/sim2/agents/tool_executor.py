@@ -396,9 +396,12 @@ class AgentToolExecutor:
         if isinstance(required_assignees, str):
             required_assignees = [required_assignees]
         if required_assignees:
+            supplied_items = list(assign_to or [])
+            if isinstance(followup_behavior, dict):
+                supplied_items.extend(followup_behavior.get("assign_to") or [])
             supplied = {
                 str(self.platform.targets.canonical_id(str(item)) or item)
-                for item in (assign_to or [])
+                for item in supplied_items
             }
             missing = [
                 self._contract_visible_name(item)

@@ -108,5 +108,11 @@ names the same item parameter as `source_item_parameter` and transfers exactly
 the reserved quantity into an existing resource or material entity. The
 Platform rejects a missing source, an amount mismatch, a missing target, and
 any attempt to mint stock.
+A world-scope `world_resource_delta` effect may also appear in an Action when
+the behavior itself produces or consumes a public stock. It names an existing
+resource or material, a non-zero numeric delta and optional `minimum`/`maximum`
+bounds; Platform validates the target at proposal time and applies the delta
+only as the behavior outcome. This is distinct from `resource_transfer`: no
+carried item is reserved because the behavior is the declared source or sink.
 `scripts/verify_dynamic_evolution.py` exercises this God → Platform → NPC →
 Story chain in seconds with a real provider.

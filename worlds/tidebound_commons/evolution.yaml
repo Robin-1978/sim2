@@ -14,6 +14,7 @@ cadence:
 stagnation:
   window: 1d
   max_interval: 7d
+  growth: structural
   progress_event_types:
   - research.progressed
   - research.completed
@@ -28,6 +29,25 @@ stagnation:
   - world.change.rule
   - world.change.relationship
   - world.change.faction
+contracts:
+  # A cadence task has no event trigger, so it needs an explicit contract.
+  # This is the structural review: add one new playable dimension, not one
+  # more research source.
+  god_structural:
+    tools:
+    - query_history
+    - query_knowledge_gaps
+    - propose_definition
+    - wait
+    purpose: 周期结构审查：给世界增加一个新的可玩维度，而不是再写一个研究源。
+    result: >-
+      只提交一个 growth unit：一个非研究 Action 和它的绑定行为树，分配给玛拉，在现有
+      可达地点执行，产生一个新的成功结果和一个新的结果事件类型。不要提交研究源、档案、
+      账本、表格或任何只能用于 study_source 的对象。新行为必须现在就可执行；证据不足
+      时 wait。
+    required_definition_type: action
+    assign_to:
+    - 玛拉
 wakes:
 - id: research_synthesis
   'on': [research.progressed, research.completed]
@@ -50,6 +70,38 @@ wakes:
     propose_entity 创建一个 distinct faction 或 propose_world_change 更新真实关系。
     新内容必须让现有角色拥有可执行的下一步；不能声称尚未走过的新地点已经到达，不能
     重复已有地点、势力或研究问题。证据不足时 wait。
+- id: god_after_place
+  external: true
+  'on': world.location.created
+  for: god
+  tools:
+  - query_history
+  - propose_definition
+  - wait
+  purpose: 新地点已经出现；给它补上一个可执行的非研究活动，避免死地点。
+  result: >-
+    读取触发证据里的新地点名称。只提交一个非研究 Action 和它的绑定行为树，在这个新地点
+    执行，分配给玛拉，并立即可达可执行。不要重复创建地点，也不要创建研究源、档案、账本
+    或表格。证据不足时 wait。
+  definition_type: action
+  assign_to:
+  - 玛拉
+- id: god_after_resource
+  external: true
+  'on': world.resource.created
+  for: god
+  tools:
+  - query_history
+  - propose_definition
+  - wait
+  purpose: 新资源节点已经出现；给它补上一个真正改变它的行为，避免只有库存没有玩法。
+  result: >-
+    读取触发证据里的新资源和地点名称。只提交一个非研究 Action 和它的绑定行为树，在这个
+    地点执行，分配给玛拉，用 world_resource_delta 改变该资源，并产生一个新的结果事件。
+    不要创建另一个资源、地点或研究源。证据不足时 wait。
+  definition_type: action
+  assign_to:
+  - 玛拉
 - id: story_after_verified_change
   'on':
   - gate.inspected
@@ -119,6 +171,7 @@ wakes:
   - query_knowledge_gaps
   - propose_entity
   - propose_definition
+  - propose_world_change
   - wait
   purpose: 从已验证的公共工程中提出一个可达的新结构或可复用定义；如果现有选项足够就等待。
 - id: god_after_supply_pressure
@@ -144,5 +197,6 @@ wakes:
   - query_knowledge_gaps
   - propose_entity
   - propose_definition
+  - propose_world_change
   - wait
-  purpose: 世界已经太久没有出现新的可执行选项；提出一个有证据支持、可达且不重复现有内容的结构或行为。
+  purpose: 世界已经太久没有结构性成长；填最空的 growth cell（地点、动词、势力/关系或规则），不要再用一个研究源替代。

@@ -239,9 +239,17 @@ emergent 来源；真正的章节由 Story Agent 在事件唤醒时提出（零�
   产生，因此在 evolution 中声明为 external producer。
 - God 在公共工程、资源压力和 `world.stagnation` 时被唤醒，并按
   `cadence.god: 3d`、`cadence.god_structural: 7d` 周期复查。
-- `stagnation` 每 1 天比较所有角色累计的可执行选项；若世界没有产生新选项，
-  发布 `world.stagnation`，再次唤醒 God，最大间隔 7 天。这样世界不会在若干
-  tick 后只剩重复的生存动作。
+  `god_structural` 不是泛泛的“看一看”，而是一份 `contracts.god_structural`
+  契约：必须提交一个非研究 Action 和绑定行为树，分配给玛拉，产生新的结果
+  事件；研究源不能替代它。
+- `stagnation.growth: structural`：每 1 天比较行为、可达地点、势力和规则，
+  外加持久化的世界结构签名。新增研究源只是给已有 `study_source` 增加一个
+  参数值，不会重置结构停滞；只有真正新增地点/动词/势力/规则才会。因此研究
+  跑步机不会再把结构审查无限推迟。
+- `world.location.created` 和 `world.resource.created` 会分别唤醒
+  `god_after_place`、`god_after_resource`：新地点补一个可执行活动，新资源补
+  一个真正改变它的行为。新资源用 `world_resource_delta` 改变，不能由 God
+  直接灌库存。这样动态地点和库存不会变成“死内容”。
 - 自动运行和玩家手动同步推进都会执行这些 Story/God 任务；不要把演化源标成
   `manual_only`，除非确实需要管理员触发。
 - 演化任务使用玩家在网页设置里选择的 provider。若默认 `local` 模型失败，

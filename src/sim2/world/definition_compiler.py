@@ -32,7 +32,7 @@ EFFECT_TYPES = frozenset(
         "inventory_add", "inventory_remove", "inventory.consume_item",
         "relationship_delta", "public_event", "world_property_delta",
         "entity_state_set", "status_add", "status_remove", "location_set",
-        "resource_transfer", "capability_xp", "capability.add_xp",
+        "world_resource_delta", "resource_transfer", "capability_xp", "capability.add_xp",
     }
 )
 

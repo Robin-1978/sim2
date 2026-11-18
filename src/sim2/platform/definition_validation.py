@@ -161,6 +161,7 @@ class DefinitionValidationMixin:
             definition_id = self._claim_definition_id(kind, name, definition, errors)
             if kind == "action":
                 self._validate_action(name, definition, definition_id, errors)
+                self._check_world_resource_targets(definition, errors)
             elif kind == "behavior":
                 self._validate_behavior(name, definition, definition_id, errors, extra_action)
             elif kind == "recipe":
@@ -201,10 +202,32 @@ class DefinitionValidationMixin:
             errors.append(f"definition name already exists: {name}")
         return definition_id
 
+    def _check_world_resource_targets(self, definition: dict[str, Any], errors: list[str]) -> None:
+        """A world-scope stock delta must target an existing resource or material."""
+
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
+        resource_types = {str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])}
+        for field in ("effects", "progress_effects"):
+            for index, effect in enumerate(definition.get(field, []) or []):
+                if not isinstance(effect, dict):
+                    continue
+                if str(effect.get("type") or effect.get("op") or "") != "world_resource_delta":
+                    continue
+                ref = str(effect.get("resource_id") or effect.get("resource") or "").strip()
+                resource_id = str(self.targets.canonical_id(ref) or ref)
+                try:
+                    entity = self.store.repositories.entities.get_entity(resource_id)
+                except KeyError:
+                    errors.append(f"{field}[{index}].world_resource_delta target is not an existing resource: {ref or '<missing>'}")
+                    continue
+                if str(entity.get("entity_type") or "") not in resource_types:
+                    errors.append(f"{field}[{index}].world_resource_delta target {ref} is not a resource or material")
+
     @staticmethod
     def _validate_action(name: str, definition: dict[str, Any], definition_id: str, errors: list[str]) -> None:
         _check_dynamic_inventory_parameters(definition, errors)
         _check_resource_transfers(definition, errors)
+        _check_world_resource_deltas(definition, errors)
         # Keep the visible proposal name in the persisted definition.  The
         # registry id is intentionally machine-oriented, while audits,
         # AgentView and later definition references must be able to show
@@ -299,6 +322,26 @@ def _check_dynamic_inventory_parameters(definition: dict[str, Any], errors: list
                 errors.append(
                     f"action.{field}.condition treats dynamic parameter(s) {', '.join(sorted(dynamic_inventory_keys))} as inventory keys; use a literal visible item or omit the condition"
                 )
+
+
+def _check_world_resource_deltas(definition: dict[str, Any], errors: list[str]) -> None:
+    """A world-scope stock delta must name one stock and a real numeric change."""
+
+    for field in ("effects", "progress_effects"):
+        for index, effect in enumerate(definition.get(field, []) or []):
+            if not isinstance(effect, dict):
+                continue
+            if str(effect.get("type") or effect.get("op") or "") != "world_resource_delta":
+                continue
+            if not str(effect.get("resource_id") or effect.get("resource") or "").strip():
+                errors.append(f"{field}[{index}].world_resource_delta requires resource_id")
+            delta = effect.get("delta", effect.get("value"))
+            if isinstance(delta, bool) or not isinstance(delta, (int, float)) or float(delta) == 0:
+                errors.append(f"{field}[{index}].world_resource_delta requires a non-zero numeric delta")
+            for bound in ("minimum", "maximum"):
+                value = effect.get(bound)
+                if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))):
+                    errors.append(f"{field}[{index}].world_resource_delta.{bound} must be numeric")
 
 
 def _check_resource_transfers(definition: dict[str, Any], errors: list[str]) -> None:

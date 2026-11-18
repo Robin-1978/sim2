@@ -43,25 +43,40 @@ class ChoiceMixin:
         executability.  ``options`` are stable identifiers: a behavior, or a
         behavior plus one parameter option (for example a configured research
         source), so new content that only adds a parameter option still counts
-        as growth.  ``choices`` and ``blocked`` use the visible wording the
-        character sees; blocked entries carry the failing conditions.
+        as growth.  ``structure`` excludes parameter-only additions: it holds
+        behaviors plus reachable places, factions and rules.  ``choices`` and
+        ``blocked`` use the visible wording the character sees; blocked entries
+        carry the failing conditions.
         """
 
         view = self.build_decision_view(agent_id, role="agent_decision", include_diagnostics=True)
         definitions = bt_defs if bt_defs is not None else {str(item["id"]): item for item in self._definitions("bt_def")}
         options: set[str] = set()
+        structure: set[str] = set()
         choices: list[str] = []
         for item in view.get("executable_behaviors", []) or []:
             ref = str(item.get("ref") or "")
             if not ref:
                 continue
             options.add(ref)
+            structure.add(ref)
             choices.append(str(item.get("choice") or ref))
             for parameter, entries in (item.get("parameter_options") or {}).items():
                 for entry in entries or []:
                     name = str((entry or {}).get("name") or "").strip()
                     if name:
                         options.add(f"{ref}|{parameter}={name}")
+        self_view = view.get("self") if isinstance(view.get("self"), dict) else {}
+        for route in self_view.get("known_routes") or []:
+            if str(route).strip():
+                structure.add("location:" + " ".join(str(route).casefold().split()))
+        for faction in self_view.get("faction_ids") or []:
+            if str(faction).strip():
+                structure.add("faction:" + str(faction))
+        for rule in view.get("active_world_rules") or []:
+            rule_label = str((rule or {}).get("name") or (rule or {}).get("id") or "").strip()
+            if rule_label:
+                structure.add("rule:" + " ".join(rule_label.casefold().split()))
         blocked: list[dict[str, Any]] = []
         for diagnostic in view.get("unavailable_behavior_diagnostics", []) or []:
             reasons = [str(text) for text in (diagnostic.get("failed") or [])]
@@ -74,7 +89,7 @@ class ChoiceMixin:
                 "choice": str(definition.get("agent_label") or definition.get("summary") or label(behavior_id)),
                 "needs": [str(text)[:120] for text in (diagnostic.get("failed") or [])][:3],
             })
-        return {"options": sorted(options), "choices": choices, "blocked": blocked}
+        return {"options": sorted(options), "structure": sorted(structure), "choices": choices, "blocked": blocked}
 
     def resolve_behavior_choice(self, agent_id: str, choice: Any) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
         """Resolve a visible choice to an internal behavior only in Platform.

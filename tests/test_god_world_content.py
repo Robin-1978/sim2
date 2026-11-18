@@ -4,6 +4,7 @@ from pathlib import Path
 
 from sim2.agents.tools import tool_schemas_for_role
 from sim2.bootstrap.service import create_instance
+from sim2.intents.models import BehaviorIntent
 from sim2.platform.runtime import Platform
 from sim2.prompting.renderer import render_context
 
@@ -178,5 +179,96 @@ def test_god_cannot_create_a_disconnected_public_location(tmp_path: Path):
         assert result["status"] == "rejected"
         assert result["failed_check"] == "entity_schema"
         assert any("requires at least one existing route neighbor" in item for item in result["errors"])
+    finally:
+        platform.close()
+
+
+def test_god_can_create_a_behavior_that_changes_a_world_resource(tmp_path: Path):
+    platform = _town(tmp_path, "god-world-resource-delta")
+    try:
+        stock = platform.submit_entity_proposal("god", {
+            "entity_type": "resource",
+            "name": "Test Local Stock",
+            "description": "An empty local stock that only a behavior may fill.",
+            "location": "三灯广场",
+            "state": {"quantity": 0},
+        })
+        assert stock["status"] == "accepted", stock
+
+        action = platform.submit_definition_proposal("god", {
+            "definition_type": "action",
+            "name": "Add Local Stock",
+            "definition": {
+                "description": "Add one unit to the local test stock.",
+                "duration": {"minutes": 5},
+                "costs": {"reserve": {}, "per_minute": {}, "on_success": {}, "on_failure": {}, "refund": {}},
+                "preconditions": ["actor.alive"],
+                "effects": [{"type": "world_resource_delta", "resource_id": "Test Local Stock", "delta": 1, "maximum": 5}],
+                "success": {"condition": "actor.alive", "result": "local stock added"},
+                "failure": {"result": "local stock failed"},
+                "success_results": ["local stock added"],
+                "failure_results": ["local stock failed"],
+            },
+            "followup_behavior": {
+                "name": "Add Local Stock",
+                "assign_to": ["梅岚"],
+                "definition": {
+                    "summary": "Walk to the square and add one local stock unit.",
+                    "entry_conditions": ["actor.alive"],
+                    "nodes": [
+                        {"type": "action", "action_id": "travel_to", "parameters": {"location_id": "三灯广场"}},
+                        {"type": "action", "action_id": "Add Local Stock", "parameters": {}},
+                    ],
+                    "success_results": ["local stock added"],
+                    "failure_results": ["local stock failed"],
+                },
+            },
+        })
+        assert action["status"] == "accepted", action
+
+        behavior = next(
+            item for item in platform.store.repositories.entities.get_definitions("bt_def")
+            if item.get("agent_label") == "Add Local Stock"
+        )
+        started = platform.submit_behavior(BehaviorIntent(
+            "mei_lan", f"behavior:{behavior['id']}", {}, {},
+            "Verify the new world-resource production action.", 0.9, "world-resource-1",
+        ))
+        assert started["status"] == "accepted", started
+        for _ in range(int(started.get("remaining_minutes", 1) or 1) + 3):
+            platform.step()
+        after = platform.store.repositories.entities.get_entity(stock["entity_id"])
+        assert after["initial_state"]["quantity"] == 1
+    finally:
+        platform.close()
+
+
+def test_god_growth_ledger_counts_structure_and_flags_a_dead_place(tmp_path: Path):
+    platform = _town(tmp_path, "god-growth-ledger")
+    try:
+        place = platform.submit_entity_proposal("god", {
+            "entity_type": "location",
+            "name": "Ledger Test Place",
+            "description": "A place created without an activity yet.",
+            "state": {"routes": ["lantern_square"], "route_distances": {"lantern_square": 2}},
+        })
+        assert place["status"] == "accepted", place
+        ledger = platform.view.build_decision_view("god", role="god")["world_growth_ledger"]
+        assert ledger["cells"]["place"]["count"] >= 1
+        assert ledger["cells"]["verb"]["count"] >= 1
+        assert "Ledger Test Place" in ledger["dead_content"]
+        assert ledger["last_structural_change"] is not None
+    finally:
+        platform.close()
+
+
+def test_god_prompt_shows_the_growth_ledger_and_empty_cells(tmp_path: Path):
+    platform = _town(tmp_path, "god-growth-ledger-prompt")
+    try:
+        prompt = render_context(platform.decision_view("god", role="god"), "Review structural growth.")
+        assert "<world_growth_ledger>" in prompt
+        assert "empty cells:" in prompt
+        assert "A new research source does not fill a structural cell" in prompt
+        assert "dead content" in prompt
     finally:
         platform.close()

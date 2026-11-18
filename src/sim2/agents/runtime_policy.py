@@ -25,8 +25,13 @@ def configured_role_tools(platform: Platform, role: str) -> list[str] | None:
 
 
 def configured_evolution_trigger(platform: Platform, task_type: str) -> dict[str, Any] | None:
-    """Return the declarative contract for one world trigger task."""
+    """Return the declarative contract for one world trigger or cadence task."""
 
+    root = platform.store.repositories.metadata.get("evolution", {}) or {}
+    root = root.get("evolution", root) if isinstance(root, dict) else {}
+    contracts = root.get("contracts") if isinstance(root, dict) else None
+    if isinstance(contracts, dict) and isinstance(contracts.get(str(task_type)), dict):
+        return {"id": str(task_type), "contract": True, "agent_contract": dict(contracts[str(task_type)])}
     prefix = "trigger:"
     if not str(task_type).startswith(prefix):
         return None

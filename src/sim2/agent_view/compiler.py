@@ -223,7 +223,7 @@ class AgentViewCompiler(
             "prompt_protocol": prompt_protocol,
             "platform_rules": platform_rules,
             "world_time": self._world_time(),
-            "self": {"id": agent_id, "name": agent.get("name", agent_id), "role": agent.get("role", "agent"), "status": state.get("status", "idle"), "location": current_location.get("name", location_id) if isinstance(current_location, dict) else location_id, "known_routes": known_routes, "attributes": self._attribute_values(agent, state), "goal": agent.get("ultimate_goal")},
+            "self": {"id": agent_id, "name": agent.get("name", agent_id), "role": agent.get("role", "agent"), "status": state.get("status", "idle"), "location": current_location.get("name", location_id) if isinstance(current_location, dict) else location_id, "known_routes": known_routes, "faction_ids": agent.get("faction_ids", []), "attributes": self._attribute_values(agent, state), "goal": agent.get("ultimate_goal")},
             "identity": {"traits": agent.get("traits", {}), "beliefs": agent.get("beliefs", []), "capabilities": agent.get("capabilities", {})},
             "goal_tags": agent.get("goal_tags", []),
             "capability_history": self.activity_repo.list_capability_progress(agent_id, limit=5),
