@@ -446,6 +446,26 @@ Five engine changes made this possible:
 The free-form one-shot prompt still does not complete the pack. The supported
 broad path is the contract-driven stage sequence.
 
+#### NPC tension pressure probe
+
+`scripts/verify_social_tension.py --provider remote --runs 3 --rounds 4 --pressure`
+keeps the model's choices neutral while changing real conditions: the reserve
+holds two units, the relay fails in thirty minutes, a real third claimant
+(Ilya) exists, and Tomas is described as exhausted and distrustful. The script
+never says “take” as a decision and never says “you have decided”.
+
+| Metric | Neutral | Pressure |
+| --- | --- | --- |
+| Runs realizing tension | 0/3 | **2/3** |
+| Take choices | 0 | 0 |
+| Rejection choices | 0 | 2 |
+| Revocation choices | 0 | 1 |
+| Sanction choices | 0 | 0 |
+
+Pressure realized tension through the steward rejecting a request after the
+reserve was exhausted and revoking a delegation. The model still preferred the
+legal request path; a spontaneous covert take remains unobserved.
+
 #### Full one-cycle Director -> God -> NPC -> Story
 
 `scripts/run_full_social_loop.py --provider remote --rounds 2` produced the

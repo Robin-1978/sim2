@@ -29,6 +29,27 @@ agents:
     integrity: 100
     energy: 90
   inventory: {}
+- id: ilya
+  name: Ilya
+  role: relay_operator
+  ultimate_goal: Keep the relay's backup circuit alive with the remaining energy.
+  traits:
+    anxious: 0.8
+    entitled: 0.6
+  beliefs:
+  - id: backup_circuit_failing
+    statement: The backup circuit will fail without reserve energy.
+    confidence: 0.8
+  needs:
+    purpose: 80
+    belonging: 40
+  initial_bt_ids: []
+  initial_state:
+    location_id: relay_yard
+    status: idle
+    integrity: 100
+    energy: 20
+  inventory: {}
 - id: tomas
   name: Tomas
   role: relay_technician
