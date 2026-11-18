@@ -138,9 +138,15 @@ class _DirectorProvider:
     def __init__(self, target: str) -> None:
         self.target = target
         self.calls = 0
+        self.system = ""
+        self.context = ""
+        self.tools = None
 
     def complete_json(self, *, system, context, tools=None, messages=None):
         self.calls += 1
+        self.system = system
+        self.context = context
+        self.tools = tools
         return {"target_cell": self.target, "reason": "The model chose the least developed cell."}
 
 
@@ -157,5 +163,10 @@ def test_llm_director_writes_the_same_plan_and_structural_task(tmp_path: Path) -
         tasks = [item for item in platform.ready_evolution_tasks() if item["task_type"] == "god_structural"]
         assert tasks and tasks[0]["season_plan"]["target_cell"] == "resource"
         assert provider.calls == 1
+        # The Director is a one-call policy chooser, not a ReAct agent.
+        assert provider.tools is None
+        assert "place=" in provider.context and "resource=" in provider.context
+        assert len(provider.context) < 500 and len(provider.system) < 100
+        assert "entity" not in provider.context.casefold()
     finally:
         platform.close()

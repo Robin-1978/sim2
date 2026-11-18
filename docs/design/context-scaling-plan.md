@@ -227,7 +227,19 @@ configuration: 3 iterations and 1 read caused repeated `read_budget` and
 | God structural | 24 | 4 | Several atomic stages, each with a bounded read before one proposal |
 | `agent_decision` | 8 | 3 | One or two reads, then one choice |
 | Story | 8 | 4 | Evidence plus one narrative continuation |
-| Director | 4 | 2 | Select one cell |
+| Director | 1 call | 0 | Select one cell; it is not a ReAct session |
+
+The LLM Director is a single `complete_json` call:
+
+- system: `Director structural planning` (28 chars);
+- user context: target list plus current cell counts (193 chars in the dynamic
+  probe);
+- tools: none;
+- output: one `target_cell` and a short reason.
+
+It does not receive entities, events, memories or tool schemas. The
+`max_agent_iterations` / `max_read_tool_calls` values in `roles.director` are
+therefore inert for this path; only the completion-token limit applies.
 
 Raising the God iteration budget does not raise context size; the read budget
 and the compact stage prompt bound the loop.

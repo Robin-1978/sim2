@@ -28,6 +28,11 @@ in the repository or in this document.
 `default_provider` is `remote`. The `local` provider remains configured but is
 not the default for active roles.
 
+For the LLM Director, only the completion-token limit applies. It makes one
+`complete_json` call with a 28-character system message and a 193-character
+target/count instruction, and receives no tools. Its iteration/read columns are
+kept for schema compatibility with other roles but are not used on this path.
+
 ## 3. Director is separate
 
 The Director is normally a deterministic service. It does not require an LLM
