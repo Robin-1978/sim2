@@ -232,8 +232,9 @@ configuration: 3 iterations and 1 read caused repeated `read_budget` and
 The LLM Director is a single `complete_json` call:
 
 - system: `Director structural planning` (28 chars);
-- user context: target list plus current cell counts (193 chars in the dynamic
-  probe);
+- user context: target list plus current cell counts (193 chars for the single
+  `resource` target in the dynamic probe, 255 chars when all five cells are
+  configured);
 - tools: none;
 - output: one `target_cell` and a short reason.
 
