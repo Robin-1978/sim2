@@ -16,6 +16,7 @@ from ..world.navigation import (
     reachable_locations,
 )
 from ..world.authorization import authorization_for_behavior
+from ..world.contested import resource_take_effect
 from ..world.context import configured_context_values
 from .action_text import action_view, label, predicate_text
 from .decision_frame import DecisionFrame, Guidance, Simulation
@@ -116,11 +117,15 @@ class BehaviorViewMixin:
         )
         entry["eligibility"] = {
             "available": bool(decision.get("available")),
+            "gated": bool(decision.get("gated")),
             "reasons": list(decision.get("reasons") or []),
             "rule_id": decision.get("rule_id"),
             "mode": decision.get("mode"),
             "authorization": decision.get("authorization"),
         }
+        risk = self._contested_risk(frame, bt)
+        if risk:
+            entry["risk"] = risk
         if decision.get("gated") and not decision.get("available"):
             reasons = list(decision.get("reasons") or [])
             entry["attemptable"] = bool(reasons) and all(bool(item.get("attemptable")) for item in reasons)
@@ -380,6 +385,34 @@ class BehaviorViewMixin:
             else:
                 target_text = f"Participant: {names}. Platform uses this participant unless another permitted target is supplied."
         return Guidance(target_text, target_required, target_options, parameter_options, source_parameter)
+
+    def _contested_risk(self, frame: DecisionFrame, bt: dict[str, Any]) -> dict[str, Any] | None:
+        """Describe the deterministic witnesses a configured take would have now."""
+
+        effect = resource_take_effect(bt, frame.action_defs, frame.bt_defs)
+        if not effect:
+            return None
+        resource_id = str(effect.get("resource_id") or effect.get("resource") or "")
+        location_id = ""
+        try:
+            resource = self.entities_repo.get_entity(resource_id)
+        except KeyError:
+            resource = {}
+        state = resource.get("initial_state") if isinstance(resource.get("initial_state"), dict) else {}
+        location_id = str(state.get("location_id") or resource.get("location_id") or "")
+        world = self.store.repositories.metadata.get("world_properties", {}) or {}
+        observers = [
+            str(item.get("name") or item.get("id"))
+            for item in (self.entities_repo.entities_at_location(location_id) if location_id else [])
+            if str(item.get("entity_type") or "") == "agent"
+            and str(item.get("id") or "") != str(frame.agent_id)
+            and self.conditions.evaluate("actor.alive", agent=item, target={}, context={}, world=world)
+        ]
+        return {
+            "observers": sorted(observers),
+            "detection": "observed" if observers else "unobserved",
+            "consequence": "A violation is recorded; witnesses lose trust.",
+        }
 
     def _behavior_entry(
         self, frame: DecisionFrame, bt_id: Any, bt: dict[str, Any], sim: Simulation, guidance: Guidance, cooldown_minutes: int

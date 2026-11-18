@@ -130,3 +130,69 @@ behavior_trees:
       reason: context.reason
   definition_source: config
   kind: base
+- id: patrol_relay
+  version: 1
+  summary: Patrol Relay
+  description: Walk to the relay yard and return to the station, leaving the reserve briefly unattended.
+  agent_label: Patrol Relay
+  entry_conditions:
+  - actor.alive
+  estimated_minutes: 2
+  goal_tags: [patrol, stewardship]
+  drive_tags: [purpose]
+  success_results: [patrol_completed]
+  failure_results: [patrol_failed]
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: relay_yard
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: relay_station
+  definition_source: config
+  kind: base
+- id: take_energy
+  version: 1
+  summary: Take Energy
+  description: Take one unit of shared reserve energy without authorization. Completion records a violation; witnesses lose trust.
+  agent_label: Take Energy
+  entry_conditions:
+  - actor.alive
+  estimated_minutes: 1
+  goal_tags: [maintenance, power]
+  drive_tags: [purpose]
+  success_results: [energy_taken]
+  failure_results: [take_failed]
+  nodes:
+  - type: action
+    action_id: take_energy
+  definition_source: config
+  kind: base
+- id: review_violation
+  version: 1
+  authorization_operation: review_violation
+  summary: Review Violation
+  description: Sanction or forgive one observed violation of the reserve.
+  agent_label: Review Violation
+  entry_conditions:
+  - actor.alive
+  estimated_minutes: 1
+  agent_parameters:
+    violation_id: {type: string, required: true, max_length: 80, description: The observed violation to review.}
+    decision: {type: string, required: true, max_length: 20, description: sanction or forgive.}
+    reason: {type: string, required: false, max_length: 300, description: Why this decision is made.}
+  goal_tags: [authority, stewardship]
+  drive_tags: [purpose, belonging]
+  success_results: [violation_reviewed]
+  failure_results: [review_failed]
+  nodes:
+  - type: action
+    action_id: review_violation
+    parameters:
+      violation_id: context.violation_id
+      decision: context.decision
+      reason: context.reason
+  definition_source: config
+  kind: base

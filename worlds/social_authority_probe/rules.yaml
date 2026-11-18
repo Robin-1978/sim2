@@ -10,6 +10,9 @@ perception:
   global:
     fields: [role, type, summary, description, public]
     state_fields: [status, location_id, quantity, amount]
+contested_actions:
+  witness_trust_delta: -0.25
+  witness_memory_confidence: 0.9
 world_rules:
 - id: energy_reserve_stewardship
   name: Energy Reserve Stewardship
@@ -43,9 +46,21 @@ world_rules:
       type: institution
       id: revocation_authority
     behavior_ids: [revoke_delegation]
+- id: violation_review_authority
+  name: Violation Review Authority
+  condition: "true"
+  description: Only a current steward of the violation target may sanction or forgive an observed violation.
+  effect:
+    type: authorization
+    mode: violation_review
+    authority:
+      type: institution
+      id: violation_review_authority
+    behavior_ids: [review_violation]
 fallback_behavior_ids:
 - withdraw_energy
 - request_access
 - approve_withdrawal
 - reject_withdrawal
 - revoke_delegation
+- review_violation

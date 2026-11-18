@@ -37,7 +37,8 @@
 [Social Authority Loop](design/social-authority-loop-phase1.md)，实现证据见
 [Phase 1 实现报告](design/social-authority-loop-phase1-report.md)。软约束作为
 有代价的选择、偷取与后果的 Phase 2 设计见
-[Contested Resource Actions](design/social-authority-loop-phase2.md)。God/Director
+[Contested Resource Actions](design/social-authority-loop-phase2.md)，实现证据见
+[Phase 2 实现报告](design/social-authority-loop-phase2-report.md)。God/Director
 动态实例化 Phase 1/2 内容的 Phase 3 设计见
 [Dynamic Social Mechanism Instantiation](design/social-authority-loop-phase3.md)，
 通用机制定义语言的 Phase 4 设计见

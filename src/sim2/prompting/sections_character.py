@@ -235,6 +235,46 @@ def reflection_lines(context: dict[str, Any]) -> list[str]:
     return lines
 
 
+def violation_lines(context: dict[str, Any]) -> list[str]:
+    """Risks and violation facts a character may know, without moral instruction."""
+
+    contested = context.get("contested_actions") or []
+    my = context.get("my_violations") or []
+    witnessed = context.get("witnessed_violations") or []
+    unresolved = context.get("unresolved_violations") or []
+    lines: list[str] = []
+    if contested:
+        lines.append("<contested_actions>")
+        for item in contested[:5]:
+            lines.append(
+                f"  choice: {item.get('choice')}; observers: {line(item.get('observers'))}; "
+                f"detection: {line(item.get('detection'))}; consequence: {line(item.get('consequence'))}"
+            )
+        lines.append("</contested_actions>")
+    if my or witnessed or unresolved:
+        lines.append("<violations>")
+        for item in my[:5]:
+            lines.append(
+                f"  my_violation: {item.get('violation_id')}; target: {item.get('target')}; "
+                f"amount: {item.get('amount')}; status: {item.get('status')}; minute: {item.get('minute')}"
+            )
+        for item in witnessed[:5]:
+            lines.append(
+                f"  witnessed_violation: {item.get('violation_id')}; actor: {item.get('actor')}; "
+                f"target: {item.get('target')}; amount: {item.get('amount')}; status: {item.get('status')}; "
+                f"minute: {item.get('minute')}"
+            )
+        for item in unresolved[:5]:
+            lines.append(
+                f"  unresolved_violation: {item.get('violation_id')}; actor: {item.get('actor')}; "
+                f"target: {item.get('target')}; amount: {item.get('amount')}; "
+                f"witnesses: {line(item.get('witnesses'))}; status: {item.get('status')}; "
+                f"minute: {item.get('minute')}"
+            )
+        lines.append("</violations>")
+    return lines
+
+
 def executable_behavior_lines(context: dict[str, Any]) -> list[str]:
     """The active execution and the Platform-validated behaviors a character may choose."""
 

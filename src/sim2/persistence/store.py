@@ -142,6 +142,40 @@ CREATE TABLE IF NOT EXISTS delegation (
 CREATE UNIQUE INDEX IF NOT EXISTS delegation_active_tuple
   ON delegation(source_id,target_id,scope) WHERE status='active';
 CREATE INDEX IF NOT EXISTS delegation_status_idx ON delegation(status,source_id);
+CREATE TABLE IF NOT EXISTS violation (
+  violation_id TEXT PRIMARY KEY,
+  intent_id TEXT NOT NULL UNIQUE,
+  actor_id TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  amount REAL NOT NULL,
+  mode TEXT NOT NULL,
+  legitimacy TEXT NOT NULL,
+  status TEXT NOT NULL,
+  witnesses_json TEXT NOT NULL,
+  created_minute INTEGER NOT NULL,
+  resolved_minute INTEGER,
+  resolved_by TEXT,
+  data_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS violation_status_idx ON violation(status,created_minute);
+CREATE INDEX IF NOT EXISTS violation_actor_idx ON violation(actor_id,created_minute);
+CREATE TABLE IF NOT EXISTS access_restriction (
+  restriction_id TEXT PRIMARY KEY,
+  actor_id TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  status TEXT NOT NULL,
+  violation_id TEXT,
+  created_by TEXT NOT NULL,
+  created_minute INTEGER NOT NULL,
+  revoked_by TEXT,
+  revoked_minute INTEGER,
+  data_json TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS access_restriction_active_tuple
+  ON access_restriction(actor_id,target_id,scope) WHERE status='active';
+CREATE INDEX IF NOT EXISTS access_restriction_status_idx ON access_restriction(status,actor_id);
 CREATE TABLE IF NOT EXISTS prompt_def (
   id TEXT PRIMARY KEY,
   data_json TEXT NOT NULL
@@ -334,6 +368,7 @@ class WorldStore:
         from .repositories.evolution import EvolutionRepository
         from .repositories.llm import LlmRepository
         from .repositories.authorization import AuthorizationRepository
+        from .repositories.contested import ContestedRepository
         from .repositories.metadata import MetadataRepository
         self.repositories = SimpleNamespace(
             metadata=MetadataRepository(self),
@@ -345,6 +380,7 @@ class WorldStore:
             evolution=EvolutionRepository(self),
             llm=LlmRepository(self),
             authorization=AuthorizationRepository(self),
+            contested=ContestedRepository(self),
         )
 
     @contextmanager

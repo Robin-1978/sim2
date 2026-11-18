@@ -21,6 +21,8 @@ agents:
   - approve_withdrawal
   - reject_withdrawal
   - revoke_delegation
+  - patrol_relay
+  - review_violation
   initial_state:
     location_id: relay_station
     status: idle
@@ -47,6 +49,7 @@ agents:
   - approve_withdrawal
   - reject_withdrawal
   - revoke_delegation
+  - take_energy
   initial_state:
     location_id: relay_station
     status: idle

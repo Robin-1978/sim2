@@ -1,4 +1,38 @@
 actions:
+- id: travel_to
+  version: 1
+  description: Move to a connected known location.
+  parameters:
+    location_id: string
+  preconditions:
+  - route.known
+  - actor.mobile
+  - destination.reachable
+  requires_destination: true
+  completion:
+    if_already_at_destination: true
+  duration:
+    mode: route_distance
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: location_set
+    location_id: context.location_id
+  success:
+    condition: actor.state.location_id == context.destination_id
+    result: arrived
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
 - id: withdraw_energy
   version: 1
   description: Withdraw one unit of energy from the shared reserve.
@@ -127,6 +161,63 @@ actions:
   failure:
     condition: actor.incapacitated
     result: revocation_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: take_energy
+  version: 1
+  description: Take one unit of shared reserve energy without authorization.
+  parameters: {}
+  preconditions:
+  - actor.alive
+  duration:
+    minutes: 1
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: resource_take
+    resource_id: energy_reserve
+    amount: 1
+    scope: energy_withdrawal
+    mode: covert
+  success:
+    condition: actor.alive
+    result: energy_taken
+  failure:
+    condition: actor.incapacitated
+    result: take_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline
+- id: review_violation
+  version: 1
+  description: Sanction or forgive one observed violation as the resource steward.
+  parameters: {}
+  preconditions:
+  - actor.alive
+  duration:
+    minutes: 0
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects: []
+  success:
+    condition: actor.alive
+    result: violation_reviewed
+  failure:
+    condition: actor.incapacitated
+    result: review_failed
   interrupt_policy: cancel
   interaction_policy: allow
   definition_source: config

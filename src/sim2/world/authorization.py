@@ -13,6 +13,7 @@ from typing import Any
 RESOURCE_ACCESS = "resource_access"
 REQUEST_DECISION = "request_decision"
 DELEGATION_REVOCATION = "delegation_revocation"
+VIOLATION_REVIEW = "violation_review"
 
 APPROVAL_CHECK_ORDER = (
     "self_approval_forbidden",
@@ -119,6 +120,25 @@ def authorization_decision(agent: dict[str, Any], action: dict[str, Any], action
             return _deny(spec, "missing_delegation", attemptable=False, message="No configured resource target was supplied.")
         if target in stewarded_targets:
             return _allow(spec, {"type": "stewardship", "id": target})
+        restrictions = list(world.get("restrictions") or [])
+        restriction = next(
+            (
+                item for item in restrictions
+                if str(item.get("actor") or "") == actor_id
+                and str(item.get("target") or "") == target
+                and (not scope or str(item.get("scope") or "") == scope)
+                and str(item.get("status") or "active") == "active"
+            ),
+            None,
+        )
+        if restriction is not None:
+            return _deny(
+                spec,
+                "access_restricted",
+                attemptable=False,
+                message="A steward restriction blocks delegated access until it is forgiven.",
+                restriction=restriction,
+            )
         matching = [
             item for item in delegations
             if str(item.get("source")) == actor_id
@@ -175,6 +195,19 @@ def authorization_decision(agent: dict[str, Any], action: dict[str, Any], action
         if str(delegation.get("target") or "") not in stewarded_targets:
             return _deny(spec, "missing_stewardship", message="Only a steward of the target can revoke this delegation.")
         return _allow(spec, delegation=delegation)
+
+    if mode == VIOLATION_REVIEW:
+        violation = action_context.get("violation")
+        if not violation:
+            return _deny(spec, "violation_not_found", attemptable=False, message="No violation is available to review.")
+        status = str(violation.get("status") or "undetected")
+        if status == "undetected":
+            return _deny(spec, "violation_not_observed", message="An undetected violation is not available to the steward.")
+        if status not in {"observed", "sanctioned"}:
+            return _deny(spec, "violation_already_resolved", message="This violation is already resolved.")
+        if str(violation.get("target") or "") not in stewarded_targets:
+            return _deny(spec, "missing_stewardship", message="Only a steward of the target can review this violation.")
+        return _allow(spec, violation=violation)
 
     return _deny(spec, "unsupported_authorization_mode", attemptable=False, message="The configured authorization mode is not supported.")
 
@@ -268,10 +301,31 @@ def authorization_for_behavior(
         if delegation_id is None:
             delegation_id = values.get("delegation_id")
         action_context["delegation"] = _delegation_for(store, actor_id, stewarded, delegation_id)
+    elif mode == VIOLATION_REVIEW:
+        violation_id = str(values.get("violation_id") or "").strip()
+        if violation_id:
+            violation = store.repositories.contested.get_violation(violation_id)
+        else:
+            # A decision view has no concrete violation parameter yet.  Resolve
+            # the first reviewable violation for this steward so the behavior
+            # is visible as executable; submission still binds and checks the
+            # explicit id.
+            violation = next(
+                (
+                    item for item in store.repositories.contested.list_violations(
+                        statuses=("observed", "sanctioned"), limit=200,
+                    )
+                    if str(item.get("target") or "") in stewarded
+                ),
+                None,
+            )
+        action_context["violation"] = violation
+        action_context["decision"] = str(values.get("decision") or "sanction")
 
     world = {
         "stewardships": stewardships,
         "delegations": store.repositories.authorization.list_delegations(limit=500),
+        "restrictions": store.repositories.contested.list_restrictions(status="active", limit=500),
         "minute": int(store.repositories.metadata.get("world_minute", 0) or 0),
     }
     result = authorization_decision(agent, {"behavior_id": str(behavior.get("id") or ""), "spec": spec}, action_context, world)

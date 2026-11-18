@@ -339,6 +339,7 @@ class BehaviorExecutionService(PlatformService):
                 state["remaining_minutes"] = 0
                 state.pop("active_resource_withdrawal", None)
                 state.pop("active_resource_authorization", None)
+                state.pop("active_resource_take", None)
             agent["initial_state"] = state
             self.store.repositories.entities.update_agent(actor_id, agent)
             bt_data["outcome"] = outcome

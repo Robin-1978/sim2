@@ -23,6 +23,7 @@ from ..world.navigation import (
 )
 from ..world.authorization import behavior_authorization_spec
 from .authorization import AuthorizationRejected, withdrawal_effect
+from .contested import ContestedRejected, resource_take_effect
 from .services import PlatformService
 
 
@@ -52,6 +53,7 @@ class BehaviorSubmission:
     authorization: dict[str, Any] = field(default_factory=dict)
     authorization_operation: str | None = None
     withdrawal: dict[str, Any] | None = None
+    take: dict[str, Any] | None = None
 
 
 class BehaviorIntentService(PlatformService):
@@ -274,6 +276,9 @@ class BehaviorIntentService(PlatformService):
         rejection = self._check_entry_conditions(submission)
         if rejection is not None:
             return rejection
+        rejection = self._check_contested_feasibility(submission)
+        if rejection is not None:
+            return rejection
         for check in (self._check_cooldown, self._check_catalog):
             rejection = check(submission)
             if rejection is not None:
@@ -400,6 +405,7 @@ class BehaviorIntentService(PlatformService):
         submission.authorization = authorization
         action_defs = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
         submission.withdrawal = withdrawal_effect(submission.behavior, action_defs)
+        submission.take = resource_take_effect(submission.behavior, action_defs, submission.definitions)
         if authorization.get("gated") and not authorization.get("available"):
             reason = (authorization.get("reasons") or [{}])[0]
             return {
@@ -505,6 +511,25 @@ class BehaviorIntentService(PlatformService):
                     "retryable": True,
                 }
         return None
+
+    def _check_contested_feasibility(self, submission: BehaviorSubmission) -> dict[str, Any] | None:
+        """Reject a configured take only when the resource cannot supply it now.
+
+        Authorization is deliberately absent from this check.  A take is a
+        priced choice, not an unauthorized branch of the Phase 1 withdrawal.
+        """
+
+        if not submission.take:
+            return None
+        error = self._context.services["contested"].feasibility(submission.agent, submission.take)
+        if error is None:
+            return None
+        return {
+            "status": "rejected",
+            "message": str(error.get("message") or "The take is not feasible."),
+            "failed_check": str(error.get("failed_check") or "resource_empty"),
+            "retryable": True,
+        }
 
     def _check_cooldown(self, submission: BehaviorSubmission) -> dict[str, Any] | None:
         cooldown_minutes = max(0, int(submission.behavior.get("cooldown_minutes", 0) or 0))
@@ -698,6 +723,10 @@ class BehaviorIntentService(PlatformService):
             return self.reject_intent(
                 intent.intent_id, intent.actor_id, intent.intent_type, submission.intent_data, exc.result(),
             )
+        except ContestedRejected as exc:
+            return self.reject_intent(
+                intent.intent_id, intent.actor_id, intent.intent_type, submission.intent_data, exc.result(),
+            )
 
     def _execute_authorization_operation(
         self,
@@ -756,6 +785,18 @@ class BehaviorIntentService(PlatformService):
                 minute=minute,
             )
             return {"delegation_id": decided["delegation"]["delegation_id"], "status": decided["delegation"]["status"]}
+        if operation == "review_violation":
+            violation = submission.authorization.get("violation")
+            if not violation:
+                raise AuthorizationRejected("violation_not_found", "No violation is available to review.")
+            decision = str(parameters.get("decision") or "sanction").strip().casefold()
+            return self._context.services["contested"].review_violation(
+                agent,
+                violation,
+                decision,
+                reason=str(parameters.get("reason") or submission.intent.reason or decision),
+                minute=minute,
+            )
         raise AuthorizationRejected("unsupported_authorization_operation", f"Unsupported authorization operation: {operation}")
 
     def _start_behavior(self, submission: BehaviorSubmission) -> dict[str, Any]:
@@ -798,6 +839,10 @@ class BehaviorIntentService(PlatformService):
                         "minute": submission.world_minute,
                     },
                 )
+            if submission.take:
+                submission.state["active_resource_take"] = dict(submission.take)
+                submission.agent["initial_state"] = submission.state
+                self.store.repositories.entities.update_agent(intent.actor_id, submission.agent)
             self._context.services["events"].append(
                 "behavior.started", intent.actor_id, submission.world_minute,
                 {"intent_id": intent.intent_id, "behavior_id": submission.behavior_id, "target": intent.target, "expected": expected, "decision": {"reason": intent.reason, "confidence": intent.confidence}},

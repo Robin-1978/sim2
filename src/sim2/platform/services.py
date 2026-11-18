@@ -182,6 +182,7 @@ def build_platform_services(context: PlatformContext) -> dict[str, PlatformServi
     from .authorization import AuthorizationService
     from .behavior_intent import BehaviorIntentService
     from .behavior_service import BehaviorExecutionService
+    from .contested import ContestedService
     from .events import EventService
     from .evolution_service import EvolutionService
     from .world_tick_service import WorldTickService
@@ -191,6 +192,7 @@ def build_platform_services(context: PlatformContext) -> dict[str, PlatformServi
         "api": RuntimeApiService(context),
         "intent": BehaviorIntentService(context),
         "authorization": AuthorizationService(context),
+        "contested": ContestedService(context),
         "execution": BehaviorExecutionService(context),
         "tick": WorldTickService(context),
         "evolution": EvolutionService(context),

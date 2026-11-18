@@ -625,6 +625,13 @@ class ActivityRuntimeMixin:
                             "minute": int(minute),
                         },
                     )
+            elif effect_type == "resource_take":
+                # One unauthorized take commits its stock change, violation
+                # record, witness set and social consequences together.  The
+                # caller's savepoint owns rollback on any failure.
+                errors.extend(
+                    self._context.services["contested"].complete_take(agent, resolved_effect, minute)
+                )
             elif effect_type == "resource_transfer":
                 # ResourceLedger has already reserved/removed any carried
                 # source item before success effects run.  This primitive
@@ -910,6 +917,12 @@ class ActivityRuntimeMixin:
                 for effect in (action.get("effects") or [])
             ):
                 return f"resource.withdrawal.failed: {exc}", None
+            if any(
+                isinstance(effect, dict)
+                and str(effect.get("type") or effect.get("op") or "") == "resource_take"
+                for effect in (action.get("effects") or [])
+            ):
+                return f"resource.take.failed: {exc}", None
             raise
 
     def apply_relationship_effect(self, agent: dict[str, Any], target: dict[str, Any], effect: dict[str, Any], minute: int) -> None:
@@ -1408,8 +1421,23 @@ class ActivityRuntimeMixin:
                     "minute": int(minute),
                 },
             )
+        take = state.get("active_resource_take") if isinstance(state.get("active_resource_take"), dict) else None
+        if status != "completed" and take:
+            self._context.services["events"].append(
+                "resource.take.failed",
+                agent["id"],
+                minute,
+                {
+                    "intent_id": str(execution_id),
+                    "actor": str(agent["id"]),
+                    "target": str(take.get("resource_id") or ""),
+                    "reason": str(result),
+                    "minute": int(minute),
+                },
+            )
         state.pop("active_resource_withdrawal", None)
         state.pop("active_resource_authorization", None)
+        state.pop("active_resource_take", None)
         state["active_bt_instance"] = None
         state["active_behavior_id"] = None
         state["active_action"] = None

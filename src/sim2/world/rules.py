@@ -104,7 +104,7 @@ class RuleCompiler:
             return False, "Rule effect type is not supported."
         if str(normalized["effect"].get("type", "")).casefold() in self._AUTHORIZATION_EFFECTS:
             mode = str(normalized["effect"].get("mode") or "resource_access")
-            if mode not in {"resource_access", "request_decision", "delegation_revocation"}:
+            if mode not in {"resource_access", "request_decision", "delegation_revocation", "violation_review"}:
                 return False, f"Unknown authorization mode: {mode}."
             if not behavior_selectors:
                 return False, "An authorization rule must name the behavior it governs."

@@ -77,6 +77,47 @@ class CharacterViewMixin:
                     pass
         return relationships
 
+    def _violation_view(self, agent_id: str) -> dict[str, list[dict[str, Any]]]:
+        """Project only the violation facts this character may know."""
+
+        repo = self.store.repositories.contested
+        my = [
+            {
+                "violation_id": item.get("violation_id"),
+                "target": self._entity_name(item.get("target")),
+                "amount": item.get("amount"),
+                "status": item.get("status"),
+                "minute": item.get("created_minute"),
+            }
+            for item in repo.list_violations(actor_id=agent_id, limit=8)
+        ]
+        witnessed = [
+            {
+                "violation_id": item.get("violation_id"),
+                "actor": self._entity_name(item.get("actor")),
+                "target": self._entity_name(item.get("target")),
+                "amount": item.get("amount"),
+                "status": item.get("status"),
+                "minute": item.get("created_minute"),
+            }
+            for item in repo.list_violations(witness_id=agent_id, limit=8)
+        ]
+        stewarded = set(self._authorization_stewardships(agent_id))
+        unresolved = [
+            {
+                "violation_id": item.get("violation_id"),
+                "actor": self._entity_name(item.get("actor")),
+                "target": self._entity_name(item.get("target")),
+                "amount": item.get("amount"),
+                "witnesses": [self._entity_name(value) for value in (item.get("witnesses") or [])],
+                "status": item.get("status"),
+                "minute": item.get("created_minute"),
+            }
+            for item in repo.list_violations(statuses=("observed", "sanctioned"), limit=200)
+            if str(item.get("target") or "") in stewarded
+        ][:8]
+        return {"my": my, "witnessed": witnessed, "unresolved": unresolved}
+
     def _recent_activity(self, agent_id: str, bt_defs: dict[str, dict[str, Any]]) -> tuple[list[Any], list[Any]]:
         actor_events = self.events_repo.recent_events_for_actor(agent_id, limit=8)
         recent_actions = [

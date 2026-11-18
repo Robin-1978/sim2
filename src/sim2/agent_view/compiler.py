@@ -195,6 +195,16 @@ class AgentViewCompiler(
             else:
                 frame.blocked.append(entry)
         available, diagnostics = frame.available, frame.diagnostics
+        contested_actions = [
+            {
+                "choice": item.get("choice"),
+                "ref": item.get("ref"),
+                **dict(item.get("risk") or {}),
+            }
+            for item in available
+            if item.get("risk")
+        ]
+        violation_view = self._violation_view(agent_id)
         state, location_id, current_location = frame.state, frame.location_id, frame.current_location
         bt_defs, action_defs = frame.bt_defs, frame.action_defs
         # Long-term goal tags are context only.  They must not promote a
@@ -304,6 +314,10 @@ class AgentViewCompiler(
             "active_story_threads": active_story_threads,
             "executable_behaviors": self._assign_choices(available) if role == "agent_decision" else [],
             "blocked_behaviors": self._assign_choices(frame.blocked) if role == "agent_decision" else [],
+            "contested_actions": contested_actions if role == "agent_decision" else [],
+            "my_violations": violation_view["my"],
+            "witnessed_violations": violation_view["witnessed"],
+            "unresolved_violations": violation_view["unresolved"],
             "decision_constraints": decision_constraints if role == "agent_decision" else [],
             "last_platform_result": self._with_behavior_choice(
                 self._humanize_record(state.get("last_platform_result")), bt_defs

@@ -6,9 +6,22 @@ locations:
   tags:
   - public
   - facility
-  routes: []
+  routes:
+  - relay_yard
   map_position:
     x: 0
+    y: 0
+- id: relay_yard
+  name: Relay Yard
+  public: true
+  safe: true
+  tags:
+  - public
+  - yard
+  routes:
+  - relay_station
+  map_position:
+    x: 1
     y: 0
 resources:
 - id: energy_reserve

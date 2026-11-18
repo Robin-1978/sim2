@@ -14,6 +14,7 @@ from .sections_character import (
     reflection_lines,
     registered_action_lines,
     scene_lines,
+    violation_lines,
 )
 from .sections_common import (
     institution_lines,
@@ -41,6 +42,7 @@ def _render_sections(context: dict[str, Any], task: str) -> str:
     lines.extend(knowledge_lines(context, role))
     lines.extend(directive_lines(context))
     lines.extend(activity_lines(context))
+    lines.extend(violation_lines(context))
     if role == "agent_reflection":
         lines.extend(reflection_lines(context))
     if role == "story":
