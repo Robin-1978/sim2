@@ -44,6 +44,7 @@ new status instead.
 | Tension multi-round | 3 runs × 4 rounds: 0 take, 0 sanction, 0 violation; cooperative equilibrium |
 | Phase 3 decomposed remote | 3/3 complete cores, 3/3 violation chains, 2/3 legal chains; 45 accepted / 6 rejected |
 | Phase 3 broad remote | 0/3 complete cores; improved prompt still 0/1 |
+| Minimal evolution loop | `audit_dynamic_evolution_loop.py --provider remote --rounds 3`: passed, `flags: []`; round 1 God created a Deposit Energy Cell Action/BT, Mira executed it and the reserve moved 0→1, Story created an emergent beat; rounds 2-3 completed research and another emergent beat |
 | Deterministic | Phase 1 `18 passed`, Phase 2 `19 passed`, Phase 3 `13 passed`, source guard `2 passed` |
 
 ## 5. Open issues
@@ -54,7 +55,7 @@ new status instead.
 | G-02 | One broad God task cannot finish the pack; model submits one proposal per turn and exhausts reads | Broad 0/3; improved prompt 0/1; `read_budget`, `entity_name_duplicate`, schema omissions | Add an automatic decomposition/continuation path (Director gap → atomic stages) or a bounded multi-proposal plan; do not loosen Platform safety | `god_structural` completes one full pack from one task without harness-authored stage instructions, or an orchestrator does the decomposition automatically; broad complete core 1/1 | OPEN |
 | G-03 | A witnessed violation does not automatically wake the steward; review is harness-injected | Phase 2C and tension probes inject Mira’s review task | Add/configure an event wake on `violation.observed` for the steward and create a review task; cover with a deterministic test | After a witnessed take, the steward receives a review task and can sanction without harness injection | OPEN |
 | G-04 | Neutral NPCs do not spontaneously choose the coercive path | 0/4 neutral take; 0/3 multi-round take; model sees `observers/detection/consequence` and still requests/waits | Add a pressure scenario (scarcity, deadline, third claimant, persona) and measure; do not hard-code take | In N neutral pressure runs, at least one take/rejection/sanction occurs without a directed “you have decided” prompt; report the rate honestly | OPEN |
-| G-05 | Long-term autonomous growth is unproven | No free multi-season run; Phase 3B is 15 harness-driven stages | Run a multi-season free loop after G-02/G-03; record gap → creation → execution → next gap | A free run creates and executes a new pack, then a new Director gap appears and is handled without stage injection | OPEN |
+| G-05 | Long-term autonomous growth is unproven | Minimal 3-round God→NPC→Story loop passed with no flags: God created a new Action/BT from a resource-safety event, Mira executed it, Story created an emergent beat, then research produced a second beat. No free multi-season run yet; Phase 3B is 15 harness-driven stages | Run a longer free loop after G-02/G-03; record gap → creation → execution → next gap across seasons | A free run creates and executes a new pack, then a new Director gap appears and is handled without stage injection | PARTIAL |
 | G-06 | Read budget and schema adherence reduce God reliability | 6 rejected Phase 3 tool calls; repeated read-budget stops | Tune the role read budget/contract and add schema repair prompts; keep the safety cap | Fewer than 2 rejected calls per decomposed run; no read-budget stop before the final proposal | OPEN |
 | G-07 | The first tension aggregate undercounted direct intents | Mira’s direct `behavior_ref: behavior:withdraw_energy` was not a `request_behavior` tool call | Script fixed to read `turn.response`; rerun needed to publish corrected counts | Corrected probe rerun completed; docs updated | IN_PROGRESS |
 
@@ -77,3 +78,8 @@ new status instead.
 - Tension probe added at `scripts/verify_social_tension.py`.
 - Counting bug for direct intents found and fixed; rerun still pending (G-07).
 - Phase 3 legal chain fresh result is 2/3 because of G-01.
+- Minimal evolution loop passed 3/3 rounds with `flags: []`:
+  `python scripts/audit_dynamic_evolution_loop.py --provider remote --rounds 3`.
+  Round 1: God proposed and assigned `Deposit Carried Energy Cell`; Mira chose it; the public reserve rose 0→1; Story created an emergent beat.
+  Round 2-3: Mira completed Signal Archive research; Story created another emergent beat.
+  A `research_synthesis` God task remained pending only because the run was cut at three requested rounds.
