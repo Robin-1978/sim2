@@ -468,6 +468,27 @@ Pressure realized tension through the steward rejecting a request after the
 reserve was exhausted and revoking a delegation. The model still preferred the
 legal request path; a spontaneous covert take remains unobserved.
 
+#### Free eight-round evolution run
+
+`scripts/audit_dynamic_evolution_loop.py --provider remote --rounds 8` passed
+with `flags: []` in a world without harness-authored Action, behavior or Story
+content after initialization:
+
+| Round | Actual result |
+| --- | --- |
+| 1 | `resource.safety_low` woke God; God created `Deposit Energy Cell` and `Restore Public Reserve`; Mira executed it; the reserve moved 0→1; Story produced a beat |
+| 2-3 | Mira studied `Signal Archive`; Story produced a beat and marked the thread completed |
+| 4 | `research_synthesis` woke God; God created `Relay Checksum Fragment`; Story proposed the next study |
+| 5 | Mira studied the new fragment; Story produced a beat |
+| 6 | `research_synthesis` woke God again; God created `Relay Second Checksum Record` |
+| 7-8 | Mira continued the new source; Story produced a beat |
+
+This is the strongest long-growth evidence: creation, execution, evidence,
+new gap and another creation all came from validated events and the configured
+wake graph. The run ended with one research-synthesis God task queued for the
+next round, which is a cut-off, not an absorbing state. It does not exercise a
+second Director-driven contract pack.
+
 #### Full one-cycle Director -> God -> NPC -> Story
 
 `scripts/run_full_social_loop.py --provider remote --rounds 2` produced the
@@ -481,8 +502,10 @@ first complete one-cycle loop on `dynamic_social_probe`:
 | Story | Three Story tasks; two accepted emergent beats about Tomas's request and Mira's approval decision; one duplicate wait |
 | Director next | The active plan completed and a new plan opened at `resource, baseline: 1` |
 
-This proves one bounded cycle with all four roles. It does **not** prove a
-second pack, a multi-season free run, or spontaneous adversarial tension.
+This proves one bounded cycle with all four roles. The free eight-round run
+above separately proves multi-round creation and execution without a Director.
+What remains unproven is a second Director-driven contract pack; spontaneous
+adversarial tension is covered by the neutral and pressure probes above.
 
 The context-growth design is recorded in
 [context-scaling-plan.md](context-scaling-plan.md); the active role values and
