@@ -174,6 +174,15 @@ class AgentEngine:
             }
             if trigger_contract.get("evidence_sources"):
                 context["evolution_trigger"]["observed_evidence"] = self.platform.count_verified_evidence(trigger_contract.get("evidence_sources"))
+            if isinstance(trigger_contract.get("stages"), list) and trigger_contract.get("stages"):
+                # The stage text already carries the exact proposal shape and
+                # the role policy is in the system message.  A ten-bullet
+                # free-form protocol would repeat it on every stage.
+                context["prompt_protocol"] = [
+                    "Follow the current stage instruction and submit exactly one proposal for it.",
+                    "Use exact visible names; a new Action needs followup_behavior in the same call.",
+                    "Use at most four focused reads; after the budget warning, submit with the facts already collected.",
+                ]
         return trigger_contract
 
     def _attach_triggering_evidence(
@@ -205,7 +214,8 @@ class AgentEngine:
                 context["recent_history"] = [
                     item for item in context["recent_history"] if int(item.get("event_id", 0) or 0) not in shown
                 ]
-            for item in verified_events[-16:]:
+            evidence_limit = 8 if context.get("role") == "god" else 16
+            for item in verified_events[-evidence_limit:]:
                 evidence = {
                     "event_type": item.get("event_type"),
                     "world_minute": item.get("world_minute"),
@@ -238,8 +248,15 @@ class AgentEngine:
         interaction_tools = self._interaction_tools(task_type)
         role_tools = configured_role_tools(self.platform, role)
         trigger_tools = None
-        if isinstance(trigger_contract, dict) and isinstance(trigger_contract.get("allowed_tools"), list):
-            trigger_tools = [str(item) for item in trigger_contract.get("allowed_tools", []) if str(item)]
+        if isinstance(trigger_contract, dict):
+            # World YAML uses the author-facing ``tools`` key; compiled
+            # contracts use ``allowed_tools``.  Accept both so a raw contract
+            # cannot silently expose the role's entire tool catalog.
+            allowed = trigger_contract.get("allowed_tools")
+            if not isinstance(allowed, list):
+                allowed = trigger_contract.get("tools")
+            if isinstance(allowed, list):
+                trigger_tools = [str(item) for item in allowed if str(item)]
         if interaction_tools is not None:
             self._compact_interaction_context(context, task_type, interaction_tools)
         session_tools = interaction_tools if interaction_tools is not None else trigger_tools if trigger_tools is not None else role_tools

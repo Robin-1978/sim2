@@ -139,7 +139,96 @@ The existing `max_agent_iterations` and `max_read_tool_calls` limits remain.
 5. Remove the full catalog sections from the structural prompt.
 6. Run the 100-Action/100-behavior budget test and the staged broad probe.
 
-## 8. Non-goals
+## 8. Function schema, cache and iteration budgets
+
+The prompt is not the only model input. Function schemas are sent on every
+request, before the messages, and a large schema is part of the cacheable
+prefix rather than the dynamic prompt text.
+
+Measured God contract schema (remote dynamic probe, tools
+`query_history, query_knowledge_gaps, propose_entity, propose_definition,
+propose_world_change, wait`):
+
+| Schema | Before | After |
+| --- | --- | --- |
+| Full contract | 14,510 chars (~3,627 tokens) | 12,793 chars (~3,198 tokens) |
+| `propose_definition` | 7,264 chars | 6,543 chars |
+| `propose_world_change` | 4,390 chars | 3,394 chars |
+
+The staged-contract prompt projection was also reduced: in the 100-entry test
+world the proposal-contract section fell from 4,997 to 641 chars and the whole
+prompt from 9,838 to 5,443 chars. A real audited staged God prompt fell from
+14,769 to 7,748 chars:
+
+| Section | Before | After |
+| --- | --- | --- |
+| Proposal contract | 5,403 | 641 |
+| World outcomes | 3,778 | 358 |
+| Protocol | 2,120 | 297 |
+| Rule condition fields | 1,091 | 139 |
+| Tool-name list | 450 | 176 |
+| World trends | 575 | 209 |
+
+The same audit found that a raw contract used the author-facing `tools` key
+while the engine only read `allowed_tools`; the session therefore exposed the
+entire 19-tool catalog. Accepting both keys reduced the God suffix schema from
+20,321 to 12,793 chars. The NPC prompt also fell from 10,020 to 8,216 chars:
+behavior blocks 3,097→1,750, duplicate attribute rules removed and
+unconditional world rules compacted. These are role-specific projections, not
+global truncation.
+
+Final remote contract-driven broad run after all projection changes:
+
+| Metric | Old broad | Final broad |
+| --- | --- | --- |
+| God calls | 16 | 15 |
+| Prompt chars | 14,423–15,396 | 7,615–8,577 |
+| Prompt tokens | 7,737–9,666 | 5,209–7,767 |
+| Accepted / rejected | 15 / 0 | 15 / 0 |
+| Cached prompt tokens | 60.8% | 72.9% |
+| Schema suffix | 20,321 chars | 12,793 chars |
+
+The remaining prompt is mostly the exact stage instruction, current target
+index, recent history and the compact platform protocol. The remaining suffix
+is the static six-tool contract schema.
+
+### Cache behavior
+
+Provider cache data from the real remote runs:
+
+| Role | Calls | Cached prompt tokens | Average cache share |
+| --- | --- | --- | --- |
+| God | 53 | 380,416 | 79.5% |
+| `agent_decision` | 10 | 21,888 | 55.1% |
+| Story | 8 | 12,544 | 47.7% |
+
+`static_prefix_hash` was one value per role in these runs. The cached token
+count is larger than the rendered static prefix because the provider caches
+the function schemas and system message together with the stable prompt head.
+This is why schema should be **stable per role/task class and optimized once**,
+not rebuilt from dynamic context on every turn. Dynamic schema filtering is
+useful only at a stable task-class boundary (for example the instant-interaction
+tool set), because changing the schema invalidates the cacheable prefix for the
+next call.
+
+### Iteration and read budgets
+
+The low decomposed-probe limits were a probe artifact, not the product
+configuration: 3 iterations and 1 read caused repeated `read_budget` and
+`tool_budget` rejections. The probe now uses the real God budget: 24 iterations,
+40 tool calls and 4 focused reads. Product budgets remain:
+
+| Role | Iterations | Reads | Reason |
+| --- | --- | --- | --- |
+| God structural | 24 | 4 | Several atomic stages, each with a bounded read before one proposal |
+| `agent_decision` | 8 | 3 | One or two reads, then one choice |
+| Story | 8 | 4 | Evidence plus one narrative continuation |
+| Director | 4 | 2 | Select one cell |
+
+Raising the God iteration budget does not raise context size; the read budget
+and the compact stage prompt bound the loop.
+
+## 9. Non-goals
 
 - Raising the global 16k cap as the primary solution.
 - Semantic search over every entity on every turn.

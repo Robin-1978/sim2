@@ -305,9 +305,24 @@ def executable_behavior_lines(context: dict[str, Any]) -> list[str]:
                 # Purpose commonly repeats summary and requires commonly
                 # repeats when. Keep one authoritative sentence in the
                 # model view instead of charging tokens for duplication.
-                if label == "purpose" and value_text == previous_values.get("summary"):
+                if label == "summary" and value_text == str(behavior.get("name") or ""):
+                    continue
+                if label == "purpose" and value_text in {
+                    str(behavior.get("name") or ""),
+                    previous_values.get("summary", ""),
+                }:
                     continue
                 if label == "requires" and value_text == previous_values.get("when"):
+                    continue
+                if label == "target" and value_text.startswith("Platform resolves permitted targets"):
+                    continue
+                if label == "interrupt" and value_text == "cancel":
+                    continue
+                if label == "steps" and value_text == str(behavior.get("name") or ""):
+                    continue
+                if label == "cost" and value_text.strip() == "No direct resource cost.":
+                    continue
+                if label == "impact" and value_text.startswith("Platform applies configured") and "; " not in value_text:
                     continue
                 previous_values[label] = value_text
                 lines.append(f"      {label}: {value_text}")

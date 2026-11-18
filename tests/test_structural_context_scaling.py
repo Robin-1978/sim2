@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from sim2.agents.tool_executor import AgentToolExecutor
@@ -92,6 +93,36 @@ def test_structural_prompt_indexes_a_large_catalog_instead_of_rendering_it() -> 
     assert metrics["omitted_required"] == []
 
 
+def test_staged_contract_replaces_the_full_free_form_contract() -> None:
+    staged = _context()
+    staged["evolution_trigger"] = {
+        "id": "director:growth:12",
+        "purpose": "Grow the resource cell.",
+        "stages": [{"instruction": "Create the required resource.", "required_content": {"entities": ["Reserve"]}}],
+    }
+    compact_prompt = render_context(staged, "Review structural growth.", max_chars=UNLIMITED)
+    assert "Follow the current stage instruction exactly" in compact_prompt
+    assert "rule.behavior_names must use exact BT names" not in compact_prompt
+    assert len(compact_prompt) < 7_000
+
+    free_form = _context()
+    full_prompt = render_context(free_form, "Review structural growth.", max_chars=UNLIMITED)
+    assert "rule.behavior_names must use exact BT names" in full_prompt
+
+
+def test_god_contract_schema_stays_compact() -> None:
+    from sim2.agent_view.tool_registry import tool_schemas_for_role
+
+    contract = tool_schemas_for_role(
+        "god",
+        ["query_history", "query_knowledge_gaps", "propose_entity", "propose_definition", "propose_world_change", "wait"],
+    )
+    text = json.dumps(contract, ensure_ascii=False)
+    assert len(text) < 13_500
+    propose = next(item for item in contract if item["function"]["name"] == "propose_definition")
+    assert len(json.dumps(propose, ensure_ascii=False)) < 7_000
+
+
 def test_omission_telemetry_marks_required_sections_lost_to_compaction() -> None:
     _, tight = render_context_with_metrics(_context(), "Review structural growth.", max_chars=6000)
 
@@ -115,6 +146,32 @@ def test_structural_history_keeps_only_a_name_level_index_summary() -> None:
     assert compact["names"] == [f"Behavior {index}" for index in range(6)]
     assert compact["total"] == 40
     assert "items" not in compact
+
+
+def test_contract_tools_alias_filters_the_role_catalog(monkeypatch) -> None:
+    from sim2.agents.engine import AgentEngine
+
+    monkeypatch.setattr("sim2.agents.engine.configured_role_tools", lambda platform, role: None)
+    engine = AgentEngine.__new__(AgentEngine)
+    engine.platform = None
+    context = {
+        "tools": [
+            {"name": "observe_nearby"},
+            {"name": "query_world_index"},
+            {"name": "propose_entity"},
+            {"name": "propose_definition"},
+            {"name": "wait"},
+        ]
+    }
+    interaction, session = engine._select_session_tools(
+        context,
+        "god",
+        "god_structural",
+        {"tools": ["query_world_index", "propose_entity", "wait"]},
+    )
+    assert interaction is None
+    assert session == ["query_world_index", "propose_entity", "wait"]
+    assert [item["name"] for item in context["tools"]] == ["query_world_index", "propose_entity", "wait"]
 
 
 def test_structural_history_summarizes_proposal_arguments() -> None:

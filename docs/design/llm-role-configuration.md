@@ -64,7 +64,22 @@ Actual verification run:
 - `story` is explicitly remote instead of inheriting the default provider.
 - `director` has a small budget because it selects one cell, not content.
 
-## 5. Reproduction
+## 5. Function schemas and cache
+
+Function schemas are part of the provider's cacheable prefix, not the dynamic
+prompt. Keep them stable per role and per task class so repeated calls hit the
+provider cache; do not rebuild the schema from changing context on every turn.
+The measured God contract schema is 12,793 chars (~3,198 tokens) after
+compression, and real remote runs show a 79.5% cached-token share for God,
+55.1% for `agent_decision` and 47.7% for Story. Details and the schema-size
+audit are in [context-scaling-plan.md](context-scaling-plan.md).
+
+The probe budgets must match the role configuration. The old decomposed probe
+used 3 iterations and 1 read and produced artificial `read_budget` /
+`tool_budget` rejections. It now uses 24 iterations, 40 tool calls and 4 reads,
+the same envelope as the God role.
+
+## 6. Reproduction
 
 ```bash
 python -c "from sim2.llm.config import LLMConfig; c=LLMConfig.load(); print(c.provider_name_for('director'), c.role_for('god'))"

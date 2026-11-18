@@ -18,14 +18,14 @@ def propose_definition_schema() -> dict[str, Any]:
     definition_properties: dict[str, Any] = {
         "nodes": {
             "type": "array",
-            "description": "For a behavior, ordered executable nodes. Use an Action node with the exact registered Action name; include Travel before a destination Action when needed.",
+            "description": "Ordered executable nodes. Use an Action node with the exact visible Action name; include Travel before a destination Action.",
             "items": {
                 "type": "object",
                 "properties": {
                     "type": {"type": "string", "enum": ["action", "behavior", "sequence", "selector", "parallel", "condition", "wait"]},
-                    "action_id": {"type": "string", "description": "Exact visible Action name from world_action_catalog."},
-                    "behavior_id": {"type": "string", "description": "Exact visible BT name when using a behavior node."},
-                    "parameters": {"type": "object", "description": "Action parameter names and exact visible entity values."},
+                    "action_id": {"type": "string", "description": "Exact visible Action name."},
+                    "behavior_id": {"type": "string", "description": "Exact visible behavior name."},
+                    "parameters": {"type": "object", "description": "Action parameter names with exact visible values."},
                     "children": {"type": "array", "items": {"type": "object"}},
                 },
                 "additionalProperties": True,
@@ -33,7 +33,7 @@ def propose_definition_schema() -> dict[str, Any]:
         },
         "parameters": {
             "type": "object",
-            "description": "For an Action: parameter_name -> one of the configured scalar type names. Do not use human-language placeholder values.",
+            "description": "Action parameter_name -> configured scalar type name.",
             "additionalProperties": {
                 "oneOf": [
                     {"type": "string", "enum": sorted(SCALAR_PARAMETER_TYPES)},
@@ -43,43 +43,43 @@ def propose_definition_schema() -> dict[str, Any]:
         },
         "duration": {
             "type": "object",
-            "description": "For an Action, use {minutes: positive number} or {mode: route_distance|recipe_duration}.",
+            "description": "Action duration: {minutes: positive number} or {mode: route_distance|recipe_duration}.",
         },
         "costs": {
             "type": "object",
-            "description": "For an Action, reserve carried inputs under costs.reserve. Use item_parameter and optionally item_quantity_parameter for a variable amount.",
+            "description": "Action costs. Reserve carried inputs under costs.reserve; use item_parameter and optional item_quantity_parameter.",
         },
-        "preconditions": {"type": "array", "items": {"type": "string"}, "description": "Optional machine predicates for an Action."},
-        "effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}, "op": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Observable Action effects. resource_transfer must bind its source and reserved quantity."},
-        "progress_effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}, "op": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Observable effects applied while a long Action progresses."},
-        "success": {"type": "object", "description": "One Action success object: {condition?: machine predicate, result: short label}."},
-        "failure": {"type": "object", "description": "One Action failure object: {condition?: machine predicate, result: short label}."},
+        "preconditions": {"type": "array", "items": {"type": "string"}, "description": "Optional machine predicates."},
+        "effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}, "op": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Observable Action effects."},
+        "progress_effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}, "op": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Observable effects while a long Action progresses."},
+        "success": {"type": "object", "description": "Action success: {condition?: machine predicate, result: short label}."},
+        "failure": {"type": "object", "description": "Action failure: {condition?: machine predicate, result: short label}."},
         "entry_conditions": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "Optional durable machine predicates only, such as actor.alive, actor.can_research, actor.inventory.item > 0, actor.state.location_id == <visible location name>, or world[\"<property>\"] >= <number>. A bare world property is not a condition; compare it with a number or true/false. Do not write prose, goals, or claims like 'actor can reach the records'; use [] when Action preconditions and a Travel node are sufficient.",
+            "description": "Durable machine predicates only, e.g. actor.alive, actor.can_research, actor.inventory.item > 0, actor.state.location_id == <visible place>, or world[\"<property>\"] >= <number>. Use [] when Action preconditions and Travel are sufficient.",
         },
         "success_results": {"type": "array", "items": {"type": "string"}, "description": "Short observable result labels."},
         "failure_results": {"type": "array", "items": {"type": "string"}, "description": "Short observable failure labels."},
         "summary": {"type": "string"},
         "goal": {"type": "string"},
-        "outcome_events": {"type": "array", "items": {"type": "object", "description": "Each event must use {event_type: new event name, summary: fact-based text, wake?: [story|god]}."}},
+        "outcome_events": {"type": "array", "items": {"type": "object", "description": "{event_type, summary, wake?: [story|god]}."}},
     }
     return {
         "type": "object",
         "properties": {
             "definition_type": {"type": "string", "enum": list(DEFINITION_TYPES)},
-            "name": {"type": "string", "description": "A short visible name. Platform derives the internal registry key."},
+            "name": {"type": "string", "description": "Short visible name."},
             "definition": {
                 "type": "object",
-                "description": "Declarative fields for the selected type. Use exact visible entity names; no free-form steps, code, handlers, SQL, or internal IDs.",
+                "description": "Declarative fields for the selected type; use exact visible names, never code or internal IDs.",
                 "properties": definition_properties,
                 "additionalProperties": True,
             },
-            "assign_to": {"type": "array", "items": {"type": "string"}, "description": "For a behavior, required visible character names that can execute it; other definition types must leave this empty."},
+            "assign_to": {"type": "array", "items": {"type": "string"}, "description": "For a behavior, visible characters that can execute it now; empty for other types."},
             "followup_behavior": {
                 "type": "object",
-                "description": "Required for a new Action. Bind the Action to one immediately executable behavior in the same transaction.",
+                "description": "Required for a new Action: bind one immediately executable behavior.",
                 "properties": {
                     "name": {"type": "string", "description": "Visible BT name."},
                     "assign_to": {"type": "array", "items": {"type": "string"}, "description": "Visible character names that can execute the BT now."},
@@ -90,7 +90,7 @@ def propose_definition_schema() -> dict[str, Any]:
             },
             "followup_recipe": {
                 "type": "object",
-                "description": "Required when the new Action consumes a recipe. Register the recipe atomically with the Action and followup BT.",
+                "description": "Required when the new Action consumes a recipe; register it atomically.",
                 "properties": {
                     "name": {"type": "string", "description": "Visible recipe name."},
                     "definition": {"type": "object", "description": "Recipe definition with duration_minutes, inputs and outputs."},
@@ -98,7 +98,7 @@ def propose_definition_schema() -> dict[str, Any]:
                 "required": ["name", "definition"],
                 "additionalProperties": False,
             },
-            "evidence": {"type": "string", "description": "The observed result that justifies this new definition."},
+            "evidence": {"type": "string", "description": "Observed result that justifies the definition."},
         },
         "required": ["definition_type", "name", "definition"],
         "additionalProperties": False,

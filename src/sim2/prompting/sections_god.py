@@ -53,7 +53,21 @@ def _proposal_contract_lines(context: dict[str, Any]) -> list[str]:
     """What a world proposal may contain and how Platform validates it."""
 
     lines: list[str] = []
+    trigger = context.get("evolution_trigger") if isinstance(context.get("evolution_trigger"), dict) else {}
+    stages = trigger.get("stages") if isinstance(trigger.get("stages"), list) else []
     lines.append("<world_proposal_contract>")
+    if stages:
+        # A staged contract already carries the exact shape of the current
+        # proposal.  Repeating the full free-form contract on every one of 15
+        # stages spends four thousand characters on instructions the stage
+        # text already contains.
+        lines.append("  - Follow the current stage instruction exactly; submit one proposal for that stage.")
+        lines.append("  - Use exact visible names. A new Action needs followup_behavior in the same call; a recipe Action also needs followup_recipe.")
+        lines.append("  - A behavior must reference registered Action names and be executable by its assigned character now; include Travel before a destination Action.")
+        lines.append("  - Platform validates references, conservation, authorization and executable consequences. Do not submit an alternative content type.")
+        lines.append("  - After the read budget warning, use the facts already collected and submit the proposal.")
+        lines.append("</world_proposal_contract>")
+        return lines
     lines.append("  - Create any missing world content the validated situation needs: agent, location, faction, object, empty resource node, institution, relationship, rule, attribute, world property, capability, Action, behavior, recipe, or narrative event.")
     lines.append("  - For a research source, put research_discoveries, research_required/required, and any research_assignees in the proposed entity data. Reuse the registered generic research behavior; do not create one BT per source.")
     lines.append("  - Use the smallest supported content type that makes the next character decision possible. Platform still validates names, references, conservation, executable behavior, and consequences.")
@@ -104,16 +118,29 @@ def _public_progress_lines(context: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _staged(context: dict[str, Any]) -> bool:
+    """Whether the active contract already supplies the exact proposal shape."""
+
+    trigger = context.get("evolution_trigger") if isinstance(context.get("evolution_trigger"), dict) else {}
+    stages = trigger.get("stages") if isinstance(trigger.get("stages"), list) else []
+    return bool(stages)
+
+
 def _catalog_lines(context: dict[str, Any]) -> list[str]:
     """Rule condition fields and the registered behavior and action catalogs."""
 
     lines: list[str] = []
     lines.append("<rule_condition_fields>")
     fields = context.get("rule_condition_fields") or []
-    for field in fields[:20]:
-        lines.append(f"  - {field.get('condition')}: {field.get('meaning', 'configured world value')}")
-    if not fields:
-        lines.append("  - none")
+    if _staged(context):
+        # Stage text carries the exact rule condition and machine fields; the
+        # full event-condition index is generic reference material here.
+        lines.append("  - Use the exact condition and fields in the current stage instruction (usually \"true\").")
+    else:
+        for field in fields[:20]:
+            lines.append(f"  - {field.get('condition')}: {field.get('meaning', 'configured world value')}")
+        if not fields:
+            lines.append("  - none")
     lines.append("</rule_condition_fields>")
     index = context.get("world_index") if isinstance(context.get("world_index"), dict) else {}
     indexed = bool(index.get("totals"))
@@ -214,6 +241,10 @@ def _world_trend_lines(context: dict[str, Any]) -> list[str]:
         )
     else:
         lines.append("  Configured regeneration: none declared.")
+    if _staged(context):
+        lines.append("  Staged contract: weekly/monthly trend prose is omitted; use query_history for a narrower slice.")
+        lines.append("</world_trends>")
+        return lines
     for period in ("weekly", "monthly"):
         item = trends.get(period) or {}
         goal = item.get("goal_trends") or {}
@@ -237,6 +268,24 @@ def _world_outcome_lines(context: dict[str, Any]) -> list[str]:
     lines: list[str] = []
     lines.append("<world_outcomes>")
     changes = context.get("recent_world_changes") or []
+    if _staged(context):
+        # A staged proposal has one exact shape.  Full expected/observed
+        # comparisons and pending-evaluation payloads repeat data already in
+        # world_rules and cost several thousand characters per stage.
+        for item in changes[:2]:
+            label = str(item.get("summary") or item.get("event_type") or "world change")[:160]
+            lines.append(f"  - {label} at minute {item.get('world_minute', 'unknown')}")
+        if not changes:
+            lines.append("  - no recent world proposal result")
+        pending = [item for item in (context.get("world_proposals") or []) if item.get("status") == "pending_evaluation"]
+        lines.append(f"  Pending proposal evaluations: {len(pending)}")
+        outcomes = context.get("recent_agent_outcomes") or []
+        for item in outcomes[:2]:
+            outcome = item.get("outcome") or {}
+            lines.append(f"  - {item.get('actor_name') or 'a character'}: {item.get('behavior_choice') or 'behavior'} -> {outcome.get('status', item.get('event_type', 'unknown'))}")
+        lines.append("  Compare the recent result with the current stage before proposing.")
+        lines.append("</world_outcomes>")
+        return lines
     if changes:
         for item in changes[:6]:
             effect = item.get("effect") or {}

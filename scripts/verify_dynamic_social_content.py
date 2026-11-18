@@ -328,9 +328,18 @@ def run_probe(platform: Platform, router: LLMRouter, provider: str, model: str |
                     str(task["task_type"]),
                     task.get("source_events") or [],
                     current_instruction,
-                    max_iterations=24 if broad else 3,
-                    max_tool_calls=40 if broad else 4,
-                    max_read_tool_calls=2 if broad else 1,
+                    # Match the configured God role closely enough that a
+                    # focused read plus one proposal fits in a single stage
+                    # session. The earlier 3-iteration / 1-read probe
+                    # manufactured budget rejections that the real role does
+                    # not have.
+                    # Use the same iteration and tool budgets as the real God
+                    # role.  The old 3-iteration / 1-read probe manufactured
+                    # budget rejections that the product configuration never
+                    # had.
+                    max_iterations=24,
+                    max_tool_calls=40,
+                    max_read_tool_calls=4,
                 )
             except Exception as exc:
                 stage_report["error"] = f"{type(exc).__name__}: {exc}"

@@ -80,8 +80,17 @@ def world_rule_lines(context: dict[str, Any]) -> list[str]:
         for rule in world_rules[:8]:
             description = f"; {rule.get('description')}" if rule.get("description") else ""
             applies = f"; applies to {plain(rule.get('applies_to'))}" if rule.get("applies_to") else ""
+            condition = rule.get("condition", "configured condition")
+            if str(condition).strip().casefold() in {"true", "always"}:
+                # An unconditional rule does not need the "when true, platform
+                # applies" boilerplate on every line.
+                lines.append(
+                    f"  - {rule.get('name', 'world policy')} [active]: "
+                    f"{rule.get('effect', 'configured effect')}{applies}{description}"
+                )
+                continue
             lines.append(
-                f"  - {rule.get('name', 'world policy')} [currently {rule.get('current_status', 'unknown')}]: when {rule.get('condition', 'configured condition')}, "
+                f"  - {rule.get('name', 'world policy')} [currently {rule.get('current_status', 'unknown')}]: when {condition}, "
                 f"the platform applies {rule.get('effect', 'configured effect')}{applies}{description}"
             )
         lines.append("</world_rules>")

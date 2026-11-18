@@ -266,7 +266,9 @@ class WorldViewMixin:
             "nearby_entities": [],
             "known_facts": [],
             "recent_actions": recent_world_events,
-            "recent_history": self._recent_history_view(20),
+            # Structural God review needs the causal neighborhood, not the
+            # full day's event stream. Story keeps a longer narrative window.
+            "recent_history": self._recent_history_view(8 if role == "god" else 20),
             "world_growth_ledger": self._world_growth_ledger(),
             "world_index": world_index,
             "season_plan": season_plan,

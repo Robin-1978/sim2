@@ -73,6 +73,7 @@ PROTOCOLS = {
         "Treat the current research_sources status as authoritative: resolved sources have no pending stage. If a world review explicitly asks for a new research question and all relevant sources are resolved, derive one distinct causal dimension from the verified evidence and propose a new declarative source instead of reopening an old question.",
         "Use exact visible entity names. For a behavior that needs travel, include a Travel node before the destination action.",
         "Use only machine predicates shown in condition_examples for entry_conditions; after a read budget warning, submit with the facts already collected instead of re-reading the same source.",
+        "Use at most four focused read calls in one session. Batch one query_world_index call for the target cell and inspect only a definition you plan to extend; then submit the proposal.",
         "For a civilization.milestone task, do not record progress again unless the milestone's source event itself matches the configured evidence; wait when progress is already complete or evidence does not match.",
         "For entity.created or definition.registered, the content already exists; wait unless new verified evidence requires a distinct executable addition, and never duplicate a definition by default.",
     ],

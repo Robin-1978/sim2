@@ -104,14 +104,9 @@ class AgentViewCompiler(
         rules = list((role_rules.get(role) if isinstance(role_rules, dict) else None) or prompt.get("platform_rules", []) or []) if isinstance(prompt, dict) else []
         if not rules:
             rules = default_platform_rules(role)
-        attributes = self.store.repositories.metadata.get("attributes", []) or []
-        attribute_rules = [
-            f"{item.get('label', item.get('id'))}: {item.get('prompt')}"
-            for item in attributes
-            if isinstance(item, dict) and item.get("prompt")
-        ]
-        if role in {"agent_decision", "agent_reflection"}:
-            rules = rules + attribute_rules
+        # Attribute meanings are already rendered once under
+        # ``state_attributes``.  Repeating them as platform rules only spends
+        # tokens on the same sentence twice.
         return protocol_lines, rules
 
     def _role_tools(self, role: str) -> list[dict[str, Any]]:

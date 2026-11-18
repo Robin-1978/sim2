@@ -314,7 +314,7 @@ All probes below were run with `--provider remote`; the resolved model was
 | Phase 2 neutral | `python scripts/verify_contested_actions.py --provider remote --runs 4` | 4/4 valid; request 4/4; request accepted 2/4; take 0/4 |
 | Phase 2 directed | `python scripts/verify_contested_actions.py --provider remote --runs 2 --directed` | 2/2 valid; take 2/2; observed 1/2; sanction of observed violation 1/1 |
 | NPC tension | `python scripts/verify_social_tension.py --provider remote --runs 3 --rounds 4` | 3/3 valid; 4 requests; 4 approvals; 0 takes; 0 sanctions; 1 spontaneous revocation; adversarial tension 1/3 |
-| Phase 3 decomposed | `python scripts/verify_dynamic_social_content.py --provider remote --runs 3` | 3/3 complete cores; 2/3 legal chains; 3/3 violation chains; 45 accepted / 6 rejected |
+| Phase 3 decomposed | `python scripts/verify_dynamic_social_content.py --provider remote --runs 3` | 3/3 complete cores; **3/3 legal chains**; 3/3 violation chains; 45 accepted / 28 rejected (mostly probe-imposed read/tool budget) |
 
 #### Phase 1 actual output
 
@@ -417,21 +417,22 @@ the fresh 2/3 legal-chain result.
 
 #### Context and Agent Engine optimization
 
-The broad staged run used 16 God LLM calls and completed the pack with 15
-accepted proposals and 0 rejected calls. The observed prompt stayed within the
-16,000-character budget:
+The final broad staged run used 15 God LLM calls and completed the pack with 15
+accepted proposals and 0 rejected calls. The observed request stayed well
+within budget:
 
-| Metric | Before G-08 | After G-08 |
-| --- | --- | --- |
-| God calls | 16 | 16 |
-| Estimated prompt tokens | 3,983 | 3,606 to 3,849 |
-| Prompt characters | about 15,900 (compacted) | 14,423 to 15,396 |
-| `world_proposal_contract` | about 4,876 chars | about 5,044 chars |
-| `interaction_history` | about 3,953 chars | 74 to 1,047 chars |
-| Omitted sections | action/behavior catalogs, outcomes, trends | none |
-| Accepted / rejected | 15 / 0 | 15 / 0 |
+| Metric | Before G-08 | After G-08 | Final projection |
+| --- | --- | --- | --- |
+| God calls | 16 | 16 | 15 |
+| Prompt characters | about 15,900 | 14,423 to 15,396 | 7,615 to 8,577 |
+| Prompt tokens (including tools) | 7,737 to 9,666 | 7,737 to 9,666 | 5,209 to 7,767 |
+| `world_proposal_contract` | about 4,876 chars | about 5,044 chars | 641 chars |
+| `interaction_history` | about 3,953 chars | 74 to 1,047 chars | bounded |
+| Tool suffix schema | 20,321 chars | 20,321 chars | 12,793 chars |
+| Cached prompt tokens | 60.8% | 60.8% | 72.9% |
+| Accepted / rejected | 15 / 0 | 15 / 0 | 15 / 0 |
 
-Five engine changes made this possible:
+Seven engine changes made this possible:
 
 1. A structural God session stays open after an accepted proposal instead of
    ending at the first final intent.
@@ -444,6 +445,11 @@ Five engine changes made this possible:
 5. A relevance-scoped `world_index` replaces the full catalogs, and old
    proposal arguments are summarized to names. `query_world_index` and
    `inspect_definition` provide bounded detail on demand.
+6. The staged contract renders a five-line proposal contract, not the full
+   free-form rules; world outcomes, trends and rule-condition fields are
+   compacted for the same reason.
+7. The raw contract's `tools` key is treated as `allowed_tools`, so a God
+   session exposes six tools instead of the entire nineteen-tool catalog.
 
 The free-form one-shot prompt still does not complete the pack. The supported
 broad path is the contract-driven stage sequence.
