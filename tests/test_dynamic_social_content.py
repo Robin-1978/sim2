@@ -733,6 +733,24 @@ class _SequenceProvider:
         return dict(self.responses.pop(0))
 
 
+class _ToolSequenceProvider:
+    def __init__(self, names: list[str]) -> None:
+        self.names = list(names)
+        self.calls = 0
+
+    def complete_json(self, *, system, context, tools=None, messages=None):
+        self.calls += 1
+        name = self.names[min(self.calls - 1, len(self.names) - 1)]
+        return {"tool_calls": [{
+            "id": f"call-{self.calls}",
+            "type": "function",
+            "function": {
+                "name": "propose_entity",
+                "arguments": {"entity_type": "faction", "name": name, "description": f"Faction {name}."},
+            },
+        }]}
+
+
 def test_god_structural_accepts_multiple_proposals_in_one_turn(platform: Platform) -> None:
     """The broad structural contract may submit several proposals without ending at the first."""
 
@@ -764,6 +782,120 @@ def test_god_structural_accepts_multiple_proposals_in_one_turn(platform: Platfor
     }
     assert {"Multi Proposal Faction A", "Multi Proposal Faction B"} <= factions
     assert provider.calls == 3
+
+
+def _set_contract(platform: Platform, **fields: Any) -> None:
+    with platform.store.transaction():
+        evolution = dict(platform.store.repositories.metadata.get("evolution", {}) or {})
+        contracts = dict(evolution.get("contracts", {}) or {})
+        contract = dict(contracts.get("god_structural", {}) or {})
+        contract.pop("stages", None)
+        contract.update(fields)
+        contracts["god_structural"] = contract
+        evolution["contracts"] = contracts
+        platform.store.repositories.metadata.set("evolution", evolution)
+
+
+def _set_season_plan(platform: Platform, target_cell: str) -> None:
+    baseline = int((build_growth_ledger(platform.store)["cells"].get(target_cell) or {}).get("count", 0))
+    with platform.store.transaction():
+        platform.store.repositories.metadata.set("season_plan", {
+            "plan_id": f"plan:test:{target_cell}",
+            "target_cell": target_cell,
+            "baseline": baseline,
+            "created_minute": 1,
+            "expires_minute": 1000,
+            "reason": "test plan",
+            "status": "active",
+        })
+
+
+def test_structural_contract_stops_at_max_proposals(platform: Platform) -> None:
+    """A one-unit contract must not keep the God turn open after its proposal."""
+
+    _set_required_content(platform, {})
+    _set_contract(platform, max_proposals=1)
+    provider = _SequenceProvider([
+        {
+            "intent_type": "propose_entity",
+            "entity_type": "faction",
+            "name": "Bounded Proposal Faction",
+            "description": "The only proposal this contract allows.",
+        },
+        {
+            "intent_type": "propose_entity",
+            "entity_type": "faction",
+            "name": "Rejected Extra Faction",
+            "description": "This proposal must never be requested.",
+        },
+        {"intent_type": "wait", "reason": "Nothing else is required."},
+    ])
+    turn = AgentEngine(platform, provider, max_iterations=5).run(
+        role="god",
+        actor_id="god",
+        task_type="god_structural",
+    )
+    assert turn.result["status"] == "accepted", turn.result
+    assert provider.calls == 1
+    factions = {str(item.get("name")) for item in platform.store.repositories.entities.entities_of_type("faction")}
+    assert "Bounded Proposal Faction" in factions
+    assert "Rejected Extra Faction" not in factions
+
+
+def test_growth_cell_contract_requires_the_target_cell_to_increase(platform: Platform) -> None:
+    """A proposal outside the Director's cell must be corrected, not accepted as growth."""
+
+    _set_required_content(platform, {"growth_cell": True})
+    _set_contract(platform, max_proposals=3)
+    _set_season_plan(platform, "social")
+    provider = _SequenceProvider([
+        {
+            "intent_type": "propose_entity",
+            "entity_type": "agent",
+            "name": "Uncounted Helper",
+            "description": "A character does not increase the social cell.",
+            "state": {
+                "role": "helper",
+                "ultimate_goal": "Help the relay.",
+                "initial_state": {"location_id": "relay_lab", "status": "idle"},
+            },
+        },
+        {
+            "intent_type": "propose_entity",
+            "entity_type": "faction",
+            "name": "Relay Bargain Circle",
+            "description": "A faction that increases the social cell.",
+        },
+    ])
+    turn = AgentEngine(platform, provider, max_iterations=5).run(
+        role="god",
+        actor_id="god",
+        task_type="god_structural",
+    )
+    assert turn.result["status"] == "accepted", turn.result
+    assert provider.calls == 2
+    factions = {str(item.get("name")) for item in platform.store.repositories.entities.entities_of_type("faction")}
+    assert "Relay Bargain Circle" in factions
+    assert build_growth_ledger(platform.store)["cells"]["social"]["count"] == 1
+
+
+def test_structural_tool_budget_ends_the_session_without_spinning(platform: Platform) -> None:
+    """Once no proposal can be submitted, more model calls cannot help."""
+
+    _set_required_content(platform, {})
+    _set_contract(platform, max_proposals=3)
+    provider = _ToolSequenceProvider(["Budget Faction 1", "Budget Faction 2", "Budget Faction 3"])
+    turn = AgentEngine(platform, provider, max_iterations=8, max_tool_calls=1).run(
+        role="god",
+        actor_id="god",
+        task_type="god_structural",
+    )
+    assert turn.result["status"] == "rejected", turn.result
+    assert turn.result["failed_check"] == "budget_exhausted"
+    assert provider.calls == 2
+    factions = {str(item.get("name")) for item in platform.store.repositories.entities.entities_of_type("faction")}
+    assert "Budget Faction 1" in factions
+    assert "Budget Faction 2" not in factions
 
 
 def test_behavior_with_social_parameters_requires_authorization_operation(platform: Platform) -> None:

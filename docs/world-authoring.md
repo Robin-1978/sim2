@@ -316,15 +316,44 @@ director:
   cadence: 1d
   window: 3d
   targets: [place, verb, social, rule]
+  policy: llm   # optional; default is deterministic
 ```
 
-At each cadence the deterministic Director selects the least-covered target
-cell (or rotates when all cells are equal), records an active `season_plan`
-with the target, baseline and expiry, and queues a `god_structural` task. It
-never creates an entity, definition, rule or event itself. Story and God both
-receive the active plan as `<season_plan>`; God must fill that cell, and a
-research source is not a substitute. When the target cell count grows above
-the baseline, or the plan expires, the next cadence advances the plan.
+At each cadence the Director selects the least-covered target cell (or rotates
+when all cells are equal), records an active `season_plan` with the target,
+baseline and expiry, and queues a `god_structural` task. It never creates an
+entity, definition, rule or event itself. Story and God both receive the active
+plan as `<season_plan>`; God must fill that cell, and a research source is not a
+substitute. When the target cell count grows above the baseline, or the plan
+expires, the next cadence advances the plan.
+
+With `policy: llm`, the ordinary simulation runner asks the separately
+configured `roles.director` provider for the target before the tick. A provider
+error or an invalid answer falls back to the deterministic policy in the same
+minute, so growth never depends on one successful model response.
+
+A generic (stageless) plan contract should bound the unit and require a real
+increase in the target cell:
+
+```yaml
+contracts:
+  god_structural:
+    max_proposals: 3
+    required_content:
+      growth_cell: true
+```
+
+`max_proposals` stops the turn after that many accepted proposals. Without it a
+broad God contract stays open until the model waits or exhausts its budget.
+`required_content.growth_cell` compares the target cell's growth-ledger count
+with the plan baseline after every accepted proposal and returns a correction
+while the cell has not grown. The God prompt lists what each cell counts
+(`social` is factions, relationships and institutions, for example), so the
+model can choose a proposal that actually advances the Director's intent.
+
+A budget-exhausted structural session retries at the Director cadence, capped
+to half the remaining plan window, instead of the one-day retry used for an
+ordinary God task. The plan therefore gets another attempt before it expires.
 
 `limits.max_ready_god_tasks` (default 4) bounds how many ready God tasks one
 scheduler pass may execute. Excess tasks stay queued for the next minute, so

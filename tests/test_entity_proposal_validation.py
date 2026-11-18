@@ -171,6 +171,20 @@ def test_location_routes_are_stored_by_canonical_id_and_joined_to_the_neighbors(
     assert last_intent(platform)["data"]["state"]["routes"] == ["河桥", "river_bridge", "村广场", ""]  # the intent keeps the proposal as received
 
 
+def test_location_routes_accept_to_distance_objects(platform: Platform) -> None:
+    """The common ``routes: [{to, distance}]`` shorthand is normalized before validation."""
+
+    result = platform.submit_entity_proposal("god", location_proposal(routes=[
+        {"to": "河桥", "distance": 2},
+        {"to": "村广场", "minutes": 4},
+    ]))
+
+    assert result["status"] == "accepted", result
+    ford = entity(platform, result["entity_id"])
+    assert ford["routes"] == ["river_bridge", "village_square"]
+    assert ford["route_distances"] == {"river_bridge": 2, "village_square": 4}
+
+
 def test_a_neighbor_without_a_declared_distance_gets_one(platform: Platform) -> None:
     result = platform.submit_entity_proposal("god", location_proposal(routes=["river_bridge", "village_square"], route_distances={"river_bridge": 7}))
 

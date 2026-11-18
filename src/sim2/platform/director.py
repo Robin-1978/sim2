@@ -27,10 +27,21 @@ class DirectorRuntimeMixin:
             for cell in config.get("targets", [])
         }
 
+    def _remember_plan(self, plan: dict[str, Any]) -> None:
+        """Keep a bounded plan history so a long run can be audited exactly."""
+
+        store = self._dependency("store")
+        with store.transaction():
+            history = dict(store.repositories.metadata.get("season_plan_history", {}) or {})
+            history[str(plan.get("plan_id") or "")] = plan
+            if len(history) > 50:
+                ordered = sorted(history.items(), key=lambda item: int(item[1].get("created_minute", 0) or 0))
+                history = dict(ordered[-50:])
+            store.repositories.metadata.set("season_plan_history", history)
+
     def _write_plan(self, minute: int, target: str, counts: dict[str, int], reason: str | None = None) -> dict[str, Any]:
         config = self._config() or {}
         store = self._dependency("store")
-        metadata = store.repositories.metadata
         plan = {
             "plan_id": f"plan:{int(minute)}:{target}",
             "target_cell": target,
@@ -40,29 +51,33 @@ class DirectorRuntimeMixin:
             "reason": reason or ", ".join(f"{cell}={counts.get(cell, 0)}" for cell in counts),
             "status": "active",
         }
-        metadata.set("season_plan", plan)
-        metadata.set("director_rotation", int(metadata.get("director_rotation", 0) or 0) + 1)
-        ready = store.repositories.evolution.ready_evolution_tasks()
-        if not any(item.get("task_type") == "god_structural" for item in ready):
-            store.repositories.evolution.put_evolution_task(
-                f"director:growth:{int(minute)}",
-                "god",
-                "god",
-                "god_structural",
-                int(minute),
-                0,
-                status="ready",
-                data={"season_plan": plan},
-            )
+        # The LLM Director calls its provider outside the transaction; the
+        # write itself stays atomic with the queued God task.
+        with store.transaction():
+            metadata = store.repositories.metadata
+            metadata.set("season_plan", plan)
+            metadata.set("director_rotation", int(metadata.get("director_rotation", 0) or 0) + 1)
+            self._remember_plan(plan)
+            ready = store.repositories.evolution.ready_evolution_tasks()
+            if not any(item.get("task_type") == "god_structural" for item in ready):
+                store.repositories.evolution.put_evolution_task(
+                    f"director:growth:{int(minute)}",
+                    "god",
+                    "god",
+                    "god_structural",
+                    int(minute),
+                    0,
+                    status="ready",
+                    data={"season_plan": plan},
+                )
         return plan
 
     def plan_with_provider(self, provider: Any, minute: int) -> dict[str, Any] | None:
         """Let a separately configured Director model choose the next target cell.
 
-        The provider is supplied by the caller (for example the simulation
-        runner or a probe) so the Platform service stays independent of the
-        LLM gateway.  The model returns a target from the configured list; the
-        persisted plan contract and the God task are identical to ``tick``.
+        The provider is called before the plan is written so the SQLite write
+        lock is never held across a network request.  The persisted plan
+        contract and the God task are identical to ``tick``.
         """
 
         config = self._config()
@@ -76,24 +91,40 @@ class DirectorRuntimeMixin:
             target = str(plan.get("target_cell") or "")
             if target in counts and counts[target] > int(plan.get("baseline", 0) or 0):
                 plan = {**plan, "status": "completed", "completed_minute": int(minute)}
-                metadata.set("last_completed_season_plan", plan)
-                metadata.set("season_plan", plan)
+                with store.transaction():
+                    metadata.set("last_completed_season_plan", plan)
+                    metadata.set("season_plan", plan)
+                    self._remember_plan(plan)
             elif int(plan.get("expires_minute", 0) or 0) <= minute:
                 plan = {**plan, "status": "expired", "completed_minute": int(minute)}
-                metadata.set("season_plan", plan)
+                with store.transaction():
+                    metadata.set("season_plan", plan)
+                    self._remember_plan(plan)
             else:
                 return plan
         targets = [str(item) for item in config.get("targets", [])]
         if not targets:
             return None
+        last = metadata.get("last_completed_season_plan", {}) or {}
+        last_target = str(last.get("target_cell") or "")
         instruction = (
-            "You are the Director. Choose exactly one structural target cell from: "
+            "You are the Director. Choose the least-covered structural target cell from: "
             + ", ".join(targets)
             + ". Current counts: "
             + ", ".join(f"{cell}={counts.get(cell, 0)}" for cell in targets)
             + '. Return JSON {"target_cell": "<one of the listed cells>", "reason": "<short reason>"}.'
         )
-        response = provider.complete_json(system="Director structural planning", context=instruction) or {}
+        if last_target in targets:
+            instruction += f" Last completed: {last_target}."
+        from ..agents.audit import AgentAudit
+
+        audit = AgentAudit(self._context.host)
+        try:
+            response = provider.complete_json(system="Director structural planning", context=instruction) or {}
+        except Exception as exc:
+            audit.record("director", "director", "director_plan", 1, instruction, {"error": str(exc)}, "llm_error")
+            raise
+        audit.record("director", "director", "director_plan", 1, instruction, response, "response")
         target = str(response.get("target_cell") or "").strip()
         if target not in targets:
             return None
@@ -128,9 +159,11 @@ class DirectorRuntimeMixin:
                 plan = {**plan, "status": "completed", "completed_minute": int(minute)}
                 metadata.set("last_completed_season_plan", plan)
                 metadata.set("season_plan", plan)
+                self._remember_plan(plan)
             elif int(plan.get("expires_minute", 0) or 0) <= minute:
                 plan = {**plan, "status": "expired", "completed_minute": int(minute)}
                 metadata.set("season_plan", plan)
+                self._remember_plan(plan)
             else:
                 return plan
 
@@ -154,6 +187,7 @@ class DirectorRuntimeMixin:
         }
         metadata.set("season_plan", plan)
         metadata.set("director_rotation", rotation)
+        self._remember_plan(plan)
         ready = store.repositories.evolution.ready_evolution_tasks()
         if not any(item.get("task_type") == "god_structural" for item in ready):
             store.repositories.evolution.put_evolution_task(

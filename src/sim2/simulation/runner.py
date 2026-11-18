@@ -32,6 +32,8 @@ class SimulationReport:
     diversity: dict[str, Any] = field(default_factory=dict)
     stop_reason: str | None = None
     bt_decisions: int = 0
+    director_plans: int = 0
+    director_errors: int = 0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -52,6 +54,8 @@ class SimulationReport:
             "diversity": self.diversity,
             "stop_reason": self.stop_reason,
             "bt_decisions": self.bt_decisions,
+            "director_plans": self.director_plans,
+            "director_errors": self.director_errors,
         }
 
 
@@ -69,6 +73,10 @@ class SimulationRunner:
         evolution = evolution.get("evolution", evolution) if isinstance(evolution, dict) else {}
         limits = evolution.get("limits") if isinstance(evolution, dict) else {}
         self.max_ready_god_tasks = max(1, int((limits or {}).get("max_ready_god_tasks", 4) or 4))
+        director = evolution.get("director") if isinstance(evolution, dict) else {}
+        self.director_policy = str((director or {}).get("policy") or "deterministic")
+        self.director_cadence_minutes = max(1, int((director or {}).get("cadence_minutes", 60) or 60))
+        self._last_director_plan_id: str | None = None
         self.max_interaction_rounds = max(1, int(interaction_policy.get("max_rounds", 3) if max_interaction_rounds is None else max_interaction_rounds))
         self.interaction_cooldown_minutes = max(1, int(interaction_policy.get("reply_cooldown_minutes", 120) if interaction_cooldown_minutes is None else interaction_cooldown_minutes))
         self.interaction_thread_window_minutes = max(self.interaction_cooldown_minutes, int(interaction_policy.get("thread_window_minutes", 360) if interaction_thread_window_minutes is None else interaction_thread_window_minutes))
@@ -182,6 +190,7 @@ class SimulationRunner:
                 self._run_due_evolution(report)
                 if require_running and self.platform.status().get("status") != "running":
                     break
+            self._plan_next_structure(report)
             self.platform.step()
             if not self._run_instant_interactions(report):
                 cooling_roles = self._cooling_provider_roles()
@@ -547,6 +556,32 @@ class SimulationRunner:
                 self._decision_not_before[actor_id] = min(minute, self._decision_not_before.get(actor_id, minute))
                 self._wait_streak.pop(actor_id, None)
 
+    def _plan_next_structure(self, report: SimulationReport) -> None:
+        """Ask the LLM Director for the next target before the tick writes one.
+
+        The deterministic Director still runs inside ``step``.  A provider
+        failure or an invalid target therefore falls back to the configured
+        policy instead of stopping the world.
+        """
+
+        if self.director_policy != "llm":
+            return
+        provider = self.providers.get("director")
+        if provider is None or self._provider_cooling_down(provider):
+            return
+        minute = int(self.platform.store.repositories.metadata.get("world_minute", 0)) + 1
+        try:
+            plan = self.platform.plan_structure_with_provider(provider, minute)
+        except Exception:
+            report.director_errors += 1
+            return
+        if not isinstance(plan, dict):
+            return
+        plan_id = str(plan.get("plan_id") or "")
+        if plan_id and plan_id != self._last_director_plan_id:
+            self._last_director_plan_id = plan_id
+            report.director_plans += 1
+
     def _run_due_evolution(self, report: SimulationReport) -> None:
         god_runs = 0
         for task in list(self.platform.ready_evolution_tasks()):
@@ -605,27 +640,47 @@ class SimulationRunner:
                 self.platform.complete_evolution_task(task["task_id"])
             else:
                 provider_cooldown = self._provider_cooling_down(provider)
-                failed_check = str(turn.result.get("failed_check") or "")
-                retry_count = int(task.get("retry_count", 0) or 0)
                 if provider_cooldown:
                     retry_delay = 0
-                elif failed_check == "llm_response":
-                    retry_delay = self.llm_error_cooldown_minutes
                 else:
-                    # A semantic/tool rejection can benefit from a bounded
-                    # retry, but replaying the same stale evidence every
-                    # simulated hour makes God appear to wake on every tick.
-                    # Budget exhaustion starts with a full day and backs off
-                    # exponentially up to one simulated week.
-                    base_delay = 1440 if failed_check == "budget_exhausted" else 60
-                    retry_delay = min(10080, base_delay * (2 ** min(retry_count, 6)))
+                    retry_delay = self._evolution_retry_delay(task, turn.result)
+                world_minute = int(self.platform.store.repositories.metadata.get("world_minute", 0))
                 self.platform.retry_evolution_task(
                     task["task_id"],
-                    int(self.platform.store.repositories.metadata.get("world_minute", 0)) + retry_delay,
+                    world_minute + retry_delay,
                     str(turn.result.get("message") or turn.result.get("failed_check") or "evolution session rejected"),
                 )
             if self._provider_cooling_down(provider):
                 return
+
+    def _evolution_retry_delay(self, task: dict[str, Any], result: dict[str, Any]) -> int:
+        """Retry a failed evolution task without losing its Director window.
+
+        A budget-exhausted structural session is retried at the Director
+        cadence, not after a full day, because the season plan may expire much
+        sooner.  The delay is also capped at half the remaining plan window so
+        one retry still fits before expiry.  Other rejections keep the existing
+        one-hour exponential backoff.
+        """
+
+        failed_check = str(result.get("failed_check") or "")
+        if failed_check == "llm_response":
+            return self.llm_error_cooldown_minutes
+        retry_count = int(task.get("retry_count", 0) or 0)
+        task_data = task.get("data") if isinstance(task.get("data"), dict) else task
+        plan = task_data.get("season_plan") if isinstance(task_data, dict) else None
+        plan = plan if isinstance(plan, dict) else None
+        if failed_check == "budget_exhausted":
+            base_delay = max(1, self.director_cadence_minutes) if plan else 1440
+        else:
+            base_delay = 60
+        delay = min(10080, base_delay * (2 ** min(retry_count, 6)))
+        if plan:
+            minute = int(self.platform.store.repositories.metadata.get("world_minute", 0))
+            remaining = int(plan.get("expires_minute", 0) or 0) - minute
+            if remaining > 0:
+                delay = min(delay, max(1, remaining // 2))
+        return delay
 
     @staticmethod
     def _cooldown_seconds(provider: Any) -> float:

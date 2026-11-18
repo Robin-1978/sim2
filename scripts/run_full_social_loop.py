@@ -130,11 +130,10 @@ def _run_story_tasks(platform: Platform, router: LLMRouter, provider: str, model
 
 def run(platform: Platform, router: LLMRouter, provider: str, model: str | None, *, rounds: int = 2) -> dict[str, Any]:
     report: dict[str, Any] = {"director": {}, "god": {}, "npc": [], "story": [], "next_director": {}}
-    with platform.store.transaction():
-        report["director"]["plan"] = platform._services["director"].plan_with_provider(
-            router.new_provider_for_name(provider, model=model, role="director"),
-            5,
-        )
+    report["director"]["plan"] = platform._services["director"].plan_with_provider(
+        router.new_provider_for_name(provider, model=model, role="director"),
+        5,
+    )
     tasks = [item for item in platform.ready_evolution_tasks() if item.get("task_type") == "god_structural"]
     report["director"]["god_task"] = tasks[-1] if tasks else None
     if not tasks:

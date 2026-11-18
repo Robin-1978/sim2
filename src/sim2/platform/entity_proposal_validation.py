@@ -231,23 +231,36 @@ class EntityProposalValidationMixin:
         """Store the route neighbors and distances of a location under their canonical ids."""
 
         proposal = submission.proposal
-        if str(proposal.get("entity_type") or "") == "location" and isinstance(proposal.get("state"), dict):
-            normalized_state = dict(proposal["state"])
-            raw_routes = normalized_state.get("routes", [])
-            if isinstance(raw_routes, list):
-                normalized_routes = [
-                    str(self.targets.canonical_id(str(route)) or route)
-                    for route in raw_routes
-                    if str(route)
-                ]
-                normalized_state["routes"] = list(dict.fromkeys(normalized_routes))
-            raw_distances = normalized_state.get("route_distances")
-            if isinstance(raw_distances, dict):
-                normalized_state["route_distances"] = {
-                    str(self.targets.canonical_id(str(route)) or route): distance
-                    for route, distance in raw_distances.items()
-                }
-            submission.proposal = {**proposal, "state": normalized_state}
+        if str(proposal.get("entity_type") or "") != "location" or not isinstance(proposal.get("state"), dict):
+            return
+        state = dict(proposal["state"])
+        raw_routes = state.get("routes", [])
+        if not isinstance(raw_routes, list):
+            return
+        neighbors: list[str] = []
+        distances: dict[str, Any] = {}
+        for route in raw_routes:
+            # Models often send ``[{to: name, distance: n}]`` because a route
+            # has two facts.  Normalize that clear shorthand to the canonical
+            # ``routes`` list plus ``route_distances`` map before validation.
+            if isinstance(route, dict):
+                neighbor = route.get("to") or route.get("location") or route.get("name")
+                distance = route.get("distance", route.get("minutes"))
+            else:
+                neighbor, distance = route, None
+            name = str(neighbor or "").strip()
+            if not name:
+                continue
+            neighbors.append(name)
+            if isinstance(distance, (int, float)) and not isinstance(distance, bool) and float(distance) > 0:
+                distances.setdefault(name, distance)
+        if isinstance(state.get("route_distances"), dict):
+            distances = {**distances, **state["route_distances"]}
+        canonical = lambda value: str(self.targets.canonical_id(str(value)) or value)
+        state["routes"] = list(dict.fromkeys(canonical(name) for name in neighbors))
+        if distances:
+            state["route_distances"] = {canonical(name): distance for name, distance in distances.items()}
+        submission.proposal = {**proposal, "state": state}
 
     def _check_god_limits(self, submission: EntitySubmission) -> None:
         """God cannot stock a resource directly, and a location it creates must join existing locations."""

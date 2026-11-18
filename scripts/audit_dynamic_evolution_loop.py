@@ -146,6 +146,8 @@ def _probe_template(*, fallback: bool = True, director: bool = False) -> dict[st
         evolution["contracts"] = {
             "god_structural": {
                 "tools": ["query_history", "query_knowledge_gaps", "propose_entity", "propose_definition", "propose_world_change", "wait"],
+                "max_proposals": 3,
+                "required_content": {"growth_cell": True},
                 "purpose": "Fill the Director's target structural cell with one concrete, reachable growth unit.",
                 "result": (
                     "Read the season plan target_cell and submit exactly one new entity, definition or world change "
@@ -360,8 +362,7 @@ def main() -> int:
             )
         director_plan: dict[str, Any] | None = None
         if args.director_llm:
-            with platform.store.transaction():
-                director_plan = platform._services["director"].plan_with_provider(providers["director"], 5)
+            director_plan = platform._services["director"].plan_with_provider(providers["director"], 5)
             if director_plan is None:
                 with platform.store.transaction():
                     director_plan = platform._services["director"].tick(5)

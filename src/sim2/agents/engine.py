@@ -9,6 +9,7 @@ from ..intents.models import BehaviorIntent
 from ..platform.runtime import Platform
 from ..prompting.renderer import render_context_with_metrics
 from ..world.lifecycle import BUSY_STATUSES, is_inactive
+from ..world.growth import build_growth_ledger
 from .runtime_policy import (
     ROLE_INTENTS, ROLE_NAMES, configured_evolution_group, configured_evolution_trigger,
     configured_role_tools, role_policy,
@@ -521,6 +522,16 @@ class AgentEngine:
             return []
         entities = self.platform.store.repositories.entities
         missing: list[str] = []
+        if required.get("growth_cell"):
+            plan = session.context.get("season_plan") if isinstance(session.context.get("season_plan"), dict) else {}
+            raw_cell = required.get("growth_cell")
+            cell = str(plan.get("target_cell") if raw_cell is True else raw_cell or "").strip()
+            if cell:
+                ledger = build_growth_ledger(self.platform.store)
+                count = int(((ledger.get("cells") or {}).get(cell) or {}).get("count", 0) or 0)
+                baseline = int(plan.get("baseline", 0) or 0)
+                if count <= baseline:
+                    missing.append(f"growth: {cell} count must exceed {baseline}")
         for raw in required.get("entities") or []:
             name = str(raw)
             canonical = self.platform.targets.canonical_id(name)
@@ -693,8 +704,22 @@ class AgentEngine:
         if len(session.messages) > 8:
             max_tail = 4 if session.role == "god" and str(session.task_type) == "god_structural" else 6
             session.messages = trim_conversation_messages(session.messages, max_tail=max_tail)
+        if accepted_result is None and str(model_result.get("failed_check")) == "tool_budget":
+            # No further proposal can be submitted in this session.  Returning
+            # to the model only produces more rejected calls, so close the
+            # session and let the scheduler retry with a fresh budget.
+            result = {
+                "status": "rejected",
+                "failed_check": "budget_exhausted",
+                "retryable": True,
+                "message": "Tool-call budget exhausted before a valid proposal.",
+            }
+            session.last_result = result
+            session.context["last_platform_result"] = result
+            return session.finish(result, iterations=iteration)
         if accepted_result is None:
             return None
+        session.accepted_proposals += max(1, len(intent_results))
         if len(intent_results) > 1:
             accepted_result = {
                 **intent_results[-1],
@@ -715,6 +740,11 @@ class AgentEngine:
                 if not missing:
                     return session.finish(accepted_result, iterations=iteration)
                 self._append_structural_progress(session, missing)
+                return None
+            contract = session.context.get("evolution_trigger")
+            limit = int(contract.get("max_proposals") or 0) if isinstance(contract, dict) else 0
+            if limit and session.accepted_proposals >= limit:
+                return session.finish(accepted_result, iterations=iteration)
             return None
         correction = self._contract_correction(session) if str(accepted_result.get("status")) == "wait" or batched else None
         if correction is not None:
@@ -904,6 +934,8 @@ class AgentEngine:
         session.context["last_platform_result"] = result
         session.last_result = result
         if result.get("status") in {"accepted", "wait"}:
+            if result.get("status") == "accepted":
+                session.accepted_proposals += 1
             if self._structural_stages(session):
                 self._save_structural_progress(session, result)
                 transition = self._advance_structural_stage(session)
@@ -917,6 +949,11 @@ class AgentEngine:
                     if not missing:
                         return session.finish(result, iterations=iteration, response=response)
                     self._append_structural_progress(session, missing)
+                    return None
+                contract = session.context.get("evolution_trigger")
+                limit = int(contract.get("max_proposals") or 0) if isinstance(contract, dict) else 0
+                if limit and session.accepted_proposals >= limit:
+                    return session.finish(result, iterations=iteration, response=response)
                 return None
             correction = self._contract_correction(session) if result.get("status") == "wait" else None
             if correction is not None:

@@ -48,6 +48,9 @@ new status instead.
 | Free 8-round evolution | `audit_dynamic_evolution_loop.py --provider remote --rounds 8`: passed, `flags: []`; God created `Deposit Energy Cell` in round 1 and new research sources `Relay Checksum Fragment` (round 4) and `Relay Second Checksum Record` (round 6); Mira executed each next behavior and Story produced 5 beats. One research-synthesis God task was queued when the round window ended |
 | LLM Director | Separate `roles.director` remote role (`1024` tokens, 4 iterations, 2 reads); actual call chose `resource` and wrote `plan:5:resource` plus a `god_structural` task |
 | Full one-cycle loop | LLM Director → 15-stage God → LLM NPCs → Story: plan completed, next plan opened at `baseline: 1`; Story produced two accepted beats and one wait; God 18 calls / 17 iterations |
+| Automatic LLM Director | `director.policy: llm` now runs inside `SimulationRunner`: Aster probe recorded **18 Director calls** in 360 minutes (`social`, `verb`, `rule`, `resource`, `place`) with no harness ordering; tidebound 2-day run completed `plan:1440:social` at minute 2880 and opened `plan:2880:social` |
+| Automatic multi-cell growth | Aster probe 360 minutes: **22 structural units** (12 entities, 5 Actions, 5 behaviors), all five cells grew to `place=5, verb=7, social=5, rule=5, resource=5`, **5 new behaviors executed** by Mira or a God-created agent, **13 Story beats**, **0 rejected sessions** |
+| Structural contract guard | `max_proposals` bounds a stageless contract; `required_content.growth_cell` keeps the session open until the Director's cell count exceeds its baseline; routine place/verb sessions finish in 2–5 iterations instead of exhausting 24 |
 | Deterministic | Phase 1 `18 passed`, Phase 2 `19 passed`, Phase 3 `13 passed`, source guard `2 passed` |
 
 ## 5. Open issues
@@ -62,12 +65,13 @@ new status instead.
 | G-06 | Read budget and schema adherence reduce God reliability | Baseline decomposed 3-run sample: 45 accepted / 28 rejected, mostly probe-imposed `read_budget` / `tool_budget` (probe used 3 iterations, 1 read). Contract-driven broad 3-run: 45 accepted / 2 rejected, both `tool_arguments`; final optimized broad run: **15 accepted / 0 rejected**, prompt 4,731–7,161 tokens, 71.5% cached | Align the probe with the real God budget (24 iterations / 40 tool calls / 4 reads); compact the staged contract and schemas; fix the raw contract `tools` alias so only the six contract tools are exposed | Fewer than 2 rejected calls per structural run; no read-budget or budget-exhausted stop before the final proposal | FIXED / VERIFIED (broad 3-run ≤2 rejects; final optimized run 0) |
 | G-07 | The first tension aggregate undercounted direct intents | Mira’s direct `behavior_ref: behavior:withdraw_energy` was not a `request_behavior` tool call. Corrected remote 3×4 run: 4 requests, 4 approvals, 0 takes, 0 sanctions, 1 revocation, 12 turns per run | Script reads `turn.response` as well as `request_behavior` tool calls | Corrected probe rerun completed; docs updated | FIXED / VERIFIED (corrected neutral counts published) |
 | G-08 | Context grows with the world and the 16k-char compaction omits action/behavior catalogs | Before: ~15.9k chars, `compacted: true`, catalogs omitted. After the relevance index: broad staged run 1/1 complete core, legal and violation chains, 15 accepted / 0 rejected, prompt 14,423 to 15,396 chars, `omitted_required: []`, `omitted: []` | Implemented a relevance-scoped `world_index`, paged `query_world_index`, one-definition `inspect_definition`, persisted stage progress and structural history summaries | A larger world keeps the structural prompt bounded while the model can still see the current target's relevant content and does not duplicate existing definitions | FIXED / VERIFIED (broad remote 1/1; 100-entry prompt test) |
+| G-09 | Automatic growth still depended on a probe calling the Director, and a generic structural contract could accept content that did not increase the target cell | Before: `SimulationRunner` never called `plan_with_provider`; a place/verb session reached 24 iterations with `budget_exhausted`; an agent proposal left `social` at baseline; a location with `routes:[{to,distance}]` failed validation | `director.policy: llm` calls the one-call Director before the tick with deterministic fallback; `max_proposals`; `required_content.growth_cell`; cell-count definitions in the God ledger; route-object normalization; immediate `tool_budget` stop; Director-cadence retries capped to the plan window; Director calls and plan history are audited | A continuous `Platform.run` reaches multiple Director plans, completes plans, creates structural units, and an NPC executes a new behavior | FIXED / VERIFIED (Aster 360 min: 18 Director calls, 22 units, 5 new behaviors executed, 13 beats, 0 rejected sessions; tidebound 2-day social plan completed and the next plan opened) |
 
 ### 5.1 Status summary
 
 | Status | Count | IDs |
 | --- | --- | --- |
-| Fixed / verified | 8 | G-01, G-02, G-03, G-04, G-05, G-06, G-07, G-08 |
+| Fixed / verified | 9 | G-01, G-02, G-03, G-04, G-05, G-06, G-07, G-08, G-09 |
 | Open / partial / in progress | 0 | none |
 
 All tracked issues are closed. The evidence is:
@@ -80,6 +84,10 @@ All tracked issues are closed. The evidence is:
 - **G-07** corrected neutral counts published.
 - **G-08** relevance-scoped context, schema compression and omission telemetry
   are recorded in [context-scaling-plan.md](context-scaling-plan.md).
+- **G-09** the ordinary runner now grows the world: an Aster 360-minute run
+  recorded 18 LLM Director decisions, 22 structural units, five new behaviors
+  executed by characters, 13 Story beats and no rejected sessions; a two-day
+  tidebound run completed its social plan and opened the next one.
 
 The local role values and the separate Director configuration are recorded in
 [llm-role-configuration.md](llm-role-configuration.md).
@@ -88,17 +96,20 @@ The local role values and the separate Director configuration are recorded in
 
 All tracked issues are fixed or verified. Remaining documented limitations:
 
-1. Free-form one-shot broad prompts are still not reliable; the supported path
-   is the contract-driven stage sequence.
-2. A second Director-driven contract pack has not been exercised; the 8-round
-   free event-driven run covers multi-season creation and execution.
-3. Spontaneous covert take was not observed; pressure produced rejection and
+1. Free-form one-shot broad prompts are still not reliable; the supported paths
+   are the contract-driven stage sequence and a bounded generic contract with
+   `max_proposals` and `required_content.growth_cell`.
+2. Spontaneous covert take was not observed; pressure produced rejection and
    revocation instead.
+3. A structural session still depends on the model producing a valid proposal
+   shape. Bad output is corrected, bounded and retried at the Director cadence,
+   but a plan can expire before a later attempt succeeds.
 
 Completed: **G-01** 3/3 legal chains, **G-02** contract-driven broad,
 **G-03** event-driven wakes, **G-04** pressure tension, **G-05** 8-round free
 growth, **G-06** reliable broad run, **G-07** corrected counts, **G-08**
-relevance-scoped context.
+relevance-scoped context, **G-09** automatic multi-cell growth through the
+ordinary runner.
 
 Completed architectural prerequisite: **G-08** relevance-scoped context, bounded
 index reads, persisted stage progress and omission telemetry. The next structural
@@ -108,6 +119,8 @@ run should use the new index instead of expanding the old catalogs.
 
 ### 2026-11-19
 
+- G-09 automatic growth verified through the production runner. Aster probe: 360 simulated minutes, **18 LLM Director calls**, **22 structural units** (12 entities, 5 Actions, 5 behaviors), all five cells grew from `place=2, verb=2, social=0, rule=1, resource=1` to `place=5, verb=7, social=5, rule=5, resource=5`, **5 new behaviors executed** (`cross_check_archive_checksum`, `meter_catchment_charge_at_gantry`, `meter_the_catchment_tray`, `record_draw_authorization_at_bench`, `trace_encoded_relay_route`), **13 Story beats**, **0 rejected sessions**. Tidebound 2-day run: `plan:1440:social` completed at 2880 and `plan:2880:social` opened; God created a faction and a relationship; 12 Story beats.
+- G-09 contract fixes: `director.policy: llm` runs the one-call Director before the tick (deterministic fallback on error); `max_proposals` bounds stageless contracts; `required_content.growth_cell` compares the target cell with the plan baseline and returns a correction; the God ledger now states what each cell counts; `routes:[{to,distance}]` is normalized; a `tool_budget` rejection ends the session; budget-exhausted structural retries use the Director cadence capped to the plan window; Director calls and plan history are persisted for audit.
 - Final optimized contract-driven broad run: 1/1 complete core, 1/1 legal, 1/1 violation, **15 accepted / 0 rejected**, no failed checks. Prompt 4,731–7,161 tokens; 62,848 cached tokens of 87,948 total (71.5%). The 3-run sample before the final projection was 3/3 with 45 accepted / 2 rejected (`tool_arguments` only).
 - Context/schema optimization after inspecting real prompts: staged God prompt 14,769→7,748 chars (contract 5,403→641, outcomes 3,778→358, protocol 2,120→297, rule fields 1,091→139); NPC prompt 10,020→8,216 chars (behavior blocks 3,097→1,750, duplicate attribute rules removed, unconditional rules compacted); Story 7,003→6,815. A raw contract `tools` alias bug exposed all 19 God tools; accepting `tools`/`allowed_tools` cut the actual God schema 20,321→10,755 chars. The decomposed probe now uses the real 24-iteration / 40-tool-call / 4-read God envelope. Provider cache was already effective: 79.5% cached tokens for God, 55.1% for NPC decisions and 47.7% for Story.
 - G-01 fresh 3-run decomposed sample: 3/3 complete cores, 3/3 legal chains, 3/3 violation chains; 15 accepted proposals in each run. The legal-chain reliability caveat is closed.

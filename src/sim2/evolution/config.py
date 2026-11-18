@@ -109,13 +109,16 @@ def _stagnation(value: Any) -> dict[str, Any]:
 def _director(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("director must be an object")
-    unknown = sorted(str(key) for key in value if key not in {"cadence", "window", "targets"})
+    unknown = sorted(str(key) for key in value if key not in {"cadence", "window", "targets", "policy"})
     if unknown:
-        raise ValueError("unknown director field(s): " + ", ".join(unknown) + "; use cadence, window, targets")
+        raise ValueError("unknown director field(s): " + ", ".join(unknown) + "; use cadence, window, targets, policy")
     cadence = duration_minutes(value.get("cadence", "1d"))
     window = duration_minutes(value.get("window", "3d"))
     if cadence <= 0 or window < cadence:
         raise ValueError("director.window must be at least one cadence")
+    policy = str(value.get("policy") or "deterministic").strip().casefold()
+    if policy not in {"deterministic", "llm"}:
+        raise ValueError("director.policy must be deterministic or llm")
     raw_targets = value.get("targets", ["place", "verb", "social", "rule"])
     if isinstance(raw_targets, str):
         raw_targets = [raw_targets]
@@ -126,7 +129,12 @@ def _director(value: Any) -> dict[str, Any]:
     unknown_targets = sorted(set(targets) - allowed)
     if unknown_targets:
         raise ValueError("director.targets has unknown targets: " + ", ".join(unknown_targets))
-    return {"cadence_minutes": cadence, "window_minutes": window, "targets": list(dict.fromkeys(targets))}
+    return {
+        "cadence_minutes": cadence,
+        "window_minutes": window,
+        "targets": list(dict.fromkeys(targets)),
+        "policy": policy,
+    }
 
 
 def _limits(value: Any) -> dict[str, Any]:
@@ -233,7 +241,7 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
         allowed = {
             "tools", "purpose", "result", "assign_to", "required_definition_type",
             "require_story_outcome", "evidence_sources", "continuation", "growth_kind",
-            "required_content", "stages",
+            "required_content", "stages", "max_proposals",
         }
         for task_type, contract in contracts.items():
             if not isinstance(contract, dict):
@@ -251,6 +259,10 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
                 raise ValueError(f"contract {task_type}.required_content must be an object")
             if contract.get("stages") is not None and not isinstance(contract.get("stages"), list):
                 raise ValueError(f"contract {task_type}.stages must be a list")
+            if contract.get("max_proposals") is not None:
+                limit = contract.get("max_proposals")
+                if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+                    raise ValueError(f"contract {task_type}.max_proposals must be a positive integer")
 
     cadence = root.get("cadence") if isinstance(root.get("cadence"), dict) else {}
     cadence_known = {"reflection", "innovation", "god", "god_structural"}

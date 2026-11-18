@@ -27,7 +27,7 @@ from sim2.llm.gateway import LLMRouter
 from sim2.platform.runtime import Platform
 
 
-ROLES = ("agent_decision", "agent_reflection", "god", "story")
+ROLES = ("agent_decision", "agent_reflection", "director", "god", "story")
 
 
 def _json(value: Any) -> str:
@@ -149,9 +149,15 @@ def _final_summary(platform: Platform, rows: list[dict[str, Any]]) -> dict[str, 
         (str(item.get("source_id") or ""), str(item.get("stage_id") or ""))
         for item in research
     ]
+    director_calls = platform.store.connection.execute(
+        "SELECT COUNT(*) AS n FROM llm_call WHERE role='director'"
+    ).fetchone()
     return {
         "world_minute": int(platform.store.repositories.metadata.get("world_minute", 0)),
         "rounds": len(rows),
+        "season_plan": platform.store.repositories.metadata.get("season_plan", {}),
+        "last_completed_season_plan": platform.store.repositories.metadata.get("last_completed_season_plan", {}),
+        "director_calls": int(director_calls["n"] if director_calls else 0),
         "llm_cache": platform.store.repositories.llm.llm_cache_metrics()
         if hasattr(platform.store.repositories, "llm") else {},
         "event_counts": event_counts,

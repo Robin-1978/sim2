@@ -77,6 +77,7 @@ class ReactSession:
     read_signatures: set[str] = field(default_factory=set)
     tool_calls_used: int = 0
     read_tool_calls: int = 0
+    accepted_proposals: int = 0
 
     def register_call(self, tool_name: str, arguments: dict[str, Any], *, is_read_tool: bool) -> int:
         """Count one requested tool call and return how often this exact request was made."""

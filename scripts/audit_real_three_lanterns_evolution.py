@@ -93,7 +93,7 @@ def main() -> int:
     def provider(role: str) -> Any:
         return router.new_provider_for_name(args.provider, max_completion_tokens=args.provider_max_completion_tokens, role=role) if args.provider else router.provider_for_role(role)
 
-    providers = {role: provider(role) for role in ("agent_decision", "agent_reflection", "god", "story")}
+    providers = {role: provider(role) for role in ("agent_decision", "agent_reflection", "director", "god", "story")}
     sessions: list[dict[str, Any]] = []
 
     def observe(turn: AgentTurn, actor_id: str) -> None:

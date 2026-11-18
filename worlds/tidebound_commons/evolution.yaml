@@ -33,6 +33,10 @@ director:
   cadence: 1d
   window: 3d
   targets: [place, verb, social, rule]
+  # Use the separately configured `roles.director` model to choose the target.
+  # A failed or invalid model answer falls back to the deterministic least-cell
+  # policy inside the world tick.
+  policy: llm
 limits:
   max_ready_god_tasks: 4
 contracts:
@@ -47,6 +51,12 @@ contracts:
     - propose_definition
     - propose_world_change
     - wait
+    # One growth unit per Director plan.  The session cannot end on a proposal
+    # that leaves the target cell at its baseline, and a stray extra proposal
+    # cannot keep the turn open indefinitely.
+    max_proposals: 3
+    required_content:
+      growth_cell: true
     purpose: 周期结构审查：按 season_plan 的目标 cell 增加一个新的可玩维度，而不是再写一个研究源。
     result: >-
       读取 <season_plan> 的 target cell 和 <world_growth_ledger> 的空格。只提交一个

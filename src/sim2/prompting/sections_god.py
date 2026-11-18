@@ -346,6 +346,10 @@ def _growth_ledger_lines(context: dict[str, Any]) -> list[str]:
     cells = ledger.get("cells") or {}
     if cells:
         lines.append("  " + "; ".join(f"{name}={int(cell.get('count', 0) or 0)}" for name, cell in cells.items()))
+    lines.append(
+        "  counted as: place=locations; verb=behavior trees; "
+        "social=factions+relationships+institutions; rule=world rules; resource=resource nodes"
+    )
     empty = [str(item) for item in (ledger.get("empty_cells") or [])]
     lines.append("  empty cells: " + (", ".join(empty) if empty else "none"))
     last_change = ledger.get("last_structural_change")

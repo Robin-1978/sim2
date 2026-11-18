@@ -29,14 +29,31 @@ in the repository or in this document.
 not the default for active roles.
 
 For the LLM Director, only the completion-token limit applies. It makes one
-`complete_json` call with a 28-character system message and a 193-character
+`complete_json` call with a 28-character system message and a 193–323 character
 target/count instruction, and receives no tools. Its iteration/read columns are
 kept for schema compatibility with other roles but are not used on this path.
 
 ## 3. Director is separate
 
 The Director is normally a deterministic service. It does not require an LLM
-to tick. A separate `roles.director` provider is used only when a caller invokes
+to tick. A world opts into the LLM showrunner with:
+
+```yaml
+director:
+  cadence: 1d
+  window: 3d
+  targets: [place, verb, social, rule]
+  policy: llm
+```
+
+With `policy: llm`, `SimulationRunner` calls `plan_with_provider` once at each
+cadence boundary, before the world tick, so the model decision never runs
+inside the tick transaction. A provider error, an invalid target, or a missing
+`director` provider falls back to the deterministic least-cell policy in the
+same minute. `policy: deterministic` is the default and makes no Director model
+call.
+
+The separate `roles.director` provider is also available to probes through
 `DirectorRuntimeMixin.plan_with_provider`. That method:
 
 1. builds the allowed target list and current cell counts;

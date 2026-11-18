@@ -64,6 +64,9 @@ def test_director_completes_the_plan_when_the_target_cell_grows(tmp_path: Path) 
         assert second["baseline"] == first["baseline"] + 1
         completed = platform.store.repositories.metadata.get("season_plan")
         assert completed["status"] == "active"
+        history = platform.store.repositories.metadata.get("season_plan_history", {}) or {}
+        assert history[first["plan_id"]]["status"] == "completed"
+        assert history[second["plan_id"]]["status"] == "active"
     finally:
         platform.close()
 
@@ -97,6 +100,10 @@ def test_director_config_is_validated() -> None:
     assert compiled["director"]["cadence_minutes"] == 1440
     assert compiled["director"]["window_minutes"] == 4320
     assert compiled["director"]["targets"] == ["place", "rule"]
+    assert compiled["director"]["policy"] == "deterministic"
+    assert normalize_evolution_config({"director": {"policy": "llm"}})["director"]["policy"] == "llm"
+    with pytest.raises(ValueError, match="policy must be deterministic or llm"):
+        normalize_evolution_config({"director": {"policy": "auto"}})
     with pytest.raises(ValueError, match="unknown targets"):
         normalize_evolution_config({"director": {"targets": ["economy"]}})
     with pytest.raises(ValueError, match="window must be at least one cadence"):
@@ -155,8 +162,7 @@ def test_llm_director_writes_the_same_plan_and_structural_task(tmp_path: Path) -
     try:
         _director_config(platform, targets=["place", "resource"])
         provider = _DirectorProvider("resource")
-        with platform.store.transaction():
-            plan = platform._services["director"].plan_with_provider(provider, 1)
+        plan = platform._services["director"].plan_with_provider(provider, 1)
         assert plan and plan["status"] == "active"
         assert plan["target_cell"] == "resource"
         assert plan["reason"] == "The model chose the least developed cell."

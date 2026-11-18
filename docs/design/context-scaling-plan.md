@@ -234,13 +234,19 @@ The LLM Director is a single `complete_json` call:
 - system: `Director structural planning` (28 chars);
 - user context: target list plus current cell counts (193 chars for the single
   `resource` target in the dynamic probe, 255 chars when all five cells are
-  configured);
+  configured, plus a 68-char "last completed" hint after a plan closes);
 - tools: none;
 - output: one `target_cell` and a short reason.
 
 It does not receive entities, events, memories or tool schemas. The
 `max_agent_iterations` / `max_read_tool_calls` values in `roles.director` are
 therefore inert for this path; only the completion-token limit applies.
+
+`director.policy: llm` makes this call part of the ordinary simulation loop.
+`SimulationRunner` calls it before each tick that lands on a cadence boundary,
+outside the tick transaction. A provider failure or an invalid target leaves
+the deterministic `tick` to write the plan in that same minute, so automatic
+growth never depends on one successful model response.
 
 Raising the God iteration budget does not raise context size; the read budget
 and the compact stage prompt bound the loop.

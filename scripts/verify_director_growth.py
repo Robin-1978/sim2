@@ -61,6 +61,8 @@ def _template() -> dict[str, Any]:
     template["evolution"]["contracts"] = {
         "god_structural": {
             "tools": ["query_history", "propose_entity", "propose_definition", "propose_world_change", "wait"],
+            "max_proposals": 3,
+            "required_content": {"growth_cell": True},
             "purpose": "Fill exactly the Director's target growth cell.",
             "result": (
                 "Read <season_plan>. Submit exactly one growth unit for the target cell, and no "

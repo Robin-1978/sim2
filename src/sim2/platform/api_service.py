@@ -106,12 +106,13 @@ class RuntimeApiService(PlatformService):
                         max_completion_tokens=provider_max_completion_tokens,
                         role=role,
                     )
-                    for role in ("agent_decision", "agent_reflection", "god", "story")
+                    for role in ("agent_decision", "agent_reflection", "director", "god", "story")
                 }
             else:
                 providers = {
                     "agent_decision": router.provider_for_role("agent_decision"),
                     "agent_reflection": router.provider_for_role("agent_reflection"),
+                    "director": router.provider_for_role("director"),
                     "god": router.provider_for_role("god"),
                     "story": router.provider_for_role("story"),
                 }

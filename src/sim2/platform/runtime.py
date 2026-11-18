@@ -147,6 +147,11 @@ class Platform:
     def retry_evolution_task(self, *args: Any, **kwargs: Any) -> Any:
         return self._services["evolution"].retry_evolution_task(*args, **kwargs)
 
+    def plan_structure_with_provider(self, provider: Any, minute: int) -> Any:
+        """Ask the LLM Director for the next structural target."""
+
+        return self._services["director"].plan_with_provider(provider, minute)
+
     def submit_experience(self, *args: Any, **kwargs: Any) -> Any:
         return self._services["learning"].submit_experience(*args, **kwargs)
 
