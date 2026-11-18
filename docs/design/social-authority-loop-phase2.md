@@ -163,6 +163,33 @@ Phase 2 采用以下边界：
 
 “没有授权”不是 Platform 的硬门；“没有库存”才是。
 
+### 1.1 原语与内容
+
+`resource_take` 是 Platform 原语；`take_energy` 只是 probe world 的内容实例。两者不能混为一谈。
+
+| 层 | 名称 | 说明 |
+| --- | --- | --- |
+| Platform 原语 | `resource_take` effect | 读取 `resource_id`、`amount`、`scope`、`mode`，不包含任何资源名分支 |
+| Platform 事件 | `resource.taken`、`violation.observed`、`resource.take.failed` | 事件 schema 与资源名无关 |
+| Platform 记录 | `violation`、`access_restriction` | 通过 `target_id`/`scope` 关联具体资源 |
+| 内容 | `take_energy` Action/BT | Phase 2 probe fixture，目标 `energy_reserve` |
+| 内容 | `take_water` Action/BT | Phase 3 God 生成的第二个资源 fixture |
+
+同一个原语可以用参数化内容表达：
+
+```yaml
+- id: take_resource
+  parameters: {resource_id: string, amount: integer, scope: string}
+  effects:
+  - type: resource_take
+    resource_id: context.resource_id
+    amount: context.amount
+    scope: context.scope
+    mode: covert
+```
+
+`take_energy` 和 `take_water` 是两种内容写法；Platform 只识别 `resource_take` effect，不识别 `take_energy` 或 `energy_reserve`。Phase 3 的 DA-07 源码检查会阻止内容 ID 进入 Platform。
+
 ### 2. 世界内容：场景化资源与机会窗口
 
 `worlds/social_authority_probe` 增加：
