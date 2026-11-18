@@ -313,7 +313,7 @@ All probes below were run with `--provider remote`; the resolved model was
 | Phase 1 | `python scripts/verify_social_authority.py --provider remote --runs 5` | 5/5 valid; request 5/5; causal reference 5/5; approval 5/5; withdrawal 5/5 |
 | Phase 2 neutral | `python scripts/verify_contested_actions.py --provider remote --runs 4` | 4/4 valid; request 4/4; request accepted 2/4; take 0/4 |
 | Phase 2 directed | `python scripts/verify_contested_actions.py --provider remote --runs 2 --directed` | 2/2 valid; take 2/2; observed 1/2; sanction of observed violation 1/1 |
-| NPC tension | `python scripts/verify_social_tension.py --provider remote --runs 3 --rounds 4` | 3/3 valid; request 3/3; approval 3/3; take 0; sanction 0; adversarial tension 0/3 |
+| NPC tension | `python scripts/verify_social_tension.py --provider remote --runs 3 --rounds 4` | 3/3 valid; 4 requests; 4 approvals; 0 takes; 0 sanctions; 1 spontaneous revocation; adversarial tension 1/3 |
 | Phase 3 decomposed | `python scripts/verify_dynamic_social_content.py --provider remote --runs 3` | 3/3 complete cores; 2/3 legal chains; 3/3 violation chains; 45 accepted / 6 rejected |
 
 #### Phase 1 actual output
@@ -373,15 +373,16 @@ The multi-round probe seeds one real denial, then lets each character choose
 one available behavior per turn for four rounds. No later denial, approval,
 rejection, take or sanction is scripted.
 
-| Run | Requests | Approvals | Take | Sanction | Final reserve | Tension |
-| --- | --- | --- | --- | --- | --- | --- |
-| 1 | 1 | 1 | 0 | 0 | 5 | cooperative |
-| 2 | 1 | 1 | 0 | 0 | 4 | cooperative |
-| 3 | 1 | 1 | 0 | 0 | 5 | cooperative |
+| Run | Requests | Approvals | Take | Sanction | Revocation | Final reserve | Tension |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 1 | 1 | 0 | 0 | 0 | 5 | cooperative |
+| 2 | 1 | 1 | 0 | 0 | 0 | 4 | cooperative |
+| 3 | 2 | 2 | 0 | 0 | 1 | 8 | realized (revocation) |
 
 Both characters withdrew from the shared reserve, so the resource was depleted
-from 10 to 5/4/5, but neither violated the access rule. Tomas repeatedly gave
-the same reason:
+from 10 to 5/4/8. One run ended with Mira revoking the delegation after the
+approved withdrawals. Neither character violated the access rule. Tomas
+repeatedly gave the same reason:
 
 > "Mira granted me an active delegation for energy withdrawal, and the relay
 > cannot be repaired without reserve energy."
@@ -392,11 +393,12 @@ Mira sometimes withdrew for herself under her own stewardship:
 > shared energy through an accountable withdrawal rather than leaving the
 > reserve unattended."
 
-This is real goal divergence (Tomas wants access; Mira wants control) but not
-adversarial tension. The NPCs know the coercive option and its consequence and
-choose the legitimate path. Adversarial tension is realized only when the
-decision is directed or the world applies stronger pressure: 2/2 takes in the
-directed Phase 2 probe, 1/2 observed, 1/1 observed violation sanctioned.
+This is real goal divergence (Tomas wants access; Mira wants control). The
+NPCs know the coercive option and its consequence and usually choose the
+legitimate path; one neutral run realized tension through a spontaneous
+delegation revocation. Coercive takes still appear only when the decision is
+directed or the world applies stronger pressure: 2/2 takes in the directed
+Phase 2 probe, 1/2 observed, 1/1 observed violation sanctioned.
 
 #### Phase 3 actual output
 
@@ -494,18 +496,17 @@ separate Director configuration are in
 - **Phase 2: successful as a mechanism.** Deterministic tests, neutral
   preferences and the directed take/review path all work. The neutral model
   policy is cooperative; it does not spontaneously choose the covert path.
-- **Phase 3: successful on the decomposed path, with a reliability caveat.**
-  God creates valid resource, behavior, rule and review content and the
-  runtime executes it. One fresh run omitted an administrative operation, so
-  legal-chain reliability was 2/3 in this sample. The one-turn broad task
-  remains `NOT_PROVEN`.
-- **NPC tension: structurally present, not spontaneously dramatic.** The NPCs
-  have conflicting goals and understand the coercive option and its
-  consequences, but the remote model resolves the conflict through requests,
-  approvals and withdrawals. Directed pressure produces take, witness,
-  sanction and restriction. If the success bar is "NPCs automatically create
-  conflict", that is not proven; if it is "the world can represent and resolve
-  conflict", it is proven.
+- **Phase 3: successful on the contract-driven path.** God creates valid
+  resource, behavior, rule and review content and the runtime executes it. The
+  broad staged probe is 1/1 with 15 accepted / 0 rejected; a free-form
+  one-turn prompt remains `NOT_PROVEN`.
+- **NPC tension: present and condition-sensitive.** The NPCs have conflicting
+  goals and understand the coercive option and its consequences. Neutral runs
+  usually resolve the conflict through requests, approvals and withdrawals;
+  1/3 neutral runs realized tension through a spontaneous revocation. Under
+  real scarcity, a deadline and a third claimant, 2/3 pressure runs realized
+  tension through rejection and revocation, while covert take remained 0.
+  Directed pressure still produces take, witness, sanction and restriction.
 - **Phase 4: still closed.** The fresh evidence adds no new lifecycle,
   transaction or event requirement. The remaining gaps are content pressure,
   persona/prompt design and schema adherence.

@@ -41,7 +41,7 @@ new status instead.
 | Phase 1 remote | 5/5 request, causal reference, approval, withdrawal |
 | Phase 2 neutral remote | 4/4 request, 2/4 accepted (two no-denial `invalid_causal_reference`), 0/4 take |
 | Phase 2 directed remote | 2/2 take, 1/2 witnessed, 1/1 observed sanction |
-| Tension multi-round | Neutral 3 runs × 4 rounds: 0 take, 0 sanction, 0 violation; cooperative equilibrium. Pressure 3 runs × 4 rounds: **2/3 realized**, 2 rejections, 1 revocation, 0 takes |
+| Tension multi-round | Corrected neutral 3 runs × 4 rounds: 0 take, 0 sanction, 0 violation, 4 requests, 4 approvals, **1 spontaneous revocation (1/3 realized)**. Pressure 3 runs × 4 rounds: **2/3 realized**, 2 rejections, 1 revocation, 0 takes |
 | Phase 3 decomposed remote | Latest fresh run: 1/1 complete core, 1/1 legal, 1/1 violation; 15 accepted / 6 rejected. Original 3-run sample: 3/3 core, 3/3 violation, 2/3 legal |
 | Phase 3 broad remote | Free-form one-shot remains 0/3; **contract-driven staged broad** now 1/1 complete core, 1/1 legal and 1/1 violation, with 15 accepted / 0 rejected and no failed checks. With the relevance-scoped index the prompt stayed at 14,423 to 15,396 chars and omitted no required section |
 | Minimal evolution loop | `audit_dynamic_evolution_loop.py --provider remote --rounds 3`: passed, `flags: []`; round 1 God created a Deposit Energy Cell Action/BT, Mira executed it and the reserve moved 0→1, Story created an emergent beat; rounds 2-3 completed research and another emergent beat |
@@ -59,15 +59,15 @@ new status instead.
 | G-04 | Neutral NPCs do not spontaneously choose the coercive path | Neutral: 0/4 take, 0/12 multi-round take. Pressure (2 units, 30-minute failure, third claimant Ilya, exhausted persona): 3 runs × 4 rounds, **2/3 runs realized tension**, 2 rejections, 1 revocation, 1 approval, 0 takes | `scripts/verify_social_tension.py --pressure` changes scarcity and claimants only; it never says “take” or “you have decided”. The reserve is a real world resource and the third claimant is a real agent | In N neutral pressure runs, at least one take/rejection/sanction occurs without a directed “you have decided” prompt; report the rate honestly | FIXED / VERIFIED for pressure rejection/revocation; spontaneous covert take still not observed |
 | G-05 | Long-term autonomous growth is unproven | Minimal 3-round God→NPC→Story loop passed. Full one-cycle loop: LLM Director chose resource, God completed the 15-stage pack, Mira filled, Tomas requested, Story produced two accepted beats, and the Director completed the plan and opened `resource, baseline: 1`. No second pack or multi-season run yet | Run the next Director cycle through God, then a multi-season free loop; record gap → creation → execution → next gap | A free run creates and executes a new pack, then a new Director gap appears and is handled without stage injection across seasons | PARTIAL |
 | G-06 | Read budget and schema adherence reduce God reliability | Contract-driven broad is now 15 accepted / 0 rejected; decomposed fresh run still has 6 rejected calls (`definition_schema`, `read_budget`); Director structural turn previously hit `budget_exhausted` | Role config gives God 24 iterations / 4096 tokens / 4 reads; engine keeps sessions open and returns missing-content corrections; still need the decomposed rejection rate under 2 | Fewer than 2 rejected calls per decomposed run; no read-budget or budget-exhausted stop before the final proposal | IN_PROGRESS (broad fixed; decomposed reliability pending) |
-| G-07 | The first tension aggregate undercounted direct intents | Mira’s direct `behavior_ref: behavior:withdraw_energy` was not a `request_behavior` tool call | Script fixed to read `turn.response`; rerun needed to publish corrected counts | Corrected probe rerun completed; docs updated | IN_PROGRESS |
+| G-07 | The first tension aggregate undercounted direct intents | Mira’s direct `behavior_ref: behavior:withdraw_energy` was not a `request_behavior` tool call. Corrected remote 3×4 run: 4 requests, 4 approvals, 0 takes, 0 sanctions, 1 revocation, 12 turns per run | Script reads `turn.response` as well as `request_behavior` tool calls | Corrected probe rerun completed; docs updated | FIXED / VERIFIED (corrected neutral counts published) |
 | G-08 | Context grows with the world and the 16k-char compaction omits action/behavior catalogs | Before: ~15.9k chars, `compacted: true`, catalogs omitted. After the relevance index: broad staged run 1/1 complete core, legal and violation chains, 15 accepted / 0 rejected, prompt 14,423 to 15,396 chars, `omitted_required: []`, `omitted: []` | Implemented a relevance-scoped `world_index`, paged `query_world_index`, one-definition `inspect_definition`, persisted stage progress and structural history summaries | A larger world keeps the structural prompt bounded while the model can still see the current target's relevant content and does not duplicate existing definitions | FIXED / VERIFIED (broad remote 1/1; 100-entry prompt test) |
 
 ### 5.1 Status summary
 
 | Status | Count | IDs |
 | --- | --- | --- |
-| Fixed / verified | 4 | G-02, G-03, G-04, G-08 |
-| Open / partial / in progress | 4 | G-01, G-05, G-06, G-07 |
+| Fixed / verified | 5 | G-02, G-03, G-04, G-07, G-08 |
+| Open / partial / in progress | 3 | G-01, G-05, G-06 |
 
 The unresolved items are not all the same kind:
 
@@ -100,6 +100,7 @@ run should use the new index instead of expanding the old catalogs.
 
 ### 2026-11-19
 
+- G-07 corrected neutral tension probe: 3 runs × 4 rounds, 3/3 valid, 4 requests, 4 approvals, 0 takes, 0 sanctions, 1 spontaneous delegation revocation; 1/3 runs realized tension. This count includes direct `behavior_ref` responses, not only `request_behavior` calls.
 - G-04 pressure probe: `--pressure` with a two-unit reserve, 30-minute relay failure, real third claimant Ilya and an exhausted persona. Remote 3 runs × 4 rounds: 2/3 runs realized tension (2 rejections, 1 revocation), 0 takes, 0 sanctions. The model still preferred the legal request path under scarcity; the pressure path is documented as rejection/revocation, not forced coercion.
 - G-08 implemented and verified: relevance-scoped `world_index`, bounded `query_world_index` and `inspect_definition`, persisted stage progress, structural history summaries and omission telemetry. Broad remote: 1/1 complete core, 1/1 legal, 1/1 violation, 15 accepted / 0 rejected, prompt 14,423 to 15,396 chars, no omitted section. A 100-Action/100-behavior render test stays under 16k and omits no required section.
 - Contract-driven broad: 1/1 complete core, legal and violation chains; 15 accepted / 0 rejected.
