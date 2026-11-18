@@ -45,8 +45,10 @@ Browser
   附近角色、资源点与设施、常驻世界路线小地图、任务进度、上一拍结果、
   **世界目标（公开篇章）**、一个推荐行动、紧凑行动列表、条件不足行动及原因。
 - **右栏**：世界脉搏摘要、世界动态、附近人物列表、交易报价、公共世界数值。
-- **篇章节拍**：目标区位于场景和路线小地图之间，排在行动区上方；章节标题
-  （例如“第二章 · 潮门守住了”）显示在面板头部，章节摘要显示在目标卡上方。
+- **篇章节拍**：目标区位于场景和路线小地图之间，排在行动区上方；面板头部
+  显示自动演化的 Story 标题（标注“自动演化”）或开局窗口内的只读态势锚点
+  （标注“当前态势”），摘要显示在目标卡上方。开局的 `situation_anchor_window_minutes`
+  结束后只显示 Story 生成的内容。
   默认只显示优先级最高的三个目标；
   其余通过“显示全部”展开。每张目标卡显示 ready/needs_support/blocked
   状态、进度条、可读的缺失条件，以及可执行按钮：单目标显示“去做：…”，
@@ -137,7 +139,7 @@ Browser
 | `item_labels` | `rules.item_labels` 的物品显示名 |
 | `capabilities` | 角色能力值与 `capabilities.yaml` 中的名称 |
 | `goals` | 公开目标及 ready/needs_support/blocked 状态；支持 `origins` 与 `visible_when` |
-| `chapter` | 由 `story.fallback_chapters` 触发事件投影出的零模型章节 |
+| `chapter` | 优先投影玩家可读的 `story.beat.activated`；没有时退回 `story.situation_anchors` 的只读态势旁白 |
 | `alert_thresholds` | 需求条警戒线 |
 | `world_properties` / `world_property_labels` | 右侧公共账目 |
 | `unavailable_actions` | 不可执行行为及失败原因 |

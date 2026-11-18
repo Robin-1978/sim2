@@ -485,6 +485,7 @@ class StoryRuntimeMixin:
                 self._grant_to_audience_member(submission, audience_id)
             event_id = self._context.services["events"].append("story.beat.activated", actor_id, minute, {
                 "beat_id": beat_id,
+                "title": str(beat.get("agent_label") or beat.get("summary") or beat_id),
                 "summary": beat.get("summary", ""),
                 "fact": beat.get("fact") or proposal.get("fact") or "",
                 "goal_hint": beat.get("goal_hint") or proposal.get("goal_hint") or "",

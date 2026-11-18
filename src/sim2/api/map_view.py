@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import deque
 from typing import Any
 
-from ..world.navigation import route_edge_distance, route_minutes
+from ..world.navigation import location_is_open, route_edge_distance, route_minutes
 
 
 def build_map_view(store: Any, *, viewer_id: str | None = None, observer: bool = False) -> dict[str, Any]:
@@ -23,12 +23,16 @@ def build_map_view(store: Any, *, viewer_id: str | None = None, observer: bool =
         if not observer and viewer_id and not _player_can_see_location(store, viewer_id, location):
             continue
         position = location.get("map_position") or location.get("position")
+        state = location.get("initial_state") if isinstance(location.get("initial_state"), dict) else {}
+        is_open = location_is_open(location)
         locations.append({
             "id": str(location["id"]),
             "name": str(location.get("name") or location["id"]),
             "tags": [str(item) for item in (location.get("tags") or [])],
             "visibility": visibility,
             "safe": bool(location.get("safe", False)),
+            "open": is_open,
+            "closed_reason": str(state.get("closed_reason") or "") if not is_open else "",
             "position": dict(position) if isinstance(position, dict) else None,
             "routes": [str(item) for item in (location.get("routes") or [])],
             "route_distances": {

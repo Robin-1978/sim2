@@ -7,6 +7,7 @@ locations:
   tags: [public, social, market, resource]
   routes: [workshop, marsh_edge, gatehouse, lantern_row]
   route_distances: {workshop: 1, marsh_edge: 2, gatehouse: 2, lantern_row: 1}
+  initial_state: {open: true}
   map_position: {x: 0, y: 0}
 - id: workshop
   name: 潮汐工坊
@@ -34,6 +35,7 @@ locations:
   tags: [resource, exploration]
   routes: [commons_quay, drowned_observatory]
   route_distances: {commons_quay: 2, drowned_observatory: 2}
+  initial_state: {open: true}
   map_position: {x: -1, y: 1}
 - id: gatehouse
   name: 潮门闸室

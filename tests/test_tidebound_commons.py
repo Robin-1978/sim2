@@ -527,14 +527,16 @@ def test_daily_public_decision_is_a_real_tradeoff_and_reopens(tmp_path: Path) ->
         platform.step()
         _start_and_finish(platform, "hero", "marsh_rest_today", "decision-rest")
         properties = platform.store.repositories.metadata.get("world_properties")
-        assert round(properties["public_confidence"], 3) == 0.48
-        assert round(properties["tide_gate_integrity"], 3) == 0.31
+        # The previous repair decision's next-day aftermath has already added
+        # its small confidence and gate gains before this rest choice.
+        assert round(properties["public_confidence"], 3) == 0.47
+        assert round(properties["tide_gate_integrity"], 3) == 0.33
         assert properties["public_decision_open"] == 0
     finally:
         service.close()
 
 
-def test_fallback_chapters_follow_storm_outcomes_without_a_model(tmp_path: Path) -> None:
+def test_situation_anchors_follow_storm_outcomes_without_a_model(tmp_path: Path) -> None:
     """Fixed chapters keep the arc readable with no Story or God calls."""
 
     from sim2.api.service import ControlService
@@ -545,18 +547,18 @@ def test_fallback_chapters_follow_storm_outcomes_without_a_model(tmp_path: Path)
         assert platform.enter_player("hero", "forager", name="试玩者")["status"] == "accepted"
         chapter = service.player_view("hero")["chapter"]
         assert chapter["id"] == "storm_watch"
-        assert chapter["title"] == "第一章 · 风暴季警戒"
+        assert chapter["title"] == "风暴季警戒"
 
         _set_world_properties(platform, tide_gate_integrity=0.85)
         platform.step()
         chapter = service.player_view("hero")["chapter"]
         assert chapter["id"] == "gate_ready"
-        assert chapter["title"] == "第二章 · 潮门已加固"
+        assert chapter["title"] == "潮门已加固"
 
         for integrity, expected in (
-            (0.5, ("storm_breached", "第二章 · 潮门被撕开")),
-            (0.85, ("storm_held", "第二章 · 潮门守住了")),
-            (0.1, ("storm_flooded", "第二章 · 潮水进了码头")),
+            (0.5, ("storm_breached", "潮门被撕开")),
+            (0.85, ("storm_held", "潮门守住了")),
+            (0.1, ("storm_flooded", "潮水进了码头")),
         ):
             if integrity == 0.85:
                 # Crossing the 80% threshold is its own edge-triggered chapter.
@@ -599,5 +601,190 @@ def test_personal_origin_goal_counts_only_the_owner(tmp_path: Path) -> None:
                 "resource.gathered", "hero", 6, {"resource_id": "shellfish"},
             )
         assert "forager_first_haul" not in {item["id"] for item in service.player_view("hero")["goals"]}
+    finally:
+        service.close()
+
+
+def test_storm_outcomes_close_space_and_reduce_materials(tmp_path: Path) -> None:
+    """Storm consequences must be world data: closed places and real stock loss."""
+
+    from sim2.world.navigation import location_is_open, reachable_locations
+
+    platform = Platform(create_instance(WORLD, "tidebound-storm-space", tmp_path / "runtime"))
+    try:
+        assert platform.enter_player("hero", "forager", name="试玩者")["status"] == "accepted"
+        _set_world_properties(
+            platform,
+            storm_eta_hours=0,
+            storm_pressure=1.0,
+            tide_gate_integrity=0.5,
+            public_confidence=0.5,
+        )
+        platform.step()
+
+        marsh = platform.store.repositories.entities.get_entity("marsh_edge")
+        assert location_is_open(marsh) is False
+        assert marsh["initial_state"]["closed_reason"] == "潮沟被风暴撕开"
+        assert "marsh_edge" not in reachable_locations(platform.store, "commons_quay")
+        shellfish = platform.store.repositories.entities.get_entity("shellfish")
+        assert shellfish["initial_state"]["quantity"] == 18
+        event = next(
+            item for item in platform.store.repositories.events.recent_events(limit=20)
+            if item["event_type"] == "storm.breached"
+        )
+        assert any(item["type"] == "entity_state_set" for item in event["effects"])
+        assert any(item["type"] == "world_resource_delta" for item in event["effects"])
+
+        agent = platform.store.repositories.entities.get_agent("hero")
+        agent["inventory"]["repair_kit"] = 1
+        with platform.store.transaction():
+            platform.store.repositories.entities.put_agent("hero", agent, agent["name"])
+        assert _start(platform, "hero", "repair_gate", "storm-space-repair")["status"] == "accepted"
+        _run_active(platform, "hero")
+        assert location_is_open(platform.store.repositories.entities.get_entity("marsh_edge")) is True
+        assert "marsh_edge" in reachable_locations(platform.store, "commons_quay")
+    finally:
+        platform.close()
+
+
+def test_flooding_closes_the_quay_until_the_gate_is_repaired(tmp_path: Path) -> None:
+    from sim2.world.navigation import location_is_open
+
+    platform = Platform(create_instance(WORLD, "tidebound-storm-flood-space", tmp_path / "runtime"))
+    try:
+        assert platform.enter_player("hero", "forager", name="试玩者")["status"] == "accepted"
+        _set_world_properties(
+            platform,
+            storm_eta_hours=0,
+            storm_pressure=1.0,
+            tide_gate_integrity=0.1,
+            public_confidence=0.5,
+        )
+        platform.step()
+        quay = platform.store.repositories.entities.get_entity("commons_quay")
+        assert location_is_open(quay) is False
+        assert quay["initial_state"]["closed_reason"] == "风暴潮淹没了码头"
+        driftwood = platform.store.repositories.entities.get_entity("driftwood")
+        assert driftwood["initial_state"]["quantity"] == 12
+    finally:
+        platform.close()
+
+
+def test_onboarding_projection_follows_world_state(tmp_path: Path) -> None:
+    from sim2.api.service import ControlService
+
+    service = ControlService(create_instance(WORLD, "tidebound-onboarding", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "steward", name="试玩者")["status"] == "accepted"
+        assert service.player_view("hero")["onboarding"]["id"] == "first_measurement"
+        _set_world_properties(platform, maintenance_evidence=1)
+        assert service.player_view("hero")["onboarding"]["id"] == "first_decision"
+        _set_world_properties(platform, public_decision_open=0)
+        assert service.player_view("hero")["onboarding"]["id"] == "brace_the_gate"
+        _set_world_properties(platform, tide_gate_integrity=0.85)
+        assert service.player_view("hero")["onboarding"]["id"] == "wait_for_storm"
+        _set_world_properties(platform, storm_eta_hours=0)
+        assert service.player_view("hero")["onboarding"] is None
+    finally:
+        service.close()
+
+
+def test_origin_second_act_waits_for_the_first_task(tmp_path: Path) -> None:
+    from sim2.api.service import ControlService
+
+    service = ControlService(create_instance(WORLD, "tidebound-origin-act-two", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "forager", name="试玩者")["status"] == "accepted"
+        assert "forager_rations" not in {item["id"] for item in service.player_view("hero")["goals"]}
+        with platform.store.transaction():
+            platform.store.repositories.events.append_event(
+                "resource.gathered", "hero", 5, {"resource_id": "shellfish"},
+            )
+        goals = {item["id"]: item for item in service.player_view("hero")["goals"]}
+        assert "forager_first_haul" not in goals
+        assert "forager_rations" in goals
+    finally:
+        service.close()
+
+
+def test_daily_decision_leaves_a_next_day_consequence(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "tidebound-aftermath", tmp_path / "runtime"))
+    try:
+        assert platform.enter_player("hero", "steward", name="试玩者")["status"] == "accepted"
+        assert _start(platform, "hero", "ration_today", "aftermath-ration")["status"] == "accepted"
+        _run_active(platform, "hero")
+        assert platform.store.repositories.metadata.get("world_properties")["decision_rationing"] == 1
+        with platform.store.transaction():
+            platform.store.repositories.metadata.set("world_minute", 1439)
+        platform.step()
+        properties = platform.store.repositories.metadata.get("world_properties")
+        assert properties["decision_rationing"] == 0
+        aftermath = [
+            item for item in platform.store.repositories.events.recent_events(limit=20)
+            if item["event_type"] == "decision.aftermath"
+        ]
+        assert aftermath and aftermath[0]["decision"] == "rationing"
+        assert aftermath[0]["summary"].startswith("昨天的配给")
+    finally:
+        platform.close()
+
+
+def test_emergent_story_chapter_takes_precedence_over_situation_anchors(tmp_path: Path) -> None:
+    from sim2.api.service import ControlService
+
+    service = ControlService(create_instance(WORLD, "tidebound-story-precedence", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "chart_keeper", name="试玩者")["status"] == "accepted"
+        with platform.store.transaction():
+            platform.store.repositories.events.append_event(
+                "story.beat.activated", "story", 6,
+                {
+                    "beat_id": "emergent_chart_thread",
+                    "title": "半张海图有回应",
+                    "summary": "塞琳在旧海图的折痕里发现了第二条低潮通道。",
+                    "goal_hint": "先复核第二个研究阶段。",
+                    "audience": ["hero"],
+                },
+            )
+        chapter = service.player_view("hero")["chapter"]
+        assert chapter["kind"] == "story"
+        assert chapter["title"] == "半张海图有回应"
+        assert chapter["summary"].startswith("塞琳")
+        assert chapter["id"] == "emergent_chart_thread"
+    finally:
+        service.close()
+
+
+def test_opening_anchors_expire_but_agent_story_continues(tmp_path: Path) -> None:
+    """Fixed opening narration ends; later chapters come only from Story."""
+
+    from sim2.api.service import ControlService
+
+    service = ControlService(create_instance(WORLD, "tidebound-opening-window", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "forager", name="试玩者")["status"] == "accepted"
+        with platform.store.transaction():
+            platform.store.repositories.metadata.set("world_minute", 2881)
+        view = service.player_view("hero")
+        assert view["chapter"] is None
+        assert view["onboarding"] is None
+
+        with platform.store.transaction():
+            platform.store.repositories.events.append_event(
+                "story.beat.activated", "story", 2881,
+                {
+                    "beat_id": "later_agent_chapter",
+                    "title": "风暴之后的第一次远行",
+                    "summary": "Story 根据已验证的风暴结果生成了新的远行章节。",
+                    "audience": ["hero"],
+                },
+            )
+        chapter = service.player_view("hero")["chapter"]
+        assert chapter["kind"] == "story"
+        assert chapter["title"] == "风暴之后的第一次远行"
     finally:
         service.close()

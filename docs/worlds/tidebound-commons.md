@@ -75,14 +75,15 @@ Story/God 唤醒策略和玩家模板。运行中的世界是 SQLite；后续 Go
 这些阶段只声明目标、目标行为和完成事件，不直接发放资源或跳过前置条件。
 Story 负责把已验证结果变成章节；God 负责在证据足够时增加可达的新结构。
 
-玩家还会看到两类非公共阶段：
+玩家还会看到三类非公共阶段：
 
 - **每日公共决策**：每天只开一次，目标卡直接给出三个可执行选项；
-- **出身第一步**：由 `rules.progression.origins` 限定，只对匹配出身的玩家显示。
+- **出身第一步**：由 `rules.progression.origins` 限定，只对匹配出身的玩家显示；
+- **出身第二幕**：通过 `requires_goal` 等第一步完成后才出现。
 
-目标卡支持 `visible_when`（例如 `world.public_decision_open >= 1`）和
-`origins`（例如 `[forager]`）。这两个字段是通用投影能力，其他世界也可以
-用它们做条件目标和出身专属目标。
+目标卡支持 `visible_when`（例如 `world.public_decision_open >= 1`）、`origins`
+（例如 `[forager]`）和 `requires_goal`（例如 `forager_first_haul`）。这些字段
+都是通用投影能力，其他世界也可以做条件目标、出身目标和阶段式目标。
 
 ## 出身开场
 
@@ -131,6 +132,29 @@ knowledge_seed:
 通过 `visible_when` 只在窗口打开时出现。每天重开由 `every_minutes: 1440`
 的世界作用域分钟效果负责，事件为 `public_decision.due`。
 
+每个决策还会写入一个隐藏的“昨日决策”标记。第二天同一时刻，世界作用域
+分钟效果会读取该标记并应用后果：配给带来淡水余量和抱怨，抢修带来一点闸门
+加固，休养让贝类和芦苇恢复。后果事件是 `decision.aftermath`，随后清除标记。
+这些仍然是 YAML 规则，不依赖 Story 或 God 是否可用。
+
+## 上手提示
+
+`rules.onboarding` 是配置驱动的第一轮提示，不是固定任务链。每一步声明：
+
+```yaml
+- id: first_measurement
+  title: 先测量潮门
+  body: ...
+  when: world.maintenance_evidence < 1
+  action_ref: behavior:inspect_gate
+  goal_id: inspect_tide_gate
+```
+
+玩家视图只投影**第一个条件满足**的步骤；条件全部不满足时提示自动消失。
+`onboarding_window_minutes: 2880` 让上手提示只覆盖开局两天，之后完全交给
+Story/God 和目标系统。网页把它显示为“上手提示”，而不是章节或剧情。步骤可以
+引用任意 `world.*` 属性，也可以只给目标 id，让玩家在目标卡里做选择。
+
 ## 风暴倒计时
 
 `storm_eta_hours` 是一个可见的世界属性，开局为 18 小时，之后每 48 小时一个
@@ -147,6 +171,20 @@ knowledge_seed:
 来源。倒计时归零不会删除角色或强制结束游戏；它降低公共设施和信心，把
 世界推进到需要修复的下一段。
 
+### 风暴后果是空间和材料，不只是数字
+
+风暴规则使用世界作用域的 `effects` 列表，所有后果都在 YAML 里：
+
+- `storm.flooded`：码头 `open: false`，淡水 `-6`、浮木 `-8`；
+- `storm.breached`：盐沼 `open: false`，贝类 `-10`、芦苇 `-8`；
+- `storm.held`：重新打开码头和盐沼；
+- `repair_tide_gate`：修复成功后重新打开两处地点。
+
+`location_is_open` 是通用拓扑规则：地点可以声明 `initial_state.open: false` 或
+`initial_state.closed: true`；不可进入的地点会从可达路线、玩家路线卡和旅行动作
+中消失，地图节点显示为封闭。Platform 不知道“码头”或“盐沼”是什么，这些地点
+和行为全部来自世界包。
+
 实现放在世界作用域的 `minute_effects` 中，使用通用能力：
 
 - `condition` 读取 `world.*` 属性；
@@ -154,30 +192,45 @@ knowledge_seed:
 - `event_type` / `event_summary` 每条规则每分钟最多发布一次公共事件；
 - 结算和重置规则按 YAML 顺序执行，因此先结算后果，再重置倒计时。
 
-## 零 LLM 兜底章节
+## 零 LLM 态势锚点，而不是固定剧情
 
-`story.yaml` 另有 `fallback_chapters`：它把固定的标题、摘要和下一步提示绑定到
-已经验证的公共事件。玩家视图会取**最新命中的章节事件**，因此即使没有任何
-模型可用，世界也有可读的连续弧线：
+`story.yaml` 的 `situation_anchors` 不是剧情分支，也不预写章节。它把一段
+**只读**的环境旁白绑定到已经验证的公共事件，只在没有模型驱动的 Story 章节时
+兜底显示：
 
-| 触发事件 | 章节 |
+| 触发事件 | 态势标题 |
 | --- | --- |
-| `storm.watch_begun` | 第一章 · 风暴季警戒 |
-| `tide_gate.ready` | 第二章 · 潮门已加固 |
-| `storm.held` | 第二章 · 潮门守住了 |
-| `storm.breached` | 第二章 · 潮门被撕开 |
-| `storm.flooded` | 第二章 · 潮水进了码头 |
-| `signal.route_open` | 第三章 · 外海航路重开 |
+| `storm.watch_begun` | 风暴季警戒 |
+| `tide_gate.ready` | 潮门已加固 |
+| `storm.held` | 潮门守住了 |
+| `storm.breached` | 潮门被撕开 |
+| `storm.flooded` | 潮水进了码头 |
 
-这些章节不是预写剧情分支：它们不推进状态、不发放资源，也不阻止 Story 在
-模型可用时追加 `emergent` 章节。它们只保证风暴结算、倒计时和目标链在零模型
-环境下仍然能被玩家理解。网页把章节标题放在目标区顶部，摘要放在目标卡上方。
+锚点只在开局窗口内有效：`situation_anchor_window_minutes: 2880`（两天）。窗口
+结束后，`chapter` 只投影 Story 生成的 `story.beat.activated`；如果 Story 还没
+生成新内容，页面退回“世界目标”，不会再用固定旁白冒充后续剧情。
+
+优先级是：**玩家可读的 `story.beat.activated` 永远优先**；没有 Story 章节时
+才投影态势锚点。锚点不推进状态、不发放资源、不解锁行为、不阻止目标，也不影响
+Story/God 的自动演化。网页会按来源显示“自动演化”或“当前态势”，不会把兜底
+旁白伪装成固定章节。
+
+## 开场之后交给 Agent
+
+固定内容只覆盖开场：`situation_anchor_window_minutes: 2880` 和
+`onboarding_window_minutes: 2880` 都在两天后失效。之后的章节、地点、势力、
+规则和 NPC 目标由 Story/God 根据已验证事件继续生成。
+
+`decision.aftermath` 也被列为 Story/God 的 external 唤醒源：每天决策的后果
+会进入自动演化，而不是只改一个数值。God 仍然可以通过通用提案增加新地点、
+势力、规则和可执行行为；Story 仍然可以提出 emergent 章节。态势锚点不会阻止、
+覆盖或替代这些结果。
 
 ## 自动演化，而不是固定剧情
 
 这个包**没有预写 `story.beats`**。`story.yaml` 只声明哪些事件可以作为
-emergent 来源；真正的章节由 Story Agent 在事件唤醒时提出（固定兜底章节
-`fallback_chapters` 见上一节）。当前策略：
+emergent 来源；真正的章节由 Story Agent 在事件唤醒时提出（零模型时的态势锚点
+`situation_anchors` 见上一节）。当前策略：
 
 - Story 在 `gate.inspected`、`research.completed`、`tide_gate.repaired`、
   `signal.tuned`、`signal.route_open`、`storm.warning`、`storm.breached`、

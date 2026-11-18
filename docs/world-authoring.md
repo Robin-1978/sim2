@@ -732,3 +732,96 @@ submit a `route` world change with `from`, `to` and a positive `distance`. The
 route is committed in both directions in one transaction. A route proposal is
 a topology change only; a later NPC behavior must pay the configured travel
 cost and produce the exploration result.
+
+### Conditional and origin stages
+
+`rules.progression` entries may additionally declare:
+
+| Field | Meaning |
+| --- | --- |
+| `origins` | Show the stage only to players whose stored `origin_id` matches. |
+| `visible_when` | A declarative condition evaluated against current world properties (for example `world.public_decision_open >= 1`). |
+| `requires_goal` | Hide the stage until another progression stage's `complete_when` contract is already satisfied. |
+| `complete_when.self_only` | Count only events whose `actor_id` is this player, so another resident cannot finish a personal first task. |
+
+These fields are projection rules only. They never bypass Platform checks or
+grant resources.
+
+### Onboarding hints
+
+`rules.onboarding` is a bounded, ordered list of first-run hints:
+
+```yaml
+onboarding_window_minutes: 2880
+onboarding:
+  - id: first_look
+    title: Inspect the gate
+    body: Confirm the damage before spending material.
+    when: world.maintenance_evidence < 1
+    action_ref: behavior:inspect_gate
+    goal_id: inspect_gate
+```
+
+The player view projects only the first step whose `when` condition is true.
+`onboarding_window_minutes` makes the hint list expire; after the window the
+client falls back to normal goals and Agent-driven Story. Hints are not story
+beats and do not mutate state.
+
+### Opening situation anchors
+
+`story.situation_anchors` is a read-only narration fallback for the opening:
+
+```yaml
+situation_anchor_window_minutes: 2880
+situation_anchors:
+  - id: storm_watch
+    title: Storm watch
+    summary: The gate is damaged and the first storm is close.
+    trigger_events: [storm.watch_begun]
+```
+
+A player-readable `story.beat.activated` always takes precedence. Anchors expire
+after the configured window, never unlock behavior or gate goals, and never stop
+Story or God from adding new content.
+
+### World-scope effect lists
+
+A world-scope `minute_effects` entry may use `effects` instead of a single
+`effect`:
+
+```yaml
+- id: storm_closes_the_quay
+  scope: world
+  every_minutes: 1
+  condition: world.storm_eta_hours <= 0 and world.tide_gate_integrity < 0.2
+  effects:
+    - {type: world_property_delta, property: public_confidence, delta: -0.22, minimum: 0}
+    - {type: world_resource_delta, resource_id: driftwood, delta: -8, minimum: 0}
+    - {type: entity_state_set, entity_id: commons_quay, state: open, value: false}
+  event_type: storm.flooded
+  event_summary: Storm tide floods the quay.
+```
+
+`entity_state_set` can close any location by setting `initial_state.open: false`
+or `initial_state.closed: true`. Closed locations disappear from reachable
+routes, player route cards and travel actions, and map nodes expose
+`open: false` plus an optional `closed_reason`. Reopen them with the same effect
+from a repair Action or a later world rule.
+
+### Context budgets
+
+`rules.context_limits` configures per-role prompt budgets:
+
+```yaml
+context_limits:
+  default_chars: 16000
+  default_tokens: 6000
+  roles:
+    god: {max_chars: 24000, max_tokens: 9000}
+```
+
+The renderer pins the current decision, executable behaviors, latest platform
+result, interaction history and God's exact `rule_condition_fields`; background
+sections are compacted first. See
+[Context Management](design/context-management.md) for metrics and memory
+ranking.

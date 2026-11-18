@@ -845,6 +845,7 @@
     renderActions();
     renderResultBeat();
     renderMobileActionBar();
+    renderOnboarding();
     renderGoals();
     renderWorldProperties();
     renderTalkTargets();
@@ -1499,11 +1500,38 @@
     return actions.find((action) => action.ref === ref) || null;
   }
 
+  function renderOnboarding() {
+    const card = $("onboarding-card");
+    if (!card) return;
+    const step = state.view?.onboarding || null;
+    if (!step) {
+      card.classList.add("hidden");
+      return;
+    }
+    card.classList.remove("hidden");
+    $("onboarding-step").textContent = `${step.step || 1}/${step.total || 1}`;
+    $("onboarding-title").textContent = step.title || "序章";
+    $("onboarding-body").textContent = step.body || "";
+    const action = step.action_ref ? actionForRef(step.action_ref) : null;
+    const button = $("onboarding-action");
+    button.classList.toggle("hidden", !action);
+    if (action) {
+      button.textContent = `去做：${action.choice || action.name || step.title}`;
+      button.onclick = () => beginAction(action, button);
+    }
+  }
+
   function renderGoals() {
     const root = $("goal-list");
     root.replaceChildren();
     const goals = Array.isArray(state.view?.goals) ? state.view.goals : [];
     const chapter = state.view?.chapter || null;
+    const chapterEyebrow = $("chapter-eyebrow");
+    if (chapterEyebrow) {
+      chapterEyebrow.textContent = chapter
+        ? (chapter.kind === "story" ? "自动演化" : "当前态势")
+        : "公开篇章";
+    }
     const chapterTitle = $("chapter-title");
     if (chapterTitle) chapterTitle.textContent = chapter?.title || "世界目标";
     const chapterSummary = $("chapter-summary");
@@ -2116,7 +2144,8 @@
     for (const item of positions) {
       const node = item.node;
       const reachable = routes.has(node.id);
-      const button = el("button", `map-node${node.id === current ? " current" : ""}${reachable ? " reachable" : ""}`);
+      const closed = node.open === false;
+      const button = el("button", `map-node${node.id === current ? " current" : ""}${reachable && !closed ? " reachable" : ""}${closed ? " closed" : ""}`);
       button.type = "button";
       button.style.left = `${(px(item.x) / width) * 100}%`;
       button.style.top = `${(py(item.y) / height) * 100}%`;
@@ -2124,15 +2153,17 @@
       const occupants = Array.isArray(node.occupants) ? node.occupants.length : 0;
       const tagNames = { resource: "资源", research: "研究", craft: "工坊", social: "社交", market: "集市", defense: "防线", home: "住屋", exploration: "探索", infrastructure: "设施", public: "公共", safe: "安全" };
       const nodeTags = (node.tags || []).map((tag) => tagNames[tag] || tag);
-      const detail = node.id === current
-        ? "你在这里"
-        : reachable
-          ? "可前往"
-          : compact
-            ? (occupants ? `${occupants} 人` : nodeTags.slice(0, 1).join(" · "))
-            : nodeTags.join(" · ");
+      const detail = closed
+        ? (node.closed_reason || "暂时封闭")
+        : node.id === current
+          ? "你在这里"
+          : reachable
+            ? "可前往"
+            : compact
+              ? (occupants ? `${occupants} 人` : nodeTags.slice(0, 1).join(" · "))
+              : nodeTags.join(" · ");
       if (detail) button.append(el("small", "", detail));
-      if (reachable && node.id !== current) {
+      if (reachable && !closed && node.id !== current) {
         // The server words every travel action from the world's ui_text, so the
         // map reuses it instead of composing its own phrases.
         const travelAction = (state.view?.actions || []).find(

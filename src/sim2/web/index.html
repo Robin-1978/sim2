@@ -6,7 +6,7 @@
   <meta name="description" content="sim2 游戏客户端">
   <title>sim2</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230b2426'/%3E%3Cpath d='M8 39c8-8 16 8 24 0s16 8 24 0' fill='none' stroke='%2365d8c2' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='46' cy='18' r='5' fill='%23efb26f'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/app.css?v=17">
+  <link rel="stylesheet" href="/app.css?v=19">
 </head>
 <body>
   <a class="skip-link" href="#center-stage">跳到主要画面</a>
@@ -115,9 +115,18 @@
       </section>
 
 
+      <section id="onboarding-card" class="panel onboarding-card hidden" aria-live="polite">
+        <div class="onboarding-copy">
+          <span class="eyebrow">上手提示 · <span id="onboarding-step">1/1</span></span>
+          <strong id="onboarding-title">—</strong>
+          <p id="onboarding-body" class="hint">—</p>
+        </div>
+        <button id="onboarding-action" class="button primary" type="button">去做</button>
+      </section>
+
       <section class="panel goals-panel">
         <div class="panel-title goals-heading">
-          <div><span class="eyebrow">公开篇章</span><h2 id="chapter-title">世界目标</h2></div>
+          <div><span id="chapter-eyebrow" class="eyebrow">当前态势</span><h2 id="chapter-title">世界目标</h2></div>
           <span id="goal-summary" class="hint">—</span>
         </div>
         <p id="chapter-summary" class="chapter-summary hidden"></p>
@@ -188,7 +197,7 @@
   </main>
 
   <footer class="footer">
-    <span>sim2 · 事实来自 Platform · <span id="js-build">web-game-v17</span></span>
+    <span>sim2 · 事实来自 Platform · <span id="js-build">web-game-v19</span></span>
     <span id="last-update">尚未同步</span>
   </footer>
 
@@ -406,6 +415,6 @@
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
   <!-- bump ?v= whenever app.js/app.css changes so stale tabs refetch -->
-  <script src="/app.js?v=17" defer></script>
+  <script src="/app.js?v=19" defer></script>
 </body>
 </html>

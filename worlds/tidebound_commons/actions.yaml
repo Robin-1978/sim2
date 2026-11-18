@@ -122,6 +122,10 @@ actions:
   - {type: world_property_delta, property: tide_gate_integrity, delta: 0.28, maximum: 1}
   - {type: world_property_delta, property: public_confidence, delta: 0.08, maximum: 1}
   - {type: entity_state_set, entity_id: tide_gate, state: repaired, value: true}
+  - {type: entity_state_set, entity_id: commons_quay, state: open, value: true}
+  - {type: entity_state_set, entity_id: commons_quay, state: closed_reason, value: ""}
+  - {type: entity_state_set, entity_id: marsh_edge, state: open, value: true}
+  - {type: entity_state_set, entity_id: marsh_edge, state: closed_reason, value: ""}
   success: {condition: actor.alive, result: tide_gate_repaired}
   failure: {condition: actor.incapacitated, result: repair_failed}
   interrupt_policy: pause
@@ -240,6 +244,7 @@ actions:
   - {type: world_property_delta, property: public_decision_open, delta: -1, minimum: 0}
   - {type: world_resource_delta, resource_id: fresh_water, delta: 6, maximum: 30}
   - {type: world_property_delta, property: public_confidence, delta: -0.05, minimum: 0}
+  - {type: world_property_delta, property: decision_rationing, delta: 1, maximum: 1}
   - type: public_event
     event: public_decision.made
     summary: 公社决定今天收紧配给。淡水留住了，但住户之间的抱怨也多了起来。
@@ -266,6 +271,7 @@ actions:
   - {type: world_property_delta, property: public_decision_open, delta: -1, minimum: 0}
   - {type: world_property_delta, property: tide_gate_integrity, delta: 0.05, maximum: 1}
   - {type: world_resource_delta, resource_id: fresh_water, delta: -4, minimum: 0}
+  - {type: world_property_delta, property: decision_repair, delta: 1, maximum: 1}
   - type: public_event
     event: public_decision.made
     summary: 公社把今天的劳力集中到潮门。闸室更稳了，但淡水的余量少了一截。
@@ -292,6 +298,7 @@ actions:
   - {type: world_property_delta, property: public_decision_open, delta: -1, minimum: 0}
   - {type: world_property_delta, property: public_confidence, delta: 0.05, maximum: 1}
   - {type: world_property_delta, property: tide_gate_integrity, delta: -0.02, minimum: 0}
+  - {type: world_property_delta, property: decision_rest, delta: 1, maximum: 1}
   - {type: need_delta, need: belonging, delta: 4}
   - type: public_event
     event: public_decision.made

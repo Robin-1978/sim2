@@ -21,6 +21,22 @@ def configured_location_tags(store: Any, group: str) -> set[str]:
     return {str(item) for item in values}
 
 
+def location_is_open(location: dict[str, Any] | None) -> bool:
+    """Return whether a configured location may currently be entered.
+
+    Worlds can close a place by setting ``initial_state.open: false`` or
+    ``initial_state.closed: true``.  This is generic topology state: the
+    engine does not know why the quay, marsh or a proposed location is shut.
+    """
+
+    if not isinstance(location, dict):
+        return False
+    state = location.get("initial_state") if isinstance(location.get("initial_state"), dict) else {}
+    if state.get("open") is False or state.get("closed") is True:
+        return False
+    return True
+
+
 def _route_edge_distance(location: dict[str, Any], neighbor_id: str) -> float:
     """Return one configured edge's distance, falling back to one unit.
 
@@ -67,8 +83,16 @@ def route_distance(store: Any, origin_id: str | None, destination_id: str | None
             location = store.repositories.entities.get_entity(current)
         except KeyError:
             continue
+        if current != origin and not location_is_open(location):
+            continue
         for neighbor in location.get("routes", []) or []:
             neighbor_id = str(neighbor)
+            try:
+                neighbor_entity = store.repositories.entities.get_entity(neighbor_id)
+            except KeyError:
+                neighbor_entity = {}
+            if not location_is_open(neighbor_entity):
+                continue
             edge_distance = _route_edge_distance(location, neighbor_id)
             candidate = current_distance + edge_distance
             if candidate < distances.get(neighbor_id, float("inf")):
@@ -219,6 +243,12 @@ def nearest_resource_node(store: Any, origin_id: str | None) -> dict[str, str] |
             neighbor_id = str(neighbor_id)
             if neighbor_id in visited:
                 continue
+            try:
+                neighbor = store.repositories.entities.get_entity(neighbor_id)
+            except KeyError:
+                continue
+            if not location_is_open(neighbor):
+                continue
             visited.add(neighbor_id)
             queue.append((neighbor_id, 0))
     return None
@@ -243,6 +273,12 @@ def nearest_location_with_tag(store: Any, origin_id: str | None, tags: set[str])
             neighbor_id = str(neighbor_id)
             if neighbor_id in visited:
                 continue
+            try:
+                neighbor = store.repositories.entities.get_entity(neighbor_id)
+            except KeyError:
+                continue
+            if not location_is_open(neighbor):
+                continue
             visited.add(neighbor_id)
             queue.append(neighbor_id)
     return None
@@ -264,6 +300,12 @@ def reachable_locations(store: Any, origin_id: str | None) -> set[str]:
         for neighbor_id in location.get("routes", []) or []:
             neighbor_id = str(neighbor_id)
             if neighbor_id in visited:
+                continue
+            try:
+                neighbor = store.repositories.entities.get_entity(neighbor_id)
+            except KeyError:
+                continue
+            if not location_is_open(neighbor):
                 continue
             visited.add(neighbor_id)
             queue.append(neighbor_id)

@@ -733,6 +733,21 @@ h1, h2, h3 { font-weight: 650; }
 
 /* ---------- Goals ---------- */
 
+.onboarding-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-color: rgba(239, 178, 111, 0.3);
+  background: linear-gradient(135deg, rgba(239, 178, 111, 0.09), rgba(9, 30, 32, 0.6));
+}
+.onboarding-card.hidden { display: none; }
+.onboarding-copy { min-width: 0; }
+.onboarding-copy strong { display: block; margin-top: 3px; font-size: 13px; }
+.onboarding-copy p { margin-top: 4px; max-width: 62ch; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.onboarding-card .button { flex: 0 0 auto; white-space: nowrap; }
+
 .goals-panel { padding-bottom: 14px; }
 .goals-heading h2 { font-size: 14px; letter-spacing: 0.01em; }
 .chapter-summary { margin: 0 15px 10px; color: var(--muted); font-size: 10px; line-height: 1.55; }
@@ -1178,11 +1193,13 @@ body.editor-open { overflow: hidden; }
   .left-rail { order: 2; width: 100%; }
   .right-rail { order: 3; width: 100%; }
   .scene-panel { order: 1; }
-  .task-panel { order: 2; }
-  .result-beat { order: 3; }
-  .goals-panel { order: 4; }
-  .actions-panel { order: 5; }
-  .mini-map-panel { order: 6; }
+  .onboarding-card { order: 2; align-items: stretch; flex-direction: column; gap: 10px; }
+  .onboarding-card .button { width: 100%; }
+  .task-panel { order: 3; }
+  .result-beat { order: 4; }
+  .goals-panel { order: 5; }
+  .actions-panel { order: 6; }
+  .mini-map-panel { order: 7; }
   .left-rail { position: static; max-height: none; display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
   .character-panel { grid-column: 1 / -1; }
   .right-rail { grid-template-columns: 1fr; }
@@ -1294,6 +1311,8 @@ body.editor-open { overflow: hidden; }
 .map-node.reachable { cursor: pointer; border-color: rgba(101, 216, 194, 0.42); }
 .map-node.reachable:hover { transform: translate(-50%, -52%); background: rgba(16, 50, 50, 0.98); }
 .map-node.current { border-color: rgba(239, 178, 111, 0.75); background: rgba(48, 34, 18, 0.95); }
+.map-node.closed { border-style: dashed; border-color: rgba(229, 120, 104, 0.45); background: rgba(41, 24, 24, 0.9); opacity: 0.82; }
+.map-node.closed small { color: var(--red); }
 .map-node small { color: var(--faint); font-size: 9px; line-height: 1.4; }
 
 /* ---------- Action dialog ---------- */

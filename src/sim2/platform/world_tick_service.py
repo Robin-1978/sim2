@@ -130,7 +130,6 @@ class WorldTickService(PlatformService):
 
         for effect in due_effects:
             scope = effect.get("scope")
-            definition = effect.get("effect", {}) or {}
             if scope == "world":
                 properties = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
                 condition = str(effect.get("condition") or "").strip()
@@ -142,27 +141,30 @@ class WorldTickService(PlatformService):
                     context=static_context_values,
                 ):
                     continue
-                key = definition.get("world_property") or definition.get("property") or definition.get("need")
-                before = float(properties.get(key, 0) or 0) if key else 0.0
-                after = before
-                if key:
-                    after = before + float(definition.get("delta", 0) or 0)
-                    if definition.get("minimum") is not None:
-                        after = max(float(definition["minimum"]), after)
-                    if definition.get("maximum") is not None:
-                        after = min(float(definition["maximum"]), after)
-                    if abs(after - before) > 1e-12:
-                        self.set_world_property(str(key), after)
+                definitions = effect.get("effects")
+                if not isinstance(definitions, list) or not definitions:
+                    definitions = [effect.get("effect", {}) or {}]
+                changes = [
+                    change for definition in definitions if isinstance(definition, dict)
+                    if (change := self._apply_world_effect(definition, minute))
+                ]
                 event_type = str(effect.get("event_type") or "").strip()
                 if event_type:
                     payload = dict(effect.get("event_data") or {})
                     if effect.get("event_summary"):
                         payload["summary"] = str(effect["event_summary"])
-                    if key:
-                        payload.update({"property": str(key), "before": before, "after": after})
+                    if len(changes) == 1 and changes[0].get("type") == "world_property_delta":
+                        payload.update({
+                            "property": changes[0]["property"],
+                            "before": changes[0]["before"],
+                            "after": changes[0]["after"],
+                        })
+                    elif changes:
+                        payload["effects"] = changes
                     payload["rule_id"] = str(effect.get("id") or "")
                     self._context.services["events"].append(event_type, None, minute, payload)
             elif scope == "relationship":
+                definition = effect.get("effect", {}) or {}
                 relation_delta = float(definition.get("relation_strength", definition.get("delta", 0)))
                 for relation in self.store.repositories.entities.list_relationships():
                     data = {key: value for key, value in relation.items() if key not in {"from", "to", "type"}}
@@ -173,6 +175,68 @@ class WorldTickService(PlatformService):
             # growing map after every agent/effect made a 1,000-agent tick
             # encode and decode the same JSON thousands of times.
             self.store.repositories.metadata.set("minute_effect_event_state", minute_event_state)
+
+    def _apply_world_effect(self, definition: dict[str, Any], minute: int) -> dict[str, Any] | None:
+        """Apply one declarative world-scope effect and return its audit delta."""
+
+        effect_type = str(definition.get("type") or definition.get("op") or "")
+        if effect_type == "world_property_delta":
+            properties = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
+            key = definition.get("world_property") or definition.get("property") or definition.get("need")
+            if not key:
+                return None
+            before = float(properties.get(str(key), 0) or 0)
+            after = before + float(definition.get("delta", 0) or 0)
+            if definition.get("minimum") is not None:
+                after = max(float(definition["minimum"]), after)
+            if definition.get("maximum") is not None:
+                after = min(float(definition["maximum"]), after)
+            if abs(after - before) > 1e-12:
+                self.set_world_property(str(key), after)
+            return {"type": effect_type, "property": str(key), "before": before, "after": after}
+        if effect_type == "world_resource_delta":
+            resource_ref = definition.get("resource_id") or definition.get("resource")
+            resource_id = str(resource_ref or "")
+            resources = self._dependency("resources")
+            if not resource_id or resources is None:
+                return None
+            current = resources._world_resource(resource_id)
+            if current is None:
+                return None
+            before = float(current.get("amount", 0) or 0)
+            after = before + float(definition.get("delta", definition.get("value", 0)) or 0)
+            if definition.get("minimum") is not None:
+                after = max(float(definition["minimum"]), after)
+            if definition.get("maximum") is not None:
+                after = min(float(definition["maximum"]), after)
+            delta = after - before
+            if abs(delta) > 1e-12:
+                resources._change_world_resource(resource_id, delta, actor_id=None)
+            return {"type": effect_type, "resource_id": resource_id, "before": before, "after": after}
+        if effect_type == "entity_state_set":
+            entity_id = definition.get("entity_id") or definition.get("target_entity")
+            state_key = definition.get("state") or definition.get("property")
+            if not entity_id or not state_key:
+                return None
+            try:
+                entity = self.store.repositories.entities.get_entity(str(entity_id))
+            except KeyError:
+                return None
+            entity_state = dict(entity.get("initial_state") or {})
+            before = entity_state.get(str(state_key))
+            after = definition.get("value")
+            entity_state[str(state_key)] = after
+            entity["initial_state"] = entity_state
+            self.store.repositories.entities.put_entity(
+                entity["id"], entity["entity_type"], entity["name"],
+                {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}},
+            )
+            self._context.services["events"].append(
+                "entity.state_changed", None, minute,
+                {"entity_id": entity["id"], "state": str(state_key), "before": before, "after": after, "source": "world_minute_effect"},
+            )
+            return {"type": effect_type, "entity_id": str(entity_id), "state": str(state_key), "before": before, "after": after}
+        return None
 
     def _recover_incapacitated(self, minute: int, agents: list[dict[str, Any]]) -> None:
         """Wake unconscious characters once the configured recovery period has elapsed.

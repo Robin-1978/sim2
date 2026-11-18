@@ -10,46 +10,106 @@ from ..world.ui_text import UiText
 from .authoring import AuthoringService
 
 
-def _fallback_chapter(platform: Platform) -> dict[str, Any] | None:
-    """Return the newest declarative chapter whose trigger event has happened.
+def _player_chapter(platform: Platform, player_id: str) -> dict[str, Any] | None:
+    """Prefer an emergent Story beat; otherwise project one situation anchor.
 
-    Worlds that ship no model-dependent plot can still provide readable
-    chapters: ``story.fallback_chapters`` names fixed titles and summaries for
-    validated event types.  The projection walks matching events newest-first,
-    so a storm outcome replaces the previous chapter without any LLM call.
+    A situation anchor is not a plot branch.  It is a fixed, read-only
+    narration of a validated public fact used when no model-driven Story beat
+    exists.  It never mutates world state or gates behavior.  Story beats take
+    precedence for the audience they were addressed to.
     """
+
+    events_repo = platform.store.repositories.events
+    for event in events_repo.recent_events_by_types(["story.beat.activated"], limit=24):
+        audience = [str(item) for item in (event.get("audience") or []) if str(item)]
+        if audience and player_id not in audience and "player" not in audience:
+            continue
+        title = str(event.get("title") or event.get("summary") or event.get("beat_id") or "当前篇章")
+        return {
+            "id": str(event.get("beat_id") or title),
+            "title": title,
+            "summary": str(event.get("summary") or event.get("fact") or ""),
+            "goal_hint": str(event.get("goal_hint") or ""),
+            "event_type": "story.beat.activated",
+            "event_id": int(event.get("event_id", 0) or 0),
+            "world_minute": int(event.get("world_minute", 0) or 0),
+            "kind": "story",
+        }
 
     story = platform.store.repositories.metadata.get("story", {}) or {}
     root = story.get("story", story) if isinstance(story, dict) else {}
-    chapters = [
-        item for item in (root.get("fallback_chapters") or [])
+    window = root.get("situation_anchor_window_minutes")
+    if isinstance(window, (int, float)) and not isinstance(window, bool):
+        current_minute = int(platform.store.repositories.metadata.get("world_minute", 0) or 0)
+        if current_minute > int(window):
+            return None
+    anchors = root.get("situation_anchors") or root.get("fallback_chapters") or []
+    anchors = [
+        item for item in anchors
         if isinstance(item, dict) and item.get("id")
     ]
-    if not chapters:
+    if not anchors:
         return None
     triggers: dict[str, list[dict[str, Any]]] = {}
-    for chapter in chapters:
-        event_types = chapter.get("trigger_events") or []
+    for anchor in anchors:
+        event_types = anchor.get("trigger_events") or []
         if isinstance(event_types, str):
             event_types = [event_types]
-        if chapter.get("trigger_event"):
-            event_types = list(event_types) + [chapter["trigger_event"]]
+        if anchor.get("trigger_event"):
+            event_types = list(event_types) + [anchor["trigger_event"]]
         for event_type in event_types:
-            triggers.setdefault(str(event_type), []).append(chapter)
+            triggers.setdefault(str(event_type), []).append(anchor)
     if not triggers:
         return None
-    events = platform.store.repositories.events.recent_events_by_types(list(triggers), limit=40)
-    for event in events:
-        for chapter in triggers.get(str(event.get("event_type") or ""), []):
+    for event in events_repo.recent_events_by_types(list(triggers), limit=40):
+        for anchor in triggers.get(str(event.get("event_type") or ""), []):
             return {
-                "id": str(chapter["id"]),
-                "title": str(chapter.get("title") or chapter["id"]),
-                "summary": str(chapter.get("summary") or ""),
-                "goal_hint": str(chapter.get("goal_hint") or ""),
+                "id": str(anchor["id"]),
+                "title": str(anchor.get("title") or anchor["id"]),
+                "summary": str(anchor.get("summary") or ""),
+                "goal_hint": str(anchor.get("goal_hint") or ""),
                 "event_type": str(event.get("event_type") or ""),
                 "event_id": int(event.get("event_id", 0) or 0),
                 "world_minute": int(event.get("world_minute", 0) or 0),
+                "kind": "situation",
             }
+    return None
+
+
+def _onboarding_step(platform: Platform, agent: dict[str, Any]) -> dict[str, Any] | None:
+    """Project the first matching configurable onboarding step for one player."""
+
+    rules = platform.store.repositories.metadata.get("rules", {}) or {}
+    steps = rules.get("onboarding") if isinstance(rules, dict) else []
+    if not isinstance(steps, list) or not steps:
+        return None
+    window = rules.get("onboarding_window_minutes") if isinstance(rules, dict) else None
+    if isinstance(window, (int, float)) and not isinstance(window, bool):
+        current_minute = int(platform.store.repositories.metadata.get("world_minute", 0) or 0)
+        if current_minute > int(window):
+            return None
+    world = platform.store.repositories.metadata.get("world_properties", {}) or {}
+    for index, raw in enumerate(steps):
+        if not isinstance(raw, dict) or not raw.get("id"):
+            continue
+        condition = str(raw.get("when") or "").strip()
+        try:
+            visible = not condition or platform.view.conditions.evaluate(
+                condition, agent=agent, target={}, world=world, context={},
+            )
+        except Exception:
+            visible = False
+        if not visible:
+            continue
+        return {
+            "id": str(raw["id"]),
+            "title": str(raw.get("title") or raw["id"]),
+            "body": str(raw.get("body") or ""),
+            "action_ref": str(raw.get("action_ref") or ""),
+            "goal_id": str(raw.get("goal_id") or ""),
+            "step": index + 1,
+            "total": len([item for item in steps if isinstance(item, dict) and item.get("id")]),
+        }
     return None
 
 
@@ -81,6 +141,8 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
     for destination in current.get("routes", []) or []:
         target = nodes.get(str(destination))
         if not target:
+            continue
+        if not target.get("open", True):
             continue
         edge = next((item for item in map_view.get("edges", []) if {str(item.get("from")), str(item.get("to"))} == {current_id, str(destination)}), {})
         routes.append({
@@ -184,7 +246,8 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         "needs": decision.get("needs", {}),
         "capabilities": capabilities,
         "goals": decision.get("progression_goals", [])[:8],
-        "chapter": _fallback_chapter(platform),
+        "chapter": _player_chapter(platform, player_id),
+        "onboarding": _onboarding_step(platform, agent),
         "active_task": active_task,
         "actions": actions[:24],
         "unavailable_actions": unavailable_actions[:12],

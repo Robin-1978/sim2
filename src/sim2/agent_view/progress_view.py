@@ -193,8 +193,22 @@ class ProgressViewMixin:
             }
 
         goals: list[dict[str, Any]] = []
+        definitions_by_id = {
+            str(item.get("id")): item for item in definitions
+            if isinstance(item, dict) and item.get("id")
+        }
+
+        def goal_completed(goal_id: str) -> bool:
+            definition = definitions_by_id.get(str(goal_id))
+            if not definition:
+                return False
+            return bool(completion(definition.get("complete_when")).get("completed"))
+
         for raw in definitions:
             if not isinstance(raw, dict) or not raw.get("id"):
+                continue
+            required_goal = str(raw.get("requires_goal") or "").strip()
+            if required_goal and not goal_completed(required_goal):
                 continue
             audience = {str(value) for value in (raw.get("audience") or [])}
             player_audience = "player" in audience and str(agent.get("role") or "") == "player"

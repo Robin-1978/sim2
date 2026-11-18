@@ -115,7 +115,8 @@ budgets, instance switching, snapshots, CLI-equivalent commands, package
 compilation and smoke tests. Its 设计世界 page uses the same visual language as
 the game and a beginner-first flow: copy a validated template, edit named
 fields, watch the readiness checks, then publish and open a new instance. See
-[Web Client Design](docs/design/web-client.md) and
+[Web Client Design](docs/design/web-client.md),
+[Context Management](docs/design/context-management.md) and
 [World Authoring Web](docs/design/world-authoring-web.md). The development
 server binds to localhost and must not be exposed publicly without additional
 deployment authentication and CORS controls.
@@ -131,8 +132,11 @@ chain, four origins with distinct opening events and first tasks, a daily
 public decision that trades water against repairs or rest, a visible storm
 countdown that damages an unprepared tide gate and rewards a real repair, and
 no pre-written story beats: Story and God evolve the commons from validated
-events, periodic cadence and the configured stagnation signal. Fixed fallback
-chapters keep storm outcomes readable even when no model is running.
+events, periodic cadence and the configured stagnation signal. Storm outcomes
+also close and reopen configured places and deplete resource nodes, so their
+consequences are spatial and material rather than only numeric. Opening-only
+situation anchors and onboarding hints expire after two world days; later
+content comes from Story and God. All of these mechanics live in YAML.
 
 To add a world, provide a package with `manifest.yaml`, setting and world state, locations, objects, factions, agents, actions, behavior trees, rules, evolution schedule, player template, and optional prompts. `manifest.config_version` is recorded in the new SQLite instance. Reusing an instance ID is rejected; initialize a new ID for every world instance.
 
