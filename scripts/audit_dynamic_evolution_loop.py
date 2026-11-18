@@ -326,18 +326,26 @@ def main() -> int:
         action="store_true",
         help="add a Director cadence and a generic god_structural contract to the probe template",
     )
+    parser.add_argument(
+        "--director-llm",
+        action="store_true",
+        help="use the separately configured director role to choose the first structural target",
+    )
     args = parser.parse_args()
     fallback = not args.no_fallback
+    director = bool(args.director or args.director_llm)
 
     router = LLMRouter(LLMConfig.load())
     providers = {
         role: router.new_provider_for_name(args.provider, max_completion_tokens=args.max_completion_tokens, role=role)
         for role in ("agent_decision", "god", "story")
     }
+    if args.director_llm:
+        providers["director"] = router.new_provider_for_name(args.provider, max_completion_tokens=args.max_completion_tokens, role="director")
     temporary = tempfile.TemporaryDirectory(prefix="sim2-evolution-probe-") if args.runtime_dir is None else None
     runtime_root = Path(args.runtime_dir) if args.runtime_dir else Path(temporary.name)
     instance_id = f"evolution-probe-{uuid4().hex[:8]}"
-    db_path = create_instance_from_template(_probe_template(fallback=fallback, director=args.director), instance_id, runtime_root)
+    db_path = create_instance_from_template(_probe_template(fallback=fallback, director=director), instance_id, runtime_root)
     platform = Platform(db_path)
     log_path = runtime_root / "evolution-audit.jsonl"
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -350,6 +358,14 @@ def main() -> int:
                 {"resource_id": "energy_reserve", "quantity": 0, "minimum_reserve": 1, "summary": "公共能源储备为零，Mira 携带的 energy_cell 可作为真实补给来源。"},
                 wake="configured",
             )
+        director_plan: dict[str, Any] | None = None
+        if args.director_llm:
+            with platform.store.transaction():
+                director_plan = platform._services["director"].plan_with_provider(providers["director"], 5)
+            if director_plan is None:
+                with platform.store.transaction():
+                    director_plan = platform._services["director"].tick(5)
+            print(json.dumps({"director_plan": director_plan}, ensure_ascii=False, default=str), flush=True)
         rows: list[dict[str, Any]] = []
         turn_failures: list[str] = []
         for round_no in range(1, max(1, args.rounds) + 1):
@@ -424,6 +440,7 @@ def main() -> int:
                 {"task_id": item.get("task_id"), "role": item.get("role"), "task_type": item.get("task_type")}
                 for item in pending_structural_tasks
             ],
+            "director_plan": director_plan,
         }
         with (runtime_root / "evolution-audit-summary.json").open("w", encoding="utf-8") as stream:
             json.dump(summary, stream, ensure_ascii=False, indent=2)

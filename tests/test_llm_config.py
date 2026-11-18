@@ -88,3 +88,31 @@ def test_split_role_tables_are_rejected(tmp_path: Path, legacy_key: str):
 
     with pytest.raises(ValueError, match="was replaced by 'roles'"):
         LLMConfig.load(path)
+
+
+def test_role_iteration_cap_allows_structural_budget(tmp_path: Path):
+    path = _write_config(tmp_path)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["roles"]["god"] = {"provider": "fast", "max_agent_iterations": 24}
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    config = LLMConfig.load(path)
+    assert config.roles["god"].max_agent_iterations == 24
+
+
+def test_director_role_has_its_own_provider_and_limits(tmp_path: Path):
+    path = _write_config(tmp_path)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["roles"]["director"] = {
+        "provider": "deep",
+        "max_completion_tokens": 1024,
+        "max_agent_iterations": 4,
+        "max_read_tool_calls": 2,
+    }
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    config = LLMConfig.load(path)
+    assert config.provider_name_for("director") == "deep"
+    director = LLMRouter(config).provider_for_role("director")
+    assert director.config.model == "deep-model"
+    assert director.max_agent_iterations == 4

@@ -53,6 +53,17 @@ WORLD = Path(__file__).parents[1] / "worlds" / "dynamic_social_probe"
 SRC = Path(__file__).parents[1] / "src" / "sim2"
 
 
+def _set_required_content(platform: Platform, required: dict[str, list[str]]) -> None:
+    with platform.store.transaction():
+        evolution = dict(platform.store.repositories.metadata.get("evolution", {}) or {})
+        contracts = dict(evolution.get("contracts", {}) or {})
+        contract = dict(contracts.get("god_structural", {}) or {})
+        contract["required_content"] = required
+        contracts["god_structural"] = contract
+        evolution["contracts"] = contracts
+        platform.store.repositories.metadata.set("evolution", evolution)
+
+
 @pytest.fixture
 def platform(tmp_path: Path):
     instance = Platform(create_instance(WORLD, "dynamic-social", tmp_path / "runtime"))
@@ -705,6 +716,7 @@ class _SequenceProvider:
 def test_god_structural_accepts_multiple_proposals_in_one_turn(platform: Platform) -> None:
     """The broad structural contract may submit several proposals without ending at the first."""
 
+    _set_required_content(platform, {})
     provider = _SequenceProvider([
         {
             "intent_type": "propose_entity",
@@ -743,3 +755,29 @@ def test_behavior_with_social_parameters_requires_authorization_operation(platfo
     assert result["status"] == "rejected", result
     errors = " ".join(str(item) for item in result.get("errors") or [])
     assert "authorization_operation" in errors
+
+
+def test_god_structural_wait_is_rejected_when_required_content_is_missing(platform: Platform) -> None:
+    """A premature wait is returned to the model with the concrete missing list."""
+
+    _set_required_content(platform, {"entities": ["Required Test Place"]})
+    provider = _SequenceProvider([
+        {"intent_type": "wait", "reason": "The pack looks complete."},
+        {
+            "intent_type": "propose_entity",
+            "entity_type": "location",
+            "name": "Required Test Place",
+            "description": "A required place created after the contract correction.",
+            "state": {"routes": ["relay_station"], "route_distances": {"relay_station": 1}},
+        },
+        {"intent_type": "wait", "reason": "The required place now exists."},
+    ])
+    turn = AgentEngine(platform, provider, max_iterations=5).run(
+        role="god",
+        actor_id="god",
+        task_type="god_structural",
+    )
+    assert turn.result["status"] == "wait", turn.result
+    locations = [item for item in platform.store.repositories.entities.entities_of_type("location") if item.get("name") == "Required Test Place"]
+    assert locations
+    assert provider.calls == 3

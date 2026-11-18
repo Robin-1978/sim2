@@ -497,6 +497,7 @@ def main() -> int:
     parser.add_argument("--provider", default="remote")
     parser.add_argument("--model", default=None)
     parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument("--runtime-dir", default=None, help="Keep the SQLite instance at this directory for inspection.")
     parser.add_argument("--broad", action="store_true", help="Use one broad God task instead of the decomposed stages.")
     args = parser.parse_args()
     runs = max(1, min(int(args.runs), 5))
@@ -513,13 +514,18 @@ def main() -> int:
         return 2
     router = LLMRouter(config)
     reports: list[dict[str, Any]] = []
-    with tempfile.TemporaryDirectory(prefix="sim2-dynamic-social-") as runtime:
+    temporary = tempfile.TemporaryDirectory(prefix="sim2-dynamic-social-") if args.runtime_dir is None else None
+    runtime = Path(args.runtime_dir) if args.runtime_dir else Path(temporary.name)
+    try:
         for index in range(runs):
-            platform = Platform(create_instance(WORLD, f"dynamic-social-probe-{index}", Path(runtime)))
+            platform = Platform(create_instance(WORLD, f"dynamic-social-probe-{index}", runtime))
             try:
                 reports.append(run_probe(platform, router, args.provider, args.model, index + 1, broad=args.broad))
             finally:
                 platform.close()
+    finally:
+        if temporary is not None:
+            temporary.cleanup()
     valid = [item for item in reports if item.get("valid_probe")]
     summary = {
         "mode": "broad_task" if args.broad else "decomposed_stages",

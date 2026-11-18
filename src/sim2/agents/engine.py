@@ -42,6 +42,7 @@ class AgentEngine:
         self.platform = platform
         self.provider = provider
         configured_iterations = getattr(self.provider, "max_agent_iterations", 4)
+        self._explicit_max_iterations = max_iterations is not None
         self.max_iterations = max(1, int(configured_iterations if max_iterations is None else max_iterations))
         self.max_repeated_tool_calls = max(1, max_repeated_tool_calls)
         self.max_tool_calls = max(1, max_tool_calls)
@@ -99,11 +100,17 @@ class AgentEngine:
         if unprepared is not None:
             return unprepared
         session = self._start_session(role, actor_id, task_type, compiled)
-        for iteration in range(1, self.max_iterations + 1):
+        iteration_limit = self.max_iterations
+        if not self._explicit_max_iterations and role == "god" and str(task_type) == "god_structural":
+            # Structural work may contain many independent proposals; the
+            # role's ordinary decision budget is too small for the pack.  An
+            # explicit caller limit still wins for tests and bounded probes.
+            iteration_limit = max(iteration_limit, 20)
+        for iteration in range(1, iteration_limit + 1):
             turn = self._react_step(session, iteration)
             if turn is not None:
                 return turn
-        return self._exhausted_turn(session)
+        return self._exhausted_turn(session, iteration_limit)
 
     def _skip_unavailable_character(self, role: str, actor_id: str, task_type: str) -> AgentTurn | None:
         """Skip the decision turn of a character that is busy or incapacitated; Platform advances it."""
@@ -398,6 +405,69 @@ class AgentEngine:
             and str(session.task_type) == "god_structural"
         )
 
+    def _required_content_missing(self, session: ReactSession) -> list[str]:
+        """Return contract-required entities, behaviors or rules that do not exist yet."""
+
+        contract = session.context.get("evolution_trigger")
+        required = contract.get("required_content") if isinstance(contract, dict) else None
+        if not isinstance(required, dict):
+            return []
+        entities = self.platform.store.repositories.entities
+        missing: list[str] = []
+        for raw in required.get("entities") or []:
+            name = str(raw)
+            canonical = self.platform.targets.canonical_id(name)
+            found = False
+            if canonical:
+                try:
+                    entities.get_entity(str(canonical))
+                    found = True
+                except KeyError:
+                    found = False
+            if not found:
+                missing.append(f"entity: {name}")
+        behavior_values: set[str] = set()
+        for item in entities.get_definitions("bt_def"):
+            behavior_values.update({
+                str(item.get("id") or "").casefold(),
+                str(item.get("agent_label") or "").casefold(),
+                str(item.get("name") or "").casefold(),
+            })
+        for raw in required.get("behaviors") or []:
+            if str(raw).casefold() not in behavior_values:
+                missing.append(f"behavior: {raw}")
+        rules = (self.platform.store.repositories.metadata.get("rules", {}) or {}).get("world_rules", []) or []
+        rule_values: set[str] = set()
+        for item in rules:
+            rule_values.update({str(item.get("id") or "").casefold(), str(item.get("name") or "").casefold()})
+        for raw in required.get("rules") or []:
+            if str(raw).casefold() not in rule_values:
+                missing.append(f"rule: {raw}")
+        return missing
+
+    def _contract_correction(self, session: ReactSession) -> dict[str, Any] | None:
+        if session.role != "god" or str(session.task_type) != "god_structural":
+            return None
+        missing = self._required_content_missing(session)
+        if not missing:
+            return None
+        return {
+            "status": "incomplete",
+            "failed_check": "required_content",
+            "missing": missing,
+            "message": (
+                "The structural contract is incomplete. Missing: "
+                + ", ".join(missing)
+                + ". Submit the missing proposals now; do not wait until every required item exists."
+            ),
+        }
+
+    def _apply_contract_correction(self, session: ReactSession, correction: dict[str, Any]) -> None:
+        session.last_result = correction
+        session.context["last_platform_result"] = correction
+        session.context["contract_missing"] = list(correction.get("missing") or [])
+        session.messages.append({"role": "user", "content": str(correction["message"])})
+
     def _run_tool_calls(self, session: ReactSession, iteration: int, response: dict[str, Any], call: tuple[str, dict[str, Any]]) -> AgentTurn | None:
         """Execute the tool call(s) of one model response; finish the turn once an Intent is accepted."""
 
@@ -427,6 +497,10 @@ class AgentEngine:
                 "submission_count": len(intent_results),
             }
         if not batched and self._multi_proposal(session, accepted_result):
+            return None
+        correction = self._contract_correction(session) if str(accepted_result.get("status")) == "wait" or batched else None
+        if correction is not None:
+            self._apply_contract_correction(session, correction)
             return None
         return session.finish(accepted_result, iterations=iteration)
 
@@ -551,10 +625,14 @@ class AgentEngine:
         if result.get("status") in {"accepted", "wait"}:
             if self._multi_proposal(session, result):
                 return None
+            correction = self._contract_correction(session) if result.get("status") == "wait" else None
+            if correction is not None:
+                self._apply_contract_correction(session, correction)
+                return None
             return session.finish(result, iterations=iteration, response=response)
         return None
 
-    def _exhausted_turn(self, session: ReactSession) -> AgentTurn:
+    def _exhausted_turn(self, session: ReactSession, iteration_limit: int | None = None) -> AgentTurn:
         """End a session whose iterations ran out before a valid final Intent."""
 
         last_result = session.last_result
@@ -566,7 +644,7 @@ class AgentEngine:
                 "retryable": True,
                 "message": "The ReAct session reached its iteration limit before a valid final Intent.",
             }
-        return session.finish(last_result, iterations=self.max_iterations)
+        return session.finish(last_result, iterations=int(iteration_limit or self.max_iterations))
 
     def _visible_actor_name(self, actor_id: Any) -> str:
         if not actor_id:

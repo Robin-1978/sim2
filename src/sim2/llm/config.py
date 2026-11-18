@@ -113,7 +113,7 @@ class LLMConfig:
                     if completion is not None else DEFAULT_MAX_COMPLETION_TOKENS
                 ),
                 max_agent_iterations=(
-                    max(1, min(12, int(iterations)))
+                    max(1, min(32, int(iterations)))
                     if iterations is not None else DEFAULT_MAX_AGENT_ITERATIONS
                 ),
                 max_read_tool_calls=(

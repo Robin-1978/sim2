@@ -20,6 +20,85 @@ from ..world.growth import build_growth_ledger
 class DirectorRuntimeMixin:
     """Select and advance the world's next structural growth target."""
 
+    def _counts(self, config: dict[str, Any]) -> dict[str, int]:
+        ledger = build_growth_ledger(self._dependency("store"))
+        return {
+            str(cell): int((ledger.get("cells", {}).get(str(cell), {}) or {}).get("count", 0))
+            for cell in config.get("targets", [])
+        }
+
+    def _write_plan(self, minute: int, target: str, counts: dict[str, int], reason: str | None = None) -> dict[str, Any]:
+        config = self._config() or {}
+        store = self._dependency("store")
+        metadata = store.repositories.metadata
+        plan = {
+            "plan_id": f"plan:{int(minute)}:{target}",
+            "target_cell": target,
+            "baseline": int(counts.get(target, 0)),
+            "created_minute": int(minute),
+            "expires_minute": int(minute) + int(config.get("window_minutes", 4320)),
+            "reason": reason or ", ".join(f"{cell}={counts.get(cell, 0)}" for cell in counts),
+            "status": "active",
+        }
+        metadata.set("season_plan", plan)
+        metadata.set("director_rotation", int(metadata.get("director_rotation", 0) or 0) + 1)
+        ready = store.repositories.evolution.ready_evolution_tasks()
+        if not any(item.get("task_type") == "god_structural" for item in ready):
+            store.repositories.evolution.put_evolution_task(
+                f"director:growth:{int(minute)}",
+                "god",
+                "god",
+                "god_structural",
+                int(minute),
+                0,
+                status="ready",
+                data={"season_plan": plan},
+            )
+        return plan
+
+    def plan_with_provider(self, provider: Any, minute: int) -> dict[str, Any] | None:
+        """Let a separately configured Director model choose the next target cell.
+
+        The provider is supplied by the caller (for example the simulation
+        runner or a probe) so the Platform service stays independent of the
+        LLM gateway.  The model returns a target from the configured list; the
+        persisted plan contract and the God task are identical to ``tick``.
+        """
+
+        config = self._config()
+        if config is None or minute <= 0 or minute % int(config["cadence_minutes"]):
+            return None
+        store = self._dependency("store")
+        metadata = store.repositories.metadata
+        plan = dict(metadata.get("season_plan", {}) or {})
+        counts = self._counts(config)
+        if plan.get("status") == "active":
+            target = str(plan.get("target_cell") or "")
+            if target in counts and counts[target] > int(plan.get("baseline", 0) or 0):
+                plan = {**plan, "status": "completed", "completed_minute": int(minute)}
+                metadata.set("last_completed_season_plan", plan)
+                metadata.set("season_plan", plan)
+            elif int(plan.get("expires_minute", 0) or 0) <= minute:
+                plan = {**plan, "status": "expired", "completed_minute": int(minute)}
+                metadata.set("season_plan", plan)
+            else:
+                return plan
+        targets = [str(item) for item in config.get("targets", [])]
+        if not targets:
+            return None
+        instruction = (
+            "You are the Director. Choose exactly one structural target cell from: "
+            + ", ".join(targets)
+            + ". Current counts: "
+            + ", ".join(f"{cell}={counts.get(cell, 0)}" for cell in targets)
+            + '. Return JSON {"target_cell": "<one of the listed cells>", "reason": "<short reason>"}.'
+        )
+        response = provider.complete_json(system="Director structural planning", context=instruction) or {}
+        target = str(response.get("target_cell") or "").strip()
+        if target not in targets:
+            return None
+        return self._write_plan(minute, target, counts, str(response.get("reason") or ""))
+
     def _config(self) -> dict[str, Any] | None:
         root = self._dependency("store").repositories.metadata.get("evolution", {}) or {}
         root = root.get("evolution", root) if isinstance(root, dict) else {}

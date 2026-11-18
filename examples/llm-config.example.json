@@ -1,11 +1,12 @@
 {
   "default_provider": "local",
   "roles": {
-    "agent_decision": {"provider": "local", "max_completion_tokens": 512, "max_agent_iterations": 5, "max_read_tool_calls": 3},
-    "agent_reflection": {"provider": "local", "max_completion_tokens": 1024, "max_agent_iterations": 4},
-    "story": {"max_completion_tokens": 512, "max_agent_iterations": 3},
-    "god": {"provider": "remote", "max_completion_tokens": 1024, "max_agent_iterations": 4},
-    "world_builder": {"provider": "remote", "max_completion_tokens": 4096, "max_agent_iterations": 6}
+    "agent_decision": {"provider": "remote", "max_completion_tokens": 768, "max_agent_iterations": 8, "max_read_tool_calls": 3},
+    "agent_reflection": {"provider": "remote", "max_completion_tokens": 1024, "max_agent_iterations": 4, "max_read_tool_calls": 2},
+    "director": {"provider": "remote", "max_completion_tokens": 1024, "max_agent_iterations": 4, "max_read_tool_calls": 2},
+    "story": {"provider": "remote", "max_completion_tokens": 2048, "max_agent_iterations": 8, "max_read_tool_calls": 4},
+    "god": {"provider": "remote", "max_completion_tokens": 4096, "max_agent_iterations": 24, "max_read_tool_calls": 4},
+    "world_builder": {"provider": "remote", "max_completion_tokens": 4096, "max_agent_iterations": 8, "max_read_tool_calls": 4}
   },
   "providers": {
     "local": {

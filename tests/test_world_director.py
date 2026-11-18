@@ -132,3 +132,30 @@ def test_world_change_dispatches_the_configured_story_wake(tmp_path: Path) -> No
         assert any(item["task_type"] == "event_group:story_growth" for item in tasks), tasks
     finally:
         platform.close()
+
+
+class _DirectorProvider:
+    def __init__(self, target: str) -> None:
+        self.target = target
+        self.calls = 0
+
+    def complete_json(self, *, system, context, tools=None, messages=None):
+        self.calls += 1
+        return {"target_cell": self.target, "reason": "The model chose the least developed cell."}
+
+
+def test_llm_director_writes_the_same_plan_and_structural_task(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "director-llm")
+    try:
+        _director_config(platform, targets=["place", "resource"])
+        provider = _DirectorProvider("resource")
+        with platform.store.transaction():
+            plan = platform._services["director"].plan_with_provider(provider, 1)
+        assert plan and plan["status"] == "active"
+        assert plan["target_cell"] == "resource"
+        assert plan["reason"] == "The model chose the least developed cell."
+        tasks = [item for item in platform.ready_evolution_tasks() if item["task_type"] == "god_structural"]
+        assert tasks and tasks[0]["season_plan"]["target_cell"] == "resource"
+        assert provider.calls == 1
+    finally:
+        platform.close()
