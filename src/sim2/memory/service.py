@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import math
 from typing import Any, TYPE_CHECKING
 
 from .similarity import ExperienceSimilarity
@@ -17,6 +18,15 @@ class MemoryService:
         rules = store.repositories.metadata.get("rules", {}) or {}
         config = rules.get("memory_quality", {}).get("semantic_similarity", {}) if isinstance(rules, dict) else {}
         self.similarity = similarity or ExperienceSimilarity(config, embedding_store=store)
+        ranking = config.get("ranking") if isinstance(config.get("ranking"), dict) else {}
+        self.ranking = {
+            "relevance": float(ranking.get("relevance", 0.62)),
+            "importance": float(ranking.get("importance", 0.18)),
+            "recency": float(ranking.get("recency", 0.12)),
+            "access": float(ranking.get("access", 0.08)),
+            "half_life_minutes": max(1.0, float(ranking.get("half_life_minutes", 1440))),
+            "diversity": max(0.0, min(1.0, float(ranking.get("diversity", 0.12)))),
+        }
         preload = bool(config.get("preload", False)) or os.getenv("SIM2_BGE_PRELOAD", "").strip().casefold() in {"1", "true", "yes", "on"}
         if preload:
             self.similarity.preload()
@@ -46,24 +56,76 @@ class MemoryService:
                 matched += 1
         return matched / max(1, total)
 
-    def _rank(self, items: list[dict[str, Any]], query: str, limit: int, dimensions: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        """Rank every permitted candidate, with tags as a soft tie-breaker.
+    @staticmethod
+    def _memory_text(item: dict[str, Any]) -> str:
+        return " ".join(
+            str(item.get(key) or "").strip()
+            for key in ("summary", "fact", "topic", "text", "goal", "reason")
+            if str(item.get(key) or "").strip()
+        ).casefold()
 
-        Scope and permission filtering happen before this method. Metadata does
-        not remove a candidate: BGE/lexical relevance is evaluated over the
-        whole permitted set, then a small tag boost improves task alignment.
+    @staticmethod
+    def _token_overlap(left: str, right: str) -> float:
+        left_tokens = {token for token in left.split() if len(token) > 1}
+        right_tokens = {token for token in right.split() if len(token) > 1}
+        if not left_tokens or not right_tokens:
+            return 0.0
+        return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+
+    def _rank(self, items: list[dict[str, Any]], query: str, limit: int, dimensions: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        """Rank permitted memories by relevance, importance, recency and access.
+
+        Tag metadata is a soft alignment feature, not a hard filter.  A small
+        diversity pass prevents the top of the prompt from filling with near
+        duplicates of the same experience.
         """
 
         if not items:
             return []
         ranked = self.similarity.rank(query, items, limit=len(items))
-        if dimensions:
-            def score(item: dict[str, Any]) -> tuple[float, float, float]:
-                relevance = float(item.get("_retrieval_relevance", 1.0 if not query.strip() else 0.0))
-                tag_boost = self._dimension_score(item, dimensions)
-                return (relevance + 0.12 * tag_boost, float(item.get("importance", 0.5) or 0), float(item.get("uses", 0) or 0))
-            ranked.sort(key=score, reverse=True)
-        return ranked[: max(1, int(limit))]
+        now = int(self.store.repositories.metadata.get("world_minute", 0) or 0)
+        weights = self.ranking
+
+        def score(item: dict[str, Any]) -> tuple[float, float, float]:
+            relevance = 1.0 if not str(query or "").strip() else float(item.get("_retrieval_relevance", 0.0))
+            importance = max(0.0, min(1.0, float(item.get("importance", 0.5) or 0.0)))
+            last_access = item.get("last_access_minute")
+            if isinstance(last_access, (int, float)) and not isinstance(last_access, bool):
+                age = max(0.0, float(now - int(last_access)))
+                recency = math.exp(-age / weights["half_life_minutes"])
+            else:
+                recency = 0.5
+            uses = max(0, int(item.get("access_count", item.get("uses", 0)) or 0))
+            access = min(1.0, math.log1p(uses) / math.log1p(100))
+            tag_boost = self._dimension_score(item, dimensions)
+            total = (
+                weights["relevance"] * relevance
+                + weights["importance"] * importance
+                + weights["recency"] * recency
+                + weights["access"] * access
+                + 0.10 * tag_boost
+            )
+            return (total, importance, uses)
+
+        ranked.sort(key=score, reverse=True)
+        target = max(1, int(limit))
+        diversity = float(weights.get("diversity", 0.0) or 0.0)
+        if diversity <= 0 or target <= 1:
+            return ranked[:target]
+        selected: list[dict[str, Any]] = []
+        selected_text: list[str] = []
+        for item in ranked:
+            text = self._memory_text(item)
+            if any(self._token_overlap(text, other) >= max(0.55, 1.0 - diversity) for other in selected_text):
+                continue
+            selected.append(item)
+            selected_text.append(text)
+            if len(selected) >= target:
+                break
+        if len(selected) < target:
+            chosen = {id(item) for item in selected}
+            selected.extend(item for item in ranked if id(item) not in chosen)
+        return selected[:target]
 
     def recall(self, agent_id: str, question: str = "", limit: int = 8, *, scope: str = "all") -> dict[str, Any]:
         scope = scope if scope in {"all", "short_term", "long_term"} else "all"
@@ -163,22 +225,60 @@ class MemoryService:
         match = self.similarity.find_match(summary, memories)
         return {"duplicate": match.score >= self.similarity.threshold, "score": round(match.score, 4), "method": match.method, "memory_id": match.matched_memory_id}
 
+    @staticmethod
+    def _consolidation_bucket(item: dict[str, Any]) -> str:
+        memory_type = str(item.get("memory_type") or item.get("type") or "").casefold()
+        if memory_type in {"knowledge", "fact", "observation"}:
+            return "facts"
+        if memory_type in {"experience", "capability", "summary"}:
+            return "lessons"
+        if memory_type in {"goal", "commitment", "open_loop", "promise"}:
+            return "open_loops"
+        return "other"
+
     def compact(self, agent_id: str, *, keep: int = 24) -> dict[str, Any]:
-        """Create a bounded deterministic summary and forget old raw items."""
+        """Create a structured, bounded summary and forget old raw items."""
 
         all_items = self.store.repositories.memory.list_memories(agent_id, limit=1000)
         if len(all_items) <= keep:
             return {"status": "unchanged", "count": len(all_items)}
         retained = all_items[:keep]
         forgotten = all_items[keep:]
-        snippets = []
-        for item in forgotten[:32]:
-            text = item.get("summary") or item.get("fact") or item.get("topic") or str(item.get("type", "memory"))
-            snippets.append(str(text).strip())
+        buckets: dict[str, list[str]] = {"facts": [], "lessons": [], "open_loops": [], "other": []}
+        seen: set[str] = set()
+        for item in forgotten[:64]:
+            text = str(
+                item.get("summary") or item.get("fact") or item.get("topic")
+                or item.get("goal") or item.get("reason") or item.get("type", "memory")
+            ).strip()
+            key = text.casefold()
+            if not text or key in seen:
+                continue
+            seen.add(key)
+            bucket = self._consolidation_bucket(item)
+            if len(buckets[bucket]) < 8:
+                buckets[bucket].append(text)
+        snippets = [text for values in buckets.values() for text in values]
         with self.store.transaction():
-            summary_id = self.store.repositories.memory.put_memory(agent_id, "summary", {"summary": " | ".join(snippets), "source_count": len(forgotten), "retained_count": len(retained)})
+            summary_id = self.store.repositories.memory.put_memory(
+                agent_id,
+                "summary",
+                {
+                    "summary": " | ".join(snippets),
+                    "sections": buckets,
+                    "source_count": len(forgotten),
+                    "retained_count": len(retained),
+                    "consolidated_types": sorted({str(item.get("memory_type") or item.get("type") or "unknown") for item in forgotten}),
+                },
+            )
             deleted = self.store.repositories.memory.delete_memories(agent_id, [int(item["id"]) for item in forgotten if item.get("id")])
-        return {"status": "compacted", "summary_id": summary_id, "forgotten": deleted, "retained": len(retained)}
+        return {
+            "status": "compacted",
+            "summary_id": summary_id,
+            "forgotten": deleted,
+            "retained": len(retained),
+            "sections": {key: len(value) for key, value in buckets.items()},
+        }
 
     def forget(self, agent_id: str, *, maximum: int = 64) -> dict[str, Any]:
         """Apply a hard memory bound while retaining newest items."""

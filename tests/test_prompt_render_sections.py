@@ -180,3 +180,65 @@ def test_tight_limit_keeps_the_executable_choices_and_the_task_verbatim(tmp_path
     assert "<context_limit>Earlier context was compacted; use a read tool if needed.</context_limit>" in prompt
     assert choices in prompt
     assert prompt.endswith(tail)
+
+
+def test_god_compaction_keeps_rule_condition_fields_and_world_trends(tmp_path: Path):
+    """Exact machine fields and current trends are decision evidence, not background."""
+
+    platform = _platform(tmp_path)
+    try:
+        with platform.store.transaction():
+            platform.store.repositories.events.append_event(
+                "resource.changed", "fei_lan", 100, {"resource_id": "village_food", "delta": -12},
+            )
+        view = platform.view.build_decision_view("god", "god")
+    finally:
+        platform.close()
+    full = render_context(view, TASK, max_chars=UNLIMITED)
+    compacted = render_context(view, TASK, max_chars=len(full) - 10)
+
+    assert "<rule_condition_fields>" in compacted
+    assert 'world["village_food"]' in compacted
+    assert "<world_trends>" in compacted
+    assert "<decision>" in compacted
+
+
+def test_token_budget_is_enforced_without_dropping_the_decision(tmp_path: Path):
+    from sim2.prompting.compaction import estimate_tokens
+
+    platform = _platform(tmp_path)
+    try:
+        view = platform.view.build_decision_view("su_wu", "agent_decision")
+    finally:
+        platform.close()
+    prompt = render_context(view, TASK, max_chars=UNLIMITED, max_tokens=2500)
+
+    assert estimate_tokens(prompt) <= 2500
+    assert "<decision>" in prompt
+    assert "<executable_behaviors>" in prompt
+
+
+def test_agent_turn_records_context_budget_metrics(tmp_path: Path):
+    from sim2.agents.engine import AgentEngine
+
+    class WaitProvider:
+        max_agent_iterations = 2
+
+        def complete_json(self, *, system, context, tools=None, messages=None):
+            return {"intent_type": "wait", "reason": "No world change is needed."}
+
+    platform = _platform(tmp_path)
+    try:
+        turn = AgentEngine(platform, WaitProvider()).run(role="agent_decision", actor_id="su_wu")
+        metrics = turn.context_metrics[0]
+        assert metrics["role"] == "agent_decision"
+        assert metrics["estimated_tokens"] > 0
+        assert metrics["max_chars"] > 0
+        assert "<decision>" in turn.prompt_history[0]
+        rows = platform.store.connection.execute(
+            "SELECT prompt_tokens_est, context_metrics_json FROM llm_call ORDER BY call_id DESC LIMIT 1"
+        ).fetchall()
+        assert rows and rows[0]["prompt_tokens_est"] == metrics["estimated_tokens"]
+        assert rows[0]["context_metrics_json"]
+    finally:
+        platform.close()

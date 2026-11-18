@@ -97,3 +97,19 @@ def test_native_intent_batch_preserves_provider_order() -> None:
             assert [item.get("tool") for item in turn.result["submission_results"]] == ["record_world_progress", "propose_story_beat"]
         finally:
             platform.close()
+
+
+def test_fresh_context_replaces_the_first_user_snapshot_without_touching_tool_tail():
+    from sim2.agents.engine import AgentEngine
+
+    messages = [
+        {"role": "system", "content": "policy"},
+        {"role": "user", "content": "<world_state>stale</world_state>"},
+        {"role": "assistant", "content": '{"tool":"wait"}'},
+        {"role": "user", "content": "tool result"},
+    ]
+    updated = AgentEngine._messages_for_prompt(messages, "<world_state>fresh</world_state>")
+
+    assert updated[1]["content"] == "<world_state>fresh</world_state>"
+    assert updated[3]["content"] == "tool result"
+    assert messages[1]["content"] == "<world_state>stale</world_state>"

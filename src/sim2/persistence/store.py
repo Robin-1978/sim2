@@ -131,7 +131,9 @@ CREATE TABLE IF NOT EXISTS llm_call (
   static_prefix_hash TEXT,
   static_prefix_chars INTEGER NOT NULL DEFAULT 0,
   dynamic_chars INTEGER NOT NULL DEFAULT 0,
-  request_latency_ms REAL
+  request_latency_ms REAL,
+  prompt_tokens_est INTEGER,
+  context_metrics_json TEXT
 );
 CREATE TABLE IF NOT EXISTS bt_instance (
   execution_id TEXT PRIMARY KEY,
@@ -288,6 +290,10 @@ class WorldStore:
         llm_columns = {row["name"] for row in self.connection.execute("PRAGMA table_info(llm_call)").fetchall()}
         if "request_latency_ms" not in llm_columns:
             self.connection.execute("ALTER TABLE llm_call ADD COLUMN request_latency_ms REAL")
+        if "prompt_tokens_est" not in llm_columns:
+            self.connection.execute("ALTER TABLE llm_call ADD COLUMN prompt_tokens_est INTEGER")
+        if "context_metrics_json" not in llm_columns:
+            self.connection.execute("ALTER TABLE llm_call ADD COLUMN context_metrics_json TEXT")
         self.connection.commit()
         from .repositories.entities import EntitiesRepository
         from .repositories.memory import MemoryRepository

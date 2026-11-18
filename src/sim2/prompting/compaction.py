@@ -2,6 +2,95 @@
 
 from __future__ import annotations
 
+import re
+
+_CJK_RANGES = (
+    (0x3040, 0x30FF),  # Hiragana / Katakana
+    (0x3400, 0x4DBF),  # CJK Extension A
+    (0x4E00, 0x9FFF),  # CJK Unified Ideographs
+    (0xAC00, 0xD7AF),  # Hangul
+)
+
+# Sections that carry a decision's causal evidence and must survive compaction.
+# Background prose and retrievable projections can be omitted; these cannot.
+_PINNED_SECTIONS = frozenset({
+    "protocol",
+    "platform_rules",
+    "allowed_intents_and_tools",
+    "world_state",
+    "decision",
+    "interaction_history",
+    "active_execution",
+    "outcome_review",
+    "executable_behaviors",
+    # God cannot submit a valid rule or world-property change without the
+    # exact machine field names this section carries.
+    "rule_condition_fields",
+})
+
+_SECTION_TAG = re.compile(r"^\s*<([a-z_]+)>\s*$", re.MULTILINE)
+
+
+def estimate_tokens(text: str) -> int:
+    """Cheap language-aware token estimate used when no tokenizer is configured.
+
+    ASCII prose is roughly four characters per token.  CJK text is closer to
+    one token per character.  This is deliberately conservative enough for a
+    budget guard; provider-reported usage remains the source of truth.
+    """
+
+    cjk = 0
+    other = 0
+    for char in str(text or ""):
+        codepoint = ord(char)
+        if any(start <= codepoint <= end for start, end in _CJK_RANGES):
+            cjk += 1
+        else:
+            other += 1
+    return int(cjk + other / 4 + 0.999)
+
+
+def section_sizes(text: str) -> dict[str, int]:
+    """Approximate the character weight of each top-level or nested tag block."""
+
+    matches = list(_SECTION_TAG.finditer(text))
+    if not matches:
+        return {}
+    sizes: dict[str, int] = {}
+    for index, match in enumerate(matches):
+        tag = match.group(1)
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        sizes[tag] = sizes.get(tag, 0) + max(0, end - match.start())
+    return sizes
+
+
+def context_metrics(
+    rendered: str,
+    fitted: str,
+    *,
+    role: str,
+    max_chars: int,
+    max_tokens: int | None = None,
+) -> dict[str, object]:
+    """Describe what the renderer produced and what compaction removed."""
+
+    before = section_sizes(rendered)
+    after = section_sizes(fitted)
+    omitted = sorted(tag for tag in before if tag not in after)
+    static_prefix = rendered.split("<world_state>", 1)[0]
+    return {
+        "role": role,
+        "chars": len(fitted),
+        "estimated_tokens": estimate_tokens(fitted),
+        "max_chars": int(max_chars),
+        "max_tokens": int(max_tokens) if max_tokens is not None else None,
+        "compacted": fitted != rendered,
+        "sections": dict(sorted(after.items())),
+        "omitted": omitted,
+        "static_prefix_chars": len(static_prefix),
+        "dynamic_chars": max(0, len(fitted) - len(static_prefix)),
+    }
+
 
 def _remove_block(text: str, tag: str) -> tuple[str, bool]:
     """Remove one low-priority tagged block without damaging other sections."""
@@ -23,7 +112,7 @@ def _remove_block(text: str, tag: str) -> tuple[str, bool]:
 # move trends to the end when it is the only useful long-term projection.
 _BACKGROUND_SECTIONS = (
     "registered_actions", "knowledge_and_memory", "nearby_entities", "relationships", "recent_actions",
-    "research_sources", "world_trends", "world_outcomes", "knowledge_gaps", "rule_condition_fields",
+    "research_sources", "world_trends", "world_outcomes", "knowledge_gaps",
 )
 
 
@@ -131,21 +220,32 @@ def _background_order(rendered: str) -> list[str]:
     return background_sections
 
 
-def fit_to_limit(rendered: str, role: str, max_chars: int) -> str:
-    """Compact a rendered prompt to ``max_chars`` while keeping the task and executable choices."""
+def fit_to_limit(
+    rendered: str,
+    role: str,
+    max_chars: int,
+    *,
+    max_tokens: int | None = None,
+) -> str:
+    """Compact a rendered prompt to its character and optional token budget."""
 
-    if len(rendered) <= max_chars:
+    def fits(text: str) -> bool:
+        return len(text) <= max_chars and (max_tokens is None or estimate_tokens(text) <= max_tokens)
+
+    if fits(rendered):
         return rendered
     omitted: list[str] = []
     # Preserve the current task, executable choices, active execution and
     # latest tool result. Remove only retrievable background sections first;
     # cutting the middle of the behavior catalog can leave an unusable prompt.
     for tag in _background_order(rendered):
+        if tag in _PINNED_SECTIONS:
+            continue
         rendered, removed = _remove_block(rendered, tag)
         if removed:
             omitted.append(tag)
             note = f"\n<context_limit>Omitted {', '.join(omitted)}; use a read tool if needed.</context_limit>"
-            if len(rendered) + len(note) <= max_chars:
+            if fits(rendered + note):
                 return rendered + note
     # As a final guard, keep the complete behavior catalog and the final task
     # section while compacting the remaining prose. This is rarely reached
@@ -158,10 +258,23 @@ def fit_to_limit(rendered: str, role: str, max_chars: int) -> str:
         preserved = rendered[behavior_start:behavior_end]
         tail = rendered[decision_start:]
         prefix_budget = max(0, max_chars - len(preserved) - len(tail) - 120)
-        prefix = rendered[:prefix_budget]
-        return prefix + "\n<context_limit>Earlier context was compacted; use a read tool if needed.</context_limit>\n" + preserved + "\n" + tail
+        while prefix_budget > 0:
+            candidate = (
+                rendered[:prefix_budget].rsplit("\n", 1)[0]
+                + "\n<context_limit>Earlier context was compacted; use a read tool if needed.</context_limit>\n"
+                + preserved + "\n" + tail
+            )
+            if fits(candidate):
+                return candidate
+            prefix_budget = int(prefix_budget * 0.85)
     if role in {"god", "story"}:
         compacted = _compact_world_prompt(rendered, max_chars)
-        if compacted is not None:
+        if compacted is not None and fits(compacted):
             return compacted
-    return rendered[: max_chars - 100] + "\n<context_limit>Context was compacted; use a read tool if needed.</context_limit>"
+    budget = max(0, max_chars - 100)
+    while budget > 0:
+        candidate = rendered[:budget].rsplit("\n", 1)[0] + "\n<context_limit>Context was compacted; use a read tool if needed.</context_limit>"
+        if fits(candidate):
+            return candidate
+        budget = int(budget * 0.85)
+    return rendered[: max(0, max_chars - 100)] + "\n<context_limit>Context was compacted; use a read tool if needed.</context_limit>"

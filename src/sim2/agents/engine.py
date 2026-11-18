@@ -7,7 +7,7 @@ from typing import Any
 from ..agent_view.validator import validate_agent_view
 from ..intents.models import BehaviorIntent
 from ..platform.runtime import Platform
-from ..prompting.renderer import render_context
+from ..prompting.renderer import render_context_with_metrics
 from ..world.lifecycle import BUSY_STATUSES, is_inactive
 from .runtime_policy import (
     ROLE_INTENTS, ROLE_NAMES, configured_evolution_group, configured_evolution_trigger,
@@ -245,6 +245,25 @@ class AgentEngine:
             return _closed_turn(role, task_type, "guard", result)
         return None
 
+    def _context_limits(self, role: str) -> tuple[int, int | None]:
+        """Resolve a role's character and token budget from world configuration."""
+
+        rules = self.platform.store.repositories.metadata.get("rules", {}) or {}
+        limits = rules.get("context_limits") if isinstance(rules, dict) else {}
+        limits = limits if isinstance(limits, dict) else {}
+        default_chars = int(limits.get("default_chars", 16000) or 16000)
+        default_tokens = limits.get("default_tokens")
+        roles = limits.get("roles") if isinstance(limits.get("roles"), dict) else {}
+        role_limits = roles.get(role) if isinstance(roles.get(role), dict) else {}
+        max_chars = int(role_limits.get("max_chars", default_chars) or default_chars)
+        max_tokens_value = role_limits.get("max_tokens", default_tokens)
+        max_tokens = int(max_tokens_value) if isinstance(max_tokens_value, (int, float)) and not isinstance(max_tokens_value, bool) and max_tokens_value > 0 else None
+        return max_chars, max_tokens
+
+    def _render_prompt(self, context: dict[str, Any], task: str, role: str) -> tuple[str, dict[str, Any]]:
+        max_chars, max_tokens = self._context_limits(role)
+        return render_context_with_metrics(context, task, max_chars=max_chars, max_tokens=max_tokens)
+
     def _start_session(self, role: str, actor_id: str, task_type: str, compiled: TaskContext) -> ReactSession:
         context = compiled.context
         task = task_text(role, task_type)
@@ -259,6 +278,7 @@ class AgentEngine:
         )
         initial_context = copy.deepcopy(context)
         system_policy = role_policy(self.platform, role)
+        prompt, metrics = self._render_prompt(context, task, role)
         return ReactSession(
             role=role,
             actor_id=actor_id,
@@ -274,8 +294,9 @@ class AgentEngine:
             session_tools=compiled.session_tools,
             messages=[
                 {"role": "system", "content": system_policy},
-                {"role": "user", "content": render_context(context, task)},
+                {"role": "user", "content": prompt},
             ],
+            context_metrics=[metrics],
             max_tool_calls=self.max_tool_calls,
             max_repeated_tool_calls=self.max_repeated_tool_calls,
             # The read budget is role configuration. A bounded world reviewer
@@ -289,8 +310,9 @@ class AgentEngine:
     def _react_step(self, session: ReactSession, iteration: int) -> AgentTurn | None:
         """Run one ReAct iteration; return the finished turn, or ``None`` to continue the session."""
 
-        prompt = render_context(session.context, session.task)
+        prompt, metrics = self._render_prompt(session.context, session.task, session.role)
         session.prompt_history.append(prompt)
+        session.context_metrics.append(metrics)
         try:
             response = self._request_model(session, prompt)
         except Exception as exc:
@@ -298,7 +320,7 @@ class AgentEngine:
         readable_response = self._readable_model_response(response)
         session.last_response = readable_response
         session.transcript.append({"step": "llm", "response": readable_response})
-        self.audit.record(session.actor_id, session.role, session.task_type, iteration, prompt, readable_response, "response", usage=self._last_usage)
+        self.audit.record(session.actor_id, session.role, session.task_type, iteration, prompt, readable_response, "response", usage=self._last_usage, context_metrics=metrics)
         try:
             call = parse_tool_call(response)
         except (TypeError, ValueError) as exc:
@@ -309,6 +331,19 @@ class AgentEngine:
         if call is None:
             return self._submit_intent(session, iteration, response)
         return self._run_tool_calls(session, iteration, response, call)
+
+    @staticmethod
+    def _messages_for_prompt(messages: list[dict[str, Any]], prompt: str) -> list[dict[str, Any]]:
+        """Return a copy whose first user snapshot is the fresh dynamic prompt."""
+
+        updated = [dict(item) for item in messages]
+        for index, item in enumerate(updated):
+            if item.get("role") == "user":
+                updated[index] = {**item, "content": prompt}
+                break
+        else:
+            updated.append({"role": "user", "content": prompt})
+        return updated
 
     def _request_model(self, session: ReactSession, prompt: str) -> dict[str, Any]:
         """Ask the provider for the next tool request or final Intent."""
@@ -322,7 +357,7 @@ class AgentEngine:
             role=session.role,
             system=session.system_policy,
             context=prompt,
-            messages=session.messages,
+            messages=self._messages_for_prompt(session.messages, prompt),
             allowed_tools=call_tools,
         )
         if not isinstance(response, dict):
@@ -337,7 +372,7 @@ class AgentEngine:
         session.context["last_platform_result"] = session.last_result
         session.transcript.append({"step": "llm_error", "error": str(exc)})
         session.context.setdefault("interaction_history", []).append({"kind": "llm_error", "error": str(exc)})
-        self.audit.record(session.actor_id, session.role, session.task_type, iteration, prompt, {"error": str(exc)}, "llm_error", usage=self._last_usage)
+        self.audit.record(session.actor_id, session.role, session.task_type, iteration, prompt, {"error": str(exc)}, "llm_error", usage=self._last_usage, context_metrics=session.context_metrics[-1] if session.context_metrics else None)
         # A provider/configuration failure is outside the model's
         # ReAct loop. Retrying it immediately six times creates an
         # error storm; the scheduler will retry after backoff.

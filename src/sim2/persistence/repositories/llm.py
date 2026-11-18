@@ -29,6 +29,8 @@ class LlmRepository:
         static_prefix_chars: int = 0,
         dynamic_chars: int = 0,
         request_latency_ms: float | None = None,
+        prompt_tokens_est: int | None = None,
+        context_metrics: dict[str, Any] | None = None,
     ) -> int:
         usage = usage or {}
         prompt_tokens = usage.get("prompt_tokens")
@@ -37,8 +39,8 @@ class LlmRepository:
         cached_tokens = usage.get("cached_tokens", usage.get("prompt_cache_hit_tokens", details.get("cached_tokens")))
         with self.store._write_lock:
             cur = self.store.connection.execute(
-                "INSERT INTO llm_call(actor_id,role,task_type,iteration,context_hash,response_json,status,world_minute,prompt_tokens,cached_tokens,completion_tokens,static_prefix_hash,static_prefix_chars,dynamic_chars,request_latency_ms) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO llm_call(actor_id,role,task_type,iteration,context_hash,response_json,status,world_minute,prompt_tokens,cached_tokens,completion_tokens,static_prefix_hash,static_prefix_chars,dynamic_chars,request_latency_ms,prompt_tokens_est,context_metrics_json) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     actor_id,
                     role,
@@ -55,6 +57,8 @@ class LlmRepository:
                     int(static_prefix_chars),
                     int(dynamic_chars),
                     float(request_latency_ms) if isinstance(request_latency_ms, (int, float)) else None,
+                    int(prompt_tokens_est) if isinstance(prompt_tokens_est, (int, float)) else None,
+                    json_dumps(context_metrics) if context_metrics else None,
                 ),
             )
             self.store.connection.commit()
@@ -70,7 +74,9 @@ class LlmRepository:
         ).fetchone()
         prefixes = self.store.connection.execute(
             "SELECT COUNT(*) AS total, COUNT(DISTINCT static_prefix_hash) AS distinct_prefixes, "
-            "COALESCE(AVG(static_prefix_chars),0) AS avg_static_chars, COALESCE(AVG(dynamic_chars),0) AS avg_dynamic_chars FROM llm_call"
+            "COALESCE(AVG(static_prefix_chars),0) AS avg_static_chars, COALESCE(AVG(dynamic_chars),0) AS avg_dynamic_chars, "
+            "COALESCE(AVG(prompt_tokens_est),0) AS avg_prompt_tokens_est, "
+            "SUM(CASE WHEN context_metrics_json IS NOT NULL THEN 1 ELSE 0 END) AS metrics_calls FROM llm_call"
         ).fetchone()
         calls = int(row["calls"] or 0)
         measured = int(row["measured"] or 0)
@@ -89,5 +95,7 @@ class LlmRepository:
             "static_prefix_reuse_rate": round(1 - int(prefixes["distinct_prefixes"] or 0) / int(prefixes["total"] or 1), 4) if calls else 0.0,
             "average_static_prefix_chars": round(float(prefixes["avg_static_chars"] or 0), 1),
             "average_dynamic_chars": round(float(prefixes["avg_dynamic_chars"] or 0), 1),
+            "average_prompt_tokens_est": round(float(prefixes["avg_prompt_tokens_est"] or 0), 1),
+            "context_metrics_calls": int(prefixes["metrics_calls"] or 0),
         }
 

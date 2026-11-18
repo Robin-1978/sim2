@@ -22,6 +22,7 @@ class AgentTurn:
     transcript: list[dict[str, Any]] = field(default_factory=list)
     initial_context: dict[str, Any] = field(default_factory=dict)
     prompt_history: list[str] = field(default_factory=list)
+    context_metrics: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,7 @@ class ReactSession:
     last_result: dict[str, Any] = field(default_factory=lambda: {"status": "no_result"})
     transcript: list[dict[str, Any]] = field(default_factory=list)
     prompt_history: list[str] = field(default_factory=list)
+    context_metrics: list[dict[str, Any]] = field(default_factory=list)
     repeated: dict[str, int] = field(default_factory=dict)
     read_signatures: set[str] = field(default_factory=set)
     tool_calls_used: int = 0
@@ -91,6 +93,7 @@ class ReactSession:
         return AgentTurn(
             self.role, self.task_type, self.last_response if response is None else response,
             result, iterations, self.transcript, self.initial_context, self.prompt_history,
+            self.context_metrics,
         )
 
 

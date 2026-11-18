@@ -204,6 +204,13 @@ capability_aliases:
   mediate: [conversation]
 conflict_relation_types: [conflict]
 memory_quality:
+  ranking:
+    relevance: 0.62
+    importance: 0.18
+    recency: 0.12
+    access: 0.08
+    half_life_minutes: 1440
+    diversity: 0.12
   semantic_similarity:
     enabled: true
     backend: onnx
