@@ -1,0 +1,25 @@
+cadence: {}
+wakes: []
+triggers: []
+director:
+  cadence: 5m
+  window: 1h
+  targets: [resource]
+contracts:
+  god_structural:
+    tools:
+    - query_history
+    - query_knowledge_gaps
+    - propose_entity
+    - propose_definition
+    - propose_world_change
+    - wait
+    purpose: Read the season plan and create one accountable resource with its behaviors, rules and review path.
+    result: >-
+      Create a new resource as an empty node, a stewardship relationship, a
+      controlled withdrawal, a covert take, a violation review, and the
+      administrative request/approval/revocation behaviors and authorization
+      rules they need. Use only the existing proposal tools. If the world
+      already supports the target cell, wait.
+    assign_to:
+    - mira

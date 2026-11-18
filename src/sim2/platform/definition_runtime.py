@@ -374,10 +374,11 @@ class DefinitionRuntimeMixin:
 
         if plan.definition_type == "action" and plan.followup_definition:
             definition, recipe = plan.definition, plan.followup_recipe_definition
+            administrative = bool(plan.followup_definition.get("authorization_operation"))
             has_observable_channel = any(
                 isinstance(definition.get(field), list) and bool(definition.get(field))
                 for field in ("effects", "progress_effects", "capability_effects")
-            ) or bool(definition.get("information"))
+            ) or bool(definition.get("information")) or administrative
             has_recipe_output = bool(
                 recipe
                 and isinstance(recipe.get("outputs"), list)

@@ -1,0 +1,18 @@
+vital_attribute: integrity
+capacity_attribute: energy
+incapacitation:
+  recovery:
+    after_minutes: 720
+    vital_fraction: 0.25
+perception:
+  visible_fields: [role, type, summary, description, public]
+  visible_state_fields: [status, quantity, amount]
+  global:
+    fields: [role, type, summary, description, public]
+    state_fields: [status, location_id, quantity, amount]
+contested_actions:
+  witness_trust_delta: -0.25
+  witness_memory_confidence: 0.9
+world_rules: []
+fallback_behavior_ids:
+- travel

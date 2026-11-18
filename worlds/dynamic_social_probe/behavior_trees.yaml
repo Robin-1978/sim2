@@ -1,0 +1,22 @@
+behavior_trees:
+- id: travel
+  version: 1
+  summary: Travel
+  description: Move to a connected known location.
+  agent_label: Travel
+  entry_conditions:
+  - actor.alive
+  estimated_minutes: 1
+  agent_parameters:
+    location_id: {type: string, required: true, max_length: 120, description: A connected known location.}
+  goal_tags: [movement]
+  drive_tags: [autonomy]
+  success_results: [arrived]
+  failure_results: [route_unknown, blocked]
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: context.location_id
+  definition_source: config
+  kind: base

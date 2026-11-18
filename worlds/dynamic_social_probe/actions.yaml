@@ -1,0 +1,35 @@
+actions:
+- id: travel_to
+  version: 1
+  description: Move to a connected known location.
+  parameters:
+    location_id: string
+  preconditions:
+  - route.known
+  - actor.mobile
+  - destination.reachable
+  requires_destination: true
+  completion:
+    if_already_at_destination: true
+  duration:
+    mode: route_distance
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: location_set
+    location_id: context.location_id
+  success:
+    condition: actor.state.location_id == context.destination_id
+    result: arrived
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  definition_source: config
+  kind: atomic
+  executor: effect_pipeline

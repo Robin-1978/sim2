@@ -134,6 +134,10 @@ class WorldChangeValidationMixin:
 
         if submission.change_type != "rule":
             return None
+        # Definitions accepted since the last rule may include new behaviors.
+        # Validate against the current registry instead of the bootstrap
+        # compiler snapshot, otherwise a valid rule names an unpublished BT.
+        self._context.set_dependency("rule_compiler", self._context.services["api"].new_rule_compiler())
         proposal = submission.proposal
         valid, message = self.rule_compiler.validate(dict(proposal["rule"]))
         if not valid:
@@ -149,7 +153,51 @@ class WorldChangeValidationMixin:
         )
         if not declared_valid:
             return self._reject(submission, declared_message, "rule_effect_semantics")
+        authorization_rejection = self._check_authorization_rule(submission)
+        if authorization_rejection is not None:
+            return authorization_rejection
         return self._check_rule_signals(submission)
+
+    def _check_authorization_rule(self, submission: WorldChangeSubmission) -> dict[str, Any] | None:
+        """An authorization rule must bind an existing resource and the right operation."""
+
+        rule = dict(submission.proposal["rule"])
+        compiled = self.rule_compiler.compile(rule)
+        effect = compiled.get("effect") or {}
+        if str(effect.get("type") or "").casefold() != "authorization":
+            return None
+        mode = str(effect.get("mode") or "resource_access")
+        if mode == "resource_access":
+            target_ref = str(effect.get("target") or "").strip()
+            target_id = str(self.targets.canonical_id(target_ref) or target_ref)
+            try:
+                target = self.store.repositories.entities.get_entity(target_id)
+            except KeyError:
+                return self._reject(submission, "A resource_access authorization rule must target an existing resource.", "rule_authorization_target")
+            rules = self.store.repositories.metadata.get("rules", {}) or {}
+            resource_types = {str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])}
+            if str(target.get("entity_type") or "") not in resource_types:
+                return self._reject(submission, "A resource_access authorization rule must target a resource or material.", "rule_authorization_target")
+            if not str(effect.get("scope") or "").strip():
+                return self._reject(submission, "A resource_access authorization rule needs a scope.", "rule_scope")
+        if mode == "violation_review":
+            selectors = {
+                str(item)
+                for item in (compiled.get("behavior_ids") or []) + (compiled.get("behavior_names") or [])
+                if str(item)
+            }
+            behaviors = self.store.repositories.entities.get_definitions("bt_def")
+            matched = [
+                item for item in behaviors
+                if str(item.get("id")) in selectors
+                or str(item.get("agent_label") or "") in selectors
+                or str(item.get("summary") or "") in selectors
+            ]
+            if not matched:
+                return self._reject(submission, "A violation_review authorization rule must name a registered behavior.", "rule_behavior")
+            if any(str(item.get("authorization_operation") or "") != "review_violation" for item in matched):
+                return self._reject(submission, "A violation_review authorization rule must govern a review_violation behavior.", "rule_behavior")
+        return None
 
     def _check_rule_signals(self, submission: WorldChangeSubmission) -> dict[str, Any] | None:
         """A signal rule must not wake its proposer, chain into another signal or repeat a registered rule."""

@@ -234,11 +234,43 @@ class DefinitionValidationMixin:
                             "set maximum or rules.resource_caps max so production cannot inflate the stock"
                         )
 
-    @staticmethod
-    def _validate_action(name: str, definition: dict[str, Any], definition_id: str, errors: list[str]) -> None:
+    def _check_contested_resource_effects(self, definition: dict[str, Any], errors: list[str]) -> None:
+        """Validate the generic withdrawal and take effects against current resources."""
+
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
+        resource_types = {str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])}
+        for field in ("effects", "progress_effects"):
+            for index, effect in enumerate(definition.get(field, []) or []):
+                if not isinstance(effect, dict):
+                    continue
+                effect_type = str(effect.get("type") or effect.get("op") or "")
+                if effect_type not in {"resource_withdrawal", "resource_take"}:
+                    continue
+                ref = str(effect.get("resource_id") or effect.get("resource") or "").strip()
+                resource_id = str(self.targets.canonical_id(ref) or ref)
+                if not ref:
+                    errors.append(f"{field}[{index}].{effect_type} requires resource_id")
+                else:
+                    try:
+                        entity = self.store.repositories.entities.get_entity(resource_id)
+                    except KeyError:
+                        errors.append(f"{field}[{index}].{effect_type} target is not an existing resource: {ref}")
+                        entity = None
+                    if entity is not None and str(entity.get("entity_type") or "") not in resource_types:
+                        errors.append(f"{field}[{index}].{effect_type} target {ref} is not a resource or material")
+                amount = effect.get("amount", effect.get("quantity"))
+                if isinstance(amount, bool) or not isinstance(amount, (int, float)) or float(amount) <= 0:
+                    errors.append(f"{field}[{index}].{effect_type} requires a positive amount")
+                if not str(effect.get("scope") or "").strip():
+                    errors.append(f"{field}[{index}].{effect_type} requires a scope")
+                if effect_type == "resource_take" and str(effect.get("mode") or "") != "covert":
+                    errors.append(f"{field}[{index}].resource_take mode must be covert")
+
+    def _validate_action(self, name: str, definition: dict[str, Any], definition_id: str, errors: list[str]) -> None:
         _check_dynamic_inventory_parameters(definition, errors)
         _check_resource_transfers(definition, errors)
         _check_world_resource_deltas(definition, errors)
+        self._check_contested_resource_effects(definition, errors)
         # Keep the visible proposal name in the persisted definition.  The
         # registry id is intentionally machine-oriented, while audits,
         # AgentView and later definition references must be able to show
@@ -255,6 +287,15 @@ class DefinitionValidationMixin:
     ) -> None:
         normalized_conditions = [self._normalize_inventory_condition(condition) for condition in definition.get("entry_conditions", []) or []]
         definition["entry_conditions"] = normalized_conditions
+        operation = str(definition.get("authorization_operation") or "").strip()
+        if operation:
+            if operation not in {"open_access_request", "decide_access_request", "revoke_access", "review_violation"}:
+                errors.append(f"unsupported behavior.authorization_operation: {operation}")
+            elif operation == "review_violation":
+                parameters = definition.get("agent_parameters") if isinstance(definition.get("agent_parameters"), dict) else {}
+                for parameter in ("violation_id", "decision"):
+                    if parameter not in parameters:
+                        errors.append(f"review_violation behavior must declare agent_parameters.{parameter}")
         for condition in normalized_conditions:
             if "event.recent." in str(condition):
                 errors.append(

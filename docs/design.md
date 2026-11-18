@@ -40,7 +40,8 @@
 [Contested Resource Actions](design/social-authority-loop-phase2.md)，实现证据见
 [Phase 2 实现报告](design/social-authority-loop-phase2-report.md)。God/Director
 动态实例化 Phase 1/2 内容的 Phase 3 设计见
-[Dynamic Social Mechanism Instantiation](design/social-authority-loop-phase3.md)，
+[Dynamic Social Mechanism Instantiation](design/social-authority-loop-phase3.md)，实现证据见
+[Phase 3 实现报告](design/social-authority-loop-phase3-report.md)，
 通用机制定义语言的 Phase 4 设计见
 [Mechanism DSL](design/social-authority-loop-phase4.md)。
 

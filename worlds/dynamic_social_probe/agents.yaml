@@ -1,0 +1,45 @@
+agents:
+- id: mira
+  name: Mira
+  role: relay_steward
+  ultimate_goal: Keep the relay operating and make the new reserve accountable.
+  traits:
+    responsible: 0.9
+    cautious: 0.8
+  beliefs:
+  - id: accountable_release
+    statement: Shared supplies should be released through an accountable decision.
+    confidence: 0.9
+  needs:
+    purpose: 70
+    belonging: 60
+  initial_bt_ids:
+  - travel
+  initial_state:
+    location_id: relay_station
+    status: idle
+    integrity: 100
+    energy: 90
+  inventory: {}
+- id: tomas
+  name: Tomas
+  role: relay_technician
+  ultimate_goal: Restore the relay, using whatever supply is available.
+  traits:
+    practical: 0.85
+    persistent: 0.75
+  beliefs:
+  - id: repairs_need_supply
+    statement: The relay cannot be repaired without a working supply.
+    confidence: 0.85
+  needs:
+    purpose: 75
+    belonging: 55
+  initial_bt_ids:
+  - travel
+  initial_state:
+    location_id: relay_station
+    status: idle
+    integrity: 100
+    energy: 90
+  inventory: {}

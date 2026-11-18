@@ -122,7 +122,7 @@ def _director(value: Any) -> dict[str, Any]:
     if not isinstance(raw_targets, (list, tuple)) or not raw_targets:
         raise ValueError("director.targets must be a non-empty list")
     targets = [str(item).strip().casefold() for item in raw_targets]
-    allowed = {"place", "verb", "social", "rule"}
+    allowed = {"place", "verb", "social", "rule", "resource"}
     unknown_targets = sorted(set(targets) - allowed)
     if unknown_targets:
         raise ValueError("director.targets has unknown targets: " + ", ".join(unknown_targets))

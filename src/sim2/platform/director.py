@@ -47,6 +47,7 @@ class DirectorRuntimeMixin:
             target = str(plan.get("target_cell") or "")
             if target in counts and counts[target] > int(plan.get("baseline", 0) or 0):
                 plan = {**plan, "status": "completed", "completed_minute": int(minute)}
+                metadata.set("last_completed_season_plan", plan)
                 metadata.set("season_plan", plan)
             elif int(plan.get("expires_minute", 0) or 0) <= minute:
                 plan = {**plan, "status": "expired", "completed_minute": int(minute)}
