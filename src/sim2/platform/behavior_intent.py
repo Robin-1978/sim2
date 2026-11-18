@@ -301,9 +301,9 @@ class BehaviorIntentService(PlatformService):
         # Models use the visible names supplied by AgentView.  Normalize every
         # entity reference only after target aliases have been folded into the
         # registered Action parameters.  Doing this earlier left values copied
-        # from ``target.location`` as display text (for example ``粮仓``), while
-        # navigation compares stable entity IDs (``granary``).  The behavior
-        # was accepted from a valid view and then failed one tick later.
+        # from ``target.location`` as display text, while navigation compares
+        # stable entity IDs.  The behavior was accepted from a valid view and
+        # then failed one tick later.
         for key in ("target_id", "patient_id", "protected_target_id", "counterparty_id", "listener_id", "location_id", "source_id", "object_id", "area_id"):
             if normalized_parameters.get(key):
                 canonical = self.targets.canonical_id(normalized_parameters[key])
@@ -708,7 +708,7 @@ class BehaviorIntentService(PlatformService):
     ) -> dict[str, Any]:
         parameters = {**submission.parameters, **submission.runtime_parameters}
         agent = submission.agent
-        if operation == "request_access":
+        if operation == "open_access_request":
             created = service.create_request(
                 agent,
                 {
@@ -725,11 +725,12 @@ class BehaviorIntentService(PlatformService):
             )
             request = created["request"]
             return {"request_id": request["request_id"], "status": request["status"], "created": created["created"]}
-        if operation in {"approve_withdrawal", "reject_withdrawal"}:
+        if operation == "decide_access_request":
             request = submission.authorization.get("request")
             if not request:
                 raise AuthorizationRejected("request_not_found", "No pending access request is available to decide.")
-            if operation == "approve_withdrawal":
+            decision = str(submission.behavior.get("authorization_decision") or "approve")
+            if decision == "approve":
                 decided = service.approve(
                     agent, request, minute=minute,
                     delegation_id=parameters.get("delegation_id"),
@@ -745,7 +746,7 @@ class BehaviorIntentService(PlatformService):
                 minute=minute,
             )
             return {"request_id": decided["request"]["request_id"], "status": decided["request"]["status"]}
-        if operation == "revoke_delegation":
+        if operation == "revoke_access":
             delegation = submission.authorization.get("delegation")
             if not delegation:
                 raise AuthorizationRejected("delegation_not_found", "No active delegation is available to revoke.")

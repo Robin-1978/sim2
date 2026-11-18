@@ -10,7 +10,7 @@ def configured_location_tags(store: Any, group: str) -> set[str]:
     """Read one semantic location tag group declared by the instance package.
 
     Tag names are world content, so a group the world does not declare is empty:
-    the engine never assumes a tag such as ``safe`` or ``clinic``.  The
+    the engine never assumes a tag such as ``safe`` or ``health_service``.  The
     ``location.*`` conditions read the same ``rules.location_tag_groups``, so a
     resolver and the condition checked on arrival rest on one declaration.
     """

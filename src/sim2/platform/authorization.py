@@ -66,7 +66,7 @@ class AuthorizationService(PlatformService):
 
         ``validate_causal`` exists for harness fixtures that must create a
         request without a preceding denial (for example the self-approval
-        fixture).  The Agent-facing ``request_access`` behavior always uses the
+        fixture).  The Agent-facing access-request behavior always uses the
         validating path.
         """
 
@@ -94,7 +94,7 @@ class AuthorizationService(PlatformService):
             events = self.store.repositories.events.events_by_ids([event_id])
             event = events[0] if events else None
         elif validate_causal:
-            raise AuthorizationRejected("invalid_causal_reference", "request_access must cite the denial event it is based on.")
+            raise AuthorizationRejected("invalid_causal_reference", "An access request must cite the denial event it is based on.")
 
         behavior_label = str(payload.get("behavior") or "").strip()
         behavior_id = str(payload.get("behavior_id") or "").strip()

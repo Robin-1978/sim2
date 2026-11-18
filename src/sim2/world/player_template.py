@@ -68,10 +68,10 @@ def parse_player_template(raw: Any, *, require_entry: bool = False) -> dict[str,
 
     The supported format is::
 
-        entry_location_id: village_square
+        entry_location_id: town_square
         capabilities: {gathering: 0.5, conversation: 0.5}
         inventory: {food_ration: 2, fresh_water: 2}
-        initial_bt_ids: [gather_water, communicate]
+        initial_bt_ids: [travel, communicate]
         origins:
           - id: traveler
             traits: {mobility: 0.6}

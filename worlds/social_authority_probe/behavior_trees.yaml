@@ -18,7 +18,7 @@ behavior_trees:
   kind: base
 - id: request_access
   version: 1
-  authorization_operation: request_access
+  authorization_operation: open_access_request
   summary: Request Access
   description: Ask a steward for scoped access to a shared resource, citing the denial that blocked you.
   agent_label: Request Access
@@ -50,7 +50,7 @@ behavior_trees:
   kind: base
 - id: approve_withdrawal
   version: 1
-  authorization_operation: approve_withdrawal
+  authorization_operation: decide_access_request
   authorization_decision: approve
   summary: Approve Withdrawal
   description: Approve a pending access request and create a scoped delegation for the requester.
@@ -83,7 +83,7 @@ behavior_trees:
   kind: base
 - id: reject_withdrawal
   version: 1
-  authorization_operation: reject_withdrawal
+  authorization_operation: decide_access_request
   authorization_decision: reject
   summary: Reject Withdrawal
   description: Reject a pending access request without creating a delegation or moving a resource.
@@ -108,7 +108,7 @@ behavior_trees:
   kind: base
 - id: revoke_delegation
   version: 1
-  authorization_operation: revoke_delegation
+  authorization_operation: revoke_access
   summary: Revoke Delegation
   description: Revoke an active delegation while retaining the delegation record as history.
   agent_label: Revoke Delegation

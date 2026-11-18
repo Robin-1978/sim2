@@ -378,7 +378,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
                         "id": {"type": "string", "description": "A short unique rule name for the world."},
                         "label": {"type": "string", "description": "A human-readable policy name."},
                         "description": {"type": "string", "description": "One short sentence describing the policy."},
-                        "condition": {"type": "string", "description": "A declarative condition such as world[\"water quality\"] < 0.5, event.recent.clinic.fever_reported == true, or actor.permission.old_well == false."},
+                        "condition": {"type": "string", "description": "A declarative condition such as world[\"water quality\"] < 0.5, event.recent.facility.inspected == true, or actor.permission.facility_access == false."},
                         "effect": {"description": "Use a typed object when enforcement matters: {type: signal, name: policy.review_signal, message: ...} records or wakes work; {type: deny, ...} or {type: behavior_constraint, ...} blocks one named target. A dot-separated string such as policy.review_signal is also a signal. Descriptions are explanatory text, not enforcement."},
                         "wake": {"type": "array", "items": {"type": "string"}, "description": "Optional visible roles to wake, such as god or story."},
                         "behavior_names": {"type": "array", "items": {"type": "string"}, "description": "Optional visible BT names. For a behavior_constraint, every listed BT is blocked; list only the blocked BT. For a signal, names identify the follow-up outcome."},

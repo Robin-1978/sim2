@@ -247,7 +247,7 @@ def authorization_for_behavior(
         action_context["request"] = request
         # A model may name the requester or target with its visible name.
         # Compare canonical identifiers so a valid approval is not rejected
-        # merely because the prompt shows "Tomas" instead of "tomas".
+        # merely because the prompt shows a visible name instead of a stable id.
         from ..actions.targets import TargetResolver
 
         resolver = TargetResolver(store)
