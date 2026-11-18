@@ -3,10 +3,17 @@ opening_events:
   type: storm.watch_begun
   world_minute: 0
   payload:
-    summary: 风暴季警戒开始。潮门已经破损，沉没观测台的海图只剩一半可读。
+    summary: 风暴季警戒开始。潮门已经破损，约 18 小时后第一场风暴抵达；只修一次只能勉强挡水，修到八成以上才算真正守住。沉没观测台的海图只剩一半可读。
     pressure: 0.42
+    eta_hours: 18
 - id: commons_pledge
   type: commons.pledge_made
   world_minute: 0
   payload:
     summary: 四名居民约定：每一次公共修复都要公开代价，沼泽的收成必须留在可再生范围内。
+- id: first_public_decision
+  type: public_decision.due
+  world_minute: 0
+  payload:
+    summary: 今天的第一项公共决定已经摆上码头：收紧配给、优先抢修，还是让沼泽和居民休养。三项只能选一项。
+    decision: open

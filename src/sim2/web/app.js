@@ -9,6 +9,7 @@
     world: null,
     entry: null,
     instances: [],
+    worlds: [],
     activeDb: "",
     playerId: null,
     playerName: "",
@@ -18,7 +19,11 @@
     runtime: null,
     map: null,
     selectedOrigin: "",
+    selectedWorldPackage: "",
+    selectedCharacter: null,
     actionFilter: "全部",
+    actionExpanded: false,
+    goalsExpanded: false,
     feedLimit: 28,
     feedEvents: [],
     taskKey: "",
@@ -34,6 +39,8 @@
 
   const ICONS = {
     refresh: '<path d="M20 11a8 8 0 1 0-2.4 5.7"/><path d="M20 4v7h-7"/>',
+    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9S14.5 18.3 12 21c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3Z"/>',
+    pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
     settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.96 4.6H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z"/>',
   };
 
@@ -70,14 +77,40 @@
     }
   }
 
+  async function unlockFromOwnerLink() {
+    const match = String(location.hash || "").match(/^#owner=([^&]+)/);
+    if (!match) return;
+    const token = decodeURIComponent(match[1]);
+    try {
+      history.replaceState(null, "", `${location.pathname}${location.search}`);
+    } catch (error) {
+      /* history can be restricted; the token is still consumed once */
+    }
+    try {
+      const result = await write("/session", { role: "operator", operator_token: token });
+      if (result.status === "ok" && result.session_token) {
+        state.operatorToken = result.session_token;
+        try { sessionStorage.setItem(OPERATOR_KEY, state.operatorToken); } catch (error) { /* ignore */ }
+        return;
+      }
+      // A direct master token is also accepted by the local session boundary.
+      state.operatorToken = token;
+      try { sessionStorage.setItem(OPERATOR_KEY, token); } catch (error) { /* ignore */ }
+    } catch (error) {
+      state.operatorToken = token;
+      try { sessionStorage.setItem(OPERATOR_KEY, token); } catch (error) { /* ignore */ }
+    }
+  }
+
+
   function tokenFor(path) {
-    if (path.startsWith("/runtime/") || path.startsWith("/instances/activate") || path.startsWith("/authoring/") || path.startsWith("/snapshots")) {
+    if (path.startsWith("/runtime/") || path.startsWith("/instances") || path.startsWith("/authoring/") || path.startsWith("/snapshots")) {
       return state.operatorToken || state.playerToken;
     }
     if (path.startsWith("/player/") || path.startsWith("/dialogue") || path.startsWith("/trade/")) {
       return state.playerToken || state.operatorToken;
     }
-    return state.playerToken || state.operatorToken;
+    return state.operatorToken || state.playerToken;
   }
 
   function setOnline(online) {
@@ -231,6 +264,10 @@
       const id = Object.keys(state.view?.item_labels || {}).find((key) => key.replace(/_/g, " ") === raw);
       return `${id ? itemLabel(id) : raw} ${inventory[1].replace("-", "−")}`;
     }
+    const reserve = value.match(/^(.+?)\s+(\d+(?:\.\d+)?)\s+\(reserve\)\.?$/i);
+    if (reserve) return `${reserve[1]} ×${reserve[2]}（预留）`;
+    const recipe = value.match(/^Recipe inputs:\s*(.+)$/i);
+    if (recipe) return `配方材料：${recipe[1]}`;
     return value;
   }
 
@@ -241,11 +278,41 @@
     value = value.replace(/\s+entered the world\.?$/i, " 进入了世界。");
     value = value.replace(/\s+began\s+/i, " 开始 ");
     value = value.replace(/\s+started the action\s+/i, " 开始行动 ");
+    value = value.replace(/\s+started\s+/i, " 开始 ");
     value = value.replace(/\s+completed\s+/i, " 完成 ");
     value = value.replace(/\s+failed\s+/i, " 失败 ");
+    value = value.replace(/\s+researched\s+/i, " 研究了 ");
+    value = value.replace(/\s+advanced research on\s+/i, " 推进研究 ");
+    value = value.replace(/\s+surveyed\s+/i, " 勘察了 ");
+    value = value.replace(/\s+recovered\s+/i, " 找回了 ");
+    value = value.replace(/\s+kept a lesson:\s*/i, " 得到经验：");
+    value = value.replace(/\s+registered\s+/i, " 注册了 ");
+    value = value.replace(/\s+offered a trade to\s+/i, " 向 ");
+    value = value.replace(/\s+completed a trade with\s+/i, " 与 ");
+    value = value.replace(/\s+rejected a trade from\s+/i, " 拒绝了来自 ");
     value = value.replace(/: arrived\.?$/i, "：抵达。");
     value = value.replace(/Configured background controller selected the highest-priority executable behavior\.?/gi, "后台控制器选择了当前可执行的最高优先行动。");
     value = value.replace(/Player selected this action from the web client\.?/gi, "玩家从游戏界面选择了这个行动。");
+    const resultWords = {
+      inspection_completed: "检查完成",
+      resource_collected: "采集完成",
+      recipe_completed: "制作完成",
+      route_traversed: "抵达目的地",
+      trade_completed: "交易完成",
+      research_completed: "研究完成",
+      research_progressed: "研究推进",
+      information_recorded: "情报已记录",
+      rationing_decided: "配给已调整",
+      repair_priority_decided: "抢修已完成",
+      marsh_rest_decided: "休养已安排",
+      decision_failed: "决策中断",
+    };
+    for (const [code, label] of Object.entries(resultWords)) {
+      value = value.replace(new RegExp(`\\b${code}\\b`, "gi"), label);
+    }
+    value = value.replace(/\bworld property changed\b/gi, "世界状态发生变化");
+    value = value.replace(/\bcapability evidence\b/gi, "能力证据");
+    value = value.replace(/A direct exchange was recorded as unverified testimony\.?/gi, "一次直接交谈被记录为未经核实的证词。");
     value = value.replace(/\.\s*$/, "。");
     return value;
   }
@@ -259,34 +326,215 @@
     return `${error?.message || fallback}${extra.length ? `（${extra.join("；")}）` : ""}`;
   }
 
-  /* ---------- Entry ---------- */
+  /* ---------- Entry / world hub ---------- */
+
+  function hashString(value) {
+    let hash = 2166136261;
+    for (const char of String(value || "sim2")) {
+      hash ^= char.codePointAt(0);
+      hash = Math.imul(hash, 16777619);
+    }
+    return Math.abs(hash);
+  }
+
+  function worldPalette(worldId) {
+    const palettes = [
+      { skyA: "#0b2c31", skyB: "#061416", a: "#2b6d6a", b: "#153c3c", c: "#3f8f86", sun: "#efb26f" },
+      { skyA: "#2b2038", skyB: "#0d0a18", a: "#6a4d86", b: "#352547", c: "#8b6aa8", sun: "#f0c27a" },
+      { skyA: "#1c3325", skyB: "#08140d", a: "#3f6f4b", b: "#1b3a25", c: "#5f9367", sun: "#d9d38a" },
+      { skyA: "#37251c", skyB: "#140b08", a: "#7d5037", b: "#42291b", c: "#a06c49", sun: "#f2b277" },
+    ];
+    const palette = palettes[hashString(worldId) % palettes.length];
+    return {
+      ...palette,
+      hue: hashString(worldId) % 360,
+    };
+  }
+
+  function renderEntryCover() {
+    const cover = $("entry-cover");
+    if (!cover) return;
+    const worldId = state.world?.id || state.world?.world_id || state.world?.title || "sim2";
+    const palette = worldPalette(worldId);
+    const seed = hashString(worldId);
+    const stars = Array.from({ length: 18 }, (_, index) => {
+      const x = ((seed >> (index % 12)) + index * 137) % 1200;
+      const y = ((seed >> ((index + 3) % 10)) + index * 53) % 84;
+      const r = index % 4 === 0 ? 1.5 : 0.8;
+      return `<circle cx="${x}" cy="${y}" r="${r}" fill="rgba(255,255,255,${0.18 + (index % 5) * 0.08})"/>`;
+    }).join("");
+    const ridges = [
+      { y: 92, amp: 14, phase: seed % 19, color: palette.c, opacity: 0.32 },
+      { y: 108, amp: 18, phase: (seed >> 3) % 23, color: palette.a, opacity: 0.5 },
+      { y: 126, amp: 11, phase: (seed >> 6) % 17, color: palette.b, opacity: 0.85 },
+    ].map((ridge) => {
+      const points = Array.from({ length: 9 }, (_, index) => {
+        const x = index * 150;
+        const y = ridge.y - Math.sin((index + ridge.phase) * 1.37) * ridge.amp - ((seed >> (index % 8)) % 7);
+        return `${x},${Math.max(54, Math.min(136, y)).toFixed(1)}`;
+      });
+      return `<path d="M0 140 L${points[0]} L${points.slice(1).join(" L")} L1200 140 Z" fill="${ridge.color}" opacity="${ridge.opacity}"/>`;
+    }).join("");
+    cover.innerHTML = `
+      <svg viewBox="0 0 1200 140" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="entry-sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${palette.skyA}"/>
+            <stop offset="100%" stop-color="${palette.skyB}"/>
+          </linearGradient>
+        </defs>
+        <rect width="1200" height="140" fill="url(#entry-sky)"/>
+        ${stars}
+        <circle cx="${180 + (seed % 720)}" cy="${42 + (seed % 18)}" r="17" fill="${palette.sun}" opacity="0.72"/>
+        <circle cx="${180 + (seed % 720)}" cy="${42 + (seed % 18)}" r="30" fill="${palette.sun}" opacity="0.08"/>
+        ${ridges}
+      </svg>`;
+  }
+
+  function paintWorldCard(card, worldId) {
+    const palette = worldPalette(worldId);
+    card.style.setProperty("--cover-a", palette.a);
+    card.style.setProperty("--cover-b", palette.b);
+  }
+
+  function renderSceneWorldCover() {
+    const root = $("scene-world-cover");
+    if (!root) return;
+    const worldId = state.world?.world_id || state.world?.title || "sim2";
+    if (root.dataset.world === worldId) return;
+    root.dataset.world = worldId;
+    const palette = worldPalette(worldId);
+    const seed = hashString(worldId);
+    const stars = Array.from({ length: 26 }, (_, index) => {
+      const x = ((seed >> (index % 11)) + index * 149) % 1200;
+      const y = ((seed >> ((index + 2) % 9)) + index * 37) % 210;
+      const r = index % 5 === 0 ? 1.7 : 0.9;
+      return `<circle cx="${x}" cy="${y}" r="${r}" fill="rgba(255,255,255,${0.14 + (index % 5) * 0.07})"/>`;
+    }).join("");
+    const ridges = [
+      { y: 262, amp: 38, phase: seed % 17, color: palette.c, opacity: 0.28 },
+      { y: 314, amp: 44, phase: (seed >> 3) % 21, color: palette.a, opacity: 0.46 },
+      { y: 372, amp: 30, phase: (seed >> 6) % 15, color: palette.b, opacity: 0.82 },
+    ].map((ridge) => {
+      const points = Array.from({ length: 9 }, (_, index) => {
+        const x = index * 150;
+        const y = ridge.y - Math.sin((index + ridge.phase) * 1.23) * ridge.amp - ((seed >> (index % 8)) % 18);
+        return `${x},${Math.max(190, Math.min(400, y)).toFixed(1)}`;
+      });
+      return `<path d="M0 420 L${points[0]} L${points.slice(1).join(" L")} L1200 420 Z" fill="${ridge.color}" opacity="${ridge.opacity}"/>`;
+    }).join("");
+    root.innerHTML = `
+      <svg viewBox="0 0 1200 420" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="scene-sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${palette.skyA}"/>
+            <stop offset="72%" stop-color="${palette.skyB}"/>
+            <stop offset="100%" stop-color="${palette.b}"/>
+          </linearGradient>
+        </defs>
+        <rect width="1200" height="420" fill="url(#scene-sky)"/>
+        ${stars}
+        <circle cx="${210 + (seed % 720)}" cy="${108 + (seed % 40)}" r="26" fill="${palette.sun}" opacity="0.6"/>
+        <circle cx="${210 + (seed % 720)}" cy="${108 + (seed % 40)}" r="46" fill="${palette.sun}" opacity="0.08"/>
+        ${ridges}
+      </svg>`;
+  }
+
+  function worldIsOpen() {
+    return Boolean(state.activeDb) && state.world?.status !== "no_world";
+  }
 
   function renderEntry() {
     const world = state.world || {};
     const entry = state.entry || {};
-    $("entry-title").textContent = world.title || "世界";
-    if (world.title) document.title = `${world.title} · sim2`;
-    $("entry-premise").textContent = world.premise || "读取世界入口…";
-    $("entry-genre").textContent = world.genre || "世界模拟";
+    const open = worldIsOpen();
+    const players = Array.isArray(entry.players) ? entry.players : [];
+    const hasPlayer = players.length > 0;
+    const noWorld = !open;
+    renderEntryCover();
+    $("entry-title").textContent = noWorld ? "开始一个新世界" : (world.title || "世界");
+    document.title = noWorld ? "sim2 · 世界大厅" : `${world.title || "世界"} · sim2`;
+    $("entry-premise").textContent = noWorld
+      ? "还没有可进入的世界。选择一个模板创建第一个实例，或者创建后从存档列表进入。"
+      : (world.premise || "读取世界入口…");
+    $("entry-genre").textContent = noWorld ? "世界大厅" : (world.genre || "世界模拟");
     $("entry-season").textContent = world.season || "—";
-    $("entry-instance").textContent = world.instance_id || "当前实例";
-    $("hud-world-title").textContent = world.title || "世界";
-    const instanceSelect = $("entry-instance-select");
-    instanceSelect.replaceChildren();
-    const instances = state.instances.length ? state.instances : [{ instance_id: world.instance_id || "当前实例", active: true, world_minute: world.world_minute || 0 }];
-    for (const item of instances) {
-      const option = el("option", "", `${item.instance_id}${item.active ? "（当前）" : ""} · 第 ${Math.floor(Number(item.world_minute || 0) / 1440) + 1} 天`);
-      option.value = item.instance_id || "";
-      option.selected = Boolean(item.active);
-      instanceSelect.append(option);
-    }
-    instanceSelect.disabled = true;
+    $("entry-instance").textContent = noWorld ? "未创建" : (world.instance_id || "当前实例");
+    $("hud-world-title").textContent = noWorld ? "世界大厅" : (world.title || "世界");
+    $("entry-no-world").classList.toggle("hidden", !noWorld);
+    $("entry-play").classList.toggle("hidden", noWorld);
+    $("entry-continue").classList.toggle("hidden", noWorld || !hasPlayer);
+    $("entry-new-character").classList.toggle("hidden", noWorld || hasPlayer);
+    $("entry-origin-section").classList.toggle("hidden", noWorld || hasPlayer);
+    $("entry-return").classList.toggle("hidden", !state.playerId);
 
+    renderEntryInstances();
+    renderContinue(players);
+    if (!noWorld) renderOrigins(entry);
+    renderWorldTemplates();
+
+    const startMinute = Number(world.world_clock?.start_minute || 0);
+    const totalMinute = Number(world.world_minute || 0) + startMinute;
+    const clock = formatClock({ minute_of_day: totalMinute % 1440, day: Math.floor(totalMinute / 1440) + 1, day_phase: "" });
+    $("entry-world-state").textContent = noWorld
+      ? "创建后会自动打开，并从这里继续。"
+      : `世界时间 ${clock.day} ${clock.time}`;
+  }
+
+  function renderEntryInstances() {
+    const list = $("entry-instance-list");
+    if (!list) return;
+    list.replaceChildren();
+    if (!state.instances.length) {
+      list.append(el("p", "entry-empty", "还没有世界存档。"));
+      return;
+    }
+    for (const item of state.instances) {
+      const card = el("article", `instance-card${item.active ? " active" : ""}`);
+      card.append(el("strong", "", item.world_id || item.instance_id || "世界"));
+      const day = Math.floor(Number(item.world_minute || 0) / 1440) + 1;
+      card.append(el("small", "", `${item.instance_id || "实例"} · 第 ${day} 天 · ${item.runtime_status || "未知状态"}`));
+      const button = el("button", "button ghost", item.active ? (state.playerId ? "返回游戏" : "当前世界") : "切换");
+      button.type = "button";
+      if (item.active) {
+        button.disabled = !state.playerId;
+        button.addEventListener("click", () => returnToGame());
+      } else {
+        button.addEventListener("click", () => activateWorldInstance(item.instance_id, button));
+      }
+      card.append(button);
+      list.append(card);
+    }
+  }
+
+  function renderContinue(players) {
+    const root = $("entry-continue");
+    if (!root) return;
+    root.replaceChildren();
+    if (!players.length) return;
+    root.append(el("span", "eyebrow", "继续游戏"));
+    for (const player of players) {
+      const card = el("div", "continue-card-inner");
+      card.append(el("strong", "", player.name || player.id));
+      const meta = [player.location ? `位于 ${player.location}` : "", `角色 ID ${player.id}`].filter(Boolean).join(" · ");
+      card.append(el("p", "", meta));
+      const button = el("button", "button primary wide", `继续 ${player.name || player.id}`);
+      button.type = "button";
+      button.addEventListener("click", () => submitEntry(button, player.id));
+      card.append(button);
+      root.append(card);
+    }
+    const hint = el("p", "hint", "这个实例已经有一个玩家角色。进入后会恢复它的物品、能力和未完成的行动。");
+    root.append(hint);
+  }
+
+  function renderOrigins(entry) {
     const origins = Array.isArray(entry.origins) ? entry.origins : [];
     const list = $("origin-list");
     list.replaceChildren();
     if (!origins.length) {
       list.append(el("p", "hint", "该世界没有配置出身；输入玩家 ID 即可进入。"));
+      return;
     }
     if (!origins.some((item) => item.id === state.selectedOrigin)) {
       state.selectedOrigin = origins[0]?.id || "";
@@ -297,6 +545,7 @@
       card.append(el("strong", "", origin.name || origin.id));
       if (origin.description) card.append(el("small", "", origin.description));
       if (origin.goal) card.append(el("div", "origin-goal", `目标：${origin.goal}`));
+      if (origin.first_task) card.append(el("div", "origin-first-task", `第一件事：${origin.first_task}`));
       card.addEventListener("click", () => {
         state.selectedOrigin = origin.id;
         for (const sibling of list.children) sibling.classList.remove("active");
@@ -304,11 +553,65 @@
       });
       list.append(card);
     }
+  }
 
-    const startMinute = Number(world.world_clock?.start_minute || 0);
-    const totalMinute = Number(world.world_minute || 0) + startMinute;
-    const clock = formatClock({ minute_of_day: totalMinute % 1440, day: Math.floor(totalMinute / 1440) + 1, day_phase: "" });
-    $("entry-world-state").textContent = `世界时间 ${clock.day} ${clock.time}`;
+  function renderWorldTemplates() {
+    const list = $("world-template-list");
+    if (!list) return;
+    list.replaceChildren();
+    const worlds = Array.isArray(state.worlds) ? state.worlds : [];
+    if (!worlds.length) {
+      list.append(el("p", "entry-empty", "世界模板列表暂不可用。可以尝试刷新页面，或用运营台的“设计世界”打开已有包。"));
+      return;
+    }
+    if (!worlds.some((item) => item.id === state.selectedWorldPackage)) {
+      state.selectedWorldPackage = worlds[0]?.id || "";
+    }
+    for (const item of worlds) {
+      const card = el("button", `world-template-card${item.id === state.selectedWorldPackage ? " active" : ""}`);
+      card.type = "button";
+      paintWorldCard(card, item.id || item.name);
+      card.append(el("div", "world-card-cover"));
+      card.append(el("strong", "", item.name || item.id));
+      if (item.genre) card.append(el("small", "", item.genre));
+      if (item.premise) card.append(el("small", "", item.premise));
+      const badges = el("div", "badge-row");
+      badges.append(el("span", "badge", item.id));
+      if (item.locale) badges.append(el("span", "badge", item.locale));
+      if (item.source === "authored") badges.append(el("span", "badge accent", "自建包"));
+      card.append(badges);
+      card.addEventListener("click", () => selectWorldPackage(item, card));
+      list.append(card);
+    }
+  }
+
+  function selectWorldPackage(item, card = null) {
+    state.selectedWorldPackage = item?.id || "";
+    const list = $("world-template-list");
+    if (list) {
+      for (const child of list.children) {
+        child.classList.toggle("active", child === card);
+      }
+    }
+    const input = $("new-instance-id");
+    if (input && item?.id) {
+      const suffix = Date.now().toString(36).slice(-4);
+      input.value = `${item.id}_${suffix}`;
+    }
+    $("new-instance-hint").textContent = item?.name
+      ? `${item.name}${item.genre ? ` · ${item.genre}` : ""}。实例 ID 用于存档目录，只能使用字母、数字、下划线或连字符。`
+      : "实例 ID 用于存档目录，只能使用字母、数字、下划线或连字符。";
+    $("new-instance-error").textContent = "";
+  }
+
+  function openCreatePanel() {
+    $("entry-create-panel").classList.remove("hidden");
+    renderWorldTemplates();
+    const input = $("new-instance-id");
+    if (input && !input.value && state.selectedWorldPackage) {
+      input.value = `${state.selectedWorldPackage}_${Date.now().toString(36).slice(-4)}`;
+    }
+    $("new-instance-id")?.focus();
   }
 
   async function loadEntryContext() {
@@ -317,17 +620,32 @@
       request("/player/entry"),
       request("/instances"),
       request("/runtime"),
+      request("/worlds"),
     ]);
-    const [world, entry, instances, runtime] = results;
+    const [world, entry, instances, runtime, worlds] = results;
     if (world.status === "fulfilled") state.world = world.value;
     if (entry.status === "fulfilled") state.entry = entry.value;
-    if (instances.status === "fulfilled" && Array.isArray(instances.value.instances)) {
-      state.instances = instances.value.instances;
+    if (instances.status === "fulfilled") {
+      state.instances = Array.isArray(instances.value.instances) ? instances.value.instances : [];
       state.activeDb = instances.value.active_db || "";
     }
     if (runtime.status === "fulfilled") state.runtime = runtime.value;
+    if (worlds.status === "fulfilled") {
+      state.worlds = Array.isArray(worlds.value.worlds) ? worlds.value.worlds : [];
+    }
     renderEntry();
     renderRuntimeStatus();
+  }
+
+  function openWorldHub(message = "") {
+    $("game").classList.add("hidden");
+    $("mobile-action-bar").classList.add("hidden");
+    closePlayerSheet();
+    closeCharacter();
+    $("entry-screen").classList.remove("hidden");
+    $("entry-error").textContent = message || "";
+    $("entry-return").classList.toggle("hidden", !state.playerId);
+    renderEntry();
   }
 
   function showEntry(message = "") {
@@ -335,10 +653,16 @@
     state.playerToken = null;
     state.view = null;
     storageSet(PLAYER_KEY, null);
-    $("game").classList.add("hidden");
-    $("entry-screen").classList.remove("hidden");
-    $("entry-error").textContent = message || "";
-    if (state.world) renderEntry();
+    openWorldHub(message);
+  }
+
+  function returnToGame() {
+    if (!state.playerId) {
+      toast("先选择一个角色进入世界。", "error");
+      return;
+    }
+    enterGame();
+    if (!state.view) loadView().catch(() => {});
   }
 
   function enterGame() {
@@ -347,10 +671,10 @@
     $("entry-error").textContent = "";
   }
 
-  async function submitEntry(button) {
-    const playerId = String($("entry-id").value || "").trim();
-    const name = String($("entry-name").value || "").trim();
-    const originId = state.selectedOrigin;
+  async function submitEntry(button, forcedPlayerId = null) {
+    const playerId = String(forcedPlayerId || $("entry-id").value || "").trim();
+    const name = forcedPlayerId ? "" : String($("entry-name").value || "").trim();
+    const originId = forcedPlayerId ? "" : state.selectedOrigin;
     $("entry-error").textContent = "";
     if (!playerId) {
       $("entry-error").textContent = "请输入玩家 ID。";
@@ -365,22 +689,90 @@
         const result = await write("/players", { player_id: playerId, origin_id: originId, name: name || undefined });
         if (result.status !== "accepted") throw new Error(result.message || "无法进入世界");
         state.playerId = result.player_id || playerId;
-        state.playerName = name || state.playerId;
+        state.playerName = result.name || name || state.playerId;
         state.playerToken = result.session_token || null;
+        state.entry = {
+          ...(state.entry || {}),
+          players: [{ id: state.playerId, name: state.playerName, status: "idle" }],
+          can_create_player: false,
+        };
         storageSet(PLAYER_KEY, { id: state.playerId, token: state.playerToken, name: state.playerName });
         enterGame();
         toast(result.resumed ? `已恢复角色 ${state.playerName}。` : `欢迎来到${state.world?.title || "这个世界"}，${state.playerName}。`, "ok");
         await Promise.all([loadView(), loadRuntime()]);
         await Promise.allSettled([loadFeed(), loadDialogue(), loadTrades()]);
       } catch (error) {
-        $("entry-error").textContent = describeError(error, "无法进入世界");
+        const message = error?.code === "player_limit"
+          ? "这个实例已经有一个玩家角色。请回到世界大厅点击“继续游戏”。"
+          : describeError(error, "无法进入世界");
+        $("entry-error").textContent = message;
+        toast(message, "error");
+      }
+    });
+  }
+
+  async function activateWorldInstance(instanceId, button = null) {
+    if (!instanceId) return;
+    if (!state.operatorToken) {
+      openCreatePanel();
+      $("entry-admin").open = true;
+      $("new-instance-error").textContent = "切换已有世界需要先在下方“管理权限”解锁。";
+      return;
+    }
+    await withPending(button, async () => {
+      try {
+        const result = await write("/instances/activate", { instance_id: instanceId });
+        if (result.status !== "accepted") throw new Error(result.message || "切换失败");
+        storageSet(PLAYER_KEY, null);
+        window.location.reload();
+      } catch (error) {
+        const message = describeError(error, "切换世界失败");
+        openCreatePanel();
+        $("new-instance-error").textContent = message;
+        toast(message, "error");
+      }
+    });
+  }
+
+  async function createWorldInstance(button) {
+    const packageId = state.selectedWorldPackage;
+    const instanceId = String($("new-instance-id").value || "").trim();
+    $("new-instance-error").textContent = "";
+    if (!packageId) return ($("new-instance-error").textContent = "请选择一个世界模板。");
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(instanceId)) {
+      $("new-instance-error").textContent = "实例 ID 需要 1-64 个字母、数字、下划线或连字符，并且以字母或数字开头。";
+      return;
+    }
+    await withPending(button, async () => {
+      try {
+        const result = await write("/instances/init", { package_id: packageId, instance_id: instanceId, activate: true });
+        if (!["passed", "accepted"].includes(String(result.status || ""))) {
+          throw new Error(result.message || (result.errors || []).join("；") || "创建失败");
+        }
+        if (result.activation && result.activation.status !== "accepted") {
+          throw new Error(result.activation.message || "世界已创建，但自动打开失败。请从世界实例列表重试。");
+        }
+        toast(`世界 ${instanceId} 已创建，正在打开…`, "ok");
+        state.activeDb = result.db_path || state.activeDb;
+        storageSet(PLAYER_KEY, null);
+        window.setTimeout(() => window.location.reload(), 500);
+      } catch (error) {
+        if (error.status === 403) {
+          openCreatePanel();
+          $("entry-admin").open = true;
+          $("new-instance-error").textContent = "创建成功需要一个已解锁的管理会话。请展开“管理权限”填入启动服务器时显示的口令。";
+        } else {
+          const message = describeError(error, "创建世界失败");
+          $("new-instance-error").textContent = message;
+          toast(message, "error");
+        }
       }
     });
   }
 
   async function restorePlayer() {
     const saved = storageGet(PLAYER_KEY, null);
-    if (!saved?.id || !saved?.token) return false;
+    if (!saved?.id || !saved?.token || !worldIsOpen()) return false;
     state.playerId = saved.id;
     state.playerName = saved.name || saved.id;
     state.playerToken = saved.token;
@@ -448,11 +840,15 @@
     renderClock();
     renderCharacter();
     renderScene();
+    renderMiniMap();
     renderTask();
     renderActions();
+    renderResultBeat();
+    renderMobileActionBar();
     renderGoals();
     renderWorldProperties();
     renderTalkTargets();
+    renderPeople();
     renderTaskHint();
     $("last-update").textContent = `同步于 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`;
   }
@@ -478,9 +874,15 @@
     const name = player.name || state.playerName || state.playerId || "?";
     $("player-name").textContent = name;
     $("player-portrait").textContent = String(name).slice(0, 1);
-    $("player-role").textContent = player.role && player.role !== "player" ? player.role : "公社居民";
-    $("player-location").textContent = player.location || view.location?.name || "未知地点";
-    $("player-goal").textContent = player.goal || "在公社里找到自己的位置。";
+    const role = player.role && player.role !== "player" ? player.role : "玩家";
+    const location = player.location || view.location?.name || "未知地点";
+    $("player-role").textContent = role;
+    $("player-location").textContent = location;
+    $("player-goal").textContent = player.goal || "在这个世界里找到自己的位置。";
+    $("player-sheet-name").textContent = name;
+    $("player-sheet-avatar").textContent = String(name).slice(0, 1);
+    $("player-sheet-role").textContent = role;
+    $("player-sheet-location").textContent = location;
 
     const badges = $("player-badges");
     badges.replaceChildren();
@@ -511,7 +913,11 @@
       else vitalRoot.append(row);
     }
     if (!needRoot.children.length) needRoot.append(el("p", "hint", "没有可显示的需求。"));
-    $("inventory-count").textContent = `${Object.keys(view.inventory || {}).filter((key) => Number(view.inventory[key]) > 0).length} 种`;
+    const inventoryCount = Object.keys(view.inventory || {}).filter((key) => Number(view.inventory[key]) > 0).length;
+    const capabilityCount = Array.isArray(view.capabilities) ? view.capabilities.length : 0;
+    $("inventory-count").textContent = `${inventoryCount} 种`;
+    $("capability-count").textContent = `${capabilityCount} 项`;
+    $("player-loadout").textContent = `${inventoryCount} 种物品 · ${capabilityCount} 项能力`;
     renderInventory();
     renderCapabilities();
   }
@@ -584,6 +990,7 @@
     const view = state.view;
     const location = view.location || {};
     const player = view.player || {};
+    renderSceneWorldCover();
     const art = $("scene-art");
     art.dataset.scene = sceneTheme(location);
     $("scene-title").textContent = location.name || player.location || "未知地点";
@@ -594,6 +1001,12 @@
     const tagNames = { public: "公共", social: "社交", market: "集市", resource: "资源", craft: "工坊", safe: "安全", research: "研究", exploration: "探索", defense: "防线", infrastructure: "基础设施", home: "住屋" };
     for (const tag of location.tags || []) {
       if (tagNames[tag]) tags.append(el("span", "badge", tagNames[tag]));
+    }
+    const properties = view.world_properties || {};
+    const propertyLabels = view.world_property_labels || {};
+    for (const [key, meta] of Object.entries(propertyLabels)) {
+      if (!meta?.alert || properties[key] === undefined) continue;
+      tags.append(el("span", "badge danger", `${meta.label || humanizeKey(key)} ${formatWorldProperty(properties[key], meta)}`));
     }
 
     const objects = $("scene-objects");
@@ -622,12 +1035,10 @@
       copy.append(el("span", "", person.status === "executing" ? "正在忙碌" : "可以交谈"));
       chip.append(copy);
       chip.addEventListener("click", () => {
-        switchTab("talk");
         const select = $("talk-target");
-        const option = [...select.options].find((item) => item.value === person.id);
-        if (option) {
-          select.value = person.id;
-          $("talk-message").focus();
+        const option = select ? [...select.options].find((item) => item.value === person.id) : null;
+        if (option || nearbyParticipants().some((item) => item.id === person.id)) {
+          openCharacter(person);
         } else {
           toast("对方不在可交谈距离内。", "error");
         }
@@ -714,20 +1125,40 @@
       button.setAttribute("role", "tab");
       button.addEventListener("click", () => {
         state.actionFilter = item;
+        state.actionExpanded = false;
         renderActions();
+        renderMobileActionBar();
       });
       filterRoot.append(button);
     }
 
+    const filtered = actions.filter((action) => state.actionFilter === "全部" || actionCategory(action) === state.actionFilter);
+    const taskActive = Boolean(view?.active_task?.bt || view?.active_task?.action);
+    const featured = !taskActive && filtered.length ? chooseRecommendedAction(filtered) : null;
+    const recommended = $("recommended-action");
+    recommended.replaceChildren();
+    recommended.classList.toggle("hidden", !featured);
+    if (featured) recommended.append(recommendedActionCard(featured));
+
     const grid = $("action-grid");
     grid.replaceChildren();
+    const rest = featured ? filtered.filter((action) => action !== featured) : filtered;
     if (!actions.length) {
       grid.append(el("div", "inventory-empty", "现在没有平台认可的行动；可以在地图上换一个地点。"));
+    } else if (!rest.length && !featured) {
+      grid.append(el("div", "inventory-empty", "这个分类下暂时没有可执行行动。"));
     }
-    const filtered = actions.filter((action) => state.actionFilter === "全部" || actionCategory(action) === state.actionFilter);
-    for (const action of filtered) {
-      grid.append(actionCard(action));
+    const limit = state.actionExpanded ? rest.length : Math.min(5, rest.length);
+    for (const action of rest.slice(0, limit)) {
+      grid.append(actionRow(action));
     }
+    const more = $("action-more");
+    const remaining = rest.length - limit;
+    const canCollapse = state.actionExpanded && rest.length > 5;
+    more.classList.toggle("hidden", !(remaining > 0 || canCollapse));
+    more.textContent = state.actionExpanded
+      ? "收起行动"
+      : `显示更多行动（${Math.max(0, remaining)}）`;
 
     const unavailable = Array.isArray(view?.unavailable_actions) ? view.unavailable_actions : [];
     const locked = $("locked-actions");
@@ -743,37 +1174,189 @@
     }
   }
 
-  function actionCard(action) {
-    const category = actionCategory(action);
-    const card = el("article", "action-card");
-    card.dataset.category = category;
-    const head = el("div", "action-head");
-    head.append(el("strong", "", action.choice || action.name || "行动"));
-    head.append(el("span", "action-time", translateTime(action.time || "时间未知")));
-    card.append(head);
-    card.append(el("p", "", action.summary || action.purpose || "按照世界规则执行这个行动。"));
-    const meta = el("div", "action-meta");
+  function chooseRecommendedAction(actions) {
+    return actions.find((action) => actionCategory(action) !== "移动") || actions[0] || null;
+  }
+
+  function actionChips(action, limit = 4) {
     const chips = [];
     for (const value of action.cost || []) chips.push(translateImpact(value));
     for (const value of (action.impact || []).slice(0, 2)) chips.push(translateImpact(value));
-    for (const value of chips.filter(Boolean).slice(0, 4)) meta.append(el("span", "action-chip", value));
-    card.append(meta);
-    const foot = el("div", "action-foot");
-    const button = el("button", "button ghost", actionButtonLabel(category, action));
+    return [...new Set(chips.filter(Boolean))].slice(0, limit);
+  }
+
+  function recommendedActionCard(action) {
+    const category = actionCategory(action);
+    const card = el("article", "recommended-card");
+    card.dataset.category = category;
+    const copy = el("div", "recommended-copy");
+    copy.append(el("span", "eyebrow", `推荐下一步 · ${category}`));
+    copy.append(el("strong", "", action.choice || action.name || "行动"));
+    copy.append(el("p", "", action.summary || action.purpose || "按照世界规则执行这个行动。"));
+    const meta = el("div", "badge-row");
+    const goal = (state.view?.goals || []).find((item) => (item.ready_behavior_refs || []).includes(action.ref));
+    if (goal) meta.append(el("span", "badge accent", `推进：${goal.label || goal.id}`));
+    meta.append(el("span", "badge", translateTime(action.time || "时间未知")));
+    for (const chip of actionChips(action, 3)) meta.append(el("span", "badge", chip));
+    copy.append(meta);
+    card.append(copy);
+    const button = el("button", "button primary recommended-action-button", actionButtonLabel(category, action));
     button.type = "button";
     button.addEventListener("click", () => beginAction(action, button));
-    foot.append(button);
-    card.append(foot);
+    card.append(button);
     return card;
   }
 
+  function actionRow(action) {
+    const category = actionCategory(action);
+    const row = el("article", "action-row");
+    row.dataset.category = category;
+    const main = el("div", "action-row-main");
+    const head = el("div", "action-row-head");
+    head.append(el("strong", "", action.choice || action.name || "行动"));
+    head.append(el("span", "badge", category));
+    main.append(head);
+    main.append(el("p", "", action.summary || action.purpose || "按照世界规则执行这个行动。"));
+    const meta = el("div", "action-row-meta");
+    for (const chip of actionChips(action, 3)) meta.append(el("span", "action-chip", chip));
+    if (meta.children.length) main.append(meta);
+    row.append(main);
+    const side = el("div", "action-row-side");
+    side.append(el("span", "action-time", translateTime(action.time || "时间未知")));
+    const button = el("button", "button ghost", actionButtonLabel(category, action));
+    button.type = "button";
+    button.addEventListener("click", () => beginAction(action, button));
+    side.append(button);
+    row.append(side);
+    return row;
+  }
+
+  const RESULT_LABELS = {
+    resource_collected: "采集完成",
+    recipe_completed: "制作完成",
+    route_traversed: "抵达目的地",
+    arrived: "抵达目的地",
+    inspected: "检查完成",
+    inspection_completed: "检查完成",
+    research_progressed: "研究推进",
+    research_completed: "研究完成",
+    repaired: "修复完成",
+    information_recorded: "情报已记录",
+    rationing_decided: "配给已调整",
+    repair_priority_decided: "抢修已完成",
+    marsh_rest_decided: "休养已安排",
+    decision_failed: "决策中断",
+  };
+
+  function renderResultBeat() {
+    const panel = $("result-beat");
+    if (!panel) return;
+    const outcome = (state.view?.recent_outcomes || [])[0];
+    const currentMinute = Number(state.view?.world_time?.minute || 0);
+    if (!outcome || currentMinute - Number(outcome.world_minute || 0) > 720) {
+      panel.classList.add("hidden");
+      return;
+    }
+    const result = String(outcome.result || "");
+    const failed = String(outcome.event_type || "").includes("failed");
+    panel.classList.remove("hidden");
+    panel.classList.toggle("failed", failed);
+    panel.querySelector(".result-beat-mark").textContent = failed ? "!" : "✓";
+    $("result-time").textContent = formatMinute(outcome.world_minute);
+    const expectedSummary = String(outcome.outcome?.expected?.summary || "");
+    $("result-title").textContent = (expectedSummary && expectedSummary.length <= 24 ? expectedSummary : "")
+      || outcome.behavior_choice
+      || expectedSummary
+      || outcome.behavior_id
+      || "行动完成";
+    $("result-detail").textContent = failed
+      ? `行动未完成${result ? ` · ${result}` : ""}`
+      : (RESULT_LABELS[result] || humanizeKey(result || "completed"));
+
+    const deltas = $("result-deltas");
+    deltas.replaceChildren();
+    const delta = outcome.outcome?.delta || {};
+    const chips = [];
+    if (delta.location?.after) chips.push(`抵达 ${delta.location.after}`);
+    for (const [key, change] of Object.entries(delta.inventory || {})) {
+      const before = Number(change?.before || 0);
+      const after = Number(change?.after || 0);
+      const diff = Math.round((after - before) * 10) / 10;
+      if (!diff) continue;
+      chips.push(`${itemLabel(key)} ${diff > 0 ? "+" : "−"}${Math.abs(diff)}`);
+    }
+    const needNames = { hydration: "水分", satiety: "饱食", belonging: "归属", purpose: "意义" };
+    for (const [key, change] of Object.entries(delta.needs || {})) {
+      const diff = Number(change?.after || 0) - Number(change?.before || 0);
+      if (Math.abs(diff) < 1) continue;
+      chips.push(`${needNames[key] || humanizeKey(key)} ${diff > 0 ? "+" : "−"}${Math.abs(Math.round(diff))}`);
+    }
+    const attributeNames = { stamina: "精力", integrity: "体力" };
+    for (const [key, change] of Object.entries(delta.attributes || {})) {
+      const diff = Number(change?.after || 0) - Number(change?.before || 0);
+      if (Math.abs(diff) < 0.01) continue;
+      chips.push(`${attributeNames[key] || humanizeKey(key)} ${diff > 0 ? "+" : "−"}${Math.abs(diff).toFixed(2)}`);
+    }
+    for (const chip of chips.slice(0, 4)) deltas.append(el("span", "badge", chip));
+    if (!chips.length) deltas.append(el("span", "badge", result || "世界已记录"));
+  }
+
+  function renderMobileActionBar() {
+    const bar = $("mobile-action-bar");
+    if (!bar) return;
+    const task = state.view?.active_task || {};
+    const taskActive = Boolean(task.bt || task.action);
+    const actions = Array.isArray(state.view?.actions) ? state.view.actions : [];
+    const action = taskActive ? null : chooseRecommendedAction(actions);
+    if (!taskActive && !action) {
+      bar.classList.add("hidden");
+      bar._action = null;
+      return;
+    }
+    bar.classList.remove("hidden");
+    bar._action = action;
+    if (taskActive) {
+      $("mobile-primary-label").textContent = `推进：${task.bt || task.action || "当前行动"}`;
+      $("mobile-primary-meta").textContent = `还需 ${Number(task.remaining_minutes || 0)} 分钟`;
+    } else {
+      $("mobile-primary-label").textContent = action.choice || action.name || "下一步";
+      $("mobile-primary-meta").textContent = `${actionCategory(action)} · ${translateTime(action.time || "时间未知")}`;
+    }
+  }
+
+  function formatWorldProperty(value, meta = {}) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return String(value ?? "—");
+    if (meta.unit === "percent") return `${Math.round(numeric * 100)}%`;
+    if (meta.unit === "hours") return `${Math.round(numeric * 10) / 10} 小时`;
+    return `${Math.round(numeric * 10) / 10}`;
+  }
+
   function humanizeReason(reason) {
-    const text = String(reason || "").trim();
-    let match = text.match(/^actor\.need\.(\w+) ([<>]=?) (\d+(?:\.\d+)?)$/);
+    let text = String(reason || "").trim().replace(/^Configured condition:\s*/i, "").replace(/\.\s*$/, "");
+    let match = text.match(/^(?:World|world\.)([A-Za-z0-9_ .-]+?) (>=|<=|==|>|<) (-?\d+(?:\.\d+)?)$/);
+    if (match) {
+      const key = match[1].trim().replace(/\s+/g, "_");
+      const meta = state.view?.world_property_labels?.[key] || {};
+      const label = meta.label || humanizeKey(key);
+      const symbol = match[2].includes("<") ? "不高于" : (match[2].includes(">") ? "至少" : "等于");
+      return `需要${label}${symbol} ${formatWorldProperty(match[3], meta)}`;
+    }
+    match = text.match(/^actor\.need\.(\w+) ([<>]=?) (\d+(?:\.\d+)?)$/);
     if (match) {
       const needNames = { hydration: "水分", satiety: "饱食", belonging: "归属", purpose: "意义" };
       const symbol = match[2].includes("<") ? "低于或等于" : "高于";
       return `需要${needNames[match[1]] || match[1]}${symbol} ${match[3]}`;
+    }
+    match = text.match(/^(?:Actor|actor) inventory ([A-Za-z0-9_ .-]+?) (>=|<=) (-?\d+(?:\.\d+)?)$/);
+    if (match) {
+      const key = match[1].trim().replace(/\s+/g, "_");
+      return `需要 ${itemLabel(key)} ${match[2] === ">=" ? "至少" : "不多于"} ${match[3]} 个`;
+    }
+    match = text.match(/^(?:Actor|actor) need (\w+) ([<>]=?) (-?\d+(?:\.\d+)?)$/);
+    if (match) {
+      const needNames = { hydration: "水分", satiety: "饱食", belonging: "归属", purpose: "意义" };
+      return `需要${needNames[match[1]] || match[1]}${match[2].includes("<") ? "低于或等于" : "高于"} ${match[3]}`;
     }
     match = text.match(/^actor\.inventory\.(\w+) >= (\d+(?:\.\d+)?)$/);
     if (match) return `需要 ${itemLabel(match[1])} 至少 ${match[2]} 个`;
@@ -785,8 +1368,8 @@
       [/route\.known/, "路线尚未确认"],
       [/actor\.alive/, "角色状态不允许"],
       [/actor\.can_(\w+)/, (_m, cap) => `需要${cap}能力`],
-      [/Action gather_resource cannot start: required resource (.+) is unavailable/, (_m, name) => `${name} 资源点已经枯竭`],
-      [/Action craft_recipe cannot start: required carried item (.+) is unavailable/, (_m, name) => `缺少随身材料：${name}`],
+      [/Action gather[ _]resource cannot start: required resource (.+) is unavailable/, (_m, name) => `${itemLabel(String(name).replace(/\s+/g, "_"))}资源点已经枯竭`],
+      [/Action craft[ _]recipe cannot start: required carried item (.+) is unavailable/, (_m, name) => `缺少随身材料：${itemLabel(String(name).replace(/\s+/g, "_"))}`],
     ];
     for (const [pattern, replacement] of words) {
       if (pattern.test(text)) return text.replace(pattern, replacement);
@@ -911,30 +1494,98 @@
 
   /* ---------- Goals / world properties ---------- */
 
+  function actionForRef(ref) {
+    const actions = Array.isArray(state.view?.actions) ? state.view.actions : [];
+    return actions.find((action) => action.ref === ref) || null;
+  }
+
   function renderGoals() {
     const root = $("goal-list");
     root.replaceChildren();
     const goals = Array.isArray(state.view?.goals) ? state.view.goals : [];
+    const chapter = state.view?.chapter || null;
+    const chapterTitle = $("chapter-title");
+    if (chapterTitle) chapterTitle.textContent = chapter?.title || "世界目标";
+    const chapterSummary = $("chapter-summary");
+    if (chapterSummary) {
+      const text = String(chapter?.summary || "").trim();
+      chapterSummary.textContent = text;
+      chapterSummary.classList.toggle("hidden", !text);
+    }
+    const summary = $("goal-summary");
+    if (summary) summary.textContent = goals.length ? `${goals.length} 项待完成` : "全部完成";
     if (!goals.length) {
       root.append(el("p", "goal-empty", "当前世界没有公开的目标投影。"));
       return;
     }
     const statusNames = { ready: "可推进", needs_support: "需准备", blocked: "受阻", completed: "已完成" };
-    goals.forEach((goal, index) => {
+    const visibleGoals = state.goalsExpanded ? goals : goals.slice(0, 3);
+    visibleGoals.forEach((goal, index) => {
       const status = String(goal.status || "blocked");
-      const row = el("div", `goal-row ${status}`);
-      row.append(el("span", "goal-mark", String(index + 1)));
+      const card = el("article", `chapter-card ${status}`);
+      const head = el("div", "chapter-card-head");
+      head.append(el("span", "goal-mark", String(index + 1).padStart(2, "0")));
       const copy = el("div", "goal-copy");
       copy.append(el("strong", "", goal.label || goal.id));
       copy.append(el("span", "", goal.summary || ""));
-      row.append(copy);
-      const progress = goal.progress && Number(goal.progress.required) > 0
-        ? `${goal.progress.current}/${goal.progress.required}`
-        : statusNames[status] || status;
-      row.append(el("span", "goal-progress", progress));
-      row.title = (goal.ready_behaviors || []).length ? `现在可做：${goal.ready_behaviors.join("、")}` : (goal.support_behaviors || []).join("、");
-      root.append(row);
+      head.append(copy);
+      head.append(el("span", `goal-status ${status}`, statusNames[status] || status));
+      card.append(head);
+
+      const current = Number(goal.progress?.current || 0);
+      const required = Number(goal.progress?.required || 0);
+      if (required > 0) {
+        const track = el("div", "goal-track");
+        const fill = el("span");
+        fill.style.width = `${clamp((current / required) * 100, 0, 100)}%`;
+        track.append(fill);
+        card.append(track);
+      }
+
+      const foot = el("div", "goal-foot");
+      if (required > 0) foot.append(el("span", "goal-progress", `${current} / ${required}`));
+      const readyCount = (goal.ready_behavior_refs || []).length;
+      const nextLabel = readyCount <= 1
+        ? ((goal.ready_behaviors || [])[0] || (goal.support_behaviors || [])[0] || "")
+        : "";
+      if (nextLabel) foot.append(el("span", "goal-next", `${status === "ready" ? "下一步" : "先准备"}：${nextLabel}`));
+      if (foot.children.length) card.append(foot);
+
+      const requirements = (goal.missing_requirements || [])
+        .map((reason) => humanizeReason(reason))
+        .filter(Boolean);
+      if (status !== "ready" && requirements.length) {
+        card.append(el("p", "goal-blockers", `还缺：${requirements.slice(0, 2).join("；")}`));
+      }
+
+      const goalActions = (goal.ready_behavior_refs || []).map(actionForRef).filter(Boolean).slice(0, 3);
+      if (goalActions.length) {
+        const row = el("div", `goal-actions${goalActions.length > 1 ? " choice" : ""}`);
+        goalActions.forEach((item, actionIndex) => {
+          const label = item.choice || item.name || goal.label;
+          const button = el(
+            "button",
+            `button goal-do${actionIndex === 0 ? " primary" : " ghost"}`,
+            goalActions.length > 1 ? label : `去做：${label}`,
+          );
+          button.type = "button";
+          button.addEventListener("click", () => beginAction(item, button));
+          row.append(button);
+        });
+        card.append(row);
+      }
+      root.append(card);
     });
+    if (goals.length > 3) {
+      const more = el("button", "text-button wide goal-more", state.goalsExpanded ? "收起目标" : `显示全部 ${goals.length} 个目标`);
+      more.type = "button";
+      more.addEventListener("click", () => {
+        state.goalsExpanded = !state.goalsExpanded;
+        renderGoals();
+        renderMobileActionBar();
+      });
+      root.append(more);
+    }
   }
 
   function renderWorldProperties() {
@@ -943,18 +1594,17 @@
     const properties = state.view?.world_properties || {};
     const labels = state.view?.world_property_labels || {};
     const entries = Object.entries(properties);
-    if (!entries.length) {
+    const visibleEntries = entries.filter(([key]) => !(labels[key] || {}).hidden);
+    if (!visibleEntries.length) {
       root.append(el("p", "hint", "当前世界没有公开数值。"));
       return;
     }
-    for (const [key, value] of entries) {
+    for (const [key, value] of visibleEntries) {
       const meta = labels[key] || {};
       const label = meta.label || humanizeKey(key);
       const numeric = Number(value);
-      let display;
-      if (meta.unit === "percent") display = `${Math.round(numeric * 100)}%`;
-      else display = `${Math.round(numeric * 10) / 10}`;
-      if (meta.max && meta.unit !== "percent") display += ` / ${meta.max}`;
+      let display = formatWorldProperty(value, meta);
+      if (meta.max && meta.unit !== "percent" && meta.unit !== "hours") display += ` / ${meta.max}`;
       const row = el("div", "world-prop");
       row.append(el("span", "", label));
       row.append(el("strong", "", display));
@@ -970,8 +1620,12 @@
 
   /* ---------- Talk ---------- */
 
+  function nearbyParticipants() {
+    return (state.view?.nearby_participants || []).filter((item) => item.id !== state.playerId);
+  }
+
   function renderTalkTargets() {
-    const participants = (state.view?.nearby_participants || []).filter((item) => item.id !== state.playerId);
+    const participants = nearbyParticipants();
     for (const selectId of ["talk-target", "trade-target"]) {
       const select = $(selectId);
       if (!select) continue;
@@ -992,25 +1646,97 @@
     if (send) send.disabled = !participants.length;
   }
 
-  async function loadDialogue() {
+  function renderPeople() {
+    const root = $("people-list");
+    if (!root) return;
+    root.replaceChildren();
+    const participants = nearbyParticipants();
+    if (state.selectedCharacter && !participants.some((item) => item.id === state.selectedCharacter.id)) {
+      closeCharacter();
+    }
+    if (!participants.length) {
+      root.append(el("p", "people-empty", "附近暂时没有可以交谈的人。"));
+      return;
+    }
+    for (const person of participants) {
+      const card = el("button", "people-card");
+      card.type = "button";
+      card.append(el("span", "person-avatar", String(person.name || person.id).slice(0, 1)));
+      const copy = el("div");
+      copy.append(el("strong", "", person.name || person.id));
+      copy.append(el("small", "", person.status === "executing" ? "正在忙碌" : "可以交谈"));
+      card.append(copy);
+      card.append(el("span", "badge", "交谈"));
+      card.addEventListener("click", () => openCharacter(person));
+      root.append(card);
+    }
+  }
+
+  function updateCharacterSheet(person) {
+    const name = person?.name || person?.id || "人物";
+    $("character-name").textContent = name;
+    $("character-avatar").textContent = String(name).slice(0, 1);
+    $("character-location").textContent = person?.location || person?.location_id || state.view?.location?.name || "附近";
+    $("character-status").textContent = person?.status === "executing" ? "正在忙碌" : "可以交谈";
+  }
+
+  function openCharacter(person) {
+    if (!person) return;
+    state.selectedCharacter = person;
+    renderTalkTargets();
+    const select = $("talk-target");
+    if (select && [...select.options].some((option) => option.value === person.id)) {
+      select.value = person.id;
+    }
+    updateCharacterSheet(person);
+    $("character-drawer").classList.remove("hidden");
+    loadDialogue(person.id);
+    window.setTimeout(() => $("talk-message")?.focus(), 80);
+  }
+
+  function closeCharacter() {
+    state.selectedCharacter = null;
+    $("character-drawer").classList.add("hidden");
+  }
+
+  function openPlayerSheet() {
+    $("player-drawer").classList.remove("hidden");
+  }
+
+  function closePlayerSheet() {
+    $("player-drawer").classList.add("hidden");
+  }
+
+  function personName(personId) {
+    const person = nearbyParticipants().find((item) => item.id === personId);
+    return person?.name || personId;
+  }
+
+  async function loadDialogue(characterId = state.selectedCharacter?.id || "") {
     const root = $("dialogue-list");
     if (!root) return;
     try {
-      const response = await request("/observer/dialogue?limit=60");
-      const exchanges = (response.exchanges || []).filter((item) => item.speaker_id === state.playerId || item.listener_id === state.playerId);
-      const latest = exchanges.slice(-14).reverse();
+      const response = await request("/observer/dialogue?limit=80");
+      const exchanges = (response.exchanges || [])
+        .filter((item) => item.speaker_id === state.playerId || item.listener_id === state.playerId)
+        .filter((item) => !characterId || item.speaker_id === characterId || item.listener_id === characterId)
+        .slice(-30);
       root.replaceChildren();
-      if (!latest.length) {
-        root.append(el("p", "dialogue-empty", "还没有人跟你交谈。走近一位居民，或者先开口。"));
+      if (!exchanges.length) {
+        const who = characterId ? personName(characterId) : "任何人";
+        root.append(el("p", "dialogue-empty", `还没有和 ${who} 的对话。先开口吧。`));
         return;
       }
-      for (const item of latest) {
-        const bubble = el("div", "dialogue-bubble");
+      for (const item of exchanges) {
         const mine = item.speaker_id === state.playerId;
-        bubble.append(el("strong", "", `${mine ? "你" : item.speaker} → ${item.listener_id === state.playerId ? "你" : item.listener}`));
+        const bubble = el("div", `dialogue-bubble ${mine ? "mine" : "theirs"}`);
+        const speaker = mine ? "你" : (item.speaker || personName(item.speaker_id));
+        bubble.append(el("strong", "", speaker));
+        if (item.topic && item.topic !== "general") bubble.append(el("span", "dialogue-topic", item.topic));
         bubble.append(el("p", "", item.message || ""));
         root.append(bubble);
       }
+      root.scrollTop = root.scrollHeight;
     } catch (error) {
       root.replaceChildren(el("p", "dialogue-empty", "对话记录暂不可用。"));
     }
@@ -1035,7 +1761,10 @@
         $("talk-message").value = "";
         const reply = result.reply || {};
         toast(reply.status === "rejected" ? "消息已记录，但 NPC 回复暂不可用。" : "对话已发送。", reply.status === "rejected" ? "error" : "ok");
-        await Promise.allSettled([loadView(), loadDialogue(), loadFeed()]);
+        await Promise.allSettled([loadView(), loadFeed()]);
+        const selected = nearbyParticipants().find((item) => item.id === target);
+        if (selected && state.selectedCharacter?.id === target) updateCharacterSheet(selected);
+        await loadDialogue(target);
       } catch (error) {
         toast(describeError(error, "对话未发送"), "error");
       }
@@ -1152,22 +1881,40 @@
     "snapshot.created",
     "snapshot.restored",
     "resource.changed",
+    "resource.regenerated",
+    "world.property_changed",
+    "entity.state_changed",
+    "player.entered",
+    "player.resumed",
+    "behavior.started",
+    "capability.updated",
+    "memory.experience_recorded",
+    "definition.registered",
+    "behavior.registered",
+    "evolution.task_due",
   ]);
 
   function eventKind(type) {
-    if (type.includes("dialogue") || type.includes("conversation")) return "dialogue";
-    if (type.includes("resource") || type.includes("ration") || type.includes("rope")) return "resource";
-    if (type.includes("repair") || type.includes("gate") || type.includes("signal")) return "repair";
-    if (type.includes("story") || type.includes("beat")) return "story";
+    const value = String(type || "");
+    if (value.startsWith("public_decision") || value.startsWith("decision.")) return "decision";
+    if (value.startsWith("storm.") || value.startsWith("weather.")) return "storm";
+    if (value.startsWith("dialogue.") || value.startsWith("conversation.")) return "dialogue";
+    if (value.startsWith("resource.") || value.startsWith("ration") || value.startsWith("rope.")) return "resource";
+    if (value.startsWith("tide_gate.") || value.startsWith("repair") || value.startsWith("signal.")) return "repair";
+    if (value.startsWith("story.") || value.startsWith("beat.")) return "story";
+    if (value.startsWith("origin.")) return "origin";
     return "";
   }
 
   function eventTitle(type) {
     const kind = eventKind(type);
+    if (kind === "decision") return "公共决策";
+    if (kind === "storm") return "风暴";
     if (kind === "dialogue") return "对话";
     if (kind === "resource") return "采集与制作";
     if (kind === "repair") return "公共设施";
     if (kind === "story") return "世界剧情";
+    if (kind === "origin") return "出身";
     if (type.startsWith("behavior.")) return "角色行动";
     if (type.startsWith("trade.")) return "交易";
     if (type.startsWith("need.")) return "需求";
@@ -1191,6 +1938,7 @@
     if (!root) return;
     root.replaceChildren();
     const events = state.feedEvents.slice(0, state.feedLimit);
+    renderWorldPulse();
     if (!events.length) {
       root.append(el("p", "feed-empty", "世界还没有留下可读的记录。"));
       return;
@@ -1213,31 +1961,116 @@
     if (more) more.classList.toggle("hidden", state.feedEvents.length <= state.feedLimit);
   }
 
+  function renderWorldPulse() {
+    const root = $("world-pulse");
+    if (!root) return;
+    root.replaceChildren();
+    const events = state.feedEvents.slice(0, 30);
+    const currentMinute = Number(state.view?.world_time?.minute || 0);
+    const important = events.find((event) => {
+      if (currentMinute - Number(event.world_minute || 0) > 720) return false;
+      const type = String(event.event_type || "");
+      return type.includes("storm")
+        || type.includes("story")
+        || type.includes("world.change")
+        || type.includes("civilization")
+        || type.includes("evolution");
+    }) || events[0];
+    if (!important) {
+      root.className = "world-pulse empty";
+      root.append(el("span", "eyebrow", "世界脉搏"));
+      root.append(el("strong", "", "还没有新的变化"));
+      root.append(el("p", "", "行动和事件会在这里汇总成世界级进展。"));
+      return;
+    }
+    root.className = "world-pulse";
+    root.append(el("span", "eyebrow", `世界脉搏 · ${formatMinute(important.world_minute)}`));
+    root.append(el("strong", "", eventTitle(String(important.event_type || ""))));
+    root.append(el("p", "", translateNarrative(important.public?.summary || important.narrative || "")));
+  }
+
   /* ---------- Map ---------- */
+
+  function showMapDialog() {
+    const dialog = $("map-dialog");
+    if (typeof dialog.showModal === "function") {
+      if (!dialog.open) dialog.showModal();
+    } else {
+      dialog.setAttribute("open", "open");
+    }
+  }
 
   async function openMap() {
     if (!state.playerId) return;
+    state.map = state.view?.map || state.map;
+    if (state.map) {
+      renderMap();
+      showMapDialog();
+    }
     try {
       const map = await request(`/map?viewer_id=${encodeURIComponent(state.playerId)}&observer=0`);
       state.map = map;
       renderMap();
-      const dialog = $("map-dialog");
-      if (typeof dialog.showModal === "function") dialog.showModal();
-      else dialog.setAttribute("open", "open");
+      showMapDialog();
     } catch (error) {
-      toast(describeError(error, "地图暂不可用"), "error");
+      if (!state.map) toast(describeError(error, "地图暂不可用"), "error");
     }
+  }
+
+  function renderMiniMap() {
+    const root = $("mini-map");
+    if (!root) return;
+    const map = state.view?.map;
+    if (!map || !Array.isArray(map.nodes) || !map.nodes.length) {
+      root.replaceChildren(el("p", "mini-map-empty", "这个世界还没有可见的地点。"));
+      return;
+    }
+    root.replaceChildren();
+    renderTopology(root, map, { width: 940, height: 210, padX: 132, padY: 48, compact: true });
   }
 
   function renderMap() {
     $("map-world-title").textContent = state.world?.title || "世界";
     const canvas = $("map-canvas");
     canvas.replaceChildren();
-    const nodes = Array.isArray(state.map?.nodes) ? state.map.nodes : [];
+    const map = state.map || state.view?.map;
+    if (!map || !Array.isArray(map.nodes) || !map.nodes.length) {
+      canvas.append(el("p", "hint", "没有可见地点。"));
+      return;
+    }
+    renderTopology(canvas, map, { width: 640, height: 380, pad: 84, compact: false });
+    const legend = $("map-legend");
+    legend.textContent = "金色边框是当前位置，亮色节点可以直接前往；虚线表示已知路线。";
+  }
+
+  function travelToNode(node) {
+    const travelAction = (state.view?.actions || []).find(
+      (entry) => entry.ref === "behavior:travel" && entry.parameters?.location_id === node.id,
+    );
+    const dialog = $("map-dialog");
+    if (dialog.open) dialog.close();
+    // beginAction forwards action.parameters; calling submitAction directly
+    // sent an empty parameter object, dropping the destination.
+    beginAction(travelAction || {
+      ref: "behavior:travel",
+      choice: node.name || node.id,
+      name: node.name || node.id,
+      kind: "travel",
+      parameters: { location_id: node.id },
+    });
+  }
+
+  function renderTopology(canvas, map, options = {}) {
+    const nodes = Array.isArray(map?.nodes) ? map.nodes : [];
     if (!nodes.length) {
       canvas.append(el("p", "hint", "没有可见地点。"));
       return;
     }
+    const compact = Boolean(options.compact);
+    const width = Number(options.width || 640);
+    const height = Number(options.height || 380);
+    const padX = Number(options.padX || options.pad || 80);
+    const padY = Number(options.padY || options.pad || 80);
     const positions = nodes.map((node, index) => {
       const position = node.position || {};
       const x = Number(position.x);
@@ -1254,19 +2087,17 @@
     const maxX = Math.max(...xs);
     const minY = Math.min(...ys);
     const maxY = Math.max(...ys);
-    const width = 640;
-    const height = 380;
-    const pad = 84;
-    const px = (x) => pad + ((x - minX) / Math.max(1, maxX - minX)) * (width - pad * 2);
-    const py = (y) => pad + ((y - minY) / Math.max(1, maxY - minY)) * (height - pad * 2);
+    const px = (x) => padX + ((x - minX) / Math.max(1, maxX - minX)) * (width - padX * 2);
+    const py = (y) => padY + ((y - minY) / Math.max(1, maxY - minY)) * (height - padY * 2);
     const routes = new Set((state.view?.routes || []).map((route) => route.id));
     const current = state.view?.location?.id;
 
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.setAttribute("preserveAspectRatio", "none");
     svg.setAttribute("class", "map-lines");
     svg.setAttribute("aria-hidden", "true");
-    for (const edge of state.map?.edges || []) {
+    for (const edge of map?.edges || []) {
       const from = positions.find((item) => item.node.id === edge.from);
       const to = positions.find((item) => item.node.id === edge.to);
       if (!from || !to) continue;
@@ -1276,11 +2107,11 @@
       line.setAttribute("x2", px(to.x));
       line.setAttribute("y2", py(to.y));
       line.setAttribute("stroke", "rgba(139,204,192,.22)");
-      line.setAttribute("stroke-width", "1");
-      line.setAttribute("stroke-dasharray", "4 5");
+      line.setAttribute("stroke-width", compact ? "1.4" : "1");
+      line.setAttribute("stroke-dasharray", compact ? "5 6" : "4 5");
       svg.append(line);
     }
-    const wrap = el("div", "map-stage");
+    const wrap = el("div", compact ? "map-stage mini-map-stage" : "map-stage");
     wrap.append(svg);
     for (const item of positions) {
       const node = item.node;
@@ -1290,33 +2121,29 @@
       button.style.left = `${(px(item.x) / width) * 100}%`;
       button.style.top = `${(py(item.y) / height) * 100}%`;
       button.append(el("strong", "", node.name || node.id));
-      button.append(el("small", "", node.id === current ? "你在这里" : reachable ? "可前往" : (node.tags || []).join(" · ")));
+      const occupants = Array.isArray(node.occupants) ? node.occupants.length : 0;
+      const tagNames = { resource: "资源", research: "研究", craft: "工坊", social: "社交", market: "集市", defense: "防线", home: "住屋", exploration: "探索", infrastructure: "设施", public: "公共", safe: "安全" };
+      const nodeTags = (node.tags || []).map((tag) => tagNames[tag] || tag);
+      const detail = node.id === current
+        ? "你在这里"
+        : reachable
+          ? "可前往"
+          : compact
+            ? (occupants ? `${occupants} 人` : nodeTags.slice(0, 1).join(" · "))
+            : nodeTags.join(" · ");
+      if (detail) button.append(el("small", "", detail));
       if (reachable && node.id !== current) {
         // The server words every travel action from the world's ui_text, so the
         // map reuses it instead of composing its own phrases.
-        const travelAction = () => (state.view?.actions || []).find(
+        const travelAction = (state.view?.actions || []).find(
           (entry) => entry.ref === "behavior:travel" && entry.parameters?.location_id === node.id,
         );
-        button.title = travelAction()?.choice || node.name || node.id;
-        button.addEventListener("click", () => {
-          const dialog = $("map-dialog");
-          if (dialog.open) dialog.close();
-          // beginAction forwards action.parameters; calling submitAction directly
-          // sent an empty parameter object, dropping the destination.
-          beginAction(travelAction() || {
-            ref: "behavior:travel",
-            choice: node.name || node.id,
-            name: node.name || node.id,
-            kind: "travel",
-            parameters: { location_id: node.id },
-          });
-        });
+        button.title = travelAction?.choice || node.name || node.id;
+        button.addEventListener("click", () => travelToNode(node));
       }
       wrap.append(button);
     }
     canvas.append(wrap);
-    const legend = $("map-legend");
-    legend.textContent = "金色边框是当前位置，亮色节点可以直接前往；虚线表示已知路线。";
   }
 
   /* ---------- Settings / runtime ---------- */
@@ -1332,6 +2159,12 @@
     const previous = select.value || preferred;
     select.replaceChildren(new Option("默认（服务端配置）", ""));
     for (const name of names) select.append(new Option(name, name));
+    if (runtime.llm_configured === false) {
+      select.replaceChildren(new Option("未配置模型（仅推进时间）", ""));
+      select.disabled = true;
+      return;
+    }
+    select.disabled = false;
     let chosen = previous;
     if (stored === null && names.includes("remote")) chosen = "remote";
     if (chosen && [...select.options].some((option) => option.value === chosen)) select.value = chosen;
@@ -1350,6 +2183,8 @@
     if (detail) {
       if (running) {
         detail.textContent = `自动运行中 · 从第 ${runtime.start_minute ?? "?"} 分钟到第 ${runtime.target_minute ?? "?"} 分钟 · 模型 ${runtime.provider || "默认"}`;
+      } else if (runtime.llm_configured === false) {
+        detail.textContent = "未配置模型：世界时间和你的长行动仍会推进，NPC 暂时不会自主决策。配置 ~/.sim2/llm.json 后即可启用完整 Agent。";
       } else {
         detail.textContent = `手动世界 · 第 ${runtime.world_minute ?? state.view?.world_time?.minute ?? 0} 分钟${runtime.last_error ? ` · 上次错误：${runtime.last_error}` : ""}`;
       }
@@ -1382,6 +2217,7 @@
       state.instances = response.instances || [];
       state.activeDb = response.active_db || "";
       renderInstanceSelects();
+      renderEntryInstances();
     } catch (error) {
       toast(describeError(error, "无法读取实例列表"), "error");
     }
@@ -1391,29 +2227,48 @@
     const select = $("settings-instance");
     if (!select) return;
     select.replaceChildren();
+    if (!state.instances.length) {
+      select.append(new Option("还没有世界存档", ""));
+      return;
+    }
     for (const item of state.instances) {
       select.append(new Option(`${item.instance_id}${item.active ? "（当前）" : ""} · ${item.world_id || "?"}`, item.instance_id));
       if (item.active) select.value = item.instance_id;
     }
-    const entrySelect = $("entry-instance-select");
-    if (entrySelect && !entrySelect.options.length) {
-      for (const item of state.instances) entrySelect.append(new Option(`${item.instance_id}${item.active ? "（当前）" : ""}`, item.instance_id));
-    }
+  }
+
+  async function exchangeOperatorToken(raw) {
+    const token = String(raw || "").trim();
+    if (!token) throw new Error("请输入 Operator Token。");
+    const result = await write("/session", { role: "operator", operator_token: token });
+    if (result.status !== "ok" || !result.session_token) throw new Error(result.message || "解锁失败");
+    state.operatorToken = result.session_token;
+    try { sessionStorage.setItem(OPERATOR_KEY, state.operatorToken); } catch (error) { /* ignore */ }
+    return state.operatorToken;
   }
 
   async function unlockOperator() {
     const raw = String($("operator-token").value || "").trim();
-    if (!raw) return toast("请输入 Operator Token。", "error");
     try {
-      const result = await write("/session", { role: "operator", operator_token: raw });
-      if (result.status !== "ok" || !result.session_token) throw new Error(result.message || "解锁失败");
-      state.operatorToken = result.session_token;
-      try { sessionStorage.setItem(OPERATOR_KEY, state.operatorToken); } catch (error) { /* ignore */ }
+      await exchangeOperatorToken(raw);
       $("operator-token").value = "";
       toast("管理写入已解锁。", "ok");
       await loadRuntime();
     } catch (error) {
       toast(describeError(error, "解锁失败"), "error");
+    }
+  }
+
+  async function unlockOperatorFromEntry() {
+    const raw = String($("entry-operator-token")?.value || "").trim();
+    try {
+      await exchangeOperatorToken(raw);
+      if ($("entry-operator-token")) $("entry-operator-token").value = "";
+      toast("管理写入已解锁，可以切换或创建世界了。", "ok");
+      $("new-instance-error").textContent = "";
+      await loadEntryContext();
+    } catch (error) {
+      $("new-instance-error").textContent = describeError(error, "解锁失败");
     }
   }
 
@@ -1452,6 +2307,52 @@
 
   function closeSettings() {
     $("settings-drawer").classList.add("hidden");
+  }
+
+  /* ---------- World editor handoff ---------- */
+
+  function adminUrl(viewId = "") {
+    const params = new URLSearchParams();
+    if (viewId) params.set("view", viewId);
+    if (state.operatorToken) params.set("operator", state.operatorToken);
+    const query = params.toString();
+    return `/admin.html${query ? `#${query}` : ""}`;
+  }
+
+  function openAdmin(viewId = "") {
+    const win = window.open(adminUrl(viewId), "_blank");
+    if (win) {
+      try { win.opener = null; } catch (error) { /* cross-window hardening */ }
+    } else {
+      toast("浏览器阻止了弹出窗口；请允许本站打开新标签后重试。", "error");
+    }
+  }
+
+  function openEditor() {
+    const overlay = $("editor-overlay");
+    const frame = $("editor-frame");
+    if (!overlay || !frame) return;
+    overlay.classList.remove("hidden");
+    document.body.classList.add("editor-open");
+    frame.src = adminUrl("authoring-view");
+  }
+
+  async function closeEditor() {
+    $("editor-overlay").classList.add("hidden");
+    document.body.classList.remove("editor-open");
+    $("editor-frame").src = "about:blank";
+    try {
+      const instances = await request("/instances");
+      const activeDb = instances.active_db || "";
+      if (activeDb !== state.activeDb) {
+        window.location.reload();
+        return;
+      }
+      await loadEntryContext();
+      if (state.playerId) await loadView().catch(() => {});
+    } catch (error) {
+      /* closing the editor must never trap the player */
+    }
   }
 
   /* ---------- Action dialog ---------- */
@@ -1536,7 +2437,7 @@
         input.dataset.param = name;
         input.required = kind.includes("required");
         input.rows = 3;
-        if (name === "topic") input.value = "公社近况";
+        if (name === "topic") input.value = "近况";
         input.placeholder = description || "";
         label.append(input);
         fields.append(label);
@@ -1594,7 +2495,7 @@
     for (const body of document.querySelectorAll(".tab-body")) {
       body.classList.toggle("active", body.id === `tab-${tab}`);
     }
-    if (tab === "talk") loadDialogue();
+    if (tab === "talk") renderPeople();
     if (tab === "trade") loadTrades();
   }
 
@@ -1602,10 +2503,15 @@
 
   function wireUi() {
     $("hud-refresh").innerHTML = icon("refresh");
+    $("hud-worlds").innerHTML = icon("globe");
+    $("hud-editor").innerHTML = icon("pen");
     $("hud-settings").innerHTML = icon("settings");
     $("settings-close").innerHTML = "";
+    $("entry-worlds-refresh").innerHTML = icon("refresh");
 
     $("hud-refresh").addEventListener("click", () => refreshAll());
+    $("hud-worlds").addEventListener("click", () => openWorldHub());
+    $("hud-editor").addEventListener("click", () => openEditor());
     $("hud-settings").addEventListener("click", openSettings);
     $("settings-close").addEventListener("click", closeSettings);
     for (const scrim of document.querySelectorAll("[data-close-drawer]")) scrim.addEventListener("click", closeSettings);
@@ -1623,18 +2529,63 @@
     $("entry-name").addEventListener("keydown", (event) => {
       if (event.key === "Enter") submitEntry($("entry-submit"));
     });
+    $("entry-create-toggle").addEventListener("click", openCreatePanel);
+    $("entry-open-editor").addEventListener("click", openEditor);
+    $("new-instance-submit").addEventListener("click", (event) => createWorldInstance(event.currentTarget));
+    $("entry-worlds-refresh").addEventListener("click", () => loadEntryContext());
+    $("entry-operator-unlock").addEventListener("click", unlockOperatorFromEntry);
+    $("entry-return").addEventListener("click", returnToGame);
+    $("settings-open-worlds").addEventListener("click", () => {
+      closeSettings();
+      openWorldHub();
+    });
+    $("settings-open-editor").addEventListener("click", () => {
+      closeSettings();
+      openEditor();
+    });
+    $("settings-open-admin").addEventListener("click", () => openAdmin(""));
+    $("editor-close").addEventListener("click", () => closeEditor());
+    $("editor-external").addEventListener("click", () => openAdmin("authoring-view"));
 
     $("task-advance").addEventListener("click", (event) => {
       event.currentTarget.disabled = true;
       advanceTask("继续：").finally(() => renderTask());
     });
     $("task-wait").addEventListener("click", (event) => waitOneMinute(event.currentTarget));
-    $("player-leave").addEventListener("click", () => showEntry("已退出角色，可以输入另一个玩家 ID。"));
+    $("player-details").addEventListener("click", openPlayerSheet);
+    $("player-sheet-close").addEventListener("click", closePlayerSheet);
+    for (const scrim of document.querySelectorAll("[data-close-player]")) scrim.addEventListener("click", closePlayerSheet);
+    $("action-more").addEventListener("click", () => {
+      state.actionExpanded = !state.actionExpanded;
+      renderActions();
+      renderMobileActionBar();
+    });
+    $("mobile-primary").addEventListener("click", (event) => {
+      const action = $("mobile-action-bar")._action;
+      if (state.view?.active_task?.bt || state.view?.active_task?.action) {
+        advanceTask("继续：");
+      } else if (action) {
+        beginAction(action, event.currentTarget);
+      }
+    });
+    $("mobile-more").addEventListener("click", () => {
+      document.querySelector(".actions-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    $("player-leave").addEventListener("click", () => showEntry("已回到世界大厅。"));
 
     $("talk-form").addEventListener("submit", (event) => {
       event.preventDefault();
       sendDialogue(event.currentTarget);
     });
+    $("talk-target").addEventListener("change", () => {
+      const person = nearbyParticipants().find((item) => item.id === $("talk-target").value);
+      if (!person) return;
+      state.selectedCharacter = person;
+      updateCharacterSheet(person);
+      loadDialogue(person.id);
+    });
+    $("character-close").addEventListener("click", closeCharacter);
+    for (const scrim of document.querySelectorAll("[data-close-character]")) scrim.addEventListener("click", closeCharacter);
     $("trade-form").addEventListener("submit", (event) => {
       event.preventDefault();
       sendTrade(event.currentTarget);
@@ -1644,6 +2595,7 @@
       button.addEventListener("click", () => switchTab(button.dataset.tab));
     }
     $("open-map").addEventListener("click", openMap);
+    $("mini-map-expand").addEventListener("click", openMap);
     $("feed-more").addEventListener("click", () => {
       state.feedLimit += 28;
       renderFeed();
@@ -1662,7 +2614,24 @@
     $("runtime-step").addEventListener("click", () => runtimeCommand("/runtime/step", {}));
 
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && !$("settings-drawer").classList.contains("hidden")) closeSettings();
+      if (event.key !== "Escape") return;
+      if (!$("editor-overlay").classList.contains("hidden")) {
+        closeEditor();
+        return;
+      }
+      if (!$("player-drawer").classList.contains("hidden")) {
+        closePlayerSheet();
+        return;
+      }
+      if (!$("character-drawer").classList.contains("hidden")) {
+        closeCharacter();
+        return;
+      }
+      if (!$("settings-drawer").classList.contains("hidden")) closeSettings();
+    });
+    window.addEventListener("message", (event) => {
+      if (event.origin !== location.origin) return;
+      if (event.data?.type === "sim2:close-editor") closeEditor();
     });
   }
 
@@ -1670,16 +2639,18 @@
     if (state.booted) return;
     state.booted = true;
     try {
-      state.operatorToken = sessionStorage.getItem(OPERATOR_KEY) || null;
+      state.operatorToken = sessionStorage.getItem(OPERATOR_KEY) || sessionStorage.getItem("sim2_operator_token") || null;
     } catch (error) {
       state.operatorToken = null;
     }
     wireUi();
+    await unlockFromOwnerLink();
     await loadEntryContext();
     const restored = await restorePlayer();
     if (!restored) {
       $("entry-screen").classList.remove("hidden");
       $("game").classList.add("hidden");
+      if (!worldIsOpen()) openCreatePanel();
     }
     state.pollTimer = window.setInterval(() => {
       if (!state.playerId || document.hidden || state.advancing) return;
@@ -1690,7 +2661,7 @@
     window.setInterval(() => {
       if (!state.playerId || document.hidden || state.advancing) return;
       loadTrades();
-      loadDialogue();
+      if (!$("character-drawer").classList.contains("hidden")) loadDialogue();
     }, 30000);
   }
 

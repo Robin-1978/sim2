@@ -132,10 +132,20 @@ class WorldTickService(PlatformService):
             scope = effect.get("scope")
             definition = effect.get("effect", {}) or {}
             if scope == "world":
+                properties = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
+                condition = str(effect.get("condition") or "").strip()
+                if condition and not self.conditions.evaluate(
+                    condition,
+                    agent={},
+                    target={},
+                    world=properties,
+                    context=static_context_values,
+                ):
+                    continue
                 key = definition.get("world_property") or definition.get("property") or definition.get("need")
+                before = float(properties.get(key, 0) or 0) if key else 0.0
+                after = before
                 if key:
-                    properties = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
-                    before = float(properties.get(key, 0) or 0)
                     after = before + float(definition.get("delta", 0) or 0)
                     if definition.get("minimum") is not None:
                         after = max(float(definition["minimum"]), after)
@@ -143,6 +153,15 @@ class WorldTickService(PlatformService):
                         after = min(float(definition["maximum"]), after)
                     if abs(after - before) > 1e-12:
                         self.set_world_property(str(key), after)
+                event_type = str(effect.get("event_type") or "").strip()
+                if event_type:
+                    payload = dict(effect.get("event_data") or {})
+                    if effect.get("event_summary"):
+                        payload["summary"] = str(effect["event_summary"])
+                    if key:
+                        payload.update({"property": str(key), "before": before, "after": after})
+                    payload["rule_id"] = str(effect.get("id") or "")
+                    self._context.services["events"].append(event_type, None, minute, payload)
             elif scope == "relationship":
                 relation_delta = float(definition.get("relation_strength", definition.get("delta", 0)))
                 for relation in self.store.repositories.entities.list_relationships():

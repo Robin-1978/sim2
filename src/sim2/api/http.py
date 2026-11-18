@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from ..bootstrap.service import world_template_schema
+from .authoring import AuthoringService
+from .catalog import bundled_world_catalog, merge_catalog
 from .instances import InstanceRegistry
 from .runtime_supervisor import RuntimeSupervisor
 from .service import ControlService
@@ -19,6 +22,10 @@ from .web import web_asset
 
 
 _LOGGER = logging.getLogger("sim2.http")
+
+
+class NoActiveWorldError(RuntimeError):
+    """Raised when a world endpoint is called before any instance is open."""
 
 
 # Control calls that need an operator session: the path and what the server does with the request body.
@@ -227,7 +234,11 @@ class _Handler(BaseHTTPRequestHandler):
             if path == "/status":
                 return self._write(200, self.server.status_payload())
             if path == "/world":
+                if not self.server.has_world:
+                    return self._write(200, {"status": "no_world", "world_id": "", "instance_id": "", "instances": self.server.registry.list(active_db=None)})
                 return self._write(200, self.server.service_call("world_info"))
+            if path == "/worlds":
+                return self._write(200, self.server.world_catalog())
             if path == "/instances":
                 return self._write(200, self.server.instance_list())
             if path == "/runtime":
@@ -273,6 +284,8 @@ class _Handler(BaseHTTPRequestHandler):
                 ticks = str(query.get("ticks", ["0"])[0]).lower() in {"1", "true", "yes"}
                 return self._serve_stream(after, ticks)
             if path == "/player/entry":
+                if not self.server.has_world:
+                    return self._write(200, {"status": "no_world", "origins": [], "players": [], "can_create_player": False})
                 return self._write(200, self.server.service_call("player_entry"))
             if path == "/player/view":
                 query = parse_qs(urlparse(self.path).query)
@@ -312,10 +325,17 @@ class _Handler(BaseHTTPRequestHandler):
                     return None
                 return self._write(200, {"tasks": self.server.service_call("evolution_tasks")})
             if path == "/authoring/schema":
+                if not self.server.has_world:
+                    return self._write(200, {"status": "ok", "schema": world_template_schema()})
                 return self._write(200, self.server.service_call("authoring_schema"))
             if path == "/authoring/catalog":
+                if not self.server.has_world:
+                    catalog = self.server.world_catalog()
+                    return self._write(200, {"status": "ok", "packages": catalog["worlds"]})
                 return self._write(200, self.server.service_call("authoring_catalog"))
             return self._write(404, {"status": "not_found"})
+        except NoActiveWorldError as exc:
+            return self._write(409, {"status": "no_world", "failed_check": "no_world", "message": str(exc)})
         except PermissionError as exc:
             return self._forbidden(str(exc))
         except Exception as exc:
@@ -331,6 +351,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._route_post(path, body)
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return self._write(400, {"status": "bad_request", "message": str(exc)})
+        except NoActiveWorldError as exc:
+            return self._write(409, {"status": "no_world", "failed_check": "no_world", "message": str(exc)})
         except PermissionError as exc:
             return self._forbidden(str(exc))
         except Exception as exc:
@@ -365,6 +387,11 @@ class _Handler(BaseHTTPRequestHandler):
 
         if path == "/session":
             return self._post_session(body)
+        # A fresh install has no world to protect yet.  The launcher may create
+        # its first instance without an operator token; every later instance
+        # operation keeps the normal local operator boundary.
+        if path == "/instances/init" and not self.server.has_world:
+            return self._write(200, self.server.init_instance(body))
         operator_call = _OPERATOR_POSTS.get(path)
         if (operator_call is not None or path.startswith("/authoring/")) and not self._require("operator"):
             return None
@@ -523,35 +550,55 @@ class ControlHTTPServer(ThreadingHTTPServer):
     def __init__(
         self,
         address: tuple[str, int],
-        db_path: Path,
+        db_path: Path | None,
         *,
         authoring_root: Path | None = None,
         operator_token: str | None = None,
         runtime_provider_factory: Any | None = None,
+        runtime_root: Path | None = None,
     ):
-        resolved_db = Path(db_path).expanduser().resolve()
+        resolved_db = Path(db_path).expanduser().resolve() if db_path is not None else None
         self._control_lock = RLock()
         self._sessions_lock = RLock()
-        self.control = ControlService(resolved_db, authoring_root=authoring_root)
+        self.control = (
+            ControlService(resolved_db, authoring_root=authoring_root)
+            if resolved_db is not None
+            else None
+        )
+        if resolved_db is not None:
+            container = resolved_db.parent.parent
+            inferred_root = container.parent if container.name == "instances" else container
+        else:
+            inferred_root = Path(runtime_root or (Path.home() / ".sim2")).expanduser().resolve()
+        self.runtime_root = Path(runtime_root).expanduser().resolve() if runtime_root is not None else inferred_root
         self.authoring_root = (
             Path(authoring_root).resolve()
             if authoring_root is not None
-            else self.control.authoring.authoring_root
+            else (self.control.authoring.authoring_root if self.control is not None else None)
         )
         self.database_path = resolved_db
-        container = resolved_db.parent.parent
-        self.runtime_root = container.parent if container.name == "instances" else container
         self.runtime_provider_factory = runtime_provider_factory
         self.registry = InstanceRegistry(self.runtime_root, active_db=resolved_db)
-        self.registry.mark_active(resolved_db)
-        self.instance_id = str(self.registry.describe(resolved_db)["instance_id"])
-        self.runtime = RuntimeSupervisor(self.control, provider_factory=self.runtime_provider_factory)
+        if resolved_db is not None:
+            self.registry.mark_active(resolved_db)
+            self.instance_id = str(self.registry.describe(resolved_db)["instance_id"])
+        else:
+            self.instance_id = ""
+        self.runtime = (
+            RuntimeSupervisor(self.control, provider_factory=self.runtime_provider_factory)
+            if self.control is not None
+            else None
+        )
         self.operator_token = str(operator_token or os.environ.get("SIM2_OPERATOR_TOKEN") or secrets.token_urlsafe(32))
         self._sessions: dict[str, dict[str, str]] = {}
         self._idem_lock = RLock()
         self._idem_store: dict[tuple[str, str], dict[str, Any]] = {}
         self._closed = False
         super().__init__(address, _Handler)
+
+    @property
+    def has_world(self) -> bool:
+        return self.control is not None and self.database_path is not None
 
     def authorize_session(
         self,
@@ -594,6 +641,8 @@ class ControlHTTPServer(ThreadingHTTPServer):
         """
 
         with self._control_lock:
+            if self.control is None:
+                raise NoActiveWorldError("no world instance is open; create or activate one first")
             if authorize_role is not None:
                 allowed, message = self.authorize_session(
                     str(authorize_token or ""),
@@ -608,6 +657,13 @@ class ControlHTTPServer(ThreadingHTTPServer):
 
     def status_payload(self) -> dict[str, Any]:
         with self._control_lock:
+            if self.control is None or self.database_path is None:
+                return {
+                    "status": "no_world",
+                    "runtime": self.runtime_status(),
+                    "instance": None,
+                    "instances": self.registry.list(active_db=None),
+                }
             payload = self.control.status()
             payload["runtime"] = self.runtime.status()
             payload["instance"] = self.registry.describe(self.database_path)
@@ -615,20 +671,71 @@ class ControlHTTPServer(ThreadingHTTPServer):
 
     def runtime_status(self) -> dict[str, Any]:
         with self._control_lock:
+            if self.runtime is None or self.database_path is None:
+                return {
+                    "status": "no_world",
+                    "state": "no_world",
+                    "running": False,
+                    "thread_alive": False,
+                    "run_id": None,
+                    "provider": None,
+                    "world_minute": 0,
+                    "world_runtime_status": "no_world",
+                    "llm_calls": 0,
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "last_error": "",
+                    "stop_reason": "",
+                    "available_providers": RuntimeSupervisor.available_providers_for_config(),
+                    "llm_configured": RuntimeSupervisor.llm_configured(),
+                    "history": [],
+                    "instance": None,
+                }
             payload = self.runtime.status()
             payload["instance"] = self.registry.describe(self.database_path)
             return payload
+
+    def world_catalog(self) -> dict[str, Any]:
+        bundled = bundled_world_catalog()
+        authored: list[dict[str, Any]] = []
+        with self._control_lock:
+            if self.control is not None:
+                try:
+                    authored = list(self.control.authoring.list_packages().get("packages") or [])
+                except (OSError, ValueError, TypeError):
+                    authored = []
+            elif self.authoring_root is not None:
+                try:
+                    authored = list(
+                        AuthoringService(self.authoring_root, runtime_root=self.runtime_root)
+                        .list_packages()
+                        .get("packages")
+                        or []
+                    )
+                except (OSError, ValueError, TypeError):
+                    authored = []
+        for item in authored:
+            item.setdefault("source", "authored")
+        return {
+            "status": "ok",
+            "worlds": merge_catalog(bundled, authored),
+            "bundled": bundled,
+            "authored": authored,
+        }
 
     def instance_list(self) -> dict[str, Any]:
         with self._control_lock:
             return {
                 "status": "ok",
-                "active_db": str(self.database_path),
+                "active_db": str(self.database_path) if self.database_path is not None else "",
+                "instance_id": self.instance_id,
                 "instances": self.registry.list(active_db=self.database_path),
             }
 
     def create_instance(self, body: dict[str, Any]) -> dict[str, Any]:
         with self._control_lock:
+            if self.control is None:
+                raise NoActiveWorldError("no world instance is open; create one from the launcher")
             result = self.control.authoring_create(body)
             if result.get("status") == "passed":
                 result["instances"] = self.registry.list(active_db=self.database_path)
@@ -636,6 +743,8 @@ class ControlHTTPServer(ThreadingHTTPServer):
 
     def enter_player(self, body: dict[str, Any]) -> dict[str, Any]:
         with self._control_lock:
+            if self.control is None:
+                raise NoActiveWorldError("no world instance is open")
             player_id = str(body["player_id"])
             result = self.control.enter_player(
                 player_id,
@@ -660,12 +769,16 @@ class ControlHTTPServer(ThreadingHTTPServer):
                 return {"status": "rejected", "message": str(exc), "failed_check": "instance"}
             if target == self.database_path:
                 return {"status": "accepted", "already_active": True, "runtime": self.runtime_status()}
-            self.runtime.close()
             previous = self.control
+            if self.runtime is not None:
+                self.runtime.close()
             try:
                 replacement = ControlService(target, authoring_root=self.authoring_root)
             except Exception as exc:
-                self.runtime = RuntimeSupervisor(previous, provider_factory=self.runtime_provider_factory)
+                if previous is not None:
+                    self.runtime = RuntimeSupervisor(previous, provider_factory=self.runtime_provider_factory)
+                else:
+                    self.runtime = None
                 return {"status": "rejected", "message": f"cannot open instance: {exc}", "failed_check": "instance"}
             self.control = replacement
             self.database_path = target
@@ -673,16 +786,22 @@ class ControlHTTPServer(ThreadingHTTPServer):
             self.registry.mark_active(target)
             self.instance_id = str(self.registry.describe(target)["instance_id"])
             self.runtime = RuntimeSupervisor(replacement, provider_factory=self.runtime_provider_factory)
-            previous.close()
+            if previous is not None:
+                previous.close()
             return {
                 "status": "accepted",
                 "instance": self.registry.describe(target),
                 "runtime": self.runtime.status(),
             }
 
+    def _runtime_or_error(self) -> RuntimeSupervisor:
+        if self.runtime is None:
+            raise NoActiveWorldError("no world instance is open")
+        return self.runtime
+
     def start_runtime(self, body: dict[str, Any]) -> dict[str, Any]:
         with self._control_lock:
-            return self.runtime.start(
+            return self._runtime_or_error().start(
                 provider=body.get("provider") or None,
                 max_world_minutes=body.get("max_world_minutes", 1440),
                 max_llm_calls=body.get("max_llm_calls", 120),
@@ -690,24 +809,25 @@ class ControlHTTPServer(ThreadingHTTPServer):
 
     def pause_runtime(self, reason: str = "web") -> dict[str, Any]:
         with self._control_lock:
-            return self.runtime.pause(reason)
+            return self._runtime_or_error().pause(reason)
 
     def resume_runtime(self, reason: str = "web") -> dict[str, Any]:
         with self._control_lock:
-            return self.runtime.resume(reason)
+            return self._runtime_or_error().resume(reason)
 
     def stop_runtime(self, reason: str = "web-stop") -> dict[str, Any]:
         with self._control_lock:
-            return self.runtime.stop(reason)
+            return self._runtime_or_error().stop(reason)
 
     def step_runtime(self) -> dict[str, Any]:
         with self._control_lock:
-            result = self.runtime.step()
-            return {**result, "runtime": self.runtime.status()}
+            runtime = self._runtime_or_error()
+            result = runtime.step()
+            return {**result, "runtime": runtime.status()}
 
     def _resolve_agent_id_locked(self, value: str | None) -> str:
         raw = str(value or "").strip()
-        if not raw:
+        if not raw or self.control is None:
             return ""
         try:
             canonical = self.control.platform.targets.canonical_id(raw)
@@ -733,6 +853,7 @@ class ControlHTTPServer(ThreadingHTTPServer):
 
     def player_wait(self, player_id: str, *, minutes: int = 1, provider_name: str | None = None, authorize_token: str | None = None) -> dict[str, Any]:
         with self._control_lock:
+            runtime = self._runtime_or_error()
             resolved = self._resolve_agent_id_locked(player_id)
             allowed, message = self.authorize_session(
                 str(authorize_token or ""),
@@ -741,24 +862,27 @@ class ControlHTTPServer(ThreadingHTTPServer):
             )
             if not allowed:
                 raise PermissionError(message)
-            if self.runtime.running:
+            if runtime.running:
                 return {
                     "status": "rejected",
                     "failed_check": "runtime_running",
                     "message": "The autonomous world is already advancing; pause or stop it before using manual wait.",
                 }
-            return self.runtime.advance_manual(minutes, provider_name=provider_name, reason="web-player-wait")
+            return runtime.advance_manual(minutes, provider_name=provider_name, reason="web-player-wait")
 
     def resolve_dialogue_reply(self, player_id: str, *, provider_name: str | None = None, token: str | None = None) -> dict[str, Any]:
         with self._control_lock:
+            runtime = self._runtime_or_error()
             resolved = self._resolve_agent_id_locked(player_id)
             allowed, message = self.authorize_session(str(token or ""), "player", player_id=resolved)
             if not allowed:
                 raise PermissionError(message)
-            return self.runtime.resolve_pending_interactions(provider_name)
+            return runtime.resolve_pending_interactions(provider_name)
 
     def trade_offers(self, agent_id: str, *, include_closed: bool = False, token: str | None = None) -> dict[str, Any]:
         with self._control_lock:
+            if self.control is None:
+                raise NoActiveWorldError("no world instance is open")
             viewer = self._resolve_agent_id_locked(agent_id)
             if not viewer:
                 return {"status": "rejected", "message": "agent_id is required", "failed_check": "agent_id"}
@@ -772,6 +896,8 @@ class ControlHTTPServer(ThreadingHTTPServer):
 
     def decide(self, body: dict[str, Any]) -> dict[str, Any]:
         with self._control_lock:
+            if self.control is None:
+                raise NoActiveWorldError("no world instance is open")
             agent_id = self._resolve_agent_id_locked(str(body.get("agent_id") or "").strip()) or str(body.get("agent_id") or "").strip()
             role = str(body.get("role") or "agent_decision").strip() or "agent_decision"
             if not agent_id:
@@ -786,7 +912,10 @@ class ControlHTTPServer(ThreadingHTTPServer):
 
     def simulate(self, body: dict[str, Any]) -> dict[str, Any]:
         with self._control_lock:
-            if self.runtime.running:
+            runtime = self._runtime_or_error()
+            if self.control is None:
+                raise NoActiveWorldError("no world instance is open")
+            if runtime.running:
                 return {"status": "rejected", "message": "Pause or stop the autonomous runner before using simulate.", "failed_check": "runtime_running"}
             providers = None
             provider_name = body.get("provider") or None
@@ -803,34 +932,61 @@ class ControlHTTPServer(ThreadingHTTPServer):
                 providers=providers,
             )
 
+    def _create_package_instance(self, package_id: str, instance_id: str) -> dict[str, Any]:
+        """Create one instance from a catalog package, bundled or authored."""
+
+        if self.control is not None:
+            result = self.control.authoring_create({"package_id": package_id, "instance_id": instance_id})
+            unknown = result.get("status") == "rejected" and "unknown world package" in " ".join(result.get("errors") or [])
+            if not unknown:
+                return result
+        elif self.authoring_root is not None:
+            result = AuthoringService(self.authoring_root, runtime_root=self.runtime_root).create_instance(
+                package_id,
+                instance_id,
+            )
+            unknown = result.get("status") == "rejected" and "unknown world package" in " ".join(result.get("errors") or [])
+            if not unknown:
+                return result
+        # Bundled packages are importable even when no authoring root is set.
+        try:
+            from worlds import world_path
+            from ..bootstrap.service import create_instance as bootstrap_create_instance
+
+            config_dir = world_path(package_id)
+        except Exception as exc:
+            return {
+                "status": "rejected",
+                "message": f"unknown world package: {package_id}: {exc}",
+                "failed_check": "package_id",
+            }
+        try:
+            db_path = bootstrap_create_instance(config_dir, instance_id, self.runtime_root)
+        except (FileExistsError, ValueError, OSError) as exc:
+            return {"status": "rejected", "message": str(exc), "failed_check": "instance"}
+        return {
+            "status": "passed",
+            "package_id": package_id,
+            "instance_id": instance_id,
+            "runtime_root": str(self.runtime_root),
+            "db_path": str(db_path),
+        }
+
     def init_instance(self, body: dict[str, Any]) -> dict[str, Any]:
         with self._control_lock:
             package_id = str(body.get("package_id") or body.get("world") or "").strip()
             instance_id = str(body.get("instance_id") or "").strip()
             if not package_id or not instance_id:
                 return {"status": "rejected", "message": "package_id and instance_id are required", "failed_check": "instance"}
-            result = self.control.authoring_create({"package_id": package_id, "instance_id": instance_id})
+            result = self._create_package_instance(package_id, instance_id)
             if result.get("status") == "passed":
                 result["instances"] = self.registry.list(active_db=self.database_path)
-                if body.get("activate"):
+                if body.get("activate") or self.control is None:
                     activation = self.activate_instance({"instance_id": instance_id})
                     result["activation"] = activation
-            elif result.get("status") == "rejected" and "unknown world package" in " ".join(result.get("errors") or []):
-                # CLI `init --world` fallback for bundled worlds not under the authoring root.
-                try:
-                    from worlds import world_path
-
-                    config_dir = world_path(package_id)
-                except Exception as exc:
-                    return {"status": "rejected", "message": f"unknown world package: {package_id}: {exc}", "failed_check": "package_id"}
-                try:
-                    from ..bootstrap.service import create_instance as bootstrap_create_instance
-
-                    db_path = bootstrap_create_instance(config_dir, instance_id, self.runtime_root)
-                except (FileExistsError, ValueError, OSError) as exc:
-                    return {"status": "rejected", "message": str(exc), "failed_check": "instance"}
-                result = {"status": "passed", "package_id": package_id, "instance_id": instance_id, "db_path": str(db_path)}
-                result["instances"] = self.registry.list(active_db=self.database_path)
+                    if activation.get("status") == "accepted":
+                        result["active"] = True
+                        result["instances"] = self.registry.list(active_db=self.database_path)
             return result
 
     def snapshots_root(self) -> Path:
@@ -860,6 +1016,8 @@ class ControlHTTPServer(ThreadingHTTPServer):
         with self._control_lock:
             import time
 
+            if self.control is None:
+                raise NoActiveWorldError("no world instance is open")
             label = str(body.get("label") or "manual").strip().replace("/", "-").replace("\\", "-") or "manual"
             minute = int(self.control.status().get("world_minute", 0))
             filename = f"{self.instance_id}_m{minute}_{label}_{int(time.time())}.sqlite3"
@@ -891,6 +1049,8 @@ class ControlHTTPServer(ThreadingHTTPServer):
 
     def snapshot_restore(self, body: dict[str, Any]) -> dict[str, Any]:
         with self._control_lock:
+            if self.control is None or self.runtime is None:
+                raise NoActiveWorldError("no world instance is open")
             snapshot_id = str(body.get("snapshot_id") or body.get("path") or "").strip()
             if not snapshot_id:
                 return {"status": "rejected", "message": "snapshot_id is required", "failed_check": "snapshot"}
@@ -961,9 +1121,11 @@ class ControlHTTPServer(ThreadingHTTPServer):
                 return
             self._closed = True
             try:
-                self.runtime.close()
+                if self.runtime is not None:
+                    self.runtime.close()
             finally:
-                self.control.close()
+                if self.control is not None:
+                    self.control.close()
 
 
 def serve(
@@ -977,11 +1139,17 @@ def serve(
 ) -> ControlHTTPServer:
     root = Path(runtime_root or (Path.home() / ".sim2")).expanduser().resolve()
     registry = InstanceRegistry(root)
-    resolved = db_path or registry.resolve(instance_id=instance_id)
+    try:
+        resolved: Path | None = db_path or registry.resolve(instance_id=instance_id)
+    except FileNotFoundError:
+        # Starting with no world is a supported launcher state; the browser
+        # creates the first instance from a bundled template.
+        resolved = None
     server = ControlHTTPServer(
         (host, port),
-        Path(resolved),
+        resolved,
         authoring_root=authoring_root,
+        runtime_root=root,
     )
     try:
         server.serve_forever()

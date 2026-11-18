@@ -238,17 +238,24 @@ class RuntimeApiService(PlatformService):
             if isinstance(item, dict) and item.get("id"):
                 needs.setdefault(str(item["id"]), float(item.get("target", 100)))
         state_defaults["reputation"] = template["initial_reputation"]
+        origin_id = str((origin or {}).get("id") or origin_id or "")
+        base_knowledge = list(template.get("knowledge_seed") or [])
+        knowledge_seed = base_knowledge + [
+            str(item) for item in ((origin or {}).get("knowledge_seed") or [])
+            if str(item) not in base_knowledge
+        ]
         agent = {
             "id": player_id,
             "name": name or player_id,
             "role": "player",
             "controller": template["controller"],
+            "origin_id": origin_id,
             "faction_ids": list(template["initial_faction_ids"]),
             "traits": dict(origin.get("traits") or {}),
             "ultimate_goal": origin.get("starting_goal") or "Find a meaningful place in this world.",
             "beliefs": [],
             "needs": needs,
-            "knowledge_seed": list(template.get("knowledge_seed") or []),
+            "knowledge_seed": knowledge_seed,
             "initial_bt_ids": list(template.get("initial_bt_ids") or []),
             "capabilities": self._player_capabilities(template, origin),
             "initial_state": state_defaults,
@@ -260,6 +267,19 @@ class RuntimeApiService(PlatformService):
             for fact in agent["knowledge_seed"]:
                 self.store.repositories.memory.put_knowledge_fact(player_id, str(fact), {"fact": str(fact), "source_type": "player_template", "confidence": 1.0})
             self._context.services["events"].append("player.entered", player_id, minute, {"origin_id": origin_id, "location_id": location_id})
+            opening = dict((origin or {}).get("opening") or {})
+            if opening.get("summary"):
+                self._context.services["events"].append(
+                    str(opening.get("event_type") or "origin.opening"),
+                    player_id,
+                    minute,
+                    {
+                        "origin_id": origin_id,
+                        "origin_name": str((origin or {}).get("name") or origin_id),
+                        "location_id": location_id,
+                        "summary": str(opening["summary"]),
+                    },
+                )
         return {"status": "accepted", "player_id": player_id, "origin_id": origin_id, "location_id": location_id, "resumed": False}
 
     @staticmethod

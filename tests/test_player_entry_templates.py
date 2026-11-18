@@ -44,6 +44,31 @@ def test_player_template_uses_one_canonical_shape():
         parse_player_template({"entry_location_id": "lantern_square", "origins": [{"id": "traveler"}], "inventory": {"food_ration": -1}})
 
 
+def test_player_template_keeps_origin_openings_and_knowledge():
+    template = parse_player_template({
+        "entry_location_id": "lantern_square",
+        "origins": [{
+            "id": "traveler",
+            "knowledge_seed": ["The caravan left before the storm."],
+            "opening": {
+                "event_type": "origin.traveler",
+                "summary": "You arrive with the caravan's last waybill.",
+            },
+        }],
+    })
+    origin = template["origins"][0]
+    assert origin["knowledge_seed"] == ["The caravan left before the storm."]
+    assert origin["opening"] == {
+        "event_type": "origin.traveler",
+        "summary": "You arrive with the caravan's last waybill.",
+    }
+    with pytest.raises(PlayerTemplateError, match="opening.summary is required"):
+        parse_player_template({
+            "entry_location_id": "lantern_square",
+            "origins": [{"id": "traveler", "opening": {"event_type": "origin.traveler"}}],
+        })
+
+
 def test_tidebound_canonical_origins_can_enter_the_world(tmp_path: Path):
     db_path = create_instance(WORLDS / "tidebound_commons", "tidebound-player-entry", tmp_path / "runtime")
     platform = Platform(db_path)
@@ -213,6 +238,8 @@ def test_player_entry_projection_lists_canonical_origins(tmp_path: Path):
             "ferry_runner",
         ]
         assert all(origin["goal"] for origin in entry["origins"])
+        assert all(origin["first_task"] for origin in entry["origins"])
+        assert len({origin["first_task"] for origin in entry["origins"]}) == 4
         assert [origin["name"] for origin in entry["origins"]] == [
             "潮务学徒",
             "沼泽采集者",

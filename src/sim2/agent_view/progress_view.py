@@ -154,6 +154,8 @@ class ProgressViewMixin:
         if not isinstance(definitions, list):
             return []
         agent_name = str(agent.get("name") or agent.get("id") or "")
+        origin_id = str(agent.get("origin_id") or "")
+        world_properties = self.store.repositories.metadata.get("world_properties", {}) or {}
         available_ids = {
             str(item.get("ref") or "").removeprefix("behavior:")
             for item in available
@@ -181,6 +183,7 @@ class ProgressViewMixin:
                 event_type=event_type,
                 match=match,
                 distinct_by=distinct_by,
+                actor_id=str(agent.get("id") or "") if contract.get("self_only") else "",
             )
             return {
                 "completed": current >= required,
@@ -197,12 +200,26 @@ class ProgressViewMixin:
             player_audience = "player" in audience and str(agent.get("role") or "") == "player"
             if audience and not player_audience and agent_name not in audience and str(agent.get("id")) not in audience:
                 continue
+            goal_origins = {str(value) for value in (raw.get("origins") or [])}
+            if goal_origins and origin_id not in goal_origins:
+                continue
+            visible_when = str(raw.get("visible_when") or "").strip()
+            if visible_when and not self.conditions.evaluate(
+                visible_when,
+                agent=agent,
+                target={},
+                world=world_properties,
+                context={},
+            ):
+                continue
             target_ids = [str(value) for value in (raw.get("target_behaviors") or [])]
             support_ids = [str(value) for value in (raw.get("support_behaviors") or [])]
             target_choices = [visible_behavior(value) for value in target_ids]
             support_choices = [visible_behavior(value) for value in support_ids if value in available_ids]
             event_progress = completion(raw.get("complete_when"))
             ready_targets = [visible_behavior(value) for value in target_ids if value in available_ids]
+            ready_refs = [f"behavior:{value}" for value in target_ids if value in available_ids]
+            support_refs = [f"behavior:{value}" for value in support_ids if value in available_ids]
             blockers: list[str] = []
             for behavior_id in target_ids + support_ids:
                 if behavior_id in available_ids:
@@ -226,10 +243,15 @@ class ProgressViewMixin:
                 "status": status,
                 "target_behaviors": target_choices,
                 "ready_behaviors": ready_targets,
+                "ready_behavior_refs": ready_refs,
                 "support_behaviors": support_choices,
+                "support_behavior_refs": support_refs,
                 "missing_requirements": list(dict.fromkeys(blockers))[:6],
-                "progress": {key: event_progress[key] for key in ("current", "required")},
+                "progress": (
+                    {key: event_progress[key] for key in ("current", "required")}
+                    if raw.get("complete_when") else {"current": 0, "required": 0}
+                ),
             }
             goals.append(goal)
         goals.sort(key=lambda item: (-float(item.get("priority", 0)), str(item.get("label", ""))))
-        return goals[:5]
+        return goals[:8]

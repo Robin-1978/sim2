@@ -29,6 +29,9 @@ initial_bt_ids:
   - communicate
   - eat_ration
   - drink_water
+  - ration_today
+  - repair_priority_today
+  - marsh_rest_today
 knowledge_seed: []
 origins:
   - id: steward
@@ -44,6 +47,11 @@ origins:
     inventory:
       food_ration: 1
       repair_kit: 1
+    knowledge_seed:
+      - 玛拉说过：潮门每次只修一处，先量再修，别把工具包浪费在看不到的裂缝上。
+    opening:
+      event_type: origin.steward
+      summary: 你以潮务学徒的身份加入公社。玛拉把维护账本推到你面前：先测量潮门，再决定今天的材料用在哪儿。
   - id: forager
     name: 沼泽采集者
     description: 熟悉潮沟与贝滩，知道哪一片浅滩还能再采一次。
@@ -57,6 +65,11 @@ origins:
     inventory:
       shellfish: 2
       fresh_water: 1
+    knowledge_seed:
+      - 老采集者叮嘱：贝滩每采一轮要留一半，潮沟恢复得比人想的慢。
+    opening:
+      event_type: origin.forager
+      summary: 你以沼泽采集者的身份加入公社。潮沟里的贝滩还能再撑一轮，第一件事是先看清哪片浅滩不该再动。
   - id: chart_keeper
     name: 海图学徒
     description: 替塞琳整理观测记录，相信一条路线必须能被别人重复走通。
@@ -70,6 +83,11 @@ origins:
     inventory:
       food_ration: 1
       marsh_reed: 1
+    knowledge_seed:
+      - 塞琳说过：一条海图路线必须能被别人重复走通，否则只是传闻。
+    opening:
+      event_type: origin.chart_keeper
+      summary: 你以海图学徒的身份加入公社。塞琳把半张沉没海图交给你：先验证第一个研究阶段，别急着画完整条航线。
   - id: ferry_runner
     name: 渡船信使
     description: 在码头与闸室之间送信，认识公社里几乎每一个人。
@@ -83,3 +101,8 @@ origins:
     inventory:
       fresh_water: 1
       food_ration: 1
+    knowledge_seed:
+      - 码头的老规矩：消息先送到闸室，再送到住户手里，不能停在半路。
+    opening:
+      event_type: origin.ferry_runner
+      summary: 你以渡船信使的身份加入公社。第一件事是找一位居民交换消息，把风暴倒计时带到每一个住户手里。

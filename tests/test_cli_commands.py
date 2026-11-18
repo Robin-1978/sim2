@@ -21,7 +21,7 @@ from sim2.api import cli
 
 COMMANDS = (
     "init", "validate-world", "describe-world", "world-schema", "build-world", "decide", "mud", "tui",
-    "simulate", "serve", "status", "health", "timeline", "map", "pause", "resume", "step", "metrics",
+    "simulate", "serve", "play", "status", "health", "timeline", "map", "pause", "resume", "step", "metrics",
     "audit", "snapshot", "restore", "enter-player", "sync-player-template", "inject",
 )
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
@@ -110,7 +110,8 @@ def env(monkeypatch):
     class FakeServer:
         def __init__(self, address, db_path, **kwargs):
             log.append(("ControlHTTPServer", address, db_path, kwargs))
-            self.database_path = Path(db_path)
+            self.database_path = Path(db_path) if db_path is not None else None
+            self.has_world = db_path is not None
             self.operator_token = kwargs.get("operator_token") or "generated-token"
 
         def serve_forever(self):
@@ -127,6 +128,8 @@ def env(monkeypatch):
 
         def resolve(self, *, instance_id=None, db_path=None):
             log.append(("registry.resolve", instance_id))
+            if instance_id == "missing":
+                raise FileNotFoundError("no world instances found")
             return Path("/runtime/resolved.sqlite")
 
     class FakeBuilder:
@@ -658,7 +661,7 @@ def test_serve_listens_on_the_defaults_and_closes_afterwards(env, monkeypatch, c
         ("close_after_serve_forever",),
     ]
     assert result.out == compact({
-        "status": "listening", "url": "http://127.0.0.1:8080", "db": "/db", "operator_token": "generated-token",
+        "status": "listening", "url": "http://127.0.0.1:8080", "db": "/db", "launcher": False, "operator_token": "generated-token",
     })
 
 
@@ -671,7 +674,7 @@ def test_serve_passes_every_option_on(env, monkeypatch, capsys):
     assert env.log[1] == (
         "ControlHTTPServer", ("0.0.0.0", 9000), Path("/db"), {"authoring_root": Path("/authoring"), "operator_token": "tok"}
     )
-    assert json.loads(result.out) == {"status": "listening", "url": "http://0.0.0.0:9000", "db": "/db", "operator_token": "tok"}
+    assert json.loads(result.out) == {"status": "listening", "url": "http://0.0.0.0:9000", "db": "/db", "launcher": False, "operator_token": "tok"}
 
 
 @pytest.mark.parametrize("name, level", [("info", logging.INFO), ("warning", logging.WARNING), ("error", logging.ERROR)])
@@ -685,6 +688,15 @@ def test_serve_resolves_the_database_from_the_instance_registry(env, monkeypatch
     assert env.log[:2] == [("InstanceRegistry", Path("/rt")), ("registry.resolve", "inst")]
     assert env.log[3][2] == Path("/runtime/resolved.sqlite")
     assert json.loads(result.out)["db"] == "/runtime/resolved.sqlite"
+
+
+def test_serve_without_any_instances_starts_the_launcher(env, monkeypatch, capsys):
+    result = run_cli(monkeypatch, capsys, "serve", "--instance-id", "missing")
+    assert env.log[1] == ("registry.resolve", "missing")
+    server = next(entry for entry in env.log if entry[0] == "ControlHTTPServer")
+    assert server[2] is None
+    assert json.loads(result.out)["launcher"] is True
+    assert json.loads(result.out)["db"] is None
 
 
 def test_serve_without_a_database_uses_the_default_runtime_root(env, monkeypatch, capsys):

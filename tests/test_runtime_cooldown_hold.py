@@ -90,13 +90,13 @@ def _scripted_runner(script: list[str]):
     class Scripted:
         calls = 0
 
-        def __init__(self, platform, providers) -> None:
+        def __init__(self, platform, providers, **kwargs) -> None:
             self.platform = platform
 
         def provider_cooldown_seconds(self) -> float:
             return 0.0
 
-        def run(self, minutes, *, require_running=True):
+        def run(self, minutes, *, require_running=True, **kwargs):
             type(self).calls += 1
             kind = script.pop(0)
             start = int(self.platform.status()["world_minute"])
@@ -212,8 +212,8 @@ def test_a_hold_goes_back_to_the_call_budget_check(opened, monkeypatch):
     script = ["stall", "ok"]
 
     class Spending(_scripted_runner(script)):
-        def run(self, minutes, *, require_running=True):
-            report = super().run(minutes, require_running=require_running)
+        def run(self, minutes, *, require_running=True, **kwargs):
+            report = super().run(minutes, require_running=require_running, **kwargs)
             self.platform.store.repositories.llm.append_llm_call(
                 "someone", "agent_decision", "decision", 1, "hash", {"error": "provider down"}, "llm_error"
             )

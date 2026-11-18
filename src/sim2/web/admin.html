@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="sim2 adaptive world runtime and authoring workbench">
   <title>sim2 · 运营台</title>
-  <link rel="stylesheet" href="/admin.css?v=1">
+  <link rel="stylesheet" href="/admin.css?v=14">
 </head>
 <body>
   <a class="skip-link" href="#main">跳到主要内容</a>
@@ -24,6 +24,7 @@
       <div class="top-status">
         <select id="instance-select" class="compact-select" aria-label="当前世界实例"><option value="">载入实例…</option></select>
         <span id="runtime-state" class="runtime-state stopped">已停止</span>
+        <button id="back-to-game" class="text-button" type="button" title="返回主游戏">返回游戏</button>
         <button id="operator-unlock" class="text-button operator-unlock">解锁管理</button>
         <span id="connection-dot" class="status-dot offline"></span>
         <span id="connection-label">正在连接</span>
@@ -152,69 +153,131 @@
       </section>
 
       <section id="authoring-view" class="view" aria-labelledby="authoring-title">
-        <div class="view-heading">
+        <div class="view-heading authoring-heading">
           <div>
-            <p class="eyebrow">WORLD AUTHORING WORKBENCH</p>
+            <p class="eyebrow">WORLD AUTHORING</p>
             <h1 id="authoring-title">设计一个世界</h1>
-            <p class="muted">Schema 驱动的草稿、编译、smoke 和导出。草稿不会触碰运行中的 SQLite。</p>
+            <p class="muted">先写名字和一句话，再放地点、人物和行动。右侧随时检查它能不能玩。</p>
           </div>
-          <div class="draft-state"><span id="draft-dot" class="status-dot"></span><span id="draft-status">新建草稿</span></div>
+          <div class="draft-state">
+            <span id="draft-dot" class="status-dot"></span>
+            <span id="draft-status">新建草稿</span>
+            <span id="draft-revision" class="revision-chip">revision 1</span>
+          </div>
         </div>
+
         <div class="authoring-grid">
-          <aside class="panel schema-panel">
-            <div class="panel-heading"><div><span class="panel-kicker">SCHEMA</span><h2>世界结构</h2></div></div>
-            <div id="schema-list" class="schema-list"><div class="empty-state">加载 Schema…</div></div>
-            <div class="builder-box">
-              <span class="panel-kicker">WORLD BUILDER</span>
-              <p>用一句话让已配置的 WorldBuilder Agent 起草模板。点击才会调用模型。</p>
-              <textarea id="builder-brief" placeholder="例如：一座漂浮在盐海上的小型气象站，三名角色依靠风帆和潮汐协作…"></textarea>
-              <button id="build-world" class="button wide">AI 起草世界</button>
+          <aside class="panel write-rail">
+            <div class="write-rail-head">
+              <div><span class="eyebrow">写作清单</span><strong id="authoring-progress-label">0 / 5 项</strong></div>
+              <span id="authoring-progress-note" class="hint">从世界概览开始</span>
             </div>
-            <div class="builder-box instance-box">
-              <span class="panel-kicker">NEW INSTANCE</span>
-              <p>从已验证模板创建独立 SQLite 游戏，并立即切换到新世界。创建本身不会调用模型。</p>
-              <label>世界模板<select id="package-select"><option value="">加载模板…</option></select></label>
-              <label>实例 ID<input id="instance-id" placeholder="my-world-001" autocomplete="off"></label>
-              <button id="create-instance" class="button wide">创建并打开游戏</button>
-              <div id="instance-result" class="interaction-result" role="status"></div>
+            <div class="write-rail-track" aria-hidden="true"><span id="authoring-progress-bar"></span></div>
+            <ol id="authoring-steps" class="write-steps">
+              <li><button type="button" class="write-step" data-authoring-step="world"><span class="write-step-copy"><strong>世界概览</strong><small>名字、一句话设定</small></span><span class="write-step-state">○</span></button></li>
+              <li><button type="button" class="write-step" data-authoring-step="locations"><span class="write-step-copy"><strong>地点与路线</strong><small>至少两个地点</small></span><span class="write-step-state">○</span></button></li>
+              <li><button type="button" class="write-step" data-authoring-step="agents"><span class="write-step-copy"><strong>人物</strong><small>至少一位居民</small></span><span class="write-step-state">○</span></button></li>
+              <li><button type="button" class="write-step" data-authoring-step="actions"><span class="write-step-copy"><strong>行动</strong><small>玩家能做什么</small></span><span class="write-step-state">○</span></button></li>
+              <li><button type="button" class="write-step" data-authoring-step="entry"><span class="write-step-copy"><strong>玩家入口</strong><small>从哪里开始</small></span><span class="write-step-state">○</span></button></li>
+            </ol>
+            <div class="write-next">
+              <span class="eyebrow">推荐下一步</span>
+              <strong id="authoring-next-title">给世界起个名字</strong>
+              <p id="authoring-next-detail" class="hint">名字和一句话设定会出现在玩家进入世界的第一屏。</p>
+              <button id="authoring-next-go" type="button" class="button primary wide">去填写</button>
             </div>
-            <div class="schema-note">字段来自 <code>world-schema</code>。网页不维护世界专用词汇。</div>
+            <details class="write-more">
+              <summary>起点与高级工具</summary>
+              <div class="write-more-body">
+                <div class="write-more-block">
+                  <span class="eyebrow">从已验证模板复制</span>
+                  <p class="hint">最快得到能运行的世界。复制后随便改，不会影响原世界。</p>
+                  <select id="start-package"><option value="">加载模板…</option></select>
+                  <button id="start-copy" type="button" class="button wide">复制这个模板</button>
+                </div>
+                <div class="write-more-row">
+                  <button id="new-draft" type="button" class="button ghost">新建空白</button>
+                  <button id="open-current" type="button" class="button ghost">打开当前包</button>
+                </div>
+                <label class="write-more-field">受限目录中的包<input id="authoring-path" placeholder="worlds/my_world" autocomplete="off"></label>
+                <button id="open-path" type="button" class="button ghost wide">打开路径</button>
+                <div class="write-more-block">
+                  <span class="eyebrow">让 AI 起草</span>
+                  <p class="hint">写一句世界简述。点击后才会调用模型。</p>
+                  <textarea id="builder-brief" placeholder="例如：一座漂浮在盐海上的小型气象站，三名角色依靠风帆和潮汐协作…"></textarea>
+                  <button id="build-world" type="button" class="button wide">AI 起草世界</button>
+                </div>
+                <details class="schema-details">
+                  <summary>字段参考（world-schema）</summary>
+                  <div id="schema-list" class="schema-list"><div class="empty-state">加载 Schema…</div></div>
+                  <p class="schema-note">字段来自 <code>world-schema</code>。网页不维护世界专用词汇。</p>
+                </details>
+              </div>
+            </details>
           </aside>
-          <section class="panel editor-panel">
-            <div class="editor-toolbar">
-              <div><span class="panel-kicker">DRAFT JSON</span><h2>模板编辑器</h2></div>
-              <div class="toolbar-actions">
-                <button id="new-draft" class="button ghost">新建</button>
-                <button id="open-current" class="button ghost">打开当前包</button>
-                <button id="format-draft" class="button ghost">格式化</button>
-                <button id="compile-draft" class="button primary">编译检查</button>
+
+          <section class="panel write-stage">
+            <div class="write-stage-head">
+              <div>
+                <span class="eyebrow">WORLD DRAFT</span>
+                <h2>世界内容</h2>
+                <p class="hint">改动只写入浏览器草稿；发布时才生成世界包。</p>
+              </div>
+              <div class="editor-mode-tabs" aria-label="编辑模式">
+                <button id="guided-mode" type="button" class="text-button active">表单</button>
+                <button id="raw-mode" type="button" class="text-button">JSON</button>
+                <button id="format-draft" type="button" class="text-button">格式化</button>
               </div>
             </div>
-            <div class="open-path-row">
-              <label>打开受限目录中的包<input id="authoring-path" placeholder="例如 worlds/my_world"></label>
-              <button id="open-path" class="button ghost">打开路径</button>
-            </div>
-            <div class="quick-fields" aria-label="世界基本信息">
-              <label>World ID<input id="quick-world-id" autocomplete="off"></label>
-              <label>标题<input id="quick-world-title" autocomplete="off"></label>
-              <label>Locale<input id="quick-world-locale" autocomplete="off"></label>
-              <button id="apply-quick-fields" class="button ghost">同步到模板</button>
-            </div>
-            <div class="editor-mode-tabs" aria-label="编辑模式">
-              <button id="guided-mode" class="text-button active">表单视图</button>
-              <button id="raw-mode" class="text-button">原始 JSON</button>
+            <div id="start-strip" class="start-strip hidden">
+              <div>
+                <span class="eyebrow">空白草稿</span>
+                <strong>先从一个能运行的世界开始，会容易得多。</strong>
+                <p class="hint">复制已验证模板后，再改名字、地点和人物。</p>
+              </div>
+              <button id="start-strip-open" type="button" class="button primary">选择模板</button>
             </div>
             <div id="guided-editor" class="guided-editor"></div>
-            <textarea id="template-editor" class="code-editor" spellcheck="false" aria-label="世界模板编辑器"></textarea>
-            <div class="editor-footer"><span id="draft-revision">revision 1</span><span>JSON 输入，服务端导出 YAML 世界包</span></div>
+            <textarea id="template-editor" class="code-editor hidden" spellcheck="false" aria-label="世界模板 JSON"></textarea>
+            <div class="editor-footer"><span id="authoring-source">未保存的草稿</span><span>JSON 输入，服务端导出 YAML 世界包</span></div>
           </section>
-          <aside class="panel diagnostics-panel">
-            <div class="panel-heading"><div><span class="panel-kicker">CHECK & TEST</span><h2>诊断</h2></div></div>
-            <div class="diagnostic-actions">
-              <button id="smoke-draft" class="button wide">运行短 smoke</button>
-              <button id="export-draft" class="button wide ghost">导出 YAML 包</button>
+
+          <aside class="panel write-check">
+            <div class="write-check-head">
+              <span class="eyebrow">READINESS</span>
+              <h2>这个世界能玩吗</h2>
+              <p class="hint">检查读取当前草稿，不写入运行中的世界。</p>
             </div>
-            <div id="diagnostics" class="diagnostics" aria-live="polite"><div class="empty-state">编译后显示结构、引用和执行性结果。</div></div>
+            <div id="authoring-readiness" class="readiness"></div>
+            <div class="write-check-actions">
+              <button id="compile-draft" type="button" class="button primary">完整检查</button>
+              <button id="smoke-draft" type="button" class="button ghost">试玩 3 分钟</button>
+              <button id="export-draft" type="button" class="button ghost">导出 YAML</button>
+            </div>
+            <div id="diagnostics" class="diagnostics" aria-live="polite"><div class="empty-state">检查后显示结构、引用和执行性结果。</div></div>
+
+            <details class="publish-box" open>
+              <summary>发布并试玩</summary>
+              <div class="publish-body">
+                <p class="hint">把当前草稿写成世界包，再创建独立实例。失败时不会覆盖已有目录。</p>
+                <label>世界包目录<input id="publish-output" placeholder="my_world" autocomplete="off"></label>
+                <label>实例 ID<input id="publish-instance" placeholder="my_world_01" autocomplete="off"></label>
+                <label class="check"><input id="publish-overwrite" type="checkbox"> 覆盖同名世界包</label>
+                <div class="publish-actions">
+                  <button id="publish-build" type="button" class="button ghost">只生成世界包</button>
+                  <button id="publish-play" type="button" class="button primary">生成并打开游戏</button>
+                </div>
+                <div id="instance-result" class="interaction-result" role="status"></div>
+              </div>
+            </details>
+            <details class="publish-box">
+              <summary>从已有模板创建实例</summary>
+              <div class="publish-body">
+                <label>世界模板<select id="package-select"><option value="">加载模板…</option></select></label>
+                <label>实例 ID<input id="instance-id" placeholder="my-world-001" autocomplete="off"></label>
+                <button id="create-instance" type="button" class="button wide">创建并打开游戏</button>
+              </div>
+            </details>
           </aside>
         </div>
       </section>
@@ -289,7 +352,7 @@
         </article>
       </section>
     </main>
-    <footer class="footer"><span>sim2 · Platform is the source of truth · <span id="js-build">admin-v1</span></span><span id="last-update">—</span></footer>
+    <footer class="footer"><span>sim2 · Platform is the source of truth · <span id="js-build">admin-v14</span></span><span id="last-update">—</span></footer>
   </div>
   <dialog id="operator-dialog" class="operator-dialog">
     <form method="dialog">
@@ -300,7 +363,7 @@
     </form>
   </dialog>
   <!-- bump ?v= whenever app.js/app.css changes so stale tabs refetch -->
-  <script src="/admin.js?v=1" defer></script>
+  <script src="/admin.js?v=14" defer></script>
 </body>
 </html>
 

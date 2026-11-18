@@ -10,6 +10,49 @@ emergent_source_event_types:
 - signal.tuned
 - signal.route_open
 - storm.warning
+- storm.breached
+- storm.held
+- storm.flooded
+# Fixed chapters are the zero-LLM safety net: they are projected from
+# validated public events, so the game still has a readable arc when no model
+# is running.  Story may add emergent beats on top; it does not replace these.
+fallback_chapters:
+- id: storm_watch
+  title: 第一章 · 风暴季警戒
+  summary: 潮门只剩两成多完整度，第一场风暴正在靠近。先测量，再决定材料用在哪儿。
+  goal_hint: 测量潮门，并把完整性修到八成以上。
+  trigger_events:
+  - storm.watch_begun
+- id: gate_ready
+  title: 第二章 · 潮门已加固
+  summary: 潮门完整性回到八成以上。接下来要看它能不能真的挡住风暴。
+  goal_hint: 等风暴结算，或者趁余量补全海图。
+  trigger_events:
+  - tide_gate.ready
+- id: storm_held
+  title: 第二章 · 潮门守住了
+  summary: 风暴过去，潮门没有失守。公社第一次证明，公开维护的代价能换来真实的安稳。
+  goal_hint: 趁下一轮风暴前补全海图，或继续加固潮门。
+  trigger_events:
+  - storm.held
+- id: storm_breached
+  title: 第二章 · 潮门被撕开
+  summary: 风暴撕开了潮门缺口。闸室还能站人，但下一次风暴会从同一个地方进来。
+  goal_hint: 先补潮门，再谈海图和信号。
+  trigger_events:
+  - storm.breached
+- id: storm_flooded
+  title: 第二章 · 潮水进了码头
+  summary: 风暴潮越过失守的潮门，码头和粮仓进了水。公社必须先把潮门修到能挡水。
+  goal_hint: 从最低处开始修复，别让下一场风暴再灌进来。
+  trigger_events:
+  - storm.flooded
+- id: route_open
+  title: 第三章 · 外海航路重开
+  summary: 季节信号覆盖到外海，公社第一次把一条安全航路写进公共记录。
+  goal_hint: 继续维护潮门和沼泽，别让新航路变成新的透支。
+  trigger_events:
+  - signal.route_open
 # Story chapters are not pre-authored here.  The Story Agent receives verified
 # source events and proposes emergent beats from those facts.  Keeping this list
 # empty prevents the runtime from cycling through a fixed plot after the first

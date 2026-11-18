@@ -58,7 +58,9 @@ world_property_labels:
   fresh_water_reserve: {label: 淡水储备, unit: amount}
   maintenance_evidence: {label: 维护记录, unit: amount, max: 3}
   storm_pressure: {label: 风暴压力, unit: percent, max: 1}
+  storm_eta_hours: {label: 风暴倒计时, unit: hours, max: 48, alert: true}
   public_confidence: {label: 公共信心, unit: percent, max: 1}
+  public_decision_open: {label: 公共决策窗口, unit: bool, hidden: true}
 context_resolvers: {}
 travel:
   minutes_per_distance: 24
@@ -230,6 +232,14 @@ minute_effects:
     type: need_delta
     need: purpose
     delta: -0.01
+- id: storm_clock
+  scope: world
+  every_minutes: 1
+  effect:
+    type: world_property_delta
+    property: storm_eta_hours
+    delta: -0.0166666667
+    minimum: 0
 - id: storm_pressure_rises
   scope: world
   every_minutes: 60
@@ -238,6 +248,76 @@ minute_effects:
     property: storm_pressure
     delta: 0.002
     maximum: 1
+- id: storm_floods_the_quay
+  scope: world
+  every_minutes: 1
+  condition: world.storm_eta_hours <= 0 and world.tide_gate_integrity < 0.2
+  effect:
+    type: world_property_delta
+    property: public_confidence
+    delta: -0.22
+    minimum: 0
+  event_type: storm.flooded
+  event_summary: 风暴潮越过失守的潮门，码头和粮仓进水，公社的信心明显动摇。
+  event_data:
+    severity: flooded
+- id: storm_breaches_the_gate
+  scope: world
+  every_minutes: 1
+  condition: world.storm_eta_hours <= 0 and world.tide_gate_integrity >= 0.2 and world.tide_gate_integrity < 0.8
+  effect:
+    type: world_property_delta
+    property: tide_gate_integrity
+    delta: -0.16
+    minimum: 0
+  event_type: storm.breached
+  event_summary: 风暴撕开了潮门缺口。闸室还能站人，但下一次风暴会更危险。
+  event_data:
+    severity: breached
+- id: storm_holds_the_gate
+  scope: world
+  every_minutes: 1
+  condition: world.storm_eta_hours <= 0 and world.tide_gate_integrity >= 0.8
+  effect:
+    type: world_property_delta
+    property: public_confidence
+    delta: 0.05
+    maximum: 1
+  event_type: storm.held
+  event_summary: 潮门扛住了风暴。公社第一次证明，公开维护的代价没有白付。
+  event_data:
+    severity: held
+- id: storm_pressure_falls
+  scope: world
+  every_minutes: 1
+  condition: world.storm_eta_hours <= 0
+  effect:
+    type: world_property_delta
+    property: storm_pressure
+    delta: -0.7
+    minimum: 0.3
+- id: storm_clock_resets
+  scope: world
+  every_minutes: 1
+  condition: world.storm_eta_hours <= 0
+  effect:
+    type: world_property_delta
+    property: storm_eta_hours
+    delta: 48
+    maximum: 48
+- id: public_decision_opens
+  scope: world
+  every_minutes: 1440
+  condition: world.public_decision_open < 1
+  effect:
+    type: world_property_delta
+    property: public_decision_open
+    delta: 1
+    maximum: 1
+  event_type: public_decision.due
+  event_summary: 新的一天开始。公社需要做一次公共决定：收紧配给、优先抢修潮门，还是让沼泽和居民休养。
+  event_data:
+    decision: open
 - id: hydration_damage
   scope: agent
   every_minutes: 60
@@ -301,6 +381,83 @@ civilization_progress:
     - story
     - god
 progression:
+- id: daily_public_decision
+  label: 今天的公共决策
+  summary: 配给、抢修或休养——今天只能选一件，明早才会重新开启。
+  priority: 0.97
+  audience:
+  - player
+  visible_when: world.public_decision_open >= 1
+  target_behaviors:
+  - ration_today
+  - repair_priority_today
+  - marsh_rest_today
+  support_behaviors: []
+- id: steward_first_rope
+  label: 搓出第一段公共用绳
+  summary: 用两份芦苇搓一段绳子；它会成为下一只修理工具包的骨架。
+  priority: 0.945
+  audience:
+  - player
+  origins:
+  - steward
+  target_behaviors:
+  - craft_rope
+  support_behaviors:
+  - gather_reed
+  complete_when:
+    event_type: rope.crafted
+    self_only: true
+    count: 1
+- id: forager_first_haul
+  label: 带回第一篓贝类
+  summary: 去浅滩采两份贝类，让公社看见沼泽还能稳定供食。
+  priority: 0.945
+  audience:
+  - player
+  origins:
+  - forager
+  target_behaviors:
+  - gather_shellfish
+  support_behaviors: []
+  complete_when:
+    event_type: resource.gathered
+    self_only: true
+    match:
+      resource_id: shellfish
+    count: 1
+- id: chart_keeper_first_stage
+  label: 验证海图的第一个阶段
+  summary: 完成一次研究，让半张海图变成别人也能复核的记录。
+  priority: 0.945
+  audience:
+  - player
+  origins:
+  - chart_keeper
+  target_behaviors:
+  - research_chart
+  support_behaviors: []
+  complete_when:
+    event_type: research.completed
+    self_only: true
+    match:
+      source_id: drowned_chart
+    count: 1
+- id: ferry_runner_first_message
+  label: 把倒计时送到第一位住户
+  summary: 找一位居民交换消息，让风暴倒计时不只停在码头。
+  priority: 0.945
+  audience:
+  - player
+  origins:
+  - ferry_runner
+  target_behaviors:
+  - communicate
+  support_behaviors: []
+  complete_when:
+    event_type: dialogue.recorded
+    self_only: true
+    count: 1
 - id: inspect_tide_gate
   label: 测量潮门
   summary: 先确认潮门的真实状况，为公共修复建立第一条可靠证据。
@@ -314,6 +471,23 @@ progression:
   support_behaviors: []
   complete_when:
     event_type: gate.inspected
+    count: 1
+- id: hold_the_first_storm
+  label: 让潮门撑过第一场风暴
+  summary: 在倒计时结束前把潮门加固到八成以上；只修一次只能挡水，撑不住风暴。
+  priority: 0.94
+  audience:
+  - player
+  target_behaviors:
+  - repair_gate
+  support_behaviors:
+  - gather_driftwood
+  - gather_reed
+  - craft_rope
+  - craft_repair_kit
+  - gather_shellfish
+  complete_when:
+    event_type: storm.held
     count: 1
 - id: repair_tide_gate
   label: 修复潮门

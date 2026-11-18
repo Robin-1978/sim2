@@ -78,12 +78,14 @@ class EventsRepository:
         event_type: str,
         match: dict[str, Any] | None = None,
         distinct_by: list[str] | tuple[str, ...] | None = None,
+        actor_id: str = "",
     ) -> int:
         """Count durable events matching flat payload fields.
 
         Progression contracts need the full event history rather than a recent
         window.  ``distinct_by`` is useful for verified stages: two events for
         the same stage count once, while two different stages count twice.
+        ``actor_id`` scopes a personal contract to the player who owns it.
         Payload fields are restricted to identifiers before they are embedded
         in a SQLite JSON path.
         """
@@ -96,6 +98,9 @@ class EventsRepository:
 
         clauses = ["event_type = ?"]
         where_parameters: list[Any] = [str(event_type)]
+        if actor_id:
+            clauses.append("actor_id = ?")
+            where_parameters.append(str(actor_id))
         for key, value in (match or {}).items():
             clauses.append(f"CAST(COALESCE(json_extract(data_json, ?), '') AS TEXT) = ?")
             where_parameters.extend((json_path(str(key)), str(value)))

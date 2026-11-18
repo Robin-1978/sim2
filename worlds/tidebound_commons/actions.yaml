@@ -224,3 +224,82 @@ actions:
   interaction_policy: allow
   kind: atomic
   executor: effect_pipeline
+- id: ration_today
+  version: 1
+  description: 今日公共决策：按人头收紧淡水配给，把余量留给风暴之后。
+  parameters: {}
+  preconditions: [actor.alive, world.public_decision_open >= 1]
+  duration: {minutes: 45}
+  costs:
+    reserve: {}
+    per_minute: {stamina: 0.05}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_delta, property: public_decision_open, delta: -1, minimum: 0}
+  - {type: world_resource_delta, resource_id: fresh_water, delta: 6, maximum: 30}
+  - {type: world_property_delta, property: public_confidence, delta: -0.05, minimum: 0}
+  - type: public_event
+    event: public_decision.made
+    summary: 公社决定今天收紧配给。淡水留住了，但住户之间的抱怨也多了起来。
+    data: {decision: rationing}
+  success: {condition: actor.alive, result: rationing_decided}
+  failure: {condition: actor.incapacitated, result: decision_failed}
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: repair_priority_today
+  version: 1
+  description: 今日公共决策：把劳力集中到潮门，先补最危险的缺口。
+  parameters: {}
+  preconditions: [actor.alive, world.public_decision_open >= 1]
+  duration: {minutes: 90}
+  costs:
+    reserve: {}
+    per_minute: {stamina: 0.12}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_delta, property: public_decision_open, delta: -1, minimum: 0}
+  - {type: world_property_delta, property: tide_gate_integrity, delta: 0.05, maximum: 1}
+  - {type: world_resource_delta, resource_id: fresh_water, delta: -4, minimum: 0}
+  - type: public_event
+    event: public_decision.made
+    summary: 公社把今天的劳力集中到潮门。闸室更稳了，但淡水的余量少了一截。
+    data: {decision: repair_priority}
+  success: {condition: actor.alive, result: repair_priority_decided}
+  failure: {condition: actor.incapacitated, result: decision_failed}
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: marsh_rest_today
+  version: 1
+  description: 今日公共决策：让沼泽和居民休养一天，接受潮门暂时少一点维护。
+  parameters: {}
+  preconditions: [actor.alive, world.public_decision_open >= 1]
+  duration: {minutes: 60}
+  costs:
+    reserve: {}
+    per_minute: {stamina: 0.02}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_delta, property: public_decision_open, delta: -1, minimum: 0}
+  - {type: world_property_delta, property: public_confidence, delta: 0.05, maximum: 1}
+  - {type: world_property_delta, property: tide_gate_integrity, delta: -0.02, minimum: 0}
+  - {type: need_delta, need: belonging, delta: 4}
+  - type: public_event
+    event: public_decision.made
+    summary: 公社让沼泽和居民休养一天。人心稳了一点，但潮门今天没有变得更结实。
+    data: {decision: marsh_rest}
+  success: {condition: actor.alive, result: marsh_rest_decided}
+  failure: {condition: actor.incapacitated, result: decision_failed}
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline

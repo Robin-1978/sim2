@@ -10,6 +10,49 @@ from ..world.ui_text import UiText
 from .authoring import AuthoringService
 
 
+def _fallback_chapter(platform: Platform) -> dict[str, Any] | None:
+    """Return the newest declarative chapter whose trigger event has happened.
+
+    Worlds that ship no model-dependent plot can still provide readable
+    chapters: ``story.fallback_chapters`` names fixed titles and summaries for
+    validated event types.  The projection walks matching events newest-first,
+    so a storm outcome replaces the previous chapter without any LLM call.
+    """
+
+    story = platform.store.repositories.metadata.get("story", {}) or {}
+    root = story.get("story", story) if isinstance(story, dict) else {}
+    chapters = [
+        item for item in (root.get("fallback_chapters") or [])
+        if isinstance(item, dict) and item.get("id")
+    ]
+    if not chapters:
+        return None
+    triggers: dict[str, list[dict[str, Any]]] = {}
+    for chapter in chapters:
+        event_types = chapter.get("trigger_events") or []
+        if isinstance(event_types, str):
+            event_types = [event_types]
+        if chapter.get("trigger_event"):
+            event_types = list(event_types) + [chapter["trigger_event"]]
+        for event_type in event_types:
+            triggers.setdefault(str(event_type), []).append(chapter)
+    if not triggers:
+        return None
+    events = platform.store.repositories.events.recent_events_by_types(list(triggers), limit=40)
+    for event in events:
+        for chapter in triggers.get(str(event.get("event_type") or ""), []):
+            return {
+                "id": str(chapter["id"]),
+                "title": str(chapter.get("title") or chapter["id"]),
+                "summary": str(chapter.get("summary") or ""),
+                "goal_hint": str(chapter.get("goal_hint") or ""),
+                "event_type": str(event.get("event_type") or ""),
+                "event_id": int(event.get("event_id", 0) or 0),
+                "world_minute": int(event.get("world_minute", 0) or 0),
+            }
+    return None
+
+
 def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
     """Build a compact, playable projection for one player.
 
@@ -140,7 +183,8 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         "item_labels": item_labels,
         "needs": decision.get("needs", {}),
         "capabilities": capabilities,
-        "goals": decision.get("progression_goals", [])[:6],
+        "goals": decision.get("progression_goals", [])[:8],
+        "chapter": _fallback_chapter(platform),
         "active_task": active_task,
         "actions": actions[:24],
         "unavailable_actions": unavailable_actions[:12],
@@ -239,6 +283,7 @@ class ControlService:
                 "name": str(item.get("name") or item["id"]),
                 "description": str(item.get("description") or ""),
                 "goal": str(item.get("starting_goal") or ""),
+                "first_task": str((item.get("opening") or {}).get("summary") or ""),
                 "traits": dict(item.get("traits") or {}),
                 "capabilities": dict(item.get("capabilities") or {}),
                 "inventory": dict(item.get("inventory") or {}),
@@ -246,11 +291,34 @@ class ControlService:
             for item in player.get("origins", [])
             if item.get("id")
         ]
+        players = []
+        for agent in self.platform.store.repositories.entities.list_agents():
+            if str(agent.get("role") or "").casefold() != "player":
+                continue
+            state = agent.get("initial_state") if isinstance(agent.get("initial_state"), dict) else {}
+            location_id = str(state.get("location_id") or "")
+            try:
+                location_name = str(
+                    self.platform.store.repositories.entities.get_entity(location_id).get("name") or location_id
+                ) if location_id else ""
+            except KeyError:
+                location_name = location_id
+            players.append(
+                {
+                    "id": str(agent.get("id") or ""),
+                    "name": str(agent.get("name") or agent.get("id") or ""),
+                    "location_id": location_id,
+                    "location": location_name,
+                    "status": str(state.get("status") or "idle"),
+                }
+            )
         return {
             "status": "ok",
             "world_id": self.platform.store.repositories.metadata.get("world_id"),
             "entry_location": {"id": entry_id, "name": str(entry.get("name") or entry_id)},
             "origins": origins,
+            "players": players,
+            "can_create_player": not players,
         }
 
     def player_view(self, player_id: str) -> dict[str, Any]:

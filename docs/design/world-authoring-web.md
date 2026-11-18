@@ -6,10 +6,26 @@
 和 `describe-world` 生成、检查和初始化，但直接维护多份 YAML 仍然要求
 作者理解较多的字段关系。网页工作台应降低配置门槛，同时保持一个事实：
 它是现有 Definition Compiler 的用户界面，不是另一套 DSL，也不直接修改
-运行中的世界。当前仓库已经提供一个无外部前端依赖的 MVP：`sim2 serve`
-根路径打开工作台，调用 `/authoring/schema`、`/authoring/catalog`、
-`/authoring/open`、`/authoring/compile`、`/authoring/smoke`、
-`/authoring/export`、`/authoring/create` 和显式的 `/authoring/build`。
+运行中的世界。当前仓库已经提供一个无外部前端依赖的 MVP：主游戏页的
+“世界编辑器”按钮内嵌 `/admin.html#view=authoring-view`，也可以直接打开
+运营台的“设计世界”页；两条入口使用同一组接口：
+`/authoring/schema`、`/authoring/catalog`、`/authoring/open`、
+`/authoring/compile`、`/authoring/smoke`、`/authoring/export`、
+`/authoring/create`、`/instances/init` 和显式的 `/authoring/build`。
+
+## 统一入口与会话
+
+- 主游戏页 HUD、设置抽屉和世界大厅都有“世界编辑器”入口。编辑器以全屏
+  overlay + iframe 打开，仍显示游戏上下文；关闭时若发现活动实例已变化，
+  会重载主页面，否则只刷新入口和角色视图。
+- 编辑器 URL 通过 fragment 携带 `view` 和一次性 Operator session：例如
+  `/admin.html#view=authoring-view&operator=<session>`。运营台读取后立即
+  `history.replaceState` 去掉 token，只保留 `#view=...`，所以刷新或创建
+  实例后仍回到编辑器，而令牌不会进入服务器日志。
+- 主游戏页和运营台共享 `sessionStorage` 中的 Operator session，兼容旧的
+  `sim2_operator_token` 键；在独立标签打开时由 fragment 完成交接。
+- 运营台顶栏提供“返回游戏”。在 iframe 中通过 `postMessage` 请求父页面关闭
+  编辑器；独立标签中直接回到 `/`。
 
 ## 单一契约
 
@@ -35,25 +51,35 @@ Action、Recipe、BT、Attribute、Capability、Entity、Rule 和 Evolution 的
 
 ## 页面和工作流
 
-首版只需要五个工作区：
+运营台“设计世界”页与主游戏页内嵌编辑器使用同一个三段式布局，视觉语言与
+主游戏一致（深青底、琥珀主按钮、衬线标题）：
 
-1. **World**：世界元数据、时钟、属性、地点、路线和地图位置；可以打开当前
-   实例来源包或受限目录中的已有包。
-2. **Entities**：资源、物体、人物、势力、关系、库存和初始知识。
-3. **Definitions**：Action、Recipe、Capability 和 BT；BT 使用节点图，
-   节点仍只能引用已注册的 Action 或子 BT。
-4. **Evolution**：Story/God 的事件唤醒、证据计数、冷却、工具契约和
-   研究阶段。页面显示“谁被什么已提交事件唤醒”，不允许用日历时间
-   隐式创建任务。
-5. **Build / Compile & Test**：可以显式提交世界简述给服务端 WorldBuilder Agent；
-   显示结构错误、AST 错误、引用错误、未绑定 Action、
-   无法执行的 BT、资源守恒错误和 smoke run 的第一条失败结果，并支持
-   导出 YAML、JSON Schema 校验报告和临时 SQLite 预览。
+1. **写作清单（左）**：5 项可玩性条件、完成进度、推荐下一步按钮，以及折叠的
+   “起点与高级工具”（从已验证模板复制、空白草稿、打开当前包、受限路径、
+   AI 起草、Schema 参考）。
+2. **草稿正文（中）**：按 01–05 排列的世界概览、地点、人物、物品与组织、
+   行动与配方。默认每类只展示前 6 条，其余可展开；每条默认折叠，点“编辑”
+   展开常用字段，复杂字段收在“更多字段（不常用）”里。顶部可在“表单 / JSON /
+   格式化”之间切换。
+3. **体检（右）**：8 项就绪检查、完整检查、3 分钟 smoke、导出，以及
+   “发布并试玩”和“从已有模板创建实例”。
 
-编辑流程是：编辑草稿 → 保存到工作区 → 编译 → 修复错误 → 运行短 smoke
-test → 查看 diff → 导出世界包。只有显式执行 `sim2 init` 或点击“从模板
-创建新游戏”才创建正式 SQLite 实例；工作台不能直接修改正在运行的实例。
-创建接口返回新数据库路径和启动命令，浏览器不会在线切换当前实例。
+新手路径：
+
+```text
+选择一个已验证模板 → 改世界名字和一句话设定 → 改地点 / 人物 / 行动
+    → 右侧体检补齐缺项 → 完整检查 → 试玩 3 分钟 → 生成并打开游戏
+```
+
+- 模板复制只替换浏览器草稿，不修改来源世界包；发布时如果目录名等于来源
+  世界包，客户端会要求换名，避免覆盖正在编辑的来源。
+- 空白草稿会显示“先从一个能运行的世界开始”的提示；行动、配方和行为树
+  没有可复制样本时，添加按钮会禁用，避免生成不完整的必填结构。
+- 玩家入口和出身直接放在世界概览内：入口地点来自地点列表，至少需要一个
+  出身才能通过体检。
+- “发布并试玩”调用 `/authoring/build-world` 写入世界包，再调用
+  `/instances/activate` 打开新实例；页面随后重载到新世界。发布失败不会
+  覆盖已有目录，勾选“覆盖同名世界包”才会覆盖。
 
 ### 网页工作台的交互状态
 
@@ -65,25 +91,18 @@ draft → compiling → diagnostics
                  ├── errors → edit draft → compiling
                  └── valid → smoke running → smoke result
                                       ├── failed → inspect event → edit draft
-                                      └── passed → review diff → export
+                                      └── passed → review diff → export / publish
 ```
 
-浏览器保存的是草稿和 `draft_revision`，不是运行时 SQLite。编译或 smoke
-返回时必须带回该 revision；如果用户在任务完成前继续编辑，旧结果标记为
-`stale`，不能覆盖新的错误列表或绿色状态。导出按钮只对当前 revision 的
-完整编译和 smoke 结果开放。
+浏览器保存的是草稿和 `draft_revision`，不是运行时 SQLite。表单输入直接写入
+内存草稿；切换到 JSON 模式时从同一份草稿序列化。编译或 smoke 返回时必须
+带回该 revision；如果用户在任务完成前继续编辑，旧结果标记为 `stale`，
+不能覆盖新的错误列表或绿色状态。
 
-页面布局采用左侧 Schema 导航、中间表单/BT 图、右侧诊断和底部运行日志：
-
-- 字段、标签、单位、枚举和默认值由 `/authoring/schema` 产生；前端不维护
-  世界专用的属性名或 Action 名。
-- 条件和公式编辑器只提供受限 Expression AST 的节点选择与文本预览，编译
-  错误落到字段路径和字符位置。
-- BT 图节点只能从已编译的 Action/子 BT 目录中选择；节点旁显示参数 Schema、
-  资源锁和可执行角色，未绑定或不可达节点直接标红。
-- “运行 smoke”显示临时世界的分钟、第一条失败事件、资源变化和行为闭环；
-  它不显示或保存真实实例路径。
-- “导出”同时下载世界包、规范化 IR 摘要和校验报告，方便提交审查。
+字段、标签、单位、枚举和默认值来自 `/authoring/schema` 与模板本身；前端
+只为常用字段提供中文标签，不维护世界专用的属性名或 Action 名。复杂结构
+（规则、演化、故事、提示词、行为树节点、效果列表）保留完整 JSON 入口，
+不会被表单悄悄丢弃。
 
 ## 校验层次
 

@@ -37,17 +37,54 @@ Browser
 
 ### 布局
 
-- **HUD**：世界名、世界日/时刻/阶段、季节、运行时状态、连接状态、刷新和设置。
-- **左栏**：角色头像/身份/地点、需求与体力条、当前目标、随身物品、能力。
-- **中栏**：地点场景、附近角色、资源点与设施、任务进度、平台校验过的行动卡、
-  条件不足行动及原因、公社公开目标。
-- **右栏**：世界动态、玩家对话、交易报价、公共世界数值。
+- **HUD**：世界名、世界日/时刻/阶段、季节、运行时状态、连接状态、世界大厅、
+  世界编辑器、刷新和设置。
+- **左栏**：角色身份、地点、需求与体力条、当前目标、物品/能力摘要；“角色详情”
+  打开侧栏查看完整随身物品与能力，不再让库存和能力常驻挤占舞台。
+- **中栏**：地点场景（世界调色板 + 程序化远景 + 可选的危机倒计时徽章）、
+  附近角色、资源点与设施、常驻世界路线小地图、任务进度、上一拍结果、
+  **世界目标（公开篇章）**、一个推荐行动、紧凑行动列表、条件不足行动及原因。
+- **右栏**：世界脉搏摘要、世界动态、附近人物列表、交易报价、公共世界数值。
+- **篇章节拍**：目标区位于场景和路线小地图之间，排在行动区上方；章节标题
+  （例如“第二章 · 潮门守住了”）显示在面板头部，章节摘要显示在目标卡上方。
+  默认只显示优先级最高的三个目标；
+  其余通过“显示全部”展开。每张目标卡显示 ready/needs_support/blocked
+  状态、进度条、可读的缺失条件，以及可执行按钮：单目标显示“去做：…”，
+  多选目标（例如每日公共决策）并列显示最多三个选项。推荐行动卡会额外标注
+  “推进：某个目标”，把即时行动和公开篇章连起来。
+- **行动节拍**：默认只突出一个推荐行动和最多五个备选行动；其余通过“显示更多
+  行动”展开。行动完成后，“上一拍”显示世界分钟、结果和资源/需求变化。
+- **人物侧栏**：点击附近人物或人物列表中的角色，从右侧滑出角色卡、对话记录和
+  消息输入框；对话不再占用右栏 tab。
 - **地图弹窗**：按配置坐标渲染地点与路线；相邻地点可直接出发。
-- **设置抽屉**：实例切换、同步推进模型、自动运行控制、Operator 解锁、运营台入口。
+- **移动端行动栏**：底部固定显示推荐行动或当前长行动的“推进”按钮，并提供
+  “更多”跳到完整行动列表。
+- **设置抽屉**：实例切换、同步推进模型、自动运行控制、Operator 解锁、世界编辑器入口。
+
+小地图直接复用 `/player/view` 的 `map` 投影，不额外读取 SQLite；每次行动完成或
+自动刷新后随角色视图一起更新。点击可前往节点会提交同样的 `behavior:travel`
+意图，因此地图、行动卡和 TUI 共享同一条 Platform 校验路径。
+
+入口页的程序化封面由世界 ID 的稳定 hash 选择调色板和山脊形状，不包含任何世界
+专用图片或名称；同一个世界每次打开得到一致封面，不同世界彼此可区分。出身卡
+显示该出身的个人目标与“第一件事”；后者来自 `player_template.origins[].opening`
+的摘要，因此玩家在进入前就能看出四个出身的开场不同。
+
+游戏场景复用同一套世界调色板生成程序化远景（天空、星点、日/月和山脊），
+地点的 `tags` 再决定前景渐变和可交互元素。这样不同世界有稳定的视觉身份，
+但客户端仍不包含任何世界专用图片或 ID 分支。
+
+右栏“世界脉搏”优先取最近的 Story/God/world-change 事件作为摘要，下面的
+动态流只保留叙事和结果类事件；`behavior.started`、能力更新、记忆记录、
+`world.property_changed`、`resource.regenerated`、演化任务到期和注册类系统
+事件不再铺满玩家信息流。
 
 视觉语义由通用字段驱动：地点 `tags` 决定场景色调，物品名来自
 `rules.item_labels`，世界数值名来自 `rules.world_property_labels`，饮水/进食
-警戒线来自 `rules.context_values.*_threshold`。代码不包含世界专用 ID 分支。
+警戒线来自 `rules.context_values.*_threshold`。世界数值标签可以声明
+`unit: hours`、`alert: true` 或 `hidden: true`：`hours` 显示为小时，`alert`
+把该数值作为危机徽章放进场景标题下方（例如风暴倒计时），`hidden` 让内部
+计数（例如每日决策窗口）不出现在公共数值面板。代码不包含世界专用 ID 分支。
 
 静态页面（`index.html`、`app.js`、`admin.html`、`admin.js`）不写任何世界的名称、
 类型或季节：HUD、入口卡和地图弹窗的世界名来自世界投影的 `title`（入口卡和
@@ -64,11 +101,15 @@ Browser
 
 - 已有玩家 ID 再次提交会恢复角色，并补齐当前 `player_template` 中缺失的
   能力、物资、行为和 controller。
-- 行动卡只显示 Platform 判定可执行的行为；其余行为进入“条件不足”列表，
-  并显示失败谓词的可读原因。
+- 行动区先给出一个推荐行动，再以紧凑列表展示最多五个备选；其余按分类筛选或
+  展开。所有行动仍只来自 Platform 判定可执行的行为，条件不足的行为保留在
+  可展开列表并显示失败谓词的可读原因。
 - 带目标或参数的行为（例如交谈）会弹出行动配置对话框。目标以稳定 ID 提交，
   避免重名角色产生歧义。
 - 长时间行为显示剩余分钟和进度条，支持“推进到完成”和“等待 1 分钟”。
+- 行动完成后，“上一拍”从 `recent_outcomes` 读取最近一次行动的公开结果、
+  世界分钟、位置、物品、需求和体力变化；移动端底部行动栏同步切换为
+  “推进当前行动”。
 
 ### 手动推进与世界同步
 
@@ -95,14 +136,32 @@ Browser
 | `location` | 当前地点的名称、描述、标签、安全性 |
 | `item_labels` | `rules.item_labels` 的物品显示名 |
 | `capabilities` | 角色能力值与 `capabilities.yaml` 中的名称 |
-| `goals` | 公开目标及 ready/needs_support/blocked 状态 |
+| `goals` | 公开目标及 ready/needs_support/blocked 状态；支持 `origins` 与 `visible_when` |
+| `chapter` | 由 `story.fallback_chapters` 触发事件投影出的零模型章节 |
 | `alert_thresholds` | 需求条警戒线 |
 | `world_properties` / `world_property_labels` | 右侧公共账目 |
 | `unavailable_actions` | 不可执行行为及失败原因 |
 
 `GET /world` 提供进入界面需要的事实：世界标题、premise、题材、locale、
-日历、起始分钟和当前实例。`GET /player/entry` 返回配置的出身，包括名称、
-描述、目标和初始配置。
+日历、起始分钟和当前实例；没有活动实例时返回 `status: "no_world"`。
+`GET /player/entry` 返回配置的出身，以及当前实例已有的玩家角色
+（`players`、`can_create_player`），页面据此直接显示“继续游戏”，而不是要求
+玩家记住 ID。`GET /worlds` 返回可创建的内置世界与受 `--authoring-root`
+约束的自建包摘要。
+
+## 启动与首次游玩
+
+`sim2 play` 是面向玩家的入口：启动本地服务并打开浏览器，URL fragment 中携带
+一次性 owner 链接；页面把 fragment 换成 Operator session 后立即用
+`history.replaceState` 清除，因此 fragment 不会进入服务器日志。
+
+- 没有 `--db` 时优先使用 `current_instance.json` 或最近的实例。
+- 一个实例都不存在时，服务器进入 launcher 状态，`/` 仍然可用，页面直接显示
+  世界模板；首次 `POST /instances/init` 可无 Operator session 执行，创建后
+  自动激活。此后创建或切换实例继续要求 Operator session。
+- 没有 `~/.sim2/llm.json` 时，`/runtime` 返回 `llm_configured: false`；时钟、
+  需求、长行动和 `bt` 控制器角色仍推进，LLM 驱动的 NPC 决策与 Story/God
+  暂停等待配置。
 
 ## 自动演化
 
@@ -122,6 +181,13 @@ Browser
 
 运营台的“演化队列”和“决策动态”仍用于审查事实、提案与结果，但普通玩家只需
 在“动态”中看到已经提交的章节和世界变化。
+
+主游戏页通过 HUD、设置抽屉和世界大厅打开 **世界编辑器**：全屏 overlay 内嵌
+`/admin.html#view=authoring-view`，并用 fragment 把当前 Operator session 传给
+运营台。运营台读取后立即从 URL 移除 token，只保留 `#view=...`，因此编辑中的
+页面刷新仍停在设计视图。关闭编辑器时主页面比较 `active_db`；实例被切换就重载，
+否则只刷新入口和角色视图。独立标签用同一 fragment 机制，也可从运营台顶栏
+“返回游戏”回到主页面。
 
 ## 运营台
 
@@ -143,8 +209,9 @@ Browser
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/world` | 世界展示事实与起始时钟 |
-| GET | `/player/entry` | 玩家出身与入口地点 |
+| GET | `/world` | 世界展示事实与起始时钟；无实例时为 `no_world` |
+| GET | `/worlds` | 可创建的世界模板摘要 |
+| GET | `/player/entry` | 玩家出身、入口地点与已有玩家 |
 | POST | `/players` | 新建或恢复玩家，返回 Player session |
 | GET | `/player/view` | 玩家投影、行动、目标、物品标签、世界数值 |
 | POST | `/player/act` | 提交 Platform 校验的行为 |
@@ -153,8 +220,9 @@ Browser
 | GET | `/timeline` | 公开事件流 |
 | GET | `/observer/dialogue` | 公开对话记录 |
 | POST | `/dialogue` / `/trade/*` | 即时对话与交易 |
-| GET | `/runtime` | 运行时状态和可用 Provider |
+| GET | `/runtime` | 运行时状态、可用 Provider 与 `llm_configured` |
 | POST | `/runtime/*` | 需要 Operator session |
+| POST | `/instances/init` | 创建实例；launcher 状态下首次创建免 Operator |
 | POST | `/instances/activate` | 需要 Operator session |
 
 `/admin.html` 额外使用 `/authoring/*`、`/snapshots*`、`/audit`、`/decisions`
@@ -169,7 +237,9 @@ Browser
 ## 测试
 
 - `tests/test_web_client.py`：游戏页面与管理页面资源、玩家恢复、世界投影、
-  对话/交易、手动同步推进、会话头、Operator 解锁。
+  对话/交易、手动同步推进、会话头、Operator 解锁、零实例 launcher 首次建世界
+  与“继续角色”入口。
+- `tests/test_play_without_llm.py`：没有 `llm.json` 时手动推进仍可运行。
 - `tests/test_web_assets_world_neutral.py`：静态页面不含任何已交付世界的名称、
   类型或季节，地图弹窗标题取自世界标题。
 - `tests/test_player_entry_templates.py`：玩家模板、恢复补齐、文本客户端和

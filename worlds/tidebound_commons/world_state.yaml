@@ -1,8 +1,10 @@
 world_state:
   properties:
+    storm_eta_hours: 18
+    storm_pressure: 0.42
+    public_decision_open: 1
     tide_gate_integrity: 0.28
+    public_confidence: 0.48
     signal_reach: 0.18
     fresh_water_reserve: 20
     maintenance_evidence: 0
-    storm_pressure: 0.42
-    public_confidence: 0.48

@@ -21,6 +21,27 @@ def _string_list(value: Any, field: str) -> list[str]:
     return list(value)
 
 
+def _opening(value: Any, field: str) -> dict[str, str]:
+    """Parse one origin's optional first-person opening beat.
+
+    A world may give every origin its own arrival event so the first minute of
+    play differs by identity, not only by starting stats.  The event is emitted
+    once when the player is created; an empty opening means "no extra event".
+    """
+
+    if value is None or value == {}:
+        return {}
+    if not isinstance(value, dict):
+        raise PlayerTemplateError(f"{field} must be an object with summary and optional event_type")
+    summary = str(value.get("summary") or "").strip()
+    event_type = str(value.get("event_type") or "origin.opening").strip()
+    if not summary:
+        raise PlayerTemplateError(f"{field}.summary is required")
+    if not event_type:
+        raise PlayerTemplateError(f"{field}.event_type must not be empty")
+    return {"event_type": event_type, "summary": summary}
+
+
 def _number_map(value: Any, field: str, *, maximum: float | None = None) -> dict[str, float]:
     if value is None:
         return {}
@@ -57,6 +78,10 @@ def parse_player_template(raw: Any, *, require_entry: bool = False) -> dict[str,
             capabilities: {exploration: 0.5}
             inventory: {food_ration: 1}
             starting_goal: Find the missing caravan.
+            knowledge_seed: ["The caravan left before the storm."]
+            opening:
+              event_type: origin.traveler
+              summary: You arrive with the caravan's last waybill.
     """
 
     source = raw if isinstance(raw, dict) else {}
@@ -102,6 +127,8 @@ def parse_player_template(raw: Any, *, require_entry: bool = False) -> dict[str,
             "starting_goal": starting_goal,
             "capabilities": _number_map(item.get("capabilities"), f"origins[{index}].capabilities", maximum=1.0),
             "inventory": _number_map(item.get("inventory"), f"origins[{index}].inventory"),
+            "knowledge_seed": _string_list(item.get("knowledge_seed"), f"origins[{index}].knowledge_seed"),
+            "opening": _opening(item.get("opening"), f"origins[{index}].opening"),
         })
 
     if origins and not entry_location_id:

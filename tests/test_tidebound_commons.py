@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 from sim2.bootstrap.service import create_instance, describe_config, validate_config
 from sim2.intents.models import BehaviorIntent
 from sim2.platform.runtime import Platform
@@ -37,6 +39,10 @@ def test_tidebound_commons_is_a_balanced_non_village_package(tmp_path: Path) -> 
     assert description["counts"]["agents"] == 6
     assert description["counts"]["locations"] == 6
     assert description["counts"]["recipes"] == 3
+
+    rules = yaml.safe_load((WORLD / "rules.yaml").read_text(encoding="utf-8"))
+    storm_label = rules["world_property_labels"]["storm_eta_hours"]
+    assert storm_label["unit"] == "hours" and storm_label["alert"] is True
 
     platform = Platform(create_instance(WORLD, "tidebound-balance", tmp_path / "runtime"))
     try:
@@ -74,6 +80,77 @@ def test_tidebound_commons_is_a_balanced_non_village_package(tmp_path: Path) -> 
         assert platform.store.repositories.metadata.get("world_properties")["tide_gate_integrity"] == 0.28
     finally:
         platform.close()
+
+
+def test_storm_clock_teaches_the_difference_between_a_patch_and_a_real_repair(tmp_path: Path) -> None:
+    """A due storm must hurt an unprepared gate and reward real preparation.
+
+    The clock is a declarative world-scope minute effect.  Its condition reads
+    world properties, its event is published once for the minute, and the
+    follow-up effects reset the clock instead of repeating damage every tick.
+    """
+
+    def properties(platform: Platform) -> dict:
+        return dict(platform.store.repositories.metadata.get("world_properties") or {})
+
+    def set_properties(platform: Platform, **values) -> None:
+        with platform.store.transaction():
+            for key, value in values.items():
+                platform.store.repositories.metadata.set(
+                    "world_properties",
+                    {**properties(platform), key: value},
+                )
+
+    unprepared = Platform(create_instance(WORLD, "tidebound-storm-unprepared", tmp_path / "runtime"))
+    try:
+        set_properties(
+            unprepared,
+            storm_eta_hours=0,
+            storm_pressure=1.0,
+            tide_gate_integrity=0.5,
+            public_confidence=0.5,
+        )
+        unprepared.step()
+        after = properties(unprepared)
+        assert after["storm_eta_hours"] > 47.9
+        assert round(after["storm_pressure"], 3) == 0.3
+        assert round(after["tide_gate_integrity"], 3) == 0.34
+        assert any(
+            event["event_type"] == "storm.breached"
+            for event in unprepared.store.repositories.events.recent_events(limit=40)
+        )
+        breach_count = sum(
+            1 for event in unprepared.store.repositories.events.recent_events(limit=80)
+            if event["event_type"] == "storm.breached"
+        )
+        unprepared.step()
+        assert sum(
+            1 for event in unprepared.store.repositories.events.recent_events(limit=80)
+            if event["event_type"] == "storm.breached"
+        ) == breach_count
+    finally:
+        unprepared.close()
+
+    prepared = Platform(create_instance(WORLD, "tidebound-storm-prepared", tmp_path / "runtime"))
+    try:
+        set_properties(
+            prepared,
+            storm_eta_hours=0,
+            storm_pressure=1.0,
+            tide_gate_integrity=0.85,
+            public_confidence=0.5,
+        )
+        prepared.step()
+        after = properties(prepared)
+        assert after["storm_eta_hours"] > 47.9
+        assert round(after["storm_pressure"], 3) == 0.3
+        assert after["tide_gate_integrity"] == 0.85
+        assert round(after["public_confidence"], 3) == 0.55
+        events = [event["event_type"] for event in prepared.store.repositories.events.recent_events(limit=40)]
+        assert "storm.held" in events
+        assert "storm.breached" not in events
+    finally:
+        prepared.close()
 
 
 def test_tidebound_research_can_expand_the_map_with_atomic_route_links(tmp_path: Path) -> None:
@@ -194,6 +271,7 @@ def test_tidebound_progression_projection_exposes_ready_and_supporting_steps(tmp
         goals = {item["id"]: item for item in mara["progression_goals"]}
         assert goals["inspect_tide_gate"]["status"] == "ready"
         assert "测量潮门" in goals["inspect_tide_gate"]["ready_behaviors"]
+        assert "behavior:inspect_gate" in goals["inspect_tide_gate"]["ready_behavior_refs"]
         assert goals["repair_tide_gate"]["status"] == "needs_support"
         assert "打捞浮木" in goals["repair_tide_gate"]["support_behaviors"]
         assert any("repair kit" in item.lower() for item in goals["repair_tide_gate"]["missing_requirements"])
@@ -342,3 +420,184 @@ def test_god_can_extend_tidebound_map_and_factions_through_generic_proposals(tmp
         assert platform.store.repositories.entities.get_entity(faction["entity_id"])["entity_type"] == "faction"
     finally:
         platform.close()
+
+
+def _set_world_properties(platform: Platform, **values) -> None:
+    with platform.store.transaction():
+        properties = dict(platform.store.repositories.metadata.get("world_properties") or {})
+        properties.update(values)
+        platform.store.repositories.metadata.set("world_properties", properties)
+
+
+def _start_and_finish(platform: Platform, actor_id: str, behavior_id: str, intent_id: str) -> dict:
+    started = _start(platform, actor_id, behavior_id, intent_id)
+    assert started["status"] == "accepted", started
+    _run_active(platform, actor_id)
+    return started
+
+
+def test_origins_ship_distinct_openings_first_tasks_and_goals(tmp_path: Path) -> None:
+    """Identity must be visible in the first minute, not only in starting stats."""
+
+    from sim2.api.service import ControlService
+
+    service = ControlService(create_instance(WORLD, "tidebound-origin-openings", tmp_path / "runtime"))
+    try:
+        entry = service.player_entry()
+        first_tasks = {origin["id"]: origin["first_task"] for origin in entry["origins"]}
+        assert set(first_tasks) == {"steward", "forager", "chart_keeper", "ferry_runner"}
+        assert all(first_tasks.values())
+        assert len(set(first_tasks.values())) == 4
+        assert service.enter_player("hero", "chart_keeper", name="塞琳的学徒")["status"] == "accepted"
+        agent = service.platform.store.repositories.entities.get_agent("hero")
+        assert agent["origin_id"] == "chart_keeper"
+        assert agent["origin_id"] in first_tasks
+        assert "一条海图路线必须能被别人重复走通" in " ".join(agent["knowledge_seed"])
+        opening = [
+            event for event in service.platform.store.repositories.events.recent_events(limit=12)
+            if event["event_type"] == "origin.chart_keeper"
+        ]
+        assert len(opening) == 1
+        assert opening[0]["summary"] == first_tasks["chart_keeper"]
+        view = service.player_view("hero")
+        goal_ids = {goal["id"] for goal in view["goals"]}
+        assert "chart_keeper_first_stage" in goal_ids
+        assert "forager_first_haul" not in goal_ids
+        assert "daily_public_decision" in goal_ids
+        assert [goal["id"] for goal in view["goals"][:3]] == [
+            "daily_public_decision",
+            "inspect_tide_gate",
+            "chart_keeper_first_stage",
+        ]
+    finally:
+        service.close()
+
+
+def test_daily_public_decision_is_a_real_tradeoff_and_reopens(tmp_path: Path) -> None:
+    """One visible decision per day: the choice must move real world state."""
+
+    from sim2.api.service import ControlService
+
+    service = ControlService(create_instance(WORLD, "tidebound-daily-decision", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "steward", name="试玩者")["status"] == "accepted"
+        view = service.player_view("hero")
+        goal = next(item for item in view["goals"] if item["id"] == "daily_public_decision")
+        assert goal["status"] == "ready"
+        assert goal["ready_behavior_refs"] == [
+            "behavior:ration_today",
+            "behavior:repair_priority_today",
+            "behavior:marsh_rest_today",
+        ]
+        assert view["world_properties"]["fresh_water_reserve"] == 24
+        assert view["world_properties"]["public_decision_open"] == 1
+
+        _start_and_finish(platform, "hero", "ration_today", "decision-ration")
+        properties = platform.store.repositories.metadata.get("world_properties")
+        assert properties["fresh_water_reserve"] == 30
+        assert round(properties["public_confidence"], 3) == 0.43
+        assert properties["public_decision_open"] == 0
+        decision_events = [
+            event for event in platform.store.repositories.events.recent_events(limit=40)
+            if event["event_type"] == "public_decision.made"
+        ]
+        assert decision_events[-1]["summary"] == "公社决定今天收紧配给。淡水留住了，但住户之间的抱怨也多了起来。"
+        assert decision_events[-1]["decision"] == "rationing"
+        assert "daily_public_decision" not in {item["id"] for item in service.player_view("hero")["goals"]}
+
+        with platform.store.transaction():
+            platform.store.repositories.metadata.set("world_minute", 1439)
+        platform.step()
+        reopened = platform.store.repositories.metadata.get("world_properties")
+        assert reopened["public_decision_open"] == 1
+        assert any(
+            event["event_type"] == "public_decision.due"
+            for event in platform.store.repositories.events.recent_events(limit=12)
+        )
+
+        _start_and_finish(platform, "hero", "repair_priority_today", "decision-repair")
+        properties = platform.store.repositories.metadata.get("world_properties")
+        assert round(properties["tide_gate_integrity"], 3) == 0.33
+        assert properties["fresh_water_reserve"] == 26
+        assert properties["public_decision_open"] == 0
+
+        with platform.store.transaction():
+            platform.store.repositories.metadata.set("world_minute", 2879)
+        platform.step()
+        _start_and_finish(platform, "hero", "marsh_rest_today", "decision-rest")
+        properties = platform.store.repositories.metadata.get("world_properties")
+        assert round(properties["public_confidence"], 3) == 0.48
+        assert round(properties["tide_gate_integrity"], 3) == 0.31
+        assert properties["public_decision_open"] == 0
+    finally:
+        service.close()
+
+
+def test_fallback_chapters_follow_storm_outcomes_without_a_model(tmp_path: Path) -> None:
+    """Fixed chapters keep the arc readable with no Story or God calls."""
+
+    from sim2.api.service import ControlService
+
+    service = ControlService(create_instance(WORLD, "tidebound-fallback-chapters", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "forager", name="试玩者")["status"] == "accepted"
+        chapter = service.player_view("hero")["chapter"]
+        assert chapter["id"] == "storm_watch"
+        assert chapter["title"] == "第一章 · 风暴季警戒"
+
+        _set_world_properties(platform, tide_gate_integrity=0.85)
+        platform.step()
+        chapter = service.player_view("hero")["chapter"]
+        assert chapter["id"] == "gate_ready"
+        assert chapter["title"] == "第二章 · 潮门已加固"
+
+        for integrity, expected in (
+            (0.5, ("storm_breached", "第二章 · 潮门被撕开")),
+            (0.85, ("storm_held", "第二章 · 潮门守住了")),
+            (0.1, ("storm_flooded", "第二章 · 潮水进了码头")),
+        ):
+            if integrity == 0.85:
+                # Crossing the 80% threshold is its own edge-triggered chapter.
+                # Settle it first so the following storm event is the newest.
+                _set_world_properties(platform, tide_gate_integrity=0.85)
+                platform.step()
+            _set_world_properties(
+                platform,
+                storm_eta_hours=0,
+                storm_pressure=1.0,
+                tide_gate_integrity=integrity,
+                public_confidence=0.5,
+            )
+            platform.step()
+            chapter = service.player_view("hero")["chapter"]
+            assert (chapter["id"], chapter["title"]) == expected
+            assert chapter["summary"]
+    finally:
+        service.close()
+
+
+def test_personal_origin_goal_counts_only_the_owner(tmp_path: Path) -> None:
+    """Another resident's harvest must not finish the player's first task."""
+
+    from sim2.api.service import ControlService
+
+    service = ControlService(create_instance(WORLD, "tidebound-personal-goal", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "forager", name="试玩者")["status"] == "accepted"
+        with platform.store.transaction():
+            platform.store.repositories.events.append_event(
+                "resource.gathered", "nia", 5, {"resource_id": "shellfish"},
+            )
+        goal = next(item for item in service.player_view("hero")["goals"] if item["id"] == "forager_first_haul")
+        assert goal["progress"] == {"current": 0, "required": 1}
+
+        with platform.store.transaction():
+            platform.store.repositories.events.append_event(
+                "resource.gathered", "hero", 6, {"resource_id": "shellfish"},
+            )
+        assert "forager_first_haul" not in {item["id"] for item in service.player_view("hero")["goals"]}
+    finally:
+        service.close()

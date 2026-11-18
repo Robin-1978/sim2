@@ -59,8 +59,12 @@ wakes:
   - signal.tuned
   - signal.route_open
   - storm.warning
+  - storm.breached
+  - storm.held
+  - storm.flooded
   - civilization.milestone
   for: story
+  external: true
   every: 6h
   tools:
   - query_history
@@ -101,8 +105,12 @@ wakes:
   - signal.tuned
   - signal.route_open
   - storm.warning
+  - storm.breached
+  - storm.held
+  - storm.flooded
   - civilization.milestone
   for: god
+  external: true
   every: 1d
   tools:
   - query_history

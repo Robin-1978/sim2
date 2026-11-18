@@ -10,7 +10,7 @@ ROOT = Path(__file__).parents[1]
 WEB = ROOT / "src" / "sim2" / "web"
 ASSETS = ("index.html", "app.js", "admin.html", "admin.js")
 # Wording that once leaked from one world into the client: the placeholder genre and the empty-scene line.
-LEAKED_WORDS = ("海岸生存", "潮声")
+LEAKED_WORDS = ("海岸生存", "潮声", "公社")
 
 
 def _read_assets() -> dict[str, str]:

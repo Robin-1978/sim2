@@ -63,7 +63,16 @@ class RuntimeSupervisor:
     def _providers_for(self, provider_name: str | None) -> dict[str, Any]:
         if self.provider_factory is not None:
             return self.provider_factory(provider_name)
-        router = LLMRouter.from_default_config()
+        try:
+            router = LLMRouter.from_default_config()
+        except FileNotFoundError:
+            # A fresh checkout can still be played with the deterministic
+            # Platform loop: the clock, long actions, needs and authored
+            # background BT actors keep running, while LLM-driven NPC turns
+            # simply stay idle until ~/.sim2/llm.json exists.
+            if provider_name:
+                raise
+            return {}
         roles = ("agent_decision", "agent_reflection", "god", "story")
         if provider_name:
             return {
@@ -72,11 +81,25 @@ class RuntimeSupervisor:
             }
         return {role: router.provider_for_role(role) for role in roles}
 
-    def available_providers(self) -> list[str]:
+    @staticmethod
+    def llm_configured() -> bool:
+        try:
+            LLMConfig.load()
+            return True
+        except FileNotFoundError:
+            return False
+        except Exception:
+            return False
+
+    @staticmethod
+    def available_providers_for_config() -> list[str]:
         try:
             return sorted(LLMConfig.load().providers)
         except Exception:
             return []
+
+    def available_providers(self) -> list[str]:
+        return self.available_providers_for_config()
 
     def _usage(self) -> dict[str, Any]:
         with self.service.platform.store.read_transaction():
@@ -110,6 +133,7 @@ class RuntimeSupervisor:
                 "last_error": self._last_error,
                 "stop_reason": self._stop_reason,
                 "available_providers": self.available_providers(),
+                "llm_configured": self.llm_configured(),
                 "history": list(self._history),
             }
 
@@ -196,7 +220,7 @@ class RuntimeSupervisor:
             }
             self._started_at = datetime.now(timezone.utc).isoformat()
         self._providers = providers
-        self._runner = SimulationRunner(platform, providers)
+        self._runner = SimulationRunner(platform, providers, resolve_interactions=bool(providers.get("agent_decision")))
         self._target_minute = target_minute
         self._max_llm_calls = max_llm_calls
         self._last_error = ""
@@ -394,7 +418,7 @@ class RuntimeSupervisor:
             if selected:
                 self._provider_name = selected
         platform = self.service.platform
-        report = SimulationRunner(platform, providers).run(max(1, min(int(minutes), 480)), require_running=False)
+        report = SimulationRunner(platform, providers, resolve_interactions=bool(providers.get("agent_decision"))).run(max(1, min(int(minutes), 480)), require_running=False)
         if report.stop_reason and report.end_minute == report.start_minute:
             return {
                 "status": "rejected",

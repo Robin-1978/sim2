@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import pytest
 import yaml
 
 from sim2.api.http import ControlHTTPServer
@@ -30,6 +31,96 @@ def _json_request(url: str, payload: dict, headers: dict[str, str] | None = None
         return json.loads(response.read())
 
 
+def test_web_launcher_starts_without_an_instance_and_creates_the_first_world(tmp_path: Path):
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    server = ControlHTTPServer(
+        ("127.0.0.1", 0),
+        None,
+        runtime_root=runtime_root,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with urlopen(base + "/") as response:
+            html = response.read().decode("utf-8")
+        assert 'id="entry-create-panel"' in html
+        assert "创建一个世界" in html or "创建新世界" in html
+        with urlopen(base + "/status") as response:
+            assert json.loads(response.read())["status"] == "no_world"
+        with urlopen(base + "/world") as response:
+            assert json.loads(response.read())["status"] == "no_world"
+        with urlopen(base + "/player/entry") as response:
+            entry = json.loads(response.read())
+        assert entry["status"] == "no_world" and entry["players"] == []
+        with urlopen(base + "/instances") as response:
+            instances = json.loads(response.read())
+        assert instances["active_db"] == "" and instances["instances"] == []
+        with urlopen(base + "/worlds") as response:
+            catalog = json.loads(response.read())
+        assert catalog["status"] == "ok"
+        assert any(item["id"] == "starter_village" for item in catalog["worlds"])
+        with urlopen(base + "/authoring/schema") as response:
+            assert json.loads(response.read())["status"] == "ok"
+        with urlopen(base + "/authoring/catalog") as response:
+            packages = json.loads(response.read())["packages"]
+        assert any(item["id"] == "starter_village" for item in packages)
+
+        created = _json_request(
+            base + "/instances/init",
+            {"package_id": "starter_village", "instance_id": "first-web-world", "activate": True},
+        )
+        assert created["status"] == "passed"
+        assert created["activation"]["status"] == "accepted"
+        assert created["active"] is True
+
+        with urlopen(base + "/world") as response:
+            world = json.loads(response.read())
+        assert world["status"] == "ok" and world["world_id"] == "starter_village"
+        with urlopen(base + "/instances") as response:
+            instances = json.loads(response.read())
+        assert instances["active_db"].endswith("first-web-world/world.sqlite3")
+
+        # Once a world exists, another instance needs the operator boundary.
+        with pytest.raises(HTTPError) as forbidden:
+            _json_request(base + "/instances/init", {"package_id": "starter_village", "instance_id": "second-web-world"})
+        assert forbidden.value.code == 403
+    finally:
+        server.close()
+        thread.join(timeout=2)
+
+
+def test_player_entry_offers_the_existing_character_for_resume(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "entry-players", tmp_path / "runtime")
+    server = ControlHTTPServer(("127.0.0.1", 0), db_path)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with urlopen(base + "/player/entry") as response:
+            entry = json.loads(response.read())
+        assert entry["players"] == [] and entry["can_create_player"] is True
+        origin = entry["origins"][0]["id"]
+
+        entered = _json_request(base + "/players", {"player_id": "resume-me", "origin_id": origin, "name": "归来的旅人"})
+        assert entered["status"] == "accepted"
+
+        with urlopen(base + "/player/entry") as response:
+            entry = json.loads(response.read())
+        assert entry["can_create_player"] is False
+        assert entry["players"][0]["id"] == "resume-me"
+        assert entry["players"][0]["name"] == "归来的旅人"
+
+        rejected = _json_request(base + "/players", {"player_id": "another-player", "origin_id": origin})
+        assert rejected["status"] == "rejected"
+        assert rejected["failed_check"] == "player_limit"
+    finally:
+        server.close()
+        thread.join(timeout=2)
+
+
 def test_http_serves_runtime_and_authoring_workbench(tmp_path: Path):
     config = Path(__file__).parents[1] / "worlds" / "starter_village"
     db_path = create_instance(config, "web-world", tmp_path / "runtime")
@@ -42,7 +133,7 @@ def test_http_serves_runtime_and_authoring_workbench(tmp_path: Path):
     try:
         with urlopen(base + "/") as response:
             html = response.read().decode("utf-8")
-        assert "现在可以做什么" in html
+        assert "下一步" in html
         assert 'id="game"' in html
         assert 'id="action-grid"' in html
         assert 'id="world-feed"' in html
@@ -57,7 +148,19 @@ def test_http_serves_runtime_and_authoring_workbench(tmp_path: Path):
         assert "创建并打开游戏" in admin_html
         assert "开始自动运行" in admin_html
         assert "解锁管理" in admin_html
+        assert "写作清单" in admin_html
+        assert "推荐下一步" in admin_html
         assert 'id="instance-select"' in admin_html
+        assert 'id="back-to-game"' in admin_html
+        assert 'id="authoring-progress-label"' in admin_html
+        assert 'id="authoring-readiness"' in admin_html
+        assert 'id="start-package"' in admin_html
+        assert 'id="publish-play"' in admin_html
+        with urlopen(base + "/admin.css") as response:
+            admin_css = response.read().decode("utf-8")
+        assert "--serif" in admin_css
+        assert ".write-rail" in admin_css
+        assert ".readiness-item" in admin_css
         with urlopen(base + "/app.css") as response:
             assert b"--cyan" in response.read()
         with urlopen(base + "/authoring/schema") as response:
@@ -625,12 +728,26 @@ def test_web_full_client_surfaces_new_panels(tmp_path: Path):
             'id="game"',
             'id="action-grid"',
             'id="world-feed"',
+            'id="recommended-action"',
+            'id="result-beat"',
+            'id="goal-summary"',
+            'id="chapter-title"',
+            'id="chapter-summary"',
+            'id="mobile-action-bar"',
             'id="talk-target"',
             'id="trade-send"',
+            'id="mini-map"',
+            'id="character-drawer"',
+            'id="player-drawer"',
+            'id="scene-world-cover"',
+            'id="world-pulse"',
+            'id="editor-overlay"',
+            'id="hud-editor"',
+            'id="entry-cover"',
             'id="map-canvas"',
             'id="task-panel"',
             'id="settings-drawer"',
-            "现在可以做什么",
+            "下一步",
         ):
             assert marker in html, marker
     finally:

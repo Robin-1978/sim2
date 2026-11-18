@@ -532,7 +532,15 @@ class ActivityRuntimeMixin:
                 self.apply_relationship_effect(agent, target or effect_target, effect, minute)
             elif effect_type == "public_event":
                 event_type = str(effect.get("event") or "public.event")
-                self._context.services["events"].append(event_type, agent["id"], minute, {"action_id": action.get("id"), "parameters": parameters})
+                payload = {
+                    **(dict(effect.get("data") or {}) if isinstance(effect.get("data"), dict) else {}),
+                    "action_id": action.get("id"),
+                    "parameters": parameters,
+                }
+                summary = str(effect.get("summary") or "").strip()
+                if summary:
+                    payload["summary"] = summary
+                self._context.services["events"].append(event_type, agent["id"], minute, payload)
             elif effect_type == "world_property_delta":
                 property_id = str(effect.get("property") or effect.get("world_property") or "")
                 if property_id:
@@ -548,6 +556,28 @@ class ActivityRuntimeMixin:
                         "world.property_changed", agent["id"], minute,
                         {"property": property_id, "before": before_value, "after": value, "delta": value - float(before_value or 0), "source": action.get("id")},
                     )
+            elif effect_type == "world_resource_delta":
+                # Public work may deliberately move a shared stock (for
+                # example, a daily rationing decision).  This is distinct from
+                # ``resource_transfer``: no carried item is reserved because
+                # the world, not one inventory, is the source or sink.
+                resource_ref = effect.get("resource_id") or effect.get("resource")
+                resource_id = str(self.targets.canonical_id(str(resource_ref or "")) or resource_ref or "")
+                delta = float(effect.get("delta", effect.get("value", 0)) or 0)
+                current = self.resources._world_resource(resource_id) if resource_id else None
+                if not resource_id or current is None:
+                    errors.append("world_resource_delta target must be an existing world resource")
+                    continue
+                target_amount = float(current.get("amount", 0) or 0) + delta
+                if isinstance(effect.get("minimum"), (int, float)):
+                    target_amount = max(float(effect["minimum"]), target_amount)
+                if isinstance(effect.get("maximum"), (int, float)):
+                    target_amount = min(float(effect["maximum"]), target_amount)
+                self.resources._change_world_resource(
+                    resource_id,
+                    target_amount - float(current.get("amount", 0) or 0),
+                    actor_id=agent.get("id"),
+                )
             elif effect_type == "resource_transfer":
                 # ResourceLedger has already reserved/removed any carried
                 # source item before success effects run.  This primitive

@@ -162,6 +162,23 @@ def _add_serve_command(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         help="HTTP request log level; 4xx/5xx responses are logged at warning (default: warning)",
     )
 
+    play = sub.add_parser("play", help="start the web client, open a browser, and show the world launcher when no world exists")
+    play_source = play.add_mutually_exclusive_group()
+    play_source.add_argument("--db", type=Path, help="world SQLite path; defaults to the current or most recent instance")
+    play_source.add_argument("--instance-id", help="world instance id under the runtime root")
+    play.add_argument("--runtime-root", type=Path, default=Path.home() / ".sim2", help="runtime root containing instances/ and current_instance.json")
+    play.add_argument("--host", default="127.0.0.1")
+    play.add_argument("--port", type=int, default=8080)
+    play.add_argument("--authoring-root", type=Path, help="optional directory containing packages the web editor may open")
+    play.add_argument("--operator-token", help="local token for runtime control and instance switching")
+    play.add_argument("--no-browser", action="store_true", help="print the URL instead of opening a browser")
+    play.add_argument(
+        "--log-level",
+        choices=("debug", "info", "warning", "error"),
+        default="warning",
+        help="HTTP request log level (default: warning)",
+    )
+
 
 def _add_instance_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     for name, help_text in [("status", "show instance status"), ("health", "check database and runtime health"), ("timeline", "show the public third-person timeline"), ("map", "show the location topology and character positions"), ("pause", "pause world advancement"), ("resume", "resume world advancement"), ("step", "advance one world minute"), ("metrics", "show runtime metrics"), ("audit", "export event and Agent audit")]:
@@ -337,21 +354,47 @@ def _run_simulate(args: argparse.Namespace) -> None:
         platform.close()
 
 
-def _run_serve(args: argparse.Namespace) -> None:
+def _run_serve(args: argparse.Namespace, *, open_browser: bool = False) -> None:
     db_path = args.db
     if db_path is None:
-        db_path = InstanceRegistry(args.runtime_root).resolve(instance_id=args.instance_id)
+        try:
+            db_path = InstanceRegistry(args.runtime_root).resolve(instance_id=args.instance_id)
+        except FileNotFoundError:
+            # No world exists yet.  The server still starts and serves the
+            # launcher, where the first world is created from a browser.
+            db_path = None
     logging.basicConfig(
         level=getattr(logging, str(args.log_level).upper(), logging.WARNING),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    server = ControlHTTPServer((args.host, args.port), db_path, authoring_root=args.authoring_root, operator_token=args.operator_token)
+    server_kwargs = {
+        "authoring_root": args.authoring_root,
+        "operator_token": args.operator_token,
+    }
+    if db_path is None:
+        server_kwargs["runtime_root"] = args.runtime_root
+    server = ControlHTTPServer(
+        (args.host, args.port),
+        db_path,
+        **server_kwargs,
+    )
+    base_url = f"http://{args.host}:{args.port}"
+    if open_browser:
+        import threading
+        import webbrowser
+
+        browser_host = "127.0.0.1" if str(args.host) in {"0.0.0.0", "::"} else str(args.host)
+        browser_url = f"http://{browser_host}:{args.port}/#owner={server.operator_token}"
+        # The fragment never reaches the server log and is stripped by the
+        # page after it exchanges the one-time owner link for a local session.
+        threading.Timer(0.6, lambda: webbrowser.open(browser_url)).start()
     try:
         print(json.dumps({
             "status": "listening",
-            "url": f"http://{args.host}:{args.port}",
-            "db": str(server.database_path),
+            "url": base_url,
+            "db": str(server.database_path) if server.database_path is not None else None,
+            "launcher": not server.has_world,
             "operator_token": server.operator_token,
         }, ensure_ascii=False), flush=True)
         server.serve_forever()
@@ -359,6 +402,10 @@ def _run_serve(args: argparse.Namespace) -> None:
         pass
     finally:
         server.close_after_serve_forever()
+
+
+def _run_play(args: argparse.Namespace) -> None:
+    _run_serve(args, open_browser=not bool(getattr(args, "no_browser", False)))
 
 
 def _sync_player_template(platform: Platform, args: argparse.Namespace) -> Any:
@@ -424,6 +471,7 @@ _COMMANDS: dict[str, Callable[[argparse.Namespace], None]] = {
     "tui": _run_tui,
     "simulate": _run_simulate,
     "serve": _run_serve,
+    "play": _run_play,
     "map": _run_platform_command,
     **{name: _run_platform_command for name in _PLATFORM_COMMANDS},
 }

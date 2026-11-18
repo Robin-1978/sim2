@@ -10,8 +10,23 @@ Each individual Agent has two phases: a short decision phase that selects a Plat
 
 ## Quick start
 
+The fastest path is the browser client. It opens a world launcher, creates
+the first SQLite instance from a bundled template, and lets you keep playing
+the same character later:
+
 ```bash
 python -m pip install -e .
+sim2 play
+```
+
+`sim2 play` starts the local server and opens `http://127.0.0.1:8080/`.
+On a first run there is no instance yet, so the page shows the world templates;
+creating one from the page is enough. Use `sim2 play --no-browser` on a
+headless machine. The launcher prints the URL and a local operator token.
+
+The same things are available from the CLI:
+
+```bash
 sim2 init --instance-id mist-village-001
 DB=~/.sim2/instances/mist-village-001/world.sqlite3
 sim2 status --db "$DB"
@@ -81,13 +96,25 @@ export SIM2_BGE_MODEL=/path/to/bge-small-zh-v1.5
 
 The text interface renders a playable scene with numbered actions as well as movement, messages, offers, counteroffers, acceptance/rejection, waiting, and public world telemetry. HTTP exposes the same Platform operations for another client.
 
-The browser surfaces are separate from the TUI. `sim2 serve` `/` is a
-game-oriented client: a scene, character sheet, action cards, goals, inventory,
-world feed, dialogue and trade. Existing players resume by ID, and manual player
-actions advance the same shared world tick as NPC decisions, interactions and
-Story/God evolution. `/admin.html` keeps the full operator and world-authoring
-workbench: runtime budgets, instance switching, snapshots, CLI-equivalent
-commands, package compilation and smoke tests. See
+The browser surfaces are separate from the TUI. `sim2 play` opens `/` as a
+game-oriented client: a world hub that can create or continue an instance, then
+a scene with a world-specific procedural backdrop, character sheet, action
+cards, goals, a compact loadout summary, a persistent route mini-map, world
+pulse, nearby people and trade. Clicking a person opens a
+character sheet with the dialogue thread and composer; “角色详情” opens the full
+inventory and capability sheet. Existing players resume with one click, and
+manual player actions
+advance the same shared world tick as NPC decisions, interactions and
+Story/God evolution. The HUD and world hall open the **World Studio** editor in
+a full-screen overlay with the current operator session, so designing or
+creating a new world no longer requires switching to a separate console or
+copying a token. With no `~/.sim2/llm.json`, the page still advances time
+and long actions; LLM-driven NPC turns wait until a provider is configured.
+`/admin.html` keeps the full operator and world-authoring workbench: runtime
+budgets, instance switching, snapshots, CLI-equivalent commands, package
+compilation and smoke tests. Its 设计世界 page uses the same visual language as
+the game and a beginner-first flow: copy a validated template, edit named
+fields, watch the readiness checks, then publish and open a new instance. See
 [Web Client Design](docs/design/web-client.md) and
 [World Authoring Web](docs/design/world-authoring-web.md). The development
 server binds to localhost and must not be exposed publicly without additional
@@ -100,8 +127,12 @@ The first validation world is [Starter Village](docs/worlds/starter-village.md),
 [`worlds/tidebound_commons`](worlds/tidebound_commons/) is the Chinese coastal
 survival world used by the game client. It ships a survival loop (water, food,
 reeds, driftwood, rations, rope and repair kits), a public repair/route goal
-chain, and no pre-written story beats: Story and God evolve the commons from
-validated events, periodic cadence and the configured stagnation signal.
+chain, four origins with distinct opening events and first tasks, a daily
+public decision that trades water against repairs or rest, a visible storm
+countdown that damages an unprepared tide gate and rewards a real repair, and
+no pre-written story beats: Story and God evolve the commons from validated
+events, periodic cadence and the configured stagnation signal. Fixed fallback
+chapters keep storm outcomes readable even when no model is running.
 
 To add a world, provide a package with `manifest.yaml`, setting and world state, locations, objects, factions, agents, actions, behavior trees, rules, evolution schedule, player template, and optional prompts. `manifest.config_version` is recorded in the new SQLite instance. Reusing an instance ID is rejected; initialize a new ID for every world instance.
 

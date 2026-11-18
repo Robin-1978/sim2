@@ -560,3 +560,76 @@ behavior_trees:
   - movement
   drive_tags:
   - autonomy
+- id: ration_today
+  agent_label: 收紧配给
+  summary: 收紧配给
+  description: 今天按人头减量发放淡水，把余量留给风暴后的修复。
+  purpose: 每天只有一次公共决策；选完后今天的决策窗口关闭。
+  entry_conditions:
+  - actor.alive
+  - world.public_decision_open >= 1
+  estimated_minutes: 45
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: ration_today
+    parameters: {}
+  success_results:
+  - rationing_decided
+  failure_results:
+  - decision_failed
+  - interrupted
+  goal_tags:
+  - supply
+  - public
+  drive_tags:
+  - belonging
+- id: repair_priority_today
+  agent_label: 优先抢修
+  summary: 优先抢修
+  description: 把今天的人力集中到潮门，先用公共劳力补最危险的缺口。
+  purpose: 每天只有一次公共决策；选完后今天的决策窗口关闭。
+  entry_conditions:
+  - actor.alive
+  - world.public_decision_open >= 1
+  estimated_minutes: 90
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: repair_priority_today
+    parameters: {}
+  success_results:
+  - repair_priority_decided
+  failure_results:
+  - decision_failed
+  - interrupted
+  goal_tags:
+  - repair
+  - safety
+  drive_tags:
+  - purpose
+- id: marsh_rest_today
+  agent_label: 沼泽休养
+  summary: 沼泽休养
+  description: 让居民和沼泽休养一天，接受潮门今天少一点维护。
+  purpose: 每天只有一次公共决策；选完后今天的决策窗口关闭。
+  entry_conditions:
+  - actor.alive
+  - world.public_decision_open >= 1
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: marsh_rest_today
+    parameters: {}
+  success_results:
+  - marsh_rest_decided
+  failure_results:
+  - decision_failed
+  - interrupted
+  goal_tags:
+  - recovery
+  - public
+  drive_tags:
+  - belonging
+  - purpose

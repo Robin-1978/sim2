@@ -58,9 +58,10 @@ class SimulationReport:
 class SimulationRunner:
     """Drive Platform minutes and invoke Agent phases only at boundaries."""
 
-    def __init__(self, platform: Platform, providers: dict[str, Any], *, wait_cooldown_minutes: int = 30, llm_error_cooldown_minutes: int = 60, max_interaction_rounds: int | None = None, interaction_cooldown_minutes: int | None = None, interaction_thread_window_minutes: int | None = None, turn_observer: Callable[[AgentTurn, str], None] | None = None):
+    def __init__(self, platform: Platform, providers: dict[str, Any], *, wait_cooldown_minutes: int = 30, llm_error_cooldown_minutes: int = 60, max_interaction_rounds: int | None = None, interaction_cooldown_minutes: int | None = None, interaction_thread_window_minutes: int | None = None, turn_observer: Callable[[AgentTurn, str], None] | None = None, resolve_interactions: bool = True):
         self.platform = platform
         self.providers = providers
+        self.resolve_interactions = bool(resolve_interactions)
         interaction_policy = (self.platform.store.repositories.metadata.get("rules", {}) or {}).get("interaction_policy", {}) or {}
         self.wait_cooldown_minutes = max(1, int(wait_cooldown_minutes))
         self.llm_error_cooldown_minutes = max(1, int(llm_error_cooldown_minutes))
@@ -229,6 +230,13 @@ class SimulationRunner:
             and event.get("event_type") in {"dialogue.completed", "trade.offer_created", "trade.countered"}
         ]
         if not pending:
+            return True
+        if not self.resolve_interactions:
+            # No model provider can answer these interactions.  Keep the
+            # authored world playable instead of freezing the clock on an
+            # unanswerable dialogue; the events remain in the public log.
+            self._interaction_events_seen.update(int(event.get("event_id", 0)) for event in pending)
+            self._persist_scheduler_state()
             return True
         if provider is None or self._provider_cooling_down(provider):
             return False

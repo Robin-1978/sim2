@@ -1,6 +1,18 @@
 # TUI, text and HTTP clients
 
-The primary local client is the Textual TUI:
+The primary local client is the web game client:
+
+```bash
+sim2 play                      # open the browser world hub
+sim2 play --no-browser         # print the URL on a headless machine
+```
+
+`sim2 play` starts the local HTTP service, opens `http://127.0.0.1:8080/`, and
+creates the first world from the page when no instance exists. The rest of this
+document covers the Textual TUI, the plain-text client and the HTTP projections
+they share.
+
+The Textual TUI is the terminal client:
 
 ```bash
 # Observe an already running world.
@@ -115,9 +127,18 @@ The MUD-style `sim2 mud` client now renders a playable text scene with the same
 projections and controls to the web client. Both go through Platform and share
 the same visibility, validation and transaction rules as the TUI.
 
-The repository now ships a dependency-free browser bundle for the local Runtime
-Web Client and Authoring Workbench. The local HTTP service is still a development
-server, not a finished public web server:
+The repository ships a dependency-free browser bundle for the local Runtime Web
+Client and Authoring Workbench. The local HTTP service is still a development
+server, not a finished public web server. The friendly entry point is:
+
+```bash
+sim2 play
+```
+
+It starts the same local server on `127.0.0.1:8080`, opens the browser, and
+passes the operator capability in a URL fragment so the page can unlock local
+management without copy-pasting a token. Use `sim2 play --no-browser` on a
+headless machine, or start the server without opening a browser:
 
 ```bash
 sim2 serve --host 127.0.0.1 --port 8080
@@ -129,18 +150,29 @@ curl 'http://127.0.0.1:8080/timeline?limit=50&after=0'
 
 Without `--db`, the server uses `current_instance.json` under `--runtime-root`
 (default `~/.sim2`) and falls back to the most recently modified
-`instances/*/world.sqlite3`. Startup prints the selected database and a local
-Operator token.
+`instances/*/world.sqlite3`. When no instance exists at all, it starts in
+**launcher mode**: `/` renders the world catalog instead of failing, `/world`
+and `/player/entry` answer `status: "no_world"`, and the page can create the
+first instance from a bundled template. The first creation is allowed before an
+operator session exists; every later instance creation or switch keeps the
+normal operator-token boundary. Startup prints the selected database (or
+`null`), a `launcher` flag, and a local Operator token.
 
-Open `http://127.0.0.1:8080/` in a browser. **运行世界** shows the map, public
-timeline, characters and evolution queue. **设计世界** edits a JSON world draft,
-loads the canonical Schema, runs compile checks and a disposable SQLite smoke test,
-opens the current source package, lists packages under `--authoring-root`, can
-create a new independent SQLite game from a selected reviewed template, can
-invoke the configured WorldBuilder Agent on an explicit button click, and
-downloads the generated YAML files as a package manifest. **Create and open**
-first creates the SQLite instance and then activates it through the same server;
-the source package is never edited as a side effect.
+Open `http://127.0.0.1:8080/` in a browser. The main client is a play-first
+world hub: it lists saved instances, offers a one-click **继续** card for the
+instance's existing player, and exposes **创建新世界** with the bundled world
+templates. Creating a world from the page compiles and initializes it through
+the same bootstrap code as the CLI, then activates it. `/worlds` returns the
+same catalog for other clients.
+
+**运营台 → 设计世界** is now a beginner-first authoring page with the same
+visual language as the game: a five-item writing checklist, a guided form with
+plain-language fields, a readiness panel, and a publish step. Authors can copy
+an existing package as a starting point, edit world basics, locations, people,
+objects and actions, then run compile checks, a disposable SQLite smoke test,
+and **生成并打开游戏** to write the package and activate a new instance. The
+full JSON remains available behind the form; the source package is never
+edited as a side effect.
 
 `sim2 serve` now creates a local in-memory session boundary. `GET /session`
 returns a read-only observer token; entering a player returns a player token that
@@ -150,6 +182,11 @@ commands (`runtime/start`, `runtime/pause`, `runtime/resume`, `runtime/stop`,
 `operator_token` printed by the server or `SIM2_OPERATOR_TOKEN`. This is a local
 development boundary, not a replacement for production login and deployment
 authentication.
+
+When `~/.sim2/llm.json` is absent, `/runtime` reports `llm_configured: false`.
+The Platform clock, needs, long actions and authored background BT actors still
+advance, so the page remains playable; only LLM-driven NPC decisions, Story/God
+turns and automatic dialogue replies stay idle until a provider is configured.
 
 One server process owns at most one autonomous runtime thread. Start accepts a
 provider name plus world-minute and LLM-call budgets. Pause finishes the current
@@ -183,14 +220,28 @@ The observer keeps a 4-second polling baseline plus an SSE live layer
 second and merge by `event_id`; three consecutive stream errors fall back to
 polling. The stream is read-only and never triggers a model call.
 
-网页默认先打开 **开始游戏**：选择玩家出身后，页面显示角色目标、需求条、
-当前位置、可见路线和行动卡。每张行动卡通过 `/player/act` 提交到 Platform；
-行动结果回到玩家事件流。行内还有交易抽屉：待处理报价列表、发起/接受/
-反报价/拒绝都走同一幂等通道。**观察世界**多了 NPC 对话与决策动态两个
-面板（公开交谈全文、谁决定做什么及原因/结果），决策行可展开因果链
-（`GET /events/related` 只含公开字段，不含 prompt 与私有记忆）；运行
-控制台有分段历史与 token/预算预警，命令页快照列表可直接下载 SQLite。
-**设计世界** 仍用于配置编辑。
+网页默认先打开 **世界大厅**：已有角色时一键继续，否则选择出身进入；出身卡
+同时显示个人目标和“第一件事”。进入后
+页面显示角色目标、需求条、当前位置、常驻路线小地图、当前篇章和行动卡；
+小地图节点与行动卡走同一个 `/player/act` 校验路径。篇章标题和摘要位于
+世界目标上方，目标区在行动区上方，默认显示前三项，包含状态、进度、可读的
+缺失条件和可执行按钮；多选目标会并列显示最多三个选项（例如每日公共决策）。
+推荐行动卡会标注它推进的篇章目标。行动区默认突出一个推荐行动和最多五个
+备选行动，完成后“上一拍”显示结果与资源/需求变化；移动端底部固定一个推荐
+行动或“推进当前行动”按钮。物品和能力收进“角色详情”侧栏，点击附近人物会
+从右侧滑出角色侧栏，
+查看该角色的对话记录并直接发送消息，而不是切到单独 tab。每张行动卡通过
+`/player/act` 提交到 Platform；行动结果回到玩家事件流。行内还有交易抽屉：
+待处理报价列表、发起/接受/反报价/拒绝都走同一幂等通道。
+
+主游戏页的 HUD、设置抽屉和世界大厅都有 **世界编辑器** 入口：编辑器以全屏
+overlay 内嵌运营台的“设计世界”页，直接用当前 Operator session 打开，不需要
+再输入令牌。编辑器与主游戏共用深青/琥珀配色和衬线标题；左侧是写作清单和
+推荐下一步，中间是中文表单，右侧是就绪检查。新手可以先复制一个已验证模板，
+再改名字、地点和人物；“生成并打开游戏”会写出世界包并切换到新实例。
+关闭编辑器时如果活动实例被切换，主页面会重载到新实例；否则只刷新世界入口
+和当前角色。独立标签仍可通过 `/admin.html#view=authoring-view` 打开同一个
+编辑器。
 
 To open other reviewed packages, constrain the server to their parent directory:
 
