@@ -1,19 +1,22 @@
 behavior_trees:
-- id: withdraw_energy
+- id: withdraw_resource
   version: 1
-  summary: Withdraw Energy
-  description: Withdraw one unit of shared reserve energy. Stewardship or an active delegation is required.
-  agent_label: Withdraw Energy
+  summary: Withdraw Resource
+  description: Withdraw one unit from the reserve bound below. Stewardship or an active delegation is required.
+  agent_label: Withdraw Resource
   entry_conditions:
   - actor.alive
   estimated_minutes: 2
   goal_tags: [maintenance, power]
   drive_tags: [purpose]
-  success_results: [energy_withdrawn]
+  success_results: [resource_withdrawn]
   failure_results: [withdrawal_failed]
   nodes:
   - type: action
-    action_id: withdraw_energy
+    action_id: withdraw_resource
+    parameters:
+      resource_id: energy_reserve
+      scope: energy_withdrawal
   definition_source: config
   kind: base
 - id: request_access
@@ -153,21 +156,24 @@ behavior_trees:
       location_id: relay_station
   definition_source: config
   kind: base
-- id: take_energy
+- id: take_resource
   version: 1
-  summary: Take Energy
-  description: Take one unit of shared reserve energy without authorization. Completion records a violation; witnesses lose trust.
-  agent_label: Take Energy
+  summary: Take Resource
+  description: Take one unit from the reserve bound below without authorization. Completion records a violation; witnesses lose trust.
+  agent_label: Take Resource
   entry_conditions:
   - actor.alive
   estimated_minutes: 1
   goal_tags: [maintenance, power]
   drive_tags: [purpose]
-  success_results: [energy_taken]
+  success_results: [resource_taken]
   failure_results: [take_failed]
   nodes:
   - type: action
-    action_id: take_energy
+    action_id: take_resource
+    parameters:
+      resource_id: energy_reserve
+      scope: energy_withdrawal
   definition_source: config
   kind: base
 - id: review_violation

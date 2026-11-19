@@ -214,6 +214,20 @@ def nearest_safe_location(store: Any, origin_id: str | None) -> str | None:
     return None
 
 
+def resource_is_at_location(store: Any, resource_id: str | None, location_id: str | None) -> bool:
+    """Return whether a stock entity is physically at the actor's location."""
+
+    if not resource_id:
+        return True
+    try:
+        entity = store.repositories.entities.get_entity(str(resource_id))
+    except KeyError:
+        return False
+    state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
+    entity_location = state.get("location_id") or entity.get("location_id")
+    return str(entity_location or "") == str(location_id or "")
+
+
 def nearest_resource_node(store: Any, origin_id: str | None) -> dict[str, str] | None:
     """Find the nearest configured, non-empty resource or material node."""
 

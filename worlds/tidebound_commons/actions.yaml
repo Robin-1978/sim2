@@ -1,5 +1,6 @@
 actions:
 - id: travel_to
+  verb: move
   version: 1
   description: 沿已知路线移动到一处可见地点。
   parameters: {location_id: string}
@@ -16,6 +17,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: gather_resource
+  verb: gather
   version: 1
   description: 从配置的可再生资源点采集材料，放进随身物品。
   parameters: {resource_tag: string, location_id: string}
@@ -35,6 +37,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: research_source
+  verb: research
   version: 1
   description: 推进一处研究来源的下一个开放阶段。
   parameters: {source_id: string}
@@ -59,6 +62,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: inspect_object
+  verb: inspect
   version: 1
   description: 检查一台公共设施，并记录可验证的维护结果。
   parameters: {object_id: string}
@@ -88,6 +92,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: craft_recipe
+  verb: craft
   version: 1
   description: 在配置的工坊里按配方加工材料。
   parameters: {recipe_id: string, station_id: string}
@@ -106,6 +111,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: repair_tide_gate
+  verb: repair
   version: 1
   description: 消耗一个修理工具包，恢复公共潮门。
   parameters: {}
@@ -133,6 +139,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: explore_area
+  verb: explore
   version: 1
   description: 勘察一处区域，记录新的路线观察。
   parameters: {area_id: string}
@@ -153,6 +160,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: communicate
+  verb: communicate
   version: 1
   description: 与另一位可见居民交换一条有依据的消息。
   parameters: {target_id: string, topic: string, message: string}
@@ -173,6 +181,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: eat_ration
+  verb: consume
   version: 1
   description: 吃下一份随身口粮。
   parameters: {item_id: string}
@@ -190,6 +199,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: drink_water
+  verb: consume
   version: 1
   description: 喝下一份随身淡水。
   parameters: {item_id: string}
@@ -207,6 +217,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: tune_signal
+  verb: repair
   version: 1
   description: 在潮门稳定后，消耗一个修理工具包校准季节信号透镜。
   parameters: {}
@@ -229,6 +240,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: ration_today
+  verb: allocate
   version: 1
   description: 今日公共决策：按人头收紧淡水配给，把余量留给风暴之后。
   parameters: {}
@@ -256,6 +268,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: repair_priority_today
+  verb: allocate
   version: 1
   description: 今日公共决策：把劳力集中到潮门，先补最危险的缺口。
   parameters: {}
@@ -283,6 +296,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: marsh_rest_today
+  verb: rest
   version: 1
   description: 今日公共决策：让沼泽和居民休养一天，接受潮门暂时少一点维护。
   parameters: {}

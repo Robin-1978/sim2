@@ -6,7 +6,7 @@ from typing import Any
 
 from ..actions.capacity import check_action_capacity
 from ..actions.institutions import allocation_preflight
-from ..world.navigation import reachable_locations
+from ..world.navigation import reachable_locations, resource_is_at_location
 from ..world.context import configured_context_values
 
 
@@ -56,9 +56,22 @@ class ActionAvailabilityMixin:
             parameters["resource_tag"] = source.get("id") if source else parameters.get("resource_tag")
         if action.get("requires_destination") and parameters.get("location_id") == (agent.get("initial_state") or {}).get("location_id"):
             return "the actor is already at the destination"
+        bound_resource = (
+            parameters.get("resource_id")
+            or parameters.get("target_resource")
+            or parameters.get("resource")
+            or parameters.get("resource_tag")
+        )
+        bound_resource_id = str(self.targets.canonical_id(str(bound_resource)) or bound_resource) if bound_resource else ""
         context = {
             "current_location": location,
             "location_id": (agent.get("initial_state") or {}).get("location_id"),
+            "resource_id": bound_resource_id,
+            "resource.here": resource_is_at_location(
+                self.store,
+                bound_resource_id,
+                (agent.get("initial_state") or {}).get("location_id"),
+            ),
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "area_id": parameters.get("area_id"),
             "source_id": parameters.get("source_id"),

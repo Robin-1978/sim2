@@ -100,7 +100,7 @@ def advance_until(platform: Platform, predicate, limit: int = 12) -> None:
 
 
 def take_and_complete(platform: Platform, intent_id: str = "take-1") -> None:
-    result = submit(platform, "tomas", "take_energy", intent_id)
+    result = submit(platform, "tomas", "take_resource", intent_id)
     assert result["status"] == "accepted"
     advance_until(platform, lambda: bool(violations(platform)))
 
@@ -148,8 +148,8 @@ def grant_delegation(
 # PA-01 .. PA-12
 # ---------------------------------------------------------------------------
 def test_pa_01_take_is_executable_without_authorization(platform: Platform) -> None:
-    take = behavior_entry(platform, "tomas", "take_energy")
-    withdraw = behavior_entry(platform, "tomas", "withdraw_energy")
+    take = behavior_entry(platform, "tomas", "take_resource")
+    withdraw = behavior_entry(platform, "tomas", "withdraw_resource")
 
     assert take["eligibility"]["available"] is True
     assert take["eligibility"]["gated"] is False
@@ -157,12 +157,12 @@ def test_pa_01_take_is_executable_without_authorization(platform: Platform) -> N
     assert take["risk"]["detection"] == "observed"
     assert withdraw["eligibility"]["available"] is False
     assert withdraw["eligibility"]["reasons"][0]["type"] == "missing_delegation"
-    assert [item["choice"] for item in platform.decision_view("tomas")["contested_actions"]] == ["Take Energy"]
+    assert [item["choice"] for item in platform.decision_view("tomas")["contested_actions"]] == ["Take Resource"]
 
 
 def test_pa_02_unwitnessed_take_is_undetected(platform: Platform) -> None:
     move(platform, "mira", "relay_yard")
-    result = submit(platform, "tomas", "take_energy", "take-1")
+    result = submit(platform, "tomas", "take_resource", "take-1")
     assert result["status"] == "accepted"
     assert resource_amount(platform) == 10
 
@@ -233,12 +233,12 @@ def test_pa_04_undetected_is_private_but_audited(platform: Platform) -> None:
 
 
 def test_pa_05_take_does_not_use_the_authorization_evaluator(platform: Platform) -> None:
-    result = submit(platform, "tomas", "take_energy", "take-1")
+    result = submit(platform, "tomas", "take_resource", "take-1")
 
     assert result["status"] == "accepted"
     assert events(platform, "behavior.denied") == []
     assert events(platform, "behavior.requested") == []
-    assert behavior_entry(platform, "tomas", "withdraw_energy")["eligibility"]["available"] is False
+    assert behavior_entry(platform, "tomas", "withdraw_resource")["eligibility"]["available"] is False
     assert resource_amount(platform) == 10
 
 
@@ -246,14 +246,14 @@ def test_pa_06_phase_one_chain_still_works_after_take(platform: Platform) -> Non
     take_and_complete(platform)
     assert resource_amount(platform) == 9
 
-    denied = submit(platform, "tomas", "withdraw_energy", "deny-2a")
+    denied = submit(platform, "tomas", "withdraw_resource", "deny-2a")
     assert denied["status"] == "rejected"
     assert denied["failed_check"] == "missing_delegation"
     denial = latest(platform, "behavior.denied")
     request_id = open_request(platform, int(denial["event_id"]))
     approved = submit(platform, "mira", "approve_withdrawal", "approve-2a", {"request_id": request_id})
     assert approved["status"] == "accepted"
-    withdrawn = submit(platform, "tomas", "withdraw_energy", "withdraw-2a")
+    withdrawn = submit(platform, "tomas", "withdraw_resource", "withdraw-2a")
     assert withdrawn["status"] == "accepted"
     advance_until(platform, lambda: bool(events(platform, "resource.withdrawal.completed")))
 
@@ -263,9 +263,9 @@ def test_pa_06_phase_one_chain_still_works_after_take(platform: Platform) -> Non
 
 
 def test_pa_07_intent_retry_has_one_side_effect(platform: Platform) -> None:
-    submit(platform, "tomas", "take_energy", "take-1")
+    submit(platform, "tomas", "take_resource", "take-1")
     advance_until(platform, lambda: bool(violations(platform)))
-    retry = submit(platform, "tomas", "take_energy", "take-1")
+    retry = submit(platform, "tomas", "take_resource", "take-1")
 
     assert retry["status"] == "accepted"
     assert resource_amount(platform) == 9
@@ -278,7 +278,7 @@ def test_pa_08_empty_resource_rejects_without_side_effects(platform: Platform) -
         platform.resources._change_world_resource("energy_reserve", -10, actor_id="test")
     assert resource_amount(platform) == 0
 
-    result = submit(platform, "tomas", "take_energy", "take-empty")
+    result = submit(platform, "tomas", "take_resource", "take-empty")
 
     assert result["status"] == "rejected"
     assert result["failed_check"] == "resource_empty"
@@ -299,7 +299,7 @@ def test_pa_09_completion_failure_rolls_back_everything(platform: Platform, monk
         return original(*args, **kwargs)
 
     monkeypatch.setattr(platform.store.repositories.memory, "put_memory", flaky_put_memory)
-    submit(platform, "tomas", "take_energy", "take-1")
+    submit(platform, "tomas", "take_resource", "take-1")
     advance_until(platform, lambda: bool(events(platform, "resource.take.failed")))
 
     failed = latest(platform, "resource.take.failed")
@@ -357,7 +357,7 @@ def test_pa_11_preview_is_side_effect_free_and_agrees_with_submit(platform: Plat
 
     before = snapshot()
     preview = AgentToolExecutor(platform, role="agent_decision", actor_id="tomas").execute(
-        "preview_behavior", {"choice": "Take Energy"},
+        "preview_behavior", {"choice": "Take Resource"},
     )
     after = snapshot()
     assert before == after
@@ -423,7 +423,7 @@ def test_pb_01_sanction_creates_restriction_and_blocks_delegated_withdrawal(plat
     assert sanctioned["restriction_id"] == restriction["restriction_id"]
     assert behavior_entry(platform, "mira", "review_violation")["eligibility"]["available"] is True
 
-    denied = submit(platform, "tomas", "withdraw_energy", "withdraw-blocked")
+    denied = submit(platform, "tomas", "withdraw_resource", "withdraw-blocked")
     assert denied["status"] == "rejected"
     assert denied["failed_check"] == "access_restricted"
     assert denied["retryable"] is True
@@ -451,7 +451,7 @@ def test_pb_02_forgive_revokes_restriction_and_restores_withdrawal(platform: Pla
     forgiven = latest(platform, "violation.forgiven")
     assert forgiven["restriction_id"] == restriction["restriction_id"]
 
-    withdrawn = submit(platform, "tomas", "withdraw_energy", "withdraw-after-forgive")
+    withdrawn = submit(platform, "tomas", "withdraw_resource", "withdraw-after-forgive")
     assert withdrawn["status"] == "accepted"
     advance_until(platform, lambda: bool(events(platform, "resource.withdrawal.completed")))
     assert resource_amount(platform) == 8
@@ -486,7 +486,7 @@ def test_pb_04_undetected_and_resolved_reviews_are_denied(platform: Platform) ->
     assert hidden_result["failed_check"] == "violation_not_observed"
 
     move(platform, "mira", "relay_station")
-    assert submit(platform, "tomas", "take_energy", "take-seen")["status"] == "accepted"
+    assert submit(platform, "tomas", "take_resource", "take-seen")["status"] == "accepted"
     advance_until(platform, lambda: any(item["status"] == "observed" for item in violations(platform)))
     seen = [item for item in violations(platform) if item["status"] == "observed"][0]
     assert review(platform, str(seen["violation_id"]), "sanction", "review-1")["status"] == "accepted"
@@ -518,7 +518,7 @@ def test_pb_06_no_restriction_keeps_phase_one_chain(platform: Platform) -> None:
     take_and_complete(platform)
     assert restrictions(platform) == []
 
-    withdrawn = submit(platform, "tomas", "withdraw_energy", "withdraw-normal")
+    withdrawn = submit(platform, "tomas", "withdraw_resource", "withdraw-normal")
     assert withdrawn["status"] == "accepted"
     advance_until(platform, lambda: bool(events(platform, "resource.withdrawal.completed")))
     assert latest(platform, "resource.withdrawal.completed")["intent_id"] == "withdraw-normal"
@@ -530,12 +530,12 @@ def test_pb_07_restriction_does_not_block_steward(platform: Platform) -> None:
     violation = violations(platform)[0]
     review(platform, str(violation["violation_id"]), "sanction", "review-1")
 
-    steward = submit(platform, "mira", "withdraw_energy", "withdraw-steward")
+    steward = submit(platform, "mira", "withdraw_resource", "withdraw-steward")
     assert steward["status"] == "accepted"
     advance_until(platform, lambda: bool(events(platform, "resource.withdrawal.completed")))
     assert resource_amount(platform) == 8
 
-    denied = submit(platform, "tomas", "withdraw_energy", "withdraw-restricted")
+    denied = submit(platform, "tomas", "withdraw_resource", "withdraw-restricted")
     assert denied["failed_check"] == "access_restricted"
 
 

@@ -105,8 +105,11 @@ class ResourceLedger:
         return None
 
     def _world_resource(self, key: str) -> dict[str, Any] | None:
+        from .targets import TargetResolver
+
+        resource_id = str(TargetResolver(self.store).canonical_id(key) or key)
         try:
-            entity = self.store.repositories.entities.get_entity(key)
+            entity = self.store.repositories.entities.get_entity(resource_id)
         except KeyError:
             return None
         data = entity.get("initial_state", {}) if isinstance(entity.get("initial_state"), dict) else {}
@@ -115,7 +118,7 @@ class ResourceLedger:
             amount = data.get("quantity", data.get("amount"))
         if not isinstance(amount, (int, float)):
             return None
-        return {"entity_id": key, "amount": float(amount)}
+        return {"entity_id": resource_id, "amount": float(amount)}
 
     def _change_world_resource(self, entity_id: str, delta: float, *, actor_id: str | None = None) -> None:
         entity = self.store.repositories.entities.get_entity(entity_id)

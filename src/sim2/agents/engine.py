@@ -564,6 +564,22 @@ class AgentEngine:
         for raw in required.get("behavior_effects") or []:
             if str(raw).casefold() not in effect_types:
                 missing.append(f"effect: {raw}")
+        for raw in required.get("generic_parameters") or []:
+            parameter = str(raw)
+            found = False
+            for action in action_defs:
+                if parameter not in (action.get("parameters") or {}):
+                    continue
+                if any(
+                    isinstance(effect, dict)
+                    and any(str(value) == f"context.{parameter}" for value in effect.values())
+                    for field in ("effects", "progress_effects")
+                    for effect in (action.get(field) or [])
+                ):
+                    found = True
+                    break
+            if not found:
+                missing.append(f"generic parameter: {parameter}")
         operations: set[tuple[str, str]] = set()
         for behavior in behaviors:
             operation = str(behavior.get("authorization_operation") or "").casefold()

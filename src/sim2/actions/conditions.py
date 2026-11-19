@@ -189,7 +189,7 @@ class ConditionEngine:
         return path in {
             "actor.alive", "actor.incapacitated", "actor.role", "actor.mobile",
             "actor.faction_id", "actor.at_location", "actor.exhausted", "actor.stunned",
-            "inventory.available", "inventory.item_available", "actor.inventory_item_available",
+            "inventory.available", "inventory.item_available", "actor.inventory_item_available", "resource.here",
             "route.known", "destination.reachable", "area.unknown", "area.not_fully_mapped",
             "object.available", "research.new_fact_available", "secret.source_available",
             "source.accessible", "target.available", "target.visible", "target.reachable",
@@ -353,7 +353,7 @@ class ConditionEngine:
             return bool(context.get(path, target.get("available", False)))
         if path == "institution.allocation_possible":
             return bool(context.get("institution.allocation_possible", False))
-        if path in {"location.safe", "destination.safe_or_defensible", "target.available", "patient.in_clinic", "resource.available", "inputs.available", "recipe.available", "medicine.available", "communication.channel_open", "location.reachable"}:
+        if path in {"location.safe", "destination.safe_or_defensible", "target.available", "patient.in_clinic", "resource.available", "resource.here", "inputs.available", "recipe.available", "medicine.available", "communication.channel_open", "location.reachable"}:
             if path == "location.safe":
                 location = context.get("current_location", {})
                 safe_tags = self.location_tag_groups.get("safe", set())

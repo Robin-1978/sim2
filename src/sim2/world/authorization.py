@@ -71,9 +71,9 @@ def behavior_authorization_spec(rule_compiler: Any, behavior: dict[str, Any], *,
         }
         if target and spec["target"] and spec["target"] == target:
             return spec
-        if fallback is None:
+        if not target and fallback is None:
             fallback = spec
-    return fallback
+    return fallback if not target else None
 
 
 def _allow(spec: dict[str, Any], authorization: dict[str, Any] | None = None, **extra: Any) -> dict[str, Any]:
@@ -283,7 +283,7 @@ def authorization_for_behavior(
         bound = values.get("resource_id") or values.get("resource") or values.get("target") or ""
         bound_id = (resolver.canonical_id(bound) if bound else None) or str(bound or "")
         if bound_id:
-            spec = behavior_authorization_spec(rule_compiler, behavior, target=bound_id) or spec
+            spec = behavior_authorization_spec(rule_compiler, behavior, target=bound_id)
     if spec is None:
         return {"available": True, "reasons": [], "mode": None, "rule_id": None, "authorization": None, "gated": False}
     stewardships = _stewardship_map(store)

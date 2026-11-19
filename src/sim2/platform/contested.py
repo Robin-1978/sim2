@@ -41,11 +41,15 @@ class ContestedService(PlatformService):
         self,
         behavior: dict[str, Any],
         action_defs: dict[str, dict[str, Any]] | None = None,
+        parameters: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         definitions = action_defs or {
             item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")
         }
-        return resource_take_effect(behavior, definitions)
+        behavior_defs = {
+            item["id"]: item for item in self.store.repositories.entities.get_definitions("bt_def")
+        }
+        return resource_take_effect(behavior, definitions, behavior_defs, parameters)
 
     def feasibility(self, agent: dict[str, Any], effect: dict[str, Any]) -> dict[str, Any] | None:
         """Return an admission rejection for impossible takes, or ``None``.
@@ -81,7 +85,8 @@ class ContestedService(PlatformService):
         feasibility failures.
         """
 
-        resource_id = str(effect.get("resource_id") or effect.get("resource") or "").strip()
+        resource_ref = str(effect.get("resource_id") or effect.get("resource") or "").strip()
+        resource_id = str(self.targets.canonical_id(resource_ref) or resource_ref) if resource_ref else ""
         amount = float(effect.get("amount", effect.get("quantity", 1)) or 0)
         scope = str(effect.get("scope") or "").strip()
         mode = str(effect.get("mode") or "covert")

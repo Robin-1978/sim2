@@ -4,6 +4,10 @@ Status: **frozen external contract; implementation evidence recorded in [the Pha
 Scope: **Phase 1A deterministic contract + Phase 1B remote-LLM probe**  
 Compatibility: **none required; this contract replaces earlier conflicting behavior**
 
+> 迁移说明（2026-11-19）: probe 行为 ID `withdraw_energy`/`take_energy` 已迁移为通用
+> `withdraw_resource`/`take_resource`；资源目标由 Behavior 节点绑定 `energy_reserve`，
+> 授权 scope 仍为 `energy_withdrawal`。本契约中的事件、请求、委托和拒绝语义未改变。
+
 This document is the single source of truth for Phase 1. Earlier discussion notes,
 prototype probes and conflicting clauses are superseded. Internal implementation
 may change; the external behavior, event schema and transaction boundaries below

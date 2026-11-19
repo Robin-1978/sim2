@@ -19,11 +19,10 @@ from sim2.bootstrap.service import create_instance
 from sim2.intents.models import BehaviorIntent
 from sim2.platform.runtime import Platform
 from sim2.world.growth import build_growth_ledger
+from sim2.world.authorization import authorization_for_behavior
 from worlds.dynamic_social_probe.proposals import (
     APPROVE,
     FILL,
-    FILL_COOLANT,
-    FILL_FUEL,
     FUEL_DEPOT,
     FUEL_RESERVE,
     FUEL_RULES,
@@ -31,19 +30,13 @@ from worlds.dynamic_social_probe.proposals import (
     REJECT,
     REQUEST,
     REVIEW,
-    REVIEW_COOLANT,
-    REVIEW_FUEL,
     REVOKE,
     RULES,
     STEWARDSHIP,
     TAKE,
-    TAKE_COOLANT,
-    TAKE_FUEL,
     WATER_PLANT,
     WATER_RESERVE,
     WITHDRAW,
-    WITHDRAW_COOLANT,
-    WITHDRAW_FUEL,
     install_social_content,
     install_second_resource,
     install_third_resource,
@@ -93,12 +86,15 @@ def submit(
     intent_id: str,
     parameters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    params = dict(parameters or {})
+    if behavior in {"fill_resource", "withdraw_resource", "take_resource"}:
+        params.setdefault("resource_id", "Water Reserve")
     return platform.submit_behavior(
         BehaviorIntent(
             actor_id=actor,
             behavior_ref=f"behavior:{behavior}",
             target={},
-            parameters=dict(parameters or {}),
+            parameters=params,
             reason="phase three contract test",
             confidence=0.8,
             intent_id=intent_id,
@@ -158,33 +154,39 @@ def tick_to(platform: Platform, minute: int) -> None:
 
 
 def fill_reserve(platform: Platform, intent_id: str = "fill-1") -> None:
-    result = submit(platform, "mira", "fill_water_reserve", intent_id)
+    result = submit(platform, "mira", "fill_resource", intent_id, {"resource_id": "Water Reserve"})
     assert result["status"] == "accepted"
     advance_until(platform, lambda: resource_amount(platform) >= 10)
 
 
 def fill_fuel(platform: Platform, intent_id: str = "fill-fuel-1") -> None:
-    result = submit(platform, "mira", "fill_fuel_reserve", intent_id)
+    result = submit(platform, "mira", "fill_resource", intent_id, {"resource_id": "Fuel Reserve"})
     assert result["status"] == "accepted"
     advance_until(platform, lambda: resource_amount_of(platform, "fuel_reserve") >= 10)
 
 
 def fill_coolant(platform: Platform, intent_id: str = "fill-coolant-1") -> None:
-    result = submit(platform, "mira", "fill_coolant_reserve", intent_id)
+    result = submit(platform, "mira", "fill_resource", intent_id, {"resource_id": "Coolant Reserve"})
     assert result["status"] == "accepted"
     advance_until(platform, lambda: resource_amount_of(platform, "coolant_reserve") >= 10)
 
 
-def grant_delegation_for(platform: Platform, behavior_id: str, suffix: str) -> str:
-    denied = submit(platform, "tomas", behavior_id, f"deny-{suffix}")
+def grant_delegation_for(
+    platform: Platform,
+    behavior_id: str,
+    suffix: str,
+    resource: str = "Water Reserve",
+) -> str:
+    denied = submit(platform, "tomas", behavior_id, f"deny-{suffix}", {"resource_id": resource})
     assert denied["failed_check"] == "missing_delegation"
     denial = latest(platform, "behavior.denied")
+    assert denial["target"] == resource_id_of(platform, resource)
     requested = submit(
         platform,
         "tomas",
         "request_access",
         f"request-{suffix}",
-        {"based_on_event": str(denial["event_id"]), "reason": f"Need {suffix}"},
+        {"based_on_event": str(denial["event_id"]), "reason": f"Need {resource}", "target": resource},
     )
     assert requested["status"] == "accepted"
     approved = submit(platform, "mira", "approve_withdrawal", f"approve-{suffix}", {"request_id": requested["request_id"]})
@@ -192,8 +194,12 @@ def grant_delegation_for(platform: Platform, behavior_id: str, suffix: str) -> s
     return str(approved["delegation_id"])
 
 
+def resource_id_of(platform: Platform, resource: str) -> str:
+    return str(platform.targets.canonical_id(resource) or resource)
+
+
 def grant_delegation(platform: Platform) -> str:
-    denied = submit(platform, "tomas", "withdraw_water", "deny-before-request")
+    denied = submit(platform, "tomas", "withdraw_resource", "deny-before-request", {"resource_id": "Water Reserve"})
     assert denied["failed_check"] == "missing_delegation"
     denial = latest(platform, "behavior.denied")
     requested = submit(
@@ -201,7 +207,7 @@ def grant_delegation(platform: Platform) -> str:
         "tomas",
         "request_access",
         "request-for-delegation",
-        {"based_on_event": str(denial["event_id"]), "reason": "Need water"},
+        {"based_on_event": str(denial["event_id"]), "reason": "Need water", "target": "Water Reserve"},
     )
     assert requested["status"] == "accepted"
     approved = submit(platform, "mira", "approve_withdrawal", "approve-for-delegation", {"request_id": requested["request_id"]})
@@ -228,7 +234,7 @@ def content_counts(platform: Platform) -> dict[str, int]:
 def test_da_01_empty_world_has_no_social_content(platform: Platform) -> None:
     assert all(item["id"] not in {"water_plant", "water_reserve"} for item in platform.store.repositories.entities.entities_of_type("location") + platform.store.repositories.entities.entities_of_type("resource"))
     definitions = {item["id"] for table in ("action_def", "bt_def") for item in platform.store.repositories.entities.get_definitions(table)}
-    assert not definitions & {"fill_water_reserve", "withdraw_water", "take_water", "review_water_violation"}
+    assert not definitions & {"fill_resource", "withdraw_resource", "take_resource", "review_violation"}
     assert platform.store.repositories.entities.list_relationships() == []
     assert (platform.store.repositories.metadata.get("rules", {}) or {}).get("world_rules", []) == []
     assert platform.store.repositories.contested.count_violations() == 0
@@ -246,8 +252,9 @@ def test_da_02_god_creates_resource_rules_and_behaviors(platform: Platform) -> N
     assert all(result["status"] == "accepted" for result in results.values()), results
     actions = {item["id"] for item in platform.store.repositories.entities.get_definitions("action_def")}
     behaviors = {item["id"] for item in platform.store.repositories.entities.get_definitions("bt_def")}
-    assert {"fill_water_reserve", "withdraw_water", "take_water", "review_water_violation"} <= actions
-    assert {"fill_water_reserve", "withdraw_water", "take_water", "review_water_violation"} <= behaviors
+    assert {"fill_resource", "withdraw_resource", "take_resource", "review_violation"} <= actions
+    assert {"fill_resource", "withdraw_resource", "take_resource", "review_violation"} <= behaviors
+    assert not {"fill_water_reserve", "withdraw_water", "take_water", "review_water_violation"} & actions
     assert {"water_reserve_stewardship", "water_approval_authority", "water_revocation_authority", "water_violation_authority"} <= {
         item["id"] for item in (platform.store.repositories.metadata.get("rules", {}) or {}).get("world_rules", [])
     }
@@ -255,28 +262,63 @@ def test_da_02_god_creates_resource_rules_and_behaviors(platform: Platform) -> N
     assert any(item["event_type"] == "entity.created" for item in events(platform))
     assert any(item["event_type"].startswith("world.change.") for item in events(platform))
 
-    tomas_withdraw = behavior_entry(platform, "tomas", "withdraw_water")
-    mira_withdraw = behavior_entry(platform, "mira", "withdraw_water")
-    take = behavior_entry(platform, "tomas", "take_water")
+    tomas_withdraw = behavior_entry(platform, "tomas", "withdraw_resource")
+    mira_withdraw = behavior_entry(platform, "mira", "withdraw_resource")
+    take = behavior_entry(platform, "tomas", "take_resource")
     assert tomas_withdraw["eligibility"]["available"] is False
     assert tomas_withdraw["eligibility"]["reasons"][0]["type"] == "missing_delegation"
     assert mira_withdraw["eligibility"]["available"] is True
     assert take["eligibility"]["available"] is True
     assert take["eligibility"]["gated"] is False
-    assert behavior_entry(platform, "mira", "fill_water_reserve")["eligibility"]["available"] is True
-    assert behavior_entry(platform, "mira", "review_water_violation")["eligibility"]["available"] is False
+    assert behavior_entry(platform, "mira", "fill_resource")["eligibility"]["available"] is True
+    assert behavior_entry(platform, "mira", "review_violation")["eligibility"]["available"] is False
 
     move(platform, "mira", "water_plant")
     move(platform, "tomas", "water_plant")
-    assert behavior_entry(platform, "tomas", "take_water")["risk"]["observers"] == ["Mira"]
-    assert behavior_entry(platform, "tomas", "take_water")["risk"]["detection"] == "observed"
+    assert behavior_entry(platform, "tomas", "take_resource")["risk"]["observers"] == ["Mira"]
+    assert behavior_entry(platform, "tomas", "take_resource")["risk"]["detection"] == "observed"
+
+
+def test_generic_capability_does_not_borrow_another_resources_rule(platform: Platform) -> None:
+    """A stock without a rule is not silently governed by the first stock's rule."""
+
+    install_social_content(platform)
+    with platform.store.transaction():
+        platform.store.repositories.entities.put_entity(
+            "unruled_stock",
+            "resource",
+            "Unruled Stock",
+            {"initial_state": {"location_id": "water_plant", "quantity": 0}},
+        )
+    behavior = next(
+        item for item in platform.store.repositories.entities.get_definitions("bt_def")
+        if item.get("id") == "withdraw_resource"
+    )
+    tomas = platform.store.repositories.entities.get_agent("tomas")
+    unruled = authorization_for_behavior(
+        platform.store,
+        tomas,
+        behavior,
+        {"resource_id": "unruled_stock"},
+        rule_compiler=platform.rule_compiler,
+    )
+    governed = authorization_for_behavior(
+        platform.store,
+        tomas,
+        behavior,
+        {"resource_id": "water_reserve"},
+        rule_compiler=platform.rule_compiler,
+    )
+    assert unruled["gated"] is False
+    assert governed["gated"] is True
+    assert governed["available"] is False
 
 
 def test_da_03_controlled_withdrawal_chain_on_generated_content(platform: Platform) -> None:
     install_social_content(platform)
     fill_reserve(platform)
 
-    denied = submit(platform, "tomas", "withdraw_water", "deny-1")
+    denied = submit(platform, "tomas", "withdraw_resource", "deny-1")
     assert denied["failed_check"] == "missing_delegation"
     denial = latest(platform, "behavior.denied")
     request = submit(
@@ -290,7 +332,7 @@ def test_da_03_controlled_withdrawal_chain_on_generated_content(platform: Platfo
     approved = submit(platform, "mira", "approve_withdrawal", "approve-1", {"request_id": request["request_id"]})
     assert approved["status"] == "accepted"
     delegation_id = str(approved["delegation_id"])
-    withdrawn = submit(platform, "tomas", "withdraw_water", "withdraw-1")
+    withdrawn = submit(platform, "tomas", "withdraw_resource", "withdraw-1")
     assert withdrawn["status"] == "accepted"
     advance_until(platform, lambda: bool(events(platform, "resource.withdrawal.completed")))
     assert resource_amount(platform) == 9
@@ -298,7 +340,7 @@ def test_da_03_controlled_withdrawal_chain_on_generated_content(platform: Platfo
 
     revoked = submit(platform, "mira", "revoke_delegation", "revoke-1", {"delegation_id": delegation_id})
     assert revoked["status"] == "accepted"
-    after = submit(platform, "tomas", "withdraw_water", "withdraw-2")
+    after = submit(platform, "tomas", "withdraw_resource", "withdraw-2")
     assert after["failed_check"] == "delegation_revoked"
     assert resource_amount(platform) == 9
 
@@ -310,32 +352,32 @@ def test_da_04_violation_sanction_and_forgiveness_on_generated_content(platform:
     move(platform, "mira", "water_plant")
     move(platform, "tomas", "water_plant")
 
-    take = submit(platform, "tomas", "take_water", "take-1")
+    take = submit(platform, "tomas", "take_resource", "take-1")
     assert take["status"] == "accepted"
     advance_until(platform, lambda: bool(platform.store.repositories.contested.list_violations()))
     observed = platform.store.repositories.contested.list_violations()[0]
     assert observed["status"] == "observed"
     assert observed["witnesses"] == ["mira"]
     assert resource_amount(platform) == 9
-    assert behavior_entry(platform, "mira", "review_water_violation")["eligibility"]["available"] is True
+    assert behavior_entry(platform, "mira", "review_violation")["eligibility"]["available"] is True
 
-    sanctioned = submit(platform, "mira", "review_water_violation", "sanction-1", {"violation_id": observed["violation_id"], "decision": "sanction"})
+    sanctioned = submit(platform, "mira", "review_violation", "sanction-1", {"violation_id": observed["violation_id"], "decision": "sanction"})
     assert sanctioned["status"] == "accepted"
-    assert platform.store.repositories.contested.active_restriction("tomas", "water_reserve", "water_withdrawal") is not None
-    blocked = submit(platform, "tomas", "withdraw_water", "withdraw-blocked")
+    assert platform.store.repositories.contested.active_restriction("tomas", "water_reserve", "resource_withdrawal") is not None
+    blocked = submit(platform, "tomas", "withdraw_resource", "withdraw-blocked")
     assert blocked["failed_check"] == "access_restricted"
 
-    forgiven = submit(platform, "mira", "review_water_violation", "forgive-1", {"violation_id": observed["violation_id"], "decision": "forgive"})
+    forgiven = submit(platform, "mira", "review_violation", "forgive-1", {"violation_id": observed["violation_id"], "decision": "forgive"})
     assert forgiven["status"] == "accepted"
-    assert platform.store.repositories.contested.active_restriction("tomas", "water_reserve", "water_withdrawal") is None
-    restored = submit(platform, "tomas", "withdraw_water", "withdraw-restored")
+    assert platform.store.repositories.contested.active_restriction("tomas", "water_reserve", "resource_withdrawal") is None
+    restored = submit(platform, "tomas", "withdraw_resource", "withdraw-restored")
     assert restored["status"] == "accepted"
     advance_until(platform, lambda: len(events(platform, "resource.withdrawal.completed")) >= 1)
     assert resource_amount(platform) == 8
 
     move(platform, "mira", "relay_yard")
     move(platform, "tomas", "water_plant")
-    hidden_take = submit(platform, "tomas", "take_water", "take-hidden")
+    hidden_take = submit(platform, "tomas", "take_resource", "take-hidden")
     assert hidden_take["status"] == "accepted"
     advance_until(platform, lambda: len(platform.store.repositories.contested.list_violations()) >= 2)
     hidden = [item for item in platform.store.repositories.contested.list_violations() if item["status"] == "undetected"][0]
@@ -362,6 +404,25 @@ def test_da_05_director_demand_and_completion(platform: Platform) -> None:
     assert next_plan["plan_id"] != completed["plan_id"]
 
 
+def test_contract_gate_accepts_the_generic_capability_pack(platform: Platform) -> None:
+    """The world's own contract recognizes one bound transfer family as complete."""
+
+    install_social_content(platform)
+    evolution = dict(platform.store.repositories.metadata.get("evolution", {}) or {})
+    contract = dict((evolution.get("contracts", {}) or {}).get("god_structural", {}) or {})
+    required = dict(contract.get("required_content") or {})
+    assert required.get("generic_parameters") == ["resource_id"]
+    _set_required_content(platform, required)
+    provider = _SequenceProvider([{"intent_type": "wait", "reason": "The generic pack is complete."}])
+    turn = AgentEngine(platform, provider, max_iterations=2).run(
+        role="god",
+        actor_id="god",
+        task_type="god_structural",
+    )
+    assert turn.result["status"] == "wait", turn.result
+    assert turn.result.get("failed_check") != "required_content", turn.result
+
+
 def test_da_06_invalid_proposals_leave_no_partial_content(platform: Platform) -> None:
     def rejected(payload: dict[str, Any], *, kind: str) -> dict[str, Any]:
         before = content_counts(platform)
@@ -381,12 +442,12 @@ def test_da_06_invalid_proposals_leave_no_partial_content(platform: Platform) ->
     base_action = dict(FILL)
     definition = dict(base_action["definition"])
     definition["id"] = "bad_missing_resource"
-    definition["effects"] = [{"type": "resource_withdrawal", "resource_id": "missing_reserve", "amount": 1, "scope": "water_withdrawal"}]
+    definition["effects"] = [{"type": "resource_withdrawal", "resource_id": "missing_reserve", "amount": 1, "scope": "resource_withdrawal"}]
     rejected({**base_action, "name": "Bad Missing Resource", "definition": definition, "followup_behavior": {**base_action["followup_behavior"], "name": "Bad Missing Resource", "definition": {**base_action["followup_behavior"]["definition"], "id": "bad_missing_resource"}}}, kind="definition")
 
     definition = dict(base_action["definition"])
     definition["id"] = "bad_wrong_target"
-    definition["effects"] = [{"type": "resource_withdrawal", "resource_id": "relay_station", "amount": 1, "scope": "water_withdrawal"}]
+    definition["effects"] = [{"type": "resource_withdrawal", "resource_id": "relay_station", "amount": 1, "scope": "resource_withdrawal"}]
     rejected({**base_action, "name": "Bad Wrong Target", "definition": definition, "followup_behavior": {**base_action["followup_behavior"], "name": "Bad Wrong Target", "definition": {**base_action["followup_behavior"]["definition"], "id": "bad_wrong_target"}}}, kind="definition")
 
     definition = dict(base_action["definition"])
@@ -396,7 +457,7 @@ def test_da_06_invalid_proposals_leave_no_partial_content(platform: Platform) ->
 
     take_definition = dict(TAKE["definition"])
     take_definition["id"] = "bad_take_mode"
-    take_definition["effects"] = [{"type": "resource_take", "resource_id": "water_reserve", "amount": 1, "scope": "water_withdrawal", "mode": "public"}]
+    take_definition["effects"] = [{"type": "resource_take", "resource_id": "water_reserve", "amount": 1, "scope": "resource_withdrawal", "mode": "public"}]
     rejected({**TAKE, "name": "Bad Take Mode", "definition": take_definition, "followup_behavior": {**TAKE["followup_behavior"], "name": "Bad Take Mode", "definition": {**TAKE["followup_behavior"]["definition"], "id": "bad_take_mode"}}}, kind="definition")
 
     rejected({
@@ -431,7 +492,7 @@ def test_da_06_invalid_proposals_leave_no_partial_content(platform: Platform) ->
         "rule": {
             "id": "bad_authorization_target",
             "condition": "true",
-            "effect": {"type": "authorization", "mode": "resource_access", "target": "missing_reserve", "scope": "water_withdrawal", "behavior_ids": ["travel"]},
+            "effect": {"type": "authorization", "mode": "resource_access", "target": "missing_reserve", "scope": "resource_withdrawal", "behavior_ids": ["travel"]},
         },
     }, kind="world_change")
 
@@ -450,28 +511,16 @@ def test_da_07_platform_source_has_no_water_content(platform: Platform) -> None:
     identifiers = (
         "water_plant",
         "water_reserve",
-        "fill_water_reserve",
-        "withdraw_water",
-        "take_water",
-        "review_water_violation",
         "water_reserve_stewardship",
         "water_approval_authority",
         "water_revocation_authority",
         "water_violation_authority",
         "fuel_depot",
         "fuel_reserve",
-        "fill_fuel_reserve",
-        "withdraw_fuel",
-        "take_fuel",
-        "review_fuel_violation",
         "fuel_reserve_stewardship",
         "fuel_violation_authority",
         "coolant_shed",
         "coolant_reserve",
-        "fill_coolant_reserve",
-        "withdraw_coolant",
-        "take_coolant",
-        "review_coolant_violation",
         "coolant_reserve_stewardship",
         "coolant_violation_authority",
     )
@@ -488,13 +537,13 @@ def test_da_08_phase_one_and_two_codes_are_preserved(platform: Platform) -> None
     install_social_content(platform)
     fill_reserve(platform)
 
-    denied = submit(platform, "tomas", "withdraw_water", "deny-preserved")
+    denied = submit(platform, "tomas", "withdraw_resource", "deny-preserved")
     assert denied["failed_check"] == "missing_delegation"
     assert denied["rule_id"] == "water_reserve_stewardship"
 
     move(platform, "mira", "water_plant")
     move(platform, "tomas", "water_plant")
-    assert submit(platform, "tomas", "take_water", "take-preserved")["status"] == "accepted"
+    assert submit(platform, "tomas", "take_resource", "take-preserved")["status"] == "accepted"
     advance_until(platform, lambda: bool(platform.store.repositories.contested.list_violations()))
     assert latest(platform, "violation.observed")["witnesses"] == ["mira"]
 
@@ -504,7 +553,7 @@ def test_da_09_negative_space(platform: Platform) -> None:
     fill_reserve(platform)
     move(platform, "mira", "water_plant")
     move(platform, "tomas", "water_plant")
-    assert submit(platform, "tomas", "take_water", "take-negative")["status"] == "accepted"
+    assert submit(platform, "tomas", "take_resource", "take-negative")["status"] == "accepted"
     advance_until(platform, lambda: bool(platform.store.repositories.contested.list_violations()))
 
     event_types = {str(item.get("event_type")) for item in events(platform)}
@@ -553,7 +602,7 @@ def test_da_11_visible_resource_names_are_canonicalized(platform: Platform) -> N
         assert platform.submit_world_change("god", value)["status"] == "accepted"
 
     fill_reserve(platform)
-    denied = submit(platform, "tomas", "withdraw_water", "visible-deny")
+    denied = submit(platform, "tomas", "withdraw_resource", "visible-deny")
     assert denied["failed_check"] == "missing_delegation"
     denial = latest(platform, "behavior.denied")
     requested = submit(
@@ -567,7 +616,7 @@ def test_da_11_visible_resource_names_are_canonicalized(platform: Platform) -> N
     approved = submit(platform, "mira", "approve_withdrawal", "visible-approve", {"request_id": requested["request_id"]})
     assert approved["status"] == "accepted", approved
     assert approved.get("delegation_id")
-    withdrawn = submit(platform, "tomas", "withdraw_water", "visible-withdraw")
+    withdrawn = submit(platform, "tomas", "withdraw_resource", "visible-withdraw")
     assert withdrawn["status"] == "accepted"
     advance_until(platform, lambda: bool(events(platform, "resource.withdrawal.completed")))
     assert resource_amount(platform) == 9
@@ -588,7 +637,7 @@ def test_da_10_duplicate_and_failed_proposals_are_idempotent(platform: Platform)
     bad = dict(WITHDRAW)
     bad_definition = dict(bad["definition"])
     bad_definition["id"] = "bad_failed_proposal"
-    bad_definition["effects"] = [{"type": "resource_withdrawal", "resource_id": "missing_reserve", "amount": 1, "scope": "water_withdrawal"}]
+    bad_definition["effects"] = [{"type": "resource_withdrawal", "resource_id": "missing_reserve", "amount": 1, "scope": "resource_withdrawal"}]
     failed = platform.submit_definition_proposal(
         "god",
         {
@@ -606,8 +655,12 @@ def test_da_12_second_resource_reuses_same_primitives(platform: Platform) -> Non
     """A second resource reuses the same actions, rules, witnesses and review path."""
 
     water = install_social_content(platform)
+    before = content_counts(platform)
     fuel = install_second_resource(platform)
+    after = content_counts(platform)
     assert all(item["status"] == "accepted" for item in {**water, **fuel}.values())
+    assert after["actions"] == before["actions"]
+    assert after["behaviors"] == before["behaviors"]
     assert resource_amount_of(platform, "water_reserve") == 0
     assert resource_amount_of(platform, "fuel_reserve") == 0
 
@@ -616,58 +669,63 @@ def test_da_12_second_resource_reuses_same_primitives(platform: Platform) -> Non
     assert resource_amount(platform) == 10
     assert resource_amount_of(platform, "fuel_reserve") == 10
 
-    grant_delegation_for(platform, "withdraw_water", "water")
-    grant_delegation_for(platform, "withdraw_fuel", "fuel")
+    grant_delegation_for(platform, "withdraw_resource", "water")
+    grant_delegation_for(platform, "withdraw_resource", "fuel", "Fuel Reserve")
 
     move(platform, "mira", "fuel_depot")
     move(platform, "tomas", "fuel_depot")
-    assert submit(platform, "tomas", "take_fuel", "take-fuel-1")["status"] == "accepted"
+    assert submit(platform, "tomas", "take_resource", "take-fuel-1", {"resource_id": "Fuel Reserve"})["status"] == "accepted"
     advance_until(platform, lambda: bool(platform.store.repositories.contested.list_violations()))
     violation = platform.store.repositories.contested.list_violations()[0]
     assert violation["target"] == "fuel_reserve"
     assert violation["witnesses"] == ["mira"]
-    assert violation["scope"] == "fuel_withdrawal"
+    assert violation["scope"] == "resource_withdrawal"
     assert resource_amount_of(platform, "fuel_reserve") == 9
 
     sanctioned = submit(
         platform,
         "mira",
-        "review_fuel_violation",
+        "review_violation",
         "sanction-fuel-1",
         {"violation_id": violation["violation_id"], "decision": "sanction"},
     )
     assert sanctioned["status"] == "accepted"
-    assert platform.store.repositories.contested.active_restriction("tomas", "fuel_reserve", "fuel_withdrawal") is not None
-    assert platform.store.repositories.contested.active_restriction("tomas", "water_reserve", "water_withdrawal") is None
+    assert platform.store.repositories.contested.active_restriction("tomas", "fuel_reserve", "resource_withdrawal") is not None
+    assert platform.store.repositories.contested.active_restriction("tomas", "water_reserve", "resource_withdrawal") is None
 
-    water_allowed = submit(platform, "tomas", "withdraw_water", "water-after-fuel-sanction")
+    water_allowed = submit(platform, "tomas", "withdraw_resource", "water-after-fuel-sanction")
     assert water_allowed["status"] == "accepted"
     advance_until(platform, lambda: bool(events(platform, "resource.withdrawal.completed")))
-    fuel_blocked = submit(platform, "tomas", "withdraw_fuel", "fuel-after-sanction")
+    fuel_blocked = submit(platform, "tomas", "withdraw_resource", "fuel-after-sanction", {"resource_id": "Fuel Reserve"})
     assert fuel_blocked["failed_check"] == "access_restricted"
 
     forgiven = submit(
         platform,
         "mira",
-        "review_fuel_violation",
+        "review_violation",
         "forgive-fuel-1",
         {"violation_id": violation["violation_id"], "decision": "forgive"},
     )
     assert forgiven["status"] == "accepted"
-    assert platform.store.repositories.contested.active_restriction("tomas", "fuel_reserve", "fuel_withdrawal") is None
-    fuel_restored = submit(platform, "tomas", "withdraw_fuel", "fuel-after-forgive")
+    assert platform.store.repositories.contested.active_restriction("tomas", "fuel_reserve", "resource_withdrawal") is None
+    fuel_restored = submit(platform, "tomas", "withdraw_resource", "fuel-after-forgive", {"resource_id": "Fuel Reserve"})
     assert fuel_restored["status"] == "accepted"
 
 
 def test_da_13_third_resource_has_independent_scope(platform: Platform) -> None:
     """A third resource proves the same DSL scales without cross-resource leaks."""
 
+    water = install_social_content(platform)
+    before = content_counts(platform)
     results = {
-        **install_social_content(platform),
+        **water,
         **install_second_resource(platform),
         **install_third_resource(platform),
     }
+    after = content_counts(platform)
     assert all(item["status"] == "accepted" for item in results.values())
+    assert after["actions"] == before["actions"]
+    assert after["behaviors"] == before["behaviors"]
     fill_reserve(platform, "fill-water-third")
     fill_fuel(platform)
     fill_coolant(platform)
@@ -675,50 +733,57 @@ def test_da_13_third_resource_has_independent_scope(platform: Platform) -> None:
     assert resource_amount_of(platform, "fuel_reserve") == 10
     assert resource_amount_of(platform, "coolant_reserve") == 10
 
-    grant_delegation_for(platform, "withdraw_water", "water-third")
-    grant_delegation_for(platform, "withdraw_fuel", "fuel-third")
-    grant_delegation_for(platform, "withdraw_coolant", "coolant-third")
+    grant_delegation_for(platform, "withdraw_resource", "water-third")
+    grant_delegation_for(platform, "withdraw_resource", "fuel-third", "Fuel Reserve")
+    grant_delegation_for(platform, "withdraw_resource", "coolant-third", "Coolant Reserve")
 
     move(platform, "mira", "coolant_shed")
     move(platform, "tomas", "coolant_shed")
-    assert submit(platform, "tomas", "take_coolant", "take-coolant-1")["status"] == "accepted"
+    assert submit(platform, "tomas", "take_resource", "take-coolant-1", {"resource_id": "Coolant Reserve"})["status"] == "accepted"
     advance_until(platform, lambda: bool(platform.store.repositories.contested.list_violations()))
     violation = platform.store.repositories.contested.list_violations()[0]
     assert violation["target"] == "coolant_reserve"
-    assert violation["scope"] == "coolant_withdrawal"
+    assert violation["scope"] == "resource_withdrawal"
     assert violation["witnesses"] == ["mira"]
 
     sanctioned = submit(
         platform,
         "mira",
-        "review_coolant_violation",
+        "review_violation",
         "sanction-coolant-1",
         {"violation_id": violation["violation_id"], "decision": "sanction"},
     )
     assert sanctioned["status"] == "accepted"
-    assert platform.store.repositories.contested.active_restriction("tomas", "coolant_reserve", "coolant_withdrawal") is not None
-    assert platform.store.repositories.contested.active_restriction("tomas", "water_reserve", "water_withdrawal") is None
-    assert platform.store.repositories.contested.active_restriction("tomas", "fuel_reserve", "fuel_withdrawal") is None
+    assert platform.store.repositories.contested.active_restriction("tomas", "coolant_reserve", "resource_withdrawal") is not None
+    assert platform.store.repositories.contested.active_restriction("tomas", "water_reserve", "resource_withdrawal") is None
+    assert platform.store.repositories.contested.active_restriction("tomas", "fuel_reserve", "resource_withdrawal") is None
 
-    water_entry = behavior_entry(platform, "tomas", "withdraw_water")
-    fuel_entry = behavior_entry(platform, "tomas", "withdraw_fuel")
-    coolant_entry = behavior_entry(platform, "tomas", "withdraw_coolant")
-    assert water_entry["eligibility"]["available"] is True
-    assert fuel_entry["eligibility"]["available"] is True
-    assert coolant_entry["eligibility"]["available"] is False
-    assert coolant_entry["eligibility"]["reasons"][0]["type"] == "access_restricted"
+    entry = behavior_entry(platform, "tomas", "withdraw_resource")
+    options = {str(option["value"]): option for option in entry["parameter_options"]["resource_id"]}
+    assert options["water_reserve"]["available"] is True
+    assert options["fuel_reserve"]["available"] is True
+    assert options["coolant_reserve"]["available"] is False
+    assert "restriction" in options["coolant_reserve"]["blocked_reason"]
+
+    water_allowed = submit(platform, "tomas", "withdraw_resource", "water-after-coolant-sanction", {"resource_id": "Water Reserve"})
+    assert water_allowed["status"] == "accepted"
+    advance_until(platform, lambda: bool(events(platform, "resource.withdrawal.completed")))
+    fuel_allowed = submit(platform, "tomas", "withdraw_resource", "fuel-after-coolant-sanction", {"resource_id": "Fuel Reserve"})
+    assert fuel_allowed["status"] == "accepted"
+    advance_until(platform, lambda: len(events(platform, "resource.withdrawal.completed")) >= 2)
+    coolant_blocked = submit(platform, "tomas", "withdraw_resource", "coolant-after-sanction", {"resource_id": "Coolant Reserve"})
+    assert coolant_blocked["failed_check"] == "access_restricted"
 
     forgiven = submit(
         platform,
         "mira",
-        "review_coolant_violation",
+        "review_violation",
         "forgive-coolant-1",
         {"violation_id": violation["violation_id"], "decision": "forgive"},
     )
     assert forgiven["status"] == "accepted"
-    assert platform.store.repositories.contested.active_restriction("tomas", "coolant_reserve", "coolant_withdrawal") is None
-    assert behavior_entry(platform, "tomas", "withdraw_coolant")["eligibility"]["available"] is True
-    assert submit(platform, "tomas", "withdraw_coolant", "coolant-after-forgive")["status"] == "accepted"
+    assert platform.store.repositories.contested.active_restriction("tomas", "coolant_reserve", "resource_withdrawal") is None
+    assert submit(platform, "tomas", "withdraw_resource", "coolant-after-forgive", {"resource_id": "Coolant Reserve"})["status"] == "accepted"
 
 
 class _SequenceProvider:
@@ -1090,7 +1155,7 @@ def test_access_request_publishes_the_configured_story_wake(platform: Platform) 
     fill_reserve(platform)
     move(platform, "mira", "water_plant")
     move(platform, "tomas", "water_plant")
-    denied = submit(platform, "tomas", "withdraw_water", "wake-denied")
+    denied = submit(platform, "tomas", "withdraw_resource", "wake-denied")
     assert denied["failed_check"] == "missing_delegation"
     denial = latest(platform, "behavior.denied")
     requested = submit(

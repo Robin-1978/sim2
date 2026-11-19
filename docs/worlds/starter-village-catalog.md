@@ -65,7 +65,7 @@
 | `sound_alarm` | 向村庄广播边界或战斗警报 | {alarm_type: string, location_id: string} | 3 分钟 | actor.can_sound_alarm<br>location.watch_post | per_minute: {attention: 0.2} | 成功：{condition: alarm.broadcast, result: alarm_raised}<br>失败：{condition: alarm_device.broken, result: failed} |
 | `craft_recipe` | 在可用工作站按配方制作物品 | {recipe_id: string, station_id: string} | recipe_duration 分钟 | actor.can_craft<br>recipe.available<br>station.available<br>inputs.available | reserve: {recipe_inputs: 1}<br>per_minute: {energy: 0.2, attention: 0.5} | 成功：{condition: outputs.created, result: recipe_completed}<br>失败：{condition: inputs.lost or station.damaged, result: crafting_failed} |
 | `consume_food` | 消耗一份携带的食物恢复饱腹度 | {item_id: string} | 1 分钟 | actor.alive<br>inventory.available | reserve: {item_parameter: item_id} | 成功：{result: ate_food, satiety: +30}<br>失败：{result: eating_failed} |
-| `withdraw_food` | 在粮仓按配给权从共享库存领取一份口粮 | {} | 15 分钟 | actor.alive<br>actor.permission.food_withdrawal<br>location.tag.food_store | reserve: {village_food: 1} | 成功：{result: ration_received, inventory.rations: +1}<br>失败：{result: ration_unavailable} |
+| `withdraw_stock` | 从同地可见的共享库存领取一份指定物品（通用能力，目标由绑定提供） | {resource_id: string, item_id: string} | 15 分钟 | actor.alive<br>location.resource_node<br>resource.here | reserve: {resource_parameter: resource_id, resource_amount: 1} | 成功：{result: stock_withdrawn, inventory: +1}；`get_food` 绑定 village_food → rations<br>失败：{result: stock_unavailable} |
 | `buy_food` | 在旅店市场用金币购买一份口粮 | {} | 10 分钟 | actor.alive<br>location.market | reserve: {coin: 1, market_rations: 1} | 成功：{result: ration_purchased, inventory.rations: +1}<br>失败：{result: ration_unavailable} |
 | `recover_object` | 回收探索发现的物体并登记证据 | {object_id: string} | 240 分钟 | actor.alive<br>actor.can_investigate<br>object.available | reserve: {rations: 1}<br>per_minute: {energy: 0.1, exposure: 0.01} | 成功：物体标记为 recovered，记录事实并提高配置的 public_trust；失败：{result: recovery_failed} |
 
@@ -91,7 +91,7 @@
 | `negotiate` | personal | actor.can_communicate<br>target.available；必须提供 topic/message；每 2,880 分钟最多一次 | 60 分钟 | negotiate | dialogue_recorded, terms_shared | conversation_refused, participant_left |
 | `gather_resource` | personal | actor.can_gather<br>resource.available | 180 分钟 | gather_resource | resource_collected | gathering_failed |
 | `eat_food` | universal | actor.alive<br>inventory.available；40 只是提醒信号 | 1 分钟 | consume_food(item_id) | ate_food | eating_failed |
-| `get_food` | universal | actor.alive<br>actor.permission.food_withdrawal<br>route.known | 路线分钟 + 15 分钟 | travel_to granary → withdraw_food | ration_received | ration_unavailable |
+| `get_food` | universal | actor.alive<br>actor.permission.food_withdrawal<br>route.known | 路线分钟 + 15 分钟 | travel_to granary → withdraw_stock(resource_id=village_food, item_id=rations) | ration_received | ration_unavailable |
 | `buy_food` | universal | actor.alive<br>location.tag.market | 10 分钟 | buy_food | ration_purchased | ration_unavailable |
 | `recover_caravan_ledger` | personal | 灰林探索发现账册线索后，且 Agent 有调查能力 | 240 分钟 | recover_object(caravan_ledger) | ledger_recovered, trade_route_evidence | recovery_failed, interrupted |
 

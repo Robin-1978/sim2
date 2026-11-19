@@ -317,6 +317,7 @@ def executable_behavior_lines(context: dict[str, Any]) -> list[str]:
                     for name, entries in value.items():
                         names = [
                             str(entry.get("name") if isinstance(entry, dict) else entry)
+                            + ("" if not isinstance(entry, dict) or entry.get("available", True) else " (blocked)")
                             for entry in (entries or [])
                         ]
                         if names:

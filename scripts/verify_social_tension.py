@@ -206,7 +206,7 @@ def _seed_denial(platform: Platform, run_index: int) -> dict[str, Any]:
     result = platform.submit_behavior(
         BehaviorIntent(
             actor_id="tomas",
-            behavior_ref="behavior:withdraw_energy",
+            behavior_ref="behavior:withdraw_resource",
             target={},
             parameters={},
             reason="tension probe precondition",
@@ -321,8 +321,8 @@ def _summarize(
     requests = sum(1 for item in choices if "request access" in item.casefold())
     approvals = sum(1 for item in choices if "approve" in item.casefold())
     rejections = sum(1 for item in choices if "reject" in item.casefold())
-    withdrawals = sum(1 for item in choices if item.casefold() == "withdraw energy")
-    takes = sum(1 for item in choices if item.casefold() == "take energy")
+    withdrawals = sum(1 for item in choices if item.casefold() == "withdraw resource")
+    takes = sum(1 for item in choices if item.casefold() == "take resource")
     reviews = sum(1 for item in choices if "review" in item.casefold())
     revocations = sum(1 for item in choices if "revoke" in item.casefold())
     def _review_decision(item: dict[str, Any]) -> str:

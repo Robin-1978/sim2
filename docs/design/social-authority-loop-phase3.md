@@ -11,6 +11,10 @@
 > 更新时间: 2026-11-18  
 > 代码位置: `src/sim2/`, `worlds/dynamic_social_probe/`, `tests/`, `scripts/`
 
+> 迁移说明（2026-11-19）: 本文记录的验收矩阵仍然有效；具体定义 ID 已按能力模型迁移为
+> `fill_resource`、`withdraw_resource`、`take_resource` 和 `review_violation`，目标通过
+> `resource_id` 绑定。阶段数量、授权规则、违法链和 Story 唤醒契约未改变。
+
 ## 需求
 
 本需求交付一个确定性验收：空世界中的 God 通过现有 DSL 提案创建第二个资源、steward、授权规则、受控取用、偷取、违规处理和 Director 压力；两条链在零 Platform 社会机制代码改动下闭环。

@@ -15,7 +15,7 @@ from typing import Any
 from uuid import uuid4
 
 from ..world.definition_compiler import compile_definition_shape, definition_slug
-from ..world.verbs import generic_parameter_target, infer_action_verb, infer_behavior_verb, normalize_verb
+from ..world.verbs import generic_parameter_target, infer_action_verb, infer_behavior_verb, normalize_verb, specific_capability_target
 
 DEFINITION_KINDS = frozenset({"attribute", "world_property", "action", "behavior", "recipe", "capability"})
 # Definition kinds that live in one registry table each.
@@ -219,8 +219,27 @@ class DefinitionValidationMixin:
                 ref = str(effect.get("resource_id") or effect.get("resource") or "").strip()
                 if ref.startswith("context."):
                     parameter = ref.removeprefix("context.")
-                    if parameter not in (definition.get("parameters") or {}):
+                    parameters = definition.get("parameters") if isinstance(definition.get("parameters"), dict) else {}
+                    if parameter not in parameters:
                         errors.append(f"{field}[{index}].world_resource_delta context.{parameter} must be declared in parameters")
+                    delta = effect.get("delta", effect.get("value"))
+                    maximum = effect.get("maximum")
+                    maximum_is_parameter = (
+                        isinstance(maximum, str)
+                        and maximum.startswith("context.")
+                        and maximum.removeprefix("context.") in parameters
+                    )
+                    if (
+                        isinstance(delta, (int, float))
+                        and not isinstance(delta, bool)
+                        and float(delta) > 0
+                        and maximum is None
+                        and not maximum_is_parameter
+                    ):
+                        errors.append(
+                            f"{field}[{index}].world_resource_delta on a bound resource requires maximum "
+                            "(or a context maximum parameter) so production cannot inflate the stock"
+                        )
                     continue
                 resource_id = str(self.targets.canonical_id(ref) or ref)
                 try:
@@ -325,21 +344,24 @@ class DefinitionValidationMixin:
         return None
 
     def _check_specific_verb(self, definition: dict[str, Any], errors: list[str]) -> None:
-        """Prefer an existing generic capability over a new target-specific Action."""
+        """Reject a capability that names one instance of its target.
 
-        verb = normalize_verb(definition.get("verb"))
-        if not verb or generic_parameter_target(definition):
+        ``Take Water`` and ``Take Coolant`` are one ``transfer_resource``
+        capability with different bindings.  The first target-specific Action
+        is not a bootstrap exception: a new resource must widen the visible
+        parameter options, not add another Action.
+        """
+
+        specific = specific_capability_target(definition)
+        if specific is None:
             return
-        if verb not in {"transfer_resource", "consume", "move", "gather", "inventory"}:
-            return
+        verb, target = specific
         types = {
             str(effect.get("type") or effect.get("op") or "").casefold()
             for field in ("effects", "progress_effects")
             for effect in (definition.get(field) or [])
             if isinstance(effect, dict)
         }
-        if not types:
-            return
         for existing in self.store.repositories.entities.get_definitions("action_def"):
             if not isinstance(existing, dict):
                 continue
@@ -358,6 +380,10 @@ class DefinitionValidationMixin:
                     "bind the target as a parameter instead of adding a new Action"
                 )
                 return
+        errors.append(
+            f"the {verb} capability must bind its target: declare a parameter such as "
+            f"resource_id and use context.<parameter> in its effects instead of the literal target {target!r}"
+        )
 
     def _check_duplicate_shape(self, kind: str, definition: dict[str, Any], errors: list[str]) -> None:
         """Reject a differently named definition with the same effect or step shape."""

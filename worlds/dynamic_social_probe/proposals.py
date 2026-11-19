@@ -1,10 +1,10 @@
 """God proposal payloads for the dynamic social probe.
 
-These payloads are world content, not Platform primitives.  They use only the
-existing proposal services: a location, an empty resource, a stewardship
-relationship, four administrative authorization behaviors, one controlled
-withdrawal, one covert take, one violation review, and four authorization
-rules.
+These payloads are world content, not Platform primitives.  One generic
+``transfer_resource`` family (fill/withdraw/take), one generic review and the
+request/approval/revocation administration are reused for every stock.  Adding
+a resource means adding an entity, a stewardship relationship and two
+authorization rules; it does not register another Action or behavior tree.
 """
 
 from __future__ import annotations
@@ -17,11 +17,13 @@ def _action(
     action_id: str,
     assign_to: list[str],
     *,
+    verb: str,
     action: dict[str, Any] | None = None,
     behavior: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     definition = {
         "id": action_id,
+        "verb": verb,
         "parameters": {},
         "preconditions": ["actor.alive"],
         "duration": {"minutes": 1},
@@ -32,6 +34,7 @@ def _action(
     definition.update(action or {})
     behavior_definition = {
         "id": action_id,
+        "verb": verb,
         "agent_label": name,
         "entry_conditions": ["actor.alive"],
         "estimated_minutes": 1,
@@ -43,6 +46,15 @@ def _action(
         "name": name,
         "definition": definition,
         "followup_behavior": {"name": name, "assign_to": assign_to, "definition": behavior_definition},
+    }
+
+
+def _resource_parameter() -> dict[str, Any]:
+    return {
+        "type": "string",
+        "required": True,
+        "max_length": 120,
+        "description": "Exact visible resource name.",
     }
 
 
@@ -82,50 +94,98 @@ STEWARDSHIP = {
     "relationship": {"participants": ["mira", "water_reserve"], "type": "stewardship"},
 }
 
+# One capability family for every stock; the target is an Agent binding.
 FILL = _action(
-    "Fill Water Reserve",
-    "fill_water_reserve",
+    "Fill Resource",
+    "fill_resource",
     ["mira"],
+    verb="transfer_resource",
     action={
-        "description": "Fill the shared water reserve from the plant.",
-        "effects": [{"type": "world_resource_delta", "resource_id": "water_reserve", "delta": 10, "maximum": 10}],
-        "success": {"condition": "actor.alive", "result": "water_filled"},
+        "description": "Top up a visible shared resource from its configured source.",
+        "parameters": {"resource_id": "string"},
+        "effects": [{
+            "type": "world_resource_delta",
+            "resource_id": "context.resource_id",
+            "delta": 10,
+            "maximum": 10,
+        }],
+        "success": {"condition": "actor.alive", "result": "resource_filled"},
         "failure": {"condition": "actor.incapacitated", "result": "fill_failed"},
     },
-    behavior={"summary": "Fill the shared water reserve."},
+    behavior={
+        "summary": "Fill a visible shared resource.",
+        "agent_parameters": {"resource_id": _resource_parameter()},
+        "nodes": [{
+            "type": "action",
+            "action_id": "fill_resource",
+            "parameters": {"resource_id": "context.resource_id"},
+        }],
+    },
 )
 
 WITHDRAW = _action(
-    "Withdraw Water",
-    "withdraw_water",
+    "Withdraw Resource",
+    "withdraw_resource",
     ["mira", "tomas"],
+    verb="transfer_resource",
     action={
-        "description": "Withdraw one unit of shared water with authorization.",
+        "description": "Withdraw one unit of a shared resource with authorization.",
+        "parameters": {"resource_id": "string"},
         "duration": {"minutes": 2},
-        "effects": [{"type": "resource_withdrawal", "resource_id": "water_reserve", "amount": 1, "scope": "water_withdrawal"}],
-        "success": {"condition": "actor.alive", "result": "water_withdrawn"},
+        "effects": [{
+            "type": "resource_withdrawal",
+            "resource_id": "context.resource_id",
+            "amount": 1,
+            "scope": "resource_withdrawal",
+        }],
+        "success": {"condition": "actor.alive", "result": "resource_withdrawn"},
         "failure": {"condition": "actor.incapacitated", "result": "withdrawal_failed"},
     },
-    behavior={"summary": "Withdraw one unit of shared water with authorization."},
+    behavior={
+        "summary": "Withdraw one unit of a visible shared resource with authorization.",
+        "agent_parameters": {"resource_id": _resource_parameter()},
+        "nodes": [{
+            "type": "action",
+            "action_id": "withdraw_resource",
+            "parameters": {"resource_id": "context.resource_id"},
+        }],
+    },
 )
 
 TAKE = _action(
-    "Take Water",
-    "take_water",
+    "Take Resource",
+    "take_resource",
     ["tomas"],
+    verb="transfer_resource",
     action={
-        "description": "Take one unit of shared water without authorization.",
-        "effects": [{"type": "resource_take", "resource_id": "water_reserve", "amount": 1, "scope": "water_withdrawal", "mode": "covert"}],
-        "success": {"condition": "actor.alive", "result": "water_taken"},
+        "description": "Take one unit of a shared resource without authorization.",
+        "parameters": {"resource_id": "string"},
+        "effects": [{
+            "type": "resource_take",
+            "resource_id": "context.resource_id",
+            "amount": 1,
+            "scope": "resource_withdrawal",
+            "mode": "covert",
+        }],
+        "success": {"condition": "actor.alive", "result": "resource_taken"},
         "failure": {"condition": "actor.incapacitated", "result": "take_failed"},
     },
-    behavior={"summary": "Take one unit of shared water without authorization."},
+    behavior={
+        "summary": "Take one unit of a visible shared resource without authorization.",
+        "agent_parameters": {"resource_id": _resource_parameter()},
+        "nodes": [{
+            "type": "action",
+            "action_id": "take_resource",
+            "parameters": {"resource_id": "context.resource_id"},
+        }],
+    },
 )
 
 REQUEST = _action(
-    "Request Water Access",
+    "Request Access",
     "request_access",
     ["mira", "tomas"],
+    verb="authorize",
     action={
         "parameters": {
             "based_on_event": "string",
@@ -158,6 +218,7 @@ APPROVE = _action(
     "Approve Withdrawal",
     "approve_withdrawal",
     ["mira"],
+    verb="authorize",
     action={
         "parameters": {
             "request_id": "string",
@@ -184,6 +245,7 @@ REJECT = _action(
     "Reject Withdrawal",
     "reject_withdrawal",
     ["mira"],
+    verb="authorize",
     action={"parameters": {"request_id": "string", "reason": "string"}},
     behavior={
         "authorization_operation": "decide_access_request",
@@ -204,6 +266,7 @@ REVOKE = _action(
     "Revoke Delegation",
     "revoke_delegation",
     ["mira"],
+    verb="authorize",
     action={"parameters": {"delegation_id": "string", "reason": "string"}},
     behavior={
         "authorization_operation": "revoke_access",
@@ -220,9 +283,10 @@ REVOKE = _action(
 )
 
 REVIEW = _action(
-    "Review Water Violation",
-    "review_water_violation",
+    "Review Violation",
+    "review_violation",
     ["mira"],
+    verb="authorize",
     action={"parameters": {"violation_id": "string", "decision": "string", "reason": "string"}},
     behavior={
         "authorization_operation": "review_violation",
@@ -233,7 +297,7 @@ REVIEW = _action(
         },
         "nodes": [{
             "type": "action",
-            "action_id": "review_water_violation",
+            "action_id": "review_violation",
             "parameters": {"violation_id": "context.violation_id", "decision": "context.decision", "reason": "context.reason"},
         }],
     },
@@ -243,7 +307,7 @@ RULES = (
     _rule(
         "water_reserve_stewardship",
         "Only the water steward or an active delegation may withdraw water.",
-        {"type": "authorization", "mode": "resource_access", "target": "water_reserve", "scope": "water_withdrawal", "behavior_ids": ["withdraw_water"]},
+        {"type": "authorization", "mode": "resource_access", "target": "water_reserve", "scope": "resource_withdrawal", "behavior_ids": ["withdraw_resource"]},
     ),
     _rule(
         "water_approval_authority",
@@ -258,207 +322,81 @@ RULES = (
     _rule(
         "water_violation_authority",
         "Only the water steward may review an observed water violation.",
-        {"type": "authorization", "mode": "violation_review", "behavior_ids": ["review_water_violation"]},
+        {"type": "authorization", "mode": "violation_review", "behavior_ids": ["review_violation"]},
     ),
 )
 
-# -- second resource instance ------------------------------------------------
-# The same proposal shapes and the same administrative behaviors are reused.
-# Only the resource, location, action effects and two authorization rules differ.
+# -- second and third resource instances ------------------------------------
+# The same capability family and the same administrative behaviors are reused.
+# Only the resource, location, stewardship and two authorization rules differ.
 
-FUEL_DEPOT = {
-    "entity_type": "location",
-    "entity_id": "fuel_depot",
-    "name": "Fuel Depot",
-    "description": "A shed with a shared fuel tank.",
-    "state": {"routes": ["relay_station"], "route_distances": {"relay_station": 1}},
-}
 
-FUEL_RESERVE = {
-    "entity_type": "resource",
-    "entity_id": "fuel_reserve",
-    "name": "Fuel Reserve",
-    "description": "A shared fuel stock created empty by God; a behavior must fill it.",
-    "location_id": "fuel_depot",
-    "state": {"quantity": 0},
-}
+def _resource_instance(
+    *,
+    location_id: str,
+    location_name: str,
+    location_description: str,
+    resource_id: str,
+    resource_name: str,
+    resource_description: str,
+    rule_prefix: str,
+    rule_description: str,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], tuple[dict[str, Any], ...]]:
+    location = {
+        "entity_type": "location",
+        "entity_id": location_id,
+        "name": location_name,
+        "description": location_description,
+        "state": {"routes": ["relay_station"], "route_distances": {"relay_station": 1}},
+    }
+    resource = {
+        "entity_type": "resource",
+        "entity_id": resource_id,
+        "name": resource_name,
+        "description": resource_description,
+        "location_id": location_id,
+        "state": {"quantity": 0},
+    }
+    stewardship = {
+        "change_type": "relationship",
+        "summary": f"Mira is accountable for the {resource_name.lower()} too.",
+        "relationship": {"participants": ["mira", resource_id], "type": "stewardship"},
+    }
+    rules = (
+        _rule(
+            f"{rule_prefix}_reserve_stewardship",
+            f"Only the {rule_description} steward or an active delegation may withdraw {rule_description}.",
+            {"type": "authorization", "mode": "resource_access", "target": resource_id, "scope": "resource_withdrawal", "behavior_ids": ["withdraw_resource"]},
+        ),
+        _rule(
+            f"{rule_prefix}_violation_authority",
+            f"Only the {rule_description} steward may review an observed {rule_description} violation.",
+            {"type": "authorization", "mode": "violation_review", "behavior_ids": ["review_violation"]},
+        ),
+    )
+    return location, resource, stewardship, rules
 
-FUEL_STEWARDSHIP = {
-    "change_type": "relationship",
-    "summary": "Mira is accountable for the fuel reserve too.",
-    "relationship": {"participants": ["mira", "fuel_reserve"], "type": "stewardship"},
-}
 
-FILL_FUEL = _action(
-    "Fill Fuel Reserve",
-    "fill_fuel_reserve",
-    ["mira"],
-    action={
-        "description": "Fill the shared fuel reserve from the depot.",
-        "effects": [{"type": "world_resource_delta", "resource_id": "fuel_reserve", "delta": 10, "maximum": 10}],
-        "success": {"condition": "actor.alive", "result": "fuel_filled"},
-        "failure": {"condition": "actor.incapacitated", "result": "fill_fuel_failed"},
-    },
-    behavior={"summary": "Fill the shared fuel reserve."},
+FUEL_DEPOT, FUEL_RESERVE, FUEL_STEWARDSHIP, FUEL_RULES = _resource_instance(
+    location_id="fuel_depot",
+    location_name="Fuel Depot",
+    location_description="A depot with room for a shared fuel stock.",
+    resource_id="fuel_reserve",
+    resource_name="Fuel Reserve",
+    resource_description="A shared fuel stock created empty by God; a behavior must fill it.",
+    rule_prefix="fuel",
+    rule_description="fuel",
 )
 
-WITHDRAW_FUEL = _action(
-    "Withdraw Fuel",
-    "withdraw_fuel",
-    ["mira", "tomas"],
-    action={
-        "description": "Withdraw one unit of shared fuel with authorization.",
-        "duration": {"minutes": 2},
-        "effects": [{"type": "resource_withdrawal", "resource_id": "fuel_reserve", "amount": 1, "scope": "fuel_withdrawal"}],
-        "success": {"condition": "actor.alive", "result": "fuel_withdrawn"},
-        "failure": {"condition": "actor.incapacitated", "result": "fuel_withdrawal_failed"},
-    },
-    behavior={"summary": "Withdraw one unit of shared fuel with authorization."},
-)
-
-TAKE_FUEL = _action(
-    "Take Fuel",
-    "take_fuel",
-    ["tomas"],
-    action={
-        "description": "Take one unit of shared fuel without authorization.",
-        "effects": [{"type": "resource_take", "resource_id": "fuel_reserve", "amount": 1, "scope": "fuel_withdrawal", "mode": "covert"}],
-        "success": {"condition": "actor.alive", "result": "fuel_taken"},
-        "failure": {"condition": "actor.incapacitated", "result": "fuel_take_failed"},
-    },
-    behavior={"summary": "Take one unit of shared fuel without authorization."},
-)
-
-REVIEW_FUEL = _action(
-    "Review Fuel Violation",
-    "review_fuel_violation",
-    ["mira"],
-    action={"parameters": {"violation_id": "string", "decision": "string", "reason": "string"}},
-    behavior={
-        "authorization_operation": "review_violation",
-        "agent_parameters": {
-            "violation_id": {"type": "string", "required": True, "max_length": 80},
-            "decision": {"type": "string", "required": True, "max_length": 20},
-            "reason": {"type": "string", "required": False, "max_length": 300},
-        },
-        "nodes": [{
-            "type": "action",
-            "action_id": "review_fuel_violation",
-            "parameters": {"violation_id": "context.violation_id", "decision": "context.decision", "reason": "context.reason"},
-        }],
-    },
-)
-
-FUEL_RULES = (
-    _rule(
-        "fuel_reserve_stewardship",
-        "Only the fuel steward or an active delegation may withdraw fuel.",
-        {"type": "authorization", "mode": "resource_access", "target": "fuel_reserve", "scope": "fuel_withdrawal", "behavior_ids": ["withdraw_fuel"]},
-    ),
-    _rule(
-        "fuel_violation_authority",
-        "Only the fuel steward may review an observed fuel violation.",
-        {"type": "authorization", "mode": "violation_review", "behavior_ids": ["review_fuel_violation"]},
-    ),
-)
-
-# -- third resource instance -------------------------------------------------
-# Same shape again; only the world content changes.
-
-COOLANT_SHED = {
-    "entity_type": "location",
-    "entity_id": "coolant_shed",
-    "name": "Coolant Shed",
-    "description": "A shed with a shared coolant tank.",
-    "state": {"routes": ["relay_station"], "route_distances": {"relay_station": 1}},
-}
-
-COOLANT_RESERVE = {
-    "entity_type": "resource",
-    "entity_id": "coolant_reserve",
-    "name": "Coolant Reserve",
-    "description": "A shared coolant stock created empty by God; a behavior must fill it.",
-    "location_id": "coolant_shed",
-    "state": {"quantity": 0},
-}
-
-COOLANT_STEWARDSHIP = {
-    "change_type": "relationship",
-    "summary": "Mira is accountable for the coolant reserve too.",
-    "relationship": {"participants": ["mira", "coolant_reserve"], "type": "stewardship"},
-}
-
-FILL_COOLANT = _action(
-    "Fill Coolant Reserve",
-    "fill_coolant_reserve",
-    ["mira"],
-    action={
-        "description": "Fill the shared coolant reserve from the shed.",
-        "effects": [{"type": "world_resource_delta", "resource_id": "coolant_reserve", "delta": 10, "maximum": 10}],
-        "success": {"condition": "actor.alive", "result": "coolant_filled"},
-        "failure": {"condition": "actor.incapacitated", "result": "fill_coolant_failed"},
-    },
-    behavior={"summary": "Fill the shared coolant reserve."},
-)
-
-WITHDRAW_COOLANT = _action(
-    "Withdraw Coolant",
-    "withdraw_coolant",
-    ["mira", "tomas"],
-    action={
-        "description": "Withdraw one unit of shared coolant with authorization.",
-        "duration": {"minutes": 2},
-        "effects": [{"type": "resource_withdrawal", "resource_id": "coolant_reserve", "amount": 1, "scope": "coolant_withdrawal"}],
-        "success": {"condition": "actor.alive", "result": "coolant_withdrawn"},
-        "failure": {"condition": "actor.incapacitated", "result": "coolant_withdrawal_failed"},
-    },
-    behavior={"summary": "Withdraw one unit of shared coolant with authorization."},
-)
-
-TAKE_COOLANT = _action(
-    "Take Coolant",
-    "take_coolant",
-    ["tomas"],
-    action={
-        "description": "Take one unit of shared coolant without authorization.",
-        "effects": [{"type": "resource_take", "resource_id": "coolant_reserve", "amount": 1, "scope": "coolant_withdrawal", "mode": "covert"}],
-        "success": {"condition": "actor.alive", "result": "coolant_taken"},
-        "failure": {"condition": "actor.incapacitated", "result": "coolant_take_failed"},
-    },
-    behavior={"summary": "Take one unit of shared coolant without authorization."},
-)
-
-REVIEW_COOLANT = _action(
-    "Review Coolant Violation",
-    "review_coolant_violation",
-    ["mira"],
-    action={"parameters": {"violation_id": "string", "decision": "string", "reason": "string"}},
-    behavior={
-        "authorization_operation": "review_violation",
-        "agent_parameters": {
-            "violation_id": {"type": "string", "required": True, "max_length": 80},
-            "decision": {"type": "string", "required": True, "max_length": 20},
-            "reason": {"type": "string", "required": False, "max_length": 300},
-        },
-        "nodes": [{
-            "type": "action",
-            "action_id": "review_coolant_violation",
-            "parameters": {"violation_id": "context.violation_id", "decision": "context.decision", "reason": "context.reason"},
-        }],
-    },
-)
-
-COOLANT_RULES = (
-    _rule(
-        "coolant_reserve_stewardship",
-        "Only the coolant steward or an active delegation may withdraw coolant.",
-        {"type": "authorization", "mode": "resource_access", "target": "coolant_reserve", "scope": "coolant_withdrawal", "behavior_ids": ["withdraw_coolant"]},
-    ),
-    _rule(
-        "coolant_violation_authority",
-        "Only the coolant steward may review an observed coolant violation.",
-        {"type": "authorization", "mode": "violation_review", "behavior_ids": ["review_coolant_violation"]},
-    ),
+COOLANT_SHED, COOLANT_RESERVE, COOLANT_STEWARDSHIP, COOLANT_RULES = _resource_instance(
+    location_id="coolant_shed",
+    location_name="Coolant Shed",
+    location_description="A shed with room for a shared coolant stock.",
+    resource_id="coolant_reserve",
+    resource_name="Coolant Reserve",
+    resource_description="A shared coolant stock created empty by God; a behavior must fill it.",
+    rule_prefix="coolant",
+    rule_description="coolant",
 )
 
 
@@ -486,35 +424,43 @@ def install_social_content(platform: Any) -> dict[str, Any]:
     return results
 
 
-def install_second_resource(platform: Any) -> dict[str, Any]:
-    """Instantiate a second resource with the same primitives and admin content."""
-
+def _install_instance(
+    platform: Any,
+    *,
+    location: dict[str, Any],
+    resource: dict[str, Any],
+    stewardship: dict[str, Any],
+    rules: tuple[dict[str, Any], ...],
+) -> dict[str, Any]:
     results: dict[str, Any] = {
-        "fuel_depot": platform.submit_entity_proposal("god", FUEL_DEPOT),
-        "fuel_reserve": platform.submit_entity_proposal("god", FUEL_RESERVE),
-        "fuel_stewardship": platform.submit_world_change("god", FUEL_STEWARDSHIP),
-        "fill_fuel": platform.submit_definition_proposal("god", FILL_FUEL),
-        "withdraw_fuel": platform.submit_definition_proposal("god", WITHDRAW_FUEL),
-        "take_fuel": platform.submit_definition_proposal("god", TAKE_FUEL),
-        "review_fuel": platform.submit_definition_proposal("god", REVIEW_FUEL),
+        str(location["entity_id"]): platform.submit_entity_proposal("god", location),
+        str(resource["entity_id"]): platform.submit_entity_proposal("god", resource),
+        f"{location['entity_id']}_stewardship": platform.submit_world_change("god", stewardship),
     }
-    for payload in FUEL_RULES:
+    for payload in rules:
         results[payload["rule"]["id"]] = platform.submit_world_change("god", payload)
     return results
+
+
+def install_second_resource(platform: Any) -> dict[str, Any]:
+    """Instantiate a second resource with the existing capability and admin content."""
+
+    return _install_instance(
+        platform,
+        location=FUEL_DEPOT,
+        resource=FUEL_RESERVE,
+        stewardship=FUEL_STEWARDSHIP,
+        rules=FUEL_RULES,
+    )
 
 
 def install_third_resource(platform: Any) -> dict[str, Any]:
-    """Instantiate a third resource with the same primitives and admin content."""
+    """Instantiate a third resource with the existing capability and admin content."""
 
-    results: dict[str, Any] = {
-        "coolant_shed": platform.submit_entity_proposal("god", COOLANT_SHED),
-        "coolant_reserve": platform.submit_entity_proposal("god", COOLANT_RESERVE),
-        "coolant_stewardship": platform.submit_world_change("god", COOLANT_STEWARDSHIP),
-        "fill_coolant": platform.submit_definition_proposal("god", FILL_COOLANT),
-        "withdraw_coolant": platform.submit_definition_proposal("god", WITHDRAW_COOLANT),
-        "take_coolant": platform.submit_definition_proposal("god", TAKE_COOLANT),
-        "review_coolant": platform.submit_definition_proposal("god", REVIEW_COOLANT),
-    }
-    for payload in COOLANT_RULES:
-        results[payload["rule"]["id"]] = platform.submit_world_change("god", payload)
-    return results
+    return _install_instance(
+        platform,
+        location=COOLANT_SHED,
+        resource=COOLANT_RESERVE,
+        stewardship=COOLANT_STEWARDSHIP,
+        rules=COOLANT_RULES,
+    )

@@ -23,7 +23,7 @@ world_rules:
     mode: resource_access
     target: energy_reserve
     scope: energy_withdrawal
-    behavior_ids: [withdraw_energy]
+    behavior_ids: [withdraw_resource]
 - id: approval_authority
   name: Approval Authority
   condition: "true"
@@ -58,7 +58,7 @@ world_rules:
       id: violation_review_authority
     behavior_ids: [review_violation]
 fallback_behavior_ids:
-- withdraw_energy
+- withdraw_resource
 - request_access
 - approve_withdrawal
 - reject_withdrawal

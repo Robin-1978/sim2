@@ -77,7 +77,7 @@ def run_probe(platform: Platform, router: LLMRouter, provider_name: str, model: 
     platform.submit_behavior(
         BehaviorIntent(
             actor_id="tomas",
-            behavior_ref="behavior:withdraw_energy",
+            behavior_ref="behavior:withdraw_resource",
             target={},
             parameters={},
             reason="probe denial",
@@ -158,7 +158,7 @@ def run_probe(platform: Platform, router: LLMRouter, provider_name: str, model: 
                 ).run(
                     role="agent_decision",
                     actor_id="tomas",
-                    task_type="social authority withdrawal: withdraw energy after the delegation was granted",
+                    task_type="social authority withdrawal: withdraw a resource after the delegation was granted",
                 )
             except Exception as exc:
                 report["valid_probe"] = False
@@ -166,10 +166,7 @@ def run_probe(platform: Platform, router: LLMRouter, provider_name: str, model: 
                 return report
             report["tomas_withdraw_tools"] = _tool_calls(follow_turn)
             report["tomas_withdraw_result"] = follow_turn.result
-            report["withdrawal_chosen"] = _chose(follow_turn, "withdraw_energy") or any(
-                str((call.get("arguments") or {}).get("choice") or "").casefold() == "withdraw energy"
-                for call in _tool_calls(follow_turn)
-            )
+            report["withdrawal_chosen"] = _chose(follow_turn, "withdraw_resource")
     return report
 
 

@@ -5,7 +5,7 @@ import json
 from typing import Any
 from uuid import uuid4
 
-from ..world.navigation import reachable_locations
+from ..world.navigation import reachable_locations, resource_is_at_location
 from ..world.time import world_time_view
 from ..world.context import configured_context_values
 from ..world.lifecycle import trim_unlocked_behaviors, unlocked_behavior_limit
@@ -798,11 +798,20 @@ class ActivityRuntimeMixin:
                 source = self.store.repositories.entities.get_entity(str(source_id))
             except KeyError:
                 source = {}
+        bound_resource = (
+            parameters.get("resource_id")
+            or parameters.get("target_resource")
+            or parameters.get("resource")
+            or parameters.get("resource_tag")
+        )
+        bound_resource_id = str(self.targets.canonical_id(str(bound_resource)) or bound_resource) if bound_resource else ""
         return {
             "location_id": location_id,
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "source_id": source_id,
             "item_id": parameters.get("item_id"),
+            "resource_id": bound_resource_id,
+            "resource.here": resource_is_at_location(self.store, bound_resource_id, location_id),
             "current_location": location,
             "location": location,
             "source": source,

@@ -92,13 +92,15 @@ class BehaviorIntentService(PlatformService):
             (request or {}).get("target")
             or submission.parameters.get("target")
             or submission.parameters.get("resource_id")
+            or (submission.withdrawal or {}).get("resource_id")
+            or (submission.take or {}).get("resource_id")
             or ""
         )
-        spec = behavior_authorization_spec(self._dependency("rule_compiler"), submission.behavior) or {}
-        if not target:
-            target = str(spec.get("target") or "")
         if target:
             target = str(self._dependency("targets").canonical_id(target) or target)
+        spec = behavior_authorization_spec(self._dependency("rule_compiler"), submission.behavior, target=target or None) or {}
+        if not target:
+            target = str(spec.get("target") or "")
         event = {
             "intent_id": str(submission.intent.intent_id),
             "actor": str(submission.intent.actor_id),
@@ -399,16 +401,29 @@ class BehaviorIntentService(PlatformService):
 
         service = self._context.services["authorization"]
         decision = str(submission.behavior.get("authorization_decision") or "") or None
+        action_defs = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
+        submission.withdrawal = self._resolve_effect_parameters(
+            withdrawal_effect(submission.behavior, action_defs, submission.definitions, submission.parameters),
+            submission.parameters,
+        )
+        submission.take = self._resolve_effect_parameters(
+            resource_take_effect(submission.behavior, action_defs, submission.definitions, submission.parameters),
+            submission.parameters,
+        )
+        effective = dict(submission.parameters)
+        for effect in (submission.withdrawal, submission.take):
+            if not effect:
+                continue
+            for key in ("resource_id", "scope", "target"):
+                if effect.get(key) is not None and key not in effective:
+                    effective[key] = effect[key]
         authorization = service.eligibility(
             submission.agent,
             submission.behavior,
-            submission.parameters,
+            effective,
             decision=decision,
         )
         submission.authorization = authorization
-        action_defs = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
-        submission.withdrawal = self._resolve_effect_parameters(withdrawal_effect(submission.behavior, action_defs), submission.parameters)
-        submission.take = self._resolve_effect_parameters(resource_take_effect(submission.behavior, action_defs, submission.definitions), submission.parameters)
         if authorization.get("gated") and not authorization.get("available"):
             reason = (authorization.get("reasons") or [{}])[0]
             return {

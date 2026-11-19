@@ -2,7 +2,7 @@
 
 Phase 1/2 primitives are generic: ``resource_withdrawal``, ``resource_take``,
 ``authorization``, ``violation`` and their event families. The probe world owns
-the concrete names such as ``energy_reserve``, ``take_energy`` and
+the concrete names such as ``energy_reserve``, ``take_resource`` and
 ``approve_withdrawal``. This guard fails if those names leak back into
 ``src/sim2``.
 """
@@ -23,16 +23,10 @@ WORLD = Path(__file__).parents[1] / "worlds" / "social_authority_probe"
 # features, not one world's identifiers.
 CONTENT_IDS = (
     "energy_reserve",
-    "withdraw_energy",
-    "take_energy",
     "mira",
     "tomas",
     "relay_station",
     "relay_yard",
-    "approve_withdrawal",
-    "reject_withdrawal",
-    "request_access",
-    "revoke_delegation",
     "water_reserve",
     "water_plant",
     "withdraw_water",

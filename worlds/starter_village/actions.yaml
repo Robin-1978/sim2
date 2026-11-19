@@ -1,5 +1,6 @@
 actions:
 - id: travel_to
+  verb: move
   version: 1
   description: 沿已知路线移动到目标地点
   parameters:
@@ -36,6 +37,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: consume_food
+  verb: consume
   version: 1
   description: Consume one available food item and restore satiety.
   parameters:
@@ -70,38 +72,43 @@ actions:
   definition_source: config
   kind: atomic
   executor: effect_pipeline
-- id: withdraw_food
+- id: withdraw_stock
   version: 1
-  description: Withdraw one ration from the configured shared food store.
-  parameters: {}
+  verb: transfer_resource
+  description: Withdraw one item from a visible shared stock into the actor's inventory.
+  parameters:
+    resource_id: string
+    item_id: string
   preconditions:
   - actor.alive
-  - actor.permission.food_withdrawal
-  - location.tag.food_store
+  - location.resource_node
+  - resource.here
   duration:
     minutes: 15
   costs:
     reserve:
-      village_food: 1
+      resource_parameter: resource_id
+      resource_amount: 1
     per_minute: {}
     on_success: {}
     on_failure: {}
     refund: {}
   effects:
   - type: inventory_add
-    item: rations
+    item: context.item_id
     quantity: 1
   success:
-    condition: ration.withdrawn
-    result: ration_received
+    condition: resource.withdrawn
+    result: stock_withdrawn
   failure:
-    condition: village_food.empty
-    result: ration_unavailable
+    condition: resource.empty
+    result: stock_unavailable
   interaction_policy: allow
   definition_source: config
   kind: atomic
   executor: effect_pipeline
 - id: buy_food
+  verb: trade
   version: 1
   description: Buy one ration from a configured market.
   parameters: {}
@@ -134,6 +141,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: rest
+  verb: rest
   version: 1
   description: 在安全地点休息
   parameters:
@@ -172,6 +180,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: gather_resource
+  verb: gather
   version: 1
   description: 在可见资源节点采集指定类型资源
   parameters:
@@ -210,6 +219,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: patrol_route
+  verb: patrol
   version: 1
   description: 巡逻已知路线并记录发现
   parameters:
@@ -249,6 +259,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: heal_target
+  verb: heal
   version: 1
   description: 使用可用治疗资源恢复目标状态
   parameters:
@@ -288,6 +299,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: heal_self
+  verb: heal
   version: 1
   description: Receive treatment at a configured health service.
   parameters: {}
@@ -321,6 +333,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: explore_area
+  verb: explore
   version: 1
   description: 探索一块尚未充分了解的区域并记录发现
   parameters:
@@ -352,6 +365,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: communicate
+  verb: communicate
   version: 1
   description: 与目标角色沟通并记录可传播信息
   parameters:
@@ -385,6 +399,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: research_source
+  verb: research
   version: 1
   description: 研究可访问的信息源并记录事实
   parameters:
@@ -420,6 +435,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: inspect_object
+  verb: inspect
   version: 1
   description: 检查可访问的物体、库存或设施
   parameters:
@@ -456,6 +472,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: negotiate
+  verb: social
   version: 1
   description: 与目标角色协商交换或契约
   parameters:
@@ -495,6 +512,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: attack
+  verb: coerce
   version: 1
   description: 使用指定武器攻击可达目标
   parameters:
@@ -539,6 +557,7 @@ actions:
   interaction_policy: deny
   executor: effect_pipeline
 - id: defend
+  verb: defend
   version: 1
   description: 保持防御姿态并保护附近目标
   parameters:
@@ -576,6 +595,7 @@ actions:
   interaction_policy: allow
   executor: effect_pipeline
 - id: flee_to_safety
+  verb: move
   version: 1
   description: 沿已知路线撤离到安全地点
   parameters:
@@ -609,6 +629,7 @@ actions:
   interaction_policy: deny
   executor: effect_pipeline
 - id: secure_boundary
+  verb: secure
   version: 1
   description: Carry out a configured boundary defense that reduces the active public threat.
   parameters: {}
@@ -649,6 +670,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: sound_alarm
+  verb: signal
   version: 1
   description: 向村庄广播边界或战斗警报
   parameters:
@@ -682,6 +704,7 @@ actions:
   interaction_policy: allow
   executor: effect_pipeline
 - id: craft_recipe
+  verb: craft
   version: 1
   description: 在可用工作站按配方制作物品
   parameters:
@@ -715,6 +738,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: recover_object
+  verb: recover
   version: 1
   description: Recover a discovered object from its configured location.
   parameters:
@@ -759,6 +783,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: install_entity
+  verb: install
   version: 1
   description: Install a carried entity at a configured public location.
   parameters:
@@ -814,6 +839,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: mitigate_water
+  verb: repair
   version: 1
   description: Apply the configured water-safety measure after the contamination finding.
   parameters: {}
@@ -854,6 +880,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: stabilize_pact
+  verb: repair
   version: 1
   description: Perform the configured root-gate stabilization measure.
   parameters: {}
@@ -894,6 +921,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: investigate_marks
+  verb: inspect
   version: 1
   description: Investigate and classify a boundary mark instead of merely recording a patrol.
   parameters: {}

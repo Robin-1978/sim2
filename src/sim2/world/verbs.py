@@ -139,3 +139,60 @@ def generic_parameter_target(definition: dict[str, Any]) -> str:
                 if is_parameter_target(value):
                     return str(value).removeprefix("context.")
     return ""
+
+
+# A capability that moves or consumes a thing must not name one instance of
+# that thing.  Composite Actions whose effects merely include one of these
+# primitives declare a different verb (for example ``repair`` or ``trade``) and
+# are intentionally exempt.
+_TARGETED_EFFECTS = {
+    "transfer_resource": {
+        "resource_withdrawal", "resource_take", "resource_transfer",
+        "world_resource_delta", "resource_deposit",
+    },
+    "consume": {"inventory.consume_item"},
+    "move": {"location_set"},
+    "gather": {"inventory_add"},
+    "inventory": {"inventory_add", "inventory_remove"},
+}
+_TARGET_KEYS = {
+    "transfer_resource": ("resource_id", "resource"),
+    "consume": ("item", "item_id"),
+    "move": ("location_id", "destination_id"),
+    "gather": ("item", "item_id"),
+    "inventory": ("item", "item_id"),
+}
+
+
+def specific_capability_target(definition: dict[str, Any]) -> tuple[str, str] | None:
+    """Return ``(verb, literal target)`` when a capability names one instance.
+
+    The effective verb is the declared one, or the inferred family when the
+    author omitted it.  Only the primitive effects owned by that family are
+    inspected, so a composite repair or trade Action is not mistaken for a
+    target-specific transfer.
+    """
+
+    verb = normalize_verb(definition.get("verb")) or infer_action_verb(definition)
+    effect_types = _TARGETED_EFFECTS.get(verb)
+    if not effect_types:
+        return None
+    if verb == "transfer_resource":
+        reserve = ((definition.get("costs") or {}).get("reserve") or {}) if isinstance(definition.get("costs"), dict) else {}
+        for key, value in reserve.items():
+            if str(key) in {"resource_parameter", "resource_amount", "item_parameter", "item_quantity_parameter", "recipe_inputs"}:
+                continue
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return verb, str(key)
+    for field in ("effects", "progress_effects"):
+        for effect in definition.get(field) or []:
+            if not isinstance(effect, dict):
+                continue
+            if str(effect.get("type") or effect.get("op") or "").casefold() not in effect_types:
+                continue
+            for key in _TARGET_KEYS[verb]:
+                value = effect.get(key)
+                if value is None or is_parameter_target(value):
+                    continue
+                return verb, str(value)
+    return None

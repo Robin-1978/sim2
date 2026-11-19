@@ -106,7 +106,8 @@ class BehaviorViewMixin:
         simulation = self._simulate_behavior(frame, bt_id, behavior_context)
         if simulation is None:
             return None
-        entry = self._behavior_entry(frame, bt_id, bt, simulation, self._target_guidance(frame, bt), cooldown_minutes)
+        guidance = self._target_guidance(frame, bt)
+        entry = self._behavior_entry(frame, bt_id, bt, simulation, guidance, cooldown_minutes)
         decision = authorization_for_behavior(
             self.store,
             frame.agent,
@@ -115,6 +116,27 @@ class BehaviorViewMixin:
             rule_compiler=self.rule_compiler,
             decision=str(bt.get("authorization_decision") or "") or None,
         )
+        resource_key, resource_options = "", []
+        if decision.get("gated"):
+            resource_key, resource_options = self._annotate_parameter_authorization(
+                frame, bt, guidance.parameter_options
+            )
+        if resource_options:
+            available_options = [item for item in resource_options if item.get("available", True)]
+            if available_options:
+                # The capability is usable, but only through the bindings that
+                # are not blocked.  The prompt marks each option and the
+                # admission check still validates the submitted one.
+                decision = {**decision, "available": True, "reasons": []}
+            else:
+                decision = authorization_for_behavior(
+                    self.store,
+                    frame.agent,
+                    bt,
+                    {resource_key: resource_options[0].get("value")},
+                    rule_compiler=self.rule_compiler,
+                    decision=str(bt.get("authorization_decision") or "") or None,
+                )
         entry["eligibility"] = {
             "available": bool(decision.get("available")),
             "gated": bool(decision.get("gated")),
@@ -435,6 +457,42 @@ class BehaviorViewMixin:
             else:
                 target_text = f"Participant: {names}. Platform uses this participant unless another permitted target is supplied."
         return Guidance(target_text, target_required, target_options, parameter_options, source_parameter)
+
+    def _annotate_parameter_authorization(
+        self,
+        frame: DecisionFrame,
+        bt: dict[str, Any],
+        parameter_options: dict[str, list[dict[str, Any]]],
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """Mark which visible resource bindings the current authority allows."""
+
+        parameters = bt.get("agent_parameters") or {}
+        key = next(
+            (name for name in ("resource_id", "resource", "target_resource") if name in parameters),
+            "",
+        )
+        options = list(parameter_options.get(key) or []) if key else []
+        if not key or not options:
+            return "", []
+        decision = str(bt.get("authorization_decision") or "") or None
+        for option in options:
+            name = str(option.get("name") or "")
+            value = str(self.targets.canonical_id(name) or name)
+            option["value"] = value
+            result = authorization_for_behavior(
+                self.store,
+                frame.agent,
+                bt,
+                {key: value},
+                rule_compiler=self.rule_compiler,
+                decision=decision,
+            )
+            available = bool(result.get("available") or not result.get("gated"))
+            option["available"] = available
+            reasons = list(result.get("reasons") or [])
+            if not available and reasons:
+                option["blocked_reason"] = str(reasons[0].get("message") or "")
+        return key, options
 
     def _contested_risk(self, frame: DecisionFrame, bt: dict[str, Any]) -> dict[str, Any] | None:
         """Describe the deterministic witnesses a configured take would have now."""

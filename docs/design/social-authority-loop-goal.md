@@ -34,10 +34,11 @@ new status instead.
 - Inspect the actual `decision_view`, prompt and model output; aggregate counters alone are not evidence.
 - Never run the full 10-minute suite for ordinary iteration.
 
-## 4. Verified baseline (2026-11-18)
+## 4. Verified baseline (updated 2026-11-19)
 
 | Item | Evidence |
 | --- | --- |
+| Capability model (2026-11-19) | One `transfer_resource` family + target bindings. Remote: legal 1/1 request, causal reference, approval and withdrawal; directed take 1/1 witnessed and sanctioned; dynamic God **15 accepted / 0 rejected**, complete core 1/1, legal 1/1, violation 1/1; growth 240 minutes **passed, 0 rejected sessions**, 12 plans opened / 11 completed, 17 structural units, 3 new behaviors executed, 7 Story beats, all five cells grew. Every God-created stock Action used `verb: transfer_resource` with `resource_id` and `context.resource_id`. Full suite **1456 passed**. |
 | Phase 1 remote | 5/5 request, causal reference, approval, withdrawal |
 | Phase 2 neutral remote | 4/4 request, 2/4 accepted (two no-denial `invalid_causal_reference`), 0/4 take |
 | Phase 2 directed remote | 2/2 take, 1/2 witnessed, 1/1 observed sanction |
@@ -116,10 +117,27 @@ Completed architectural prerequisite: **G-08** relevance-scoped context, bounded
 index reads, persisted stage progress and omission telemetry. The next structural
 run should use the new index instead of expanding the old catalogs.
 
+Completed capability migration (2026-11-19): all shipped world Actions declare a
+`verb`; the transfer/consume/move/gather/inventory families bind their target as a
+parameter; `dynamic_social_probe`, `social_authority_probe` and
+`starter_village` no longer register per-resource copies. Definition validation
+rejects a target-specific known-verb Action even when no generic exists, and a
+world-pack lint covers every `worlds/*/actions.yaml`.
+
 ## 7. Progress log
 
 ### 2026-11-19
 
+- Capability migration (engine + content): Actions now carry an explicit `verb` family and every shipped world binds targets through parameters instead of registering `take_water`/`withdraw_fuel`-style copies. `dynamic_social_probe` uses one `fill_resource`/`withdraw_resource`/`take_resource` family and one `review_violation`; adding a second or third resource now adds only an entity, a stewardship and two rules. `social_authority_probe` uses `withdraw_resource`/`take_resource` with a literal `resource_id` binding in the Behavior node; the admission path resolves that binding before authorization and contested feasibility. `starter_village` uses `withdraw_stock` and binds `village_food`/`rations` in `get_food`. Validation rejects the first target-specific Action (no bootstrap exception), and `tests/test_world_pack_capabilities.py` lints every world Action. Focused suites and changed workers passed; remote re-verification is recorded separately after it runs.
+- Target binding resolver: `world/bindings.py` resolves Action-node literals, nested Behavior bindings and Agent parameters for admission and completion; a literal node binding cannot be overridden by an Agent parameter. The decision view marks each visible resource option `available`/`blocked_reason` when a generic capability has per-resource authority.
+- Capability migration verification (remote `deepseek-v4.1-flash`):
+  - `verify_social_authority.py --runs 1`: 1/1 request, 1/1 causal reference, 1/1 approval, 1/1 withdrawal accepted. The behavior is now `withdraw_resource` with a literal `energy_reserve` node binding; no per-resource Action exists.
+  - `verify_contested_actions.py --runs 1 --directed`: 1/1 valid probe, take 1/1, witnessed take 1/1, review decision `sanction`. The follow-up request was rejected with `invalid_causal_reference` because a restriction is not a denial event; this is the expected separation, not a regression.
+  - `verify_dynamic_social_content.py --runs 1`: 1/1 complete core, **15 accepted / 0 rejected**, legal chain `completed`, violation chain `sanctioned`. The probe now reads the world's 15 stages instead of duplicating them.
+  - `verify_automatic_growth.py --minutes 240`: passed, `flags: []`, 8 Director plans opened / 7 completed, 8 structural units, 1 new behavior executed (`settle_archive_checksum`), 2 Story beats, 3 budget-exhausted God sessions.
+  - `verify_automatic_growth.py --minutes 360`: passed, `flags: []`, 8 plans opened / 5 completed, 10 structural units, 4 new behaviors executed, 2 Story beats, 21 budget-exhausted God sessions. The wider reject count comes from model iteration on malformed proposals, not from accepting target-specific Actions; the accepted Actions (`draw_relay_power`, `ration_relay_power`) are generic `transfer_resource` with `resource_id` parameters.
+  - Final `verify_automatic_growth.py --minutes 240` after the literal-reserve lint: passed, `flags: []`, 12 Director plans opened / 11 completed, 17 structural units, **0 rejected sessions**, 3 new behaviors executed (`crank_the_storm_cellar_dynamo`, `log_circle_agreement_in_the_ledger`, `route_reserve_charge_to_relay`), 7 Story beats, and ledger `place=3, verb=3, social=4, rule=4, resource=3`. Every God-created stock Action is generic: `crank_dynamo_charge`, `draw_reserve_charge`, `tap_capacitor_bank` and `stock_salvage_rack` use `verb: transfer_resource` with `resource_id` and `context.resource_id`.
+- Focused suites (128 passed) and changed workers (232 + 527 + 284 + 413 passed) are green. Full release gate after the migration: **1456 passed** across four isolated workers; compileall is clean.
 - G-10 catalog bounds: measured the NPC decision prompt against duplicated behaviors: 20 unlocked behaviors = 14,410 chars, 40 = 15,960 (cap), 160 = the old fallback cut a block and dropped `<decision>`. Now the prompt keeps five full behaviors, lists the rest as one-line entries, preserves complete lines and the decision, and omits 58 of 162 with an explicit note at 15,983 chars. Added `max_unlocked_behaviors` (24) rotation, `query_behavior_catalog`, Action shape dedup, and `director.max_cell_units` saturation. This is a bound, not the final capability model: the next design collapses target-specific trees into one parameterized verb.
 - G-09 automatic growth verified through the production runner. Aster probe: 360 simulated minutes, **18 LLM Director calls**, **22 structural units** (12 entities, 5 Actions, 5 behaviors), all five cells grew from `place=2, verb=2, social=0, rule=1, resource=1` to `place=5, verb=7, social=5, rule=5, resource=5`, **5 new behaviors executed** (`cross_check_archive_checksum`, `meter_catchment_charge_at_gantry`, `meter_the_catchment_tray`, `record_draw_authorization_at_bench`, `trace_encoded_relay_route`), **13 Story beats**, **0 rejected sessions**. Tidebound 2-day run: `plan:1440:social` completed at 2880 and `plan:2880:social` opened; God created a faction and a relationship; 12 Story beats.
 - G-09 contract fixes: `director.policy: llm` runs the one-call Director before the tick (deterministic fallback on error); `max_proposals` bounds stageless contracts; `required_content.growth_cell` compares the target cell with the plan baseline and returns a correction; the God ledger now states what each cell counts; `routes:[{to,distance}]` is normalized; a `tool_budget` rejection ends the session; budget-exhausted structural retries use the Director cadence capped to the plan window; Director calls and plan history are persisted for audit.

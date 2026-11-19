@@ -390,11 +390,35 @@ definition:
 
 `verb` is the stable capability family (`transfer_resource`, `consume`, `move`,
 `inspect`, `research`, `craft`, `communicate`, ...). When omitted, the
-validator infers it from the effect mix. A new Action that targets one literal
-resource is rejected once a generic Action with the same family exists; the
-message tells God to bind the target as a parameter instead. Existing
-target-specific definitions remain valid content, but new growth should use the
-generic family.
+validator infers it from the effect mix. A new Action that names one literal
+resource, item or destination in a targeted effect is rejected even when no
+generic Action exists yet: the first specific Action is not a bootstrap
+exception. The message tells God to declare a parameter and use
+`context.<parameter>` instead. All shipped world packs follow this rule, and
+`tests/test_world_pack_capabilities.py` enforces it.
+
+A Behavior may bind a generic Action to a literal target in its Action node
+when the Behavior itself is a policy composition, such as `get_food` binding
+`withdraw_stock` to `village_food` and `rations`. The Action stays reusable for
+another stock. When the Behavior is the capability itself, expose the target as
+an `agent_parameters` entry so a new stock widens the visible options instead of
+registering another tree.
+
+A composite Action that intentionally consumes or produces a literal item
+(craft, repair, trade, install, allocate) declares that verb and is exempt from
+the target-binding rule. Only the generic families `transfer_resource`,
+`consume`, `move`, `gather` and `inventory` must bind their target.
+
+A structural contract can require that a capability exists:
+
+```yaml
+required_content:
+  behavior_effects: [resource_withdrawal]
+  generic_parameters: [resource_id]
+```
+
+`generic_parameters` is satisfied only by an Action that declares the parameter
+and references `context.<parameter>` in an effect.
 
 Three optional bounds keep an add-only world from outgrowing its prompts:
 

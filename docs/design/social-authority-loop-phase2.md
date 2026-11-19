@@ -5,6 +5,7 @@
 > 需求文档: `docs/design/social-authority-loop-phase1.md`（Phase 1 控制契约）；`docs/design/social-authority-loop-phase1-report.md`（Phase 1 证据）  
 > 需求结论: 交付一个可确定性验收的偷取纵切：软约束不拦截行为，Platform 记录资源转移、违规事实、目击、信任后果和可撤销制裁；Phase 1 的授权取用路径保持不变。  
 > 架构结论: 在授权评估器之外增加独立的 `take_energy` 资源取用路径；该路径不经过授权门槛，由 Platform 在完成事务中判定可行性、目击和后果；违规记录与授权记录分表，事件分族。  
+> 迁移说明（2026-11-19）: `take_energy` 行为已迁移为通用 `take_resource`，目标由 Behavior 节点绑定 `energy_reserve`；Platform 原语、违规事务和事件语义未改变。
 > 交付范围: Phase 2A 确定性运行时、Phase 2B 可撤销制裁、Phase 2C 远程 LLM 观测；probe world、Platform、SQLite、AgentView、Prompt、测试与验证脚本。  
 > 首要风险: 偷取成为支配策略，使授权路径和制度变成装饰；通过目击、信任下降、可撤销访问限制和资源稀缺维持权衡。  
 > 创建时间: 2026-11-18  

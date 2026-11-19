@@ -1,5 +1,6 @@
 actions:
 - id: travel_to
+  verb: move
   version: 1
   description: Move to a connected known location.
   parameters:

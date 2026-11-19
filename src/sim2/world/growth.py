@@ -58,6 +58,13 @@ def build_growth_ledger(store: Any) -> dict[str, Any]:
                 raw = parameters.get("location_id")
                 if raw and not str(raw).startswith("context."):
                     targeted_locations.add(_canonical_id(store, raw))
+            resource_binding = (
+                parameters.get("resource_id")
+                or parameters.get("target_resource")
+                or parameters.get("resource")
+            )
+            if resource_binding and not str(resource_binding).startswith("context."):
+                referenced_resources.add(_canonical_id(store, resource_binding))
     for action in action_defs.values():
         for field in ("effects", "progress_effects"):
             for effect in action.get(field) or []:

@@ -137,7 +137,11 @@ class AuthorizationService(PlatformService):
                 (item for item in self.store.repositories.entities.get_definitions("bt_def") if str(item.get("id")) == behavior_id),
                 {},
             )
-            spec = behavior_authorization_spec(self._dependency("rule_compiler"), denied_behavior)
+            spec = behavior_authorization_spec(
+                self._dependency("rule_compiler"),
+                denied_behavior,
+                target=target,
+            )
             scope = str((spec or {}).get("scope") or data.get("scope") or "")
             if not behavior_label or not behavior_id or not target or not scope:
                 raise AuthorizationRejected("invalid_causal_reference", "The cited denial does not carry a complete behavior, target and scope.")
@@ -267,14 +271,24 @@ class AuthorizationService(PlatformService):
         return {"delegation": revoked}
 
 
-def withdrawal_effect(behavior: dict[str, Any], action_defs: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
-    """Return the configured two-phase withdrawal effect for one behavior."""
+def withdrawal_effect(
+    behavior: dict[str, Any],
+    action_defs: dict[str, dict[str, Any]],
+    behavior_defs: dict[str, dict[str, Any]] | None = None,
+    parameters: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Return the configured two-phase withdrawal effect for one behavior.
 
-    for node in behavior.get("nodes", []) or []:
-        if not isinstance(node, dict) or node.get("type") != "action":
-            continue
-        action = action_defs.get(str(node.get("action_id"))) or {}
-        for effect in action.get("effects", []) or []:
-            if isinstance(effect, dict) and str(effect.get("type") or effect.get("op") or "") == "resource_withdrawal":
-                return dict(effect)
-    return None
+    The effect is resolved through Action-node literals and Agent parameters so
+    an admission check sees the same target that execution will use.
+    """
+
+    from ..world.bindings import resolve_behavior_effect
+
+    return resolve_behavior_effect(
+        behavior,
+        "resource_withdrawal",
+        action_defs,
+        behavior_defs,
+        parameters,
+    )

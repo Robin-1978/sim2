@@ -55,7 +55,7 @@ def propose_definition_schema() -> dict[str, Any]:
             "description": "Action costs. Reserve carried inputs under costs.reserve; use item_parameter and optional item_quantity_parameter.",
         },
         "preconditions": {"type": "array", "items": {"type": "string"}, "description": "Optional machine predicates."},
-        "effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Set type and fields; positive world_resource_delta needs maximum; withdrawal/take need amount and scope."},
+        "effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Set fields; bind stock targets via context.<param>; positive delta needs max; withdrawal/take need amount and scope."},
         "progress_effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Observable effects while a long Action progresses."},
         "success": {"type": "object", "description": "Action success: {condition?: machine predicate, result: short label}."},
         "failure": {"type": "object", "description": "Action failure: {condition?: machine predicate, result: short label}."},

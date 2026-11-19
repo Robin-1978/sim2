@@ -1,5 +1,6 @@
 actions:
 - id: travel_to
+  verb: move
   version: 1
   description: 沿已知路线移动到目标地点
   parameters:
@@ -34,6 +35,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: inspect_object
+  verb: inspect
   version: 1
   description: 检查可访问的记录或设施
   parameters:
@@ -76,6 +78,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: drink_water
+  verb: consume
   version: 1
   description: 饮用个人携带的蓄水，恢复 hydration
   parameters:
@@ -111,6 +114,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: gather_resource
+  verb: gather
   version: 1
   description: 在可见资源节点采集指定材料
   parameters:
@@ -148,6 +152,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: explore_area
+  verb: explore
   version: 1
   description: 探索一段尚未充分了解的旧商路
   parameters:
@@ -180,6 +185,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: research_source
+  verb: research
   version: 1
   description: 研究可访问的信息源并记录事实
   parameters:
@@ -218,6 +224,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: communicate
+  verb: communicate
   version: 1
   description: 与目标角色沟通并记录可传播信息
   parameters:
@@ -254,6 +261,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: secure_boundary
+  verb: secure
   version: 1
   description: 加固北岗边界并记录守望结果
   parameters: {}
@@ -285,6 +293,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: settle_institution_allocation
+  verb: allocate
   version: 1
   description: 按已激活制度的账本结算一次公共资源分配
   parameters:

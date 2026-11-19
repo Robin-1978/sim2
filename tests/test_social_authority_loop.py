@@ -87,7 +87,7 @@ def state_snapshot(platform: Platform) -> dict[str, Any]:
 
 
 def deny_tomas(platform: Platform, intent_id: str = "deny-1") -> dict[str, Any]:
-    result = submit(platform, "tomas", "withdraw_energy", intent_id)
+    result = submit(platform, "tomas", "withdraw_resource", intent_id)
     assert result["status"] == "rejected"
     return latest(platform, "behavior.denied")
 
@@ -97,8 +97,8 @@ def open_request(
     *,
     requester: str = "tomas",
     request_id: str = "req-test",
-    behavior: str = "Withdraw Energy",
-    behavior_id: str = "withdraw_energy",
+    behavior: str = "Withdraw Resource",
+    behavior_id: str = "withdraw_resource",
     target: str = "energy_reserve",
     scope: str = "energy_withdrawal",
     reason: str = "test request",
@@ -161,13 +161,13 @@ def advance_until(platform: Platform, predicate, limit: int = 12) -> None:
 # ---------------------------------------------------------------------------
 def test_sa_01_preview_discriminates_steward(platform: Platform) -> None:
     before = state_snapshot(platform)
-    mira = behavior_entry(platform, "mira", "withdraw_energy")
-    tomas = behavior_entry(platform, "tomas", "withdraw_energy")
+    mira = behavior_entry(platform, "mira", "withdraw_resource")
+    tomas = behavior_entry(platform, "tomas", "withdraw_resource")
 
     assert mira["eligibility"]["available"] is True
     assert mira["eligibility"]["authorization"] == {"type": "stewardship", "id": "energy_reserve"}
     steward_preview = AgentToolExecutor(platform, role="agent_decision", actor_id="mira").execute(
-        "preview_behavior", {"choice": "Withdraw Energy"},
+        "preview_behavior", {"choice": "Withdraw Resource"},
     )
     assert steward_preview["behavior"]["eligibility"]["available"] is True
     assert tomas["eligibility"]["available"] is False
@@ -179,7 +179,7 @@ def test_sa_01_preview_discriminates_steward(platform: Platform) -> None:
 
 
 def test_sa_02_non_steward_withdraw_denied(platform: Platform) -> None:
-    result = submit(platform, "tomas", "withdraw_energy", "deny-1")
+    result = submit(platform, "tomas", "withdraw_resource", "deny-1")
 
     assert result["status"] == "rejected"
     assert result["failed_check"] == "missing_delegation"
@@ -189,7 +189,7 @@ def test_sa_02_non_steward_withdraw_denied(platform: Platform) -> None:
     requested = latest(platform, "behavior.requested")
     denied = latest(platform, "behavior.denied")
     assert requested["event_id"] < denied["event_id"]
-    assert requested["behavior"] == "Withdraw Energy"
+    assert requested["behavior"] == "Withdraw Resource"
     assert requested["target"] == "energy_reserve"
     assert denied["reason"] == "missing_delegation"
     assert denied["rule_id"] == "energy_reserve_stewardship"
@@ -214,7 +214,7 @@ def test_sa_03_request_cites_denial(platform: Platform) -> None:
     assert result["status"] == "accepted"
     request = platform.store.repositories.authorization.get_request(result["request_id"])
     assert request["status"] == "pending"
-    assert request["behavior"] == "Withdraw Energy"
+    assert request["behavior"] == "Withdraw Resource"
     assert request["target"] == "energy_reserve"
     assert request["scope"] == "energy_withdrawal"
     assert request["based_on_event"] == denied["event_id"]
@@ -222,7 +222,7 @@ def test_sa_03_request_cites_denial(platform: Platform) -> None:
     event = latest(platform, "access.requested")
     assert event["request_id"] == result["request_id"]
     assert event["requester"] == "tomas"
-    assert event["behavior"] == "Withdraw Energy"
+    assert event["behavior"] == "Withdraw Resource"
     assert event["target"] == "energy_reserve"
     assert event["scope"] == "energy_withdrawal"
     assert event["reason"] == "Need energy for relay maintenance"
@@ -265,7 +265,7 @@ def test_sa_05_withdrawal_decrements_once(platform: Platform) -> None:
     )
     submit(platform, "mira", "approve_withdrawal", "approve-1", {"request_id": request["request_id"]})
 
-    result = submit(platform, "tomas", "withdraw_energy", "withdraw-1")
+    result = submit(platform, "tomas", "withdraw_resource", "withdraw-1")
     assert result["status"] == "accepted"
     assert resource_amount(platform) == 10
     started = latest(platform, "resource.withdrawal.started")
@@ -293,7 +293,7 @@ def test_sa_06_revocation_denies_withdrawal(platform: Platform) -> None:
     )
     approved = submit(platform, "mira", "approve_withdrawal", "approve-1", {"request_id": request["request_id"]})
     delegation_id = approved["delegation_id"]
-    submit(platform, "tomas", "withdraw_energy", "withdraw-1")
+    submit(platform, "tomas", "withdraw_resource", "withdraw-1")
     advance_until(platform, lambda: bool(events(platform, "resource.withdrawal.completed")))
     assert resource_amount(platform) == 9
 
@@ -309,7 +309,7 @@ def test_sa_06_revocation_denies_withdrawal(platform: Platform) -> None:
     revoked_event = latest(platform, "delegation.revoked")
     assert revoked_event["delegation_id"] == delegation_id
 
-    after = submit(platform, "tomas", "withdraw_energy", "withdraw-2")
+    after = submit(platform, "tomas", "withdraw_resource", "withdraw-2")
     assert after["status"] == "rejected"
     assert after["failed_check"] == "delegation_revoked"
     assert resource_amount(platform) == 9
@@ -370,7 +370,7 @@ def test_sa_09_reject_branch(platform: Platform) -> None:
     assert events(platform, "resource.withdrawal.completed") == []
     assert resource_amount(platform) == 10
 
-    after = submit(platform, "tomas", "withdraw_energy", "withdraw-after-reject")
+    after = submit(platform, "tomas", "withdraw_resource", "withdraw-after-reject")
     assert after["failed_check"] == "missing_delegation"
     assert resource_amount(platform) == 10
 
@@ -416,9 +416,9 @@ def test_sa_11_duplicate_delegation_rejected(platform: Platform) -> None:
 
 def test_sa_12_wrong_scope_delegation_denied(platform: Platform) -> None:
     grant_delegation(platform, delegation_id="del-wrong-scope", scope="reserve_management")
-    preview = behavior_entry(platform, "tomas", "withdraw_energy")
+    preview = behavior_entry(platform, "tomas", "withdraw_resource")
     assert preview["eligibility"]["reasons"][0]["type"] == "missing_delegation"
-    result = submit(platform, "tomas", "withdraw_energy", "wrong-scope-1")
+    result = submit(platform, "tomas", "withdraw_resource", "wrong-scope-1")
     assert result["failed_check"] == "missing_delegation"
     assert resource_amount(platform) == 10
     assert events(platform, "resource.withdrawal.started") == []
@@ -446,8 +446,8 @@ def test_sa_13_idempotent_retries(platform: Platform) -> None:
     assert len(events(platform, "access.approved")) == 1
     assert len(platform.store.repositories.authorization.list_delegations()) == 1
 
-    accepted = submit(platform, "tomas", "withdraw_energy", "withdraw-once")
-    retry_withdraw = submit(platform, "tomas", "withdraw_energy", "withdraw-once")
+    accepted = submit(platform, "tomas", "withdraw_resource", "withdraw-once")
+    retry_withdraw = submit(platform, "tomas", "withdraw_resource", "withdraw-once")
     assert retry_withdraw == accepted
     assert len(events(platform, "resource.withdrawal.started")) == 1
 
@@ -455,7 +455,7 @@ def test_sa_13_idempotent_retries(platform: Platform) -> None:
     assert resource_amount(platform) == 9
     assert len(events(platform, "resource.withdrawal.completed")) == 1
 
-    second = submit(platform, "tomas", "withdraw_energy", "withdraw-2")
+    second = submit(platform, "tomas", "withdraw_resource", "withdraw-2")
     assert second["status"] == "accepted"
     advance_until(platform, lambda: len(events(platform, "resource.withdrawal.completed")) == 2)
     assert resource_amount(platform) == 8
@@ -503,7 +503,7 @@ def test_sa_14_transaction_failure_rollbacks(platform: Platform, monkeypatch: py
 
     monkeypatch.setattr(service, "append", fail_start)
     with pytest.raises(RuntimeError, match="injected start failure"):
-        submit(platform, "tomas", "withdraw_energy", "withdraw-start-fail")
+        submit(platform, "tomas", "withdraw_resource", "withdraw-start-fail")
     monkeypatch.setattr(service, "append", original)
     assert platform.store.repositories.entities.get_agent("tomas")["initial_state"]["status"] == "idle"
     assert events(platform, "resource.withdrawal.started") == []
@@ -512,7 +512,7 @@ def test_sa_14_transaction_failure_rollbacks(platform: Platform, monkeypatch: py
         "SELECT COUNT(*) FROM bt_instance WHERE execution_id='withdraw-start-fail'"
     ).fetchone()[0] == 0
 
-    accepted = submit(platform, "tomas", "withdraw_energy", "withdraw-complete")
+    accepted = submit(platform, "tomas", "withdraw_resource", "withdraw-complete")
     assert accepted["status"] == "accepted"
     assert resource_amount(platform) == 10
     state["raised"] = False
@@ -536,7 +536,7 @@ def test_sa_14_transaction_failure_rollbacks(platform: Platform, monkeypatch: py
     assert tomas["status"] != "executing"
     follow_up = submit(
         platform, "tomas", "request_access", "after-completion-failure",
-        {"based_on_event": str(_inject_denial(platform, "tomas", 0, "Withdraw Energy", "energy_reserve"))},
+        {"based_on_event": str(_inject_denial(platform, "tomas", 0, "Withdraw Resource", "energy_reserve"))},
     )
     assert follow_up["status"] == "accepted"
 
@@ -561,14 +561,14 @@ def test_sa_14_transaction_failure_rollbacks(platform: Platform, monkeypatch: py
 # ---------------------------------------------------------------------------
 def test_sa_15_preview_submit_equivalence(platform: Platform) -> None:
     before = state_snapshot(platform)
-    preview = behavior_entry(platform, "tomas", "withdraw_energy")
+    preview = behavior_entry(platform, "tomas", "withdraw_resource")
     tool_preview = AgentToolExecutor(platform, role="agent_decision", actor_id="tomas").execute(
-        "preview_behavior", {"choice": "Withdraw Energy"},
+        "preview_behavior", {"choice": "Withdraw Resource"},
     )
     assert tool_preview["behavior"]["eligibility"]["available"] is False
     assert tool_preview["behavior"]["eligibility"]["reasons"][0]["type"] == "missing_delegation"
     assert state_snapshot(platform) == before
-    denied = submit(platform, "tomas", "withdraw_energy", "equivalent-deny")
+    denied = submit(platform, "tomas", "withdraw_resource", "equivalent-deny")
     assert denied["failed_check"] == preview["eligibility"]["reasons"][0]["type"]
     assert latest(platform, "behavior.denied")["reason"] == preview["eligibility"]["reasons"][0]["type"]
 
@@ -579,10 +579,10 @@ def test_sa_15_preview_submit_equivalence(platform: Platform) -> None:
     assert approved["status"] == "accepted"
 
     frozen = state_snapshot(platform)
-    withdraw_preview = behavior_entry(platform, "tomas", "withdraw_energy")
+    withdraw_preview = behavior_entry(platform, "tomas", "withdraw_resource")
     assert withdraw_preview["eligibility"]["available"] is True
     assert state_snapshot(platform) == frozen
-    accepted = submit(platform, "tomas", "withdraw_energy", "equivalent-withdraw")
+    accepted = submit(platform, "tomas", "withdraw_resource", "equivalent-withdraw")
     assert accepted["status"] == "accepted"
     assert latest(platform, "resource.withdrawal.started")["intent_id"] == "equivalent-withdraw"
 
@@ -609,13 +609,13 @@ def test_sa_16_event_schema_and_order(platform: Platform) -> None:
         platform.step()
     approved = submit(platform, "mira", "approve_withdrawal", "approve-1", {"request_id": request["request_id"]})
     platform.step()
-    submit(platform, "tomas", "withdraw_energy", "withdraw-1")
+    submit(platform, "tomas", "withdraw_resource", "withdraw-1")
     advance_until(platform, lambda: bool(events(platform, "resource.withdrawal.completed")))
     for _ in range(5):
         platform.step()
     submit(platform, "mira", "revoke_delegation", "revoke-1", {"delegation_id": approved["delegation_id"]})
     platform.step()
-    final = submit(platform, "tomas", "withdraw_energy", "withdraw-final")
+    final = submit(platform, "tomas", "withdraw_resource", "withdraw-final")
     assert (
         denied["world_minute"],
         latest(platform, "access.requested")["minute"],
@@ -677,11 +677,11 @@ def test_sa_17_denial_memory_and_causal_reference(platform: Platform) -> None:
     invalid_cases = [
         ("missing", {}),
         ("nonexistent", {"based_on_event": "99999"}),
-        ("wrong_actor", {"based_on_event": str(_inject_denial(platform, "mira", 0, "Withdraw Energy", "energy_reserve"))}),
+        ("wrong_actor", {"based_on_event": str(_inject_denial(platform, "mira", 0, "Withdraw Resource", "energy_reserve"))}),
         ("wrong_type", {"based_on_event": str(_inject_event(platform, "behavior.started", "tomas", 0))}),
         ("wrong_behavior", {"based_on_event": str(denied["event_id"]), "behavior": "Approve Withdrawal"}),
         ("wrong_target", {"based_on_event": str(denied["event_id"]), "target": "other_reserve"}),
-        ("future", {"based_on_event": str(_inject_denial(platform, "tomas", 100, "Withdraw Energy", "energy_reserve"))}),
+        ("future", {"based_on_event": str(_inject_denial(platform, "tomas", 100, "Withdraw Resource", "energy_reserve"))}),
     ]
     before = len(events(platform, "access.requested"))
     for index, (name, parameters) in enumerate(invalid_cases):
@@ -732,7 +732,7 @@ def _inject_event(platform: Platform, event_type: str, actor: str, minute: int) 
     with platform.store.transaction():
         return platform.store.repositories.events.append_event(
             event_type, actor, minute,
-            {"intent_id": "injected", "behavior": "Withdraw Energy", "behavior_id": "withdraw_energy", "target": "energy_reserve", "reason": "missing_delegation"},
+            {"intent_id": "injected", "behavior": "Withdraw Resource", "behavior_id": "withdraw_resource", "target": "energy_reserve", "reason": "missing_delegation"},
         )
 
 
@@ -744,7 +744,7 @@ def _inject_denial(platform: Platform, actor: str, minute: int, behavior: str, t
                 "intent_id": "injected",
                 "actor": actor,
                 "behavior": behavior,
-                "behavior_id": "withdraw_energy",
+                "behavior_id": "withdraw_resource",
                 "target": target,
                 "rule_id": "energy_reserve_stewardship",
                 "reason": "missing_delegation",

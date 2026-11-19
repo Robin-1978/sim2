@@ -1,5 +1,6 @@
 actions:
 - id: travel_to
+  verb: move
   version: 1
   description: Move along a configured route.
   parameters:
@@ -32,6 +33,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: research_source
+  verb: research
   version: 1
   description: Study one configured archive source.
   parameters:
@@ -68,6 +70,7 @@ actions:
   kind: atomic
   executor: effect_pipeline
 - id: inspect_archive
+  verb: inspect
   version: 1
   description: Inspect the public reserve and archive console until the configured
     stability review threshold.

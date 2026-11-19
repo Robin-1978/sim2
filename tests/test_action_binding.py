@@ -107,9 +107,9 @@ def test_resource_transfer_without_carried_reservation_is_rejected(tmp_path: Pat
                 "definition_type": "action",
                 "name": "Unreserved Water Transfer",
                 "definition": {
-                    "parameters": {"item_id": "string"},
+                    "parameters": {"resource_id": "string", "item_id": "string"},
                     "duration": {"minutes": 1},
-                    "effects": [{"type": "resource_transfer", "resource_id": "蓄水", "quantity": 1}],
+                    "effects": [{"type": "resource_transfer", "resource_id": "context.resource_id", "quantity": 1}],
                     "success": {"result": "water transferred"},
                     "failure": {"result": "water transfer failed"},
                 },
@@ -117,7 +117,7 @@ def test_resource_transfer_without_carried_reservation_is_rejected(tmp_path: Pat
                     "name": "Unreserved Water Transfer Behavior",
                     "assign_to": ["梅岚"],
                     "definition": {
-                        "nodes": [{"type": "action", "action_id": "Unreserved Water Transfer", "parameters": {"item_id": "蓄水"}}],
+                        "nodes": [{"type": "action", "action_id": "Unreserved Water Transfer", "parameters": {"resource_id": "cistern_water", "item_id": "蓄水"}}],
                         "success_results": ["water transferred"],
                         "failure_results": ["water transfer failed"],
                     },
@@ -139,10 +139,10 @@ def test_dynamic_item_parameter_cannot_be_used_as_inventory_condition(tmp_path: 
                 "definition_type": "action",
                 "name": "Parameter Condition Transfer",
                 "definition": {
-                    "parameters": {"item_id": "string"},
+                    "parameters": {"resource_id": "string", "item_id": "string"},
                     "duration": {"minutes": 1},
                     "costs": {"reserve": {"item_parameter": "item_id"}},
-                    "effects": [{"type": "resource_transfer", "resource_id": "蓄水", "quantity": 1}],
+                    "effects": [{"type": "resource_transfer", "resource_id": "context.resource_id", "quantity": 1}],
                     "success": {"condition": "actor.inventory.item_id > 0", "result": "water transferred"},
                     "failure": {"result": "water transfer failed"},
                 },
@@ -150,7 +150,7 @@ def test_dynamic_item_parameter_cannot_be_used_as_inventory_condition(tmp_path: 
                     "name": "Parameter Condition Transfer Behavior",
                     "assign_to": ["梅岚"],
                     "definition": {
-                        "nodes": [{"type": "action", "action_id": "Parameter Condition Transfer", "parameters": {"item_id": "蓄水"}}],
+                        "nodes": [{"type": "action", "action_id": "Parameter Condition Transfer", "parameters": {"resource_id": "cistern_water", "item_id": "蓄水"}}],
                         "success_results": ["water transferred"],
                         "failure_results": ["water transfer failed"],
                     },
@@ -172,10 +172,10 @@ def test_resource_transfer_success_cannot_depend_on_reserved_inventory(tmp_path:
                 "definition_type": "action",
                 "name": "Post Reservation Inventory Check",
                 "definition": {
-                    "parameters": {"item_id": "string"},
+                    "parameters": {"resource_id": "string", "item_id": "string"},
                     "duration": {"minutes": 1},
                     "costs": {"reserve": {"item_parameter": "item_id"}},
-                    "effects": [{"type": "resource_transfer", "resource_id": "蓄水", "quantity": 1}],
+                    "effects": [{"type": "resource_transfer", "resource_id": "context.resource_id", "quantity": 1}],
                     "success": {"condition": "actor.inventory.energy_cell > 0", "result": "water transferred"},
                     "failure": {"result": "water transfer failed"},
                 },
@@ -183,7 +183,7 @@ def test_resource_transfer_success_cannot_depend_on_reserved_inventory(tmp_path:
                     "name": "Post Reservation Inventory Check Behavior",
                     "assign_to": ["梅岚"],
                     "definition": {
-                        "nodes": [{"type": "action", "action_id": "Post Reservation Inventory Check", "parameters": {"item_id": "蓄水"}}],
+                        "nodes": [{"type": "action", "action_id": "Post Reservation Inventory Check", "parameters": {"resource_id": "cistern_water", "item_id": "蓄水"}}],
                         "success_results": ["water transferred"],
                         "failure_results": ["water transfer failed"],
                     },
@@ -356,10 +356,10 @@ def test_dynamic_action_can_transfer_carried_resource_into_world_stock(tmp_path:
                 "definition_type": "action",
                 "name": "Transfer Carried Water",
                 "definition": {
-                    "parameters": {"item_id": "string"},
+                    "parameters": {"resource_id": "string", "item_id": "string"},
                     "duration": {"minutes": 1},
                     "costs": {"reserve": {"item_parameter": "item_id"}},
-                    "effects": [{"type": "resource_transfer", "resource_id": "蓄水", "quantity": 1}],
+                    "effects": [{"type": "resource_transfer", "resource_id": "context.resource_id", "quantity": 1}],
                     "success": {"result": "water transferred"},
                     "failure": {"result": "water transfer failed"},
                 },
@@ -369,7 +369,7 @@ def test_dynamic_action_can_transfer_carried_resource_into_world_stock(tmp_path:
                     "definition": {
                         "nodes": [
                             {"type": "action", "action_id": "Travel To", "parameters": {"location_id": "蓄水屋"}},
-                            {"type": "action", "action_id": "Transfer Carried Water", "parameters": {"item_id": "蓄水"}},
+                            {"type": "action", "action_id": "Transfer Carried Water", "parameters": {"resource_id": "cistern_water", "item_id": "蓄水"}},
                         ],
                         "success_results": ["water transferred"],
                         "failure_results": ["water transfer failed"],
@@ -404,10 +404,10 @@ def test_dynamic_resource_transfer_uses_configured_quantity(tmp_path: Path) -> N
                 "definition_type": "action",
                 "name": "Transfer Configured Water",
                 "definition": {
-                    "parameters": {"item_id": "string", "quantity": "number"},
+                    "parameters": {"resource_id": "string", "item_id": "string", "quantity": "number"},
                     "duration": {"minutes": 1},
                     "costs": {"reserve": {"item_parameter": "item_id", "item_quantity_parameter": "quantity"}},
-                    "effects": [{"type": "resource_transfer", "resource_id": "蓄水", "source_item_parameter": "item_id", "quantity_parameter": "quantity"}],
+                    "effects": [{"type": "resource_transfer", "resource_id": "context.resource_id", "source_item_parameter": "item_id", "quantity_parameter": "quantity"}],
                     "success": {"result": "water transferred"},
                     "failure": {"result": "water transfer failed"},
                 },
@@ -417,7 +417,7 @@ def test_dynamic_resource_transfer_uses_configured_quantity(tmp_path: Path) -> N
                     "definition": {
                         "nodes": [
                             {"type": "action", "action_id": "Travel To", "parameters": {"location_id": "蓄水屋"}},
-                            {"type": "action", "action_id": "Transfer Configured Water", "parameters": {"item_id": "蓄水", "quantity": 2}},
+                            {"type": "action", "action_id": "Transfer Configured Water", "parameters": {"resource_id": "cistern_water", "item_id": "蓄水", "quantity": 2}},
                         ],
                         "success_results": ["water transferred"],
                         "failure_results": ["water transfer failed"],
@@ -457,10 +457,10 @@ def test_dynamic_resource_transfer_cannot_mint_more_than_reserved(tmp_path: Path
                 "definition_type": "action",
                 "name": "Overfill Carried Water",
                 "definition": {
-                    "parameters": {"item_id": "string"},
+                    "parameters": {"resource_id": "string", "item_id": "string"},
                     "duration": {"minutes": 1},
                     "costs": {"reserve": {"item_parameter": "item_id"}},
-                    "effects": [{"type": "resource_transfer", "resource_id": "蓄水", "quantity": 2}],
+                    "effects": [{"type": "resource_transfer", "resource_id": "context.resource_id", "quantity": 2}],
                     "success": {"result": "water transferred"},
                     "failure": {"result": "water transfer failed"},
                 },
@@ -470,7 +470,7 @@ def test_dynamic_resource_transfer_cannot_mint_more_than_reserved(tmp_path: Path
                     "definition": {
                         "nodes": [
                             {"type": "action", "action_id": "Travel To", "parameters": {"location_id": "蓄水屋"}},
-                            {"type": "action", "action_id": "Overfill Carried Water", "parameters": {"item_id": "蓄水"}},
+                            {"type": "action", "action_id": "Overfill Carried Water", "parameters": {"resource_id": "cistern_water", "item_id": "蓄水"}},
                         ],
                         "success_results": ["water transferred"],
                         "failure_results": ["water transfer failed"],

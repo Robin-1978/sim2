@@ -758,7 +758,10 @@ behavior_trees:
     parameters:
       location_id: granary
   - type: action
-    action_id: withdraw_food
+    action_id: withdraw_stock
+    parameters:
+      resource_id: village_food
+      item_id: rations
   definition_source: config
   kind: fallback
 - id: buy_food

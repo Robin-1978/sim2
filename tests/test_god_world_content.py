@@ -203,11 +203,12 @@ def test_god_can_create_a_behavior_that_changes_a_world_resource(tmp_path: Path)
             "definition_type": "action",
             "name": "Add Local Stock",
             "definition": {
-                "description": "Add one unit to the local test stock.",
+                "description": "Add one unit to a visible local stock.",
+                "parameters": {"resource_id": "string"},
                 "duration": {"minutes": 5},
                 "costs": {"reserve": {}, "per_minute": {}, "on_success": {}, "on_failure": {}, "refund": {}},
                 "preconditions": ["actor.alive"],
-                "effects": [{"type": "world_resource_delta", "resource_id": "Test Local Stock", "delta": 1, "maximum": 5}],
+                "effects": [{"type": "world_resource_delta", "resource_id": "context.resource_id", "delta": 1, "maximum": 5}],
                 "success": {"condition": "actor.alive", "result": "local stock added"},
                 "failure": {"result": "local stock failed"},
                 "success_results": ["local stock added"],
@@ -221,7 +222,7 @@ def test_god_can_create_a_behavior_that_changes_a_world_resource(tmp_path: Path)
                     "entry_conditions": ["actor.alive"],
                     "nodes": [
                         {"type": "action", "action_id": "travel_to", "parameters": {"location_id": "三灯广场"}},
-                        {"type": "action", "action_id": "Add Local Stock", "parameters": {}},
+                        {"type": "action", "action_id": "Add Local Stock", "parameters": {"resource_id": stock["entity_id"]}},
                     ],
                     "success_results": ["local stock added"],
                     "failure_results": ["local stock failed"],
@@ -293,14 +294,15 @@ def test_positive_world_resource_delta_needs_a_cap_and_respects_it(tmp_path: Pat
         assert stock["status"] == "accepted", stock
 
         def action(maximum: int | None):
-            effect = {"type": "world_resource_delta", "resource_id": "Test Capped Stock", "delta": 10}
+            effect = {"type": "world_resource_delta", "resource_id": "context.resource_id", "delta": 10}
             if maximum is not None:
                 effect["maximum"] = maximum
             return platform.submit_definition_proposal("god", {
                 "definition_type": "action",
                 "name": "Add Capped Stock",
                 "definition": {
-                    "description": "Add to the capped stock.",
+                    "description": "Add to a visible capped stock.",
+                    "parameters": {"resource_id": "string"},
                     "duration": {"minutes": 5},
                     "costs": {"reserve": {}, "per_minute": {}, "on_success": {}, "on_failure": {}, "refund": {}},
                     "preconditions": ["actor.alive"],
@@ -318,7 +320,7 @@ def test_positive_world_resource_delta_needs_a_cap_and_respects_it(tmp_path: Pat
                         "entry_conditions": ["actor.alive"],
                         "nodes": [
                             {"type": "action", "action_id": "travel_to", "parameters": {"location_id": "三灯广场"}},
-                            {"type": "action", "action_id": "Add Capped Stock", "parameters": {}},
+                            {"type": "action", "action_id": "Add Capped Stock", "parameters": {"resource_id": stock["entity_id"]}},
                         ],
                         "success_results": ["capped stock added"],
                         "failure_results": ["capped stock failed"],
@@ -328,7 +330,7 @@ def test_positive_world_resource_delta_needs_a_cap_and_respects_it(tmp_path: Pat
 
         uncapped = action(None)
         assert uncapped["status"] == "rejected", uncapped
-        assert any("without a maximum" in item for item in uncapped["errors"])
+        assert any("maximum" in item for item in uncapped["errors"])
 
         with platform.store.transaction():
             rules = dict(platform.store.repositories.metadata.get("rules", {}) or {})

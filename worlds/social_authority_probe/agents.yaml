@@ -16,7 +16,7 @@ agents:
     purpose: 70
     belonging: 60
   initial_bt_ids:
-  - withdraw_energy
+  - withdraw_resource
   - request_access
   - approve_withdrawal
   - reject_withdrawal
@@ -65,12 +65,12 @@ agents:
     purpose: 75
     belonging: 55
   initial_bt_ids:
-  - withdraw_energy
+  - withdraw_resource
   - request_access
   - approve_withdrawal
   - reject_withdrawal
   - revoke_delegation
-  - take_energy
+  - take_resource
   initial_state:
     location_id: relay_station
     status: idle

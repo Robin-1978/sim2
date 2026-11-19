@@ -1,7 +1,7 @@
 """Phase 2C observational probe for contested resource actions.
 
 This is not a Runtime gate.  It gives a real model the same two paths a
-character sees (request access or take energy), plus the steward's review
+character sees (request access or take a resource), plus the steward's review
 decision, and records what happens.  It never prints API keys or reasoning.
 
 Run with:
@@ -91,7 +91,7 @@ def _deny_once(platform: Platform, run_index: int) -> None:
     platform.submit_behavior(
         BehaviorIntent(
             actor_id="tomas",
-            behavior_ref="behavior:withdraw_energy",
+            behavior_ref="behavior:withdraw_resource",
             target={},
             parameters={},
             reason="probe denial",
@@ -135,10 +135,10 @@ def run_probe(
     contested = tomas_view.get("contested_actions") or []
     detection = str((contested[0] if contested else {}).get("detection") or "")
     preconditions = {
-        "take_executable": "behavior:take_energy" in {
+        "take_executable": "behavior:take_resource" in {
             str(item.get("ref")) for item in (tomas_view.get("executable_behaviors") or [])
         },
-        "withdraw_blocked": "behavior:withdraw_energy" in {
+        "withdraw_blocked": "behavior:withdraw_resource" in {
             str(item.get("ref")) for item in (tomas_view.get("blocked_behaviors") or [])
         },
         "review_visible": "behavior:review_violation" in _behavior_refs(mira_view),
@@ -197,7 +197,7 @@ def run_probe(
         and call.get("status") == "accepted"
         for call in _tool_calls(tomas_turn)
     )
-    report["take_chosen"] = _chose(tomas_turn, "take_energy")
+    report["take_chosen"] = _chose(tomas_turn, "take_resource")
     report["other_choice"] = not report["request_chosen"] and not report["take_chosen"]
     if not report["take_chosen"]:
         report["notes"].append("Tomas did not choose the take path.")
@@ -245,8 +245,8 @@ def run_probe(
         return report
     report["followup_tools"] = _tool_calls(follow_turn)
     report["followup_choice"] = _choice_of(follow_turn)
-    report["followup_withdraw"] = _chose(follow_turn, "withdraw_energy")
-    report["followup_take"] = _chose(follow_turn, "take_energy")
+    report["followup_withdraw"] = _chose(follow_turn, "withdraw_resource")
+    report["followup_take"] = _chose(follow_turn, "take_resource")
     return report
 
 

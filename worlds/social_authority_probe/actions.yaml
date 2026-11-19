@@ -1,6 +1,7 @@
 actions:
 - id: travel_to
   version: 1
+  verb: move
   description: Move to a connected known location.
   parameters:
     location_id: string
@@ -33,10 +34,13 @@ actions:
   definition_source: config
   kind: atomic
   executor: effect_pipeline
-- id: withdraw_energy
+- id: withdraw_resource
   version: 1
-  description: Withdraw one unit of energy from the shared reserve.
-  parameters: {}
+  verb: transfer_resource
+  description: Withdraw one unit from a named shared reserve.
+  parameters:
+    resource_id: string
+    scope: string
   preconditions:
   - actor.alive
   duration:
@@ -49,11 +53,12 @@ actions:
     refund: {}
   effects:
   - type: resource_withdrawal
-    resource_id: energy_reserve
+    resource_id: context.resource_id
     amount: 1
+    scope: context.scope
   success:
     condition: actor.alive
-    result: energy_withdrawn
+    result: resource_withdrawn
   failure:
     condition: actor.incapacitated
     result: withdrawal_failed
@@ -64,6 +69,7 @@ actions:
   executor: effect_pipeline
 - id: request_access
   version: 1
+  verb: authorize
   description: Request scoped access to the shared reserve after a denial.
   parameters: {}
   preconditions:
@@ -90,6 +96,7 @@ actions:
   executor: effect_pipeline
 - id: approve_withdrawal
   version: 1
+  verb: authorize
   description: Approve one pending access request and grant a scoped delegation.
   parameters: {}
   preconditions:
@@ -116,6 +123,7 @@ actions:
   executor: effect_pipeline
 - id: reject_withdrawal
   version: 1
+  verb: authorize
   description: Reject one pending access request without creating a delegation.
   parameters: {}
   preconditions:
@@ -142,6 +150,7 @@ actions:
   executor: effect_pipeline
 - id: revoke_delegation
   version: 1
+  verb: authorize
   description: Revoke one active delegation while retaining its history.
   parameters: {}
   preconditions:
@@ -166,10 +175,13 @@ actions:
   definition_source: config
   kind: atomic
   executor: effect_pipeline
-- id: take_energy
+- id: take_resource
   version: 1
-  description: Take one unit of shared reserve energy without authorization.
-  parameters: {}
+  verb: transfer_resource
+  description: Take one unit from a named shared reserve without authorization.
+  parameters:
+    resource_id: string
+    scope: string
   preconditions:
   - actor.alive
   duration:
@@ -182,13 +194,13 @@ actions:
     refund: {}
   effects:
   - type: resource_take
-    resource_id: energy_reserve
+    resource_id: context.resource_id
     amount: 1
-    scope: energy_withdrawal
+    scope: context.scope
     mode: covert
   success:
     condition: actor.alive
-    result: energy_taken
+    result: resource_taken
   failure:
     condition: actor.incapacitated
     result: take_failed
@@ -199,6 +211,7 @@ actions:
   executor: effect_pipeline
 - id: review_violation
   version: 1
+  verb: authorize
   description: Sanction or forgive one observed violation as the resource steward.
   parameters: {}
   preconditions:
