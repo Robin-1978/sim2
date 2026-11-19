@@ -42,6 +42,74 @@ def test_unlocked_behavior_limit_reads_the_decision_policy() -> None:
     assert unlocked_behavior_limit({"decision_policy": {"max_unlocked_behaviors": "bad"}}) == 24
 
 
+def test_generic_verb_is_preferred_over_a_new_specific_action(tmp_path: Path) -> None:
+    platform = _platform(tmp_path, "generic-verb")
+    try:
+        generic = {
+            "definition_type": "action",
+            "name": "Transfer Stored Resource",
+            "definition": {
+                "summary": "Move one unit of a visible shared resource.",
+                "parameters": {"resource_id": "string"},
+                "duration": {"minutes": 1},
+                "effects": [{
+                    "type": "resource_withdrawal",
+                    "resource_id": "context.resource_id",
+                    "amount": 1,
+                    "scope": "resource_withdrawal",
+                }],
+                "success": {"condition": "actor.alive", "result": "resource_moved"},
+                "failure": {"condition": "actor.incapacitated", "result": "move_failed"},
+            },
+            "followup_behavior": {
+                "name": "Transfer Stored Resource Behavior",
+                "assign_to": ["梅岚"],
+                "definition": {
+                    "entry_conditions": ["actor.alive"],
+                    "estimated_minutes": 1,
+                    "agent_parameters": {"resource_id": {"type": "string", "required": True, "max_length": 120}},
+                    "nodes": [{
+                        "type": "action",
+                        "action_id": "Transfer Stored Resource",
+                        "parameters": {"resource_id": "context.resource_id"},
+                    }],
+                    "success_results": ["resource_moved"],
+                    "failure_results": ["move_failed"],
+                },
+            },
+        }
+        first = platform.submit_definition_proposal("god", generic)
+        assert first["status"] == "accepted", first
+
+        specific = {
+            "definition_type": "action",
+            "name": "Withdraw Cistern Water",
+            "definition": {
+                "summary": "Withdraw water from the cistern.",
+                "parameters": {},
+                "duration": {"minutes": 1},
+                "effects": [{
+                    "type": "resource_withdrawal",
+                    "resource_id": "cistern_water",
+                    "amount": 1,
+                    "scope": "resource_withdrawal",
+                }],
+                "success": {"condition": "actor.alive", "result": "water_moved"},
+                "failure": {"condition": "actor.incapacitated", "result": "move_failed"},
+            },
+        }
+        rejected = platform.submit_definition_proposal("god", specific)
+        assert rejected["status"] == "rejected", rejected
+        assert any("generic transfer_resource Action already exists" in str(item) for item in rejected.get("errors") or []), rejected
+
+        view = platform.decision_view("mei_lan")
+        entry = next(item for item in view["executable_behaviors"] if item.get("ref") == "behavior:transfer_stored_resource_behavior")
+        names = {item["name"] for item in entry["parameter_options"]["resource_id"]}
+        assert "蓄水" in names
+    finally:
+        platform.close()
+
+
 def test_assigning_behaviors_keeps_the_catalog_cap(tmp_path: Path) -> None:
     platform = _platform(tmp_path, "catalog-trim")
     try:

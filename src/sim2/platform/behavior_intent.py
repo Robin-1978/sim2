@@ -91,11 +91,14 @@ class BehaviorIntentService(PlatformService):
         target = str(
             (request or {}).get("target")
             or submission.parameters.get("target")
+            or submission.parameters.get("resource_id")
             or ""
         )
         spec = behavior_authorization_spec(self._dependency("rule_compiler"), submission.behavior) or {}
         if not target:
             target = str(spec.get("target") or "")
+        if target:
+            target = str(self._dependency("targets").canonical_id(target) or target)
         event = {
             "intent_id": str(submission.intent.intent_id),
             "actor": str(submission.intent.actor_id),
@@ -404,8 +407,8 @@ class BehaviorIntentService(PlatformService):
         )
         submission.authorization = authorization
         action_defs = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
-        submission.withdrawal = withdrawal_effect(submission.behavior, action_defs)
-        submission.take = resource_take_effect(submission.behavior, action_defs, submission.definitions)
+        submission.withdrawal = self._resolve_effect_parameters(withdrawal_effect(submission.behavior, action_defs), submission.parameters)
+        submission.take = self._resolve_effect_parameters(resource_take_effect(submission.behavior, action_defs, submission.definitions), submission.parameters)
         if authorization.get("gated") and not authorization.get("available"):
             reason = (authorization.get("reasons") or [{}])[0]
             return {
@@ -617,6 +620,20 @@ class BehaviorIntentService(PlatformService):
                 "world_revision": submission.world_revision,
             }
         return None
+
+    def _resolve_effect_parameters(self, effect: dict[str, Any] | None, parameters: dict[str, Any]) -> dict[str, Any] | None:
+        if not isinstance(effect, dict):
+            return effect
+        resolved = {
+            key: parameters.get(value.removeprefix("context."), value)
+            if isinstance(value, str) and value.startswith("context.") else value
+            for key, value in effect.items()
+        }
+        if resolved.get("resource_id"):
+            canonical = self._dependency("targets").canonical_id(str(resolved["resource_id"]))
+            if canonical:
+                resolved["resource_id"] = str(canonical)
+        return resolved
 
     @staticmethod
     def _authorization_target(submission: BehaviorSubmission) -> str:

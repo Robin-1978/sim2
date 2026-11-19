@@ -377,6 +377,25 @@ behavior with `agent_parameters: {resource_id: string}` and a node parameter
 stock. A new resource or place is data: making it visible widens the parameter
 options without registering another behavior tree.
 
+```yaml
+definition:
+  verb: transfer_resource
+  parameters: {resource_id: string}
+  effects:
+    - type: resource_withdrawal
+      resource_id: context.resource_id
+      amount: 1
+      scope: resource_withdrawal
+```
+
+`verb` is the stable capability family (`transfer_resource`, `consume`, `move`,
+`inspect`, `research`, `craft`, `communicate`, ...). When omitted, the
+validator infers it from the effect mix. A new Action that targets one literal
+resource is rejected once a generic Action with the same family exists; the
+message tells God to bind the target as a parameter instead. Existing
+target-specific definitions remain valid content, but new growth should use the
+generic family.
+
 Three optional bounds keep an add-only world from outgrowing its prompts:
 
 ```yaml

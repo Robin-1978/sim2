@@ -562,18 +562,18 @@ class ActivityRuntimeMixin:
                 # example, a daily rationing decision).  This is distinct from
                 # ``resource_transfer``: no carried item is reserved because
                 # the world, not one inventory, is the source or sink.
-                resource_ref = effect.get("resource_id") or effect.get("resource")
+                resource_ref = resolved_effect.get("resource_id") or resolved_effect.get("resource")
                 resource_id = str(self.targets.canonical_id(str(resource_ref or "")) or resource_ref or "")
-                delta = float(effect.get("delta", effect.get("value", 0)) or 0)
+                delta = float(resolved_effect.get("delta", resolved_effect.get("value", 0)) or 0)
                 current = self.resources._world_resource(resource_id) if resource_id else None
                 if not resource_id or current is None:
                     errors.append("world_resource_delta target must be an existing world resource")
                     continue
                 target_amount = float(current.get("amount", 0) or 0) + delta
-                if isinstance(effect.get("minimum"), (int, float)):
-                    target_amount = max(float(effect["minimum"]), target_amount)
-                if isinstance(effect.get("maximum"), (int, float)):
-                    target_amount = min(float(effect["maximum"]), target_amount)
+                if isinstance(resolved_effect.get("minimum"), (int, float)):
+                    target_amount = max(float(resolved_effect["minimum"]), target_amount)
+                if isinstance(resolved_effect.get("maximum"), (int, float)):
+                    target_amount = min(float(resolved_effect["maximum"]), target_amount)
                 caps = ((self.store.repositories.metadata.get("rules", {}) or {}).get("resource_caps", {}) or {})
                 try:
                     resource_entity = self.store.repositories.entities.get_entity(resource_id)

@@ -17,6 +17,10 @@ def propose_definition_schema() -> dict[str, Any]:
     """Return a fresh JSON Schema for the declarative definition proposal."""
 
     definition_properties: dict[str, Any] = {
+        "verb": {
+            "type": "string",
+            "description": "Capability family, e.g. transfer_resource or consume; reuse a generic verb.",
+        },
         "nodes": {
             "type": "array",
             "description": "Ordered executable nodes. Use an Action node with the exact visible Action name; include Travel before a destination Action.",

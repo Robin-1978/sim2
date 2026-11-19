@@ -347,8 +347,12 @@ def _growth_ledger_lines(context: dict[str, Any]) -> list[str]:
     if cells:
         lines.append("  " + "; ".join(f"{name}={int(cell.get('count', 0) or 0)}" for name, cell in cells.items()))
     lines.append(
-        "  counted as: place=locations; verb=behavior trees; "
+        "  counted as: place=locations; verb=distinct capability families (not trees); "
         "social=factions+relationships+institutions; rule=world rules; resource=resource nodes"
+    )
+    lines.append(
+        "  Prefer one parameterized verb (transfer_resource, consume, move); bind a visible target "
+        "instead of adding a tree."
     )
     empty = [str(item) for item in (ledger.get("empty_cells") or [])]
     lines.append("  empty cells: " + (", ".join(empty) if empty else "none"))

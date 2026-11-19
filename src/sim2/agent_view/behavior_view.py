@@ -338,6 +338,56 @@ class BehaviorViewMixin:
                 f"{item['name']} ({item['remaining_stages']} stage(s) remaining at {item['location']})"
                 for item in parameter_options["source_id"]
             )
+        params = bt.get("agent_parameters") or {}
+        resource_keys = {"resource_id", "resource", "target_resource", "resource_tag"}
+        if resource_keys & set(params):
+            rules = self.store.repositories.metadata.get("rules", {}) or {}
+            resource_types = [str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])]
+            resources = []
+            for entity_type in resource_types:
+                for row in self.entities_repo.entities_of_type(entity_type):
+                    try:
+                        entity = self.entities_repo.get_entity(str(row["id"]))
+                    except KeyError:
+                        continue
+                    state = entity.get("initial_state") or {}
+                    quantity = entity.get("amount", state.get("quantity", state.get("amount")))
+                    location = state.get("location_id") or entity.get("location_id")
+                    resources.append({
+                        "name": str(entity.get("name") or entity.get("id")),
+                        "quantity": quantity if isinstance(quantity, (int, float)) else 0,
+                        "location": self._entity_name(location) if location else "",
+                    })
+            if resources:
+                resources.sort(key=lambda item: (-float(item["quantity"] or 0), item["name"]))
+                for key in resource_keys & set(params):
+                    parameter_options[key] = resources[:12]
+                target_text = "Choose a visible resource: " + "; ".join(
+                    f"{item['name']} ({item['quantity']:g}{' at ' + item['location'] if item['location'] else ''})"
+                    for item in resources[:6]
+                )
+        location_keys = {"location_id", "location", "destination", "destination_id"}
+        if location_keys & set(params):
+            locations = []
+            for location_id in frame.known_route_destinations or []:
+                name = self._entity_name(location_id)
+                if name:
+                    locations.append({"name": name})
+            if locations:
+                for key in location_keys & set(params):
+                    parameter_options[key] = locations[:8]
+                target_text = "Choose a reachable destination: " + ", ".join(item["name"] for item in locations[:6])
+        item_keys = {"item_id", "item", "consumable"}
+        if item_keys & set(params):
+            items = []
+            for item_id, quantity in (frame.agent.get("inventory") or {}).items():
+                items.append({"name": self._entity_name(item_id), "quantity": quantity})
+            if items:
+                for key in item_keys & set(params):
+                    parameter_options[key] = items[:8]
+                target_text = "Choose a carried item: " + ", ".join(
+                    f"{item['name']} ({item['quantity']})" for item in items[:6]
+                )
         bindings = bt.get("parameter_bindings", {}) or {}
         binding_values = {
             "nearest_safe_location": safe_location_id,
@@ -393,6 +443,18 @@ class BehaviorViewMixin:
         if not effect:
             return None
         resource_id = str(effect.get("resource_id") or effect.get("resource") or "")
+        if resource_id.startswith("context."):
+            # A generic take binds the stock at execution time.  Use the
+            # nearest visible resource for the pre-choice risk view; the
+            # actual intent still resolves the submitted parameter.
+            resource_id = str((frame.resource_node or {}).get("resource_tag") or "")
+            if not resource_id and frame.location_id:
+                rules = self.store.repositories.metadata.get("rules", {}) or {}
+                resource_types = {str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])}
+                for item in self.entities_repo.entities_at_location(frame.location_id):
+                    if str(item.get("entity_type") or "") in resource_types:
+                        resource_id = str(item.get("id") or "")
+                        break
         location_id = ""
         try:
             resource = self.entities_repo.get_entity(resource_id)

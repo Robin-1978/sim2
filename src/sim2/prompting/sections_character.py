@@ -312,6 +312,18 @@ def executable_behavior_lines(context: dict[str, Any]) -> list[str]:
         for label in ("name", "summary", "purpose", "when", "requires", "target", "parameters", "parameter_options", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "cooldown_minutes", "tags", "goal_tags", "drive_tags", "supports_drive_tags"):
             value = behavior.get(label)
             if value:
+                if label == "parameter_options" and isinstance(value, dict):
+                    rendered_options = []
+                    for name, entries in value.items():
+                        names = [
+                            str(entry.get("name") if isinstance(entry, dict) else entry)
+                            for entry in (entries or [])
+                        ]
+                        if names:
+                            rendered_options.append(f"{name}: " + ", ".join(names[:8]))
+                    if rendered_options:
+                        lines.append("      parameter_options: " + "; ".join(rendered_options))
+                    continue
                 if isinstance(value, list):
                     value = "; ".join(str(item) for item in value)
                 value_text = str(value)

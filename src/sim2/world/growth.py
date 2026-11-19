@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .verbs import infer_behavior_verb, normalize_verb
+
 def _canonical_id(store: Any, value: Any) -> str:
     """Resolve a visible name or id without importing an upper-layer package."""
 
@@ -95,9 +97,13 @@ def build_growth_ledger(store: Any) -> dict[str, Any]:
         if resource_id in dynamic_resource_ids and resource_id not in referenced_resources:
             dead.append(f"{resource.get('name') or resource_id} (resource: no behavior)")
 
+    verb_families = sorted({
+        normalize_verb(behavior.get("verb")) or infer_behavior_verb(behavior, action_defs)
+        for behavior in behaviors
+    } - {"", "other"})
     cells = {
         "place": {"count": len(locations)},
-        "verb": {"count": len(behaviors)},
+        "verb": {"count": len(verb_families)},
         "social": {"count": len(factions) + _count(store, "SELECT COUNT(*) AS count FROM relationship") + _count(store, "SELECT COUNT(*) AS count FROM institution_definition WHERE status='active'")},
         "rule": {"count": len(world_rules)},
         "resource": {"count": len(resources)},
@@ -114,6 +120,8 @@ def build_growth_ledger(store: Any) -> dict[str, Any]:
         "cells": cells,
         "empty_cells": empty_cells,
         "dead_content": dead,
+        "verb_families": verb_families,
+        "behavior_trees": len(behaviors),
         "last_structural_change": int(last["minute"]) if last and last["minute"] is not None else None,
         "growth_mode": str((stagnation or {}).get("growth") or "option"),
     }

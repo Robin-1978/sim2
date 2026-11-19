@@ -68,7 +68,16 @@ class ScriptedAgents:
             if not choice:
                 continue
             options_line = re.search(r"^\s+parameter_options: (.+)$", block, flags=re.MULTILINE)
-            options = ast.literal_eval(options_line.group(1)) if options_line else {}
+            options: dict[str, list[Any]] = {}
+            if options_line:
+                text = options_line.group(1).strip()
+                if text.startswith("{"):
+                    options = ast.literal_eval(text)
+                else:
+                    for part in text.split("; "):
+                        name, _, values = part.partition(": ")
+                        if name and values:
+                            options[name] = [{"name": value.strip()} for value in values.split(",") if value.strip()]
             parameters: dict[str, Any] = {}
             for name in re.findall(r"\b(\w+) \(required", block):
                 first = (options.get(name) or [None])[0]

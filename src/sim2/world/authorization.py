@@ -36,11 +36,17 @@ def _reason(code: str, *, attemptable: bool, rule_id: str, authority: dict[str, 
     }
 
 
-def behavior_authorization_spec(rule_compiler: Any, behavior: dict[str, Any]) -> dict[str, Any] | None:
-    """Return the configured authorization rule that governs one behavior."""
+def behavior_authorization_spec(rule_compiler: Any, behavior: dict[str, Any], *, target: str | None = None) -> dict[str, Any] | None:
+    """Return the configured authorization rule that governs one behavior.
+
+    A capability may bind different resources, each with its own stewardship
+    rule.  When ``target`` is supplied, prefer the matching rule instead of
+    returning the first rule for the behavior id.
+    """
 
     if rule_compiler is None or not isinstance(behavior, dict):
         return None
+    fallback: dict[str, Any] | None = None
     for raw in rule_compiler.all_rules():
         compiled = rule_compiler.compile(raw)
         effect = compiled.get("effect") or {}
@@ -56,14 +62,18 @@ def behavior_authorization_spec(rule_compiler: Any, behavior: dict[str, Any]) ->
             "type": str(configured_authority.get("type") or default_type),
             "id": str(configured_authority.get("id") or (rule_id if mode == RESOURCE_ACCESS else f"{mode}_authority")),
         }
-        return {
+        spec = {
             "rule_id": rule_id,
             "mode": mode,
             "target": str(effect.get("target") or ""),
             "scope": str(effect.get("scope") or ""),
             "authority": authority,
         }
-    return None
+        if target and spec["target"] and spec["target"] == target:
+            return spec
+        if fallback is None:
+            fallback = spec
+    return fallback
 
 
 def _allow(spec: dict[str, Any], authorization: dict[str, Any] | None = None, **extra: Any) -> dict[str, Any]:
@@ -264,12 +274,20 @@ def authorization_for_behavior(
     """Project the current world into the pure evaluator for one behavior."""
 
     spec = behavior_authorization_spec(rule_compiler, behavior)
+    actor_id = str(agent.get("id") or "")
+    values = dict(parameters or {})
+    if spec is not None and str(spec.get("mode") or RESOURCE_ACCESS) == RESOURCE_ACCESS:
+        from ..actions.targets import TargetResolver
+
+        resolver = TargetResolver(store)
+        bound = values.get("resource_id") or values.get("resource") or values.get("target") or ""
+        bound_id = (resolver.canonical_id(bound) if bound else None) or str(bound or "")
+        if bound_id:
+            spec = behavior_authorization_spec(rule_compiler, behavior, target=bound_id) or spec
     if spec is None:
         return {"available": True, "reasons": [], "mode": None, "rule_id": None, "authorization": None, "gated": False}
-    actor_id = str(agent.get("id") or "")
     stewardships = _stewardship_map(store)
     stewarded = stewardships.get(actor_id, set())
-    values = dict(parameters or {})
     mode = str(spec.get("mode") or RESOURCE_ACCESS)
     action_context: dict[str, Any] = {"target": spec.get("target"), "scope": spec.get("scope"), "decision": decision}
 

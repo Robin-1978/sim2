@@ -114,6 +114,8 @@ class AuthorizationService(PlatformService):
             event_behavior = str(data.get("behavior") or "")
             event_behavior_id = str(data.get("behavior_id") or "")
             event_target = str(data.get("target") or "")
+            if event_target:
+                event_target = str(self.targets.canonical_id(event_target) or event_target)
             if behavior_label and behavior_label not in {event_behavior, event_behavior_id}:
                 raise AuthorizationRejected("invalid_causal_reference", "The requested behavior does not match the cited denial.")
             if behavior_id and event_behavior_id and behavior_id != event_behavior_id:

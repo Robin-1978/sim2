@@ -15,6 +15,7 @@ from typing import Any
 from uuid import uuid4
 
 from ..world.definition_compiler import compile_definition_shape, definition_slug
+from ..world.verbs import generic_parameter_target, infer_action_verb, infer_behavior_verb, normalize_verb
 
 DEFINITION_KINDS = frozenset({"attribute", "world_property", "action", "behavior", "recipe", "capability"})
 # Definition kinds that live in one registry table each.
@@ -162,6 +163,7 @@ class DefinitionValidationMixin:
             if kind == "action":
                 self._validate_action(name, definition, definition_id, errors)
                 self._check_world_resource_targets(definition, errors)
+                self._check_specific_verb(definition, errors)
                 self._check_duplicate_shape(kind, definition, errors)
             elif kind == "behavior":
                 self._validate_behavior(name, definition, definition_id, errors, extra_action)
@@ -215,6 +217,11 @@ class DefinitionValidationMixin:
                 if str(effect.get("type") or effect.get("op") or "") != "world_resource_delta":
                     continue
                 ref = str(effect.get("resource_id") or effect.get("resource") or "").strip()
+                if ref.startswith("context."):
+                    parameter = ref.removeprefix("context.")
+                    if parameter not in (definition.get("parameters") or {}):
+                        errors.append(f"{field}[{index}].world_resource_delta context.{parameter} must be declared in parameters")
+                    continue
                 resource_id = str(self.targets.canonical_id(ref) or ref)
                 try:
                     entity = self.store.repositories.entities.get_entity(resource_id)
@@ -249,10 +256,14 @@ class DefinitionValidationMixin:
                 if effect_type not in {"resource_withdrawal", "resource_take"}:
                     continue
                 ref = str(effect.get("resource_id") or effect.get("resource") or "").strip()
-                resource_id = str(self.targets.canonical_id(ref) or ref)
+                parameters = definition.get("parameters") if isinstance(definition.get("parameters"), dict) else {}
                 if not ref:
                     errors.append(f"{field}[{index}].{effect_type} requires resource_id")
+                elif ref.startswith("context."):
+                    if ref.removeprefix("context.") not in parameters:
+                        errors.append(f"{field}[{index}].{effect_type} context.{ref.removeprefix('context.')} must be declared in parameters")
                 else:
+                    resource_id = str(self.targets.canonical_id(ref) or ref)
                     effect["resource_id"] = resource_id
                     try:
                         entity = self.store.repositories.entities.get_entity(resource_id)
@@ -262,9 +273,16 @@ class DefinitionValidationMixin:
                     if entity is not None and str(entity.get("entity_type") or "") not in resource_types:
                         errors.append(f"{field}[{index}].{effect_type} target {ref} is not a resource or material")
                 amount = effect.get("amount", effect.get("quantity"))
-                if isinstance(amount, bool) or not isinstance(amount, (int, float)) or float(amount) <= 0:
+                if isinstance(amount, str) and amount.startswith("context."):
+                    if amount.removeprefix("context.") not in parameters:
+                        errors.append(f"{field}[{index}].{effect_type} amount context parameter is not declared")
+                elif isinstance(amount, bool) or not isinstance(amount, (int, float)) or float(amount) <= 0:
                     errors.append(f"{field}[{index}].{effect_type} requires a positive amount")
-                if not str(effect.get("scope") or "").strip():
+                scope = str(effect.get("scope") or "").strip()
+                if scope.startswith("context."):
+                    if scope.removeprefix("context.") not in parameters:
+                        errors.append(f"{field}[{index}].{effect_type} scope context parameter is not declared")
+                elif not scope:
                     errors.append(f"{field}[{index}].{effect_type} requires a scope")
                 if effect_type == "resource_take" and str(effect.get("mode") or "") != "covert":
                     errors.append(f"{field}[{index}].resource_take mode must be covert")
@@ -306,6 +324,41 @@ class DefinitionValidationMixin:
             return ("action", tuple(sorted(effects)), self._shape_number(duration.get("minutes")), str(success.get("result") or ""))
         return None
 
+    def _check_specific_verb(self, definition: dict[str, Any], errors: list[str]) -> None:
+        """Prefer an existing generic capability over a new target-specific Action."""
+
+        verb = normalize_verb(definition.get("verb"))
+        if not verb or generic_parameter_target(definition):
+            return
+        if verb not in {"transfer_resource", "consume", "move", "gather", "inventory"}:
+            return
+        types = {
+            str(effect.get("type") or effect.get("op") or "").casefold()
+            for field in ("effects", "progress_effects")
+            for effect in (definition.get(field) or [])
+            if isinstance(effect, dict)
+        }
+        if not types:
+            return
+        for existing in self.store.repositories.entities.get_definitions("action_def"):
+            if not isinstance(existing, dict):
+                continue
+            existing_verb = normalize_verb(existing.get("verb")) or infer_action_verb(existing)
+            if existing_verb != verb or not generic_parameter_target(existing):
+                continue
+            existing_types = {
+                str(effect.get("type") or effect.get("op") or "").casefold()
+                for field in ("effects", "progress_effects")
+                for effect in (existing.get(field) or [])
+                if isinstance(effect, dict)
+            }
+            if existing_types and types <= existing_types:
+                errors.append(
+                    f"a generic {verb} Action already exists: {existing.get('name') or existing.get('id')}; "
+                    "bind the target as a parameter instead of adding a new Action"
+                )
+                return
+
     def _check_duplicate_shape(self, kind: str, definition: dict[str, Any], errors: list[str]) -> None:
         """Reject a differently named definition with the same effect or step shape."""
 
@@ -336,6 +389,7 @@ class DefinitionValidationMixin:
         # AgentView and later definition references must be able to show
         # the exact human-facing label that God submitted.
         definition.update({"id": definition_id, "version": 1, "definition_version": 1, "name": definition.get("name") or name, "description": definition.get("description") or str(name), "definition_source": "god_proposal", "kind": "atomic", "executor": "effect_pipeline", "validation_status": "validated"})
+        definition["verb"] = infer_action_verb(definition)
 
     def _validate_behavior(
         self,
@@ -385,6 +439,10 @@ class DefinitionValidationMixin:
                     )
                     break
         definition.update({"id": definition_id, "version": 1, "definition_version": 1, "summary": definition.get("summary") or definition.get("description") or str(name), "agent_label": definition.get("agent_label") or name, "definition_source": "god_proposal", "kind": "proposed", "validation_status": "validated"})
+        action_defs = {str(item.get("id")): item for item in self.store.repositories.entities.get_definitions("action_def")}
+        if isinstance(extra_action, dict) and extra_action.get("id"):
+            action_defs[str(extra_action["id"])] = extra_action
+        definition["verb"] = infer_behavior_verb(definition, action_defs)
 
     def _normalize_inventory_condition(self, condition: Any) -> str:
         """Resolve a visible item label inside one entry condition to its registry key.
@@ -464,12 +522,19 @@ def _check_world_resource_deltas(definition: dict[str, Any], errors: list[str]) 
                 continue
             if not str(effect.get("resource_id") or effect.get("resource") or "").strip():
                 errors.append(f"{field}[{index}].world_resource_delta requires resource_id")
+            parameters = definition.get("parameters") if isinstance(definition.get("parameters"), dict) else {}
             delta = effect.get("delta", effect.get("value"))
-            if isinstance(delta, bool) or not isinstance(delta, (int, float)) or float(delta) == 0:
+            if isinstance(delta, str) and delta.startswith("context."):
+                if delta.removeprefix("context.") not in parameters:
+                    errors.append(f"{field}[{index}].world_resource_delta delta context parameter is not declared")
+            elif isinstance(delta, bool) or not isinstance(delta, (int, float)) or float(delta) == 0:
                 errors.append(f"{field}[{index}].world_resource_delta requires a non-zero numeric delta")
             for bound in ("minimum", "maximum"):
                 value = effect.get(bound)
-                if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))):
+                if isinstance(value, str) and value.startswith("context."):
+                    if value.removeprefix("context.") not in parameters:
+                        errors.append(f"{field}[{index}].world_resource_delta.{bound} context parameter is not declared")
+                elif value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))):
                     errors.append(f"{field}[{index}].world_resource_delta.{bound} must be numeric")
 
 
