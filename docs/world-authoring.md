@@ -369,6 +369,41 @@ The roles are intentionally separate:
 | God | a place, verb, faction, rule or other structural proposal | narrate the player chapter or bypass Platform |
 | Platform | legality, conservation, transactions and execution | invent content |
 
+### Capability bindings and catalog bounds
+
+A behavior should be a **capability**, not a target. Prefer one `Take Resource`
+behavior with `agent_parameters: {resource_id: string}` and a node parameter
+`context.resource_id` over `Take Water`, `Take Coolant`, and one behavior per
+stock. A new resource or place is data: making it visible widens the parameter
+options without registering another behavior tree.
+
+Three optional bounds keep an add-only world from outgrowing its prompts:
+
+```yaml
+rules:
+  decision_policy:
+    max_unlocked_behaviors: 24   # rotate the oldest assigned behavior
+    full_behavior_choices: 5     # full blocks; the rest are one-line entries
+director:
+  max_cell_units: 12             # 0 disables; saturation stops new plans
+```
+
+- `max_unlocked_behaviors`: initial behaviors and the active behavior always
+  stay. Older assigned behaviors are dropped from the default catalog but
+  remain registered and discoverable with `query_behavior_catalog`.
+- `full_behavior_choices`: the most urgent behaviors get full requirements,
+  steps, costs and effects; the rest are compact name/time/requirement lines.
+  `preview_behavior` returns the full entry for one choice.
+- `max_cell_units`: once every target cell reaches the cap, the Director writes
+  `season_plan.status: saturated` and queues no new structural task. Removing
+  dead or duplicate content lowers a cell and growth can resume.
+
+Definition validation also rejects a reskinned Action with the same
+effect/duration/outcome shape, and a taken visible name. Names alone are not
+enough to make a new Action distinct. A Behavior that only rebinds an existing
+generic verb is a binding, not a new capability; the binding belongs in
+`agent_parameters`/`parameter_options` rather than a new tree.
+
 ### Growth events
 
 Creating a location emits `world.location.created`; creating a resource or

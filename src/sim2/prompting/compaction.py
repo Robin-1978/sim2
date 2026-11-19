@@ -249,22 +249,36 @@ def _truncate_behavior_catalog(
 
     catalog = rendered[behavior_start:behavior_end]
     blocks = re.findall(r"\n\s*<behavior>.*?\n\s*</behavior>", catalog, flags=re.DOTALL)
-    if not blocks:
+    more_match = re.search(r"\n\s*<more_behaviors>.*?\n\s*</more_behaviors>", catalog, flags=re.DOTALL)
+    compact_lines = [
+        line for line in (more_match.group(0).splitlines() if more_match else [])
+        if line.strip().startswith("- ")
+    ]
+    if not blocks and not compact_lines:
         return None
     header_end = catalog.find("<behavior>")
     header = catalog[:header_end].rstrip() if header_end >= 0 else "  <executable_behaviors>"
     tail = rendered[decision_start:]
     closing = "  </executable_behaviors>"
-    for keep in range(len(blocks), -1, -1):
-        omitted = len(blocks) - keep
-        note = (
-            f"\n    <context_limit>{omitted} more behaviors omitted by the prompt budget; "
-            "use the listed choices.</context_limit>"
-        ) if omitted else ""
-        candidate_catalog = header + "".join(blocks[:keep]) + note + "\n" + closing
-        candidate = rendered[:behavior_start] + candidate_catalog + "\n" + tail
-        if fits(candidate):
-            return candidate
+    for keep_blocks in range(len(blocks), -1, -1):
+        for keep_compact in range(len(compact_lines), -1, -1):
+            omitted = (len(blocks) - keep_blocks) + (len(compact_lines) - keep_compact)
+            more = ""
+            if keep_compact:
+                more = (
+                    "\n    <more_behaviors>\n"
+                    "      Use query_behavior_catalog for full details.\n"
+                    + "\n".join(compact_lines[:keep_compact])
+                    + "\n    </more_behaviors>"
+                )
+            note = (
+                f"\n    <context_limit>{omitted} more behaviors omitted by the prompt budget; "
+                "use the listed choices.</context_limit>"
+            ) if omitted else ""
+            candidate_catalog = header + "".join(blocks[:keep_blocks]) + more + note + "\n" + closing
+            candidate = rendered[:behavior_start] + candidate_catalog + "\n" + tail
+            if fits(candidate):
+                return candidate
     return None
 
 

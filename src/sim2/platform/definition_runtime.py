@@ -11,6 +11,7 @@ from ..actions.conditions import ConditionEngine
 from ..actions.effects import EffectPipeline
 from ..evolution.memory import remember_role
 from ..world.schema import AttributeSchema
+from ..world.lifecycle import trim_unlocked_behaviors, unlocked_behavior_limit
 from .definition_validation import DEFINITION_TABLES
 
 
@@ -472,12 +473,14 @@ class DefinitionRuntimeMixin:
         )
 
     def _unlock_behavior(self, definition: dict[str, Any], agents: list[tuple[str, str]]) -> None:
+        limit = unlocked_behavior_limit(self.store.repositories.metadata.get("rules", {}) or {})
         for agent_id, _ in agents:
             agent = self.store.repositories.entities.get_agent(agent_id)
             unlocked = list(agent.get("unlocked_bt_ids", []) or [])
             if definition["id"] not in unlocked:
                 unlocked.append(definition["id"])
                 agent["unlocked_bt_ids"] = unlocked
+                agent["unlocked_bt_ids"] = trim_unlocked_behaviors(agent, limit)
                 self.store.repositories.entities.update_agent(agent_id, agent)
 
     def _require_executable(

@@ -87,6 +87,50 @@ def validate_incapacitation_rule(rules: dict[str, Any]) -> list[str]:
     return errors
 
 
+def unlocked_behavior_limit(rules: dict[str, Any] | None) -> int:
+    """Configured cap on one character's unlocked behavior catalog.
+
+    ``0`` disables the cap.  The default keeps roughly two dozen assigned
+    behaviors per character so the prompt stays below its budget while older
+    definitions remain registered and queryable in the world.
+    """
+
+    policy = (rules or {}).get("decision_policy", {}) if isinstance(rules, dict) else {}
+    value = (policy or {}).get("max_unlocked_behaviors", 24) if isinstance(policy, dict) else 24
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 24
+
+
+def trim_unlocked_behaviors(agent: dict[str, Any], limit: int) -> list[str]:
+    """Return the unlocked catalog after dropping the oldest overflow.
+
+    Initial behaviors are separate and always stay.  The currently executing
+    behavior is reserved even when it is old; the remaining slots go to the
+    most recently unlocked definitions.  Dropping an id here does not delete
+    the definition: the character can still find it with
+    ``query_behavior_catalog`` and a later story or God proposal can re-unlock
+    it.
+    """
+
+    unlocked = [str(item) for item in (agent.get("unlocked_bt_ids") or []) if str(item)]
+    cap = max(0, int(limit))
+    if cap <= 0 or len(unlocked) <= cap:
+        return unlocked
+    active = str((agent.get("initial_state") or {}).get("active_behavior_id") or "")
+    keep: list[str] = []
+    if active and active in unlocked:
+        keep.append(active)
+    for item in reversed(unlocked):
+        if len(keep) >= cap:
+            break
+        if item not in keep:
+            keep.append(item)
+    kept = set(keep)
+    return [item for item in unlocked if item in kept][:cap]
+
+
 def recovery_rule(rules: dict[str, Any]) -> RecoveryRule | None:
     """The world's configured recovery, or ``None`` when incapacitation is absorbing."""
 

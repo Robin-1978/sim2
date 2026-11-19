@@ -289,11 +289,24 @@ def executable_behavior_lines(context: dict[str, Any]) -> list[str]:
         "  <executable_behaviors>",
     ])
     behaviors = context.get("executable_behaviors") or context.get("available_behaviors") or []
+    urgency = {
+        str(item.get("id") or ""): float(item.get("urgency", 0) or 0)
+        for item in (context.get("drives") or [])
+        if isinstance(item, dict)
+    }
+
+    def priority(behavior: dict[str, Any]) -> float:
+        direct = max((urgency.get(tag, 0.0) for tag in behavior.get("drive_tags") or []), default=0.0)
+        support = max((urgency.get(tag, 0.0) for tag in behavior.get("supports_drive_tags") or []), default=0.0)
+        return direct if direct > 0 else support * 0.8
+
+    behaviors = sorted(behaviors, key=lambda item: -priority(item)) if urgency else list(behaviors)
+    full_count = max(1, int(context.get("behavior_full_choices", 5) or 5))
     # The view already contains only Platform-validated executable BTs.
     # Reflection receives outcomes and the registered Action vocabulary,
     # not an unrelated planning catalog or a misleading instruction to
     # wait because no behavior is currently executable.
-    for behavior in behaviors:
+    for behavior in behaviors[:full_count]:
         lines.append("    <behavior>")
         previous_values: dict[str, str] = {}
         for label in ("name", "summary", "purpose", "when", "requires", "target", "parameters", "parameter_options", "steps", "time", "cost", "impact", "success", "failure", "interrupt", "cooldown_minutes", "tags", "goal_tags", "drive_tags", "supports_drive_tags"):
@@ -328,6 +341,26 @@ def executable_behavior_lines(context: dict[str, Any]) -> list[str]:
                 lines.append(f"      {label}: {value_text}")
         lines.append(f"      choice: {behavior.get('choice') or behavior.get('name') or 'unnamed behavior'}")
         lines.append("    </behavior>")
+    rest = behaviors[full_count:]
+    if rest:
+        lines.append("    <more_behaviors>")
+        lines.append(
+            f"      {len(rest)} more executable behaviors are listed compactly. "
+            "Use query_behavior_catalog or preview_behavior for full requirements and effects."
+        )
+        for behavior in rest:
+            parts = [str(behavior.get("choice") or behavior.get("name") or "unnamed behavior")]
+            if behavior.get("time"):
+                parts.append(str(behavior.get("time")))
+            need = behavior.get("when") or behavior.get("requires")
+            if need:
+                text = "; ".join(str(item) for item in need) if isinstance(need, list) else str(need)
+                parts.append(text[:110])
+            tags = list(behavior.get("drive_tags") or []) + list(behavior.get("supports_drive_tags") or [])
+            if tags:
+                parts.append("drives: " + ", ".join(str(item) for item in dict.fromkeys(tags))[:80])
+            lines.append("      - " + " | ".join(parts))
+        lines.append("    </more_behaviors>")
     if not behaviors:
         lines.append("    - none; return wait")
     lines.append("  </executable_behaviors>")

@@ -207,6 +207,40 @@ def test_oversized_behavior_catalog_keeps_complete_blocks_and_decision():
     assert fitted.rstrip().endswith("</decision>")
 
 
+def test_oversized_compact_catalog_keeps_complete_lines():
+    """A large compact list is trimmed by whole lines, never mid-line."""
+
+    from sim2.prompting.compaction import fit_to_limit
+
+    blocks = [
+        f"    <behavior>\n      name: Full {index}\n      choice: Full {index}\n    </behavior>"
+        for index in range(5)
+    ]
+    compact = [
+        f"      - Compact Choice {index} | 5 minutes | actor.alive | drives: purpose"
+        for index in range(100)
+    ]
+    rendered = (
+        "<world_state>small</world_state>\n"
+        "  <executable_behaviors>\n"
+        + "\n".join(blocks)
+        + "\n    <more_behaviors>\n      Use query_behavior_catalog for full details.\n"
+        + "\n".join(compact)
+        + "\n    </more_behaviors>\n  </executable_behaviors>\n"
+        "<decision>\n  Choose one behavior.\n</decision>"
+    )
+    fitted = fit_to_limit(rendered, "agent_decision", 4000)
+
+    assert len(fitted) <= 4000
+    assert fitted.count("<behavior>") == fitted.count("</behavior>")
+    assert "<more_behaviors>" in fitted and "</more_behaviors>" in fitted
+    assert "more behaviors omitted by the prompt budget" in fitted
+    assert fitted.count("<decision>") == 1
+    for line in fitted.splitlines():
+        if "Compact Choice" in line:
+            assert line.strip().startswith("- Compact Choice") and "drives: purpose" in line
+
+
 def test_god_compaction_keeps_rule_condition_fields_and_world_trends(tmp_path: Path):
     """Exact machine fields and current trends are decision evidence, not background."""
 

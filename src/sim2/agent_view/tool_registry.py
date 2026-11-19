@@ -198,6 +198,19 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "additionalProperties": False,
         },
     },
+    "query_behavior_catalog": {
+        "purpose": "Find registered behaviors by name or summary, including options not currently offered.",
+        "kind": "read",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Words to match in a behavior name or summary; empty lists offered options."},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 12, "description": "Maximum matches; defaults to 8."},
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
+    },
     "preview_behavior": {
         "purpose": "Show an offered behavior's requirements, time, costs and outcomes.",
         "kind": "read",
@@ -499,7 +512,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
 
 
 ROLE_TOOLS: dict[str, list[str]] = {
-    "agent_decision": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "preview_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "request_behavior", "wait"],
+    "agent_decision": ["observe_nearby", "inspect_entity", "listen", "read_public_record", "query_known_fact", "recall_memory", "query_behavior_catalog", "preview_behavior", "send_message", "create_trade_offer", "accept_trade_offer", "counter_trade_offer", "reject_trade_offer", "request_behavior", "wait"],
     "agent_reflection": ["recall_memory", "query_known_fact", "record_experience", "update_capability", "update_belief", "update_goal", "propose_behavior", "wait"],
     # Story receives the validated source and recent history in its world view;
     # query_history is the bounded read path for an older causal thread.

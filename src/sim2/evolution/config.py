@@ -109,9 +109,9 @@ def _stagnation(value: Any) -> dict[str, Any]:
 def _director(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("director must be an object")
-    unknown = sorted(str(key) for key in value if key not in {"cadence", "window", "targets", "policy"})
+    unknown = sorted(str(key) for key in value if key not in {"cadence", "window", "targets", "policy", "max_cell_units", "saturation"})
     if unknown:
-        raise ValueError("unknown director field(s): " + ", ".join(unknown) + "; use cadence, window, targets, policy")
+        raise ValueError("unknown director field(s): " + ", ".join(unknown) + "; use cadence, window, targets, policy, max_cell_units, saturation")
     cadence = duration_minutes(value.get("cadence", "1d"))
     window = duration_minutes(value.get("window", "3d"))
     if cadence <= 0 or window < cadence:
@@ -119,6 +119,12 @@ def _director(value: Any) -> dict[str, Any]:
     policy = str(value.get("policy") or "deterministic").strip().casefold()
     if policy not in {"deterministic", "llm"}:
         raise ValueError("director.policy must be deterministic or llm")
+    max_cell_units = value.get("max_cell_units", 0)
+    if isinstance(max_cell_units, bool) or not isinstance(max_cell_units, int) or max_cell_units < 0:
+        raise ValueError("director.max_cell_units must be a non-negative integer")
+    saturation = str(value.get("saturation") or "idle").strip().casefold()
+    if saturation != "idle":
+        raise ValueError("director.saturation must be idle")
     raw_targets = value.get("targets", ["place", "verb", "social", "rule"])
     if isinstance(raw_targets, str):
         raw_targets = [raw_targets]
@@ -134,6 +140,8 @@ def _director(value: Any) -> dict[str, Any]:
         "window_minutes": window,
         "targets": list(dict.fromkeys(targets)),
         "policy": policy,
+        "max_cell_units": int(max_cell_units),
+        "saturation": saturation,
     }
 
 

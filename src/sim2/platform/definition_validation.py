@@ -162,6 +162,7 @@ class DefinitionValidationMixin:
             if kind == "action":
                 self._validate_action(name, definition, definition_id, errors)
                 self._check_world_resource_targets(definition, errors)
+                self._check_duplicate_shape(kind, definition, errors)
             elif kind == "behavior":
                 self._validate_behavior(name, definition, definition_id, errors, extra_action)
             elif kind == "recipe":
@@ -267,6 +268,63 @@ class DefinitionValidationMixin:
                     errors.append(f"{field}[{index}].{effect_type} requires a scope")
                 if effect_type == "resource_take" and str(effect.get("mode") or "") != "covert":
                     errors.append(f"{field}[{index}].resource_take mode must be covert")
+
+    @staticmethod
+    def _shape_number(value: Any) -> str:
+        if isinstance(value, bool) or value is None:
+            return ""
+        if isinstance(value, (int, float)):
+            return f"{float(value):.3f}"
+        return str(value)
+
+    def _definition_shape(self, kind: str, definition: dict[str, Any]) -> tuple[Any, ...] | None:
+        """A name-independent signature for semantic redundancy checks."""
+
+        if kind == "action":
+            effects = []
+            for field in ("effects", "progress_effects"):
+                for effect in definition.get(field) or []:
+                    if not isinstance(effect, dict):
+                        continue
+                    target = (
+                        effect.get("resource_id") or effect.get("resource") or effect.get("property")
+                        or effect.get("need") or effect.get("attribute") or effect.get("status")
+                        or effect.get("event_type") or ""
+                    )
+                    amount = effect.get("delta", effect.get("amount", effect.get("value")))
+                    effects.append((
+                        str(effect.get("type") or effect.get("op") or ""),
+                        str(target),
+                        self._shape_number(amount),
+                    ))
+            if not effects:
+                # A no-effect administrative Action is defined by its outcome,
+                # not by an empty effect list; leave that to name validation.
+                return None
+            duration = definition.get("duration") if isinstance(definition.get("duration"), dict) else {}
+            success = definition.get("success") if isinstance(definition.get("success"), dict) else {}
+            return ("action", tuple(sorted(effects)), self._shape_number(duration.get("minutes")), str(success.get("result") or ""))
+        return None
+
+    def _check_duplicate_shape(self, kind: str, definition: dict[str, Any], errors: list[str]) -> None:
+        """Reject a differently named definition with the same effect or step shape."""
+
+        shape = self._definition_shape(kind, definition)
+        if shape is None:
+            return
+        table = DEFINITION_TABLES.get(kind)
+        if not table:
+            return
+        for existing in self.store.repositories.entities.get_definitions(table):
+            if not isinstance(existing, dict) or str(existing.get("id")) == str(definition.get("id")):
+                continue
+            if self._definition_shape(kind, existing) == shape:
+                label = existing.get("name") or existing.get("agent_label") or existing.get("id")
+                errors.append(
+                    f"definition shape duplicates existing {kind}: {label}; "
+                    "reuse it or change its effect, duration, steps or outcome"
+                )
+                return
 
     def _validate_action(self, name: str, definition: dict[str, Any], definition_id: str, errors: list[str]) -> None:
         _check_dynamic_inventory_parameters(definition, errors)

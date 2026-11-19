@@ -101,7 +101,14 @@ def test_director_config_is_validated() -> None:
     assert compiled["director"]["window_minutes"] == 4320
     assert compiled["director"]["targets"] == ["place", "rule"]
     assert compiled["director"]["policy"] == "deterministic"
+    assert compiled["director"]["max_cell_units"] == 0
+    assert compiled["director"]["saturation"] == "idle"
     assert normalize_evolution_config({"director": {"policy": "llm"}})["director"]["policy"] == "llm"
+    assert normalize_evolution_config({"director": {"max_cell_units": 8}})["director"]["max_cell_units"] == 8
+    with pytest.raises(ValueError, match="max_cell_units must be a non-negative integer"):
+        normalize_evolution_config({"director": {"max_cell_units": -1}})
+    with pytest.raises(ValueError, match="saturation must be idle"):
+        normalize_evolution_config({"director": {"saturation": "delete"}})
     with pytest.raises(ValueError, match="policy must be deterministic or llm"):
         normalize_evolution_config({"director": {"policy": "auto"}})
     with pytest.raises(ValueError, match="unknown targets"):

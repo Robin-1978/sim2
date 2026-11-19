@@ -283,6 +283,7 @@ class AgentViewCompiler(
             "capability_update_candidates": capability_update_candidates,
             "needs": needs, "inventory": agent.get("inventory", {}), "injuries": state.get("injuries", []),
             "drives": drives[:5], "drive_model": drive_model, "observation": {"facts": observation_facts[:6], "source": "current_state"}, "nearby_entities": nearby[:8], "known_facts": known_facts, "research_tracks": research_tracks[:8], "memories": memories, "short_term_memories": short_term_memories, "long_term_memories": long_term_memories, "memory_query": memory_query, "recent_actions": recent_actions, "recent_outcomes": recent_outcomes, "direct_relationships": relationships,
+            "behavior_full_choices": max(1, int(((rules.get("decision_policy") or {}).get("full_behavior_choices", 5)) or 5)),
             "denial_memories": denial_memories,
             "pending_access_requests": pending_access_requests,
             "active_delegations": active_delegations,

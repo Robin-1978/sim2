@@ -8,6 +8,7 @@ from uuid import uuid4
 from ..world.navigation import reachable_locations
 from ..world.time import world_time_view
 from ..world.context import configured_context_values
+from ..world.lifecycle import trim_unlocked_behaviors, unlocked_behavior_limit
 from ..actions.institutions import allocation_preflight
 from ..evolution.memory import update_role_memory_status
 
@@ -1048,7 +1049,10 @@ class ActivityRuntimeMixin:
                         unlocked = list(agent.get("unlocked_bt_ids", []) or [])
                         if behavior_id not in unlocked:
                             unlocked.append(behavior_id)
-                            agent["unlocked_bt_ids"] = unlocked
+                            agent["unlocked_bt_ids"] = trim_unlocked_behaviors(
+                                {**agent, "unlocked_bt_ids": unlocked},
+                                unlocked_behavior_limit(self.store.repositories.metadata.get("rules", {}) or {}),
+                            )
                             self._context.services["events"].append("behavior.unlocked", agent["id"], minute, {"behavior_id": behavior_id, "discovery_id": discovery_id, "source": "exploration"})
                 event_id = self._context.services["events"].publish("exploration.completed", agent["id"], minute, {"area_id": area_id, "result_id": result_id, "discoveries": [str(item.get("id")) for item in discoveries]}, wake="story_source")
                 result = {"result": "exploration_completed", "event_id": event_id}

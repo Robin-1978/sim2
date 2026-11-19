@@ -39,6 +39,27 @@ class DirectorRuntimeMixin:
                 history = dict(ordered[-50:])
             store.repositories.metadata.set("season_plan_history", history)
 
+    def _eligible_targets(self, config: dict[str, Any], counts: dict[str, int]) -> list[str]:
+        """Targets that have not reached the configured per-cell unit cap."""
+
+        targets = [str(item) for item in config.get("targets", [])]
+        limit = int(config.get("max_cell_units", 0) or 0)
+        if limit <= 0:
+            return targets
+        return [target for target in targets if int(counts.get(target, 0) or 0) < limit]
+
+    def _mark_saturated(self, config: dict[str, Any], minute: int) -> None:
+        store = self._dependency("store")
+        limit = int(config.get("max_cell_units", 0) or 0)
+        with store.transaction():
+            store.repositories.metadata.set("season_plan", {
+                "status": "saturated",
+                "target_cell": None,
+                "saturated_minute": int(minute),
+                "max_cell_units": limit,
+                "reason": f"all target cells reached max_cell_units={limit}",
+            })
+
     def _write_plan(self, minute: int, target: str, counts: dict[str, int], reason: str | None = None) -> dict[str, Any]:
         config = self._config() or {}
         store = self._dependency("store")
@@ -102,8 +123,9 @@ class DirectorRuntimeMixin:
                     self._remember_plan(plan)
             else:
                 return plan
-        targets = [str(item) for item in config.get("targets", [])]
+        targets = self._eligible_targets(config, counts)
         if not targets:
+            self._mark_saturated(config, minute)
             return None
         last = metadata.get("last_completed_season_plan", {}) or {}
         last_target = str(last.get("target_cell") or "")
@@ -167,8 +189,9 @@ class DirectorRuntimeMixin:
             else:
                 return plan
 
-        targets = [str(item) for item in config.get("targets", [])]
+        targets = self._eligible_targets(config, counts)
         if not targets:
+            self._mark_saturated(config, minute)
             return None
         rotation = int(metadata.get("director_rotation", 0) or 0)
         if len(set(counts.values())) <= 1:

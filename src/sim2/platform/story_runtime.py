@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from ..evolution.memory import remember_role
 from ..evolution.story import eligible_story_beats, story_evidence_event_types
+from ..world.lifecycle import trim_unlocked_behaviors, unlocked_behavior_limit
 
 _NUMBER = re.compile(r"(?<![A-Za-z0-9])\d+(?:\.\d+)?")
 _NO_FOLLOWUP = ("<no-explicit-followup>",)
@@ -526,7 +527,10 @@ class StoryRuntimeMixin:
                 unlocked = list(target.get("unlocked_bt_ids", []) or [])
                 if behavior_id not in unlocked and behavior_id not in (target.get("initial_bt_ids", []) or []):
                     unlocked.append(behavior_id)
-                target["unlocked_bt_ids"] = unlocked
+                target["unlocked_bt_ids"] = trim_unlocked_behaviors(
+                    {**target, "unlocked_bt_ids": unlocked},
+                    unlocked_behavior_limit(self.store.repositories.metadata.get("rules", {}) or {}),
+                )
         if submission.research_source_id:
             targets = list(target.get("research_targets", []) or [])
             if submission.research_source_id not in targets:

@@ -244,6 +244,52 @@ class AgentToolExecutor:
     def _recall_memory(self, question: str = "", limit: int = 8, scope: str = "all") -> dict[str, Any]:
         return self.platform.memory.recall(self.actor_id, question, limit, scope=scope)
 
+    def _query_behavior_catalog(self, query: str = "", limit: int = 8) -> dict[str, Any]:
+        """Search every registered behavior, not only the current shortlist."""
+
+        limit = max(1, min(int(limit or 8), 12))
+        entities = self.platform.store.repositories.entities
+        action_defs = {str(item.get("id")): item for item in entities.get_definitions("action_def")}
+        try:
+            agent = entities.get_agent(self.actor_id)
+        except KeyError:
+            agent = {}
+        offered = set(str(item) for item in (agent.get("initial_bt_ids") or []))
+        offered.update(str(item) for item in (agent.get("unlocked_bt_ids") or []))
+        rules = self.platform.store.repositories.metadata.get("rules", {}) or {}
+        offered.update(str(item) for item in (rules.get("fallback_behavior_ids") or []))
+        terms = [term for term in str(query or "").casefold().split() if term]
+        matches = []
+        for definition in entities.get_definitions("bt_def"):
+            label = str(definition.get("agent_label") or definition.get("name") or definition.get("id") or "")
+            haystack = " ".join(str(definition.get(key) or "") for key in ("agent_label", "name", "summary", "description")).casefold()
+            if terms and not all(term in haystack for term in terms):
+                continue
+            steps = []
+            for node in definition.get("nodes") or []:
+                if not isinstance(node, dict):
+                    continue
+                kind = str(node.get("type") or "")
+                if kind == "action":
+                    action_id = str(node.get("action_id") or "")
+                    steps.append(str((action_defs.get(action_id) or {}).get("agent_label") or action_id.replace("_", " ")))
+                elif kind in {"behavior", "sequence", "selector", "parallel", "condition", "wait"}:
+                    steps.append(kind)
+            matches.append({
+                "choice": label,
+                "summary": str(definition.get("summary") or definition.get("description") or "")[:160],
+                "entry_conditions": [str(item) for item in (definition.get("entry_conditions") or [])][:6],
+                "steps": steps[:6],
+                "offered": str(definition.get("id")) in offered,
+            })
+        matches.sort(key=lambda item: (not item["offered"], item["choice"].casefold()))
+        return {
+            "status": "ok",
+            "query": str(query or ""),
+            "matched": len(matches),
+            "behaviors": matches[:limit],
+        }
+
     def _preview_behavior(self, choice: str, target: dict[str, Any] | None = None) -> dict[str, Any]:
         behavior, error = self.platform.view.resolve_behavior_choice(self.actor_id, choice)
         if error:

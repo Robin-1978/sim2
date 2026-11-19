@@ -175,10 +175,12 @@ adding it to the same agent:
 | 160 | 15,960 chars | old fallback cut a block in half and dropped `<decision>` |
 
 `fit_to_limit` now keeps complete `<behavior>` blocks, always keeps the
-`<decision>` section, and states how many choices were omitted. That prevents
-an invalid prompt, but it is a safety net rather than a growth policy: a
-long-lived character still needs a catalog rotation cap or a paged
-`query_behaviors` read tool.
+`<decision>` section, and states how many choices were omitted. A separate
+rotation cap (`max_unlocked_behaviors`, default 24) drops the oldest assigned
+behaviors while keeping initial and active ones; dropped definitions remain
+queryable. The prompt renders the five most urgent behaviors in full and the
+rest as one-line entries with `query_behavior_catalog` for details. That keeps
+a large catalog useful instead of merely fitting it.
 
 The staged-contract prompt projection was also reduced: in the 100-entry test
 world the proposal-contract section fell from 4,997 to 641 chars and the whole
