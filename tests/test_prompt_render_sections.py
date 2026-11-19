@@ -182,6 +182,31 @@ def test_tight_limit_keeps_the_executable_choices_and_the_task_verbatim(tmp_path
     assert prompt.endswith(tail)
 
 
+def test_oversized_behavior_catalog_keeps_complete_blocks_and_decision():
+    """A catalog that cannot fit at all must degrade to complete blocks, not a broken prompt."""
+
+    from sim2.prompting.compaction import fit_to_limit
+
+    blocks = [
+        f"    <behavior>\n      name: Choice {index}\n      choice: Choice {index}\n    </behavior>"
+        for index in range(100)
+    ]
+    rendered = (
+        "<world_state>small</world_state>\n"
+        "  <executable_behaviors>\n"
+        + "\n".join(blocks)
+        + "\n  </executable_behaviors>\n"
+        "<decision>\n  Choose one behavior.\n</decision>"
+    )
+    fitted = fit_to_limit(rendered, "agent_decision", 4000)
+
+    assert len(fitted) <= 4000
+    assert fitted.count("<behavior>") == fitted.count("</behavior>")
+    assert fitted.count("<decision>") == 1
+    assert "more behaviors omitted by the prompt budget" in fitted
+    assert fitted.rstrip().endswith("</decision>")
+
+
 def test_god_compaction_keeps_rule_condition_fields_and_world_trends(tmp_path: Path):
     """Exact machine fields and current trends are decision evidence, not background."""
 

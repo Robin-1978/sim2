@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 _CJK_RANGES = (
     (0x3040, 0x30FF),  # Hiragana / Katakana
@@ -229,6 +230,44 @@ def _background_order(rendered: str) -> list[str]:
     return background_sections
 
 
+def _truncate_behavior_catalog(
+    rendered: str,
+    behavior_start: int,
+    behavior_end: int,
+    decision_start: int,
+    fits: Any,
+) -> str | None:
+    """Keep complete behavior blocks and the decision when the catalog is too large.
+
+    Ordinary compaction preserves the whole catalog because hiding an option
+    changes what a character can choose.  A catalog that cannot fit at all is
+    different: the previous fallback cut a block in half and could drop the
+    ``<decision>`` section, producing an unusable prompt.  This guard keeps as
+    many complete blocks as fit, states how many were omitted, and always keeps
+    the decision.
+    """
+
+    catalog = rendered[behavior_start:behavior_end]
+    blocks = re.findall(r"\n\s*<behavior>.*?\n\s*</behavior>", catalog, flags=re.DOTALL)
+    if not blocks:
+        return None
+    header_end = catalog.find("<behavior>")
+    header = catalog[:header_end].rstrip() if header_end >= 0 else "  <executable_behaviors>"
+    tail = rendered[decision_start:]
+    closing = "  </executable_behaviors>"
+    for keep in range(len(blocks), -1, -1):
+        omitted = len(blocks) - keep
+        note = (
+            f"\n    <context_limit>{omitted} more behaviors omitted by the prompt budget; "
+            "use the listed choices.</context_limit>"
+        ) if omitted else ""
+        candidate_catalog = header + "".join(blocks[:keep]) + note + "\n" + closing
+        candidate = rendered[:behavior_start] + candidate_catalog + "\n" + tail
+        if fits(candidate):
+            return candidate
+    return None
+
+
 def fit_to_limit(
     rendered: str,
     role: str,
@@ -276,6 +315,10 @@ def fit_to_limit(
             if fits(candidate):
                 return candidate
             prefix_budget = int(prefix_budget * 0.85)
+    if behavior_start >= 0 and behavior_end >= 0 and decision_start >= 0:
+        truncated = _truncate_behavior_catalog(rendered, behavior_start, behavior_end, decision_start, fits)
+        if truncated is not None:
+            return truncated
     if role in {"god", "story"}:
         compacted = _compact_world_prompt(rendered, max_chars)
         if compacted is not None and fits(compacted):

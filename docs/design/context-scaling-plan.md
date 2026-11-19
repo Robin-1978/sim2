@@ -159,6 +159,27 @@ All model-facing schema descriptions are now at most 120 characters, with no
 truncated `...` text. Field names, types, enums, required lists and nested
 structure remain unchanged; only explanatory prose was shortened.
 
+### Behavior catalog pressure
+
+The God index is relevance-scoped, but an NPC catalog is the agent's own
+unlocked behavior list, so it grows with every behavior assigned to that
+character. Measured on `three_lanterns_town` by duplicating one behavior and
+adding it to the same agent:
+
+| Unlocked behaviors | Decision prompt | Result |
+| ---: | ---: | --- |
+| 0 (2 base) | 3,000–4,000 chars | normal |
+| 10 | 10,010 chars | normal |
+| 20 | 14,410 chars | near the 16k cap |
+| 40 | 15,960 chars | compaction starts |
+| 160 | 15,960 chars | old fallback cut a block in half and dropped `<decision>` |
+
+`fit_to_limit` now keeps complete `<behavior>` blocks, always keeps the
+`<decision>` section, and states how many choices were omitted. That prevents
+an invalid prompt, but it is a safety net rather than a growth policy: a
+long-lived character still needs a catalog rotation cap or a paged
+`query_behaviors` read tool.
+
 The staged-contract prompt projection was also reduced: in the 100-entry test
 world the proposal-contract section fell from 4,997 to 641 chars and the whole
 prompt from 9,838 to 5,443 chars. A real audited staged God prompt fell from
