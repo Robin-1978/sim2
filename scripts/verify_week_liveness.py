@@ -108,7 +108,10 @@ class ScriptedAgents:
                 "research_question": f"{w[0]} {w[1]} {w[2]}", "novelty_key": f"{w[0]}{w[1]}",
                 # Two discoveries of one study each: two research outcomes, the count of the research_synthesis wake.
                 "research_required": 1,
-                "research_discoveries": [f"{w[3]} {w[4]}", f"{w[5]} {w[2]}"],
+                "research_discoveries": [
+                    {"id": f"fact:{number}:a", "fact": f"The {w[3]} record confirms the {w[4]} observation."},
+                    {"id": f"fact:{number}:b", "fact": f"The {w[5]} record clarifies the {w[2]} observation."},
+                ],
                 "research_assignees": [self.assignee], "status": "unresolved",
             },
         }}

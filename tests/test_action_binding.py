@@ -485,3 +485,106 @@ def test_dynamic_resource_transfer_cannot_mint_more_than_reserved(tmp_path: Path
     finally:
         platform.close()
 
+
+
+def test_resource_transfer_requires_the_actor_at_the_stock_location(tmp_path: Path) -> None:
+    """A carried item cannot be deposited into a stock in another location."""
+
+    platform = Platform(create_instance(WORLD, "action-transfer-location", tmp_path / "runtime"))
+    try:
+        agent = platform.store.repositories.entities.get_agent("mei_lan")
+        agent["inventory"] = {**(agent.get("inventory") or {}), "蓄水": 1}
+        platform.store.repositories.entities.update_agent("mei_lan", agent)
+        with platform.store.transaction():
+            pool = platform.store.repositories.entities.get_entity("cistern_water")
+            pool["initial_state"]["quantity"] = 0
+            platform.store.repositories.entities.put_entity(
+                pool["id"],
+                pool["entity_type"],
+                pool["name"],
+                {key: value for key, value in pool.items() if key not in {"id", "entity_type", "name"}},
+            )
+        result = platform.submit_definition_proposal(
+            "god",
+            {
+                "definition_type": "action",
+                "name": "Transfer Without Travel",
+                "definition": {
+                    "parameters": {"resource_id": "string", "item_id": "string"},
+                    "duration": {"minutes": 1},
+                    "costs": {"reserve": {"item_parameter": "item_id"}},
+                    "effects": [{"type": "resource_transfer", "resource_id": "context.resource_id", "quantity": 1}],
+                    "success": {"result": "water transferred"},
+                    "failure": {"result": "water transfer failed"},
+                },
+                "followup_behavior": {
+                    "name": "Transfer Without Travel Behavior",
+                    "assign_to": ["梅岚"],
+                    "definition": {
+                        "nodes": [{
+                            "type": "action",
+                            "action_id": "Transfer Without Travel",
+                            "parameters": {"resource_id": "cistern_water", "item_id": "蓄水"},
+                        }],
+                        "success_results": ["water transferred"],
+                        "failure_results": ["water transfer failed"],
+                    },
+                },
+            },
+        )
+        assert result["status"] == "rejected", result
+        assert any(
+            "not at the resource location" in str(item) or "travel node" in str(item)
+            for item in result.get("errors") or []
+        ), result
+        assert not any(
+            item.get("agent_label") == "Transfer Without Travel Behavior"
+            for item in platform.store.repositories.entities.get_definitions("bt_def")
+        )
+    finally:
+        platform.close()
+
+
+def test_action_rejects_behavior_only_fields(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "action-field-scope", tmp_path / "runtime"))
+    try:
+        result = platform.submit_definition_proposal(
+            "god",
+            {
+                "definition_type": "action",
+                "name": "Scoped Field Action",
+                "definition": {
+                    "parameters": {"resource_id": "string"},
+                    "duration": {"minutes": 1},
+                    "effects": [{
+                        "type": "resource_withdrawal",
+                        "resource_id": "context.resource_id",
+                        "amount": 1,
+                        "scope": "resource_withdrawal",
+                    }],
+                    "success": {"result": "done"},
+                    "failure": {"result": "failed"},
+                    "entry_conditions": ["actor.alive"],
+                    "success_results": ["done"],
+                    "failure_results": ["failed"],
+                    "outcome_events": [{"event_type": "scoped.done", "summary": "Done."}],
+                },
+                "followup_behavior": {
+                    "name": "Scoped Field Action Behavior",
+                    "assign_to": ["梅岚"],
+                    "definition": {
+                        "nodes": [{
+                            "type": "action",
+                            "action_id": "Scoped Field Action",
+                            "parameters": {"resource_id": "cistern_water"},
+                        }],
+                    },
+                },
+            },
+        )
+        assert result["status"] == "rejected", result
+        errors = " ".join(str(item) for item in result.get("errors") or [])
+        for field in ("entry_conditions", "success_results", "failure_results", "outcome_events"):
+            assert f"behavior field {field}" in errors, errors
+    finally:
+        platform.close()

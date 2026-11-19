@@ -253,6 +253,8 @@ def test_world_index_is_paged_and_bounded(tmp_path: Path) -> None:
         assert index["counts"]["verb"] >= 50
         assert index["totals"]["actions"] >= 25
         assert len(index["behaviors"]) <= index["limit"]
+        water = next(item for item in index["entities"] if item.get("name") == "蓄水")
+        assert water["location"] == "蓄水屋"
     finally:
         platform.close()
 

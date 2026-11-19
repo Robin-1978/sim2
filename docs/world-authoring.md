@@ -639,8 +639,10 @@ research_discoveries:
     supersedes: researched:source:first_reading
 ```
 
-The generic research BT/Action selects the first active stage whose fact has
-not been recorded for the researcher. A source may set `research_required` in
+Every discovery must declare a readable `fact`; a bare identifier such as
+`relay_checksum_parity` is rejected because it would become an ungrounded
+knowledge fact. The generic research BT/Action selects the first active stage
+whose fact has not been recorded for the researcher. A source may set `research_required` in
 its entity data (or `initial_state`) to require the same number of work units
 for each stage; an individual stage may override it with `required`. If a
 source omits both values, the package-level `rules.research_default_required`
@@ -765,11 +767,20 @@ An Action is executable mechanics. It declares:
 - success and failure outcomes;
 - interruption and interaction policy.
 
+An Action definition must not contain Behavior-only fields. `entry_conditions`,
+`success_results`, `failure_results`, `outcome_events`, `agent_parameters`,
+`agent_label`, `nodes`, `estimated_minutes`, `goal_tags`, `drive_tags` and
+`requirements` belong in `followup_behavior`; validation rejects them at the
+Action level.
+
 `world_resource_delta` changes an existing resource or material as the
 behavior's declared outcome; `resource_transfer` moves a reserved carried item
-into a stock. Use the former when the behavior itself produces or consumes
-public stock, and give it a non-zero numeric `delta` plus optional
-`minimum`/`maximum` bounds. Platform rejects an unknown target. A positive
+into a stock and requires the actor to be at that stock's location. A Behavior
+using `resource_transfer` must include a Travel node to the stock or expose the
+target as an Agent parameter resolved by a generic travel/location binding.
+Use the former when the behavior itself produces or consumes public stock, and
+give it a non-zero numeric `delta` plus optional `minimum`/`maximum` bounds.
+Platform rejects an unknown target. A positive
 delta must declare `maximum` or a `rules.resource_caps.<id>.max`; execution
 clamps to the configured cap so production cannot inflate a stock.
 

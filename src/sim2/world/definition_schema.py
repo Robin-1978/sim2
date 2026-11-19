@@ -62,12 +62,12 @@ def propose_definition_schema() -> dict[str, Any]:
         "entry_conditions": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "Durable predicates only, e.g. actor.alive; [] if none.",
+            "description": "Behavior: durable predicates, e.g. actor.alive; [] if none.",
         },
-        "success_results": {"type": "array", "items": {"type": "string"}, "description": "Short observable result labels."},
-        "failure_results": {"type": "array", "items": {"type": "string"}, "description": "Short observable failure labels."},
+        "success_results": {"type": "array", "items": {"type": "string"}, "description": "Behavior: short result labels."},
+        "failure_results": {"type": "array", "items": {"type": "string"}, "description": "Behavior: short failure labels."},
         "summary": {"type": "string"},
-        "outcome_events": {"type": "array", "items": {"type": "object", "description": "{event_type, summary, wake?: [story|god]}."}},
+        "outcome_events": {"type": "array", "items": {"type": "object", "description": "Behavior: {event_type, summary, wake?: [story|god]}."}},
     }
     schema = {
         "type": "object",

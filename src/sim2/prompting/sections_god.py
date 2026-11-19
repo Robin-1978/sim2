@@ -69,7 +69,7 @@ def _proposal_contract_lines(context: dict[str, Any]) -> list[str]:
         lines.append("</world_proposal_contract>")
         return lines
     lines.append("  - Create any missing world content the validated situation needs: agent, location, faction, object, empty resource node, institution, relationship, rule, attribute, world property, capability, Action, behavior, recipe, or narrative event.")
-    lines.append("  - For a research source, put research_discoveries, research_required/required, and any research_assignees in the proposed entity data. Reuse the registered generic research behavior; do not create one BT per source.")
+    lines.append("  - For a research source, put research_discoveries as [{id?, fact: 'readable sentence'}], research_required/required and any research_assignees in the proposed entity data. A bare identifier is not a fact. Reuse the registered generic research behavior; do not create one BT per source.")
     lines.append("  - Use the smallest supported content type that makes the next character decision possible. Platform still validates names, references, conservation, executable behavior, and consequences.")
     lines.append("  - rule.behavior_names must use exact BT names from world_behavior_catalog.")
     lines.append("  - In a behavior_constraint, every listed BT is blocked; list only the blocked BT, never the desired follow-up BT.")
@@ -82,7 +82,7 @@ def _proposal_contract_lines(context: dict[str, Any]) -> list[str]:
     lines.append("  - Action success/failure each need {condition?, result}; Travel To uses location_id. Copy parameter names from world_action_catalog. A dynamic parameter such as item_id is not an inventory key; omit the condition or use the literal visible item name.")
     lines.append("  - A new Action must have a real observable result: declare effects, information or capability/progress effects, or bind a Recipe with outputs. A success label or outcome_events field alone never changes resources or state; do not call a resource refill successful without a configured effect that performs it.")
     lines.append("  - To move carried material into an existing world resource, use costs.reserve:{item_parameter:<item parameter>, item_quantity_parameter:<quantity parameter>} and effect:{type:'resource_transfer', resource_id:<existing visible resource>, source_item_parameter:<same item parameter>, quantity_parameter:<same quantity parameter>}; omit item_quantity_parameter only for one item with quantity:1. The transfer must equal the reserved amount and cannot mint stock or target a missing resource.")
-    lines.append("  - Any Action that changes a stock (world_resource_delta, resource_withdrawal, resource_take) must declare the stock target as a parameter, for example parameters:{resource_id:'string'} and effect resource_id:'context.resource_id'. Do not put the stock's literal name in the effect or in the Action name; one generic Action serves every stock. Bind a single stock in the Behavior node when that behavior is stock-specific.")
+    lines.append("  - Any Action that changes a stock (world_resource_delta, resource_withdrawal, resource_take) must declare the stock target as a parameter, for example parameters:{resource_id:'string'} and effect resource_id:'context.resource_id'. Do not put the stock's literal name in the effect. Bind one stock in the Behavior node only with a Travel node to that stock's location, or expose resource_id/item_id as agent_parameters; a literal stock binding without Travel is not executable.")
     lines.append("  - A composite Action that intentionally consumes or produces a literal item (craft, repair, trade, install, allocate) must declare that verb; the transfer_resource, consume, move, gather and inventory families must bind their target.")
     lines.append("  - A resource_transfer reserves the carried item before the success condition is checked. Its success condition must not inspect actor.inventory.<item>; use actor.alive or an observable destination/world result instead.")
     lines.append("  - Action parameters whose names end in _entity or _id must use exact visible entity names from the world view and parameter names from the Action catalog. A behavior is rejected unless its assigned character can execute the whole sequence now.")
@@ -161,7 +161,8 @@ def _catalog_lines(context: dict[str, Any]) -> list[str]:
         )
         for entity in (index.get("entities") or [])[:6]:
             kind = str(entity.get("entity_type") or entity.get("cell") or "content")
-            lines.append(f"  - {kind}: {entity.get('name', 'content')}: {entity.get('summary', 'configured content')}")
+            location = f" at {entity['location']}" if entity.get("location") else ""
+            lines.append(f"  - {kind}: {entity.get('name', 'content')}{location}: {entity.get('summary', 'configured content')}")
         for behavior in (index.get("behaviors") or [])[:6]:
             operations = behavior.get("operations") or []
             detail = f"; operations={', '.join(str(item) for item in operations)}" if operations else ""

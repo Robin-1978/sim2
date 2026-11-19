@@ -179,10 +179,13 @@ def test_unexecutable_followup_rolls_back_the_whole_registration(tmp_path: Path)
             },
         }
 
-        with pytest.raises(ValueError, match="Action followup behavior is not executable"):
-            platform.submit_definition_proposal("god", proposal)
+        result = platform.submit_definition_proposal("god", proposal)
+        assert result["status"] == "rejected", result
+        assert "not executable" in str(result.get("message") or result.get("errors") or "")
 
-        assert registry_snapshot(platform) == before
+        after = registry_snapshot(platform)
+        for table in ("action_def", "bt_def", "recipe_def", "agent_state"):
+            assert after[table] == before[table]
     finally:
         platform.close()
 

@@ -16,6 +16,7 @@ from ..world.navigation import (
     reachable_locations,
 )
 from ..world.authorization import authorization_for_behavior
+from ..world.bindings import iter_behavior_actions, resolve_behavior_effect
 from ..world.contested import resource_take_effect
 from ..world.context import configured_context_values
 from .action_text import action_view, label, predicate_text
@@ -353,11 +354,20 @@ class BehaviorViewMixin:
                     "name": str(item.get("name") or item.get("id")),
                     "location": str(item.get("location_name") or item.get("location_id") or "configured source"),
                     "remaining_stages": int(item.get("remaining_stages", 0) or 0),
+                    "question": next(
+                        (
+                            str(discovery.get("fact") or discovery.get("question") or "")
+                            for discovery in (item.get("discoveries") or [])
+                            if isinstance(discovery, dict) and (discovery.get("fact") or discovery.get("question"))
+                        ),
+                        "",
+                    ),
                 }
                 for item in research_sources[:12]
             ]
             target_text = "Choose one configured research source: " + "; ".join(
                 f"{item['name']} ({item['remaining_stages']} stage(s) remaining at {item['location']})"
+                + (f" — {item['question'][:120]}" if item.get("question") else "")
                 for item in parameter_options["source_id"]
             )
         params = bt.get("agent_parameters") or {}
@@ -410,6 +420,48 @@ class BehaviorViewMixin:
                 target_text = "Choose a carried item: " + ", ".join(
                     f"{item['name']} ({item['quantity']})" for item in items[:6]
                 )
+        bound_resource_text = ""
+        if not (resource_keys & set(params)):
+            for effect_type, verb_text in (
+                ("resource_transfer", "Transfer into"),
+                ("resource_withdrawal", "Withdraw from"),
+                ("resource_take", "Take from"),
+            ):
+                effect = resolve_behavior_effect(bt, effect_type, frame.action_defs, frame.bt_defs)
+                if not effect:
+                    continue
+                reference = effect.get("resource_id") or effect.get("resource")
+                if not reference or str(reference).startswith("context."):
+                    continue
+                resource_id = str(self.targets.canonical_id(str(reference)) or reference)
+                try:
+                    resource = self.entities_repo.get_entity(resource_id)
+                except KeyError:
+                    continue
+                state = resource.get("initial_state") if isinstance(resource.get("initial_state"), dict) else {}
+                location_id = state.get("location_id") or resource.get("location_id")
+                location_name = self._entity_name(location_id) if location_id else ""
+                item_name = ""
+                if effect_type == "resource_transfer":
+                    item_parameter = str(effect.get("source_item_parameter") or "")
+                    for _, binding in iter_behavior_actions(bt, frame.action_defs, frame.bt_defs):
+                        value = binding.get(item_parameter) if item_parameter else None
+                        if isinstance(value, str) and not value.startswith("context."):
+                            item_name = self._entity_name(value)
+                            break
+                target_text = f"{verb_text} {resource.get('name') or resource_id}"
+                if location_name:
+                    target_text += f" at {location_name}"
+                target_text += "."
+                if effect_type == "resource_transfer":
+                    target_text += (
+                        f" Platform reserves the carried {item_name} from your inventory."
+                        if item_name else " Platform reserves the carried input from your inventory."
+                    )
+                elif effect_type == "resource_take":
+                    target_text += " Observers may see the take."
+                bound_resource_text = target_text
+                break
         bindings = bt.get("parameter_bindings", {}) or {}
         binding_values = {
             "nearest_safe_location": safe_location_id,
@@ -450,6 +502,8 @@ class BehaviorViewMixin:
                 target_text = f"Resource: {resource.get('name', resource_node['resource_tag'])} at {location.get('name', resource_node['location_id'])}. Platform reserves the configured amount."
             except KeyError:
                 target_text = "A configured resource is available at the nearest known node."
+        elif bound_resource_text:
+            target_text = bound_resource_text
         elif target_keys and participants:
             names = ", ".join(str(item.get("name", item.get("id"))) for item in participants[:8])
             if target_required:

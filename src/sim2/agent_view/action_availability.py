@@ -143,6 +143,26 @@ class ActionAvailabilityMixin:
             if recipe is None:
                 return "the recipe is not registered"
             context["station_tags"] = list(recipe.get("station_tags", []) or [])
+        actor_location = str((agent.get("initial_state") or {}).get("location_id") or "")
+        for effect in action.get("effects", []) or []:
+            if not isinstance(effect, dict):
+                continue
+            if str(effect.get("type") or effect.get("op") or "") != "resource_transfer":
+                continue
+            reference = effect.get("resource_id") or effect.get("resource")
+            if isinstance(reference, str) and reference.startswith("context."):
+                reference = parameters.get(reference.removeprefix("context."))
+            if not reference:
+                continue
+            resource_id = str(self.targets.canonical_id(str(reference)) or reference)
+            try:
+                resource = self.entities_repo.get_entity(resource_id)
+            except KeyError:
+                continue
+            state = resource.get("initial_state") if isinstance(resource.get("initial_state"), dict) else {}
+            resource_location = str(state.get("location_id") or resource.get("location_id") or "")
+            if resource_location and resource_location != actor_location:
+                return "the actor is not at the resource location"
         resolved_target, target_error = self.targets.resolve(agent, parameters)
         if target_error:
             return "no permitted target can be resolved"

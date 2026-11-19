@@ -300,7 +300,7 @@ def test_location_id_must_exist_and_wins_over_the_state_location(platform: Platf
             {"research_discoveries": {}},
             [
                 "a research_source must declare at least one research_discoveries entry",
-                "research_discoveries[0] must declare an id or fact",
+                "research_discoveries[0] must declare a readable fact",
                 "a dynamic research source must declare at least one research_assignee",
             ],
         ),
@@ -317,7 +317,7 @@ def test_location_id_must_exist_and_wins_over_the_state_location(platform: Platf
         (
             "document",
             {"research_discoveries": [{"fact": "  "}, {}], "research_assignees": ["林泊"]},
-            ["research_discoveries[0] must declare an id or fact", "research_discoveries[1] must declare an id or fact"],
+            ["research_discoveries[0] must declare a readable fact", "research_discoveries[1] must declare a readable fact"],
         ),
     ],
 )
@@ -521,3 +521,35 @@ def test_research_source_with_a_novelty_key_and_question_keys_its_gap_by_them(to
     gap = next(item for item in town.store.repositories.memory.list_knowledge_gaps() if item["gap_id"] == "marker_origin")
     assert (gap["status"], gap["topic_key"], gap["question"], gap["current_source_id"]) == ("active", "marker_origin", "Who raised the marker?", "proposed_marker")
     assert entity(town, "proposed_marker")["initial_state"]["research_focus"] == "marker_origin Who raised the marker? The marker is reliable. A marker introduced after the opening story."
+
+
+def test_research_discoveries_reject_bare_identifiers(platform: Platform) -> None:
+    """A code-like token is not a research fact."""
+
+    bare = platform.submit_entity_proposal(
+        "operator",
+        {
+            "entity_type": "document",
+            "name": "裸标识研究页",
+            "state": {
+                "research_discoveries": ["relay_checksum_parity"],
+                "research_assignees": ["林泊"],
+            },
+        },
+    )
+    assert bare["failed_check"] == "entity_schema"
+    assert any("object with a readable fact" in error for error in bare["errors"])
+
+    identifier = platform.submit_entity_proposal(
+        "operator",
+        {
+            "entity_type": "document",
+            "name": "标识符事实研究页",
+            "state": {
+                "research_discoveries": [{"id": "fact:x", "fact": "relay_checksum_parity"}],
+                "research_assignees": ["林泊"],
+            },
+        },
+    )
+    assert identifier["failed_check"] == "entity_schema"
+    assert any("readable sentence, not an identifier" in error for error in identifier["errors"])

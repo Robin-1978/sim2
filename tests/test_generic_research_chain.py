@@ -44,6 +44,7 @@ def test_one_research_bt_can_research_a_god_created_source(tmp_path: Path):
         research = next(item for item in view["executable_behaviors"] if item["ref"] == "behavior:research_boundary_stone")
         assert research["choice"] == "Research Configured Source"
         assert [item["name"] for item in research["parameter_options"]["source_id"]] == ["后续标记记录", "褪色界碑"]
+        assert "The later marker is aligned with the old road." in research["target"]
 
         for index in range(2):
             started = platform.submit_behavior(

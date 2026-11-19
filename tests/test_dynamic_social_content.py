@@ -265,6 +265,7 @@ def test_da_02_god_creates_resource_rules_and_behaviors(platform: Platform) -> N
     tomas_withdraw = behavior_entry(platform, "tomas", "withdraw_resource")
     mira_withdraw = behavior_entry(platform, "mira", "withdraw_resource")
     take = behavior_entry(platform, "tomas", "take_resource")
+    assert "Choose a visible resource" in tomas_withdraw["target"]
     assert tomas_withdraw["eligibility"]["available"] is False
     assert tomas_withdraw["eligibility"]["reasons"][0]["type"] == "missing_delegation"
     assert mira_withdraw["eligibility"]["available"] is True

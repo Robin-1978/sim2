@@ -166,6 +166,8 @@ def test_sa_01_preview_discriminates_steward(platform: Platform) -> None:
 
     assert mira["eligibility"]["available"] is True
     assert mira["eligibility"]["authorization"] == {"type": "stewardship", "id": "energy_reserve"}
+    assert "Energy Reserve" in mira["target"]
+    assert "Relay Station" in mira["target"]
     steward_preview = AgentToolExecutor(platform, role="agent_decision", actor_id="mira").execute(
         "preview_behavior", {"choice": "Withdraw Resource"},
     )

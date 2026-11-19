@@ -211,8 +211,6 @@ def test_god_can_create_a_behavior_that_changes_a_world_resource(tmp_path: Path)
                 "effects": [{"type": "world_resource_delta", "resource_id": "context.resource_id", "delta": 1, "maximum": 5}],
                 "success": {"condition": "actor.alive", "result": "local stock added"},
                 "failure": {"result": "local stock failed"},
-                "success_results": ["local stock added"],
-                "failure_results": ["local stock failed"],
             },
             "followup_behavior": {
                 "name": "Add Local Stock",
@@ -224,9 +222,7 @@ def test_god_can_create_a_behavior_that_changes_a_world_resource(tmp_path: Path)
                         {"type": "action", "action_id": "travel_to", "parameters": {"location_id": "三灯广场"}},
                         {"type": "action", "action_id": "Add Local Stock", "parameters": {"resource_id": stock["entity_id"]}},
                     ],
-                    "success_results": ["local stock added"],
-                    "failure_results": ["local stock failed"],
-                },
+                        },
             },
         })
         assert action["status"] == "accepted", action
@@ -309,9 +305,7 @@ def test_positive_world_resource_delta_needs_a_cap_and_respects_it(tmp_path: Pat
                     "effects": [effect],
                     "success": {"condition": "actor.alive", "result": "capped stock added"},
                     "failure": {"result": "capped stock failed"},
-                    "success_results": ["capped stock added"],
-                    "failure_results": ["capped stock failed"],
-                },
+                        },
                 "followup_behavior": {
                     "name": "Add Capped Stock",
                     "assign_to": ["梅岚"],
@@ -322,9 +316,7 @@ def test_positive_world_resource_delta_needs_a_cap_and_respects_it(tmp_path: Pat
                             {"type": "action", "action_id": "travel_to", "parameters": {"location_id": "三灯广场"}},
                             {"type": "action", "action_id": "Add Capped Stock", "parameters": {"resource_id": stock["entity_id"]}},
                         ],
-                        "success_results": ["capped stock added"],
-                        "failure_results": ["capped stock failed"],
-                    },
+                                    },
                 },
             })
 

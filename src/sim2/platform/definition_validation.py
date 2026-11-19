@@ -343,6 +343,20 @@ class DefinitionValidationMixin:
             return ("action", tuple(sorted(effects)), self._shape_number(duration.get("minutes")), str(success.get("result") or ""))
         return None
 
+    def _check_action_fields(self, definition: dict[str, Any], errors: list[str]) -> None:
+        """Behavior-only fields belong in followup_behavior, never in an Action."""
+
+        for field in (
+            "entry_conditions", "success_results", "failure_results",
+            "outcome_events", "agent_parameters", "agent_label",
+            "nodes", "estimated_minutes", "goal_tags", "drive_tags", "requirements",
+        ):
+            if field in definition:
+                errors.append(
+                    f"action definition must not declare behavior field {field}; "
+                    "put it in followup_behavior instead"
+                )
+
     def _check_specific_verb(self, definition: dict[str, Any], errors: list[str]) -> None:
         """Reject a capability that names one instance of its target.
 
@@ -406,6 +420,7 @@ class DefinitionValidationMixin:
                 return
 
     def _validate_action(self, name: str, definition: dict[str, Any], definition_id: str, errors: list[str]) -> None:
+        self._check_action_fields(definition, errors)
         _check_dynamic_inventory_parameters(definition, errors)
         _check_resource_transfers(definition, errors)
         _check_world_resource_deltas(definition, errors)

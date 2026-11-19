@@ -206,20 +206,43 @@ class DefinitionRuntimeMixin:
         if plan.errors:
             return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_definition", data, {"status": "rejected", "message": "Definition proposal failed validation.", "failed_check": "definition_schema", "errors": plan.errors, "retryable": True})
         world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
-        with self.store.transaction():
-            self.store.repositories.evolution.create_intent(intent_id, actor_id, "propose_definition", data, world_minute)
-            self._register_definition(plan)
-            event_ids = self._publish_definition_events(plan, actor_id, world_minute, str(proposal.get("evidence") or ""))
-            self._assign_new_behavior(plan, event_ids, world_minute)
-            if actor_id == "god":
-                remember_role(self.store, "god", "world_definition", {
-                    "summary": f"Registered {plan.definition_type}: {plan.name}.",
-                    "definition_type": plan.definition_type,
-                    "definition_id": plan.definition.get("id"),
-                    "status": "accepted",
-                }, memory_key=f"god:definition:{intent_id}", source_event_id=event_ids.definition)
-            result = self._definition_result(plan, intent_id, event_ids)
-            self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
+        try:
+            with self.store.transaction():
+                self.store.repositories.evolution.create_intent(intent_id, actor_id, "propose_definition", data, world_minute)
+                self._register_definition(plan)
+                event_ids = self._publish_definition_events(plan, actor_id, world_minute, str(proposal.get("evidence") or ""))
+                self._assign_new_behavior(plan, event_ids, world_minute)
+                if actor_id == "god":
+                    remember_role(self.store, "god", "world_definition", {
+                        "summary": f"Registered {plan.definition_type}: {plan.name}.",
+                        "definition_type": plan.definition_type,
+                        "definition_id": plan.definition.get("id"),
+                        "status": "accepted",
+                    }, memory_key=f"god:definition:{intent_id}", source_event_id=event_ids.definition)
+                result = self._definition_result(plan, intent_id, event_ids)
+                self.store.repositories.evolution.finish_intent(intent_id, "accepted", result)
+        except ValueError as exc:
+            # A followup Behavior may only be rejected after its Action has
+            # been staged in the transaction.  Return the normal typed
+            # rejection so God can correct a missing Travel node instead of
+            # crashing the proposal session.
+            if "not executable" not in str(exc):
+                raise
+            if self.store.connection.in_transaction:
+                self.store.connection.rollback()
+            return self._context.services["intent"].reject_intent(
+                intent_id,
+                actor_id,
+                "propose_definition",
+                data,
+                {
+                    "status": "rejected",
+                    "message": str(exc),
+                    "failed_check": "definition_schema",
+                    "errors": [str(exc)],
+                    "retryable": True,
+                },
+            )
         if plan.definition_type == "attribute":
             self._refresh_attribute_dependencies()
         return result

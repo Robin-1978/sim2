@@ -47,6 +47,19 @@ def entity_failed_check(errors: list[str]) -> str:
     return "god_resource_creation" if any("stocked resource" in error for error in errors) else "entity_schema"
 
 
+def _readable_research_fact(value: str) -> bool:
+    """A discovery must carry a sentence, not a bare machine identifier."""
+
+    text = str(value or "").strip()
+    if len(text) < 16:
+        return False
+    if text.isascii() and " " not in text and ("_" in text or ":" in text):
+        return False
+    words = text.split()
+    cjk = sum(1 for character in text if "\u4e00" <= character <= "\u9fff")
+    return len(words) >= 3 or cjk >= 8
+
+
 def _research_discovery_errors(research_values: Any) -> list[str]:
     errors: list[str] = []
     stages = [research_values] if isinstance(research_values, dict) else research_values if isinstance(research_values, list) else []
@@ -54,9 +67,20 @@ def _research_discovery_errors(research_values: Any) -> list[str]:
         errors.append("research_discoveries must be a non-empty list or object")
     for index, stage in enumerate(stages):
         if isinstance(stage, str):
+            errors.append(
+                f"research_discoveries[{index}] must be an object with a readable fact, not a bare identifier"
+            )
             continue
-        if not isinstance(stage, dict) or not str(stage.get("id") or stage.get("fact_key") or stage.get("fact") or "").strip():
-            errors.append(f"research_discoveries[{index}] must declare an id or fact")
+        if not isinstance(stage, dict):
+            errors.append(f"research_discoveries[{index}] must be an object with a readable fact")
+            continue
+        fact = str(stage.get("fact") or "").strip()
+        if not fact:
+            errors.append(f"research_discoveries[{index}] must declare a readable fact")
+        elif not _readable_research_fact(fact):
+            errors.append(
+                f"research_discoveries[{index}].fact must be a readable sentence, not an identifier"
+            )
     return errors
 
 

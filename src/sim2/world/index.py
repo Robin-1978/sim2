@@ -99,12 +99,15 @@ def _entity_items(store: Any) -> list[dict[str, Any]]:
             data = json.loads(row["data_json"] or "{}")
         except (TypeError, ValueError):
             data = {}
+        state = data.get("initial_state") if isinstance(data.get("initial_state"), dict) else {}
+        location_id = state.get("location_id") or data.get("location_id")
         items.append({
             "kind": "entity",
             "cell": _cell_of_entity(entity_type),
             "entity_type": entity_type,
             "name": str(row["name"] or row["id"]),
             "summary": str(data.get("description") or data.get("role") or entity_type)[:240],
+            "location": _entity_label(store, location_id) if location_id else "",
             "ref": str(row["id"]),
         })
     return items

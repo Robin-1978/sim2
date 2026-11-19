@@ -50,7 +50,14 @@ def test_scripted_god_declines_first_then_proposes_sources_that_share_no_words()
 
     assert declined["intent_type"] == "wait"
     assert first["name"] == second["name"] == "propose_entity"
-    words = [set(" ".join(str(item) for item in call["arguments"]["state"]["research_discoveries"]).split()) for call in (first, second)]
+    def _words(call):
+        values = [
+            item.get("fact") if isinstance(item, dict) else item
+            for item in call["arguments"]["state"]["research_discoveries"]
+        ]
+        return {word for word in " ".join(str(item) for item in values).split() if "x" in word}
+
+    words = [_words(first), _words(second)]
     assert not words[0] & words[1]
     assert first["arguments"]["state"]["research_assignees"] == ["Mira"]
     assert first["arguments"]["location"] == "Relay Lab"

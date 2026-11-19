@@ -38,7 +38,8 @@ SYNTHESIS_COUNT = 2
 OUTCOME_NOTE = (
     f" The new source must yield at least {SYNTHESIS_COUNT} verified research outcomes (its number of stages times its "
     f"research_required must be at least {SYNTHESIS_COUNT}) because this world wakes you again only after "
-    f"{SYNTHESIS_COUNT} verified research outcomes."
+    f"{SYNTHESIS_COUNT} verified research outcomes. Each research_discoveries entry must be "
+    f"{{id?, fact: 'a readable sentence'}}; a bare identifier is rejected."
 )
 
 
@@ -123,7 +124,7 @@ def _probe_template(*, fallback: bool = True, director: bool = False) -> dict[st
         "evolution": {
             "wakes": [
                 {"id": "research_synthesis", "on": ["research.progressed", "research.completed"], "for": "god", "count": SYNTHESIS_COUNT, "every": 1, "external": True, "tools": ["propose_entity", "propose_definition", "wait"], "purpose": "Two verified research work outcomes justify one new unanswered relay question or a concrete structure that lets the next study happen.", "result": "Create at most one genuinely new source or executable continuation when the accumulated evidence leaves a distinct unanswered question. If every current source is exhausted, derive a distinct causal dimension such as effect, risk, intervention, provenance, or application from the verified result and use a new novelty key; do not wait merely because the words overlap, and do not rename the same question. Otherwise wait." + OUTCOME_NOTE},
-                {"id": "resource_safety", "on": "resource.safety_low", "for": "god", "count": 1, "every": 1, "external": True, "require_story_outcome": True, "tools": ["propose_definition", "wait"], "purpose": "The public energy reserve is below its floor and Mira carries a real source item.", "result": "Create one conserved supply Action and bound behavior when a real carried source exists; the behavior must wake Story after execution. Never mint public stock."},
+                {"id": "resource_safety", "on": "resource.safety_low", "for": "god", "count": 1, "every": 1, "external": True, "require_story_outcome": True, "tools": ["propose_definition", "wait"], "purpose": "The public energy reserve is below its floor and Mira carries a real source item.", "result": "Create one conserved supply Action and bound behavior when a real carried source exists; the behavior must include Travel to the target stock's location or expose resource_id/item_id as agent parameters, and must wake Story after execution. Never mint public stock."},
                 {"id": "relay_stability_review", "on": "relay.stability_review", "for": "god", "count": 1, "every": 1, "external": True, "tools": ["propose_entity", "wait"], "purpose": "Repeated verified archive inspections have raised relay stability enough for a new world-level research question.", "result": "Create one genuinely new research source only if the stability evidence supports a distinct unanswered question; otherwise wait." + OUTCOME_NOTE},
                 {"on": "research.completed", "for": "story"},
                 {"on": "resource.replenished", "for": "story"},
