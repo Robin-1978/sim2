@@ -8,6 +8,7 @@ from sim2.platform.runtime import Platform
 
 
 WORLD = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+SOCIAL_WORLD = Path(__file__).parents[1] / "worlds" / "social_authority_probe"
 
 
 def test_action_without_followup_behavior_is_rejected(tmp_path: Path) -> None:
@@ -568,6 +569,8 @@ def test_action_rejects_behavior_only_fields(tmp_path: Path) -> None:
                     "success_results": ["done"],
                     "failure_results": ["failed"],
                     "outcome_events": [{"event_type": "scoped.done", "summary": "Done."}],
+                    "parameter_bindings": {"resource_location_id": "resource_location"},
+                    "authorization_operation": "review_violation",
                 },
                 "followup_behavior": {
                     "name": "Scoped Field Action Behavior",
@@ -584,7 +587,244 @@ def test_action_rejects_behavior_only_fields(tmp_path: Path) -> None:
         )
         assert result["status"] == "rejected", result
         errors = " ".join(str(item) for item in result.get("errors") or [])
-        for field in ("entry_conditions", "success_results", "failure_results", "outcome_events"):
+        for field in (
+            "entry_conditions", "success_results", "failure_results", "outcome_events",
+            "parameter_bindings", "authorization_operation",
+        ):
             assert f"behavior field {field}" in errors, errors
+    finally:
+        platform.close()
+
+
+def _move_agent(platform: Platform, agent_id: str, location_id: str) -> None:
+    with platform.store.transaction():
+        agent = platform.store.repositories.entities.get_agent(agent_id)
+        state = dict(agent.get("initial_state") or {})
+        state["location_id"] = location_id
+        agent["initial_state"] = state
+        platform.store.repositories.entities.update_agent(agent_id, agent)
+
+
+def _withdraw_action(name: str, action_id: str) -> dict:
+    return {
+        "definition_type": "action",
+        "name": name,
+        "definition": {
+            "verb": "transfer_resource",
+            "parameters": {"resource_id": "string", "scope": "string"},
+            "duration": {"minutes": 1},
+            "effects": [{
+                "type": "resource_withdrawal",
+                "resource_id": "context.resource_id",
+                "amount": 1,
+                "scope": "context.scope",
+            }],
+            "success": {"condition": "actor.alive", "result": "withdrawn"},
+            "failure": {"condition": "actor.incapacitated", "result": "withdrawal failed"},
+        },
+        "followup_behavior": {
+            "name": f"{name} Behavior",
+            "assign_to": ["梅岚"],
+            "definition": {},
+        },
+    }
+
+
+def test_parameterized_withdrawal_derives_the_stock_location_and_travels(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "withdraw-location-binding", tmp_path / "runtime"))
+    try:
+        proposal = _withdraw_action("Withdraw Bound Stock", "withdraw_bound_stock")
+        proposal["followup_behavior"]["definition"] = {
+            "id": "withdraw_bound_stock",
+            "agent_label": "Withdraw Bound Stock",
+            "agent_parameters": {"resource_id": {"type": "string", "required": True}},
+            "parameter_bindings": {"resource_location_id": "resource_location"},
+            "nodes": [
+                {"type": "action", "action_id": "travel_to", "parameters": {"location_id": "context.resource_location_id"}},
+                {"type": "action", "action_id": "Withdraw Bound Stock", "parameters": {"resource_id": "context.resource_id", "scope": "resource_withdrawal"}},
+            ],
+        }
+        result = platform.submit_definition_proposal("god", proposal)
+        assert result["status"] == "accepted", result
+
+        before = platform.store.repositories.entities.get_entity("cistern_water")["initial_state"]["quantity"]
+        admitted = platform.submit_behavior(
+            BehaviorIntent(
+                "mei_lan",
+                "behavior:withdraw_bound_stock",
+                {},
+                {"resource_id": "cistern_water"},
+                "Withdraw from the cistern.",
+                0.9,
+                "withdraw-location-binding-1",
+            )
+        )
+        assert admitted["status"] == "accepted", admitted
+        stored = platform.store.repositories.evolution.get_intent("withdraw-location-binding-1")
+        assert stored["data"]["parameters"]["resource_location_id"] == "cistern_house"
+
+        for _ in range(10):
+            platform.step()
+            agent = platform.store.repositories.entities.get_agent("mei_lan")
+            if agent["initial_state"].get("status") != "executing":
+                break
+        agent = platform.store.repositories.entities.get_agent("mei_lan")
+        assert agent["initial_state"]["location_id"] == "cistern_house"
+        assert platform.store.repositories.entities.get_entity("cistern_water")["initial_state"]["quantity"] == before - 1
+    finally:
+        platform.close()
+
+
+def test_remote_withdrawal_without_travel_is_rejected_at_admission(tmp_path: Path) -> None:
+    platform = Platform(create_instance(SOCIAL_WORLD, "withdraw-remote-gate", tmp_path / "runtime"))
+    try:
+        _move_agent(platform, "mira", "relay_yard")
+        view = platform.view.build_decision_view("mira", role="agent_decision", include_diagnostics=True)
+        diagnostic = next(
+            item for item in view["unavailable_behavior_diagnostics"] if item.get("behavior_id") == "withdraw_resource"
+        )
+        assert any("not at the resource location" in str(item) for item in diagnostic["failed"])
+
+        before = platform.store.repositories.entities.get_entity("energy_reserve")["initial_state"]["quantity"]
+        rejected = platform.submit_behavior(
+            BehaviorIntent(
+                "mira",
+                "behavior:withdraw_resource",
+                {},
+                {},
+                "Try to withdraw from another location.",
+                0.9,
+                "withdraw-remote-gate-1",
+            )
+        )
+        assert rejected["status"] == "rejected", rejected
+        assert rejected["failed_check"] == "resource_location"
+        assert platform.store.repositories.entities.get_entity("energy_reserve")["initial_state"]["quantity"] == before
+    finally:
+        platform.close()
+
+def test_remote_take_without_travel_is_rejected_at_admission(tmp_path: Path) -> None:
+    platform = Platform(create_instance(SOCIAL_WORLD, "take-remote-gate", tmp_path / "runtime"))
+    try:
+        _move_agent(platform, "tomas", "relay_yard")
+        rejected = platform.submit_behavior(
+            BehaviorIntent(
+                "tomas",
+                "behavior:take_resource",
+                {},
+                {},
+                "Try to take from another location.",
+                0.9,
+                "take-remote-gate-1",
+            )
+        )
+        assert rejected["status"] == "rejected", rejected
+        assert rejected["failed_check"] == "resource_location"
+        assert platform.store.repositories.entities.get_entity("energy_reserve")["initial_state"]["quantity"] == 10
+    finally:
+        platform.close()
+
+def test_withdrawal_completion_rechecks_the_stock_location(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "withdraw-completion-gate", tmp_path / "runtime"))
+    try:
+        _move_agent(platform, "mei_lan", "cistern_house")
+        proposal = _withdraw_action("Slow Withdraw Cistern Water", "slow_withdraw_cistern_water")
+        proposal["definition"]["duration"] = {"minutes": 3}
+        proposal["followup_behavior"]["definition"] = {
+            "id": "slow_withdraw_cistern_water",
+            "agent_label": "Slow Withdraw Cistern Water",
+            "nodes": [
+                {"type": "action", "action_id": "travel_to", "parameters": {"location_id": "cistern_house"}},
+                {
+                    "type": "action",
+                    "action_id": "Slow Withdraw Cistern Water",
+                    "parameters": {"resource_id": "cistern_water", "scope": "resource_withdrawal"},
+                },
+            ],
+        }
+        result = platform.submit_definition_proposal("god", proposal)
+        assert result["status"] == "accepted", result
+
+        started = platform.submit_behavior(
+            BehaviorIntent(
+                "mei_lan",
+                "behavior:slow_withdraw_cistern_water",
+                {},
+                {},
+                "Start the withdrawal at the cistern.",
+                0.9,
+                "withdraw-completion-gate-1",
+            )
+        )
+        assert started["status"] == "accepted", started
+        before = platform.store.repositories.entities.get_entity("cistern_water")["initial_state"]["quantity"]
+        for _ in range(6):
+            platform.step()
+            if platform.store.repositories.entities.get_agent("mei_lan")["initial_state"].get("active_action") == "slow_withdraw_cistern_water":
+                break
+        else:
+            raise AssertionError("the withdrawal Action did not start")
+        _move_agent(platform, "mei_lan", "lantern_square")
+
+        for _ in range(8):
+            platform.step()
+        agent = platform.store.repositories.entities.get_agent("mei_lan")
+        assert agent["initial_state"].get("status") != "executing"
+        assert platform.store.repositories.entities.get_entity("cistern_water")["initial_state"]["quantity"] == before
+        assert not [
+            item for item in platform.store.repositories.events.timeline_events(after_event_id=0, limit=500, include_ticks=True)
+            if item.get("event_type") == "resource.withdrawal.completed"
+        ]
+    finally:
+        platform.close()
+
+
+def test_remote_withdrawal_behavior_without_travel_is_rejected_at_registration(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "withdraw-registration-gate", tmp_path / "runtime"))
+    try:
+        proposal = _withdraw_action("Bound Cistern Withdrawal", "bound_cistern_withdrawal")
+        proposal["followup_behavior"]["definition"] = {
+            "id": "bound_cistern_withdrawal",
+            "agent_label": "Bound Cistern Withdrawal",
+            "nodes": [{
+                "type": "action",
+                "action_id": "Bound Cistern Withdrawal",
+                "parameters": {"resource_id": "cistern_water", "scope": "resource_withdrawal"},
+            }],
+        }
+        result = platform.submit_definition_proposal("god", proposal)
+        assert result["status"] == "rejected", result
+        assert any("must include Travel before the stock operation" in str(item) for item in result.get("errors") or []), result
+        assert not any(
+            item.get("id") == "bound_cistern_withdrawal"
+            for item in platform.store.repositories.entities.get_definitions("bt_def")
+        )
+    finally:
+        platform.close()
+
+
+def test_stock_location_travel_binding_must_be_declared_on_the_behavior(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "withdraw-missing-binding", tmp_path / "runtime"))
+    try:
+        proposal = _withdraw_action("Unbound Travel Withdrawal", "unbound_travel_withdrawal")
+        proposal["followup_behavior"]["definition"] = {
+            "id": "unbound_travel_withdrawal",
+            "agent_label": "Unbound Travel Withdrawal",
+            "agent_parameters": {"resource_id": {"type": "string", "required": True}},
+            "nodes": [
+                {"type": "action", "action_id": "travel_to", "parameters": {"location_id": "context.resource_location_id"}},
+                {"type": "action", "action_id": "Unbound Travel Withdrawal", "parameters": {"resource_id": "context.resource_id", "scope": "resource_withdrawal"}},
+            ],
+        }
+        result = platform.submit_definition_proposal("god", proposal)
+        assert result["status"] == "rejected", result
+        assert any(
+            "parameter_bindings.resource_location_id: resource_location" in str(item)
+            for item in result.get("errors") or []
+        ), result
+        assert not any(
+            item.get("id") == "unbound_travel_withdrawal"
+            for item in platform.store.repositories.entities.get_definitions("bt_def")
+        )
     finally:
         platform.close()

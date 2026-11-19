@@ -14,6 +14,7 @@ import re
 from typing import Any
 from uuid import uuid4
 
+from ..world.bindings import iter_behavior_effects
 from ..world.definition_compiler import compile_definition_shape, definition_slug
 from ..world.verbs import generic_parameter_target, infer_action_verb, infer_behavior_verb, normalize_verb, specific_capability_target
 
@@ -350,6 +351,7 @@ class DefinitionValidationMixin:
             "entry_conditions", "success_results", "failure_results",
             "outcome_events", "agent_parameters", "agent_label",
             "nodes", "estimated_minutes", "goal_tags", "drive_tags", "requirements",
+            "parameter_bindings", "authorization_operation",
         ):
             if field in definition:
                 errors.append(
@@ -462,11 +464,52 @@ class DefinitionValidationMixin:
             nodes = []
         definition["nodes"] = BehaviorNodeNormalizer(self, errors, extra_action).normalize_tree(nodes)
         definition.pop("actions", None)
+        action_defs = {str(item.get("id")): item for item in self.store.repositories.entities.get_definitions("action_def")}
+        if isinstance(extra_action, dict) and extra_action.get("id"):
+            action_defs[str(extra_action["id"])] = extra_action
+        stock_operation = False
+        travels_before_stock = False
+        for _action, effect in iter_behavior_effects(definition, action_defs):
+            effect_type = str(effect.get("type") or effect.get("op") or "")
+            if effect_type == "location_set" and not stock_operation:
+                travels_before_stock = True
+            if effect_type in {"resource_withdrawal", "resource_take"}:
+                stock_operation = True
+                break
+        requires_stock_here = any(
+            "resource.here" in str(condition) for condition in definition.get("entry_conditions", []) or []
+        )
+        if stock_operation and not travels_before_stock and not requires_stock_here:
+            errors.append(
+                "behavior with resource_withdrawal/resource_take must include Travel before the stock "
+                "operation or require resource.here; a remote actor cannot reach the stock otherwise"
+            )
+        bindings = definition.get("parameter_bindings") if isinstance(definition.get("parameter_bindings"), dict) else {}
+        agent_parameters = definition.get("agent_parameters") if isinstance(definition.get("agent_parameters"), dict) else {}
+
+        def node_parameters(nodes: list[Any]) -> list[Any]:
+            values: list[Any] = []
+            for node in nodes:
+                if not isinstance(node, dict):
+                    continue
+                values.extend((node.get("parameters") or {}).values())
+                values.extend(node_parameters(list(node.get("children") or [])))
+            return values
+
+        uses_stock_location = any(
+            value == "context.resource_location_id" for value in node_parameters(definition["nodes"])
+        )
+        if (
+            uses_stock_location
+            and "resource_location_id" not in agent_parameters
+            and str(bindings.get("resource_location_id") or "") != "resource_location"
+        ):
+            errors.append(
+                "behavior nodes that use context.resource_location_id must declare "
+                "parameter_bindings.resource_location_id: resource_location"
+            )
         if not operation:
             social_parameters = {"based_on_event", "violation_id"}
-            action_defs = {str(item.get("id")): item for item in self.store.repositories.entities.get_definitions("action_def")}
-            if isinstance(extra_action, dict) and extra_action.get("id"):
-                action_defs[str(extra_action["id"])] = extra_action
             for node in definition["nodes"]:
                 if not isinstance(node, dict) or str(node.get("type") or "") != "action":
                     continue

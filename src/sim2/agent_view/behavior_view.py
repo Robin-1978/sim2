@@ -14,6 +14,7 @@ from ..world.navigation import (
     nearest_resource_node,
     nearest_safe_location,
     reachable_locations,
+    resource_is_at_location,
 )
 from ..world.authorization import authorization_for_behavior
 from ..world.bindings import iter_behavior_actions, resolve_behavior_effect
@@ -187,6 +188,16 @@ class BehaviorViewMixin:
                 "source_id": selected_source["id"],
                 "source_location_id": selected_source.get("location_id"),
             })
+        stock = self._representative_stock(frame, bt)
+        if stock:
+            behavior_context["resource_id"] = stock[0]
+            bindings = bt.get("parameter_bindings") if isinstance(bt.get("parameter_bindings"), dict) else {}
+            agent_parameters = bt.get("agent_parameters") if isinstance(bt.get("agent_parameters"), dict) else {}
+            if (
+                str(bindings.get("resource_location_id") or "") == "resource_location"
+                or "resource_location_id" in agent_parameters
+            ):
+                behavior_context["resource_location_id"] = stock[1]
         condition_context = {
             "current_location": current_location,
             "location_id": location_id,
@@ -205,6 +216,12 @@ class BehaviorViewMixin:
         }
         condition_context.update(behavior_context)
         condition_context.update(self._interaction_context(agent, participants))
+        if behavior_context.get("resource_id"):
+            condition_context["resource.here"] = resource_is_at_location(
+                self.store,
+                str(behavior_context["resource_id"]),
+                location_id,
+            )
         failed_conditions = [
             str(predicate)
             for predicate in bt.get("entry_conditions", []) or []
@@ -234,6 +251,50 @@ class BehaviorViewMixin:
                 diagnostics.append({"behavior_id": bt_id, "failed": [f"cooldown until world minute {last_minute + cooldown_minutes}"]})
                 return None
         return behavior_context, cooldown_minutes
+
+    def _representative_stock(self, frame: DecisionFrame, bt: dict[str, Any]) -> tuple[str, str] | None:
+        """Pick the stock a parameterized withdrawal/take behavior will use.
+
+        The Agent chooses the exact stock at submission time.  For the decision
+        view we validate one representative binding, preferring a stock the
+        actor can already reach, so a generic Travel-bound behavior is shown as
+        executable instead of being rejected for a remote default.
+        """
+
+        for effect_type in ("resource_withdrawal", "resource_take"):
+            effect = resolve_behavior_effect(bt, effect_type, frame.action_defs, frame.bt_defs)
+            if not effect:
+                continue
+            reference = effect.get("resource_id") or effect.get("resource")
+            if reference and not str(reference).startswith("context."):
+                resource_id = str(self.targets.canonical_id(str(reference)) or reference)
+                try:
+                    resource = self.entities_repo.get_entity(resource_id)
+                except KeyError:
+                    return None
+                state = resource.get("initial_state") if isinstance(resource.get("initial_state"), dict) else {}
+                return resource_id, str(state.get("location_id") or resource.get("location_id") or "")
+            resource_keys = {"resource_id", "resource", "target_resource"}
+            if not (resource_keys & set((bt.get("agent_parameters") or {}).keys())):
+                continue
+            rules = self.store.repositories.metadata.get("rules", {}) or {}
+            entity_types = [str(item) for item in (rules.get("resource_entity_types", ["resource", "material"]) or [])]
+            candidates: list[tuple[int, str, str]] = []
+            for entity_type in entity_types:
+                for row in self.entities_repo.entities_of_type(entity_type):
+                    try:
+                        entity = self.entities_repo.get_entity(str(row["id"]))
+                    except KeyError:
+                        continue
+                    state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
+                    location_id = str(state.get("location_id") or entity.get("location_id") or "")
+                    rank = 0 if location_id == frame.location_id else 1 if location_id in frame.known_route_destinations else 2
+                    candidates.append((rank, str(entity.get("id") or row["id"]), location_id))
+            if candidates:
+                candidates.sort(key=lambda item: (item[0], item[1]))
+                _, resource_id, location_id = candidates[0]
+                return resource_id, location_id
+        return None
 
     def _simulate_behavior(self, frame: DecisionFrame, bt_id: Any, behavior_context: dict[str, Any]) -> Simulation | None:
         """Replay every step against a copy of the agent so later steps see earlier effects."""
@@ -398,6 +459,8 @@ class BehaviorViewMixin:
                     f"{item['name']} ({item['quantity']:g}{' at ' + item['location'] if item['location'] else ''})"
                     for item in resources[:6]
                 )
+                if str((bt.get("parameter_bindings") or {}).get("resource_location_id") or "") == "resource_location":
+                    target_text += ". Platform travels to the selected stock's location before the operation."
         location_keys = {"location_id", "location", "destination", "destination_id"}
         if location_keys & set(params):
             locations = []

@@ -22,6 +22,7 @@ from ..world.navigation import (
     nearest_safe_location,
 )
 from ..world.authorization import behavior_authorization_spec
+from ..world.bindings import iter_behavior_effects
 from .authorization import AuthorizationRejected, withdrawal_effect
 from .contested import ContestedRejected, resource_take_effect
 from .services import PlatformService
@@ -278,6 +279,9 @@ class BehaviorIntentService(PlatformService):
         if rejection is not None:
             return rejection
         self._bind_runtime_parameters(submission)
+        rejection = self._check_resource_location(submission)
+        if rejection is not None:
+            return rejection
         rejection = self._check_entry_conditions(submission)
         if rejection is not None:
             return rejection
@@ -488,6 +492,23 @@ class BehaviorIntentService(PlatformService):
                 value = (resource or {}).get("location_id" if resolver == "nearest_resource_node" else "resource_tag")
             elif resolver == "nearest_health_service":
                 value = nearest_location_with_tag(self.store, state.get("location_id"), configured_location_tags(self.store, "health_service"))
+            elif resolver == "resource_location":
+                # Derive the stock's location from the same resolved
+                # resource_withdrawal/resource_take target the authorization
+                # check uses.  A generic behavior can then Travel to
+                # context.resource_location_id without naming a stock.
+                stock = submission.withdrawal or submission.take
+                value = None
+                if stock:
+                    reference = stock.get("resource_id") or stock.get("resource")
+                    if reference and not str(reference).startswith("context."):
+                        resource_id = str(self.targets.canonical_id(str(reference)) or reference)
+                        try:
+                            resource = self.store.repositories.entities.get_entity(resource_id)
+                        except KeyError:
+                            resource = {}
+                        resource_state = resource.get("initial_state") if isinstance(resource.get("initial_state"), dict) else {}
+                        value = resource_state.get("location_id") or resource.get("location_id")
             else:
                 value = None
             if value:
@@ -508,6 +529,64 @@ class BehaviorIntentService(PlatformService):
             if source_location:
                 runtime_parameters.setdefault("source_location_id", source_location)
         submission.intent_data["parameters"] = {**submission.parameters, **runtime_parameters}
+
+    def _check_resource_location(self, submission: BehaviorSubmission) -> dict[str, Any] | None:
+        """A remote actor may start a stock operation only after a Travel step.
+
+        The Action runtime still re-checks the location before every stock
+        change.  This admission check prevents a configured Behavior that
+        binds a stock at another location, but has no Travel node, from
+        starting and silently failing halfway through.
+        """
+
+        effects = [
+            effect for effect in (submission.withdrawal, submission.take) if isinstance(effect, dict)
+        ]
+        if not effects:
+            return None
+        actor_location = str((submission.agent.get("initial_state") or {}).get("location_id") or "")
+        action_defs = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
+        for effect in effects:
+            reference = effect.get("resource_id") or effect.get("resource")
+            if not reference or str(reference).startswith("context."):
+                continue
+            resource_id = str(self.targets.canonical_id(str(reference)) or reference)
+            try:
+                resource = self.store.repositories.entities.get_entity(resource_id)
+            except KeyError:
+                continue
+            resource_state = resource.get("initial_state") if isinstance(resource.get("initial_state"), dict) else {}
+            resource_location = str(resource_state.get("location_id") or resource.get("location_id") or "")
+            if not resource_location or resource_location == actor_location:
+                continue
+            travels_to_stock = False
+            for _action, resolved in iter_behavior_effects(
+                submission.behavior,
+                action_defs,
+                submission.definitions,
+                submission.runtime_parameters,
+            ):
+                effect_type = str(resolved.get("type") or resolved.get("op") or "")
+                if effect_type == "location_set":
+                    destination = resolved.get("location_id") or resolved.get("location") or resolved.get("destination_id")
+                    if destination and str(self.targets.canonical_id(str(destination)) or destination) == resource_location:
+                        travels_to_stock = True
+                        break
+                if effect_type in {"resource_withdrawal", "resource_take"}:
+                    target = resolved.get("resource_id") or resolved.get("resource")
+                    if target and str(self.targets.canonical_id(str(target)) or target) == resource_id:
+                        break
+            if travels_to_stock:
+                continue
+            return {
+                "status": "rejected",
+                "message": "The actor is not at the resource location; travel there first or add a Travel node to the behavior.",
+                "failed_check": "resource_location",
+                "resource_id": resource_id,
+                "location_id": resource_location,
+                "retryable": True,
+            }
+        return None
 
     def _check_entry_conditions(self, submission: BehaviorSubmission) -> dict[str, Any] | None:
         intent = submission.intent

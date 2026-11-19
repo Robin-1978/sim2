@@ -404,6 +404,35 @@ another stock. When the Behavior is the capability itself, expose the target as
 an `agent_parameters` entry so a new stock widens the visible options instead of
 registering another tree.
 
+A withdrawal or take Behavior whose stock is chosen by the Agent must travel to
+that stock before the stock Action. Declare the stock location as a derived
+binding; Platform resolves it from the same `resource_id` target used for
+authorization:
+
+```yaml
+agent_parameters: {resource_id: {type: string, required: true}}
+parameter_bindings: {resource_location_id: resource_location}
+nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: context.resource_location_id}
+  - type: action
+    action_id: withdraw_resource
+    parameters: {resource_id: context.resource_id}
+```
+
+Platform records `resource_location_id` in the admitted intent. The Action
+runtime re-checks the stock location at start, parallel start and completion,
+so a Behavior that binds a remote stock without Travel is not executable. A
+literal stock binding may instead name a literal Travel destination. Validation
+rejects `parameter_bindings` on an Action definition, and rejects a Behavior
+node that uses `context.resource_location_id` without declaring the
+`resource_location` binding (or an explicit `resource_location_id` Agent
+parameter). A God-proposed withdrawal/take Behavior must also place Travel
+before the stock operation or declare a `resource.here` entry condition; the
+runtime still blocks a remote stock change even if content bypasses that
+validation.
+
 A composite Action that intentionally consumes or produces a literal item
 (craft, repair, trade, install, allocate) declares that verb and is exempt from
 the target-binding rule. Only the generic families `transfer_resource`,
@@ -769,17 +798,19 @@ An Action is executable mechanics. It declares:
 
 An Action definition must not contain Behavior-only fields. `entry_conditions`,
 `success_results`, `failure_results`, `outcome_events`, `agent_parameters`,
-`agent_label`, `nodes`, `estimated_minutes`, `goal_tags`, `drive_tags` and
-`requirements` belong in `followup_behavior`; validation rejects them at the
-Action level.
+`agent_label`, `nodes`, `estimated_minutes`, `goal_tags`, `drive_tags`,
+`requirements`, `parameter_bindings` and `authorization_operation` belong in
+`followup_behavior`; validation rejects them at the Action level.
 
 `world_resource_delta` changes an existing resource or material as the
 behavior's declared outcome; `resource_transfer` moves a reserved carried item
-into a stock and requires the actor to be at that stock's location. A Behavior
-using `resource_transfer` must include a Travel node to the stock or expose the
-target as an Agent parameter resolved by a generic travel/location binding.
-Use the former when the behavior itself produces or consumes public stock, and
-give it a non-zero numeric `delta` plus optional `minimum`/`maximum` bounds.
+into a stock; `resource_withdrawal` and `resource_take` remove stock. All three
+require the actor to be at the stock's location. A Behavior using one of them
+must include a Travel node to the stock or expose the target as an Agent
+parameter resolved by the `resource_location` binding.
+Use `world_resource_delta` when the behavior itself produces or consumes public
+stock, and give it a non-zero numeric `delta` plus optional `minimum`/`maximum`
+bounds.
 Platform rejects an unknown target. A positive
 delta must declare `maximum` or a `rules.resource_caps.<id>.max`; execution
 clamps to the configured cap so production cannot inflate a stock.

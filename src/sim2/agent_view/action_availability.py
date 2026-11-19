@@ -22,7 +22,7 @@ class ActionAvailabilityMixin:
             elif value == "context.safe_location_id":
                 resolved[key] = safe_location_id
             elif value == "context.resource_location_id":
-                resolved[key] = (resource_node or {}).get("location_id")
+                resolved[key] = context_values.get("resource_location_id") or (resource_node or {}).get("location_id")
             elif value == "context.resource_tag":
                 resolved[key] = (resource_node or {}).get("resource_tag")
             elif value == "context.health_location_id":
@@ -144,10 +144,11 @@ class ActionAvailabilityMixin:
                 return "the recipe is not registered"
             context["station_tags"] = list(recipe.get("station_tags", []) or [])
         actor_location = str((agent.get("initial_state") or {}).get("location_id") or "")
+        stock_effect_types = {"resource_transfer", "resource_withdrawal", "resource_take"}
         for effect in action.get("effects", []) or []:
             if not isinstance(effect, dict):
                 continue
-            if str(effect.get("type") or effect.get("op") or "") != "resource_transfer":
+            if str(effect.get("type") or effect.get("op") or "") not in stock_effect_types:
                 continue
             reference = effect.get("resource_id") or effect.get("resource")
             if isinstance(reference, str) and reference.startswith("context."):

@@ -20,15 +20,29 @@ from typing import Any, Iterator
 CONTEXT_PREFIX = "context."
 
 
-def resolve_binding(value: Any, parameters: dict[str, Any]) -> Any:
-    """Resolve every ``context.<name>`` reference in a configured value."""
+def resolve_binding(value: Any, parameters: dict[str, Any], _seen: set[str] | None = None) -> Any:
+    """Resolve every ``context.<name>`` reference in a configured value.
+
+    A node parameter may itself point at another context name (for example a
+    Travel node resolves ``context.resource_location_id`` while the effect
+    receives that node parameter as ``context.location_id``).  Resolution is
+    therefore recursive, with a guard against a self-referential binding.
+    """
 
     if isinstance(value, str) and value.startswith(CONTEXT_PREFIX):
-        return parameters.get(value.removeprefix(CONTEXT_PREFIX))
+        name = value.removeprefix(CONTEXT_PREFIX)
+        seen = set(_seen or ())
+        if name in seen:
+            return parameters.get(name)
+        seen.add(name)
+        resolved = parameters.get(name)
+        if isinstance(resolved, str) and resolved.startswith(CONTEXT_PREFIX):
+            return resolve_binding(resolved, parameters, seen)
+        return resolved
     if isinstance(value, dict):
-        return {key: resolve_binding(item, parameters) for key, item in value.items()}
+        return {key: resolve_binding(item, parameters, _seen) for key, item in value.items()}
     if isinstance(value, list):
-        return [resolve_binding(item, parameters) for item in value]
+        return [resolve_binding(item, parameters, _seen) for item in value]
     return value
 
 
@@ -137,6 +151,28 @@ def _visit_nodes(
             )
 
 
+def iter_behavior_effects(
+    behavior: dict[str, Any],
+    action_defs: dict[str, dict[str, Any]],
+    behavior_defs: dict[str, dict[str, Any]] | None = None,
+    parameters: dict[str, Any] | None = None,
+) -> Iterator[tuple[dict[str, Any], dict[str, Any]]]:
+    """Yield ``(action, resolved_effect)`` in execution order.
+
+    Node literals win over Agent parameters, while ``context.*`` references
+    are resolved from the submitted parameters.  Callers that need to know
+    whether an earlier step moves the actor to a target location can inspect
+    the yielded effects in order.
+    """
+
+    for action, bindings in iter_behavior_actions(behavior, action_defs, behavior_defs):
+        merged = _with_agent_parameters(bindings, parameters)
+        for effect in action.get("effects", []) or []:
+            if not isinstance(effect, dict):
+                continue
+            yield action, {key: resolve_binding(value, merged) for key, value in effect.items()}
+
+
 def resolve_behavior_effect(
     behavior: dict[str, Any],
     effect_type: str,
@@ -149,12 +185,7 @@ def resolve_behavior_effect(
     wanted = str(effect_type or "").casefold()
     if not wanted:
         return None
-    for action, bindings in iter_behavior_actions(behavior, action_defs, behavior_defs):
-        merged = _with_agent_parameters(bindings, parameters)
-        for effect in action.get("effects", []) or []:
-            if not isinstance(effect, dict):
-                continue
-            if str(effect.get("type") or effect.get("op") or "").casefold() != wanted:
-                continue
-            return {key: resolve_binding(value, merged) for key, value in effect.items()}
+    for _action, effect in iter_behavior_effects(behavior, action_defs, behavior_defs, parameters):
+        if str(effect.get("type") or effect.get("op") or "").casefold() == wanted:
+            return effect
     return None

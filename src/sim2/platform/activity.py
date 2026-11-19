@@ -30,7 +30,7 @@ class ActivityRuntimeMixin:
         state = dict(agent.get("initial_state") or {})
         parameters = self._context.services["execution"].resolve_activity_parameters(dict(action_info.get("parameters") or {}), state)
         parameters = self._context.services["execution"].apply_action_parameter_defaults(agent, action, parameters)
-        location_ok, location_reason = self._resource_transfer_location(agent, action, parameters, state)
+        location_ok, location_reason = self._resource_effect_location(agent, action, parameters, state)
         if not location_ok:
             return None, location_reason
         already_at_destination = bool(
@@ -101,7 +101,7 @@ class ActivityRuntimeMixin:
             condition_target = {**parameters, **(resolved_target or {})}
             if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=condition_context, world=self.store.repositories.metadata.get("world_properties", {}) or {}):
                 return False, f"precondition failed: {predicate}"
-        location_ok, location_reason = self._resource_transfer_location(agent, action, parameters, state)
+        location_ok, location_reason = self._resource_effect_location(agent, action, parameters, state)
         if not location_ok:
             return False, location_reason
         duration = self._context.services["execution"].action_duration(agent, action, parameters, state.get("location_id"))
@@ -143,20 +143,27 @@ class ActivityRuntimeMixin:
         self._context.services["events"].append("action.started", agent["id"], minute, {"execution_id": execution_id, "action_id": action_id, "duration_minutes": duration, "no_op": already_at_destination})
         return True, ""
 
-    def _resource_transfer_location(
+    def _resource_effect_location(
         self,
         agent: dict[str, Any],
         action: dict[str, Any],
         parameters: dict[str, Any],
         state: dict[str, Any],
     ) -> tuple[bool, str]:
-        """A carried item can only be deposited at the stock's location."""
+        """Every stock change requires the actor at the stock's location.
+
+        ``resource_transfer`` deposits a carried item, while
+        ``resource_withdrawal`` and ``resource_take`` remove stock.  All three
+        mutate one located world stock, so the same generic location gate
+        applies regardless of the stock name or how a Behavior binds it.
+        """
 
         actor_location = str(state.get("location_id") or "")
+        stock_effect_types = {"resource_transfer", "resource_withdrawal", "resource_take"}
         for effect in action.get("effects", []) or []:
             if not isinstance(effect, dict):
                 continue
-            if str(effect.get("type") or effect.get("op") or "") != "resource_transfer":
+            if str(effect.get("type") or effect.get("op") or "") not in stock_effect_types:
                 continue
             reference = effect.get("resource_id") or effect.get("resource")
             if isinstance(reference, str) and reference.startswith("context."):
@@ -548,6 +555,11 @@ class ActivityRuntimeMixin:
         reservations: list[dict[str, Any]] | None = None,
     ) -> list[str]:
         errors: list[str] = []
+        location_ok, location_reason = self._resource_effect_location(
+            agent, action, parameters, agent.get("initial_state") or {}
+        )
+        if not location_ok:
+            return [location_reason]
         effects = list(action.get("effects", []) or [])
         for effect in effects:
             resolved_effect = {
@@ -717,13 +729,7 @@ class ActivityRuntimeMixin:
                     if not resource or str(resource.get("entity_type") or "") not in {"resource", "material"}:
                         errors.append("resource_transfer target must be an existing resource or material")
                     else:
-                        resource_state = resource.get("initial_state") if isinstance(resource.get("initial_state"), dict) else {}
-                        resource_location = str(resource_state.get("location_id") or resource.get("location_id") or "")
-                        actor_location = str((agent.get("initial_state") or {}).get("location_id") or "")
-                        if resource_location and resource_location != actor_location:
-                            errors.append("resource_transfer actor is not at the resource location")
-                        else:
-                            self.resources._change_world_resource(resource_id, quantity, actor_id=agent.get("id"))
+                        self.resources._change_world_resource(resource_id, quantity, actor_id=agent.get("id"))
             elif effect_type == "entity_state_set":
                 entity_id = resolved_effect.get("entity_id") or resolved_effect.get("target_entity")
                 state_key = resolved_effect.get("state") or resolved_effect.get("property")

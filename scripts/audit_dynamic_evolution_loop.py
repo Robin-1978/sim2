@@ -154,7 +154,9 @@ def _probe_template(*, fallback: bool = True, director: bool = False) -> dict[st
                     "Read the season plan target_cell and submit exactly one new entity, definition or world change "
                     "that increases that cell and is reachable from Mira's current state. Do not duplicate existing "
                     "content. Any new Action that changes a stock must bind the stock as a resource_id parameter and "
-                    "use context.resource_id in its effect; one generic Action serves every stock. "
+                    "use context.resource_id in its effect; one generic Action serves every stock. A withdrawal or "
+                    "take behavior must also declare parameter_bindings.resource_location_id: resource_location on "
+                    "the followup behavior and travel to context.resource_location_id before the stock action. "
                     "If the target cell is already supported and no distinct extension exists, wait."
                 ),
             }

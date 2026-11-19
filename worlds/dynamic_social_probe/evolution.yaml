@@ -32,8 +32,11 @@ contracts:
       take_resource), one generic review_violation behavior, and the
       administrative request/approval/revocation behaviors. Every capability
       that moves a stock must bind its target as the resource_id parameter and
-      use context.resource_id in its effects; never create Take Water,
-      Withdraw Fuel or any other per-resource Action or behavior tree. You may
+      use context.resource_id in its effects; a withdrawal or take behavior
+      must also declare parameter_bindings {resource_location_id:
+      resource_location} and travel to context.resource_location_id before the
+      stock action. Never create Take Water, Withdraw Fuel or any other
+      per-resource Action or behavior tree. You may
       submit multiple proposal calls in one turn; each Action must include
       followup_behavior with assign_to. A resource_withdrawal/resource_take
       effect needs a positive amount and a scope; resource_take needs mode
@@ -101,9 +104,11 @@ contracts:
         definition.verb transfer_resource, agent_label Withdraw Resource,
         entry_conditions ['actor.alive'], estimated_minutes 2,
         agent_parameters {resource_id: {type: string, required: true,
-        max_length: 120, description: Exact visible resource name.}}, nodes
-        [{type: action, action_id: withdraw_resource, parameters:
-        {resource_id: context.resource_id}}].
+        max_length: 120, description: Exact visible resource name.}},
+        parameter_bindings {resource_location_id: resource_location}, nodes
+        [{type: action, action_id: travel_to, parameters: {location_id:
+        context.resource_location_id}}, {type: action, action_id:
+        withdraw_resource, parameters: {resource_id: context.resource_id}}].
       required_content:
         behavior_effects:
         - resource_withdrawal
@@ -123,8 +128,10 @@ contracts:
         agent_label Take Resource, entry_conditions ['actor.alive'],
         estimated_minutes 1, agent_parameters {resource_id: {type: string,
         required: true, max_length: 120, description: Exact visible resource
-        name.}}, nodes [{type: action, action_id: take_resource, parameters:
-        {resource_id: context.resource_id}}].
+        name.}}, parameter_bindings {resource_location_id: resource_location},
+        nodes [{type: action, action_id: travel_to, parameters: {location_id:
+        context.resource_location_id}}, {type: action, action_id:
+        take_resource, parameters: {resource_id: context.resource_id}}].
       required_content:
         behavior_effects:
         - resource_take

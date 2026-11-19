@@ -144,11 +144,19 @@ WITHDRAW = _action(
     behavior={
         "summary": "Withdraw one unit of a visible shared resource with authorization.",
         "agent_parameters": {"resource_id": _resource_parameter()},
-        "nodes": [{
-            "type": "action",
-            "action_id": "withdraw_resource",
-            "parameters": {"resource_id": "context.resource_id"},
-        }],
+        "parameter_bindings": {"resource_location_id": "resource_location"},
+        "nodes": [
+            {
+                "type": "action",
+                "action_id": "travel_to",
+                "parameters": {"location_id": "context.resource_location_id"},
+            },
+            {
+                "type": "action",
+                "action_id": "withdraw_resource",
+                "parameters": {"resource_id": "context.resource_id"},
+            },
+        ],
     },
 )
 
@@ -173,11 +181,19 @@ TAKE = _action(
     behavior={
         "summary": "Take one unit of a visible shared resource without authorization.",
         "agent_parameters": {"resource_id": _resource_parameter()},
-        "nodes": [{
-            "type": "action",
-            "action_id": "take_resource",
-            "parameters": {"resource_id": "context.resource_id"},
-        }],
+        "parameter_bindings": {"resource_location_id": "resource_location"},
+        "nodes": [
+            {
+                "type": "action",
+                "action_id": "travel_to",
+                "parameters": {"location_id": "context.resource_location_id"},
+            },
+            {
+                "type": "action",
+                "action_id": "take_resource",
+                "parameters": {"resource_id": "context.resource_id"},
+            },
+        ],
     },
 )
 

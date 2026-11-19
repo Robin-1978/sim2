@@ -68,11 +68,19 @@ def test_generic_verb_is_preferred_over_a_new_specific_action(tmp_path: Path) ->
                     "entry_conditions": ["actor.alive"],
                     "estimated_minutes": 1,
                     "agent_parameters": {"resource_id": {"type": "string", "required": True, "max_length": 120}},
-                    "nodes": [{
-                        "type": "action",
-                        "action_id": "Transfer Stored Resource",
-                        "parameters": {"resource_id": "context.resource_id"},
-                    }],
+                    "parameter_bindings": {"resource_location_id": "resource_location"},
+                    "nodes": [
+                        {
+                            "type": "action",
+                            "action_id": "travel_to",
+                            "parameters": {"location_id": "context.resource_location_id"},
+                        },
+                        {
+                            "type": "action",
+                            "action_id": "Transfer Stored Resource",
+                            "parameters": {"resource_id": "context.resource_id"},
+                        },
+                    ],
                     "success_results": ["resource_moved"],
                     "failure_results": ["move_failed"],
                 },

@@ -212,11 +212,19 @@ def test_a_generic_transfer_is_accepted_and_binds_at_runtime(tmp_path: Path) -> 
                     "agent_parameters": {
                         "resource_id": {"type": "string", "required": True, "max_length": 120},
                     },
-                    "nodes": [{
-                        "type": "action",
-                        "action_id": "withdraw_stored_resource",
-                        "parameters": {"resource_id": "context.resource_id"},
-                    }],
+                    "parameter_bindings": {"resource_location_id": "resource_location"},
+                    "nodes": [
+                        {
+                            "type": "action",
+                            "action_id": "travel_to",
+                            "parameters": {"location_id": "context.resource_location_id"},
+                        },
+                        {
+                            "type": "action",
+                            "action_id": "withdraw_stored_resource",
+                            "parameters": {"resource_id": "context.resource_id"},
+                        },
+                    ],
                     "success_results": ["resource_withdrawn"],
                     "failure_results": ["withdrawal_failed"],
                 },
@@ -231,3 +239,44 @@ def test_a_generic_transfer_is_accepted_and_binds_at_runtime(tmp_path: Path) -> 
         assert action["verb"] == "transfer_resource"
     finally:
         platform.close()
+
+
+def test_travel_node_derives_a_stock_location_from_the_agent_resource_binding() -> None:
+    from sim2.world.bindings import iter_behavior_effects
+
+    behavior = {
+        "id": "withdraw_resource",
+        "agent_parameters": {"resource_id": {"type": "string", "required": True}},
+        "parameter_bindings": {"resource_location_id": "resource_location"},
+        "nodes": [
+            {
+                "type": "action",
+                "action_id": "travel_to",
+                "parameters": {"location_id": "context.resource_location_id"},
+            },
+            {
+                "type": "action",
+                "action_id": "withdraw_stock",
+                "parameters": {"resource_id": "context.resource_id", "scope": "resource_withdrawal"},
+            },
+        ],
+    }
+    action_defs = {
+        **ACTION_DEFS,
+        "travel_to": {
+            "id": "travel_to",
+            "parameters": {"location_id": "string"},
+            "effects": [{"type": "location_set", "location_id": "context.location_id"}],
+        },
+    }
+
+    effects = list(
+        iter_behavior_effects(
+            behavior,
+            action_defs,
+            parameters={"resource_id": "water_reserve", "resource_location_id": "water_plant"},
+        )
+    )
+
+    assert effects[0][1]["location_id"] == "water_plant"
+    assert effects[1][1]["resource_id"] == "water_reserve"

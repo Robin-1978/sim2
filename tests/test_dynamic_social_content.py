@@ -335,9 +335,11 @@ def test_da_03_controlled_withdrawal_chain_on_generated_content(platform: Platfo
     delegation_id = str(approved["delegation_id"])
     withdrawn = submit(platform, "tomas", "withdraw_resource", "withdraw-1")
     assert withdrawn["status"] == "accepted"
+    assert platform.store.repositories.evolution.get_intent("withdraw-1")["data"]["parameters"]["resource_location_id"] == "water_plant"
     advance_until(platform, lambda: bool(events(platform, "resource.withdrawal.completed")))
     assert resource_amount(platform) == 9
     assert latest(platform, "resource.withdrawal.completed")["intent_id"] == "withdraw-1"
+    assert platform.store.repositories.entities.get_agent("tomas")["initial_state"]["location_id"] == "water_plant"
 
     revoked = submit(platform, "mira", "revoke_delegation", "revoke-1", {"delegation_id": delegation_id})
     assert revoked["status"] == "accepted"
