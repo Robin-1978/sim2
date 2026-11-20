@@ -16,6 +16,11 @@ initial_bt_ids:
   - travel
   - inspect_gate
   - repair_gate
+  - brace_gate
+  - craft_gate_brace
+  - stock_repair_kit
+  - repair_rain_catcher
+  - market_barter
   - tune_signal
   - gather_water
   - gather_shellfish

@@ -14,13 +14,24 @@ emergent_source_event_types:
 - storm.held
 - storm.flooded
 - decision.aftermath
+- gate.braced
+- repair_kit.stored
+- rain_catcher.repaired
+- rainwater.harvested
+- market.barter_completed
+- gate.repair_needed
+- confidence.low
+- confidence.solidarity
+- season.advanced
+- commons.volunteer_repair
+- civilization.milestone
 # Situation anchors are a zero-LLM narration fallback, not a plot branch.
 # They never mutate state, unlock behavior or gate goals.  An emergent Story
 # beat for the player always takes precedence; anchors only describe the
 # current validated situation when no such beat exists.
 # Situation anchors are only the opening safety net.  After this window the
 # player chapter comes exclusively from agent-generated Story beats.
-situation_anchor_window_minutes: 2880
+situation_anchor_window_minutes: 10080
 situation_anchors:
 - id: storm_watch
   title: 风暴季警戒
@@ -46,12 +57,39 @@ situation_anchors:
   goal_hint: 先补潮门，再谈海图和信号。
   trigger_events:
   - storm.breached
+- id: storm_warning
+  title: 风暴压力越过警戒线
+  summary: 风暴压力已经越过警戒线。公社还能再修一次潮门，或先让居民休养；再拖下去，第一道缺口就会变成洪水。
+  goal_hint: 先确认潮门完整性，再决定今天是否抢修。
+  trigger_events:
+  - storm.warning
+- id: rain_catcher_working
+  title: 集雨器开始工作
+  summary: 工坊屋顶的集雨器把雨水引进储水槽。公社第一次有了不靠沼泽也能补充的淡水。
+  goal_hint: 趁淡水有余量，补全海图或校准信号。
+  trigger_events:
+  - rainwater.harvested
+- id: outer_route_reopened
+  title: 外海航路重开
+  summary: 季节信号越过海面，另一处聚落沿着低潮通道抵达公社。第一季的公共维护没有白付。
+  goal_hint: 第一季结束；世界会继续运行，下一轮风暴季仍需要有人维护潮门和集雨器。
+  trigger_events:
+  - signal.route_open
 - id: storm_flooded
   title: 潮水进了码头
   summary: 风暴潮越过失守的潮门，码头和粮仓进了水。公社必须先把潮门修到能挡水。
   goal_hint: 从最低处开始修复，别让下一场风暴再灌进来。
   trigger_events:
   - storm.flooded
+# A configured ending is a read-only epilogue card.  It does not stop the
+# world: the next storm cycle and generated Story beats continue to run.
+endings:
+- id: outer_route_reopened
+  title: 第一季：外海航路重开
+  summary: 季节信号越过海面，另一处聚落沿着低潮通道抵达公社。潮门、集雨器和公共工具架一起撑过了第一季；接下来是下一轮风暴季。
+  goal_hint: 第一季已完成。世界继续运行：守住下一轮风暴，补全海图，或让新来的聚落加入公共维护。
+  condition: world.signal_reach >= 0.7
+  kind: ending
 # Story chapters are not pre-authored here.  The Story Agent receives verified
 # source events and proposes emergent beats from those facts.  Keeping this list
 # empty prevents the runtime from cycling through a fixed plot after the first

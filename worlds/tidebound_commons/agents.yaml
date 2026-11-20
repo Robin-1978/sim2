@@ -23,6 +23,10 @@ agents:
   initial_bt_ids:
   - inspect_gate
   - repair_gate
+  - brace_gate
+  - craft_gate_brace
+  - stock_repair_kit
+  - repair_rain_catcher
   - craft_repair_kit
   - craft_rope
   - gather_reed
@@ -70,7 +74,11 @@ agents:
   - gather_driftwood
   - gather_reed
   - craft_rations
+  - craft_repair_kit
   - craft_rope
+  - stock_repair_kit
+  - craft_gate_brace
+  - market_barter
   - eat_ration
   - drink_water
   - communicate
@@ -118,8 +126,12 @@ agents:
   - gather_reed
   - craft_rope
   - craft_rations
-  - tune_signal
   - craft_repair_kit
+  - stock_repair_kit
+  - repair_rain_catcher
+  - brace_gate
+  - craft_gate_brace
+  - tune_signal
   initial_state:
     location_id: commons_quay
     status: idle
@@ -160,6 +172,8 @@ agents:
   - gather_reed
   - craft_rations
   - craft_rope
+  - market_barter
+  - stock_repair_kit
   initial_state:
     location_id: gatehouse
     status: idle
@@ -173,6 +187,9 @@ agents:
   role: 码头帮工
   controller: bt
   bt_priority:
+  - drink_water
+  - eat_ration
+  - gather_water
   - gather_driftwood
   - gather_reed
   - gather_shellfish
@@ -192,8 +209,12 @@ agents:
   - gather_driftwood
   - gather_reed
   - gather_shellfish
+  - gather_water
   - craft_rope
   - craft_rations
+  - craft_repair_kit
+  - stock_repair_kit
+  - market_barter
   - eat_ration
   - drink_water
   initial_state:
@@ -228,6 +249,8 @@ agents:
   - gather_water
   - gather_reed
   - craft_rations
+  - stock_repair_kit
+  - market_barter
   - eat_ration
   - drink_water
   initial_state:

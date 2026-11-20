@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import re
 from typing import Any
 
 from ..behavior.estimator import BehaviorDurationEstimator
@@ -177,6 +178,11 @@ class BehaviorViewMixin:
             })
             return None
         behavior_context = dict(configured_context)
+        # Behavior defaults are part of the executable contract, not only a
+        # submission-time convenience.  The decision view must evaluate the
+        # same resource binding before it can offer the behavior.
+        for key, value in (bt.get("parameter_defaults") or {}).items():
+            behavior_context.setdefault(str(key), value)
         uses_source_parameter = any(
             value == "context.source_id"
             for node in self._iter_behavior_actions(bt_id)
@@ -217,11 +223,20 @@ class BehaviorViewMixin:
         condition_context.update(behavior_context)
         condition_context.update(self._interaction_context(agent, participants))
         if behavior_context.get("resource_id"):
+            resource_id = str(behavior_context["resource_id"])
             condition_context["resource.here"] = resource_is_at_location(
                 self.store,
-                str(behavior_context["resource_id"]),
+                resource_id,
                 location_id,
             )
+            try:
+                resource = self.entities_repo.get_entity(resource_id)
+            except KeyError:
+                resource = {}
+            resource_state = resource.get("initial_state") if isinstance(resource.get("initial_state"), dict) else {}
+            amount = float(resource_state.get("quantity", resource_state.get("amount", 0)) or 0)
+            condition_context["resource.amount"] = amount
+            condition_context["resource.available"] = amount > 0
         failed_conditions = [
             str(predicate)
             for predicate in bt.get("entry_conditions", []) or []
@@ -681,7 +696,7 @@ class BehaviorViewMixin:
             "steps": steps[:5],
             "time": f"{estimator.behavior_minutes(bt_id, ({'safe_location_id': safe_location_id} if safe_location_id else {}) | ({'source_id': research_sources[0]['id'], 'source_location_id': research_sources[0].get('location_id')} if source_parameter is not None and research_sources else {}), location_id)} minutes",
             "parameter_options": parameter_options,
-            "cost": list(dict.fromkeys(costs))[:6] or ["Costs are defined by the selected steps."],
+            "cost": self._merge_cost_lines(costs)[:6] or ["Costs are defined by the selected steps."],
             "impact": list(dict.fromkeys(impacts))[:3] or ["Platform applies configured effects and records events."],
             "success": [str(item).replace("_", " ") for item in bt.get("success_results", [])] or list(dict.fromkeys(action_successes))[:4] or ["Platform reports the configured success result."],
             "failure": [str(item).replace("_", " ") for item in bt.get("failure_results", [])] or list(dict.fromkeys(action_failures))[:4] or ["Platform reports a failed or interrupted step."],
@@ -692,6 +707,40 @@ class BehaviorViewMixin:
             "drive_tags": bt.get("drive_tags", []),
             "supports_drive_tags": bt.get("supports_drive_tags", []),
         }
+
+    @staticmethod
+    def _merge_cost_lines(costs: list[str]) -> list[str]:
+        """Collapse repeated per-minute costs into one readable total.
+
+        A behavior made of Travel plus a service used to show two separate
+        "Stamina ... (per minute)" lines.  They are both real, but presenting
+        them as unrelated rows made the action card look duplicated.  Keep
+        non-rate lines untouched and sum rates for the same attribute.
+        """
+
+        rates: dict[str, float] = {}
+        labels: dict[str, str] = {}
+        for line in costs:
+            text = str(line)
+            match = re.match(r"^(.+?) ([0-9]+(?:\.[0-9]+)?) \(per minute\)$", text)
+            if match:
+                key = match.group(1).casefold()
+                labels.setdefault(key, match.group(1))
+                rates[key] = rates.get(key, 0.0) + float(match.group(2))
+        combined: list[str] = []
+        emitted_rates: set[str] = set()
+        for line in costs:
+            text = str(line)
+            match = re.match(r"^(.+?) ([0-9]+(?:\.[0-9]+)?) \(per minute\)$", text)
+            if match:
+                key = match.group(1).casefold()
+                if key in emitted_rates:
+                    continue
+                emitted_rates.add(key)
+                combined.append(f"{labels[key]} {rates[key]:g} (per minute)")
+            elif text not in combined:
+                combined.append(text)
+        return combined
 
     @staticmethod
     def _target_parameter_keys(behavior: dict[str, Any], behavior_defs: dict[str, dict[str, Any]] | None = None) -> set[str]:

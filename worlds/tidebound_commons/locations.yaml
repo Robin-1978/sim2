@@ -76,3 +76,8 @@ resources:
   name: 芦苇丛
   location_id: marsh_edge
   initial_state: {location_id: marsh_edge, quantity: 20}
+- id: commons_tool_rack
+  type: resource
+  name: 公共工具架
+  location_id: gatehouse
+  initial_state: {location_id: gatehouse, quantity: 2}

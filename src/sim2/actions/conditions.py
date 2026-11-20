@@ -42,7 +42,7 @@ class ConditionEngine:
         self.public_locations_are_safe = bool(config.get("public_locations_are_safe", True))
 
     def evaluate(self, expression: str, *, agent: dict[str, Any], target: dict[str, Any] | None = None, world: dict[str, Any] | None = None, context: dict[str, Any] | None = None) -> bool:
-        expression = str(expression or "").strip()
+        expression = self._normalize_expression(expression)
         if not expression:
             return True
         try:
@@ -64,7 +64,7 @@ class ConditionEngine:
         expression is not machine-evaluable with the available projection.
         """
 
-        expression = str(expression or "").strip()
+        expression = self._normalize_expression(expression)
         if not expression:
             return True
         try:
@@ -73,6 +73,22 @@ class ConditionEngine:
         except (ExpressionSyntaxError, TypeError, ValueError):
             return None
         return None if value is _UNKNOWN else bool(value)
+
+    @staticmethod
+    def _normalize_expression(expression: str) -> str:
+        """Accept bracket notation for world properties as a readable alias.
+
+        God proposals and authored rules commonly use either
+        ``world.tide_gate_integrity`` or ``world["tide_gate_integrity"]``.
+        Both address the same flat world projection.  Normalizing here keeps
+        the parser and every caller on one machine syntax; the RuleCompiler
+        still owns visible-name aliasing for human labels.
+        """
+
+        text = str(expression or "").strip()
+        text = re.sub(r'world\[\s*"([^"]+)"\s*\]', r"world.\1", text)
+        text = re.sub(r"world\[\s*'([^']+)'\s*\]", r"world.\1", text)
+        return text
 
     def _evaluate_tree(
         self,
@@ -353,7 +369,14 @@ class ConditionEngine:
             return bool(context.get(path, target.get("available", False)))
         if path == "institution.allocation_possible":
             return bool(context.get("institution.allocation_possible", False))
-        if path in {"location.safe", "destination.safe_or_defensible", "target.available", "patient.in_clinic", "resource.available", "resource.here", "inputs.available", "recipe.available", "medicine.available", "communication.channel_open", "location.reachable"}:
+        if path == "resource.available":
+            # A bound stock predicate must fail closed.  Unbound legacy
+            # behaviors use this as "some resource is available" and keep
+            # their historical default until they declare a binding.
+            if "resource.available" in context:
+                return bool(context.get("resource.available"))
+            return True
+        if path in {"location.safe", "destination.safe_or_defensible", "target.available", "patient.in_clinic", "resource.here", "inputs.available", "recipe.available", "medicine.available", "communication.channel_open", "location.reachable"}:
             if path == "location.safe":
                 location = context.get("current_location", {})
                 safe_tags = self.location_tag_groups.get("safe", set())

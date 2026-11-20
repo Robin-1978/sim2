@@ -39,6 +39,7 @@ context_values:
   station_id: workshop
   hydration_alert_threshold: 45
   satiety_alert_threshold: 45
+  public_confidence_threshold: 0.35
 item_groups:
   water:
   - fresh_water
@@ -52,14 +53,20 @@ item_labels:
   marsh_reed: 芦苇
   repair_kit: 修理工具包
   reed_rope: 芦苇绳
+  gate_brace: 潮门支撑件
 world_property_labels:
   tide_gate_integrity: {label: 潮门完整性, unit: percent, max: 1}
+  gate_repairs: {label: 已修复次数, unit: amount, max: 3}
   signal_reach: {label: 信号覆盖, unit: percent, max: 1}
   fresh_water_reserve: {label: 淡水储备, unit: amount}
   maintenance_evidence: {label: 维护记录, unit: amount, max: 3}
+  commons_tool_kits: {label: 公共工具包, unit: amount, max: 3}
   storm_pressure: {label: 风暴压力, unit: percent, max: 1}
   storm_eta_hours: {label: 风暴倒计时, unit: hours, max: 48, alert: true}
+  storm_cycle: {label: 风暴轮次, unit: amount, max: 3}
   public_confidence: {label: 公共信心, unit: percent, max: 1}
+  rain_catcher_repaired: {label: 集雨器, unit: bool, max: 1}
+  market_trades: {label: 集市交换, unit: amount}
   public_decision_open: {label: 公共决策窗口, unit: bool, hidden: true}
   decision_rationing: {label: 昨日配给, unit: bool, hidden: true}
   decision_repair: {label: 昨日抢修, unit: bool, hidden: true}
@@ -108,8 +115,10 @@ resource_caps:
   shellfish: {max: 36, min: 0}
   marsh_reed: {max: 30, min: 0}
   driftwood: {max: 60, min: 0}
+  commons_tool_rack: {max: 3, min: 0}
 resource_property_projections:
   fresh_water: fresh_water_reserve
+  commons_tool_rack: commons_tool_kits
 world_rules:
 - id: gate_ready
   condition: world.tide_gate_integrity >= 0.8
@@ -119,7 +128,47 @@ world_rules:
   - story
   - god
   description: 潮门完整性已足以支撑一条更安全的路线。
-- id: signal_route_open
+- id: storm_warning
+  condition: world.storm_pressure >= 0.45
+  effect: storm.warning
+  event_type: storm.warning
+  wake:
+  - story
+  - god
+  description: 风暴压力越过警戒线，公社必须公开回应。
+- id: gate_repair_needed
+  condition: world.tide_gate_integrity < 0.8 and world.maintenance_evidence >= 1 and world.commons_tool_kits >= 1
+  effect: gate.repair_needed
+  event_type: gate.repair_needed
+  wake:
+  - story
+  - god
+  description: 潮门低于八成，公共工具架还有工具包；单靠一次修复挡不住风暴，需要两个人各修一次。
+- id: confidence_crisis
+  condition: world.public_confidence < 0.25
+  effect: confidence.low
+  event_type: confidence.low
+  wake:
+  - story
+  - god
+  description: 公共信心跌破协作底线。居民会拒绝需要集体配合的公共工程，先恢复信心再谈外海航路。
+- id: confidence_solidarity
+  condition: world.public_confidence >= 0.65
+  effect: confidence.solidarity
+  event_type: confidence.solidarity
+  wake:
+  - story
+  - god
+  description: 公共信心足够高，居民开始主动维护公共设施。
+- id: season_advanced
+  condition: world.storm_cycle >= 1
+  effect: season.advanced
+  event_type: season.advanced
+  wake:
+  - story
+  - god
+  description: 第一场风暴已经过去，公社进入下一轮风暴季。
+- id: outer_route_reopened
   condition: world.signal_reach >= 0.7
   effect: signal.route_open
   event_type: signal.route_open
@@ -127,37 +176,6 @@ world_rules:
   - story
   - god
   description: 稳定的信号可以为另一处聚落指路，让他们抵达公社。
-- id: storm_warning
-  condition: world.storm_pressure >= 0.7
-  effect: storm.warning
-  event_type: storm.warning
-  wake:
-  - story
-  - god
-  description: 风暴压力越过警戒线，公社必须公开回应。
-onboarding:
-- id: first_measurement
-  title: 先测量潮门
-  body: 潮门只剩两成多，第一场风暴正在靠近。先确认缺口，再决定今天的材料。
-  when: world.maintenance_evidence < 1
-  action_ref: behavior:inspect_gate
-  goal_id: inspect_tide_gate
-- id: first_decision
-  title: 今天的公共决定
-  body: 配给、抢修或休养，今天只能选一件；明早才会重新开启。
-  when: world.maintenance_evidence >= 1 and world.public_decision_open >= 1
-  goal_id: daily_public_decision
-- id: brace_the_gate
-  title: 把潮门修到八成
-  body: 只修一次只能挡水。撑过风暴需要把完整性推到 80% 以上。
-  when: world.maintenance_evidence >= 1 and world.public_decision_open < 1 and world.tide_gate_integrity < 0.8
-  action_ref: behavior:repair_gate
-  goal_id: hold_the_first_storm
-- id: wait_for_storm
-  title: 等待第一场风暴
-  body: 潮门已经加固到八成以上。风暴会检验它是否真的守得住。
-  when: world.tide_gate_integrity >= 0.8 and world.storm_eta_hours > 0
-  goal_id: hold_the_first_storm
 progression:
   stewardship:
     minimum_completed_outcomes: 2
@@ -290,7 +308,7 @@ minute_effects:
   effect:
     type: world_property_delta
     property: storm_pressure
-    delta: 0.002
+    delta: 0.004
     maximum: 1
 - id: storm_floods_the_quay
   scope: world
@@ -347,11 +365,9 @@ minute_effects:
   scope: world
   every_minutes: 1
   condition: world.storm_eta_hours <= 0
-  effect:
-    type: world_property_delta
-    property: storm_eta_hours
-    delta: 48
-    maximum: 48
+  effects:
+  - {type: world_property_delta, property: storm_eta_hours, delta: 48, maximum: 48}
+  - {type: world_property_delta, property: storm_cycle, delta: 1, maximum: 3}
 - id: aftermath_rationing
   scope: world
   every_minutes: 1440
@@ -402,6 +418,26 @@ minute_effects:
   event_summary: 新的一天开始。公社需要做一次公共决定：收紧配给、优先抢修潮门，还是让沼泽和居民休养。
   event_data:
     decision: open
+- id: rain_catcher_refills
+  scope: world
+  every_minutes: 360
+  condition: world.rain_catcher_repaired >= 1
+  effects:
+  - {type: world_resource_delta, resource_id: fresh_water, delta: 6, maximum: 30}
+  event_type: rainwater.harvested
+  event_summary: 修好的屋顶集雨器把雨水引进储水槽，公社多了一批可分配的淡水。
+  event_data:
+    amount: 6
+- id: confidence_volunteer_repair
+  scope: world
+  every_minutes: 720
+  condition: world.public_confidence >= 0.65 and world.tide_gate_integrity > 0 and world.tide_gate_integrity < 0.8
+  effects:
+  - {type: world_property_delta, property: tide_gate_integrity, delta: 0.01, maximum: 1}
+  event_type: commons.volunteer_repair
+  event_summary: 公共信心足够高，居民自发轮班加固潮门；没人需要被点名。
+  event_data:
+    amount: 0.01
 - id: hydration_damage
   scope: agent
   every_minutes: 60
@@ -459,6 +495,14 @@ social_credibility:
   reputation_attribute: reputation
   reputation_min: -100
   reputation_max: 100
+need_effects:
+  trade.completed:
+  - {type: need_delta, need: belonging, delta: 0.2}
+relationship_effects:
+  dialogue.completed:
+  - {type: relationship_delta, relation: trust, delta: 0.03}
+  trade.completed:
+  - {type: relationship_delta, relation: trust, delta: 0.05}
 civilization_progress:
   safe_channel_knowledge:
     required: 2
@@ -479,22 +523,61 @@ onboarding:
   when: world.maintenance_evidence < 1
   action_ref: behavior:inspect_gate
   goal_id: inspect_tide_gate
+  origin_overrides:
+    steward:
+      title: 先看账本，再量缺口
+      body: 你是潮务学徒。玛拉把维护账本推到你面前：先测量潮门，再决定今天的材料；你随身那只工具包要留给最关键的一次修复。
+      action_ref: behavior:inspect_gate
+      goal_id: inspect_tide_gate
+    forager:
+      title: 先量潮门，再看清浅滩
+      body: 你是沼泽采集者。潮门只剩两成多，但公社今天也得有吃的：先测量潮门，再去浅滩带回第一篓贝类，别把贝滩采空。
+      action_ref: behavior:inspect_gate
+      goal_id: inspect_tide_gate
+    chart_keeper:
+      title: 先量潮门，再验证海图
+      body: 你是海图学徒。塞琳要你先确认潮门缺口，再去观测台验证沉没海图的第一阶段；一条路线必须能被别人重复走通。
+      action_ref: behavior:inspect_gate
+      goal_id: inspect_tide_gate
+    ferry_runner:
+      title: 先量潮门，再把消息送出去
+      body: 你是渡船信使。先测量潮门，再把风暴倒计时带给玛拉；消息不能停在码头。
+      action_ref: behavior:inspect_gate
+      goal_id: inspect_tide_gate
 - id: first_decision
   title: 今天的公共决定
   body: 配给、抢修或休养，今天只能选一件；明早才会重新开启。
   when: world.maintenance_evidence >= 1 and world.public_decision_open >= 1
   goal_id: daily_public_decision
 - id: brace_the_gate
-  title: 把潮门修到八成
-  body: 只修一次只能挡水。撑过风暴需要把完整性推到 80% 以上。
-  when: world.maintenance_evidence >= 1 and world.public_decision_open < 1 and world.tide_gate_integrity < 0.8
+  title: 第一道缺口：谁先修？
+  body: 一次修复只能把潮门抬高 28%。玛拉会从公共工具架取另一只工具包；你们各修一次，才能把完整性推到 80% 以上。
+  when: world.maintenance_evidence >= 1 and world.public_decision_open < 1 and world.gate_repairs < 1 and world.tide_gate_integrity < 0.8
+  action_ref: behavior:repair_gate
+  goal_id: hold_the_first_storm
+- id: second_gate_repair
+  title: 还差一次修复
+  body: 潮门已经修复过，但完整性还低于 80%。单靠一个人修不到八成：去闸室公共工具架取工具包，或把工具包放回工具架让玛拉去修；玛拉通常会补第二道缺口，第二个人再修一次就能撑过风暴。
+  when: world.gate_repairs >= 1 and world.tide_gate_integrity < 0.8
   action_ref: behavior:repair_gate
   goal_id: hold_the_first_storm
 - id: wait_for_storm
   title: 等待第一场风暴
   body: 潮门已经加固到八成以上。风暴会检验它是否真的守得住。
-  when: world.tide_gate_integrity >= 0.8 and world.storm_eta_hours > 0
+  when: world.storm_cycle < 1 and world.tide_gate_integrity >= 0.8 and world.storm_eta_hours > 0
   goal_id: hold_the_first_storm
+- id: open_outer_route
+  title: 把航路消息送出去
+  body: 潮门已经稳住，下一步是校准季节信号；信号覆盖到 70% 时，外海航路会重新打开。集雨器可以之后再修。
+  when: world.storm_cycle >= 1 and world.tide_gate_integrity >= 0.8 and world.signal_reach < 0.7
+  action_ref: behavior:tune_signal
+  goal_id: reopen_outer_route
+- id: restore_rain_catcher
+  title: 修好屋顶集雨器
+  body: 航路消息已经送出去，工坊屋顶的集雨器还堵着；修好它能每六小时稳定补一次淡水，为下一季做准备。
+  when: world.signal_reach >= 0.7 and world.rain_catcher_repaired < 1
+  action_ref: behavior:repair_rain_catcher
+  goal_id: restore_rain_catcher
 progression:
 - id: daily_public_decision
   label: 今天的公共决策
@@ -661,7 +744,7 @@ progression:
     count: 1
 - id: hold_the_first_storm
   label: 让潮门撑过第一场风暴
-  summary: 在倒计时结束前把潮门加固到八成以上；只修一次只能挡水，撑不住风暴。
+  summary: 一次修复只能抬高 28%。第一场风暴前需要两次修复：你和玛拉各修一次，或轮流从工坊的公共工具架取工具包。
   priority: 0.94
   audience:
   - player
@@ -673,12 +756,14 @@ progression:
   - craft_rope
   - craft_repair_kit
   - gather_shellfish
+  - deposit_repair_kit
+  - withdraw_repair_kit
   complete_when:
     event_type: storm.held
     count: 1
 - id: repair_tide_gate
   label: 修复潮门
-  summary: 把采集到的材料做成工具包，真正用在潮门缺口上。
+  summary: 先测量潮门，再把材料做成工具包；公共工具架上的备用工具包可以交给下一位修复者。
   priority: 0.92
   audience:
   - player
@@ -688,14 +773,73 @@ progression:
   target_behaviors:
   - repair_gate
   support_behaviors:
+  - inspect_gate
   - gather_driftwood
   - gather_reed
   - craft_rope
   - craft_repair_kit
   - gather_shellfish
+  - deposit_repair_kit
+  - withdraw_repair_kit
   complete_when:
     event_type: tide_gate.repaired
     count: 1
+- id: stock_the_commons_tool_rack
+  label: 让公共工具架不断料
+  summary: 把修好的工具包放回工坊的公共工具架，让玛拉或下一位居民不用从零开始搓绳。
+  priority: 0.9
+  audience:
+  - player
+  - 玛拉
+  - 伊沃
+  target_behaviors:
+  - deposit_repair_kit
+  support_behaviors:
+  - craft_repair_kit
+  - gather_driftwood
+  - gather_reed
+  - craft_rope
+  complete_when:
+    event_type: repair_kit.stored
+    count: 1
+- id: restore_rain_catcher
+  label: 修好屋顶集雨器
+  summary: 用两块浮木和一段芦苇绳修好工坊屋顶的集雨器，每六小时稳定补充淡水。
+  priority: 0.84
+  audience:
+  - player
+  - 玛拉
+  - 塞琳
+  target_behaviors:
+  - repair_rain_catcher
+  support_behaviors:
+  - gather_driftwood
+  - gather_reed
+  - craft_rope
+  visible_when: world.tide_gate_integrity >= 0.56
+  complete_when:
+    event_type: rain_catcher.repaired
+    count: 1
+- id: hold_the_next_storms
+  label: 撑过接下来的风暴季
+  summary: 第一场风暴只是开始。公社还要再守住两轮风暴，才能把临时加固变成真正的季节防线。
+  priority: 0.7
+  audience:
+  - player
+  target_behaviors:
+  - repair_gate
+  - brace_gate
+  support_behaviors:
+  - repair_rain_catcher
+  - craft_gate_brace
+  - gather_driftwood
+  - gather_reed
+  - craft_rope
+  - craft_repair_kit
+  visible_when: world.storm_cycle >= 1
+  complete_when:
+    event_type: storm.held
+    count: 3
 - id: complete_drowned_chart
   label: 补全沉没海图
   summary: 在有人真正沿着海图走进沼泽之前，验证两个阶段。
@@ -715,7 +859,7 @@ progression:
     count: 2
 - id: tune_seasonal_signal
   label: 校准季节信号
-  summary: 利用修好的潮门和省下的工具包，把信号送出海岸。
+  summary: 先把潮门修到八成以上，再消耗工具包校准信号；公共信心低于 35% 时，居民不会把航路消息送出去。
   priority: 0.82
   audience:
   - player
@@ -734,7 +878,7 @@ progression:
     count: 2
 - id: reopen_outer_route
   label: 重开外海航路
-  summary: 在公社决定走向外海之前，把公共信号推到配置阈值。
+  summary: 把公共信号推到 70%。航路重开后会进入季末结局，世界仍可继续运行下一轮风暴季。
   priority: 0.76
   audience:
   - player

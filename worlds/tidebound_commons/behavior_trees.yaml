@@ -36,13 +36,16 @@ behavior_trees:
 - id: repair_gate
   agent_label: 修复潮门
   summary: 修复潮门
-  description: 带着修理工具包赶到闸室，把材料真正用在缺口上。
+  description: 带上自己的工具包，或从闸室公共工具架取一只备用包，把材料用在缺口上。
   entry_conditions:
   - actor.can_repair
   - actor.alive
-  - actor.inventory.repair_kit >= 1
+  - world.maintenance_evidence >= 1
+  - actor.inventory.repair_kit >= 1 or resource.available
   - actor.need.hydration > 40
   - actor.need.satiety > 40
+  parameter_defaults:
+    resource_id: commons_tool_rack
   estimated_minutes: 77
   cooldown_minutes: 720
   nodes:
@@ -52,7 +55,8 @@ behavior_trees:
       location_id: gatehouse
   - type: action
     action_id: repair_tide_gate
-    parameters: {}
+    parameters:
+      resource_id: context.resource_id
   success_results:
   - tide_gate_repaired
   failure_results:
@@ -68,17 +72,192 @@ behavior_trees:
   drive_tags:
   - purpose
   - belonging
-- id: tune_signal
-  agent_label: 校准季节信号
-  summary: 校准季节信号
-  description: 在潮门能撑住之后，用工具包重新校准屋顶的信号透镜。
+- id: brace_gate
+  agent_label: 临时加固潮门
+  summary: 临时加固潮门
+  description: 带上一件潮门支撑件到闸室，给潮门加一道临时支撑；不消耗工具包，但每次只能补 8%。
   entry_conditions:
   - actor.can_repair
   - actor.alive
-  - actor.inventory.repair_kit >= 1
-  - world.tide_gate_integrity >= 0.56
+  - actor.inventory.gate_brace >= 1
   - actor.need.hydration > 40
   - actor.need.satiety > 40
+  estimated_minutes: 74
+  cooldown_minutes: 360
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: gatehouse
+  - type: action
+    action_id: brace_tide_gate
+    parameters: {}
+  success_results:
+  - gate_braced
+  failure_results:
+  - repair_failed
+  - interrupted
+  outcome_events:
+  - event_type: gate.braced
+    summary: 浮木和芦苇绳被钉在潮门上，缺口多了一道临时支撑。
+  goal_tags:
+  - repair
+  - safety
+  - supply
+  drive_tags:
+  - purpose
+  - belonging
+- id: craft_gate_brace
+  agent_label: 制作潮门支撑件
+  summary: 制作潮门支撑件
+  description: 在工坊用一块浮木和一段芦苇绳做出一件临时支撑件，供下一次加固潮门使用。
+  entry_conditions:
+  - actor.can_craft
+  - actor.alive
+  - recipe.available
+  - inputs.available
+  - actor.need.hydration > 40
+  - actor.need.satiety > 40
+  estimated_minutes: 55
+  cooldown_minutes: 180
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: workshop
+  - type: action
+    action_id: craft_recipe
+    parameters:
+      recipe_id: gate_brace
+      station_id: context.station_id
+  success_results:
+  - recipe_completed
+  failure_results:
+  - crafting_failed
+  - interrupted
+  outcome_events:
+  - event_type: gate_brace.crafted
+    summary: 一件潮门临时支撑件在工坊完成。
+  goal_tags:
+  - crafting
+  - repair
+  - supply
+  drive_tags:
+  - purpose
+- id: stock_repair_kit
+  agent_label: 把工具包放上公共工具架
+  summary: 把工具包放上公共工具架
+  description: 走到闸室，把一个修理工具包放回公共工具架，让玛拉或下一位居民直接取用。
+  entry_conditions:
+  - actor.alive
+  - actor.inventory.repair_kit >= 1
+  estimated_minutes: 45
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: gatehouse
+  - type: action
+    action_id: deposit_repair_kit
+    parameters:
+      item_id: repair_kit
+      quantity: 1
+      resource_id: commons_tool_rack
+  success_results:
+  - repair_kit_stored
+  failure_results:
+  - deposit_failed
+  - interrupted
+  outcome_events:
+  - event_type: repair_kit.stored
+    summary: 一个修理工具包被放回公共工具架，任何居民都能取用。
+  goal_tags:
+  - repair
+  - supply
+  - public
+  drive_tags:
+  - belonging
+  - purpose
+- id: repair_rain_catcher
+  agent_label: 修好屋顶集雨器
+  summary: 修好屋顶集雨器
+  description: 在工坊用两块浮木和一段芦苇绳修好屋顶集雨器，之后每六小时补充淡水。
+  entry_conditions:
+  - actor.can_repair
+  - actor.alive
+  - actor.inventory.driftwood >= 2
+  - actor.inventory.reed_rope >= 1
+  - world.rain_catcher_repaired < 1
+  - actor.need.hydration > 40
+  - actor.need.satiety > 40
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: workshop
+  - type: action
+    action_id: repair_rain_catcher
+    parameters: {}
+  success_results:
+  - rain_catcher_repaired
+  failure_results:
+  - repair_failed
+  - interrupted
+  outcome_events:
+  - event_type: rain_catcher.repaired
+    summary: 屋顶集雨器的管路被疏通，工坊开始稳定收集雨水。
+  goal_tags:
+  - water
+  - building
+  - supply
+  drive_tags:
+  - purpose
+  - belonging
+- id: market_barter
+  agent_label: 在码头换芦苇绳
+  summary: 在码头换芦苇绳
+  description: 在公共码头用一份口粮和过往船户换一段现成的芦苇绳。
+  entry_conditions:
+  - actor.alive
+  - location.tag.market
+  - actor.inventory.food_ration >= 1
+  estimated_minutes: 20
+  cooldown_minutes: 60
+  nodes:
+  - type: action
+    action_id: market_barter
+    parameters: {}
+  success_results:
+  - barter_completed
+  failure_results:
+  - barter_failed
+  outcome_events:
+  - event_type: market.barter_completed
+    summary: 一份口粮在码头换回了一段现成的芦苇绳。
+  goal_tags:
+  - trade
+  - supply
+  - social
+  drive_tags:
+  - belonging
+  - purpose
+- id: tune_signal
+  agent_label: 校准季节信号
+  summary: 校准季节信号
+  description: 在潮门能撑住、公共信心足够之后，用工具包重新校准屋顶的信号透镜。
+  entry_conditions:
+  - actor.can_repair
+  - actor.alive
+  - actor.inventory.repair_kit >= 1 or resource.available
+  - world.tide_gate_integrity >= 0.8
+  - world.public_confidence >= 0.35
+  - actor.need.hydration > 40
+  - actor.need.satiety > 40
+  parameter_defaults:
+    resource_id: commons_tool_rack
   estimated_minutes: 62
   cooldown_minutes: 720
   nodes:
@@ -88,7 +267,8 @@ behavior_trees:
       location_id: gatehouse
   - type: action
     action_id: tune_signal
-    parameters: {}
+    parameters:
+      resource_id: context.resource_id
   success_results:
   - signal_tuned
   failure_results:

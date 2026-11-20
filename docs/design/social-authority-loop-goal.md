@@ -167,6 +167,21 @@ world-pack lint covers every `worlds/*/actions.yaml`.
 - G-03 marked FIXED / VERIFIED for the wake and full-loop Story path.
 - New scalability issue G-08 recorded: the 16k-char cap hides catalogs as the world grows.
 
+### 2026-11-21 潮汐公社首小时闭环
+
+- 首场风暴改为明确的两次修复路径：`tide_gate_integrity` 初始 28%，每次 `repair_gate` +28%，闸室公共工具架 `commons_tool_rack` 开局两只备用工具包；玩家与玛拉各修一次可到 84%–89%。`gate_repairs` 记录修复次数，上手提示在第一次修复后切换为“还差一次修复”，并明确写出玛拉通常会补第二道缺口。
+- 公共工具架使用通用世界资源，不新增平台特例：`resource_withdrawal` 支持 `output_item` 与 `only_if_missing`，`resource_transfer` 支持参数化 item/quantity；`resource_property_projections` 把库存投影为可见的“公共工具包”。玛拉和伊沃能在远程运行中完成 `inspect_gate` → `repair_gate` → `stock_repair_kit` 的真实流转。
+- `repair_tide_gate` 与 `repair_gate` 现在都要求 `maintenance_evidence >= 1`，“先测量再修复”从提示变成机制。
+- `public_confidence` 进入规则：低于 20% 禁止“优先抢修”，低于 35% 禁止校准信号，低于 25% 触发 `confidence.low`；高于 65% 触发 `confidence.solidarity`，居民每 12 小时自发加固潮门 1%。
+- 风暴压力改为每小时 +0.004、警戒线 0.45，`storm.warning` 在首场风暴前可触发；`storm_cycle` 记录轮次，第一轮后出现“撑过接下来的风暴季”目标。
+- 新增可修复集雨器（每 6 小时 +6 淡水）、码头口粮换芦苇绳、潮门支撑件配方与 `brace_gate`、季末结局投影；`tune_signal` 门槛从 0.56 提高到 0.80。
+- 表现层：出身专属 onboarding 覆盖、行为冷却显示为剩余时间、按属性合并 per-minute 成本行。
+- 条件引擎接受 `world["property"]` 与 `world.property` 两种写法；God 规则不再出现“叙事生效、机制不生效”。
+- 聚焦回归：`tests/test_tidebound_commons.py` 28 项、`tests/test_condition_engine.py` 3 项全部通过。全量门禁 **1477 passed**（4 个隔离 worker）；`compileall`、`git diff --check` 干净；平台基准 p95 **185.377 ms**（1000 agents / 5 runs）。
+- 远程 360 分钟最终代码审计（`deepseek-v4.1-flash`）：玛拉测量并修复，`gate.repair_needed` 规则触发，伊沃制作并放回工具包，市场交换 2 次、Story 2 条，无空轮次。第一次 720 分钟审计还记录了 5 条 Story 和 1 个 God 定义。
+- 确定性 3 天 smoke：潮门完整性 0.96、公共信心 0.77、风暴轮次 2、公共工具架 3（上限生效），无退化标记。
+- 确定性首场风暴回归：沼泽采集者玩家与玛拉各修一次，潮门 0.61 → 0.89，`storm.held`；同一角色仍受 720 分钟冷却限制。
+
 ### 2026-11-18
 
 - Phase 1-3 fresh remote verification completed and recorded in

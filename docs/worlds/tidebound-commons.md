@@ -106,9 +106,9 @@ knowledge_seed:
 | 出身 | 第一件事 | 专属目标 |
 | --- | --- | --- |
 | 潮务学徒 | 先测量潮门，再决定材料 | 搓出第一段公共用绳 |
-| 沼泽采集者 | 先看清哪片浅滩不该再动 | 带回第一篓贝类 |
-| 海图学徒 | 先验证第一个研究阶段 | 验证海图的第一个阶段 |
-| 渡船信使 | 先找一位居民交换消息 | 把倒计时送到第一位住户 |
+| 沼泽采集者 | 先量潮门，再看清浅滩 | 带回第一篓贝类 |
+| 海图学徒 | 先量潮门，再验证海图 | 验证海图的第一个阶段 |
+| 渡船信使 | 先量潮门，再把消息送出去 | 把倒计时送到第一位住户 |
 
 ## 每日公共决策
 
@@ -155,6 +155,53 @@ knowledge_seed:
 Story/God 和目标系统。网页把它显示为“上手提示”，而不是章节或剧情。步骤可以
 引用任意 `world.*` 属性，也可以只给目标 id，让玩家在目标卡里做选择。
 
+`onboarding[].origin_overrides` 允许同一个步骤按出身改写标题、正文、行动和
+目标。潮务学徒看到“先看账本，再量缺口”，沼泽采集者看到“先量潮门，再看清
+浅滩”，海图学徒和渡船信使也各有自己的第一句话；但四者仍共享同一条世界
+危机，不会把公共目标拆成四条互不相干的教程。
+
+## 第一场风暴：两次修复
+
+第一场风暴前，潮门只能靠**两次修复**推到 80% 以上：
+
+- 初始完整性 `28%`；每日“优先抢修”再给 `+5%`；
+- 每次 `repair_gate` 消耗一只修理工具包，恢复 `28%`；
+- 闸室里有公共工具架（`commons_tool_rack`），开局放着两只备用工具包；
+- 玩家和玛拉各修一次，典型结果是 `28% + 5% + 28% + 28% = 89%`；
+- 同一个角色的 `repair_gate` 冷却仍是 720 分钟，所以不能靠一个人连修两次。
+
+公共工具架是通用世界资源，不是新的平台特例：
+
+- `stock_repair_kit` 走到闸室，把随身工具包放回工具架；
+- `repair_gate` 带着自己的工具包，或直接从工具架取一只备用包；
+- `resource_property_projections` 把库存投影成可见的“公共工具包”数值；
+- 工具架上限 3，防止无限囤积。
+
+上手提示会在第一次修复后切换为“还差一次修复”，明确写出“玛拉通常会补
+第二道缺口”。这样单人玩家不会误以为 720 分钟冷却坏了，也不会把“修到八成”
+当成一次行动就能完成的目标。
+
+## 公共信心
+
+`public_confidence` 不只是叙事数值：
+
+- 低于 `25%` 时，`confidence.low` 规则唤醒 Story/God，居民拒绝需要集体
+  配合的公共工程；
+- 低于 `20%` 时，“优先抢修”不可执行；低于 `35%` 时，季节信号无法校准；
+- 修复潮门 `+8%`，风暴守住 `+5%`，休养 `+5%`，配给 `-5%`，风暴灌入 `-22%`；
+- 高于 `65%` 时，`confidence.solidarity` 触发，居民每 12 小时自发加固潮门
+  `+1%`，形成正反馈。
+
+## 集雨器与码头集市
+
+工坊屋顶的 `rain_catcher` 是可修复建筑：消耗浮木 2 + 芦苇绳 1，修好后每
+6 小时补充淡水 `+6`，并发布 `rainwater.harvested`。它把“修完潮门之后做
+什么”从纯数值修复变成一条新的淡水来源。
+
+公共码头的 `market` 标签现在有真实交换动作 `market_barter`：用一份口粮
+换一段现成的芦苇绳。它不替代腌制口粮，而是给玩家一个在风暴前用食物换
+修复材料的取舍。
+
 ## 风暴倒计时
 
 `storm_eta_hours` 是一个可见的世界属性，开局为 18 小时，之后每 48 小时一个
@@ -167,9 +214,14 @@ Story/God 和目标系统。网页把它显示为“上手提示”，而不是�
 | `>= 80%` | 潮门扛住风暴 | `storm.held` | 公共信心 `+5%` |
 
 结算后风暴压力回落、倒计时重置为 48 小时。这样“修一次”和“修到八成”是
-两个不同的决定：前者只能让公社勉强撑过，后者才能把风暴变成公共信誉的
-来源。倒计时归零不会删除角色或强制结束游戏；它降低公共设施和信心，把
-世界推进到需要修复的下一段。
+两个不同的决定：一次修复只能把大门抬到 61% 左右，风暴仍会撕开缺口；两次
+修复才能把风暴变成公共信誉的来源。倒计时归零不会删除角色或强制结束游戏；
+它降低公共设施和信心，把世界推进到需要修复的下一段。
+
+风暴压力从 `0.42` 开始，每 60 分钟 `+0.004`；超过 `0.45` 时触发
+`storm.warning`，在风暴到达前给 Story/God 和玩家一个公开回应窗口。风暴
+结算后压力回落到 `0.3`，下一轮 48 小时会再次越过警戒线。`storm_cycle`
+记录已经结算的风暴轮次，上限 3；第一轮之后“撑过接下来的风暴季”目标出现。
 
 ### 风暴后果是空间和材料，不只是数字
 
@@ -204,22 +256,32 @@ Story/God 和目标系统。网页把它显示为“上手提示”，而不是�
 | `tide_gate.ready` | 潮门已加固 |
 | `storm.held` | 潮门守住了 |
 | `storm.breached` | 潮门被撕开 |
+| `storm.warning` | 风暴压力越过警戒线 |
+| `rainwater.harvested` | 集雨器开始工作 |
+| `signal.route_open` | 外海航路重开 |
 | `storm.flooded` | 潮水进了码头 |
 
-锚点只在开局窗口内有效：`situation_anchor_window_minutes: 2880`（两天）。窗口
-结束后，`chapter` 只投影 Story 生成的 `story.beat.activated`；如果 Story 还没
-生成新内容，页面退回“世界目标”，不会再用固定旁白冒充后续剧情。
+锚点在 `situation_anchor_window_minutes: 10080`（一周）内有效，让没有模型
+的玩家也能看到完整的第一季；窗口结束后，`chapter` 只投影 Story 生成的
+`story.beat.activated`。如果 Story 还没生成新内容，页面退回“世界目标”，
+不会再用固定旁白冒充后续剧情。
+
+`story.endings` 是另一层只读投影：当 `world.signal_reach >= 0.7` 时，玩家
+章节卡显示“第一季：外海航路重开”，并标注“季末结局”。结局不会暂停世界，
+下一轮风暴、集雨器、公共工具架和 Story/God 仍会继续运行；`goal_hint` 明确
+提示下一季仍要维护潮门。
 
 优先级是：**玩家可读的 `story.beat.activated` 永远优先**；没有 Story 章节时
 才投影态势锚点。锚点不推进状态、不发放资源、不解锁行为、不阻止目标，也不影响
-Story/God 的自动演化。网页会按来源显示“自动演化”或“当前态势”，不会把兜底
-旁白伪装成固定章节。
+Story/God 的自动演化。网页会按来源显示“自动演化”“当前态势”或“季末结局”，
+不会把兜底旁白伪装成固定章节。
 
 ## 开场之后交给 Agent
 
-固定内容只覆盖开场：`situation_anchor_window_minutes: 2880` 和
-`onboarding_window_minutes: 2880` 都在两天后失效。之后的章节、地点、势力、
-规则和 NPC 目标由 Story/God 根据已验证事件继续生成。
+固定内容只覆盖开场：`situation_anchor_window_minutes: 10080`（一周）和
+`onboarding_window_minutes: 2880`（两天）。之后的上手提示失效，章节继续由
+Story/God 根据已验证事件生成；没有模型时，一周内的态势锚点仍能描述风暴、
+集雨器和航路结局。
 
 `decision.aftermath` 也被列为 Story/God 的 external 唤醒源：每天决策的后果
 会进入自动演化，而不是只改一个数值。God 仍然可以通过通用提案增加新地点、
@@ -234,7 +296,9 @@ emergent 来源；真正的章节由 Story Agent 在事件唤醒时提出（零�
 
 - Story 在 `gate.inspected`、`research.completed`、`tide_gate.repaired`、
   `signal.tuned`、`signal.route_open`、`storm.warning`、`storm.breached`、
-  `storm.held`、`storm.flooded`、资源收获和对话后被唤醒；`count`、`every`、
+  `storm.held`、`storm.flooded`、`rain_catcher.repaired`、`rainwater.harvested`、
+  `market.barter_completed`、`confidence.low`、`confidence.solidarity`、
+  `season.advanced`、资源收获和对话后被唤醒；`count`、`every`、
   `distinct_by` 抑制同一次收成被反复讲述。风暴结算事件由世界作用域分钟效果
   产生，因此在 evolution 中声明为 external producer。
 - God 在公共工程、资源压力和 `world.stagnation` 时被唤醒，并按
@@ -299,8 +363,9 @@ python scripts/audit_world_evolution.py \
 ```
 
 重点回归测试覆盖：包验证、地点/资源/配方数量、资源再生上限、公开目标投影、
-`story.beats == []`、Story/God 自动唤醒、God cadence 与 stagnation 配置，以及
-一次真实 `inspect_gate` 后自动生成 ready Story 任务。
+`story.beats == []`、Story/God 自动唤醒、God cadence 与 stagnation 配置、
+第一次测量门槛、公共工具架与两次修复路径、公共信心门槛、集雨器/码头集市、
+风暴警戒、季末结局，以及一次真实 `inspect_gate` 后自动生成 ready Story 任务。
 
 ## 地图扩展
 

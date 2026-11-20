@@ -38,7 +38,7 @@ def test_tidebound_commons_is_a_balanced_non_village_package(tmp_path: Path) -> 
     assert description["world_id"] == "tidebound_commons"
     assert description["counts"]["agents"] == 6
     assert description["counts"]["locations"] == 6
-    assert description["counts"]["recipes"] == 3
+    assert description["counts"]["recipes"] == 4
 
     rules = yaml.safe_load((WORLD / "rules.yaml").read_text(encoding="utf-8"))
     storm_label = rules["world_property_labels"]["storm_eta_hours"]
@@ -274,7 +274,7 @@ def test_tidebound_progression_projection_exposes_ready_and_supporting_steps(tmp
         assert "behavior:inspect_gate" in goals["inspect_tide_gate"]["ready_behavior_refs"]
         assert goals["repair_tide_gate"]["status"] == "needs_support"
         assert "打捞浮木" in goals["repair_tide_gate"]["support_behaviors"]
-        assert any("repair kit" in item.lower() for item in goals["repair_tide_gate"]["missing_requirements"])
+        assert any("maintenance" in item.lower() for item in goals["repair_tide_gate"]["missing_requirements"])
         selene = platform.decision_view("selene")
         chart = next(item for item in selene["progression_goals"] if item["id"] == "complete_drowned_chart")
         assert chart["status"] == "ready"
@@ -619,6 +619,7 @@ def test_storm_outcomes_close_space_and_reduce_materials(tmp_path: Path) -> None
             storm_pressure=1.0,
             tide_gate_integrity=0.5,
             public_confidence=0.5,
+            maintenance_evidence=1,
         )
         platform.step()
 
@@ -767,15 +768,17 @@ def test_opening_anchors_expire_but_agent_story_continues(tmp_path: Path) -> Non
     platform = service.platform
     try:
         assert platform.enter_player("hero", "forager", name="试玩者")["status"] == "accepted"
+        story = yaml.safe_load((WORLD / "story.yaml").read_text(encoding="utf-8"))
+        expire_minute = int(story["situation_anchor_window_minutes"]) + 1
         with platform.store.transaction():
-            platform.store.repositories.metadata.set("world_minute", 2881)
+            platform.store.repositories.metadata.set("world_minute", expire_minute)
         view = service.player_view("hero")
         assert view["chapter"] is None
         assert view["onboarding"] is None
 
         with platform.store.transaction():
             platform.store.repositories.events.append_event(
-                "story.beat.activated", "story", 2881,
+                "story.beat.activated", "story", expire_minute,
                 {
                     "beat_id": "later_agent_chapter",
                     "title": "风暴之后的第一次远行",
@@ -788,3 +791,217 @@ def test_opening_anchors_expire_but_agent_story_continues(tmp_path: Path) -> Non
         assert chapter["title"] == "风暴之后的第一次远行"
     finally:
         service.close()
+
+
+def test_first_storm_coop_path_uses_the_public_tool_rack(tmp_path: Path) -> None:
+    """The intended first storm is two repairs: player and Mara, one each."""
+
+    from sim2.api.service import ControlService
+
+    service = ControlService(create_instance(WORLD, "tidebound-coop-storm", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "forager", name="试玩者")["status"] == "accepted"
+        _start_and_finish(platform, "hero", "inspect_gate", "coop-inspect")
+        _start_and_finish(platform, "hero", "repair_priority_today", "coop-decision")
+        _start_and_finish(platform, "hero", "repair_gate", "coop-player-repair")
+
+        properties = platform.store.repositories.metadata.get("world_properties")
+        assert round(properties["tide_gate_integrity"], 3) == 0.61
+        assert properties["gate_repairs"] == 1
+        assert platform.store.repositories.entities.get_entity("commons_tool_rack")["initial_state"]["quantity"] == 1
+        assert service.player_view("hero")["onboarding"]["id"] == "second_gate_repair"
+        assert platform.store.repositories.events.recent_events_by_types(["gate.repair_needed"], limit=10)
+
+        _start_and_finish(platform, "mara", "repair_gate", "coop-mara-repair")
+        properties = platform.store.repositories.metadata.get("world_properties")
+        assert round(properties["tide_gate_integrity"], 3) == 0.89
+        assert properties["gate_repairs"] == 2
+        assert platform.store.repositories.entities.get_entity("commons_tool_rack")["initial_state"]["quantity"] == 0
+
+        _set_world_properties(platform, storm_eta_hours=0, storm_pressure=1.0)
+        platform.step()
+        assert any(
+            event["event_type"] == "storm.held"
+            for event in platform.store.repositories.events.recent_events(limit=40)
+        )
+    finally:
+        service.close()
+
+
+def test_public_confidence_gates_outer_route_and_public_repair(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "tidebound-confidence-gate", tmp_path / "runtime"))
+    try:
+        assert platform.enter_player("hero", "steward", name="试玩者")["status"] == "accepted"
+        _set_world_properties(
+            platform,
+            public_confidence=0.1,
+            public_decision_open=1,
+            tide_gate_integrity=0.9,
+            signal_reach=0.1,
+            maintenance_evidence=1,
+        )
+        rejected = _start(platform, "hero", "repair_priority_today", "confidence-public")
+        assert rejected["status"] == "rejected"
+        rejected = _start(platform, "hero", "tune_signal", "confidence-signal")
+        assert rejected["status"] == "rejected"
+
+        # Repairing the gate raises confidence; only then can the route message
+        # be calibrated.  The gate threshold is 0.8, not the old 0.56.
+        _set_world_properties(platform, public_confidence=0.4, tide_gate_integrity=0.7)
+        agent = platform.store.repositories.entities.get_agent("hero")
+        agent["inventory"]["repair_kit"] = 2
+        platform.store.repositories.entities.put_agent("hero", agent, agent["name"])
+        _start_and_finish(platform, "hero", "repair_gate", "confidence-repair")
+        assert round(platform.store.repositories.metadata.get("world_properties")["tide_gate_integrity"], 3) == 0.98
+
+        _start_and_finish(platform, "hero", "tune_signal", "confidence-tune")
+        assert round(platform.store.repositories.metadata.get("world_properties")["signal_reach"], 3) == 0.36
+    finally:
+        platform.close()
+
+
+def test_rain_catcher_market_and_storm_warning_are_real_world_actions(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "tidebound-rain-market-warning", tmp_path / "runtime"))
+    try:
+        assert platform.enter_player("hero", "forager", name="试玩者")["status"] == "accepted"
+
+        _start_and_finish(platform, "hero", "market_barter", "market-barter")
+        hero = platform.store.repositories.entities.get_agent("hero")
+        assert hero["inventory"]["reed_rope"] == 1
+        assert platform.store.repositories.metadata.get("world_properties")["market_trades"] == 1
+
+        hero["inventory"].update({"driftwood": 2, "reed_rope": 1, "repair_kit": 1})
+        platform.store.repositories.entities.put_agent("hero", hero, hero["name"])
+        _start_and_finish(platform, "hero", "repair_rain_catcher", "rain-catcher")
+        properties = platform.store.repositories.metadata.get("world_properties")
+        assert properties["rain_catcher_repaired"] == 1
+        assert platform.store.repositories.entities.get_entity("rain_catcher")["initial_state"]["status"] == "working"
+
+        fresh_before = platform.store.repositories.entities.get_entity("fresh_water")["initial_state"]["quantity"]
+        for _ in range(360):
+            platform.step()
+        assert platform.store.repositories.entities.get_entity("fresh_water")["initial_state"]["quantity"] > fresh_before
+        assert any(
+            event["event_type"] == "rainwater.harvested"
+            for event in platform.store.repositories.events.recent_events_by_types(["rainwater.harvested"], limit=10)
+        )
+
+        _set_world_properties(platform, storm_pressure=0.45)
+        platform.step()
+        assert any(
+            event["event_type"] == "storm.warning"
+            for event in platform.store.repositories.events.recent_events(limit=40)
+        )
+    finally:
+        platform.close()
+
+
+def test_origin_onboarding_ending_chapter_and_merged_cost_lines(tmp_path: Path) -> None:
+    from sim2.api.service import ControlService
+
+    service = ControlService(create_instance(WORLD, "tidebound-presentation", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "chart_keeper", name="试玩者")["status"] == "accepted"
+        onboarding = service.player_view("hero")["onboarding"]
+        assert "海图" in onboarding["body"]
+        assert onboarding["title"] == "先量潮门，再验证海图"
+
+        view = service.player_view("hero")
+        gather = next(item for item in view["actions"] if item["ref"] == "behavior:gather_water")
+        stamina_lines = [line for line in gather["cost"] if "Stamina" in line]
+        assert len(stamina_lines) == 1
+        assert "0.3" in stamina_lines[0]
+
+        _set_world_properties(platform, signal_reach=0.7)
+        chapter = service.player_view("hero")["chapter"]
+        assert chapter["kind"] == "ending"
+        assert chapter["ended"] is True
+        assert "外海航路" in chapter["title"]
+    finally:
+        service.close()
+
+
+def test_gate_brace_recipe_feeds_a_non_kit_repair(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "tidebound-gate-brace", tmp_path / "runtime"))
+    try:
+        assert platform.enter_player("hero", "forager", name="试玩者")["status"] == "accepted"
+        hero = platform.store.repositories.entities.get_agent("hero")
+        hero["inventory"].update({"driftwood": 1, "reed_rope": 1})
+        platform.store.repositories.entities.put_agent("hero", hero, hero["name"])
+
+        _start_and_finish(platform, "hero", "craft_gate_brace", "brace-craft")
+        hero = platform.store.repositories.entities.get_agent("hero")
+        assert hero["inventory"]["gate_brace"] == 1
+
+        _start_and_finish(platform, "hero", "brace_gate", "brace-use")
+        properties = platform.store.repositories.metadata.get("world_properties")
+        assert round(properties["tide_gate_integrity"], 3) == 0.36
+        assert platform.store.repositories.entities.get_agent("hero")["inventory"].get("gate_brace", 0) == 0
+    finally:
+        platform.close()
+
+
+def test_repair_requires_a_measurement_first(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "tidebound-measure-first", tmp_path / "runtime"))
+    try:
+        assert platform.enter_player("hero", "steward", name="试玩者")["status"] == "accepted"
+        hero = platform.store.repositories.entities.get_agent("hero")
+        hero["inventory"]["repair_kit"] = 1
+        platform.store.repositories.entities.put_agent("hero", hero, hero["name"])
+
+        rejected = _start(platform, "hero", "repair_gate", "no-measure")
+        assert rejected["status"] == "rejected"
+        assert rejected.get("condition") == "world.maintenance_evidence >= 1"
+
+        _start_and_finish(platform, "hero", "inspect_gate", "measure-first")
+        assert platform.store.repositories.metadata.get("world_properties")["maintenance_evidence"] >= 1
+        _start_and_finish(platform, "hero", "repair_gate", "measured-repair")
+        assert platform.store.repositories.metadata.get("world_properties")["gate_repairs"] == 1
+    finally:
+        platform.close()
+
+
+def test_public_tool_rack_respects_its_capacity(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "tidebound-rack-cap", tmp_path / "runtime"))
+    try:
+        assert platform.enter_player("hero", "steward", name="试玩者")["status"] == "accepted"
+        with platform.store.transaction():
+            rack = platform.store.repositories.entities.get_entity("commons_tool_rack")
+            rack["initial_state"]["quantity"] = 3
+            platform.store.repositories.entities.put_entity(
+                "commons_tool_rack", "resource", rack["name"], {"initial_state": rack["initial_state"]}
+            )
+            properties = dict(platform.store.repositories.metadata.get("world_properties") or {})
+            properties["commons_tool_kits"] = 3
+            platform.store.repositories.metadata.set("world_properties", properties)
+
+        rejected = _start(platform, "hero", "stock_repair_kit", "rack-full")
+        assert rejected["status"] == "rejected"
+        assert platform.store.repositories.entities.get_entity("commons_tool_rack")["initial_state"]["quantity"] == 3
+        assert platform.store.repositories.entities.get_agent("hero")["inventory"]["repair_kit"] == 1
+    finally:
+        platform.close()
+
+
+def test_repair_works_from_a_carried_kit_when_the_rack_is_empty(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "tidebound-empty-rack", tmp_path / "runtime"))
+    try:
+        assert platform.enter_player("hero", "steward", name="试玩者")["status"] == "accepted"
+        _start_and_finish(platform, "hero", "inspect_gate", "empty-rack-inspect")
+        with platform.store.transaction():
+            rack = platform.store.repositories.entities.get_entity("commons_tool_rack")
+            rack["initial_state"]["quantity"] = 0
+            platform.store.repositories.entities.put_entity(
+                "commons_tool_rack", "resource", rack["name"], {"initial_state": rack["initial_state"]}
+            )
+            properties = dict(platform.store.repositories.metadata.get("world_properties") or {})
+            properties["commons_tool_kits"] = 0
+            platform.store.repositories.metadata.set("world_properties", properties)
+
+        _start_and_finish(platform, "hero", "repair_gate", "empty-rack-repair")
+        assert round(platform.store.repositories.metadata.get("world_properties")["tide_gate_integrity"], 3) == 0.56
+        assert platform.store.repositories.entities.get_agent("hero")["inventory"].get("repair_kit", 0) == 0
+    finally:
+        platform.close()

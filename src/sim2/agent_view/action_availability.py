@@ -63,10 +63,20 @@ class ActionAvailabilityMixin:
             or parameters.get("resource_tag")
         )
         bound_resource_id = str(self.targets.canonical_id(str(bound_resource)) or bound_resource) if bound_resource else ""
+        resource_amount = 0.0
+        if bound_resource_id:
+            try:
+                resource_entity = self.entities_repo.get_entity(bound_resource_id)
+            except KeyError:
+                resource_entity = {}
+            resource_state = resource_entity.get("initial_state") if isinstance(resource_entity.get("initial_state"), dict) else {}
+            resource_amount = float(resource_state.get("quantity", resource_state.get("amount", 0)) or 0)
         context = {
             "current_location": location,
             "location_id": (agent.get("initial_state") or {}).get("location_id"),
             "resource_id": bound_resource_id,
+            "resource.amount": resource_amount,
+            "resource.available": resource_amount > 0,
             "resource.here": resource_is_at_location(
                 self.store,
                 bound_resource_id,

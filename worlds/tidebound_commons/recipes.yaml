@@ -37,6 +37,29 @@ recipes:
   - op: capability.add_xp
     capability: crafting
     value: 0.02
+- id: gate_brace
+  name: 潮门临时支撑件
+  station_tags:
+  - craft
+  inputs:
+  - item: driftwood
+    quantity: 1
+  - item: reed_rope
+    quantity: 1
+  outputs:
+  - item: gate_brace
+    quantity: 1
+  requires:
+  - capability: crafting
+    min_level: 0.2
+  duration_minutes: 35
+  limits:
+  - item: gate_brace
+    max_total: 4
+  effects:
+  - op: capability.add_xp
+    capability: crafting
+    value: 0.02
 - id: repair_kit
   name: 潮门修理工具包
   station_tags:

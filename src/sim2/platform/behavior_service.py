@@ -61,6 +61,25 @@ class BehaviorExecutionService(PlatformService):
             "day_phase": world_time_view(self.store).get("day_phase"),
             "conflict": {"available": conflict_available},
         }
+        resource_ref = (
+            parameters.get("resource_id")
+            or parameters.get("target_resource")
+            or parameters.get("resource")
+        )
+        if resource_ref:
+            resource_id = str(self.targets.canonical_id(str(resource_ref)) or resource_ref)
+            try:
+                resource = self.store.repositories.entities.get_entity(resource_id)
+            except KeyError:
+                resource = {}
+            resource_state = resource.get("initial_state") if isinstance(resource.get("initial_state"), dict) else {}
+            amount = float(resource_state.get("quantity", resource_state.get("amount", 0)) or 0)
+            result.update({
+                "resource_id": resource_id,
+                "resource.amount": amount,
+                "resource.available": amount > 0,
+                "resource.here": bool(resource) and str(resource_state.get("location_id") or resource.get("location_id") or "") == str(location_id or ""),
+            })
         result.update(configured_context_values(self.store.repositories.metadata.get("rules", {}) or {}, agent))
         return result
 

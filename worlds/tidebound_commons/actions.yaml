@@ -113,9 +113,10 @@ actions:
 - id: repair_tide_gate
   verb: repair
   version: 1
-  description: 消耗一个修理工具包，恢复公共潮门。
-  parameters: {}
-  preconditions: [actor.can_repair, actor.alive, actor.inventory.repair_kit >= 1, world.tide_gate_integrity < 1]
+  description: 先测量，再消耗一个修理工具包（自己带着，或从闸室的公共工具架取），恢复公共潮门。
+  parameters: {resource_id: string}
+  parameter_defaults: {resource_id: commons_tool_rack}
+  preconditions: [actor.can_repair, actor.alive, location.tag.infrastructure, actor.inventory.repair_kit >= 1 or resource.available, world.maintenance_evidence >= 1, world.tide_gate_integrity < 1]
   duration: {minutes: 75}
   costs:
     reserve: {}
@@ -124,8 +125,10 @@ actions:
     on_failure: {}
     refund: {}
   effects:
+  - {type: resource_withdrawal, resource_id: context.resource_id, amount: 1, scope: resource_withdrawal, output_item: repair_kit, only_if_missing: true}
   - {type: inventory.consume_item, item: repair_kit, quantity: 1}
   - {type: world_property_delta, property: tide_gate_integrity, delta: 0.28, maximum: 1}
+  - {type: world_property_delta, property: gate_repairs, delta: 1, maximum: 3}
   - {type: world_property_delta, property: public_confidence, delta: 0.08, maximum: 1}
   - {type: entity_state_set, entity_id: tide_gate, state: repaired, value: true}
   - {type: entity_state_set, entity_id: commons_quay, state: open, value: true}
@@ -219,9 +222,10 @@ actions:
 - id: tune_signal
   verb: repair
   version: 1
-  description: 在潮门稳定后，消耗一个修理工具包校准季节信号透镜。
-  parameters: {}
-  preconditions: [actor.can_repair, actor.alive, actor.inventory.repair_kit >= 1, world.tide_gate_integrity >= 0.56, world.signal_reach < 0.7]
+  description: 在潮门稳定、公共信心足够后，消耗一个修理工具包（自己带着，或从闸室工具架取）校准季节信号透镜。
+  parameters: {resource_id: string}
+  parameter_defaults: {resource_id: commons_tool_rack}
+  preconditions: [actor.can_repair, actor.alive, location.tag.infrastructure, actor.inventory.repair_kit >= 1 or resource.available, world.tide_gate_integrity >= 0.8, world.public_confidence >= 0.35, world.signal_reach < 0.7]
   duration: {minutes: 60}
   costs:
     reserve: {}
@@ -230,12 +234,122 @@ actions:
     on_failure: {}
     refund: {}
   effects:
+  - {type: resource_withdrawal, resource_id: context.resource_id, amount: 1, scope: resource_withdrawal, output_item: repair_kit, only_if_missing: true}
   - {type: inventory.consume_item, item: repair_kit, quantity: 1}
   - {type: world_property_delta, property: signal_reach, delta: 0.26, maximum: 1}
   - {type: entity_state_set, entity_id: signal_lens, state: tuned, value: true}
   success: {condition: actor.alive, result: signal_tuned}
   failure: {condition: actor.incapacitated, result: tuning_failed}
   interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: deposit_repair_kit
+  verb: transfer_resource
+  version: 1
+  description: 把随身的一件修理材料放回公共工具架，让任何居民都能取用。
+  parameters: {item_id: string, quantity: number, resource_id: string}
+  parameter_defaults: {item_id: repair_kit, quantity: 1, resource_id: commons_tool_rack}
+  preconditions: [actor.alive, inventory.available, world.commons_tool_kits < 3]
+  duration: {minutes: 10}
+  costs:
+    reserve: {item_parameter: item_id, item_quantity_parameter: quantity}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: resource_transfer, resource_id: context.resource_id, quantity_parameter: quantity, source_item_parameter: item_id}
+  success: {condition: actor.alive, result: repair_kit_stored}
+  failure: {condition: actor.incapacitated, result: deposit_failed}
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: withdraw_repair_kit
+  verb: transfer_resource
+  version: 1
+  description: 从公共工具架取一个修理工具包；已经带着工具包时不会重复拿取。
+  parameters: {resource_id: string}
+  parameter_defaults: {resource_id: commons_tool_rack}
+  preconditions: [actor.alive]
+  duration: {minutes: 10}
+  costs: {reserve: {}, per_minute: {}, on_success: {}, on_failure: {}, refund: {}}
+  effects:
+  - {type: resource_withdrawal, resource_id: context.resource_id, amount: 1, scope: resource_withdrawal, output_item: repair_kit, only_if_missing: true}
+  success: {condition: actor.alive, result: repair_kit_withdrawn}
+  failure: {condition: actor.incapacitated, result: withdrawal_failed}
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: repair_rain_catcher
+  verb: repair
+  version: 1
+  description: 用浮木和芦苇绳修好工坊屋顶的集雨器，让它每六小时补充淡水。
+  parameters: {}
+  preconditions: [actor.can_repair, actor.alive, location.tag.craft, actor.inventory.driftwood >= 2, actor.inventory.reed_rope >= 1, world.rain_catcher_repaired < 1]
+  duration: {minutes: 60}
+  costs:
+    reserve: {driftwood: 2, reed_rope: 1}
+    per_minute: {stamina: 0.16}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: entity_state_set, entity_id: rain_catcher, state: repaired, value: true}
+  - {type: entity_state_set, entity_id: rain_catcher, state: status, value: working}
+  - {type: world_property_delta, property: rain_catcher_repaired, delta: 1, maximum: 1}
+  - {type: world_property_delta, property: public_confidence, delta: 0.03, maximum: 1}
+  - {type: world_resource_delta, resource_id: fresh_water, delta: 4, maximum: 30}
+  success: {condition: actor.alive, result: rain_catcher_repaired}
+  failure: {condition: actor.incapacitated, result: repair_failed}
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: brace_tide_gate
+  verb: repair
+  version: 1
+  description: 用一件潮门支撑件给潮门加一道临时支撑，不消耗修理工具包。
+  parameters: {}
+  preconditions: [actor.can_repair, actor.alive, location.tag.infrastructure, actor.inventory.gate_brace >= 1, world.tide_gate_integrity < 1]
+  duration: {minutes: 50}
+  costs:
+    reserve: {gate_brace: 1}
+    per_minute: {stamina: 0.18}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_delta, property: tide_gate_integrity, delta: 0.08, maximum: 1}
+  - {type: world_property_delta, property: public_confidence, delta: 0.02, maximum: 1}
+  success: {condition: actor.alive, result: gate_braced}
+  failure: {condition: actor.incapacitated, result: repair_failed}
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: market_barter
+  verb: trade
+  version: 1
+  description: 在公共码头用一份口粮和过往船户换一段现成的芦苇绳。
+  parameters: {}
+  preconditions: [actor.alive, location.tag.market, actor.inventory.food_ration >= 1]
+  duration: {minutes: 20}
+  costs:
+    reserve: {food_ration: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: reed_rope, quantity: 1}
+  - {type: world_property_delta, property: market_trades, delta: 1, maximum: 99}
+  - {type: need_delta, need: belonging, delta: 0.1}
+  success: {condition: actor.alive, result: barter_completed}
+  failure: {condition: actor.incapacitated, result: barter_failed}
+  interrupt_policy: cancel
   interaction_policy: allow
   kind: atomic
   executor: effect_pipeline
@@ -272,7 +386,7 @@ actions:
   version: 1
   description: 今日公共决策：把劳力集中到潮门，先补最危险的缺口。
   parameters: {}
-  preconditions: [actor.alive, world.public_decision_open >= 1]
+  preconditions: [actor.alive, world.public_decision_open >= 1, world.public_confidence >= 0.2]
   duration: {minutes: 90}
   costs:
     reserve: {}

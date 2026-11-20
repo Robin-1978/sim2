@@ -11,13 +11,18 @@ from .authoring import AuthoringService
 
 
 def _player_chapter(platform: Platform, player_id: str) -> dict[str, Any] | None:
-    """Prefer an emergent Story beat; otherwise project one situation anchor.
+    """Prefer a configured ending, then an emergent Story beat, then an anchor.
 
     A situation anchor is not a plot branch.  It is a fixed, read-only
     narration of a validated public fact used when no model-driven Story beat
-    exists.  It never mutates world state or gates behavior.  Story beats take
-    precedence for the audience they were addressed to.
+    exists.  It never mutates world state or gates behavior.  A configured
+    season ending stays visible after the final route opens; Story beats take
+    precedence over opening anchors for the audience they were addressed to.
     """
+
+    ending = _configured_ending(platform, player_id)
+    if ending is not None:
+        return ending
 
     events_repo = platform.store.repositories.events
     for event in events_repo.recent_events_by_types(["story.beat.activated"], limit=24):
@@ -76,6 +81,45 @@ def _player_chapter(platform: Platform, player_id: str) -> dict[str, Any] | None
     return None
 
 
+def _configured_ending(platform: Platform, player_id: str) -> dict[str, Any] | None:
+    """Return the first configured season ending whose condition is true."""
+
+    story = platform.store.repositories.metadata.get("story", {}) or {}
+    root = story.get("story", story) if isinstance(story, dict) else {}
+    endings = root.get("endings") or []
+    if not isinstance(endings, list) or not endings:
+        return None
+    try:
+        agent = platform.store.repositories.entities.get_agent(player_id)
+    except KeyError:
+        agent = {}
+    world = platform.store.repositories.metadata.get("world_properties", {}) or {}
+    for ending in endings:
+        if not isinstance(ending, dict) or not ending.get("id"):
+            continue
+        condition = str(ending.get("condition") or "").strip()
+        try:
+            visible = not condition or platform.view.conditions.evaluate(
+                condition, agent=agent, target={}, world=world, context={},
+            )
+        except Exception:
+            visible = False
+        if not visible:
+            continue
+        return {
+            "id": str(ending["id"]),
+            "title": str(ending.get("title") or ending["id"]),
+            "summary": str(ending.get("summary") or ""),
+            "goal_hint": str(ending.get("goal_hint") or ""),
+            "event_type": "story.ending",
+            "event_id": 0,
+            "world_minute": int(platform.store.repositories.metadata.get("world_minute", 0) or 0),
+            "kind": str(ending.get("kind") or "ending"),
+            "ended": True,
+        }
+    return None
+
+
 def _onboarding_step(platform: Platform, agent: dict[str, Any]) -> dict[str, Any] | None:
     """Project the first matching configurable onboarding step for one player."""
 
@@ -101,12 +145,16 @@ def _onboarding_step(platform: Platform, agent: dict[str, Any]) -> dict[str, Any
             visible = False
         if not visible:
             continue
+        override = raw.get("origin_overrides") if isinstance(raw.get("origin_overrides"), dict) else {}
+        origin_id = str(agent.get("origin_id") or "")
+        chosen = override.get(origin_id) if isinstance(override.get(origin_id), dict) else {}
+        payload = {**raw, **chosen}
         return {
-            "id": str(raw["id"]),
-            "title": str(raw.get("title") or raw["id"]),
-            "body": str(raw.get("body") or ""),
-            "action_ref": str(raw.get("action_ref") or ""),
-            "goal_id": str(raw.get("goal_id") or ""),
+            "id": str(payload["id"]),
+            "title": str(payload.get("title") or payload["id"]),
+            "body": str(payload.get("body") or ""),
+            "action_ref": str(payload.get("action_ref") or ""),
+            "goal_id": str(payload.get("goal_id") or ""),
             "step": index + 1,
             "total": len([item for item in steps if isinstance(item, dict) and item.get("id")]),
         }

@@ -2,9 +2,14 @@ world_state:
   properties:
     storm_eta_hours: 18
     storm_pressure: 0.42
+    storm_cycle: 0
     public_decision_open: 1
     tide_gate_integrity: 0.28
+    gate_repairs: 0
     public_confidence: 0.48
     signal_reach: 0.18
     fresh_water_reserve: 20
     maintenance_evidence: 0
+    commons_tool_kits: 2
+    rain_catcher_repaired: 0
+    market_trades: 0

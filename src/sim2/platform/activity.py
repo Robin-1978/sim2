@@ -80,6 +80,26 @@ class ActivityRuntimeMixin:
             "recent_event_types": self._context.services["evolution"].recent_event_types(),
             "day_phase": world_time_view(self.store).get("day_phase"),
         }
+        bound_resource = (
+            parameters.get("resource_id")
+            or parameters.get("target_resource")
+            or parameters.get("resource")
+            or parameters.get("resource_tag")
+        )
+        if bound_resource:
+            resource_id = str(self.targets.canonical_id(str(bound_resource)) or bound_resource)
+            try:
+                resource = self.store.repositories.entities.get_entity(resource_id)
+            except KeyError:
+                resource = {}
+            resource_state = resource.get("initial_state") if isinstance(resource.get("initial_state"), dict) else {}
+            amount = float(resource_state.get("quantity", resource_state.get("amount", 0)) or 0)
+            condition_context.update({
+                "resource_id": resource_id,
+                "resource.amount": amount,
+                "resource.available": amount > 0,
+                "resource.here": resource_is_at_location(self.store, resource_id, location_id),
+            })
         condition_context.update(configured_context_values(self.store.repositories.metadata.get("rules", {}) or {}, agent))
         condition_context.update(self._institution_action_context(action, parameters))
         if (
@@ -649,6 +669,15 @@ class ActivityRuntimeMixin:
                 resource_id = str(self.targets.canonical_id(str(resource_ref or "")) or resource_ref or "")
                 amount = float(resolved_effect.get("amount", resolved_effect.get("quantity", 1)) or 0)
                 current = self.resources._world_resource(resource_id) if resource_id else None
+                output_item = str(resolved_effect.get("output_item") or resolved_effect.get("inventory_item") or "")
+                only_if_missing = bool(resolved_effect.get("only_if_missing"))
+                inventory = dict(agent.get("inventory") or {})
+                if only_if_missing and output_item and float(inventory.get(output_item, 0) or 0) >= amount:
+                    # A reusable step such as "take a repair kit from the
+                    # commons rack" becomes idempotent: an actor who already
+                    # carries one can still run the combined behavior without
+                    # stripping the shared stock, even when the rack is empty.
+                    continue
                 if not resource_id or current is None:
                     errors.append("resource_withdrawal target must be an existing world resource")
                 elif amount <= 0:
@@ -659,6 +688,9 @@ class ActivityRuntimeMixin:
                     before = float(current.get("amount", 0) or 0)
                     self.resources._change_world_resource(resource_id, -amount, actor_id=agent.get("id"))
                     after = before - amount
+                    if output_item:
+                        inventory[output_item] = float(inventory.get(output_item, 0) or 0) + amount
+                        agent["inventory"] = inventory
                     state = agent.get("initial_state") or {}
                     self._context.services["events"].append(
                         "resource.withdrawal.completed",
@@ -729,7 +761,15 @@ class ActivityRuntimeMixin:
                     if not resource or str(resource.get("entity_type") or "") not in {"resource", "material"}:
                         errors.append("resource_transfer target must be an existing resource or material")
                     else:
-                        self.resources._change_world_resource(resource_id, quantity, actor_id=agent.get("id"))
+                        caps = ((self.store.repositories.metadata.get("rules", {}) or {}).get("resource_caps", {}) or {})
+                        cap = caps.get(resource_id) or caps.get(str(resource.get("name") or "")) or {}
+                        resource_state = resource.get("initial_state") if isinstance(resource.get("initial_state"), dict) else {}
+                        current = float(resource_state.get("quantity", resource_state.get("amount", 0)) or 0)
+                        maximum = cap.get("max") if isinstance(cap, dict) else None
+                        if isinstance(maximum, (int, float)) and current + quantity > float(maximum):
+                            errors.append("the shared resource is at capacity")
+                        else:
+                            self.resources._change_world_resource(resource_id, quantity, actor_id=agent.get("id"))
             elif effect_type == "entity_state_set":
                 entity_id = resolved_effect.get("entity_id") or resolved_effect.get("target_entity")
                 state_key = resolved_effect.get("state") or resolved_effect.get("property")
@@ -854,13 +894,23 @@ class ActivityRuntimeMixin:
             or parameters.get("resource_tag")
         )
         bound_resource_id = str(self.targets.canonical_id(str(bound_resource)) or bound_resource) if bound_resource else ""
+        resource_amount = 0.0
+        if bound_resource_id:
+            try:
+                bound_entity = self.store.repositories.entities.get_entity(bound_resource_id)
+            except KeyError:
+                bound_entity = {}
+            bound_state = bound_entity.get("initial_state") if isinstance(bound_entity.get("initial_state"), dict) else {}
+            resource_amount = float(bound_state.get("quantity", bound_state.get("amount", 0)) or 0)
         return {
             "location_id": location_id,
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "source_id": source_id,
             "item_id": parameters.get("item_id"),
             "resource_id": bound_resource_id,
+            "resource.amount": resource_amount,
             "resource.here": resource_is_at_location(self.store, bound_resource_id, location_id),
+            "resource.available": resource_amount > 0,
             "current_location": location,
             "location": location,
             "source": source,

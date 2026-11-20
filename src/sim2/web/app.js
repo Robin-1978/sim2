@@ -1335,7 +1335,20 @@
 
   function humanizeReason(reason) {
     let text = String(reason || "").trim().replace(/^Configured condition:\s*/i, "").replace(/\.\s*$/, "");
-    let match = text.match(/^(?:World|world\.)([A-Za-z0-9_ .-]+?) (>=|<=|==|>|<) (-?\d+(?:\.\d+)?)$/);
+    let match = text.match(/^cooldown until world minute (\d+)$/i);
+    if (match) {
+      const current = Number(state.view?.world_time?.minute || 0);
+      const remaining = Math.max(0, Number(match[1]) - current);
+      const days = Math.floor(remaining / 1440);
+      const hours = Math.floor((remaining % 1440) / 60);
+      const minutes = remaining % 60;
+      const parts = [];
+      if (days) parts.push(`${days} 天`);
+      if (hours) parts.push(`${hours} 小时`);
+      if (minutes || !parts.length) parts.push(`${minutes} 分钟`);
+      return `行动冷却中：还需 ${parts.join(" ")}（世界第 ${match[1]} 分钟后可再次执行）`;
+    }
+    match = text.match(/^(?:World|world\.)([A-Za-z0-9_ .-]+?) (>=|<=|==|>|<) (-?\d+(?:\.\d+)?)$/);
     if (match) {
       const key = match[1].trim().replace(/\s+/g, "_");
       const meta = state.view?.world_property_labels?.[key] || {};
@@ -1529,7 +1542,7 @@
     const chapterEyebrow = $("chapter-eyebrow");
     if (chapterEyebrow) {
       chapterEyebrow.textContent = chapter
-        ? (chapter.kind === "story" ? "自动演化" : "当前态势")
+        ? (chapter.kind === "story" ? "自动演化" : (chapter.kind === "ending" ? "季末结局" : "当前态势"))
         : "公开篇章";
     }
     const chapterTitle = $("chapter-title");

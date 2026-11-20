@@ -134,6 +134,16 @@ wakes:
   - storm.flooded
   - decision.aftermath
   - civilization.milestone
+  - gate.braced
+  - repair_kit.stored
+  - rain_catcher.repaired
+  - rainwater.harvested
+  - market.barter_completed
+  - gate.repair_needed
+  - confidence.low
+  - confidence.solidarity
+  - season.advanced
+  - commons.volunteer_repair
   for: story
   external: true
   every: 6h
@@ -181,6 +191,16 @@ wakes:
   - storm.flooded
   - decision.aftermath
   - civilization.milestone
+  - gate.braced
+  - repair_kit.stored
+  - rain_catcher.repaired
+  - rainwater.harvested
+  - market.barter_completed
+  - gate.repair_needed
+  - confidence.low
+  - confidence.solidarity
+  - season.advanced
+  - commons.volunteer_repair
   for: god
   external: true
   every: 1d
