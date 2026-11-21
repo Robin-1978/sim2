@@ -18,6 +18,7 @@ from ..world.navigation import (
     resource_is_at_location,
 )
 from ..world.authorization import authorization_for_behavior
+from ..actions.catalogs import catalog_entries, entry_cost_available, entry_location
 from ..world.bindings import iter_behavior_actions, resolve_behavior_effect
 from ..world.contested import resource_take_effect
 from ..world.context import configured_context_values
@@ -204,6 +205,9 @@ class BehaviorViewMixin:
                 or "resource_location_id" in agent_parameters
             ):
                 behavior_context["resource_location_id"] = stock[1]
+        recipe = self._representative_recipe(frame, bt)
+        if recipe:
+            behavior_context["recipe_id"] = recipe
         condition_context = {
             "current_location": current_location,
             "location_id": location_id,
@@ -266,6 +270,27 @@ class BehaviorViewMixin:
                 diagnostics.append({"behavior_id": bt_id, "failed": [f"cooldown until world minute {last_minute + cooldown_minutes}"]})
                 return None
         return behavior_context, cooldown_minutes
+
+    def _representative_recipe(self, frame: DecisionFrame, bt: dict[str, Any]) -> str:
+        """Pick one currently craftable recipe for a generic recipe selection."""
+
+        if "recipe_id" not in (bt.get("agent_parameters") or {}):
+            return ""
+        location_tags = set(frame.current_location.get("tags") or [])
+        inventory = frame.agent.get("inventory", {}) or {}
+        for recipe in self.entities_repo.get_definitions("recipe_def"):
+            station_tags = set(recipe.get("station_tags") or [])
+            if station_tags and not station_tags & location_tags:
+                continue
+            if any(
+                str(item.get("scope") or "agent") == "agent"
+                and float(inventory.get(str(item.get("item")), 0) or 0) < float(item.get("quantity", 0) or 0)
+                for item in (recipe.get("inputs") or [])
+                if isinstance(item, dict)
+            ):
+                continue
+            return str(recipe.get("id") or "")
+        return ""
 
     def _representative_stock(self, frame: DecisionFrame, bt: dict[str, Any]) -> tuple[str, str] | None:
         """Pick the stock a parameterized withdrawal/take behavior will use.
@@ -447,6 +472,73 @@ class BehaviorViewMixin:
                 for item in parameter_options["source_id"]
             )
         params = bt.get("agent_parameters") or {}
+        entry_keys = {"entry_id", "entry"}
+        if entry_keys & set(params):
+            catalog = str(bt.get("catalog") or "").strip()
+            entries = catalog_entries(self.store, catalog)
+            location_id = str(frame.location_id or "")
+            tier = str(bt.get("tier") or "").strip()
+            options: list[dict[str, Any]] = []
+            for entry in entries:
+                if entry_location(entry) and entry_location(entry) != location_id:
+                    continue
+                if tier and str(entry.get("tier") or "").strip() != tier:
+                    continue
+                condition_context = {
+                    "current_location": frame.current_location,
+                    "location_id": location_id,
+                    "inventory": frame.agent.get("inventory", {}) or {},
+                }
+                if any(
+                    not self.conditions.evaluate(
+                        str(predicate), agent=frame.agent, target={}, context=condition_context,
+                        world=self.store.repositories.metadata.get("world_properties", {}) or {},
+                    )
+                    for predicate in (entry.get("requires") or [])
+                ):
+                    continue
+                if not entry_cost_available(self.store, entry, frame.agent, entity_quantity=self._entity_quantity):
+                    continue
+                options.append({
+                    "name": str(entry.get("label") or entry.get("id")),
+                    "value": str(entry.get("id") or ""),
+                    "location": entry_location(entry),
+                })
+            if options:
+                for key in entry_keys & set(params):
+                    parameter_options[key] = options[:24]
+                target_text = "Choose one visible action: " + "; ".join(item["name"] for item in options[:8])
+            else:
+                target_text = "No configured action is currently available here."
+        recipe_keys = {"recipe_id"}
+        if recipe_keys & set(params):
+            recipe_options = []
+            location_tags = set(frame.current_location.get("tags") or [])
+            inventory = frame.agent.get("inventory", {}) or {}
+            for recipe in self.entities_repo.get_definitions("recipe_def"):
+                station_tags = set(recipe.get("station_tags") or [])
+                if station_tags and not station_tags & location_tags:
+                    continue
+                inputs = recipe.get("inputs") or []
+                if any(
+                    str(item.get("scope") or "agent") == "agent"
+                    and float(inventory.get(str(item.get("item")), 0) or 0) < float(item.get("quantity", 0) or 0)
+                    for item in inputs
+                    if isinstance(item, dict)
+                ):
+                    continue
+                label = str(recipe.get("name") or recipe.get("id"))
+                costs = ", ".join(f"{item.get('item')}×{item.get('quantity', 1)}" for item in inputs if isinstance(item, dict))
+                recipe_options.append({
+                    "name": f"{label}（{costs}，{recipe.get('duration_minutes', 0)} 分钟）" if costs else label,
+                    "value": str(recipe.get("id") or ""),
+                })
+            if recipe_options:
+                for key in recipe_keys & set(params):
+                    parameter_options[key] = recipe_options[:24]
+                target_text = "Choose one visible recipe: " + "; ".join(item["name"] for item in recipe_options[:8])
+            else:
+                target_text = "No recipe is currently craftable at this station."
         resource_keys = {"resource_id", "resource", "target_resource", "resource_tag"}
         if resource_keys & set(params):
             rules = self.store.repositories.metadata.get("rules", {}) or {}

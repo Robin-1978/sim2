@@ -704,27 +704,13 @@ progression:
   target_behaviors:
   - assemble_fair_crate
   support_behaviors:
-  - gather_iron_ore
-  - gather_coal
-  - gather_herb
-  - gather_grain
-  - gather_fish
-  - gather_firewood
-  - sell_ore_to_smith
-  - sell_coal_to_smith
-  - sell_grain_to_tavern
-  - sell_fish_to_tavern
-  - sell_herb_to_clinic
-  - sell_firewood_to_inn
-  - sell_ale_to_inn
-  - sell_ingot_to_market
-  - sell_tonic_to_market
-  - sell_stew_to_market
-  - sell_ale_to_market
-  - craft_iron_ingot
-  - craft_tonic
-  - craft_stew
-  - craft_ale
+  - gather
+  - trade_smithy
+  - trade_tavern
+  - trade_clinic
+  - trade_inn
+  - trade_market
+  - craft
   complete_when:
     event_type: fair.crate_assembled
     count: 1
@@ -736,11 +722,9 @@ progression:
   - player
   visible_when: world.smithy_ready < 1 and world.fair_stage < 2
   target_behaviors:
-  - sell_ore_to_smith
-  - sell_coal_to_smith
+  - trade_smithy
   support_behaviors:
-  - gather_iron_ore
-  - gather_coal
+  - gather
   complete_when:
     event_type: trade.sold
     match:
@@ -754,11 +738,9 @@ progression:
   - player
   visible_when: world.tavern_ready < 1 and world.fair_stage < 2
   target_behaviors:
-  - sell_grain_to_tavern
-  - sell_fish_to_tavern
+  - trade_tavern
   support_behaviors:
-  - gather_grain
-  - gather_fish
+  - gather
   complete_when:
     event_type: trade.sold
     match:
@@ -772,9 +754,9 @@ progression:
   - player
   visible_when: world.clinic_ready < 1 and world.fair_stage < 2
   target_behaviors:
-  - sell_herb_to_clinic
+  - trade_clinic
   support_behaviors:
-  - gather_herb
+  - gather
   complete_when:
     event_type: trade.sold
     match:
@@ -788,11 +770,10 @@ progression:
   - player
   visible_when: world.inn_ready < 1 and world.fair_stage < 2
   target_behaviors:
-  - sell_firewood_to_inn
-  - sell_ale_to_inn
+  - trade_inn
   support_behaviors:
-  - gather_firewood
-  - craft_ale
+  - gather
+  - craft
   complete_when:
     event_type: trade.sold
     match:
@@ -806,15 +787,9 @@ progression:
   - player
   visible_when: world.market_ready < 1 and world.fair_stage < 2
   target_behaviors:
-  - sell_ingot_to_market
-  - sell_tonic_to_market
-  - sell_stew_to_market
-  - sell_ale_to_market
+  - trade_market
   support_behaviors:
-  - craft_iron_ingot
-  - craft_tonic
-  - craft_stew
-  - craft_ale
+  - craft
   complete_when:
     event_type: trade.sold
     match:
@@ -829,9 +804,9 @@ progression:
   origins:
   - peddler
   target_behaviors:
-  - sell_ore_to_smith
-  - sell_grain_to_tavern
-  - sell_herb_to_clinic
+  - trade_smithy
+  - trade_tavern
+  - trade_clinic
   support_behaviors: []
   complete_when:
     event_type: trade.sold
@@ -846,7 +821,7 @@ progression:
   origins:
   - miner
   target_behaviors:
-  - gather_iron_ore
+  - gather
   support_behaviors: []
   complete_when:
     event_type: resource.gathered
@@ -863,7 +838,7 @@ progression:
   origins:
   - herbalist
   target_behaviors:
-  - gather_herb
+  - gather
   support_behaviors: []
   complete_when:
     event_type: resource.gathered
@@ -880,10 +855,9 @@ progression:
   origins:
   - cook
   target_behaviors:
-  - craft_meal
+  - craft
   support_behaviors:
-  - gather_grain
-  - gather_fish
+  - gather
   complete_when:
     event_type: craft.completed
     self_only: true
@@ -893,14 +867,14 @@ onboarding:
   title: 先让钱转起来
   body: 去北山矿场、麦田或河滩采一份原料，卖给需要的店。第一枚自己挣来的金币，是桥市的起点。
   when: world.fair_stage < 2 and world.smithy_rep < 0.16
-  action_ref: behavior:gather_iron_ore
+  action_ref: behavior:gather
   goal_id: smithy_order
 - id: first_tool
   title: 买一把趁手的工具
   body: 铁匠铺的声望已经起步。花十枚金币买一把铁镐，深巷里的矿石会让后面的日子好过很多。
   when: world.smithy_rep >= 0.16 and world.fair_act < 4 and actor.inventory.pickaxe
     < 1
-  action_ref: behavior:buy_pickaxe
+  action_ref: behavior:trade_smithy
   goal_id: smithy_order
 - id: drink_water
   title: 先喝水
@@ -912,7 +886,7 @@ onboarding:
   title: 把四家店推到备货线
   body: 每家店声望到 40% 就算备货。卖一份货加 8%，大约五次；买货也会加一点。先把“备货店铺”推到至少 4/5，再去凑礼箱。
   when: world.fair_ready < 4 and world.fair_act < 4
-  action_ref: behavior:gather_iron_ore
+  action_ref: behavior:trade_smithy
   goal_id: fair_preparation
 - id: fair_crate
   title: 凑齐桥市礼箱
@@ -930,3 +904,1054 @@ memory_quality:
     diversity: 0.12
 vital_attribute: integrity
 capacity_attribute: stamina
+action_catalogs:
+  trade_offers:
+  - id: sell_ore_to_smith
+    label: 把铁矿石卖给周铁山，换三枚金币。
+    location: smithy
+    requires:
+    - actor.inventory.iron_ore >= 1
+    - world.smithy_till >= 3
+    - world.smithy_stock < 30
+    costs:
+      reserve:
+        iron_ore: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_resource_delta
+      resource_id: smithy_stock
+      delta: 1
+      maximum: 30
+    - type: inventory_add
+      item: coin
+      quantity: 3
+    - type: world_property_delta
+      property: smithy_till
+      delta: -3
+      minimum: 0
+    - type: world_property_delta
+      property: smithy_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.01
+      maximum: 1
+    event_type: trade.sold
+    event_data:
+      shop: smithy
+      item: iron_ore
+      price: 3
+  - id: sell_coal_to_smith
+    label: 把煤卖给周铁山，换三枚金币。
+    location: smithy
+    requires:
+    - actor.inventory.coal >= 1
+    - world.smithy_till >= 3
+    - world.smithy_stock < 30
+    costs:
+      reserve:
+        coal: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_resource_delta
+      resource_id: smithy_stock
+      delta: 1
+      maximum: 30
+    - type: inventory_add
+      item: coin
+      quantity: 3
+    - type: world_property_delta
+      property: smithy_till
+      delta: -3
+      minimum: 0
+    - type: world_property_delta
+      property: smithy_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.01
+      maximum: 1
+    event_type: trade.sold
+    event_data:
+      shop: smithy
+      item: coal
+      price: 3
+  - id: sell_grain_to_tavern
+    label: 把麦子卖给阿芹，换两枚金币。
+    location: tavern
+    requires:
+    - actor.inventory.grain >= 1
+    - world.tavern_till >= 2
+    - world.tavern_stock < 30
+    costs:
+      reserve:
+        grain: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_resource_delta
+      resource_id: tavern_stock
+      delta: 1
+      maximum: 30
+    - type: inventory_add
+      item: coin
+      quantity: 2
+    - type: world_property_delta
+      property: tavern_till
+      delta: -2
+      minimum: 0
+    - type: world_property_delta
+      property: tavern_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.01
+      maximum: 1
+    event_type: trade.sold
+    event_data:
+      shop: tavern
+      item: grain
+      price: 2
+  - id: sell_fish_to_tavern
+    label: 把河鱼卖给阿芹，换两枚金币。
+    location: tavern
+    requires:
+    - actor.inventory.river_fish >= 1
+    - world.tavern_till >= 2
+    - world.tavern_stock < 30
+    costs:
+      reserve:
+        river_fish: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_resource_delta
+      resource_id: tavern_stock
+      delta: 1
+      maximum: 30
+    - type: inventory_add
+      item: coin
+      quantity: 2
+    - type: world_property_delta
+      property: tavern_till
+      delta: -2
+      minimum: 0
+    - type: world_property_delta
+      property: tavern_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.01
+      maximum: 1
+    event_type: trade.sold
+    event_data:
+      shop: tavern
+      item: river_fish
+      price: 2
+  - id: sell_herb_to_clinic
+    label: 把草药卖给白芷，换三枚金币。
+    location: clinic
+    requires:
+    - actor.inventory.herb >= 1
+    - world.clinic_till >= 3
+    - world.clinic_stock < 30
+    costs:
+      reserve:
+        herb: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_resource_delta
+      resource_id: clinic_stock
+      delta: 1
+      maximum: 30
+    - type: inventory_add
+      item: coin
+      quantity: 3
+    - type: world_property_delta
+      property: clinic_till
+      delta: -3
+      minimum: 0
+    - type: world_property_delta
+      property: clinic_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.01
+      maximum: 1
+    event_type: trade.sold
+    event_data:
+      shop: clinic
+      item: herb
+      price: 3
+  - id: sell_firewood_to_inn
+    label: 把柴火卖给老陶，换两枚金币。
+    location: inn
+    requires:
+    - actor.inventory.firewood >= 1
+    - world.inn_till >= 2
+    - world.inn_stock < 30
+    costs:
+      reserve:
+        firewood: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_resource_delta
+      resource_id: inn_stock
+      delta: 1
+      maximum: 30
+    - type: inventory_add
+      item: coin
+      quantity: 2
+    - type: world_property_delta
+      property: inn_till
+      delta: -2
+      minimum: 0
+    - type: world_property_delta
+      property: inn_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.01
+      maximum: 1
+    event_type: trade.sold
+    event_data:
+      shop: inn
+      item: firewood
+      price: 2
+  - id: sell_ale_to_inn
+    label: 把麦酒卖给老陶，换三枚金币。
+    location: inn
+    requires:
+    - actor.inventory.ale >= 1
+    - world.inn_till >= 3
+    - world.inn_stock < 30
+    costs:
+      reserve:
+        ale: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_resource_delta
+      resource_id: inn_stock
+      delta: 1
+      maximum: 30
+    - type: inventory_add
+      item: coin
+      quantity: 3
+    - type: world_property_delta
+      property: inn_till
+      delta: -3
+      minimum: 0
+    - type: world_property_delta
+      property: inn_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.01
+      maximum: 1
+    event_type: trade.sold
+    event_data:
+      shop: inn
+      item: ale
+      price: 3
+  - id: sell_ingot_to_market
+    label: 把铁锭卖给金算盘，换六枚金币。
+    location: market_square
+    requires:
+    - actor.inventory.iron_ingot >= 1
+    - world.market_till >= 6
+    - world.market_stock < 30
+    costs:
+      reserve:
+        iron_ingot: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_resource_delta
+      resource_id: market_stock
+      delta: 1
+      maximum: 30
+    - type: inventory_add
+      item: coin
+      quantity: 6
+    - type: world_property_delta
+      property: market_till
+      delta: -6
+      minimum: 0
+    - type: world_property_delta
+      property: market_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.01
+      maximum: 1
+    event_type: trade.sold
+    event_data:
+      shop: market
+      item: iron_ingot
+      price: 6
+  - id: sell_tonic_to_market
+    label: 把药剂卖给金算盘，换六枚金币。
+    location: market_square
+    requires:
+    - actor.inventory.tonic >= 1
+    - world.market_till >= 6
+    - world.market_stock < 30
+    costs:
+      reserve:
+        tonic: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_resource_delta
+      resource_id: market_stock
+      delta: 1
+      maximum: 30
+    - type: inventory_add
+      item: coin
+      quantity: 6
+    - type: world_property_delta
+      property: market_till
+      delta: -6
+      minimum: 0
+    - type: world_property_delta
+      property: market_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.01
+      maximum: 1
+    event_type: trade.sold
+    event_data:
+      shop: market
+      item: tonic
+      price: 6
+  - id: sell_stew_to_market
+    label: 把炖菜卖给金算盘，换六枚金币。
+    location: market_square
+    requires:
+    - actor.inventory.stew >= 1
+    - world.market_till >= 6
+    - world.market_stock < 30
+    costs:
+      reserve:
+        stew: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_resource_delta
+      resource_id: market_stock
+      delta: 1
+      maximum: 30
+    - type: inventory_add
+      item: coin
+      quantity: 6
+    - type: world_property_delta
+      property: market_till
+      delta: -6
+      minimum: 0
+    - type: world_property_delta
+      property: market_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.01
+      maximum: 1
+    event_type: trade.sold
+    event_data:
+      shop: market
+      item: stew
+      price: 6
+  - id: sell_ale_to_market
+    label: 把麦酒卖给金算盘，换两枚金币。
+    location: market_square
+    requires:
+    - actor.inventory.ale >= 1
+    - world.market_till >= 2
+    - world.market_stock < 30
+    costs:
+      reserve:
+        ale: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_resource_delta
+      resource_id: market_stock
+      delta: 1
+      maximum: 30
+    - type: inventory_add
+      item: coin
+      quantity: 2
+    - type: world_property_delta
+      property: market_till
+      delta: -2
+      minimum: 0
+    - type: world_property_delta
+      property: market_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.01
+      maximum: 1
+    event_type: trade.sold
+    event_data:
+      shop: market
+      item: ale
+      price: 2
+  - id: buy_pickaxe
+    label: 花十枚金币，从周铁山手里买一把铁镐。
+    location: smithy
+    requires:
+    - world.smithy_stock >= 2
+    costs:
+      reserve:
+        coin: 10
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: pickaxe
+      quantity: 1
+    - type: world_resource_delta
+      resource_id: smithy_stock
+      delta: -2
+      minimum: 0
+    - type: world_property_delta
+      property: smithy_till
+      delta: 10
+    - type: world_property_delta
+      property: smithy_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.005
+      maximum: 1
+    event_type: trade.bought
+    event_data:
+      shop: smithy
+      price: 10
+      item: pickaxe
+  - id: buy_herb_sickle
+    label: 花十枚金币，从周铁山手里买一把药锄。
+    location: smithy
+    requires:
+    - world.smithy_stock >= 2
+    costs:
+      reserve:
+        coin: 10
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: herb_sickle
+      quantity: 1
+    - type: world_resource_delta
+      resource_id: smithy_stock
+      delta: -2
+      minimum: 0
+    - type: world_property_delta
+      property: smithy_till
+      delta: 10
+    - type: world_property_delta
+      property: smithy_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.005
+      maximum: 1
+    event_type: trade.bought
+    event_data:
+      shop: smithy
+      price: 10
+      item: herb_sickle
+  - id: buy_fishing_rod
+    label: 花十枚金币，从周铁山手里买一根鱼竿。
+    location: smithy
+    requires:
+    - world.smithy_stock >= 2
+    costs:
+      reserve:
+        coin: 10
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: fishing_rod
+      quantity: 1
+    - type: world_resource_delta
+      resource_id: smithy_stock
+      delta: -2
+      minimum: 0
+    - type: world_property_delta
+      property: smithy_till
+      delta: 10
+    - type: world_property_delta
+      property: smithy_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.005
+      maximum: 1
+    event_type: trade.bought
+    event_data:
+      shop: smithy
+      price: 10
+      item: fishing_rod
+  - id: buy_meal
+    label: 花四枚金币，从阿芹手里买一份热饭。
+    location: tavern
+    requires:
+    - world.tavern_stock >= 1
+    costs:
+      reserve:
+        coin: 4
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: meal
+      quantity: 1
+    - type: world_resource_delta
+      resource_id: tavern_stock
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: tavern_till
+      delta: 4
+    - type: world_property_delta
+      property: tavern_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.005
+      maximum: 1
+    event_type: trade.bought
+    event_data:
+      shop: tavern
+      price: 4
+      item: meal
+  - id: buy_stew
+    label: 花七枚金币，从阿芹手里买一份炖菜；它也是桥市礼箱的一格。
+    location: tavern
+    requires:
+    - world.tavern_stock >= 1
+    costs:
+      reserve:
+        coin: 7
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: stew
+      quantity: 1
+    - type: world_resource_delta
+      resource_id: tavern_stock
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: tavern_till
+      delta: 7
+    - type: world_property_delta
+      property: tavern_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.005
+      maximum: 1
+    event_type: trade.bought
+    event_data:
+      shop: tavern
+      price: 7
+      item: stew
+  - id: buy_ale
+    label: 花三枚金币，从阿芹手里买一壶麦酒。
+    location: tavern
+    requires:
+    - world.tavern_stock >= 1
+    costs:
+      reserve:
+        coin: 3
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: ale
+      quantity: 1
+    - type: world_resource_delta
+      resource_id: tavern_stock
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: tavern_till
+      delta: 3
+    - type: world_property_delta
+      property: tavern_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.005
+      maximum: 1
+    event_type: trade.bought
+    event_data:
+      shop: tavern
+      price: 3
+      item: ale
+  - id: buy_tonic
+    label: 花九枚金币，从白芷手里买一份药剂；它也是桥市礼箱的一格。
+    location: clinic
+    requires:
+    - world.clinic_stock >= 1
+    costs:
+      reserve:
+        coin: 9
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: tonic
+      quantity: 1
+    - type: world_resource_delta
+      resource_id: clinic_stock
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: clinic_till
+      delta: 9
+    - type: world_property_delta
+      property: clinic_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.005
+      maximum: 1
+    event_type: trade.bought
+    event_data:
+      shop: clinic
+      price: 9
+      item: tonic
+  - id: buy_spice
+    label: 花六枚金币，从金算盘手里买一包香料。
+    location: market_square
+    requires: []
+    costs:
+      reserve:
+        coin: 6
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: spice
+      quantity: 1
+    - type: world_property_delta
+      property: market_till
+      delta: 6
+    - type: world_property_delta
+      property: market_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.005
+      maximum: 1
+    event_type: trade.bought
+    event_data:
+      shop: market
+      price: 6
+      item: spice
+  gather:
+  - id: gather_iron_ore
+    label: 在北山矿场敲下两份铁矿石。
+    location: north_mine
+    tier: surface
+    requires:
+    - actor.can_gather
+    - actor.need.hydration > 15
+    - actor.need.satiety > 15
+    costs:
+      reserve: {}
+      per_minute:
+        stamina: 0.2
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: resource_withdrawal
+      resource_id: iron_vein
+      amount: 2
+      scope: resource_withdrawal
+      output_item: iron_ore
+    event_type: resource.gathered
+    event_data:
+      resource_id: iron_vein
+      item: iron_ore
+      quantity: 2
+  - id: gather_coal
+    label: 在北山矿场收两份煤。
+    location: north_mine
+    tier: surface
+    requires:
+    - actor.can_gather
+    - actor.need.hydration > 15
+    - actor.need.satiety > 15
+    costs:
+      reserve: {}
+      per_minute:
+        stamina: 0.2
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: resource_withdrawal
+      resource_id: coal_seam
+      amount: 2
+      scope: resource_withdrawal
+      output_item: coal
+    event_type: resource.gathered
+    event_data:
+      resource_id: coal_seam
+      item: coal
+      quantity: 2
+  - id: gather_herb
+    label: 在草药沼泽采两份草药，留下根。
+    location: herb_marsh
+    tier: surface
+    requires:
+    - actor.can_gather
+    - actor.need.hydration > 15
+    - actor.need.satiety > 15
+    costs:
+      reserve: {}
+      per_minute:
+        stamina: 0.2
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: resource_withdrawal
+      resource_id: herb_patch
+      amount: 2
+      scope: resource_withdrawal
+      output_item: herb
+    event_type: resource.gathered
+    event_data:
+      resource_id: herb_patch
+      item: herb
+      quantity: 2
+  - id: gather_grain
+    label: 在麦田割两份麦子。
+    location: barley_field
+    tier: surface
+    requires:
+    - actor.can_gather
+    - actor.need.hydration > 15
+    - actor.need.satiety > 15
+    costs:
+      reserve: {}
+      per_minute:
+        stamina: 0.2
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: resource_withdrawal
+      resource_id: grain_field
+      amount: 2
+      scope: resource_withdrawal
+      output_item: grain
+    event_type: resource.gathered
+    event_data:
+      resource_id: grain_field
+      item: grain
+      quantity: 2
+  - id: gather_fish
+    label: 在河滩下网，收两份河鱼。
+    location: riverbank
+    tier: surface
+    requires:
+    - actor.can_gather
+    - actor.need.hydration > 15
+    - actor.need.satiety > 15
+    costs:
+      reserve: {}
+      per_minute:
+        stamina: 0.2
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: resource_withdrawal
+      resource_id: river_fish
+      amount: 2
+      scope: resource_withdrawal
+      output_item: river_fish
+    event_type: resource.gathered
+    event_data:
+      resource_id: river_fish
+      item: river_fish
+      quantity: 2
+  - id: gather_firewood
+    label: 在河滩捡两捆浮木。
+    location: riverbank
+    tier: surface
+    requires:
+    - actor.can_gather
+    - actor.need.hydration > 15
+    - actor.need.satiety > 15
+    costs:
+      reserve: {}
+      per_minute:
+        stamina: 0.2
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: resource_withdrawal
+      resource_id: driftwood
+      amount: 2
+      scope: resource_withdrawal
+      output_item: firewood
+    event_type: resource.gathered
+    event_data:
+      resource_id: driftwood
+      item: firewood
+      quantity: 2
+  - id: deep_mine
+    label: 用铁镐进北山深巷，敲下四份铁矿石；松动的岩层会伤到人。
+    location: north_mine
+    tier: deep
+    requires:
+    - actor.inventory.pickaxe >= 1
+    - actor.need.hydration > 15
+    - actor.need.satiety > 15
+    costs:
+      reserve: {}
+      per_minute:
+        stamina: 0.25
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: resource_withdrawal
+      resource_id: iron_vein
+      amount: 4
+      scope: resource_withdrawal
+      output_item: iron_ore
+    - type: attribute_delta
+      attribute: integrity
+      delta: -3
+      minimum: 0
+    event_type: resource.gathered
+    event_data:
+      resource_id: iron_vein
+      item: iron_ore
+      quantity: 4
+      deep: true
+  - id: deep_herb
+    label: 用药锄挖开沼泽深处的药根，收四份草药；湿气会伤身。
+    location: herb_marsh
+    tier: deep
+    requires:
+    - actor.inventory.herb_sickle >= 1
+    - actor.need.hydration > 15
+    - actor.need.satiety > 15
+    costs:
+      reserve: {}
+      per_minute:
+        stamina: 0.25
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: resource_withdrawal
+      resource_id: herb_patch
+      amount: 3
+      scope: resource_withdrawal
+      output_item: herb
+    - type: attribute_delta
+      attribute: integrity
+      delta: -3
+      minimum: 0
+    event_type: resource.gathered
+    event_data:
+      resource_id: herb_patch
+      item: herb
+      quantity: 4
+      deep: true
+  - id: deep_fish
+    label: 用鱼竿在河湾急流下网，收四份河鱼；冷水会让人发抖。
+    location: riverbank
+    tier: deep
+    requires:
+    - actor.inventory.fishing_rod >= 1
+    - actor.need.hydration > 15
+    - actor.need.satiety > 15
+    costs:
+      reserve: {}
+      per_minute:
+        stamina: 0.25
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: resource_withdrawal
+      resource_id: river_fish
+      amount: 3
+      scope: resource_withdrawal
+      output_item: river_fish
+    - type: attribute_delta
+      attribute: integrity
+      delta: -3
+      minimum: 0
+    event_type: resource.gathered
+    event_data:
+      resource_id: river_fish
+      item: river_fish
+      quantity: 4
+      deep: true
+  consume:
+  - id: eat_meal
+    label: 吃一份热饭，恢复饱食和一点归属感。
+    requires:
+    - actor.inventory.meal >= 1
+    costs:
+      reserve:
+        meal: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: need_delta
+      need: satiety
+      delta: 35
+      maximum: 100
+    - type: need_delta
+      need: belonging
+      delta: 2
+      maximum: 100
+    event_type: meal.eaten
+    event_data: {}
+  - id: drink_ale
+    label: 喝一壶麦酒，恢复一点饱食和归属感。
+    requires:
+    - actor.inventory.ale >= 1
+    costs:
+      reserve:
+        ale: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: need_delta
+      need: satiety
+      delta: 8
+      maximum: 100
+    - type: need_delta
+      need: belonging
+      delta: 5
+      maximum: 100
+    event_type: ale.drunk
+    event_data: {}
+  - id: use_tonic
+    label: 喝下一份药剂，恢复体力。
+    requires:
+    - actor.inventory.tonic >= 1
+    - actor.state.integrity < 100
+    costs:
+      reserve:
+        tonic: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: attribute_delta
+      attribute: integrity
+      delta: 30
+      maximum: 100
+    event_type: tonic.used
+    event_data: {}
+  - id: stew
+    label: 吃一份炖菜（饱食 +50，归属 +4）
+    requires:
+    - actor.inventory.stew >= 1
+    costs:
+      reserve:
+        stew: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: need_delta
+      need: satiety
+      delta: 50
+      maximum: 100
+    - type: need_delta
+      need: belonging
+      delta: 4
+      maximum: 100
+    event_type: stew.eaten
+    event_data:
+      item: stew

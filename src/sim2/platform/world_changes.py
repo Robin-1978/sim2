@@ -27,7 +27,35 @@ class _ChangeRejected(Exception):
 class WorldChangesRuntimeMixin:
     """Commit validated world-level changes and manage world templates."""
 
+    @staticmethod
+    def _normalize_rule_proposal(proposal: dict[str, Any]) -> dict[str, Any]:
+        """Lift a signal's event/wake into the rule's top-level fields.
+
+        God models often describe a signal as ``effect: {type: signal,
+        signal: ..., wake: [...]}``.  Runtime rule dispatch reads the
+        top-level fields, so accepting the nested spelling unchanged creates a
+        rule that silently never wakes anyone.  Normalize before validation.
+        """
+
+        if not isinstance(proposal, dict) or str(proposal.get("change_type") or "") != "rule":
+            return proposal
+        rule = proposal.get("rule")
+        if not isinstance(rule, dict):
+            return proposal
+        effect = rule.get("effect")
+        if not isinstance(effect, dict):
+            return proposal
+        normalized = dict(rule)
+        signal = effect.get("signal") or effect.get("event_type")
+        if signal and not str(normalized.get("event_type") or "").strip():
+            normalized["event_type"] = str(signal)
+        wake = effect.get("wake")
+        if wake and not normalized.get("wake"):
+            normalized["wake"] = [wake] if isinstance(wake, str) else list(wake)
+        return {**proposal, "rule": normalized}
+
     def submit_world_change(self, actor_id: str, proposal: dict[str, Any], *, origin_role: str | None = None) -> dict[str, Any]:
+        proposal = self._normalize_rule_proposal(proposal)
         submission = WorldChangeSubmission(str(uuid4()), actor_id, proposal, origin_role)
         rejection = self._validate_world_change(submission)
         if rejection is not None:
@@ -78,7 +106,8 @@ class WorldChangesRuntimeMixin:
     def _apply_rule(self, proposal: dict[str, Any]) -> dict[str, Any]:
         rules = dict(self.store.repositories.metadata.get("rules", {}) or {})
         world_rules = list(rules.get("world_rules", []))
-        world_rules.append(dict(proposal["rule"]))
+        normalized = self._normalize_rule_proposal({"change_type": "rule", "rule": proposal["rule"]})
+        world_rules.append(dict(normalized["rule"]))
         rules["world_rules"] = world_rules
         self.store.repositories.metadata.set("rules", rules)
         self._context.set_dependency("conditions", ConditionEngine(rules))

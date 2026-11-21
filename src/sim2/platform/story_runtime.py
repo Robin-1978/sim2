@@ -130,6 +130,7 @@ class StoryRuntimeMixin:
         story_root = story_root.get("story", story_root) if isinstance(story_root, dict) else {}
         beats = list(story_root.get("beats", []) or []) if isinstance(story_root, dict) else []
         state = dict(self.store.repositories.metadata.get("story_state", {}) or {})
+        self._expire_story_beats(story_root, state, int(self.store.repositories.metadata.get("world_minute", 0) or 0))
         recent = self.store.repositories.events.recent_events(limit=500)
         bound_sources = self.store.repositories.events.events_by_ids([int(item) for item in (source_event_ids or []) if int(item) > 0])
         configured_source_types = {str(item) for item in (story_root.get("emergent_source_event_types") or [])}
@@ -155,6 +156,38 @@ class StoryRuntimeMixin:
             intent_id, actor_id, proposal, story_root, beats, state, recent,
             source_event, observed_events, observed_facts, scoped_beats,
         )
+
+    def _expire_story_beats(self, story_root: dict[str, Any], state: dict[str, Any], minute: int) -> None:
+        """Close or expire a beat whose configured lifetime has elapsed.
+
+        Global beats have no audience follow-up, so without a lifetime they
+        stay ``active`` forever and block the same configured beat from being
+        used again.  A one-shot beat becomes ``completed``; a repeatable beat
+        becomes ``expired`` and can be activated by a later validated event.
+        """
+
+        beats = {
+            str(item.get("id")): item
+            for item in (story_root.get("beats") or [])
+            if isinstance(item, dict) and item.get("id")
+        }
+        changed = False
+        for beat_id, entry in list(state.items()):
+            if beat_id == "emergent_beats" or not isinstance(entry, dict) or entry.get("status") != "active":
+                continue
+            definition = beats.get(str(beat_id)) or {}
+            ttl = int(definition.get("ttl_minutes", 0) or 0)
+            started = int(entry.get("started_minute", 0) or 0)
+            if ttl <= 0 or minute < started + ttl:
+                continue
+            entry = dict(entry)
+            entry["status"] = "completed" if definition.get("one_shot") else "expired"
+            entry["completed_minute"] = int(minute)
+            state[beat_id] = entry
+            changed = True
+        if changed:
+            with self.store.transaction():
+                self.store.repositories.metadata.set("story_state", state)
 
     def _reject(self, submission: _Submission, failed_check: str, message: str, retryable: bool, **extra: Any) -> dict[str, Any]:
         return self._context.services["intent"].reject_intent(

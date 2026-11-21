@@ -69,8 +69,8 @@ def test_riverbend_market_is_a_complete_five_shop_package(tmp_path: Path) -> Non
     assert description["world_id"] == "riverbend_market"
     assert description["counts"]["locations"] == 10
     assert description["counts"]["agents"] == 8
-    assert description["counts"]["actions"] == 46
-    assert description["counts"]["behavior_trees"] == 53
+    assert description["counts"]["actions"] == 19
+    assert description["counts"]["behavior_trees"] == 23
     assert description["counts"]["recipes"] == 8
     assert description["counts"]["resources"] == 11
 
@@ -97,14 +97,21 @@ def test_gather_sell_tool_and_craft_keep_the_coin_ledger(tmp_path: Path) -> None
     platform = Platform(create_instance(WORLD, "riverbend-ledger", tmp_path / "runtime"))
     try:
         assert platform.enter_player("hero", "miner", name="阿岚")["status"] == "accepted"
-        _start_and_finish(platform, "hero", "gather_iron_ore", "ledger-gather-1")
-        _start_and_finish(platform, "hero", "gather_iron_ore", "ledger-gather-2")
+        with platform.store.transaction():
+            agent = platform.store.repositories.entities.get_agent("hero")
+            agent["initial_state"]["location_id"] = "north_mine"
+            platform.store.repositories.entities.put_agent("hero", agent, "阿岚")
+        _start_and_finish(platform, "hero", "gather", "ledger-gather-1", {"entry_id": "gather_iron_ore"})
+        _start_and_finish(platform, "hero", "gather", "ledger-gather-2", {"entry_id": "gather_iron_ore"})
         agent = platform.store.repositories.entities.get_agent("hero")
         assert agent["inventory"]["iron_ore"] == 6
         assert platform.store.repositories.entities.get_entity("iron_vein")["initial_state"]["quantity"] == 36
 
+        with platform.store.transaction():
+            agent["initial_state"]["location_id"] = "smithy"
+            platform.store.repositories.entities.put_agent("hero", agent, "阿岚")
         for index in range(5):
-            _start_and_finish(platform, "hero", "sell_ore_to_smith", f"ledger-sell-{index}")
+            _start_and_finish(platform, "hero", "trade_smithy", f"ledger-sell-{index}", {"entry_id": "sell_ore_to_smith"})
 
         agent = platform.store.repositories.entities.get_agent("hero")
         properties = _properties(platform)
@@ -125,7 +132,7 @@ def test_gather_sell_tool_and_craft_keep_the_coin_ledger(tmp_path: Path) -> None
             for event in platform.store.repositories.events.recent_events(limit=30)
         )
 
-        _start_and_finish(platform, "hero", "buy_pickaxe", "ledger-tool")
+        _start_and_finish(platform, "hero", "trade_smithy", "ledger-tool", {"entry_id": "buy_pickaxe"})
         agent = platform.store.repositories.entities.get_agent("hero")
         properties = _properties(platform)
         assert agent["inventory"]["pickaxe"] == 1
@@ -137,7 +144,7 @@ def test_gather_sell_tool_and_craft_keep_the_coin_ledger(tmp_path: Path) -> None
             agent = platform.store.repositories.entities.get_agent("hero")
             agent["inventory"].update({"iron_ore": 2, "coal": 1})
             platform.store.repositories.entities.put_agent("hero", agent, "阿岚")
-        _start_and_finish(platform, "hero", "craft_iron_ingot", "ledger-craft")
+        _start_and_finish(platform, "hero", "craft", "ledger-craft", {"recipe_id": "iron_ingot"})
         agent = platform.store.repositories.entities.get_agent("hero")
         assert agent["inventory"].get("iron_ore", 0) == 0
         assert agent["inventory"].get("coal", 0) == 0
@@ -157,7 +164,7 @@ def test_market_ale_trade_does_not_mint_coin(tmp_path: Path) -> None:
             agent["initial_state"]["location_id"] = "market_square"
             platform.store.repositories.entities.put_agent("hero", agent, "阿岚")
         before_till = _properties(platform)["market_till"]
-        _start_and_finish(platform, "hero", "sell_ale_to_market", "no-mint-ale")
+        _start_and_finish(platform, "hero", "trade_market", "no-mint-ale", {"entry_id": "sell_ale_to_market"})
         agent = platform.store.repositories.entities.get_agent("hero")
         assert agent["inventory"]["coin"] == 2
         assert _properties(platform)["market_till"] == before_till - 2
@@ -335,15 +342,15 @@ def test_active_task_reports_persisted_progress_for_long_actions(tmp_path: Path)
     platform = service.platform
     try:
         assert platform.enter_player("hero", "miner", name="阿岚")["status"] == "accepted"
-        started = _start(platform, "hero", "gather_iron_ore", "task-progress")
+        started = _start(platform, "hero", "consume", "task-progress", {"entry_id": "eat_meal"})
         assert started["status"] == "accepted"
-        for _ in range(8):
+        for _ in range(2):
             platform.step()
         task = service.player_view("hero")["active_task"]
-        assert task["bt"] == "采铁矿石"
-        assert task["total_minutes"] == 60
+        assert task["bt"] == "使用随身物品"
+        assert task["total_minutes"] == 10
         assert 0 < task["progress"] < 1
-        assert task["remaining_minutes"] < 60
+        assert task["remaining_minutes"] < 10
     finally:
         service.close()
 
@@ -374,10 +381,64 @@ def test_craft_actions_are_visible_when_inputs_are_available(tmp_path: Path) -> 
         with platform.store.transaction():
             agent = platform.store.repositories.entities.get_agent("hero")
             agent["inventory"].update({"iron_ore": 2, "coal": 1, "herb": 2})
+            agent["initial_state"]["location_id"] = "smithy"
             platform.store.repositories.entities.put_agent("hero", agent, "阿岚")
         view = service.player_view("hero")
-        refs = [action["ref"] for action in view["actions"]]
-        assert "behavior:craft_iron_ingot" in refs
-        assert "behavior:craft_tonic" in refs
+        craft = next(action for action in view["actions"] if action["ref"] == "behavior:craft")
+        assert "iron_ingot" in {option["value"] for option in craft["parameter_options"]["recipe_id"]}
+
+        with platform.store.transaction():
+            agent = platform.store.repositories.entities.get_agent("hero")
+            agent["initial_state"]["location_id"] = "clinic"
+            platform.store.repositories.entities.put_agent("hero", agent, "阿岚")
+        view = service.player_view("hero")
+        craft = next(action for action in view["actions"] if action["ref"] == "behavior:craft")
+        assert "tonic" in {option["value"] for option in craft["parameter_options"]["recipe_id"]}
     finally:
         service.close()
+
+
+def test_director_kickoff_creates_the_first_plan_immediately(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "riverbend-director-kickoff", tmp_path / "runtime"))
+    try:
+        assert platform.store.repositories.metadata.get("season_plan") is None
+        platform.step()
+        plan = platform.store.repositories.metadata.get("season_plan") or {}
+        assert plan.get("status") == "active"
+        assert plan.get("target_cell") in {"verb", "social", "rule", "place"}
+        assert "fair_act" in str(plan.get("reason") or "")
+        assert any(task.get("task_type") == "god_structural" for task in platform.store.repositories.evolution.ready_evolution_tasks())
+    finally:
+        platform.close()
+
+
+def test_global_story_beat_expires_so_the_same_beat_can_reappear(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "riverbend-story-ttl", tmp_path / "runtime"))
+    try:
+        assert platform.enter_player("hero", "peddler", name="阿岚")["status"] == "accepted"
+        _set_world_properties(platform, smithy_rep=0.4)
+        platform.step()
+        platform.step()
+        ready = next(
+            event for event in platform.store.repositories.events.recent_events(limit=40)
+            if event["event_type"] == "shop.ready"
+        )
+        accepted = platform.submit_story_beat(
+            "story", {"beat": "一家店备好了"}, source_event_ids=[ready["event_id"]],
+        )
+        assert accepted["status"] == "accepted", accepted
+        state = platform.store.repositories.metadata.get("story_state") or {}
+        started = int(state["shop_ready"]["started_minute"])
+        assert state["shop_ready"]["status"] == "active"
+
+        with platform.store.transaction():
+            platform.store.repositories.metadata.set("world_minute", started + 721)
+        replay = platform.submit_story_beat(
+            "story", {"beat": "一家店备好了"}, source_event_ids=[ready["event_id"]],
+        )
+        assert replay["status"] == "accepted", replay
+        state = platform.store.repositories.metadata.get("story_state") or {}
+        assert state["shop_ready"]["status"] == "active"
+        assert int(state["shop_ready"]["started_minute"]) > started
+    finally:
+        platform.close()

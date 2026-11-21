@@ -24,17 +24,16 @@ agents:
     conversation: 0.3
   initial_bt_ids:
   - travel
-  - gather_iron_ore
-  - gather_coal
-  - craft_iron_ingot
-  - craft_pickaxe
-  - buy_meal
   - rest_at_inn
-  - eat_meal
   - drink_water
   - collect_smithy_income
   - work_tavern
   - work_market
+  - consume
+  - gather
+  - deep_gather
+  - trade_smithy
+  - craft
   initial_state:
     location_id: smithy
     status: idle
@@ -71,18 +70,16 @@ agents:
     conversation: 0.7
   initial_bt_ids:
   - travel
-  - gather_grain
-  - gather_fish
-  - craft_meal
-  - craft_stew
-  - craft_ale
-  - buy_meal
   - rest_at_inn
-  - eat_meal
   - drink_water
   - collect_tavern_income
   - work_tavern
   - work_market
+  - consume
+  - gather
+  - deep_gather
+  - trade_tavern
+  - craft
   initial_state:
     location_id: tavern
     status: idle
@@ -120,17 +117,17 @@ agents:
     conversation: 0.45
   initial_bt_ids:
   - travel
-  - gather_herb
-  - craft_tonic
   - treat
-  - buy_meal
   - rest_at_inn
-  - eat_meal
   - drink_water
   - collect_clinic_income
-  - use_tonic
   - work_tavern
   - work_market
+  - consume
+  - gather
+  - deep_gather
+  - trade_clinic
+  - craft
   initial_state:
     location_id: clinic
     status: idle
@@ -167,15 +164,17 @@ agents:
     crafting: 0.3
   initial_bt_ids:
   - travel
-  - gather_firewood
-  - buy_ale
-  - buy_meal
   - rest_at_inn
-  - eat_meal
   - drink_water
   - collect_inn_income
   - work_tavern
   - work_market
+  - consume
+  - gather
+  - deep_gather
+  - trade_inn
+  - trade_tavern
+  - craft
   initial_state:
     location_id: inn
     status: idle
@@ -212,15 +211,18 @@ agents:
     gathering: 0.2
   initial_bt_ids:
   - travel
-  - buy_meal
-  - buy_ale
-  - buy_tonic
   - rest_at_inn
-  - eat_meal
   - drink_water
   - collect_market_income
   - work_tavern
   - work_market
+  - consume
+  - gather
+  - deep_gather
+  - trade_market
+  - trade_tavern
+  - trade_inn
+  - craft
   initial_state:
     location_id: market_square
     status: idle
@@ -256,17 +258,16 @@ agents:
     conversation: 0.25
   initial_bt_ids:
   - travel
-  - gather_iron_ore
-  - gather_coal
-  - deep_mine
-  - sell_ore_to_smith
-  - sell_coal_to_smith
-  - buy_meal
   - rest_at_inn
-  - eat_meal
   - drink_water
   - work_tavern
   - work_market
+  - consume
+  - gather
+  - deep_gather
+  - trade_smithy
+  - trade_tavern
+  - craft
   initial_state:
     location_id: north_mine
     status: idle
@@ -300,14 +301,16 @@ agents:
     conversation: 0.3
   initial_bt_ids:
   - travel
-  - gather_grain
-  - sell_grain_to_tavern
-  - buy_meal
   - rest_at_inn
-  - eat_meal
   - drink_water
   - work_tavern
   - work_market
+  - consume
+  - gather
+  - deep_gather
+  - trade_tavern
+  - trade_inn
+  - craft
   initial_state:
     location_id: barley_field
     status: idle
@@ -341,16 +344,17 @@ agents:
     conversation: 0.35
   initial_bt_ids:
   - travel
-  - gather_fish
-  - gather_firewood
-  - sell_fish_to_tavern
-  - sell_firewood_to_inn
-  - buy_meal
   - rest_at_inn
-  - eat_meal
   - drink_water
   - work_tavern
   - work_market
+  - consume
+  - gather
+  - deep_gather
+  - trade_tavern
+  - trade_inn
+  - trade_market
+  - craft
   initial_state:
     location_id: riverbank
     status: idle

@@ -417,7 +417,7 @@ def _world_change_checks(turn: AgentTurn, view: dict[str, Any], payload: dict[st
 def _narrative_event_checks(payload: dict[str, Any], checks: list[dict[str, Any]]) -> None:
     """An event without a property is narrative only: it must not claim a state change."""
 
-    mutation_types = {"state_delta", "need_delta", "attribute_delta", "attribute_set", "inventory_add", "inventory_remove", "world_property_delta", "relationship_delta", "entity_state_set"}
+    mutation_types = {"state_delta", "need_delta", "attribute_delta", "attribute_set", "inventory_add", "inventory_remove", "world_property_delta", "relationship_delta", "entity_state_set", "catalog_action"}
     direct_claim = any(isinstance(item, dict) and str(item.get("type") or item.get("op") or "") in mutation_types for item in (payload.get("effects") or []))
     checks.append(_check("god_event_does_not_claim_unapplied_state_change", not direct_claim, "event is narrative only" if not direct_claim else "direct state mutation requires a structured property/rule/relationship/faction proposal"))
     checks.append(_check("god_event_is_valid_narrative_signal", not direct_claim, "narrative event can be handled by a configured world rule" if not direct_claim else "event effects claim a direct state change"))

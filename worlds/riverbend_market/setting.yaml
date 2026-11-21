@@ -121,6 +121,9 @@ ui:
     eating_failed: 没有食物
     drinking_failed: 没有饮品
     arrived: 已抵达
+    trade_completed: 交易完成
+    consumed: 已使用
+    action_failed: 行动失败
   reason_labels:
     station.available: 当前地点没有对应工作台
 ui_text:

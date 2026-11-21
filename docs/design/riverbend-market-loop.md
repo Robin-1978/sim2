@@ -123,6 +123,17 @@ flowchart LR
 - 没钱时的保底：食铺帮工换金币和热饭，旅店帮工换金币，集市短工从救济金换 2 枚金币。救济金每日 +3，上限 30。
 - 没有动作能凭空增加金币，除了每日补货和救济金这两条有上限的世界规则。
 
+### 通用 Action 目录
+
+重复的“一个物品一棵 BT”已经收敛为数据目录：
+
+- `action_catalogs.trade_offers`：19 条报价，玩家在店铺里选“卖铁矿石给铁匠铺（3 金币）”或“买铁镐（10 金币）”。
+- `action_catalogs.gather`：9 个采集节点，按 `surface/deep` 分层；普通采集和深采各一棵 BT。
+- `action_catalogs.consume`：热饭、炖菜、麦酒、药剂四种随身物品。
+- `craft` 用 `recipe_id` 选择配方，配方仍由 `recipes.yaml` 定义。
+
+Platform 通过通用 `catalog_action` 效果执行目录条目：先校验位置/`requires`/成本，再用现有效果管线应用库存、钱柜、声望和事件。玩家界面只显示当前地点或当前背包里可用的条目，选择值使用稳定 ID，标签保持人类可读。
+
 ### 七天桥市
 
 | 幕 | 触发 | 世界变化 |
@@ -153,7 +164,7 @@ flowchart LR
 
 | 角色 | 核心问题 | 写什么 | 不写什么 | 节奏 |
 |---|---|---|---|---|
-| Director | 世界下一步该长哪一块？ | `season_plan`、目标 cell、基线、过期时间 | 具体内容、金币、库存、剧情 | 每 2 天 |
+| Director | 世界下一步该长哪一块？ | `season_plan`、目标 cell、基线、过期时间 | 具体内容、金币、库存、剧情 | 启动立即 + 每 6 小时 |
 | Story | 这件事对谁有意义，下一步做什么？ | beat、audience goal、fact、世界进度 | 数值、库存、关系、移动 | 幕事件、交易、缺货、里程碑 |
 | God | 缺了哪块可玩内容？ | 新定义、实体、规则、关系、地点、Action/BT | 金币、免费物资、纯叙事假事件 | 结构计划、资源压力、桥市失败、停滞 |
 
@@ -163,8 +174,10 @@ flowchart LR
 
 ```yaml
 director:
-  cadence: 2d
-  window: 4d
+  cadence: 6h
+  window: 1d
+  kickoff: true
+  context_properties: [fair_act, days_to_fair, fair_ready, town_prosperity]
   targets: [verb, social, rule, place]
   policy: llm          # 没配模型时自动回落 deterministic
   max_cell_units: 0
@@ -180,7 +193,9 @@ limits:
   - `rule`：会改变桥市结果的一条规则。
   - `place`：带路线和一个可执行行为的新地点。
 - Director 不拥有桥市倒计时；七天的幕次由确定性分钟效果控制，避免 LLM 把高潮拖没。
-- 在测试时间第 2880 分钟，Director 写出 `target_cell=verb` 的 `season_plan`，并创建 `god_structural` 任务。
+- `kickoff: true` 让 Director 在第一次世界 tick 就写出 `season_plan`，不用等 2 天；之后每 6 小时检查一次，计划窗口 1 天。
+- 计划 reason 带上 `fair_act`、`days_to_fair`、`fair_ready`、`town_prosperity`；Story 和 God 读取同一个 `season_plan`。
+- 测试覆盖 kickoff：第一次 `platform.step()` 后必须有 active plan，并已创建 `god_structural` 任务。
 
 #### Story：叙事导演
 
@@ -216,6 +231,7 @@ Story 只做三件事：
 - 只使用已验证事件里的事实；不自己加数字、交付、移动或公开讲话。
 - 每个 NPC beat 的后续行为必须在受众当前可执行目录里；不可执行会被 Platform 拒绝。
 - 重复的同一事实不会反复生成 beat。
+- 全局 beat 支持 `ttl_minutes`/`one_shot`：`first_coin`/`shop_ready` 超过 12 小时后会过期或完成，不会永久 active 并阻塞后续 Story 会话。
 - Story 可以调用 `record_world_progress` 推进公共进度：
   - `market_revival`：金币在五家店之间流动。
   - `town_trust`：治疗、住店、帮工、备货。
@@ -251,6 +267,7 @@ God 的唤醒：
 - `fair.failed`：重建项目或便宜供应商。
 - `civilization.milestone`：承接公共进度。
 - `world.stagnation`：长时间没有新可执行选择。
+- God 提案的规则如果写成 `effect: {type: signal, signal: ..., wake: [...]}`，Platform 会在校验前把 `event_type`/`wake` 提升到规则顶层；没有顶层事件名的 signal 规则会被拒绝。
 
 #### 协作约束
 
@@ -271,10 +288,10 @@ God 的唤醒：
 | `objects.yaml` | 五家店设施卡、桥市告示板 |
 | `agents.yaml` | 5 个店主 + 3 个工人，含初始行为树与库存 |
 | `player_template.yaml` | 4 个出身、初始金币、全部玩家行为 |
-| `actions.yaml` | 46 个 Action：采集、买卖、制作、服务、帮工、礼箱、店主收入 |
-| `behavior_trees.yaml` | 53 棵行为树：玩家和 NPC 共用 |
+| `actions.yaml` | 19 个 Action：通用买卖、采集、深采、使用、制作、服务、帮工、礼箱、店主收入 |
+| `behavior_trees.yaml` | 23 棵行为树：通用买卖/采集/使用/制作 + 店铺工作与恢复 |
 | `recipes.yaml` | 8 个配方：铁锭、三种工具、热饭、炖菜、麦酒、药剂 |
-| `rules.yaml` | 属性、需求、分钟效果、资源再生、桥市结算、声望、进度、目标 |
+| `rules.yaml` | 属性、需求、分钟效果、资源再生、桥市结算、声望、进度、目标、`action_catalogs` 报价/采集/消耗目录 |
 | `story.yaml` | 桥市开场、8 个 beat、3 个结局 |
 | `evolution.yaml` | Director、Story/God 唤醒、停滞策略、结构契约 |
 | `prompts/world.yaml` | 金币账本与 God 约束 |
@@ -282,26 +299,28 @@ God 的唤醒：
 
 ### 验证方式
 
-聚焦测试 `tests/test_riverbend_market.py`，12 项全部通过：
+聚焦测试 `tests/test_riverbend_market.py`，14 项全部通过：
 
-1. 世界包完整：10 地点、8 NPC、46 Action、53 行为树、8 配方、11 资源。
+1. 世界包完整：10 地点、8 NPC、19 Action、23 行为树、8 配方、11 资源、19 条交易报价、9 个采集节点、4 种消耗品。
 2. 采集→卖矿→买镐→打铁锭：金币、钱柜、库存、声望和输入消耗都正确。
 3. 集市麦酒交易不铸造金币：玩家 +2，钱柜 -2。
 4. 礼箱需要五种成品和十枚金币，完成后能触发桥市成功结局。
 5. 桥市失败后仍能用集市短工恢复现金流。
 6. 礼箱 + 2 家店 + 0.45 繁荣触发“只停一夜”结局。
 7. Story 只能提交与来源事件匹配的 beat；医馆 beat 绑定 `clinic.stock.low`，并分配给白芷。
-8. Director 在第 2880 分钟写出 `verb` 计划，并创建 `god_structural` 任务。
+8. Director kickoff 在第一次 tick 写出计划，并创建 `god_structural` 任务。
 9. 玩家视图显示四项桥市指标、五家店设施卡、六个筹备目标和首个上手提示。
 10. 长行动返回 `total_minutes` 和真实 `progress`；刷新或断线后进度条不会从剩余分钟重新开始。
 11. 水分低时“喝水”排在可见行动前六项，不会被商店和制作选项挤出行动列表。
-12. 身上有铁矿石、煤和草药时，“打铁锭”和“配药剂”会出现在玩家行动列表，而不是被 24 项上限截掉。
+12. 身上有铁矿石、煤和草药时，通用“制作”会列出铁锭/药剂配方，而不是每个配方一棵 BT。
+13. 通用“买卖/采集/使用”能从 catalog 选择可见条目，并保持金币/库存守恒。
+14. 全局 Story beat 超过 12 小时后会过期/完成，不会永久阻塞同一 beat。
 
 远程 Provider 验证（`sim2 simulate --provider remote --minutes 90`，新实例）：
 
-- 90 分钟运行：15 次 Agent 决策、27 次 LLM 调用、0 个 LLM 错误、6 笔卖出、2 笔买入、3 次制作、3 次店主收入、1 个 `shop.ready`、1 个 Story beat。
-- 最终配置 45 分钟复跑：11 次决策、16 次 LLM 调用、0 个 LLM 错误、2 笔卖出、1 笔买入、2 次制作、3 次店主收入、2 次帮工。
-- 两次运行中分别有 2 次行为失败和 2 到 3 次被拒绝的回合，均由 Platform 正常回传，没有中断世界。
+- 通用目录 + Director kickoff 后的 30 分钟远程运行：10 次 Agent 决策、19 次 LLM 调用、0 个 LLM 错误、0 个被拒绝的回合。
+- 期间 Director 创建 1 个计划（目标 `social`），God 完成 1 次结构会话并创建 `jin → zhou` 的供货关系；NPC 完成 3 次制作、2 次采集、2 笔旅店交易。
+- 更早的 45/90 分钟运行也验证过 Story beat；本次 30 分钟没有触发新的 Story 会话，因为不同店铺的成交阈值还没到。
 - 这些结果来自 `--provider remote`，不是确定性 Provider。
 
 未执行全量测试和基准测试；按当前约定只跑改动相关测试。

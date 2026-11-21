@@ -415,16 +415,24 @@ export function openActionDialog(action) {
       fields.append(label);
     }
 
+    let missingChoice = false;
     for (const spec of Array.isArray(action.parameters) ? action.parameters : []) {
       const match = String(spec).match(/^(\w+)\s*\(([^)]+)\):\s*(.*)$/);
       if (!match) continue;
       const [, name, kind, description] = match;
-      if (action.parameter_options?.[name]) {
+      if (Array.isArray(action.parameter_options?.[name])) {
+        const options = action.parameter_options[name];
+        if (!options.length) {
+          missingChoice = true;
+          fields.append(el("p", "hint", "当前地点没有可用选项。"));
+          continue;
+        }
         const label = el("label", "", name === "source_id" ? "研究来源" : name);
         const select = document.createElement("select");
         select.dataset.param = name;
-        for (const option of action.parameter_options[name]) {
-          select.append(new Option(option.name || option.value || "选项", option.name || option.value || ""));
+        for (const option of options) {
+          const value = option.value || option.name || "";
+          select.append(new Option(option.name || value || "选项", value));
         }
         label.append(select);
         fields.append(label);
@@ -448,6 +456,10 @@ export function openActionDialog(action) {
     }
     const confirm = $("action-dialog-confirm");
     confirm.onclick = () => {
+      if (missingChoice) {
+        toast("当前地点没有可用选项。", "error");
+        return;
+      }
       const targetId = $("action-target")?.value || "";
       if (action.target_required && !targetId) {
         toast("请选择一个目标。", "error");

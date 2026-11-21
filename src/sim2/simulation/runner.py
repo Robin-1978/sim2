@@ -458,6 +458,18 @@ class SimulationRunner:
             return True
         view = self.platform.decision_view(agent_id)
         options = [item for item in (view.get("executable_behaviors") or []) if item.get("ref")]
+        # A generic catalog behavior is executable only when its required
+        # visible choice exists.  Background controllers cannot invent a
+        # recipe, offer or carried consumable, so skip empty option sets
+        # instead of submitting a guaranteed parameter rejection.
+        def has_required_choices(item: dict[str, Any]) -> bool:
+            options_by_key = item.get("parameter_options") or {}
+            for spec in item.get("parameters") or []:
+                match = re.match(r"(\w+)\s*\(required", str(spec))
+                if match and not options_by_key.get(match.group(1)):
+                    return False
+            return True
+        options = [item for item in options if has_required_choices(item)]
         if not options:
             self._decision_not_before[agent_id] = minute + self._empty_catalog_delay(minute)
             return True
@@ -481,11 +493,19 @@ class SimulationRunner:
         selected = max(scored, key=lambda value: value[:3])[3]
         if not any(score > 0.02 for score, *_ in scored):
             selected = next((ranked[item] for item in priority if item in ranked), options[0])
+        parameters = dict(selected.get("parameter_values") or {})
+        for key, choices in (selected.get("parameter_options") or {}).items():
+            if key in parameters or not isinstance(choices, list) or not choices:
+                continue
+            first = choices[0] if isinstance(choices[0], dict) else {}
+            value = first.get("value") or first.get("name")
+            if value:
+                parameters[str(key)] = str(value)
         result = self.platform.submit_behavior(BehaviorIntent(
             actor_id=agent_id,
             behavior_ref=str(selected["ref"]),
             target={},
-            parameters=dict(selected.get("parameter_values") or {}),
+            parameters=parameters,
             reason="Configured background controller selected the highest-priority executable behavior.",
             confidence=1.0,
             intent_id=f"bt:{agent_id}:{minute}:{selected['ref']}",

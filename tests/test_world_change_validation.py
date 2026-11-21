@@ -300,3 +300,23 @@ def test_failure_while_recording_the_change_rolls_everything_back(platform: Plat
 
     assert snapshot(platform) == before
     assert properties(platform)["fog_level"] == 0.1
+
+
+def test_rule_signal_event_and_wake_are_lifted_to_top_level(platform: Platform) -> None:
+    proposal = {
+        "change_type": "rule",
+        "summary": "Market stock is low; wake Story.",
+        "rule": {
+            "id": "market_signal_top_level",
+            "condition": "event.recent.clinic.fever_reported == true",
+            "effect": {"type": "signal", "signal": "market.restock", "wake": ["story"]},
+        },
+    }
+
+    accepted = platform.submit_world_change("god", proposal, origin_role="god")
+
+    assert accepted["status"] == "accepted", accepted
+    rules = (platform.store.repositories.metadata.get("rules", {}) or {}).get("world_rules", [])
+    stored = next(item for item in rules if item.get("id") == "market_signal_top_level")
+    assert stored["event_type"] == "market.restock"
+    assert stored["wake"] == ["story"]

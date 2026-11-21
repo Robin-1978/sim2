@@ -109,9 +109,9 @@ def _stagnation(value: Any) -> dict[str, Any]:
 def _director(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("director must be an object")
-    unknown = sorted(str(key) for key in value if key not in {"cadence", "window", "targets", "policy", "max_cell_units", "saturation"})
+    unknown = sorted(str(key) for key in value if key not in {"cadence", "window", "targets", "policy", "max_cell_units", "saturation", "kickoff", "context_properties"})
     if unknown:
-        raise ValueError("unknown director field(s): " + ", ".join(unknown) + "; use cadence, window, targets, policy, max_cell_units, saturation")
+        raise ValueError("unknown director field(s): " + ", ".join(unknown) + "; use cadence, window, targets, policy, max_cell_units, saturation, kickoff, context_properties")
     cadence = duration_minutes(value.get("cadence", "1d"))
     window = duration_minutes(value.get("window", "3d"))
     if cadence <= 0 or window < cadence:
@@ -125,6 +125,15 @@ def _director(value: Any) -> dict[str, Any]:
     saturation = str(value.get("saturation") or "idle").strip().casefold()
     if saturation != "idle":
         raise ValueError("director.saturation must be idle")
+    kickoff = value.get("kickoff", False)
+    if not isinstance(kickoff, bool):
+        raise ValueError("director.kickoff must be a boolean")
+    raw_context = value.get("context_properties", [])
+    if isinstance(raw_context, str):
+        raw_context = [raw_context]
+    if not isinstance(raw_context, (list, tuple)):
+        raise ValueError("director.context_properties must be a list")
+    context_properties = [str(item).strip() for item in raw_context if str(item).strip()]
     raw_targets = value.get("targets", ["place", "verb", "social", "rule"])
     if isinstance(raw_targets, str):
         raw_targets = [raw_targets]
@@ -142,6 +151,8 @@ def _director(value: Any) -> dict[str, Any]:
         "policy": policy,
         "max_cell_units": int(max_cell_units),
         "saturation": saturation,
+        "kickoff": bool(kickoff),
+        "context_properties": list(dict.fromkeys(context_properties)),
     }
 
 

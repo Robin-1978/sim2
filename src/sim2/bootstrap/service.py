@@ -517,6 +517,11 @@ def _validate_event_wake_references(
         behavior_id = str(behavior.get("id") or "behavior")
         for index, outcome in enumerate(behavior.get("outcome_events", []) or []):
             add(f"behavior {behavior_id} outcome_events[{index}]", outcome)
+    for catalog_id, entries in (rules.get("action_catalogs", {}) or {}).items():
+        for index, entry in enumerate(entries if isinstance(entries, list) else []):
+            event_type = str((entry or {}).get("event_type") or "").strip() if isinstance(entry, dict) else ""
+            if event_type:
+                producers.append((f"catalog {catalog_id} entry {index}", event_type, [], f"catalog:{catalog_id}"))
     for progress_key, definition in (rules.get("civilization_progress", {}) or {}).items():
         add(f"civilization progress {progress_key}", definition, default_event="civilization.milestone")
     for rule in rules.get("world_rules", []) or []:

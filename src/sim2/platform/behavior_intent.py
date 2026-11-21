@@ -323,7 +323,27 @@ class BehaviorIntentService(PlatformService):
                 canonical = self.targets.canonical_id(normalized_parameters[key])
                 if canonical:
                     normalized_parameters[key] = canonical
+        recipe_value = normalized_parameters.get("recipe_id")
+        if recipe_value:
+            canonical_recipe = self._canonical_recipe_id(recipe_value)
+            if canonical_recipe:
+                normalized_parameters["recipe_id"] = canonical_recipe
         return normalized_parameters
+
+    def _canonical_recipe_id(self, value: Any) -> str:
+        """Resolve a visible recipe name or a label with its input summary."""
+
+        text = str(value or "").strip()
+        candidate = text.split("（", 1)[0].strip()
+        folded = "".join(char for char in candidate.casefold() if char.isalnum())
+        if not folded:
+            return ""
+        for recipe in self.store.repositories.entities.get_definitions("recipe_def"):
+            for name in (recipe.get("id"), recipe.get("name")):
+                normalized = "".join(char for char in str(name or "").casefold() if char.isalnum())
+                if normalized and normalized == folded:
+                    return str(recipe.get("id") or "")
+        return ""
 
     def _resolve_behavior(self, submission: BehaviorSubmission) -> dict[str, Any] | None:
         """Load the registered behaviors; the player's generic travel behavior is created on demand."""

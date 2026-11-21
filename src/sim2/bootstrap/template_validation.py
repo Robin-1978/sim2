@@ -25,7 +25,7 @@ ALLOWED_EFFECTS = frozenset({
     "inventory_add", "inventory_remove", "inventory.consume_item",
     "relationship_delta", "public_event", "world_property_delta",
     "entity_state_set", "status_add", "status_remove", "location_set",
-    "institution_allocation",
+    "institution_allocation", "catalog_action",
 })
 BEHAVIOR_NODE_TYPES = frozenset({"action", "subtree", "behavior", "sequence", "parallel", "selector", "condition"})
 # State an agent carries without the world declaring it as an attribute.
@@ -305,6 +305,8 @@ class _TemplateChecks:
                 errors.append(f"{owner} institution_allocation requires institution, pool_entity and item")
         elif effect_type == "public_event" and not str(effect.get("event") or "").strip():
             errors.append(f"{owner} public_event requires event")
+        elif effect_type == "catalog_action" and (not str(effect.get("catalog") or "").strip() or not str(effect.get("entry") or "").strip()):
+            errors.append(f"{owner} catalog_action requires catalog and entry")
         elif effect_type in {"status_add", "status_remove"} and not str(effect.get("status") or "").strip():
             errors.append(f"{owner} {effect_type} requires status")
         if effect_type == "world_property_delta" and not str(effect.get("property") or "").strip():

@@ -3,10 +3,8 @@ capabilities:
   name: 采集
   description: 在河滩、麦田、矿场和沼泽收集原料。
   uses:
-  - gather_node
-  - deep_mine
-  - deep_herb
-  - deep_fish
+  - gather
+  - deep_gather
   xp_rule: verified_outcome
 - id: crafting
   name: 制作
@@ -18,9 +16,7 @@ capabilities:
   name: 交易
   description: 在五家店之间买卖，让金币转起来。
   uses:
-  - sell_to_smith
-  - sell_to_market
-  - buy_meal
+  - trade_offer
   xp_rule: verified_outcome
 - id: medicine
   name: 医术

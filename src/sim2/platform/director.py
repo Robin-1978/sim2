@@ -27,6 +27,31 @@ class DirectorRuntimeMixin:
             for cell in config.get("targets", [])
         }
 
+    def _context_reason(self, config: dict[str, Any]) -> str:
+        """Compact world context the Director uses for its plan brief."""
+
+        world = self._dependency("store").repositories.metadata.get("world_properties", {}) or {}
+        parts = [
+            f"{key}={world.get(key)}"
+            for key in (config.get("context_properties") or [])
+            if key in world
+        ]
+        return ", ".join(parts)
+
+    def _should_kickoff(self, minute: int, config: dict[str, Any]) -> bool:
+        """Create the first plan immediately when a short world needs direction."""
+
+        if not config.get("kickoff") or minute <= 0:
+            return False
+        metadata = self._dependency("store").repositories.metadata
+        if metadata.get("season_plan"):
+            return False
+        if metadata.get("last_completed_season_plan"):
+            return False
+        if metadata.get("season_plan_history"):
+            return False
+        return True
+
     def _remember_plan(self, plan: dict[str, Any]) -> None:
         """Keep a bounded plan history so a long run can be audited exactly."""
 
@@ -69,7 +94,12 @@ class DirectorRuntimeMixin:
             "baseline": int(counts.get(target, 0)),
             "created_minute": int(minute),
             "expires_minute": int(minute) + int(config.get("window_minutes", 4320)),
-            "reason": reason or ", ".join(f"{cell}={counts.get(cell, 0)}" for cell in counts),
+            "reason": reason or "; ".join(
+                item for item in (
+                    ", ".join(f"{cell}={counts.get(cell, 0)}" for cell in counts),
+                    f"context: {self._context_reason(config)}" if self._context_reason(config) else "",
+                ) if item
+            ),
             "status": "active",
         }
         # The LLM Director calls its provider outside the transaction; the
@@ -102,7 +132,10 @@ class DirectorRuntimeMixin:
         """
 
         config = self._config()
-        if config is None or minute <= 0 or minute % int(config["cadence_minutes"]):
+        if config is None or minute <= 0:
+            return None
+        kickoff = self._should_kickoff(minute, config)
+        if not kickoff and minute % int(config["cadence_minutes"]):
             return None
         store = self._dependency("store")
         metadata = store.repositories.metadata
@@ -134,6 +167,8 @@ class DirectorRuntimeMixin:
             + ", ".join(targets)
             + ". Current counts: "
             + ", ".join(f"{cell}={counts.get(cell, 0)}" for cell in targets)
+            + ". World context: "
+            + (self._context_reason(config) or "none")
             + '. Return JSON {"target_cell": "<one of the listed cells>", "reason": "<short reason>"}.'
         )
         if last_target in targets:
@@ -164,7 +199,10 @@ class DirectorRuntimeMixin:
         """Evaluate the plan at a cadence boundary; return the active plan."""
 
         config = self._config()
-        if config is None or minute <= 0 or minute % int(config["cadence_minutes"]):
+        if config is None or minute <= 0:
+            return None
+        kickoff = self._should_kickoff(minute, config)
+        if not kickoff and minute % int(config["cadence_minutes"]):
             return None
         store = self._dependency("store")
         metadata = store.repositories.metadata
@@ -205,7 +243,12 @@ class DirectorRuntimeMixin:
             "baseline": int(counts.get(target, 0)),
             "created_minute": int(minute),
             "expires_minute": int(minute) + int(config.get("window_minutes", 4320)),
-            "reason": ", ".join(f"{cell}={counts.get(cell, 0)}" for cell in targets),
+            "reason": "; ".join(
+                item for item in (
+                    ", ".join(f"{cell}={counts.get(cell, 0)}" for cell in targets),
+                    f"context: {self._context_reason(config)}" if self._context_reason(config) else "",
+                ) if item
+            ),
             "status": "active",
         }
         metadata.set("season_plan", plan)

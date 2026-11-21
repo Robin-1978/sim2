@@ -24,8 +24,14 @@ stagnation:
   - world.change.relationship
   - world.change.faction
 director:
-  cadence: 2d
-  window: 4d
+  cadence: 6h
+  window: 1d
+  kickoff: true
+  context_properties:
+  - fair_act
+  - days_to_fair
+  - fair_ready
+  - town_prosperity
   targets:
   - verb
   - social

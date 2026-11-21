@@ -10,6 +10,7 @@ from ..world.time import world_time_view
 from ..world.context import configured_context_values
 from ..world.lifecycle import trim_unlocked_behaviors, unlocked_behavior_limit
 from ..actions.institutions import allocation_preflight
+from ..actions.catalogs import resolve_catalog_entry
 from ..evolution.memory import update_role_memory_status
 
 
@@ -714,6 +715,53 @@ class ActivityRuntimeMixin:
                 errors.extend(
                     self._context.services["contested"].complete_take(agent, resolved_effect, minute)
                 )
+            elif effect_type == "catalog_action":
+                catalog = str(resolved_effect.get("catalog") or "")
+                entry_value = resolved_effect.get("entry") or parameters.get("entry_id") or parameters.get("entry")
+                entry = resolve_catalog_entry(self.store, catalog, entry_value)
+                if entry is None:
+                    errors.append(f"catalog_action has no entry {entry_value!r} in {catalog or 'an unspecified catalog'}")
+                else:
+                    state = agent.get("initial_state") or {}
+                    location_id = str(state.get("location_id") or "")
+                    entry_location = str(entry.get("location") or "")
+                    if entry_location and entry_location != location_id:
+                        errors.append(f"catalog entry requires location {entry_location}")
+                    condition_context = self._action_condition_context(agent, parameters, target)
+                    for predicate in entry.get("requires") or []:
+                        if not self.conditions.evaluate(
+                            str(predicate),
+                            agent=agent,
+                            target=target or {},
+                            context=condition_context,
+                            world=self.store.repositories.metadata.get("world_properties", {}) or {},
+                        ):
+                            errors.append(f"catalog entry requirement not met: {predicate}")
+                            break
+                    if not errors:
+                        synthetic = {
+                            "id": action.get("id"),
+                            "costs": entry.get("costs") or {},
+                            "effects": entry.get("effects") or [],
+                        }
+                        accepted, reason, reservations = self.resources.reserve(agent, synthetic, parameters, commit=True)
+                        if not accepted:
+                            errors.append(reason or "catalog entry costs are unavailable")
+                        else:
+                            nested_errors = self._apply_success_effects(
+                                agent, synthetic, parameters, minute, target=target, reservations=reservations,
+                            )
+                            errors.extend(nested_errors)
+                            if not nested_errors:
+                                event_type = str(entry.get("event_type") or "").strip()
+                                if event_type:
+                                    payload = dict(entry.get("event_data") or {})
+                                    payload.update({
+                                        "entry_id": str(entry.get("id") or ""),
+                                        "entry_label": str(entry.get("label") or ""),
+                                        "action_id": str(action.get("id") or ""),
+                                    })
+                                    self._context.services["events"].append(event_type, agent["id"], minute, payload)
             elif effect_type == "resource_transfer":
                 # ResourceLedger has already reserved/removed any carried
                 # source item before success effects run.  This primitive
