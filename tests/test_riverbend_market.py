@@ -346,3 +346,21 @@ def test_active_task_reports_persisted_progress_for_long_actions(tmp_path: Path)
         assert task["remaining_minutes"] < 60
     finally:
         service.close()
+
+
+def test_low_hydration_keeps_drink_water_in_the_visible_actions(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "riverbend-water-visible", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "peddler", name="阿岚")["status"] == "accepted"
+        with platform.store.transaction():
+            agent = platform.store.repositories.entities.get_agent("hero")
+            agent["initial_state"]["location_id"] = "inn"
+            agent["needs"]["hydration"] = 33
+            platform.store.repositories.entities.put_agent("hero", agent, "阿岚")
+        view = service.player_view("hero")
+        refs = [action["ref"] for action in view["actions"]]
+        assert "behavior:drink_water" in refs
+        assert refs.index("behavior:drink_water") < 6
+    finally:
+        service.close()

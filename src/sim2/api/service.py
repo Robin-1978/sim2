@@ -292,6 +292,17 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         })
     active_task = decision.get("active_task", {}) or {}
     actions = list(decision.get("executable_behaviors", []) or [])
+    # Basic recovery is not optional bookkeeping: a low need must keep its
+    # drink/eat/rest action inside the client's compact action window even
+    # when the world has many shop and crafting choices.
+    needs = decision.get("needs") or {}
+    state = agent.get("initial_state") or {}
+    needs_recovery = any(
+        float(needs.get(key, 100) or 100) < 45
+        for key in ("hydration", "satiety")
+    ) or float(state.get("stamina", 100) or 100) < 55
+    if needs_recovery:
+        actions.sort(key=lambda action: 0 if "recovery" in (action.get("goal_tags") or []) else 1)
     # Travel is a generic player affordance. The decision projection hides
     # a travel BT when its destination is not selected yet; clients supply
     # each known route as an explicit, validated intent instead.
