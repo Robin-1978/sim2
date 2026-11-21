@@ -39,7 +39,7 @@ objects:
   facility:
     order: 2
     properties:
-    - {key: fresh_water_reserve, label: 淡水储备}
+    - {key: fresh_water_reserve, label: 公共淡水}
 - id: signal_lens
   type: machine
   name: 季节信号透镜

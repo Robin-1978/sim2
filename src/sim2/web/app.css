@@ -646,6 +646,45 @@ h1, h2, h3 { font-weight: 650; }
 .people-card small { display: block; color: var(--faint); font-size: 9px; }
 .people-hint { display: block; padding: 6px 14px 12px; line-height: 1.55; }
 .people-empty { padding: 22px 8px; text-align: center; color: var(--faint); font-size: 10px; }
+.people-activity-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 10px 14px 6px; }
+.people-activity-head .hint { font-size: 9px; }
+.people-nearby-head { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+.people-activity { display: flex; flex-direction: column; gap: 6px; padding: 0 12px 6px; max-height: 230px; overflow-y: auto; }
+.people-activity-empty { padding: 10px 4px; color: var(--faint); font-size: 9.5px; line-height: 1.6; }
+.people-activity-row {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid rgba(139, 204, 192, 0.1);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.018);
+}
+.people-activity-row.world { border-color: rgba(239, 178, 111, 0.2); }
+.people-activity-row.story { border-color: rgba(139, 163, 255, 0.2); }
+.people-activity-time { color: var(--faint); font-size: 8.5px; font-variant-numeric: tabular-nums; }
+.people-activity-copy strong { display: block; font-size: 9.5px; color: var(--text); }
+.people-activity-copy p {
+  display: -webkit-box;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 8.8px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.person-mini-track { display: block; width: 100%; height: 2px; margin-top: 3px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.person-mini-track i { display: block; height: 100%; border-radius: inherit; background: var(--cyan); }
+.person-busy { border-color: rgba(101, 216, 194, 0.24); }
+.person-progress { display: block; width: 100%; height: 2px; margin-top: 5px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
+.person-progress span { display: block; height: 100%; border-radius: inherit; background: var(--cyan); }
+.character-intent { max-width: 320px; margin-top: 6px; color: var(--amber); font-size: 9.5px; line-height: 1.5; }
+.time-advance { display: flex; align-items: center; gap: 6px; padding: 10px 15px 0; }
+.time-advance .eyebrow { margin-right: auto; }
+.time-advance .button { padding: 4px 8px; border-radius: 8px; font-size: 9px; }
+.time-progress { width: 42px; height: 3px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+.time-progress i { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--cyan); transition: width 300ms linear; }
 
 .character-drawer { position: fixed; inset: 0; z-index: 65; }
 .character-drawer-scrim { position: absolute; inset: 0; background: rgba(1, 8, 9, 0.58); backdrop-filter: blur(3px); }

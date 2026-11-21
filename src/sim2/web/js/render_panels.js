@@ -32,7 +32,51 @@ export function renderTalkTargets() {
   }
 
 
+function latestActivityFor(personId) {
+    return (state.agentEvents || []).find((event) => event.activity?.actor_id === personId) || null;
+  }
+
+
+function personActivityLine(person) {
+    if (person?.status !== "executing" && person?.status !== "paused") return "可以交谈";
+    return person?.active_behavior_label || "正在忙碌";
+  }
+
+
+export function renderPeopleActivity() {
+    const root = $("people-activity");
+    if (!root) return;
+    root.replaceChildren();
+    const events = (state.agentEvents || [])
+      .filter((event) => {
+        if (event.activity?.kind !== "behavior" || event.activity?.actor_id === state.playerId) return false;
+        return !String(event.public?.correlation_id || "").startsWith("bt:");
+      })
+      .slice(0, 6);
+    if (!events.length) {
+      root.append(el("p", "people-activity-empty", "还没有居民行动的记录。推进一点时间，看看他们在做什么。"));
+      return;
+    }
+    for (const event of events) {
+      const activity = event.activity || {};
+      const row = el("article", `people-activity-row ${activity.kind || ""}`);
+      row.append(el("span", "people-activity-time", formatMinute(event.world_minute)));
+      const copy = el("div", "people-activity-copy");
+      const actor = activity.actor || "世界";
+      const label = activity.kind === "behavior"
+        ? `${activity.status === "completed" ? "完成" : activity.status === "started" ? "开始" : "中断"} · ${activity.behavior || "行动"}`
+        : (activity.label || "世界变化");
+      copy.append(el("strong", "", `${actor} ${label}`));
+      const detail = translateNarrative(String(activity.reason || activity.summary || "").trim());
+      if (detail) copy.append(el("p", "", detail));
+      row.append(copy);
+      root.append(row);
+    }
+  }
+
+
 export function renderPeople() {
+    renderPeopleActivity();
     const root = $("people-list");
     if (!root) return;
     root.replaceChildren();
@@ -50,9 +94,19 @@ export function renderPeople() {
       card.append(el("span", "person-avatar", String(person.name || person.id).slice(0, 1)));
       const copy = el("div");
       copy.append(el("strong", "", person.name || person.id));
-      copy.append(el("small", "", person.status === "executing" ? "正在忙碌" : "可以交谈"));
+      copy.append(el("small", "", personActivityLine(person)));
+      if (person.status === "executing" || person.status === "paused") {
+        const progress = Number(person.initial_state?.action_progress);
+        if (Number.isFinite(progress)) {
+          const track = el("span", "person-progress");
+          const fill = el("span");
+          fill.style.width = `${Math.max(0, Math.min(100, progress * 100))}%`;
+          track.append(fill);
+          copy.append(track);
+        }
+      }
       card.append(copy);
-      card.append(el("span", "badge", "交谈"));
+      card.append(el("span", "badge", personActivityLine(person) === "可以交谈" ? "交谈" : "查看"));
       card.addEventListener("click", () => openCharacter(person));
       root.append(card);
     }
@@ -61,10 +115,21 @@ export function renderPeople() {
 
 export function updateCharacterSheet(person) {
     const name = person?.name || person?.id || "人物";
+    const active = person?.status === "executing" || person?.status === "paused";
     $("character-name").textContent = name;
     $("character-avatar").textContent = String(name).slice(0, 1);
-    $("character-location").textContent = person?.location || person?.location_id || state.view?.location?.name || "附近";
-    $("character-status").textContent = person?.status === "executing" ? "正在忙碌" : "可以交谈";
+    const place = person?.location || person?.location_id || state.view?.location?.name || "附近";
+    const remaining = Number(person?.initial_state?.remaining_minutes);
+    $("character-location").textContent = Number.isFinite(remaining) && remaining > 0
+      ? `${place} · 还剩 ${Math.ceil(remaining)} 分钟`
+      : place;
+    $("character-status").textContent = personActivityLine(person);
+    const intent = $("character-intent");
+    if (intent) {
+      const detail = translateNarrative(String(latestActivityFor(person?.id)?.activity?.reason || "").trim());
+      intent.textContent = detail;
+      intent.classList.toggle("hidden", !detail);
+    }
   }
 
 
@@ -134,6 +199,7 @@ const DEFAULT_EVENT_KINDS = {
     trade: ["market.", "trade."],
     story: ["story.", "beat."],
     origin: ["origin."],
+    rule: ["world.change.", "world.rule.", "rule."],
   };
 
   const DEFAULT_EVENT_TITLES = {
@@ -144,6 +210,7 @@ const DEFAULT_EVENT_KINDS = {
     trade: "交易",
     story: "世界剧情",
     origin: "出身",
+    rule: "世界规则",
     behavior: "角色行动",
     need: "需求",
     player: "角色",
@@ -203,6 +270,7 @@ export const SKIP_EVENTS = new Set([
     "player.resumed",
     "behavior.started",
     "capability.updated",
+    "capability.evidence",
     "memory.experience_recorded",
     "definition.registered",
     "behavior.registered",
@@ -252,6 +320,19 @@ export function renderWorldPulse() {
       return pulsePrefixes.some((prefix) => type.includes(String(prefix)));
     }) || events[0];
     if (!important) {
+      const activityEvent = (state.agentEvents || []).find((event) => {
+        const activity = event.activity || {};
+        if (activity.kind !== "behavior" || activity.actor_id === state.playerId) return false;
+        return !String(event.public?.correlation_id || "").startsWith("bt:");
+      });
+      if (activityEvent) {
+        const activity = activityEvent.activity || {};
+        root.className = "world-pulse";
+        root.append(el("span", "eyebrow", `居民动向 · ${formatMinute(activityEvent.world_minute)}`));
+        root.append(el("strong", "", `${activity.actor || "居民"} · ${activity.behavior || "行动"}`));
+        root.append(el("p", "", translateNarrative(String(activity.reason || activity.summary || "居民正在自行安排下一步。"))));
+        return;
+      }
       root.className = "world-pulse empty";
       root.append(el("span", "eyebrow", "世界脉搏"));
       root.append(el("strong", "", "还没有新的变化"));

@@ -31,6 +31,7 @@ export const state = {
     goalsExpanded: false,
     feedLimit: 28,
     feedEvents: [],
+    agentEvents: [],
     taskKey: "",
     taskTotal: 0,
     clockOffset: 0,
@@ -279,6 +280,8 @@ export function translateNarrative(text) {
     let value = String(text || "").trim();
     if (!value) return "";
     value = value.replace(/^The world:\s*/i, "");
+    value = value.replace(/^The world changed:\s*/i, "世界变化：");
+    value = value.replace(/^A new development emerged:\s*/i, "新的进展：");
     value = value.replace(/\s+entered the world\.?$/i, " 进入了世界。");
     value = value.replace(/\s+began\s+/i, " 开始 ");
     value = value.replace(/\s+started the action\s+/i, " 开始行动 ");
@@ -320,6 +323,8 @@ export const BASE_RESULT_LABELS = {
   research_progressed: "研究推进",
   information_recorded: "情报已记录",
   repaired: "修复完成",
+  water_drawn: "已领取淡水",
+  drawing_failed: "领取失败",
   decision_failed: "决策中断",
 };
 

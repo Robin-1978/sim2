@@ -185,7 +185,13 @@
           <strong>正在读取世界动态…</strong>
         </div>
         <div id="world-properties" class="world-properties"></div>
-        <p class="hint world-evolution-hint">Story 与 God 会根据已验证事件持续生成新章节和新结构；世界不会停在固定剧本里。</p>
+        <div class="time-advance" aria-label="推进世界时间">
+          <span class="eyebrow">等待</span>
+          <button class="button ghost compact" data-wait-minutes="60" type="button">1 小时</button>
+          <button class="button ghost compact" data-wait-minutes="240" type="button">4 小时</button>
+          <span id="time-progress" class="time-progress hidden" aria-hidden="true"><i></i></span>
+        </div>
+        <p class="hint world-evolution-hint">等待时居民会继续决策；随时可以停止推进。Story 与 God 会根据已验证事件持续生成新章节和新结构。</p>
       </section>
 
       <section class="panel feed-panel">
@@ -199,6 +205,15 @@
           <button id="feed-more" class="text-button wide" type="button">载入更早的事件</button>
         </div>
         <div id="tab-talk" class="tab-body">
+          <div class="people-activity-head">
+            <span class="eyebrow">居民动向</span>
+            <span class="hint">他们自己的决定</span>
+          </div>
+          <div id="people-activity" class="people-activity"></div>
+          <div class="people-activity-head people-nearby-head">
+            <span class="eyebrow">附近的人</span>
+            <span class="hint">点击查看</span>
+          </div>
           <div id="people-list" class="people-list"></div>
           <p class="hint people-hint">点击一个人打开角色侧栏，查看对话并开口。</p>
         </div>
@@ -392,6 +407,7 @@
             <span id="character-status" class="eyebrow">人物</span>
             <h2 id="character-name">—</h2>
             <p id="character-location" class="hint">—</p>
+            <p id="character-intent" class="character-intent hidden"></p>
           </div>
         </div>
         <button id="character-close" class="icon-button close" type="button" aria-label="关闭人物侧栏"></button>

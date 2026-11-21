@@ -1,4 +1,4 @@
-import { activateInstance, advanceTask, beginAction, closeEditor, closeSettings, createWorldInstance, loadDialogue, loadEntryContext, loadFeed, loadInstances, loadRuntime, loadTrades, loadView, openAdmin, openEditor, openMap, openSettings, openWorldHub, refreshAll, restorePlayer, returnToGame, runtimeCommand, selectedProvider, sendDialogue, sendTrade, showEntry, startStream, submitEntry, unlockOperator, unlockOperatorFromEntry, waitOneMinute } from "./actions.js";
+import { activateInstance, advanceTask, beginAction, closeEditor, closeSettings, createWorldInstance, loadDialogue, loadEntryContext, loadFeed, loadInstances, loadRuntime, loadTrades, loadView, openAdmin, openEditor, openMap, openSettings, openWorldHub, refreshAll, restorePlayer, returnToGame, runtimeCommand, selectedProvider, sendDialogue, sendTrade, showEntry, startStream, submitEntry, unlockOperator, unlockOperatorFromEntry, waitFor, waitOneMinute } from "./actions.js";
 import { unlockFromOwnerLink } from "./api.js";
 import { armSoundOnGesture, renderSoundButton, toggleSound } from "./audio.js";
 import { $, OPERATOR_KEY, SOUND_KEY, icon, state, storageGet, toast, worldIsOpen } from "./core.js";
@@ -99,6 +99,9 @@ export function wireUi() {
       advanceTask("继续：").finally(() => renderTask());
     });
     $("task-wait").addEventListener("click", (event) => waitOneMinute(event.currentTarget));
+    for (const button of document.querySelectorAll("[data-wait-minutes]")) {
+      button.addEventListener("click", (event) => waitFor(Number(event.currentTarget.dataset.waitMinutes), event.currentTarget));
+    }
     $("player-details").addEventListener("click", openPlayerSheet);
     $("player-sheet-close").addEventListener("click", closePlayerSheet);
     for (const scrim of document.querySelectorAll("[data-close-player]")) scrim.addEventListener("click", closePlayerSheet);

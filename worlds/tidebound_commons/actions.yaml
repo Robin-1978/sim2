@@ -220,6 +220,29 @@ actions:
   interaction_policy: deny
   kind: atomic
   executor: effect_pipeline
+- id: draw_public_water
+  verb: gather
+  version: 1
+  description: 从公社的公共淡水储备里领取一份随身淡水。储备来自沼泽水洼和屋顶集雨器；领取会减少所有人可用的余量。
+  parameters: {item_id: string}
+  parameter_defaults: {item_id: fresh_water}
+  preconditions: [actor.alive, location.safe, world.fresh_water_reserve >= 1, actor.inventory.fresh_water < 2]
+  duration: {minutes: 10}
+  costs:
+    reserve: {}
+    per_minute: {stamina: 0.02}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: context.item_id, delta: -1, minimum: 0}
+  - {type: inventory_add, item: context.item_id, quantity: 1}
+  success: {condition: actor.alive, result: water_drawn}
+  failure: {condition: actor.incapacitated, result: drawing_failed}
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
 - id: tune_signal
   verb: repair
   version: 1

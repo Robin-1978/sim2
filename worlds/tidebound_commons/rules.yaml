@@ -59,7 +59,7 @@ world_property_labels:
   tide_gate_integrity: {label: 潮门完整性, unit: percent, max: 1, group: 防线, group_order: 1, order: 2}
   gate_repairs: {label: 已修复次数, unit: amount, max: 3, group: 防线, group_order: 1, order: 3}
   signal_reach: {label: 信号覆盖, unit: percent, max: 1, group: 进展, group_order: 3, order: 1}
-  fresh_water_reserve: {label: 淡水储备, unit: amount, group: 储备, group_order: 2, order: 1}
+  fresh_water_reserve: {label: 公共淡水, unit: amount, group: 储备, group_order: 2, order: 1, prompt: 沼泽水洼与集雨器的公共存量；在安全地点领取会消耗它。}
   maintenance_evidence: {label: 维护记录, unit: amount, max: 3, group: 进展, group_order: 3, order: 2}
   commons_tool_kits: {label: 公共工具包, unit: amount, max: 3, group: 储备, group_order: 2, order: 2}
   storm_pressure: {label: 风暴压力, unit: percent, max: 1, group: 防线, group_order: 1, order: 5}

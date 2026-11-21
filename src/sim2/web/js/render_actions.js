@@ -66,7 +66,7 @@ export function actionButtonLabel(category, action) {
     if (category === "制作") return "开始制作";
     if (category === "社交") return "交谈";
     if (category === "交易") return "交换";
-    if (category === "恢复") return "立即使用";
+    if (category === "恢复") return String(action.ref || "").includes("draw") ? "领取" : "立即使用";
     if (category === "公共") return "执行";
     return "开始";
   }

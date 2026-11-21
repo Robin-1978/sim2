@@ -458,6 +458,43 @@ export async function waitOneMinute(button) {
   }
 
 
+export async function waitFor(minutes, button) {
+    if (!state.playerId || state.advancing) return;
+    const amount = Math.max(1, Math.min(480, Number(minutes || 60)));
+    const bar = $("time-progress");
+    const fill = bar?.firstElementChild;
+    state.advancing = true;
+    bar?.classList.remove("hidden");
+    try {
+      await withPending(button, async () => {
+        try {
+          const started = await startWaitTask(amount);
+          const task = await awaitWaitTask(started, {
+            onProgress: (progress) => {
+              state.taskProgress = progress;
+              const done = Number(progress?.completed_minutes || 0);
+              const total = Math.max(1, Number(progress?.requested_minutes || amount));
+              if (fill) fill.style.width = `${Math.min(100, (done / total) * 100)}%`;
+            },
+          });
+          await loadView();
+          const report = task?.result?.report || {};
+          const advanced = Math.max(0, Number(report.end_minute || 0) - Number(report.start_minute || 0)) || Number(task?.completed_minutes || 0) || amount;
+          const decisions = Number(report.decisions || 0);
+          toast(`世界推进了 ${advanced} 分钟${decisions ? `，居民做了 ${decisions} 次决策` : ""}。`, "ok");
+          await Promise.allSettled([loadFeed(), loadDialogue()]);
+        } catch (error) {
+          toast(describeError(error, "无法推进世界"), "error");
+        }
+      });
+    } finally {
+      state.advancing = false;
+      bar?.classList.add("hidden");
+      if (fill) fill.style.width = "0%";
+    }
+  }
+
+
 export function selectedProvider() {
     const value = String($("settings-provider")?.value || "").trim();
     return value || state.runtime?.provider || null;
@@ -614,8 +651,16 @@ export async function sendTrade(form) {
 export async function loadFeed(force = false) {
     try {
       const response = await request("/api/v1/observer/timeline?limit=80&after=0&latest=1");
-      const events = (response.events || []).filter((event) => !SKIP_EVENTS.has(String(event.event_type || "")));
+      const all = Array.isArray(response.events) ? response.events : [];
+      const events = all.filter((event) => !SKIP_EVENTS.has(String(event.event_type || "")));
       state.feedEvents = events.slice().reverse();
+      state.agentEvents = all
+        .filter((event) => {
+          const activity = event.activity || {};
+          return activity.kind && ["behavior", "world.change", "story"].includes(activity.kind);
+        })
+        .slice(-24)
+        .reverse();
       renderFeed();
     } catch (error) {
       if (force) toast("世界动态暂不可用。", "error");
@@ -692,6 +737,9 @@ export function renderRuntimeStatus() {
     if (pill) {
       pill.textContent = running ? "自动运行中" : "手动世界";
       pill.className = `pill${running ? " live" : ""}`;
+    }
+    for (const button of document.querySelectorAll("[data-wait-minutes]")) {
+      button.disabled = running;
     }
     const detail = $("runtime-detail");
     if (detail) {

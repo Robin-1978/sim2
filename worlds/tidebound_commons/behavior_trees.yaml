@@ -321,6 +321,38 @@ behavior_trees:
   - purpose
   supports_drive_tags:
   - hydration
+- id: draw_water
+  agent_label: 领取公共淡水
+  summary: 领取公共淡水
+  description: 从公社的公共淡水储备领取一份淡水，不用走去沼泽；会消耗所有人可用的余量。
+  purpose: 随身淡水不足时，在安全地点从公共储备补一份。
+  entry_conditions:
+  - actor.alive
+  - location.safe
+  - world.fresh_water_reserve >= 1
+  - actor.inventory.fresh_water < 2
+  estimated_minutes: 12
+  cooldown_minutes: 30
+  nodes:
+  - type: action
+    action_id: draw_public_water
+  success_results:
+  - water_drawn
+  failure_results:
+  - drawing_failed
+  outcome_events:
+  - event_type: resource.drawn
+    summary: 一份淡水从公共储备被领进随身水袋。
+    data:
+      resource_id: fresh_water
+      result_kind: water_drawn
+  goal_tags:
+  - water
+  - recovery
+  drive_tags:
+  - hydration
+  supports_drive_tags:
+  - hydration
 - id: gather_shellfish
   agent_label: 采贝类
   summary: 采贝类

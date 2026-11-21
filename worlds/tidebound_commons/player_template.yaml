@@ -23,6 +23,7 @@ initial_bt_ids:
   - market_barter
   - tune_signal
   - gather_water
+  - draw_water
   - gather_shellfish
   - gather_driftwood
   - gather_reed

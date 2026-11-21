@@ -88,8 +88,20 @@ export function renderScene() {
       chip.title = `和 ${person.name || person.id} 交谈`;
       chip.append(el("span", "person-avatar", String(person.name || person.id).slice(0, 1)));
       const copy = el("span", "person-copy");
+      const active = person.status === "executing" || person.status === "paused";
       copy.append(el("strong", "", person.name || person.id));
-      copy.append(el("span", "", person.status === "executing" ? "正在忙碌" : "可以交谈"));
+      copy.append(el("span", "", active ? (person.active_behavior_label || "正在忙碌") : "可以交谈"));
+      if (active) {
+        const progress = Number(person.initial_state?.action_progress);
+        if (Number.isFinite(progress)) {
+          const track = el("span", "person-mini-track");
+          const fill = el("i");
+          fill.style.width = `${Math.max(0, Math.min(100, progress * 100))}%`;
+          track.append(fill);
+          copy.append(track);
+        }
+      }
+      chip.classList.toggle("person-busy", active);
       chip.append(copy);
       chip.addEventListener("click", () => {
         const select = $("talk-target");

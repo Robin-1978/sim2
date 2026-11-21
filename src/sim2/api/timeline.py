@@ -54,16 +54,43 @@ def build_timeline(store: Any, *, limit: int = 100, after_event_id: int = 0, inc
         actor = names.get(str(event.get("actor_id")), "The world") if event.get("actor_id") else "The world"
         event_type = str(event.get("event_type", "world.event"))
         target = next((names.get(str(event.get(key))) for key in ("target_id", "recipient_id", "listener_id") if event.get(key)), None)
+        activity = None
         if event_type == "behavior.started":
             label = behavior_labels.get(str(event.get("behavior_id", "")), str((event.get("expected", {}) or {}).get("summary") or "a behavior"))
             reason = public_reason((event.get("decision", {}) or {}).get("reason"))
             sentence = f"{actor} began {label}." if not reason else f"{actor} began {label}: {reason}."
+            activity = {
+                "kind": "behavior",
+                "status": "started",
+                "actor": actor,
+                "actor_id": event.get("actor_id"),
+                "behavior": label,
+                "reason": reason,
+            }
         elif event_type == "behavior.completed":
             label = behavior_labels.get(str(event.get("behavior_id", "")), "a behavior")
-            sentence = f"{actor} completed {label}: {clip(event.get('result') or event.get('outcome', {}).get('result') or 'the expected result')}."
+            summary = clip(event.get('result') or event.get('outcome', {}).get('result') or 'the expected result')
+            sentence = f"{actor} completed {label}: {summary}."
+            activity = {
+                "kind": "behavior",
+                "status": "completed",
+                "actor": actor,
+                "actor_id": event.get("actor_id"),
+                "behavior": label,
+                "summary": summary,
+            }
         elif event_type in {"behavior.failed", "behavior.interrupted"}:
             label = behavior_labels.get(str(event.get("behavior_id", "")), "a behavior")
-            sentence = f"{actor}'s {label} {event_type.removeprefix('behavior.')} ({clip(event.get('result') or 'without a stated result')})."
+            summary = clip(event.get('result') or 'without a stated result')
+            sentence = f"{actor}'s {label} {event_type.removeprefix('behavior.')} ({summary})."
+            activity = {
+                "kind": "behavior",
+                "status": event_type.removeprefix("behavior."),
+                "actor": actor,
+                "actor_id": event.get("actor_id"),
+                "behavior": label,
+                "summary": summary,
+            }
         elif event_type == "action.started":
             sentence = f"{actor} started the action {str(event.get('action_id', 'an action')).replace('_', ' ')}."
         elif event_type == "action.completed":
@@ -108,6 +135,14 @@ def build_timeline(store: Any, *, limit: int = 100, after_event_id: int = 0, inc
         elif event_type == "story.beat.activated":
             audience = ", ".join(names.get(str(member), str(member)) for member in (event.get("audience", []) or []))
             sentence = f"A new development emerged: '{clip(event.get('summary'), 160)}'{f' for {audience}' if audience else ''}."
+            activity = {
+                "kind": "story",
+                "status": "activated",
+                "actor": actor,
+                "actor_id": event.get("actor_id"),
+                "label": clip(event.get("title") or "a development", 80),
+                "summary": clip(event.get("summary"), 160),
+            }
         elif event_type == "story.beat.completed":
             label = behavior_labels.get(str(event.get("behavior_id", "")), str(event.get("behavior_id", "a behavior")))
             sentence = f"{actor} followed through on a development with {label}."
@@ -125,8 +160,22 @@ def build_timeline(store: Any, *, limit: int = 100, after_event_id: int = 0, inc
         elif event_type in {"definition.registered", "behavior.registered"}:
             sentence = f"{actor} registered {clip(event.get('definition_type') or 'a behavior')}: {clip(event.get('name') or event.get('definition_id') or event.get('behavior_id'), 80)}."
         elif event_type.startswith("world.change."):
-            summary = str(event.get("summary") or event_type.removeprefix("world.change.").replace("_", " ")).rstrip(".")
+            rule = (event.get("effect") or {}).get("rule_added") or {}
+            summary = str(
+                event.get("summary")
+                or rule.get("description")
+                or rule.get("label")
+                or event_type.removeprefix("world.change.").replace("_", " ")
+            ).rstrip(".")
             sentence = f"The world changed: {summary}."
+            activity = {
+                "kind": "world.change",
+                "status": "committed",
+                "actor": actor,
+                "actor_id": event.get("actor_id"),
+                "label": clip(rule.get("label") or "world rule", 80),
+                "summary": clip(summary, 160),
+            }
         elif event_type == "world.created":
             sentence = "The world was created from its configured opening state."
         elif event_type == "player.entered":
@@ -134,5 +183,5 @@ def build_timeline(store: Any, *, limit: int = 100, after_event_id: int = 0, inc
         else:
             summary = str(event.get("summary") or event.get("result") or event_type.replace(".", " ").replace("_", " ")).rstrip(".")
             sentence = f"{actor}: {summary}."
-        rendered.append({"event_id": event["event_id"], "world_minute": event["world_minute"], "event_type": event_type, "narrative": sentence, "public": {key: value for key, value in event.items() if key not in {"actor_id", "target_id", "recipient_id", "offerer_id", "speaker_id", "listener_id", "location_id", "decision"}}})
+        rendered.append({"event_id": event["event_id"], "world_minute": event["world_minute"], "event_type": event_type, "narrative": sentence, "activity": activity, "public": {key: value for key, value in event.items() if key not in {"actor_id", "target_id", "recipient_id", "offerer_id", "speaker_id", "listener_id", "location_id", "decision"}}})
     return {"status": "ok", "world_id": store.repositories.metadata.get("world_id"), "world_minute": int(store.repositories.metadata.get("world_minute", 0)), "events": rendered, "next_after_event_id": events[-1]["event_id"] if events else after_event_id}

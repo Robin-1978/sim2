@@ -322,11 +322,25 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
     # ids are not valid listeners and used to surface as "participant does not
     # exist" when a player picked them from the target dropdown.
     nearby = list(decision.get("nearby_entities", []) or [])
+    bt_defs = {str(item.get("id")): item for item in platform.store.repositories.entities.get_definitions("bt_def")}
+
+    def _participant(item: dict[str, Any]) -> dict[str, Any]:
+        state = item.get("initial_state") or {}
+        behavior_id = str(state.get("active_behavior_id") or "")
+        if not behavior_id:
+            behavior_id = str((state.get("last_platform_result") or {}).get("behavior_ref") or "").removeprefix("behavior:")
+        behavior = bt_defs.get(behavior_id, {})
+        label = str(behavior.get("agent_label") or behavior.get("summary") or "")
+        return {
+            **item,
+            "active_behavior": behavior_id,
+            "active_behavior_label": label,
+        }
+
     participants = [
-        item for item in nearby
+        _participant(item) for item in nearby
         if str(item.get("type") or item.get("entity_type") or "") in {"agent", "player"}
     ]
-    bt_defs = {str(item.get("id")): item for item in platform.store.repositories.entities.get_definitions("bt_def")}
     unavailable_actions = []
     for item in (decision.get("unavailable_behavior_diagnostics") or []):
         behavior_id = str(item.get("behavior_id") or "")

@@ -576,6 +576,14 @@ def test_observer_feeds_show_npc_dialogue_and_decisions(tmp_path: Path):
             decisions = json.loads(response.read())["decisions"]
         assert decisions[-1]["actor"] == "玛拉"
         assert decisions[-1]["event_type"] == "behavior.completed"
+        with urlopen(Request(base + "/api/v1/observer/timeline?limit=20", headers=_observer_headers(server))) as response:
+            timeline = json.loads(response.read())["events"]
+        activity = [
+            event for event in timeline
+            if event.get("event_type") == "behavior.completed" and event.get("activity")
+        ]
+        assert activity[-1]["activity"]["actor"] == "玛拉"
+        assert activity[-1]["activity"]["behavior"] == "移动"
     finally:
         server.close()
         thread.join(timeout=3)
@@ -961,7 +969,7 @@ def test_web_manual_wait_runs_the_same_npc_ticks(tmp_path: Path):
                 headers={"x-sim2-session": token},
             )).read())["task"]
         assert task["state"] == "completed", task
-        assert task["result"]["report"]["start_minute"] < task["result"]["report"]["end_minute"]
+        assert task["result"]["report"]["end_minute"] - task["result"]["report"]["start_minute"] == 2
         assert provider_names[-1] == "remote"
         assert provider.contexts
         assert all('"web_player"' not in context for context in provider.contexts)

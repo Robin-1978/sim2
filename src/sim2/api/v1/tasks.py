@@ -27,6 +27,7 @@ class TaskRecord:
     completed_minutes: int = 0
     start_minute: int = 0
     world_minute: int = 0
+    follow_active_task: bool = False
     decisions: int = 0
     llm_errors: int = 0
     stop_reason: str = ""
@@ -92,6 +93,7 @@ class ManualTaskRunner:
             state = self.server.player_state(player_id)
             record.world_minute = int(state.get("world_minute", 0) or 0)
             record.start_minute = record.world_minute
+            record.follow_active_task = bool(state.get("active"))
             self._tasks[record.task_id] = record
             self._active[player_id] = record.task_id
             self._evict_locked()
@@ -165,7 +167,7 @@ class ManualTaskRunner:
             record.world_minute = int(result.get("world_minute", report.get("end_minute", record.world_minute)) or record.world_minute)
             self._publish("task.progress", record)
             state = self.server.player_state(record.player_id)
-            if not state.get("active"):
+            if record.follow_active_task and not state.get("active"):
                 break
             # A manual minute is a real Platform tick; yield between chunks so
             # read requests and the SSE hub are not starved by a tight loop.

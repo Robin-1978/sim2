@@ -135,6 +135,7 @@ export function appendWorldProperty(root, key, value, meta) {
     let display = formatWorldProperty(value, meta);
     if (meta.max && !["percent", "hours", "bool"].includes(meta.unit)) display += ` / ${meta.max}`;
     const row = el("div", "world-prop");
+    if (meta.prompt) row.title = String(meta.prompt);
     row.append(el("span", "", label));
     row.append(el("strong", "", display));
     const track = el("div", "track");

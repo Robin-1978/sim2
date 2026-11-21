@@ -1146,3 +1146,29 @@ def test_stamina_and_social_needs_change_instead_of_staying_pinned(tmp_path: Pat
         assert "behavior:rest_at_hearth" in refs
     finally:
         platform.close()
+
+
+def test_public_water_reserve_can_be_drawn_at_a_safe_location(tmp_path: Path) -> None:
+    """The shared reserve is a usable buffer, not a decorative world number."""
+
+    from sim2.api.service import ControlService
+
+    service = ControlService(create_instance(WORLD, "tidebound-public-water", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "steward", name="挑水的人")["status"] == "accepted"
+        hero = platform.store.repositories.entities.get_agent("hero")
+        hero["inventory"]["fresh_water"] = 0
+        with platform.store.transaction():
+            platform.store.repositories.entities.put_agent("hero", hero, hero["name"])
+        view = service.player_view("hero")
+        refs = {item.get("ref") for item in view["actions"]}
+        assert "behavior:draw_water" in refs
+        before = int(view["world_properties"]["fresh_water_reserve"])
+        _start_and_finish(platform, "hero", "draw_water", "draw-public-water")
+        hero = platform.store.repositories.entities.get_agent("hero")
+        assert hero["inventory"].get("fresh_water") == 1
+        properties = platform.store.repositories.metadata.get("world_properties")
+        assert int(properties["fresh_water_reserve"]) == before - 1
+    finally:
+        service.close()
