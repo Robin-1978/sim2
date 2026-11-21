@@ -813,3 +813,29 @@ behavior_trees:
   drive_tags:
   - belonging
   - purpose
+
+- id: rest_at_hearth
+  agent_label: 休息一会儿
+  summary: 休息一会儿
+  description: 在安全地点坐下休息，恢复精力。长时间的修复和赶路会消耗精力；精力见底时重活会被 Platform 隐藏。
+  purpose: 先恢复精力，再决定今天还能做多少事。
+  entry_conditions:
+  - actor.alive
+  - location.safe
+  - actor.state.stamina < 70
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: rest_at_hearth
+    parameters: {}
+  success_results:
+  - rested
+  failure_results:
+  - rest_failed
+  - interrupted
+  goal_tags:
+  - recovery
+  drive_tags:
+  - belonging
+  - purpose

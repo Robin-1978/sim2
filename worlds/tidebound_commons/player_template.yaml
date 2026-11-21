@@ -37,6 +37,7 @@ initial_bt_ids:
   - ration_today
   - repair_priority_today
   - marsh_rest_today
+  - rest_at_hearth
 knowledge_seed: []
 origins:
   - id: steward

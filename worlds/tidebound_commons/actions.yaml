@@ -441,3 +441,27 @@ actions:
   interaction_policy: allow
   kind: atomic
   executor: effect_pipeline
+
+- id: rest_at_hearth
+  verb: rest
+  version: 1
+  description: 在安全地点坐下休息一会儿，恢复精力，也重新接上公社的节奏。
+  parameters: {}
+  preconditions: [actor.alive, location.safe]
+  duration: {minutes: 60}
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: attribute_delta, attribute: stamina, delta: 30, maximum: 100}
+  - {type: need_delta, need: belonging, delta: 2}
+  - {type: need_delta, need: purpose, delta: 1}
+  success: {condition: actor.alive, result: rested}
+  failure: {condition: actor.incapacitated, result: rest_failed}
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline

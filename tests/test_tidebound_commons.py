@@ -1098,3 +1098,51 @@ def test_player_view_exposes_crisis_metrics_and_readable_action_impacts(tmp_path
         ]
     finally:
         service.close()
+
+
+def test_stamina_and_social_needs_change_instead_of_staying_pinned(tmp_path: Path) -> None:
+    """Stamina must be spent during work and recovered while idle.
+
+    Recovery used to run at 0.45/min even while executing, which was higher
+    than every configured action cost (0.02-0.20/min).  The capacity bar
+    therefore drifted to 100 and never gated anything.  Belonging and purpose
+    also decayed so slowly that a normal session could not see them move.
+    """
+
+    platform = Platform(create_instance(WORLD, "tidebound-live-stats", tmp_path / "runtime"))
+    try:
+        agent = platform.store.repositories.entities.get_agent("mara")
+        agent["initial_state"]["stamina"] = 50
+        agent["initial_state"]["status"] = "executing"
+        with platform.store.transaction():
+            platform.store.repositories.entities.put_agent("mara", agent, agent["name"])
+        platform.step()
+        busy = platform.store.repositories.entities.get_agent("mara")
+        assert busy["initial_state"]["stamina"] == 50
+
+        agent = platform.store.repositories.entities.get_agent("mara")
+        agent["initial_state"]["status"] = "idle"
+        agent["needs"]["belonging"] = 58
+        agent["needs"]["purpose"] = 62
+        with platform.store.transaction():
+            platform.store.repositories.entities.put_agent("mara", agent, agent["name"])
+        platform.step()
+        idle = platform.store.repositories.entities.get_agent("mara")
+        assert idle["initial_state"]["stamina"] == 50.2
+
+        for _ in range(29):
+            platform.step()
+        after = platform.store.repositories.entities.get_agent("mara")
+        assert after["initial_state"]["stamina"] > 55
+        assert after["needs"]["belonging"] < 58
+        assert after["needs"]["purpose"] < 62
+
+        platform.enter_player("hero", "steward", name="Ari")
+        hero = platform.store.repositories.entities.get_agent("hero")
+        hero["initial_state"]["stamina"] = 40
+        with platform.store.transaction():
+            platform.store.repositories.entities.put_agent("hero", hero, hero["name"])
+        refs = {item.get("ref") for item in platform.decision_view("hero")["executable_behaviors"]}
+        assert "behavior:rest_at_hearth" in refs
+    finally:
+        platform.close()

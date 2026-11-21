@@ -39,6 +39,7 @@ context_values:
   station_id: workshop
   hydration_alert_threshold: 45
   satiety_alert_threshold: 45
+  stamina_alert_threshold: 35
   public_confidence_threshold: 0.35
 item_groups:
   water:
@@ -239,10 +240,14 @@ minute_effects:
 - id: stamina_recovery
   scope: agent
   every_minutes: 1
+  # Work spends stamina; only an idle or waiting actor recovers it.  Without
+  # this guard every action cost (0.02-0.20/min) was weaker than recovery
+  # (0.45/min), so the capacity bar always drifted to 100 and never gated.
+  condition: action.none
   effect:
     type: attribute_delta
     attribute: stamina
-    delta: 0.45
+    delta: 0.2
     maximum: 100
 - id: hydration_decay
   scope: agent
@@ -282,18 +287,18 @@ minute_effects:
       signal_only: true
 - id: belonging_decay
   scope: agent
-  every_minutes: 20
+  every_minutes: 10
   effect:
     type: need_delta
     need: belonging
-    delta: -0.01
+    delta: -0.05
 - id: purpose_decay
   scope: agent
-  every_minutes: 30
+  every_minutes: 15
   effect:
     type: need_delta
     need: purpose
-    delta: -0.01
+    delta: -0.05
 - id: storm_clock
   scope: world
   every_minutes: 1
