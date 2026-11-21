@@ -258,6 +258,26 @@
     for (const [pattern, replacement] of direct) {
       if (pattern.test(value)) return value.replace(pattern, replacement);
     }
+    const worldChange = value.match(/^World (.+) changes by (-?\d+(?:\.\d+)?)\.?$/i);
+    if (worldChange) {
+      const key = worldChange[1].trim().replace(/\s+/g, "_");
+      const meta = state.view?.world_property_labels?.[key] || {};
+      const label = meta.label || humanizeKey(key);
+      const delta = Number(worldChange[2]);
+      if (meta.unit === "percent") return `${label} ${delta >= 0 ? "+" : "−"}${Math.abs(Math.round(delta * 100))}%`;
+      return `${label} ${delta >= 0 ? "+" : "−"}${Math.abs(delta)}`;
+    }
+    const worldResource = value.match(/^World resource (.+?) ([+-]\d+(?:\.\d+)?)\.?$/i);
+    if (worldResource) {
+      const key = worldResource[1].trim().replace(/\s+/g, "_");
+      return `${itemLabel(key)} ${worldResource[2]}`;
+    }
+    const useShared = value.match(/^Use ([\d.]+) (.+) \(carried or shared stock\)\.?$/i);
+    if (useShared) return `使用 ${useShared[1]} ${itemLabel(useShared[2])}（随身或公共库存）`;
+    const withdraw = value.match(/^Withdraw ([\d.]+) (.+) from shared stock\.?$/i);
+    if (withdraw) return `从公共库存取 ${withdraw[1]} ${itemLabel(withdraw[2])}`;
+    const deposit = value.match(/^Deposit ([\d.]+) (.+) into shared stock\.?$/i);
+    if (deposit) return `存入公共库存 ${deposit[1]} ${itemLabel(deposit[2])}`;
     const inventory = value.match(/^Inventory ([+-]\d+(?:\.\d+)?) (.+)\.?$/i);
     if (inventory) {
       const raw = inventory[2].toLowerCase();
@@ -840,6 +860,7 @@
     renderClock();
     renderCharacter();
     renderScene();
+    renderCrisisStrip();
     renderMiniMap();
     renderTask();
     renderActions();
@@ -1014,11 +1035,12 @@
     objects.replaceChildren();
     const nearby = Array.isArray(view.nearby_entities) ? view.nearby_entities : [];
     const objectItems = nearby.filter((item) => item.type && !["agent", "player", "resource"].includes(item.type));
+    const statusNames = { offline: "未修复", working: "运转中", damaged: "受损", repaired: "已修复", dim: "暗淡", tuned: "已校准", partial: "残缺", braced: "加固中", open: "开放", closed: "封闭" };
     for (const item of objectItems.slice(0, 4)) {
       const status = item.initial_state?.status || "";
       const chip = el("div", "scene-object");
       chip.append(el("i"));
-      chip.append(el("span", "", `${item.name || item.id}${status ? ` · ${status}` : ""}`));
+      chip.append(el("span", "", `${item.name || item.id}${status ? ` · ${statusNames[status] || status}` : ""}`));
       objects.append(chip);
     }
 
@@ -1060,6 +1082,53 @@
     }
   }
 
+  function renderCrisisStrip() {
+    const panel = $("crisis-strip");
+    if (!panel) return;
+    const metrics = Array.isArray(state.view?.ui?.crisis_metrics) ? state.view.ui.crisis_metrics : [];
+    const root = $("crisis-metrics");
+    if (!root) return;
+    if (!metrics.length) {
+      panel.classList.add("hidden");
+      return;
+    }
+    panel.classList.remove("hidden");
+    root.replaceChildren();
+    const properties = state.view?.world_properties || {};
+    const labels = state.view?.world_property_labels || {};
+    for (const metric of metrics) {
+      const key = String(metric?.property || "").trim();
+      if (!key || properties[key] === undefined) continue;
+      const base = labels[key] || {};
+      const meta = {
+        ...base,
+        label: metric.label || base.label || humanizeKey(key),
+        unit: metric.format || base.unit,
+        max: metric.max ?? base.max,
+      };
+      const numeric = Number(properties[key]);
+      const danger = Number(metric.danger_below);
+      const warning = Number(metric.warning_below);
+      let level = "good";
+      if (Number.isFinite(danger) && numeric < danger) level = "danger";
+      else if (Number.isFinite(warning) && numeric < warning) level = "warning";
+      const card = el("article", `crisis-metric ${level}`);
+      card.append(el("span", "crisis-label", meta.label));
+      let display = formatWorldProperty(properties[key], meta);
+      if (meta.max && meta.unit !== "percent" && meta.unit !== "hours") display += ` / ${meta.max}`;
+      card.append(el("strong", "", display));
+      const track = el("div", "crisis-track");
+      const fill = el("span");
+      const max = Number(meta.max || (meta.unit === "percent" ? 1 : Math.max(1, numeric)));
+      fill.style.width = `${clamp((numeric / max) * 100, 0, 100)}%`;
+      track.append(fill);
+      card.append(track);
+      if (metric.hint) card.append(el("small", "", metric.hint));
+      root.append(card);
+    }
+    if (!root.children.length) panel.classList.add("hidden");
+  }
+
   function renderTask() {
     const view = state.view;
     const task = view?.active_task || {};
@@ -1089,16 +1158,17 @@
 
   /* ---------- Actions ---------- */
 
-  const CATEGORY_ORDER = ["移动", "采集", "制作", "公共", "社交", "恢复", "其他"];
+  const CATEGORY_ORDER = ["移动", "采集", "制作", "公共", "交易", "社交", "恢复", "其他"];
 
   function actionCategory(action) {
     if (action.kind === "travel" || action.ref === "behavior:travel") return "移动";
     const ref = String(action.ref || "");
+    if (ref.includes("market") || ref.includes("trade") || ref.includes("barter")) return "交易";
     if (ref.includes("gather")) return "采集";
     if (ref.includes("craft")) return "制作";
     if (ref.includes("communicate")) return "社交";
     if (ref.includes("eat") || ref.includes("drink")) return "恢复";
-    if (ref.includes("inspect") || ref.includes("repair") || ref.includes("research") || ref.includes("explore") || ref.includes("tune")) return "公共";
+    if (ref.includes("inspect") || ref.includes("repair") || ref.includes("research") || ref.includes("explore") || ref.includes("tune") || ref.includes("brace") || ref.includes("stock")) return "公共";
     return "其他";
   }
 
@@ -1107,6 +1177,7 @@
     if (category === "采集") return "开始采集";
     if (category === "制作") return "开始制作";
     if (category === "社交") return "交谈";
+    if (category === "交易") return "交换";
     if (category === "恢复") return "立即使用";
     if (category === "公共") return "执行";
     return "开始";
@@ -1553,6 +1624,14 @@
       chapterSummary.textContent = text;
       chapterSummary.classList.toggle("hidden", !text);
     }
+    const chapterGoal = $("chapter-goal");
+    if (chapterGoal) {
+      const text = String(chapter?.goal_hint || "").trim();
+      chapterGoal.textContent = text;
+      chapterGoal.classList.toggle("hidden", !text);
+    }
+    const goalsPanel = document.querySelector(".goals-panel");
+    if (goalsPanel) goalsPanel.classList.toggle("ending", chapter?.kind === "ending");
     const summary = $("goal-summary");
     if (summary) summary.textContent = goals.length ? `${goals.length} 项待完成` : "全部完成";
     if (!goals.length) {
@@ -1629,33 +1708,53 @@
     }
   }
 
+  function appendWorldProperty(root, key, value, meta) {
+    const label = meta.label || humanizeKey(key);
+    const numeric = Number(value);
+    let display = formatWorldProperty(value, meta);
+    if (meta.max && meta.unit !== "percent" && meta.unit !== "hours") display += ` / ${meta.max}`;
+    const row = el("div", "world-prop");
+    row.append(el("span", "", label));
+    row.append(el("strong", "", display));
+    const track = el("div", "track");
+    const fill = el("span");
+    const max = Number(meta.max || (meta.unit === "percent" ? 1 : Math.max(1, numeric)));
+    fill.style.width = `${clamp((numeric / max) * 100, 0, 100)}%`;
+    track.append(fill);
+    row.append(track);
+    root.append(row);
+  }
+
   function renderWorldProperties() {
     const root = $("world-properties");
     root.replaceChildren();
     const properties = state.view?.world_properties || {};
     const labels = state.view?.world_property_labels || {};
-    const entries = Object.entries(properties);
-    const visibleEntries = entries.filter(([key]) => !(labels[key] || {}).hidden);
+    const visibleEntries = Object.entries(properties)
+      .filter(([key]) => !(labels[key] || {}).hidden)
+      .sort((left, right) => {
+        const leftMeta = labels[left[0]] || {};
+        const rightMeta = labels[right[0]] || {};
+        return (Number(leftMeta.group_order || 0) - Number(rightMeta.group_order || 0))
+          || (Number(leftMeta.order || 0) - Number(rightMeta.order || 0));
+      });
     if (!visibleEntries.length) {
       root.append(el("p", "hint", "当前世界没有公开数值。"));
       return;
     }
+    if (!visibleEntries.some(([key]) => (labels[key] || {}).group)) {
+      for (const [key, value] of visibleEntries) appendWorldProperty(root, key, value, labels[key] || {});
+      return;
+    }
+    const groups = new Map();
     for (const [key, value] of visibleEntries) {
-      const meta = labels[key] || {};
-      const label = meta.label || humanizeKey(key);
-      const numeric = Number(value);
-      let display = formatWorldProperty(value, meta);
-      if (meta.max && meta.unit !== "percent" && meta.unit !== "hours") display += ` / ${meta.max}`;
-      const row = el("div", "world-prop");
-      row.append(el("span", "", label));
-      row.append(el("strong", "", display));
-      const track = el("div", "track");
-      const fill = el("span");
-      const max = Number(meta.max || (meta.unit === "percent" ? 1 : Math.max(1, numeric)));
-      fill.style.width = `${clamp((numeric / max) * 100, 0, 100)}%`;
-      track.append(fill);
-      row.append(track);
-      root.append(row);
+      const group = String((labels[key] || {}).group || "其他");
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group).push([key, value]);
+    }
+    for (const [group, rows] of groups) {
+      root.append(el("div", "world-group-title", group));
+      for (const [key, value] of rows) appendWorldProperty(root, key, value, labels[key] || {});
     }
   }
 
@@ -1941,7 +2040,10 @@
     if (value.startsWith("storm.") || value.startsWith("weather.")) return "storm";
     if (value.startsWith("dialogue.") || value.startsWith("conversation.")) return "dialogue";
     if (value.startsWith("resource.") || value.startsWith("ration") || value.startsWith("rope.")) return "resource";
-    if (value.startsWith("tide_gate.") || value.startsWith("repair") || value.startsWith("signal.")) return "repair";
+    if (value.startsWith("tide_gate.") || value.startsWith("repair") || value.startsWith("signal.") || value.startsWith("gate.") || value.startsWith("gate_brace.") || value.startsWith("rain_catcher.") || value.startsWith("rainwater.") || value.startsWith("commons.volunteer")) return "repair";
+    if (value.startsWith("market.") || value.startsWith("trade.")) return "trade";
+    if (value.startsWith("confidence.")) return "decision";
+    if (value.startsWith("season.")) return "storm";
     if (value.startsWith("story.") || value.startsWith("beat.")) return "story";
     if (value.startsWith("origin.")) return "origin";
     return "";
@@ -1954,6 +2056,7 @@
     if (kind === "dialogue") return "对话";
     if (kind === "resource") return "采集与制作";
     if (kind === "repair") return "公共设施";
+    if (kind === "trade") return "交易";
     if (kind === "story") return "世界剧情";
     if (kind === "origin") return "出身";
     if (type.startsWith("behavior.")) return "角色行动";
@@ -2015,7 +2118,14 @@
         || type.includes("story")
         || type.includes("world.change")
         || type.includes("civilization")
-        || type.includes("evolution");
+        || type.includes("evolution")
+        || type.startsWith("gate.")
+        || type.startsWith("confidence.")
+        || type.startsWith("season.")
+        || type.startsWith("signal.")
+        || type.startsWith("rain")
+        || type.startsWith("market.")
+        || type.startsWith("commons.");
     }) || events[0];
     if (!important) {
       root.className = "world-pulse empty";

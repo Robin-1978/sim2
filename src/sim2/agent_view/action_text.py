@@ -41,6 +41,13 @@ def _display_number(value: Any) -> str:
     return str(value)
 
 
+def _safe_number(value: Any, default: float = 1.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _cost_text(action: dict[str, Any], recipe: dict[str, Any] | None = None) -> list[str]:
     costs = action.get("costs", {})
     out: list[str] = []
@@ -88,6 +95,8 @@ def _effect_text(action: dict[str, Any], recipe: dict[str, Any] | None = None, p
     def resolved(value: Any) -> Any:
         if isinstance(value, str) and value.startswith("context."):
             return parameters.get(value.removeprefix("context."), value)
+        if isinstance(value, str) and value in parameters:
+            return parameters[value]
         return value
 
     for effect in action.get("effects", []) or []:
@@ -113,6 +122,26 @@ def _effect_text(action: dict[str, Any], recipe: dict[str, Any] | None = None, p
             impacts.append("Arrive at the selected location")
         elif effect_type == "world_property_delta":
             impacts.append(f"World {_display_item(effect.get('property', 'property'))} changes by {effect.get('delta', effect.get('value', 0))}")
+        elif effect_type == "world_resource_delta":
+            resource = resolved(effect.get("resource_id") or effect.get("resource") or "resource")
+            delta = _safe_number(effect.get("delta", effect.get("value", 0)), default=0.0)
+            impacts.append(f"World resource {_display_item(resource)} {delta:+g}")
+        elif effect_type == "resource_withdrawal":
+            amount = _safe_number(resolved(effect.get("amount", effect.get("quantity", 1))))
+            item = resolved(effect.get("output_item") or effect.get("inventory_item") or "item")
+            if effect.get("only_if_missing"):
+                impacts.append(f"Use {amount:g} {_display_item(item)} (carried or shared stock)")
+            else:
+                impacts.append(f"Withdraw {amount:g} {_display_item(item)} from shared stock")
+        elif effect_type == "resource_transfer":
+            quantity = effect.get("quantity_parameter")
+            amount = _safe_number(resolved(parameters.get(str(quantity))) if quantity else resolved(effect.get("quantity", effect.get("amount", 1))))
+            item = resolved(effect.get("source_item") or effect.get("source_item_parameter") or "item")
+            impacts.append(f"Deposit {amount:g} {_display_item(item)} into shared stock")
+        elif effect_type == "entity_state_set":
+            # The world-property delta and the action title already describe
+            # the visible facility change; raw entity/state flags are noise.
+            continue
         elif effect_type:
             impacts.append(f"Platform applies configured {effect_type.replace('_', ' ')} effect")
     if recipe:

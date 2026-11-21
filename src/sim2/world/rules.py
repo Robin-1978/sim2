@@ -362,5 +362,5 @@ class RuleCompiler:
                 continue
             stable_id = str(raw.get("id") or raw.get("name") or rule["name"])
             event_type = rule["event_type"] or f"world.rule.{stable_id}"
-            result.append({"id": stable_id, "name": rule["name"], "event_type": event_type, "wake": rule["wake"], "effect": rule["effect"], "condition": rule["condition"]})
+            result.append({"id": stable_id, "name": rule["name"], "event_type": event_type, "wake": rule["wake"], "effect": rule["effect"], "condition": rule["condition"], "description": rule["description"]})
         return result

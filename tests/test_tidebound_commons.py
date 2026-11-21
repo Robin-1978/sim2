@@ -811,7 +811,8 @@ def test_first_storm_coop_path_uses_the_public_tool_rack(tmp_path: Path) -> None
         assert properties["gate_repairs"] == 1
         assert platform.store.repositories.entities.get_entity("commons_tool_rack")["initial_state"]["quantity"] == 1
         assert service.player_view("hero")["onboarding"]["id"] == "second_gate_repair"
-        assert platform.store.repositories.events.recent_events_by_types(["gate.repair_needed"], limit=10)
+        repair_needed = platform.store.repositories.events.recent_events_by_types(["gate.repair_needed"], limit=10)
+        assert repair_needed and repair_needed[0].get("summary")
 
         _start_and_finish(platform, "mara", "repair_gate", "coop-mara-repair")
         properties = platform.store.repositories.metadata.get("world_properties")
@@ -1036,5 +1037,36 @@ def test_story_after_the_ending_can_replace_the_epilogue_card(tmp_path: Path) ->
         chapter = service.player_view("hero")["chapter"]
         assert chapter["kind"] == "story"
         assert chapter["title"] == "下一季的第一条消息"
+    finally:
+        service.close()
+
+
+def test_player_view_exposes_crisis_metrics_and_readable_action_impacts(tmp_path: Path) -> None:
+    from sim2.api.service import ControlService
+
+    service = ControlService(create_instance(WORLD, "tidebound-ui-projection", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "steward", name="试玩者")["status"] == "accepted"
+        view = service.player_view("hero")
+        metrics = view["ui"]["crisis_metrics"]
+        assert [item["property"] for item in metrics] == [
+            "tide_gate_integrity",
+            "storm_eta_hours",
+            "public_confidence",
+            "commons_tool_kits",
+        ]
+        assert all(item["property"] in view["world_properties"] for item in metrics)
+
+        _set_world_properties(platform, maintenance_evidence=1)
+        mara = platform.decision_view("mara")
+        repair = next(item for item in mara["executable_behaviors"] if item["ref"] == "behavior:repair_gate")
+        assert any("Use 1 repair kit" in item for item in repair["impact"])
+        assert not any("configured resource withdrawal effect" in item for item in repair["impact"])
+
+        _set_world_properties(platform, signal_reach=0.7)
+        ending = service.player_view("hero")["chapter"]
+        assert ending["kind"] == "ending"
+        assert ending["goal_hint"]
     finally:
         service.close()

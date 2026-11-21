@@ -220,7 +220,8 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
     # Travel is a generic player affordance. The decision projection hides
     # a travel BT when its destination is not selected yet; clients supply
     # each known route as an explicit, validated intent instead.
-    ui = UiText.from_setting(platform.store.repositories.metadata.get("setting", {}))
+    setting = platform.store.repositories.metadata.get("setting", {}) or {}
+    ui = UiText.from_setting(setting)
     for route in routes:
         if active_task.get("action") or active_task.get("bt"):
             break
@@ -317,6 +318,7 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         "location": location,
         "world_properties": platform.store.repositories.metadata.get("world_properties", {}),
         "world_property_labels": world_property_labels,
+        "ui": dict(setting.get("ui") or {}),
         "alert_thresholds": alert_thresholds,
         "routes": routes,
         "map": map_view,

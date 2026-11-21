@@ -55,18 +55,18 @@ item_labels:
   reed_rope: 芦苇绳
   gate_brace: 潮门支撑件
 world_property_labels:
-  tide_gate_integrity: {label: 潮门完整性, unit: percent, max: 1}
-  gate_repairs: {label: 已修复次数, unit: amount, max: 3}
-  signal_reach: {label: 信号覆盖, unit: percent, max: 1}
-  fresh_water_reserve: {label: 淡水储备, unit: amount}
-  maintenance_evidence: {label: 维护记录, unit: amount, max: 3}
-  commons_tool_kits: {label: 公共工具包, unit: amount, max: 3}
-  storm_pressure: {label: 风暴压力, unit: percent, max: 1}
-  storm_eta_hours: {label: 风暴倒计时, unit: hours, max: 48, alert: true}
-  storm_cycle: {label: 风暴轮次, unit: amount, max: 3}
-  public_confidence: {label: 公共信心, unit: percent, max: 1}
-  rain_catcher_repaired: {label: 集雨器, unit: bool, max: 1}
-  market_trades: {label: 集市交换, unit: amount}
+  tide_gate_integrity: {label: 潮门完整性, unit: percent, max: 1, group: 防线, group_order: 1, order: 2}
+  gate_repairs: {label: 已修复次数, unit: amount, max: 3, group: 防线, group_order: 1, order: 3}
+  signal_reach: {label: 信号覆盖, unit: percent, max: 1, group: 进展, group_order: 3, order: 1}
+  fresh_water_reserve: {label: 淡水储备, unit: amount, group: 储备, group_order: 2, order: 1}
+  maintenance_evidence: {label: 维护记录, unit: amount, max: 3, group: 进展, group_order: 3, order: 2}
+  commons_tool_kits: {label: 公共工具包, unit: amount, max: 3, group: 储备, group_order: 2, order: 2}
+  storm_pressure: {label: 风暴压力, unit: percent, max: 1, group: 防线, group_order: 1, order: 5}
+  storm_eta_hours: {label: 风暴倒计时, unit: hours, max: 48, alert: true, group: 防线, group_order: 1, order: 1}
+  storm_cycle: {label: 风暴轮次, unit: amount, max: 3, group: 防线, group_order: 1, order: 6}
+  public_confidence: {label: 公共信心, unit: percent, max: 1, group: 防线, group_order: 1, order: 4}
+  rain_catcher_repaired: {label: 集雨器, unit: bool, max: 1, group: 储备, group_order: 2, order: 3}
+  market_trades: {label: 集市交换, unit: amount, group: 储备, group_order: 2, order: 4}
   public_decision_open: {label: 公共决策窗口, unit: bool, hidden: true}
   decision_rationing: {label: 昨日配给, unit: bool, hidden: true}
   decision_repair: {label: 昨日抢修, unit: bool, hidden: true}
@@ -320,6 +320,7 @@ minute_effects:
   - {type: world_resource_delta, resource_id: fresh_water, delta: -6, minimum: 0}
   - {type: entity_state_set, entity_id: commons_quay, state: open, value: false}
   - {type: entity_state_set, entity_id: commons_quay, state: closed_reason, value: 风暴潮淹没了码头}
+  - {type: entity_state_set, entity_id: tide_gate, state: status, value: damaged}
   event_type: storm.flooded
   event_summary: 风暴潮越过失守的潮门，码头和粮仓进水，公社的信心明显动摇。
   event_data:
@@ -334,6 +335,7 @@ minute_effects:
   - {type: world_resource_delta, resource_id: marsh_reed, delta: -8, minimum: 0}
   - {type: entity_state_set, entity_id: marsh_edge, state: open, value: false}
   - {type: entity_state_set, entity_id: marsh_edge, state: closed_reason, value: 潮沟被风暴撕开}
+  - {type: entity_state_set, entity_id: tide_gate, state: status, value: damaged}
   event_type: storm.breached
   event_summary: 风暴撕开了潮门缺口。闸室还能站人，但下一次风暴会更危险。
   event_data:
@@ -348,6 +350,7 @@ minute_effects:
   - {type: entity_state_set, entity_id: commons_quay, state: closed_reason, value: ""}
   - {type: entity_state_set, entity_id: marsh_edge, state: open, value: true}
   - {type: entity_state_set, entity_id: marsh_edge, state: closed_reason, value: ""}
+  - {type: entity_state_set, entity_id: tide_gate, state: status, value: repaired}
   event_type: storm.held
   event_summary: 潮门扛住了风暴。公社第一次证明，公开维护的代价没有白付。
   event_data:

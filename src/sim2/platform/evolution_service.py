@@ -65,6 +65,7 @@ class EvolutionService(PlatformService):
                         "rule": name,
                         "condition": signal.get("condition"),
                         "effect": signal.get("effect"),
+                        "summary": str(signal.get("description") or name),
                         "signal": True,
                     },
                 )

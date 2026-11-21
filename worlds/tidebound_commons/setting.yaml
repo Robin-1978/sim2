@@ -2,6 +2,12 @@ name: 潮汐公社
 premise: 风暴季正在逼近。四名居民守着一段破损的潮门和一座半沉的观测台，必须在修复海堤、补全海图与重开外海航路之间做出选择，并让每一次采集都留给沼泽恢复的余地。
 genre: 海岸生存与公共抉择
 locale: zh-CN
+ui:
+  crisis_metrics:
+  - {property: tide_gate_integrity, label: 潮门完整性, format: percent, danger_below: 0.2, warning_below: 0.8, hint: 目标 80%}
+  - {property: storm_eta_hours, label: 风暴倒计时, format: hours, danger_below: 3, warning_below: 8, hint: 下一次风暴}
+  - {property: public_confidence, label: 公共信心, format: percent, danger_below: 0.25, warning_below: 0.35, hint: 低于 35% 无法校准信号}
+  - {property: commons_tool_kits, label: 公共工具包, format: amount, max: 3, danger_below: 1, warning_below: 2, hint: 闸室公共工具架}
 ui_text:
   travel_choice: "前往 {name}"
   travel_summary: "沿已知路线前往 {name}。"
