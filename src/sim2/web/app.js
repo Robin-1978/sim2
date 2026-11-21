@@ -230,8 +230,12 @@
   }
 
   function itemLabel(itemId) {
+    const value = String(itemId || "");
     const labels = state.view?.item_labels || {};
-    return labels[String(itemId)] || humanizeKey(itemId);
+    if (labels[value]) return labels[value];
+    const normalized = value.replace(/_/g, " ").toLowerCase();
+    const match = Object.keys(labels).find((key) => key.replace(/_/g, " ").toLowerCase() === normalized);
+    return match ? labels[match] : humanizeKey(value);
   }
 
   function translateTime(text) {
@@ -274,18 +278,18 @@
     }
     const useShared = value.match(/^Use ([\d.]+) (.+) \(carried or shared stock\)\.?$/i);
     if (useShared) return `使用 ${useShared[1]} ${itemLabel(useShared[2])}（随身或公共库存）`;
+    const carried = value.match(/^Carried stock -([\d.]+) (.+) on success \(reserved before start\)\.?$/i);
+    if (carried) return `预留 ${carried[1]} ${itemLabel(carried[2])}（开始时扣除）`;
     const withdraw = value.match(/^Withdraw ([\d.]+) (.+) from shared stock\.?$/i);
     if (withdraw) return `从公共库存取 ${withdraw[1]} ${itemLabel(withdraw[2])}`;
     const deposit = value.match(/^Deposit ([\d.]+) (.+) into shared stock\.?$/i);
     if (deposit) return `存入公共库存 ${deposit[1]} ${itemLabel(deposit[2])}`;
     const inventory = value.match(/^Inventory ([+-]\d+(?:\.\d+)?) (.+)\.?$/i);
     if (inventory) {
-      const raw = inventory[2].toLowerCase();
-      const id = Object.keys(state.view?.item_labels || {}).find((key) => key.replace(/_/g, " ") === raw);
-      return `${id ? itemLabel(id) : raw} ${inventory[1].replace("-", "−")}`;
+      return `${itemLabel(inventory[2])} ${inventory[1].replace("-", "−")}`;
     }
     const reserve = value.match(/^(.+?)\s+(\d+(?:\.\d+)?)\s+\(reserve\)\.?$/i);
-    if (reserve) return `${reserve[1]} ×${reserve[2]}（预留）`;
+    if (reserve) return `${itemLabel(reserve[1])} ×${reserve[2]}（预留）`;
     const recipe = value.match(/^Recipe inputs:\s*(.+)$/i);
     if (recipe) return `配方材料：${recipe[1]}`;
     return value;
@@ -1113,6 +1117,7 @@
       if (Number.isFinite(danger) && numeric < danger) level = "danger";
       else if (Number.isFinite(warning) && numeric < warning) level = "warning";
       const card = el("article", `crisis-metric ${level}`);
+      if (metric.hint) card.title = String(metric.hint);
       card.append(el("span", "crisis-label", meta.label));
       let display = formatWorldProperty(properties[key], meta);
       if (meta.max && meta.unit !== "percent" && meta.unit !== "hours") display += ` / ${meta.max}`;
@@ -1494,6 +1499,9 @@
         state.taskTotal = Math.max(1, Number(result.remaining_minutes || parseMinutes(action.time) || 1));
         toast(`已开始：${label}`, "ok");
         await loadView();
+        if (state.view?.active_task && window.matchMedia("(min-width: 861px)").matches) {
+          $("task-panel").scrollIntoView({ block: "center", behavior: "smooth" });
+        }
         if (!state.runtime?.running) {
           await advanceTask(`${label}：`);
         }

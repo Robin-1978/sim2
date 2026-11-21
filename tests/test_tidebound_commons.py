@@ -1064,6 +1064,14 @@ def test_player_view_exposes_crisis_metrics_and_readable_action_impacts(tmp_path
         assert any("Use 1 repair kit" in item for item in repair["impact"])
         assert not any("configured resource withdrawal effect" in item for item in repair["impact"])
 
+        hero = platform.store.repositories.entities.get_agent("hero")
+        hero["inventory"]["repair_kit"] = 1
+        with platform.store.transaction():
+            platform.store.repositories.entities.put_agent("hero", hero, hero["name"])
+        stock = next(item for item in service.player_view("hero")["actions"] if item["ref"] == "behavior:stock_repair_kit")
+        assert stock["cost"] == ["Stamina 0.12 (per minute)", "Carried stock -1 repair kit on success (reserved before start)"]
+        assert not any("parameter" in line.casefold() or "selected item" in line.casefold() for line in stock["cost"])
+
         _set_world_properties(platform, signal_reach=0.7)
         ending = service.player_view("hero")["chapter"]
         assert ending["kind"] == "ending"

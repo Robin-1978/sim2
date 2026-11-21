@@ -477,7 +477,7 @@ h1, h2, h3 { font-weight: 650; }
   background: rgba(255, 255, 255, 0.025);
 }
 .crisis-label { display: block; color: var(--faint); font-size: 9px; letter-spacing: 0.08em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.crisis-metric strong { display: block; margin-top: 3px; font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.crisis-metric strong { display: block; margin-top: 3px; font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .crisis-metric small { display: block; margin-top: 3px; min-height: 13px; color: var(--faint); font-size: 8.5px; line-height: 1.35; }
 .crisis-track { height: 3px; margin-top: 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
 .crisis-track span { display: block; height: 100%; border-radius: inherit; background: var(--cyan); }
@@ -1243,7 +1243,12 @@ body.editor-open { overflow: hidden; }
   .right-rail { order: 3; width: 100%; }
   .scene-panel { order: 1; }
   .crisis-strip { order: 2; }
-  .crisis-metrics { grid-template-columns: 1fr 1fr; }
+  .crisis-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .crisis-metric { padding: 8px 8px 7px; }
+  .crisis-label { font-size: 8.5px; }
+  .crisis-metric strong { font-size: 13px; }
+  .crisis-metric small { display: none; }
+  .crisis-track { margin-top: 5px; }
   .onboarding-card { order: 3; align-items: stretch; flex-direction: column; gap: 10px; }
   .onboarding-card .button { width: 100%; }
   .task-panel { order: 4; }

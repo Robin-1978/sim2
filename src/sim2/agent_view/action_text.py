@@ -48,8 +48,13 @@ def _safe_number(value: Any, default: float = 1.0) -> float:
         return default
 
 
-def _cost_text(action: dict[str, Any], recipe: dict[str, Any] | None = None) -> list[str]:
+def _cost_text(
+    action: dict[str, Any],
+    recipe: dict[str, Any] | None = None,
+    parameters: dict[str, Any] | None = None,
+) -> list[str]:
     costs = action.get("costs", {})
+    parameters = parameters or {}
     out: list[str] = []
     for phase, values in costs.items():
         if not values:
@@ -70,7 +75,17 @@ def _cost_text(action: dict[str, Any], recipe: dict[str, Any] | None = None) -> 
                     out.append(f"Recipe inputs: {inputs or 'configured inputs'} (reserved before start)")
                     continue
                 if key == "item_parameter":
-                    out.append("Carried stock -1 selected item on success (reserved before start)")
+                    item = parameters.get(str(value), value) if isinstance(value, str) else value
+                    quantity_key = values.get("item_quantity_parameter")
+                    quantity = parameters.get(str(quantity_key), 1) if quantity_key else 1
+                    out.append(
+                        f"Carried stock -{_safe_number(quantity):g} {_display_item(item)} "
+                        "on success (reserved before start)"
+                    )
+                    continue
+                if key == "item_quantity_parameter":
+                    # The declared item line already carries the resolved
+                    # quantity; showing the raw parameter key again is noise.
                     continue
                 if key == "resource_parameter":
                     amount = values.get("resource_amount", 1)
@@ -166,7 +181,7 @@ def action_view(action: dict[str, Any], recipe: dict[str, Any] | None = None, pa
         "requires": action.get("requirements") or action.get("requirement_text") or [predicate_text(item) for item in action.get("preconditions", [])] or ["Platform confirms the configured requirements."],
         "target": "Platform selects a permitted target from the current view.",
         "time": f"{action.get('duration', {}).get('minutes', 'variable')} minutes",
-        "cost": _cost_text(action, recipe),
+        "cost": _cost_text(action, recipe, parameters),
         "impact": _effect_text(action, recipe, parameters),
         "success": [str(success.get("result", "configured success")).replace("_", " ")],
         "failure": [str(failure.get("result", "configured failure")).replace("_", " ")],
