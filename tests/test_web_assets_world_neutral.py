@@ -87,6 +87,23 @@ def test_world_vocabulary_moves_into_setting_ui():
     assert "uiConfig().event_titles" in panels
 
 
+def test_entry_hook_is_world_driven():
+    setting = yaml.safe_load((ROOT / "worlds" / "tidebound_commons" / "setting.yaml").read_text(encoding="utf-8"))
+    ui = setting["ui"]
+    assert ui["tagline"]
+    assert ui["cast_order"][0] == "mara"
+    assets = _read_assets()
+    assert 'id="entry-tagline"' in assets["index.html"]
+    assert 'id="entry-stakes"' in assets["index.html"]
+    assert 'id="entry-cast"' in assets["index.html"]
+    assert 'id="scene-alert"' in assets["index.html"]
+    assert "resolveWorldTemplate(world.ui?.tagline" in assets["js/render_entry.js"]
+    assert "crisisMetrics(state.world)" in assets["js/render_entry.js"]
+    assert "state.world.cast" in assets["js/render_entry.js"]
+    assert "crisisMetrics()" in assets["js/render_scene.js"]
+    assert 'art.dataset.crisis = crisisMood()' in assets["js/render_scene.js"]
+
+
 def test_map_dialog_heading_is_filled_from_the_world_title():
     assets = _read_assets()
     assert 'id="map-world-title"' in assets["index.html"]

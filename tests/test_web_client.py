@@ -65,6 +65,9 @@ def test_web_launcher_starts_without_an_instance_and_creates_the_first_world(tmp
             catalog = json.loads(response.read())
         assert catalog["status"] == "ok"
         assert any(item["id"] == "starter_village" for item in catalog["worlds"])
+        assert catalog["worlds"][0]["id"] == "tidebound_commons"
+        assert all(item["kind"] == "world" for item in catalog["worlds"][:4])
+        assert any(item["kind"] == "probe" for item in catalog["worlds"])
         with urlopen(base + "/api/v1/authoring/schema") as response:
             assert json.loads(response.read())["status"] == "ok"
         with urlopen(base + "/api/v1/authoring/catalog") as response:
@@ -82,6 +85,10 @@ def test_web_launcher_starts_without_an_instance_and_creates_the_first_world(tmp
         with urlopen(base + "/api/v1/world") as response:
             world = json.loads(response.read())
         assert world["status"] == "ok" and world["world_id"] == "starter_village"
+        assert world["world_properties"]
+        assert isinstance(world["world_property_labels"], dict)
+        assert world["cast"] and all({"id", "name", "role"} <= set(item) for item in world["cast"])
+        assert all(item["role"] != "player" for item in world["cast"])
         with urlopen(base + "/api/v1/instances") as response:
             instances = json.loads(response.read())
         assert instances["active_db"].endswith("first-web-world/world.sqlite3")

@@ -1,5 +1,6 @@
 config_version: aster-relay-1
 world_id: aster_relay
+order: 4
 name: Aster Relay
 time_unit: minute
 start_world_minute: 0

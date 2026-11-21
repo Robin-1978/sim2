@@ -1,6 +1,6 @@
 import { actionForRef, beginAction } from "./actions.js";
-import { $, ENDING_KEY, clamp, el, humanizeKey, state, storageGet, storageSet } from "./core.js";
-import { formatWorldProperty, humanizeReason, renderMobileActionBar } from "./render_actions.js";
+import { $, ENDING_KEY, clamp, el, formatWorldProperty, humanizeKey, state, storageGet, storageSet } from "./core.js";
+import { humanizeReason, renderMobileActionBar } from "./render_actions.js";
 
 
 export function renderOnboarding() {

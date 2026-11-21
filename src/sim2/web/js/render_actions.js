@@ -1,5 +1,5 @@
 import { beginAction, selectedProvider } from "./actions.js";
-import { $, clamp, el, formatMinute, humanizeKey, icon, itemLabel, resultLabel, state, toast, translateCost, translateImpact, translateTime, uiConfig } from "./core.js";
+import { $, clamp, el, formatMinute, formatWorldProperty, humanizeKey, icon, itemLabel, resultLabel, state, toast, translateCost, translateImpact, translateTime, uiConfig } from "./core.js";
 
 
 export function renderTask() {
@@ -270,20 +270,6 @@ export function renderMobileActionBar() {
       $("mobile-primary-label").textContent = action.choice || action.name || "下一步";
       $("mobile-primary-meta").textContent = `${actionCategory(action)} · ${translateTime(action.time || "时间未知")}`;
     }
-  }
-
-
-export function formatWorldProperty(value, meta = {}) {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return String(value ?? "—");
-    if (meta.unit === "bool") {
-      if (numeric > 0 && meta.true_label) return String(meta.true_label);
-      if (numeric <= 0 && meta.false_label) return String(meta.false_label);
-      return numeric > 0 ? "已启用" : "未启用";
-    }
-    if (meta.unit === "percent") return `${Math.round(numeric * 100)}%`;
-    if (meta.unit === "hours") return `${Math.round(numeric * 10) / 10} 小时`;
-    return `${Math.round(numeric * 10) / 10}`;
   }
 
 

@@ -1,7 +1,6 @@
 import { renderSceneWorldCover } from "./art.js";
 import { applyAmbientProfile } from "./audio.js";
-import { $, clamp, el, humanizeKey, state, toast } from "./core.js";
-import { formatWorldProperty } from "./render_actions.js";
+import { $, clamp, crisisMetrics, crisisMood, el, formatWorldProperty, humanizeKey, state, toast } from "./core.js";
 import { nearbyParticipants, openCharacter } from "./render_panels.js";
 
 
@@ -14,6 +13,30 @@ export function sceneTheme(location) {
     if (tags.has("home")) return "lantern";
     if (tags.has("market") || tags.has("social")) return "quay";
     return "harbor";
+  }
+
+
+export function renderSceneAlert() {
+    const alert = $("scene-alert");
+    const art = $("scene-art");
+    if (!alert || !art) return;
+    const metrics = crisisMetrics();
+    art.dataset.crisis = crisisMood();
+    if (!metrics.length) {
+      alert.classList.add("hidden");
+      return;
+    }
+    const urgent = metrics.find((metric) => metric.level === "danger")
+      || metrics.find((metric) => metric.level === "warning")
+      || metrics[0];
+    const countdown = metrics.find((metric) => metric.key !== urgent.key && metric.meta?.unit === "hours");
+    const chapter = state.view?.chapter || {};
+    $("scene-alert-eyebrow").textContent = chapter.title || "当前态势";
+    $("scene-alert-title").textContent = `${urgent.label} ${urgent.display}`;
+    const lines = [urgent.hint];
+    if (countdown) lines.push(`${countdown.label} ${countdown.display}`);
+    $("scene-alert-hint").textContent = lines.filter(Boolean).join(" · ");
+    alert.classList.remove("hidden");
   }
 
 
@@ -91,6 +114,7 @@ export function renderScene() {
       chip.append(el("strong", "", amount <= 0 ? "枯竭" : Math.round(amount)));
       resources.append(chip);
     }
+    renderSceneAlert();
   }
 
 

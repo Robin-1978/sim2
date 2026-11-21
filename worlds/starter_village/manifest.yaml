@@ -1,5 +1,6 @@
 config_version: starter-village-0.1.0
 world_id: starter_village
+order: 2
 name: 雾溪村
 random_seed: 70419
 files:

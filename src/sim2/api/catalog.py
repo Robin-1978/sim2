@@ -37,6 +37,10 @@ def bundled_world_catalog() -> list[dict[str, Any]]:
         manifest = _load_yaml(manifest_path)
         setting = _load_yaml(path / "setting.yaml")
         world_id = str(manifest.get("world_id") or path.name)
+        try:
+            order = int(manifest.get("order") or 100)
+        except (TypeError, ValueError):
+            order = 100
         worlds.append(
             {
                 "id": world_id,
@@ -44,12 +48,15 @@ def bundled_world_catalog() -> list[dict[str, Any]]:
                 "premise": str(setting.get("premise") or ""),
                 "genre": str(setting.get("genre") or ""),
                 "locale": str(setting.get("locale") or "en"),
+                "kind": str(manifest.get("kind") or "world"),
+                "order": order,
                 "config_version": str(manifest.get("config_version") or ""),
                 "source": "bundled",
                 "status": "passed",
                 "errors": [],
             }
         )
+    worlds.sort(key=lambda item: (item["kind"] in {"probe", "test"}, item["order"], item["name"]))
     return worlds
 
 

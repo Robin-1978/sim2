@@ -342,6 +342,83 @@ export function resultLabel(code) {
 }
 
 
+export function formatWorldProperty(value, meta = {}) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return String(value ?? "—");
+  if (meta.unit === "bool") {
+    if (numeric > 0 && meta.true_label) return String(meta.true_label);
+    if (numeric <= 0 && meta.false_label) return String(meta.false_label);
+    return numeric > 0 ? "已启用" : "未启用";
+  }
+  if (meta.unit === "percent") return `${Math.round(numeric * 100)}%`;
+  if (meta.unit === "hours") return `${Math.round(numeric * 10) / 10} 小时`;
+  return `${Math.round(numeric * 10) / 10}`;
+}
+
+
+/** Configured crisis metrics with live values and tone levels. */
+export function crisisMetrics(source = state.view) {
+  const configured = Array.isArray(source?.ui?.crisis_metrics) ? source.ui.crisis_metrics : [];
+  const properties = source?.world_properties || {};
+  const labels = source?.world_property_labels || {};
+  const result = [];
+  for (const metric of configured) {
+    const key = String(metric?.property || "").trim();
+    const value = properties[key];
+    if (!key || value === undefined) continue;
+    const base = labels[key] || {};
+    const meta = {
+      ...base,
+      label: metric.label || base.label || humanizeKey(key),
+      unit: metric.format || base.unit,
+      max: metric.max ?? base.max,
+      true_label: metric.true_label ?? base.true_label,
+      false_label: metric.false_label ?? base.false_label,
+    };
+    const numeric = Number(value);
+    let level = "";
+    if (Number.isFinite(numeric)) {
+      const danger = Number(metric.danger_below);
+      const warning = Number(metric.warning_below);
+      if (Number.isFinite(danger) && numeric < danger) level = "danger";
+      else if (Number.isFinite(warning) && numeric < warning) level = "warning";
+    }
+    let display = formatWorldProperty(value, meta);
+    if (meta.max && !["percent", "hours", "bool"].includes(meta.unit)) display += ` / ${meta.max}`;
+    result.push({
+      key,
+      label: meta.label,
+      value,
+      meta,
+      display,
+      level,
+      hint: String(metric.hint || ""),
+    });
+  }
+  return result;
+}
+
+
+/** Worst configured crisis tone, used by scene and cover treatments. */
+export function crisisMood(source = state.view) {
+  const metrics = crisisMetrics(source);
+  if (metrics.some((metric) => metric.level === "danger")) return "danger";
+  if (metrics.some((metric) => metric.level === "warning")) return "warning";
+  return "";
+}
+
+
+/** Fill ``{world_property}`` placeholders with live, formatted values. */
+export function resolveWorldTemplate(text, source = state.world) {
+  const properties = source?.world_properties || {};
+  const labels = source?.world_property_labels || {};
+  return String(text || "").replace(/\{([A-Za-z0-9_.-]+)\}/g, (_, key) => {
+    if (properties[key] === undefined) return "—";
+    return formatWorldProperty(properties[key], labels[key] || {});
+  });
+}
+
+
 export function describeError(error, fallback = "操作失败") {
     const payload = error?.payload || {};
     const extra = [];

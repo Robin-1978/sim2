@@ -1,6 +1,6 @@
 import { activateWorldInstance, returnToGame, submitEntry } from "./actions.js";
 import { paintWorldCard, renderEntryCover } from "./art.js";
-import { $, el, formatClock, state, worldIsOpen } from "./core.js";
+import { $, crisisMetrics, el, formatClock, humanizeKey, resolveWorldTemplate, state, worldIsOpen } from "./core.js";
 
 
 export function renderEntry() {
@@ -16,6 +16,9 @@ export function renderEntry() {
     $("entry-premise").textContent = noWorld
       ? "还没有可进入的世界。选择一个模板创建第一个实例，或者创建后从存档列表进入。"
       : (world.premise || "读取世界入口…");
+    const taglineText = noWorld ? "" : resolveWorldTemplate(world.ui?.tagline || "", world);
+    $("entry-tagline").textContent = taglineText;
+    $("entry-tagline").classList.toggle("hidden", !taglineText);
     $("entry-genre").textContent = noWorld ? "世界大厅" : (world.genre || "世界模拟");
     $("entry-season").textContent = world.season || "—";
     $("entry-instance").textContent = noWorld ? "未创建" : (world.instance_id || "当前实例");
@@ -25,8 +28,12 @@ export function renderEntry() {
     $("entry-continue").classList.toggle("hidden", noWorld || !hasPlayer);
     $("entry-new-character").classList.toggle("hidden", noWorld || hasPlayer);
     $("entry-origin-section").classList.toggle("hidden", noWorld || hasPlayer);
+    $("entry-submit").classList.toggle("hidden", noWorld || hasPlayer);
     $("entry-return").classList.toggle("hidden", !state.playerId);
+    $("entry-screen").classList.toggle("has-player", hasPlayer);
 
+    renderEntryStakes(noWorld);
+    renderEntryCast(noWorld);
     renderEntryInstances();
     renderContinue(players);
     if (!noWorld) renderOrigins(entry);
@@ -38,6 +45,42 @@ export function renderEntry() {
     $("entry-world-state").textContent = noWorld
       ? "创建后会自动打开，并从这里继续。"
       : `世界时间 ${clock.day} ${clock.time}`;
+  }
+
+
+export function renderEntryStakes(noWorld = false) {
+    const root = $("entry-stakes");
+    if (!root) return;
+    root.replaceChildren();
+    const metrics = noWorld ? [] : crisisMetrics(state.world).slice(0, 4);
+    root.classList.toggle("hidden", !metrics.length);
+    if (!metrics.length) return;
+    for (const metric of metrics) {
+      const card = el("article", `entry-stake${metric.level ? ` ${metric.level}` : ""}`);
+      card.append(el("span", "entry-stake-label", metric.label));
+      card.append(el("strong", "entry-stake-value", metric.display));
+      if (metric.hint) card.append(el("small", "entry-stake-hint", metric.hint));
+      root.append(card);
+    }
+  }
+
+
+export function renderEntryCast(noWorld = false) {
+    const section = $("entry-cast");
+    const list = $("entry-cast-list");
+    if (!section || !list) return;
+    list.replaceChildren();
+    const cast = noWorld || !Array.isArray(state.world?.cast) ? [] : state.world.cast;
+    section.classList.toggle("hidden", !cast.length);
+    for (const person of cast) {
+      const chip = el("div", "entry-cast-chip");
+      chip.append(el("span", "entry-cast-avatar", String(person.name || person.id || "?").slice(0, 1)));
+      const copy = el("div", "entry-cast-copy");
+      copy.append(el("strong", "", person.name || person.id || "角色"));
+      if (person.role) copy.append(el("small", "", humanizeKey(person.role)));
+      chip.append(copy);
+      list.append(chip);
+    }
   }
 
 
@@ -54,11 +97,17 @@ export function renderEntryInstances() {
       card.append(el("strong", "", item.world_id || item.instance_id || "世界"));
       const day = Math.floor(Number(item.world_minute || 0) / 1440) + 1;
       card.append(el("small", "", `${item.instance_id || "实例"} · 第 ${day} 天 · ${item.runtime_status || "未知状态"}`));
-      const button = el("button", "button ghost", item.active ? (state.playerId ? "返回游戏" : "当前世界") : "切换");
+      const players = Array.isArray(state.entry?.players) ? state.entry.players : [];
+      const resumePlayer = item.active ? players[0] : null;
+      const label = item.active
+        ? (state.playerId ? "返回游戏" : (resumePlayer ? `继续 ${resumePlayer.name || resumePlayer.id}` : "当前世界"))
+        : "切换";
+      const button = el("button", "button ghost", label);
       button.type = "button";
       if (item.active) {
-        button.disabled = !state.playerId;
-        button.addEventListener("click", () => returnToGame());
+        button.disabled = !state.playerId && !resumePlayer;
+        if (state.playerId) button.addEventListener("click", () => returnToGame());
+        else if (resumePlayer) button.addEventListener("click", () => submitEntry(button, resumePlayer.id));
       } else {
         button.addEventListener("click", () => activateWorldInstance(item.instance_id, button));
       }
@@ -141,6 +190,7 @@ export function renderWorldTemplates() {
       const badges = el("div", "badge-row");
       badges.append(el("span", "badge", item.id));
       if (item.locale) badges.append(el("span", "badge", item.locale));
+      if (item.kind === "probe" || item.kind === "test") badges.append(el("span", "badge", "测试"));
       if (item.source === "authored") badges.append(el("span", "badge accent", "自建包"));
       card.append(badges);
       card.addEventListener("click", () => selectWorldPackage(item, card));
@@ -176,5 +226,5 @@ export function openCreatePanel() {
     if (input && !input.value && state.selectedWorldPackage) {
       input.value = `${state.selectedWorldPackage}_${Date.now().toString(36).slice(-4)}`;
     }
-    $("new-instance-id")?.focus();
+    $("new-instance-id")?.focus({ preventScroll: true });
   }

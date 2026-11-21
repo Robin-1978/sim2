@@ -72,6 +72,14 @@
         <div id="scene-art" class="scene-art" data-scene="harbor">
           <div id="scene-world-cover" class="scene-world-cover" aria-hidden="true"></div>
           <div class="scene-backdrop"></div>
+          <div id="scene-alert" class="scene-alert hidden">
+            <span class="scene-alert-pulse" aria-hidden="true"></span>
+            <div class="scene-alert-copy">
+              <span id="scene-alert-eyebrow" class="eyebrow">当前态势</span>
+              <strong id="scene-alert-title">—</strong>
+              <span id="scene-alert-hint" class="hint">—</span>
+            </div>
+          </div>
           <div class="scene-copy">
             <span id="scene-eyebrow" class="eyebrow">你在这里</span>
             <h2 id="scene-title">—</h2>
@@ -222,12 +230,20 @@
         <div class="entry-heading">
           <span class="eyebrow">世界大厅</span>
           <h1 id="entry-title">世界</h1>
+          <p id="entry-tagline" class="entry-tagline hidden"></p>
           <p id="entry-premise">正在读取世界…</p>
           <div class="badge-row">
             <span id="entry-genre" class="badge">—</span>
             <span id="entry-season" class="badge accent">—</span>
             <span id="entry-instance" class="badge">—</span>
           </div>
+        </div>
+
+        <div id="entry-stakes" class="entry-stakes hidden" aria-label="世界关键指标"></div>
+
+        <div id="entry-cast" class="entry-cast hidden">
+          <span class="eyebrow">这个世界里的人</span>
+          <div id="entry-cast-list" class="entry-cast-list"></div>
         </div>
 
         <div id="entry-no-world" class="entry-callout hidden">
@@ -248,13 +264,14 @@
             <label>角色名<input id="entry-name" placeholder="例如：旅人" autocomplete="off" maxlength="24"></label>
             <label>玩家 ID（新角色）<input id="entry-id" placeholder="例如：wolf_002" autocomplete="off" maxlength="64"></label>
             <p class="hint">新 ID 会从所选出身开始。创建后这个实例会绑定一个玩家；再次进入时直接点“继续游戏”。</p>
-            <button id="entry-submit" class="button primary wide" type="button">进入世界</button>
           </div>
 
           <div id="entry-origin-section" class="entry-origins">
             <span class="eyebrow">选择出身（仅新角色）</span>
             <div id="origin-list" class="origin-list"></div>
           </div>
+
+          <button id="entry-submit" class="button primary wide entry-submit" type="button">进入世界</button>
         </div>
 
         <p id="entry-error" class="form-error" role="alert"></p>

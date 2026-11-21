@@ -1,5 +1,6 @@
 config_version: tidebound-commons-2.1
 world_id: tidebound_commons
+order: 1
 name: 潮汐公社
 time_unit: minute
 start_world_minute: 0

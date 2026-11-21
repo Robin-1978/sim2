@@ -1,5 +1,6 @@
 config_version: three-lanterns-town-0.1
 world_id: three_lanterns_town
+order: 3
 name: 三灯镇
 time_unit: minute
 start_world_minute: 0

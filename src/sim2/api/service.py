@@ -464,7 +464,38 @@ class ControlService:
         with self.platform.store.read_transaction():
             metadata = self.platform.store.repositories.metadata
             setting = metadata.get("setting", {}) or {}
+            rules = metadata.get("rules", {}) or {}
             world_id = str(metadata.get("world_id") or "")
+            property_labels = {
+                str(key): dict(value)
+                for key, value in (rules.get("world_property_labels") or {}).items()
+                if str(key) and isinstance(value, dict)
+            }
+            cast_order = [
+                str(item) for item in ((setting.get("ui") or {}).get("cast_order") or [])
+                if str(item)
+            ]
+            entities = self.platform.store.repositories.entities
+            agents: list[dict[str, Any]] = []
+            if cast_order:
+                for agent_id in cast_order:
+                    try:
+                        agents.append(entities.get_agent(agent_id))
+                    except KeyError:
+                        continue
+                    if len(agents) >= 6:
+                        break
+            else:
+                agents = entities.list_agents()[:6]
+            cast = [
+                {
+                    "id": str(agent.get("id") or ""),
+                    "name": str(agent.get("name") or agent.get("id") or ""),
+                    "role": str(agent.get("role") or ""),
+                }
+                for agent in agents
+                if str(agent.get("role") or "").casefold() != "player" and agent.get("name")
+            ]
             return {
                 "status": "ok",
                 "world_id": world_id,
@@ -478,6 +509,9 @@ class ControlService:
                 "world_clock": dict(setting.get("world_clock") or {}),
                 "world_minute": int(metadata.get("world_minute", 0) or 0),
                 "ui": dict(setting.get("ui") or {}),
+                "world_properties": dict(metadata.get("world_properties", {}) or {}),
+                "world_property_labels": property_labels,
+                "cast": cast,
             }
 
     def player_entry(self) -> dict[str, Any]:

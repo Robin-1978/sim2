@@ -1,4 +1,4 @@
-import { $, state } from "./core.js";
+import { $, crisisMood, state } from "./core.js";
 
 
   /* ---------- Entry / world hub ---------- */
@@ -31,6 +31,7 @@ export function worldPalette(worldId) {
 export function renderEntryCover() {
     const cover = $("entry-cover");
     if (!cover) return;
+    cover.dataset.crisis = crisisMood(state.world);
     const worldId = state.world?.id || state.world?.world_id || state.world?.title || "sim2";
     const palette = worldPalette(worldId);
     const seed = hashString(worldId);
@@ -52,6 +53,11 @@ export function renderEntryCover() {
       });
       return `<path d="M0 140 L${points[0]} L${points.slice(1).join(" L")} L1200 140 Z" fill="${ridge.color}" opacity="${ridge.opacity}"/>`;
     }).join("");
+    const rain = `<g class="art-rain">${Array.from({ length: 30 }, (_, index) => {
+      const x = (index * 53 + (seed % 37)) % 1200;
+      const y = (index * 19) % 140;
+      return `<line x1="${x}" y1="${y}" x2="${x - 7}" y2="${y + 36}" stroke="rgba(210,230,235,0.42)" stroke-width="1"/>`;
+    }).join("")}</g>`;
     cover.innerHTML = `
       <svg viewBox="0 0 1200 140" preserveAspectRatio="none" aria-hidden="true">
         <defs>
@@ -65,6 +71,7 @@ export function renderEntryCover() {
         <circle cx="${180 + (seed % 720)}" cy="${42 + (seed % 18)}" r="17" fill="${palette.sun}" opacity="0.72"/>
         <circle cx="${180 + (seed % 720)}" cy="${42 + (seed % 18)}" r="30" fill="${palette.sun}" opacity="0.08"/>
         ${ridges}
+        ${rain}
       </svg>`;
   }
 

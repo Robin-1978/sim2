@@ -89,6 +89,23 @@ Browser
 显示该出身的个人目标与“第一件事”；后者来自 `player_template.origins[].opening`
 的摘要，因此玩家在进入前就能看出四个出身的开场不同。
 
+入口首屏先讲“赌注”，再讲操作：标题下的 `ui.tagline` 是世界自己的钩子；
+`ui.crisis_metrics` 与 `/api/v1/world` 返回的实时 `world_properties` 组成关键
+指标卡（danger / warning / 正常三档）；`/api/v1/world.cast` 列出这个世界的人，
+`ui.cast_order` 决定先展示谁。进入游戏后，最紧急的危机指标、章节标题和倒计时
+组成场景左上角的态势条；`crisisMood()` 同时把场景和入口封面切到 warning / danger
+色调，并在封面上显示雨。没有配置这些字段的世界自动隐藏对应区域，不会留下空白。
+移动端有玩家时先展示存档与继续入口，其余情况先展示世界钩子或创建说明。
+
+```yaml
+ui:
+  tagline: 风暴季正在逼近。潮门、海图和人心，只能先救一样。
+  cast_order: [mara, ivo, selene, taro]
+  crisis_metrics:
+    - {property: tide_gate_integrity, label: 潮门完整性, format: percent,
+       danger_below: 0.2, warning_below: 0.8, hint: 目标 80%}
+```
+
 游戏场景复用同一套世界调色板生成分层 SVG 场景插画：天空、星点、日/月、水面、
 码头、闸门、工坊、观测塔、沼泽和住屋剪影由通用场景主题组合而成，地点的 `tags`
 决定使用哪一套。雨、雾、星光、炉火和信号光束由 CSS 动画驱动。这样不同世界有
@@ -277,11 +294,14 @@ endings:
 | `unavailable_actions` | 不可执行行为及失败原因 |
 
 `GET /api/v1/world` 提供进入界面需要的事实：世界标题、premise、题材、locale、
-日历、起始分钟和当前实例；没有活动实例时返回 `status: "no_world"`。
+日历、起始分钟、当前实例，以及入口钩子用的 `world_properties`、
+`world_property_labels` 和 `cast`（当前世界的非玩家角色）；没有活动实例时
+返回 `status: "no_world"`。
 `GET /api/v1/player/entry` 返回配置的出身，以及当前实例已有的玩家角色
 （`players`、`can_create_player`），页面据此直接显示“继续游戏”，而不是要求
 玩家记住 ID。`GET /api/v1/worlds` 返回可创建的内置世界与受
-`--authoring-root` 约束的自建包摘要。
+`--authoring-root` 约束的自建包摘要；内置包带 `kind` 与 `order`，创建页先列
+`world`（按 `order`），`probe` / `test` 包排在后面并标注“测试”。
 
 ## 启动与首次游玩
 
