@@ -4,6 +4,8 @@
   const $ = (id) => document.getElementById(id);
   const PLAYER_KEY = "sim2.game.player";
   const OPERATOR_KEY = "sim2.game.operator";
+  const ENDING_KEY = "sim2.game.ending";
+  const SOUND_KEY = "sim2.game.sound";
 
   const state = {
     world: null,
@@ -33,6 +35,9 @@
     busy: false,
     online: false,
     lastDialogueKey: "",
+    endingKey: "",
+    soundOn: false,
+    audio: null,
     pollTimer: null,
     booted: false,
   };
@@ -41,6 +46,8 @@
     refresh: '<path d="M20 11a8 8 0 1 0-2.4 5.7"/><path d="M20 4v7h-7"/>',
     globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9S14.5 18.3 12 21c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3Z"/>',
     pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    sound: '<path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>',
+    soundOff: '<path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M16 9l5 6M21 9l-5 6"/>',
     settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 8.96 4.6H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z"/>',
   };
 
@@ -75,6 +82,127 @@
     } catch (error) {
       /* storage can be blocked; play still works for this tab */
     }
+  }
+
+  function sceneSoundProfile() {
+    const theme = $("scene-art")?.dataset.scene || "harbor";
+    const profiles = {
+      harbor: { filter: 520, drone: 55, volume: 0.3 },
+      quay: { filter: 620, drone: 58, volume: 0.3 },
+      gatehouse: { filter: 430, drone: 46, volume: 0.34 },
+      workshop: { filter: 340, drone: 62, volume: 0.24 },
+      observatory: { filter: 760, drone: 44, volume: 0.2 },
+      marsh: { filter: 560, drone: 50, volume: 0.26 },
+      lantern: { filter: 300, drone: 65, volume: 0.22 },
+    };
+    return profiles[theme] || profiles.harbor;
+  }
+
+  function renderSoundButton() {
+    const button = $("hud-sound");
+    if (!button) return;
+    button.innerHTML = icon(state.soundOn ? "sound" : "soundOff");
+    button.classList.toggle("active", state.soundOn);
+    button.setAttribute("aria-pressed", state.soundOn ? "true" : "false");
+    button.title = state.soundOn ? "关闭环境音" : "开启环境音";
+  }
+
+  function startAmbient() {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) return false;
+    if (!state.audio) {
+      try {
+        const ctx = new AudioCtor();
+        const master = ctx.createGain();
+        master.gain.value = 0;
+        master.connect(ctx.destination);
+        const buffer = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        let last = 0;
+        for (let index = 0; index < data.length; index += 1) {
+          const white = Math.random() * 2 - 1;
+          last = (last + 0.02 * white) / 1.02;
+          data[index] = last * 3.2;
+        }
+        const noise = ctx.createBufferSource();
+        noise.buffer = buffer;
+        noise.loop = true;
+        const filter = ctx.createBiquadFilter();
+        filter.type = "lowpass";
+        filter.Q.value = 0.8;
+        const noiseGain = ctx.createGain();
+        noiseGain.gain.value = 0.5;
+        const drone = ctx.createOscillator();
+        drone.type = "sine";
+        const droneGain = ctx.createGain();
+        droneGain.gain.value = 0.035;
+        const lfo = ctx.createOscillator();
+        lfo.frequency.value = 0.06;
+        const lfoGain = ctx.createGain();
+        lfoGain.gain.value = 160;
+        lfo.connect(lfoGain);
+        lfoGain.connect(filter.frequency);
+        noise.connect(filter);
+        filter.connect(noiseGain);
+        noiseGain.connect(master);
+        drone.connect(droneGain);
+        droneGain.connect(master);
+        noise.start();
+        drone.start();
+        lfo.start();
+        state.audio = { ctx, master, filter, drone };
+      } catch (error) {
+        state.audio = null;
+        return false;
+      }
+    }
+    const audio = state.audio;
+    if (audio.ctx.state === "suspended") audio.ctx.resume();
+    applyAmbientProfile(audio);
+    return true;
+  }
+
+  function applyAmbientProfile(audio = state.audio) {
+    if (!audio) return;
+    const profile = sceneSoundProfile();
+    const now = audio.ctx.currentTime;
+    audio.filter.frequency.setTargetAtTime(profile.filter, now, 0.8);
+    audio.drone.frequency.setTargetAtTime(profile.drone, now, 0.8);
+    audio.master.gain.setTargetAtTime(profile.volume, now, 1.2);
+  }
+
+  function stopAmbient() {
+    if (!state.audio) return;
+    const now = state.audio.ctx.currentTime;
+    state.audio.master.gain.setTargetAtTime(0, now, 0.35);
+  }
+
+  function toggleSound() {
+    state.soundOn = !state.soundOn;
+    storageSet(SOUND_KEY, state.soundOn);
+    renderSoundButton();
+    if (!state.soundOn) {
+      stopAmbient();
+      toast("环境音已关闭", "ok");
+      return;
+    }
+    if (!startAmbient()) {
+      state.soundOn = false;
+      storageSet(SOUND_KEY, false);
+      renderSoundButton();
+      toast("当前浏览器不支持环境音", "error");
+      return;
+    }
+    toast("环境音已开启", "ok");
+  }
+
+  function armSoundOnGesture() {
+    if (!state.soundOn || state.audio) return;
+    const resume = () => {
+      window.removeEventListener("pointerdown", resume);
+      if (state.soundOn) startAmbient();
+    };
+    window.addEventListener("pointerdown", resume, { once: true });
   }
 
   async function unlockFromOwnerLink() {
@@ -421,46 +549,293 @@
     card.style.setProperty("--cover-b", palette.b);
   }
 
-  function renderSceneWorldCover() {
+  function artStars(seed, count = 30, maxY = 190) {
+    return Array.from({ length: count }, (_, index) => {
+      const x = ((seed >> (index % 11)) + index * 151) % 1200;
+      const y = ((seed >> ((index + 2) % 9)) + index * 41) % maxY;
+      const r = index % 5 === 0 ? 1.6 : 0.85;
+      const delay = ((seed + index * 37) % 80) / 10;
+      return `<circle class="art-star" style="animation-delay:${delay}s" cx="${x}" cy="${y}" r="${r}" fill="rgba(255,255,255,${0.16 + (index % 5) * 0.08})"/>`;
+    }).join("");
+  }
+
+  function artReeds(seed, baseY, color, count = 22) {
+    return Array.from({ length: count }, (_, index) => {
+      const x = 30 + index * 55 + ((seed >> (index % 7)) % 26);
+      const height = 42 + ((seed >> (index % 9)) % 74);
+      const lean = index % 2 ? 8 : -7;
+      return `<path d="M${x} ${baseY} Q${x + lean * 0.4} ${baseY - height * 0.58} ${x + lean} ${baseY - height}" stroke="${color}" stroke-width="${index % 4 === 0 ? 2.2 : 1.2}" fill="none" opacity="${0.32 + (index % 3) * 0.12}"/>`;
+    }).join("");
+  }
+
+  function renderSceneWorldCover(theme = "harbor") {
     const root = $("scene-world-cover");
     if (!root) return;
     const worldId = state.world?.world_id || state.world?.title || "sim2";
-    if (root.dataset.world === worldId) return;
-    root.dataset.world = worldId;
-    const palette = worldPalette(worldId);
+    const cacheKey = `${worldId}|${theme}`;
+    if (root.dataset.world === cacheKey) return;
+    root.dataset.world = cacheKey;
+    const p = worldPalette(worldId);
     const seed = hashString(worldId);
-    const stars = Array.from({ length: 26 }, (_, index) => {
-      const x = ((seed >> (index % 11)) + index * 149) % 1200;
-      const y = ((seed >> ((index + 2) % 9)) + index * 37) % 210;
-      const r = index % 5 === 0 ? 1.7 : 0.9;
-      return `<circle cx="${x}" cy="${y}" r="${r}" fill="rgba(255,255,255,${0.14 + (index % 5) * 0.07})"/>`;
+    const moonX = 860 + (seed % 140);
+    const moonY = 86 + (seed % 38);
+    const stars = artStars(seed);
+    const mist = `<ellipse class="art-mist" cx="${260 + (seed % 500)}" cy="250" rx="360" ry="26" fill="url(#scene-mist)"/>`;
+    const rain = `<g class="art-rain">${Array.from({ length: 18 }, (_, index) => {
+      const x = (index * 71 + (seed % 40)) % 1200;
+      return `<line x1="${x}" y1="${(index * 23) % 180}" x2="${x - 8}" y2="${((index * 23) % 180) + 58}" stroke="rgba(190,220,232,0.22)" stroke-width="1"/>`;
+    }).join("")}</g>`;
+    const water = `<path d="M0 250 C160 242 280 256 420 250 S760 240 900 250 S1100 256 1200 246 L1200 420 L0 420Z" fill="url(#scene-water)"/>`;
+    const seaGlints = Array.from({ length: 12 }, (_, index) => {
+      const y = 270 + index * 11;
+      const width = 34 + (index % 4) * 24;
+      const x = 80 + ((seed >> (index % 8)) + index * 97) % 980;
+      return `<rect x="${x}" y="${y}" width="${width}" height="1.2" rx="0.6" fill="${p.sun}" opacity="${0.05 + (index % 4) * 0.025}"/>`;
     }).join("");
-    const ridges = [
-      { y: 262, amp: 38, phase: seed % 17, color: palette.c, opacity: 0.28 },
-      { y: 314, amp: 44, phase: (seed >> 3) % 21, color: palette.a, opacity: 0.46 },
-      { y: 372, amp: 30, phase: (seed >> 6) % 15, color: palette.b, opacity: 0.82 },
-    ].map((ridge) => {
-      const points = Array.from({ length: 9 }, (_, index) => {
-        const x = index * 150;
-        const y = ridge.y - Math.sin((index + ridge.phase) * 1.23) * ridge.amp - ((seed >> (index % 8)) % 18);
-        return `${x},${Math.max(190, Math.min(400, y)).toFixed(1)}`;
-      });
-      return `<path d="M0 420 L${points[0]} L${points.slice(1).join(" L")} L1200 420 Z" fill="${ridge.color}" opacity="${ridge.opacity}"/>`;
-    }).join("");
+    let scene = "";
+    if (theme === "gatehouse") {
+      scene = `
+        <path d="M0 0 L1200 0 L1200 130 C1020 168 900 96 760 126 C620 156 500 122 380 138 C250 154 120 128 0 150Z" fill="${p.skyB}" opacity=".78"/>
+        ${stars}
+        <circle cx="${moonX}" cy="${moonY}" r="24" fill="${p.sun}" opacity=".5"/>
+        <circle cx="${moonX}" cy="${moonY}" r="58" fill="${p.sun}" opacity=".07"/>
+        ${water}
+        <path d="M0 262 C180 250 320 266 470 258 S780 246 940 260 S1110 264 1200 254" stroke="${p.c}" stroke-opacity=".28" stroke-width="2" fill="none"/>
+        ${seaGlints}
+        <g fill="#071017" opacity=".96">
+          <path d="M250 420 L250 128 L330 84 L420 128 L420 420Z"/>
+          <path d="M780 420 L780 116 L870 70 L970 116 L970 420Z"/>
+          <rect x="285" y="150" width="100" height="240" fill="${p.b}" opacity=".55"/>
+          <rect x="820" y="142" width="110" height="248" fill="${p.b}" opacity=".55"/>
+          <path d="M420 196 L780 184 L780 228 L420 238Z" fill="#09141a"/>
+          <path d="M420 238 L780 228 L780 420 L420 420Z" fill="#041014" opacity=".55"/>
+        </g>
+        <g stroke="${p.sun}" stroke-opacity=".35" fill="none">
+          <path d="M470 196 L470 420 M505 194 L505 420 M540 192 L540 420 M575 190 L575 420 M610 188 L610 420 M645 186 L645 420 M680 184 L680 420 M715 184 L715 420" stroke-width="2"/>
+          <circle cx="600" cy="300" r="58" stroke-width="3"/>
+          <circle cx="600" cy="300" r="18" stroke-width="2"/>
+          <path d="M600 242 L600 358 M542 300 L658 300 M559 259 L641 341 M641 259 L559 341" stroke-width="1.4"/>
+        </g>
+        <g class="art-beam" opacity=".55">
+          <path d="M952 158 L1200 112 L1200 196 Z" fill="${p.sun}" opacity=".18"/>
+          <path d="M952 158 L1200 132 L1200 172 Z" fill="${p.sun}" opacity=".14"/>
+        </g>
+        <g>
+          <rect x="930" y="150" width="24" height="86" rx="5" fill="#0a1a20" stroke="${p.c}" stroke-opacity=".5"/>
+          <circle cx="942" cy="150" r="15" fill="${p.sun}" opacity=".85"/>
+          <circle cx="942" cy="150" r="28" fill="${p.sun}" opacity=".12"/>
+        </g>
+        ${rain}
+        ${mist}
+        <path d="M0 380 C120 368 220 386 320 378 S520 366 620 380 S840 386 940 372 S1100 366 1200 380 L1200 420 L0 420Z" fill="${p.skyB}" opacity=".6"/>`;
+    } else if (theme === "workshop") {
+      scene = `
+        <rect width="1200" height="420" fill="url(#scene-interior)"/>
+        <g stroke="${p.b}" stroke-opacity=".6" fill="none">
+          <path d="M0 56 L1200 18" stroke-width="10"/>
+          <path d="M0 96 L1200 58" stroke-width="6"/>
+          <path d="M120 0 L200 100 M380 0 L440 92 M660 0 L700 84 M920 0 L960 76" stroke-width="4"/>
+        </g>
+        <rect x="828" y="54" width="250" height="176" rx="6" fill="#07131b" stroke="${p.c}" stroke-opacity=".42" stroke-width="2"/>
+        <path d="M953 54 L953 230 M828 142 L1078 142" stroke="${p.b}" stroke-width="5" opacity=".8"/>
+        <g class="art-rain" clip-path="url(#scene-window-clip)">
+          ${Array.from({ length: 10 }, (_, index) => `<line x1="${850 + index * 23}" y1="${64 + (index % 3) * 8}" x2="${844 + index * 23}" y2="${130 + (index % 4) * 22}" stroke="rgba(190,220,232,0.25)" stroke-width="1"/>`).join("")}
+        </g>
+        <g opacity=".9">
+          <path d="M0 332 L1200 318 L1200 420 L0 420Z" fill="#0a1512"/>
+          <path d="M0 332 L1200 318" stroke="${p.sun}" stroke-opacity=".18" stroke-width="2"/>
+          <rect x="90" y="260" width="340" height="22" rx="4" fill="#1a2018"/>
+          <rect x="118" y="282" width="18" height="86" fill="#111812"/>
+          <rect x="382" y="282" width="18" height="86" fill="#111812"/>
+          <g fill="#263027">
+            <rect x="150" y="236" width="36" height="24" rx="3"/>
+            <rect x="198" y="228" width="18" height="32" rx="2"/>
+            <rect x="230" y="240" width="46" height="20" rx="3"/>
+          </g>
+        </g>
+        <g stroke="${p.c}" stroke-opacity=".55" fill="none">
+          <path d="M760 0 L760 330 M760 330 L900 330" stroke-width="9"/>
+          <path d="M790 330 L790 388 M860 330 L860 388" stroke-width="5"/>
+          <rect x="740" y="318" width="176" height="70" rx="10" fill="#12201e" stroke-width="2"/>
+        </g>
+        <g fill="${p.sun}" opacity=".8">
+          <circle cx="708" cy="160" r="9"/>
+          <circle cx="650" cy="188" r="6"/>
+          <circle cx="790" cy="150" r="7"/>
+        </g>
+        <circle cx="708" cy="160" r="50" fill="${p.sun}" opacity=".08"/>
+        <g stroke="${p.c}" stroke-opacity=".4" fill="none">
+          <path d="M520 88 L520 220 M540 100 L540 214 M560 108 L560 208" stroke-width="2"/>
+          <circle cx="540" cy="224" r="14"/>
+          <path d="M610 92 L610 196" stroke-width="3"/>
+          <path d="M596 196 L624 196 L620 224 L600 224Z" fill="#0a1718"/>
+        </g>
+        ${mist}`;
+    } else if (theme === "observatory") {
+      scene = `
+        ${stars}
+        <circle cx="${moonX}" cy="${moonY}" r="34" fill="${p.sun}" opacity=".55"/>
+        <circle cx="${moonX}" cy="${moonY}" r="82" fill="${p.sun}" opacity=".06"/>
+        <ellipse cx="700" cy="120" rx="260" ry="110" fill="${p.c}" opacity=".08"/>
+        <path d="M0 280 C160 268 280 284 420 278 S760 266 900 280 S1100 286 1200 274 L1200 420 L0 420Z" fill="url(#scene-water)" opacity=".82"/>
+        <path d="M0 292 C180 280 320 296 460 288 S780 278 940 292 S1110 296 1200 286" stroke="${p.c}" stroke-opacity=".24" stroke-width="2" fill="none"/>
+        <path d="M0 420 L0 338 C120 314 210 330 300 318 C390 306 470 328 560 332 C660 336 760 314 860 322 C980 332 1080 318 1200 338 L1200 420Z" fill="#071017"/>
+        <g>
+          <path d="M790 330 L810 150 L900 104 L990 150 L1010 330Z" fill="#0a1820" stroke="${p.c}" stroke-opacity=".3"/>
+          <path d="M810 150 L990 150 L960 108 L840 108Z" fill="#0d2028"/>
+          <circle cx="900" cy="128" r="30" fill="#0a141a" stroke="${p.c}" stroke-opacity=".55" stroke-width="2"/>
+          <circle cx="900" cy="128" r="17" fill="${p.sun}" opacity=".8"/>
+          <circle cx="900" cy="128" r="50" fill="${p.sun}" opacity=".1"/>
+          <path d="M900 128 L1200 88 L1200 162 Z" class="art-beam" fill="${p.sun}" opacity=".11"/>
+          <path d="M830 330 L830 180 M970 330 L970 180" stroke="${p.c}" stroke-opacity=".24"/>
+          <path d="M848 330 L848 210 M952 330 L952 210" stroke="${p.c}" stroke-opacity=".18"/>
+        </g>
+        <g fill="${p.c}" opacity=".5">
+          <path d="M700 380 L720 350 L738 380Z"/>
+          <path d="M740 388 L758 362 L776 388Z"/>
+        </g>
+        ${mist}`;
+    } else if (theme === "marsh") {
+      scene = `
+        <circle cx="${760 + (seed % 160)}" cy="${132 + (seed % 30)}" r="34" fill="${p.sun}" opacity=".38"/>
+        <circle cx="${760 + (seed % 160)}" cy="${132 + (seed % 30)}" r="82" fill="${p.sun}" opacity=".06"/>
+        <path d="M0 238 C140 224 260 244 400 232 S700 218 860 236 S1080 242 1200 226 L1200 420 L0 420Z" fill="url(#scene-marsh-water)"/>
+        <path d="M0 252 C180 240 320 258 470 248 S780 236 940 252 S1110 256 1200 246" stroke="${p.c}" stroke-opacity=".26" stroke-width="2" fill="none"/>
+        <path d="M0 300 C160 286 280 308 430 298 S760 284 920 302 S1110 306 1200 294 L1200 420 L0 420Z" fill="#0a1a15" opacity=".7"/>
+        <path d="M260 420 C300 370 340 350 390 330 C450 306 500 336 540 360 C580 386 620 372 680 340 C740 308 800 342 850 380 L900 420Z" fill="#0c211a"/>
+        <path d="M80 420 C120 388 160 372 210 360 C250 350 280 370 300 390 L320 420Z" fill="#0d241c"/>
+        ${artReeds(seed + 11, 400, p.c, 24)}
+        ${artReeds(seed + 29, 410, p.a, 18)}
+        <g fill="#071410" opacity=".85">
+          <path d="M930 300 L940 260 L950 300Z"/>
+          <path d="M960 304 L970 268 L980 304Z"/>
+          <path d="M910 306 L918 276 L926 306Z"/>
+        </g>
+        <g stroke="rgba(220,235,225,0.35)" stroke-width="1.2" fill="none" class="art-birds">
+          <path d="M520 160 Q530 152 540 160 Q550 152 560 160"/>
+          <path d="M600 136 Q608 129 616 136 Q624 129 632 136"/>
+        </g>
+        ${mist}`;
+    } else if (theme === "lantern") {
+      scene = `
+        <rect width="1200" height="420" fill="url(#scene-interior-warm)"/>
+        <g stroke="#3a2418" stroke-opacity=".9" fill="none">
+          <path d="M0 52 L1200 20" stroke-width="12"/>
+          <path d="M0 86 L1200 54" stroke-width="7"/>
+          <path d="M180 0 L260 104 M520 0 L560 96 M900 0 L940 88" stroke-width="5"/>
+        </g>
+        <g fill="#2a1a12" opacity=".7">
+          <rect x="60" y="120" width="300" height="210" rx="8"/>
+          <rect x="60" y="120" width="300" height="14" fill="#3b2619"/>
+          <rect x="860" y="110" width="280" height="220" rx="8"/>
+          <rect x="860" y="110" width="280" height="14" fill="#3b2619"/>
+        </g>
+        <rect x="870" y="152" width="200" height="120" rx="4" fill="#07131b" stroke="#4a3020" stroke-width="4"/>
+        <g class="art-rain">
+          ${Array.from({ length: 9 }, (_, index) => `<line x1="${890 + index * 20}" y1="${162 + (index % 3) * 6}" x2="${884 + index * 20}" y2="${220 + (index % 4) * 14}" stroke="rgba(180,210,225,0.22)" stroke-width="1"/>`).join("")}
+        </g>
+        <g class="art-ember">
+          <circle cx="250" cy="300" r="3" fill="${p.sun}" opacity=".8"/>
+          <circle cx="285" cy="274" r="2" fill="${p.sun}" opacity=".65"/>
+          <circle cx="220" cy="250" r="1.6" fill="${p.sun}" opacity=".6"/>
+        </g>
+        <g>
+          <path d="M180 420 L180 356 C220 334 300 334 340 356 L340 420Z" fill="#1b120c"/>
+          <ellipse cx="260" cy="360" rx="54" ry="24" fill="${p.sun}" opacity=".18"/>
+          <path d="M235 360 C240 334 252 326 260 314 C270 332 284 340 282 360 C278 378 248 382 235 360Z" fill="${p.sun}" opacity=".75"/>
+          <path d="M250 362 C254 348 260 344 264 338 C270 350 272 356 268 366 C264 376 252 374 250 362Z" fill="#fff1cf" opacity=".7"/>
+        </g>
+        <g>
+          <path d="M520 0 L520 58" stroke="#2a1a12" stroke-width="3"/>
+          <rect x="500" y="58" width="40" height="54" rx="8" fill="${p.sun}" opacity=".55"/>
+          <rect x="506" y="64" width="28" height="42" rx="6" fill="#ffe5b8" opacity=".35"/>
+          <path d="M700 0 L700 38" stroke="#2a1a12" stroke-width="3"/>
+          <rect x="684" y="38" width="32" height="44" rx="7" fill="${p.sun}" opacity=".5"/>
+        </g>
+        <g opacity=".9">
+          <path d="M380 420 L380 380 L760 380 L760 420Z" fill="#1a110b"/>
+          <path d="M400 380 L400 352 L520 352 L520 380Z" fill="#2a1a12"/>
+          <path d="M560 380 L560 342 L700 342 L700 380Z" fill="#241610"/>
+        </g>
+        ${mist}`;
+    } else {
+      const quayExtra = theme === "quay" ? `
+        <g>
+          <path d="M90 300 L90 250 L250 250 L250 300Z" fill="#1b1710"/>
+          <path d="M80 250 L260 250 L240 226 L100 226Z" fill="${p.sun}" opacity=".18"/>
+          <rect x="120" y="258" width="34" height="34" rx="3" fill="#2a2116"/>
+          <rect x="164" y="264" width="28" height="28" rx="3" fill="#33271a"/>
+          <path d="M250 300 L250 210 M250 220 L300 240 L250 260" stroke="#0b1414" stroke-width="3" fill="none"/>
+          <circle cx="300" cy="244" r="5" fill="${p.sun}" opacity=".8"/>
+        </g>` : `
+        <g>
+          <path d="M790 300 L850 300 L866 326 L774 326Z" fill="#0b1414"/>
+          <path d="M820 300 L820 230" stroke="#0b1414" stroke-width="4"/>
+          <path d="M820 232 L880 280 L820 280Z" fill="${p.c}" opacity=".22"/>
+          <path d="M820 242 L776 280 L820 280Z" fill="${p.c}" opacity=".15"/>
+        </g>`;
+      scene = `
+        ${stars}
+        <circle cx="${moonX}" cy="${moonY}" r="30" fill="${p.sun}" opacity=".62"/>
+        <circle cx="${moonX}" cy="${moonY}" r="72" fill="${p.sun}" opacity=".08"/>
+        <path d="M0 246 C140 238 240 252 360 246 S620 236 760 248 S1020 254 1200 242 L1200 420 L0 420Z" fill="url(#scene-water)"/>
+        <path d="M0 258 C160 248 300 264 440 256 S740 244 880 258 S1080 262 1200 252" stroke="${p.c}" stroke-opacity=".28" stroke-width="2" fill="none"/>
+        ${seaGlints}
+        <path d="M0 258 L110 226 L150 258Z" fill="${p.b}" opacity=".8"/>
+        <path d="M1010 258 L1080 214 L1150 258Z" fill="${p.b}" opacity=".72"/>
+        <path d="M940 258 L986 232 L1032 258Z" fill="${p.b}" opacity=".6"/>
+        <g opacity=".95">
+          <path d="M-20 348 L540 306 L640 420 L-20 420Z" fill="#071416"/>
+          <path d="M-20 348 L540 306" stroke="${p.c}" stroke-opacity=".34" stroke-width="2"/>
+          <path d="M40 348 L60 420 M160 340 L180 420 M280 332 L300 420 M400 322 L420 420 M520 308 L540 420" stroke="${p.b}" stroke-opacity=".65" stroke-width="3"/>
+          <rect x="500" y="286" width="18" height="112" rx="4" fill="#0a1718"/>
+          <rect x="626" y="272" width="18" height="126" rx="4" fill="#0a1718"/>
+          <circle cx="509" cy="286" r="18" fill="${p.sun}" opacity=".1"/>
+          <circle cx="509" cy="286" r="5" fill="${p.sun}" opacity=".8"/>
+          <circle cx="635" cy="272" r="24" fill="${p.sun}" opacity=".08"/>
+          <circle cx="635" cy="272" r="6" fill="${p.sun}" opacity=".7"/>
+        </g>
+        ${quayExtra}
+        ${mist}
+        <path d="M0 374 C120 364 220 382 320 374 S520 362 620 376 S840 382 940 368 S1100 362 1200 378 L1200 420 L0 420Z" fill="${p.skyB}" opacity=".62"/>
+        <g stroke="rgba(210,235,230,0.15)" stroke-width="1" fill="none">
+          <path d="M40 400 Q120 394 200 400 T360 400 T520 400 T680 400 T840 400 T1000 400 T1160 400"/>
+          <path d="M80 410 Q160 404 240 410 T400 410 T560 410 T720 410 T880 410 T1040 410"/>
+        </g>`;
+    }
     root.innerHTML = `
       <svg viewBox="0 0 1200 420" preserveAspectRatio="none" aria-hidden="true">
         <defs>
-          <linearGradient id="scene-sky" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="${palette.skyA}"/>
-            <stop offset="72%" stop-color="${palette.skyB}"/>
-            <stop offset="100%" stop-color="${palette.b}"/>
+          <linearGradient id="scene-water" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${p.c}" stop-opacity=".42"/>
+            <stop offset="100%" stop-color="${p.skyB}" stop-opacity=".94"/>
           </linearGradient>
+          <linearGradient id="scene-marsh-water" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${p.a}" stop-opacity=".55"/>
+            <stop offset="100%" stop-color="${p.skyB}" stop-opacity=".9"/>
+          </linearGradient>
+          <linearGradient id="scene-interior" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#241a12"/>
+            <stop offset="62%" stop-color="#15100c"/>
+            <stop offset="100%" stop-color="#090b08"/>
+          </linearGradient>
+          <linearGradient id="scene-interior-warm" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#2d1c12"/>
+            <stop offset="58%" stop-color="#1a110b"/>
+            <stop offset="100%" stop-color="#0b0907"/>
+          </linearGradient>
+          <radialGradient id="scene-mist" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="rgba(214,236,232,0.2)"/>
+            <stop offset="100%" stop-color="rgba(214,236,232,0)"/>
+          </radialGradient>
+          <radialGradient id="scene-vignette" cx="50%" cy="48%" r="72%">
+            <stop offset="54%" stop-color="#03100f" stop-opacity="0"/>
+            <stop offset="100%" stop-color="#03100f" stop-opacity=".5"/>
+          </radialGradient>
+          <clipPath id="scene-window-clip"><rect x="828" y="54" width="250" height="176" rx="6"/></clipPath>
         </defs>
-        <rect width="1200" height="420" fill="url(#scene-sky)"/>
-        ${stars}
-        <circle cx="${210 + (seed % 720)}" cy="${108 + (seed % 40)}" r="26" fill="${palette.sun}" opacity="0.6"/>
-        <circle cx="${210 + (seed % 720)}" cy="${108 + (seed % 40)}" r="46" fill="${palette.sun}" opacity="0.08"/>
-        ${ridges}
+        ${scene}
+        <rect width="1200" height="420" fill="url(#scene-vignette)"/>
       </svg>`;
   }
 
@@ -873,6 +1248,8 @@
     renderOnboarding();
     renderGoals();
     renderWorldProperties();
+    renderFacilities();
+    renderEnding();
     renderTalkTargets();
     renderPeople();
     renderTaskHint();
@@ -1016,9 +1393,11 @@
     const view = state.view;
     const location = view.location || {};
     const player = view.player || {};
-    renderSceneWorldCover();
     const art = $("scene-art");
-    art.dataset.scene = sceneTheme(location);
+    const theme = sceneTheme(location);
+    art.dataset.scene = theme;
+    renderSceneWorldCover(theme);
+    if (state.soundOn && state.audio) applyAmbientProfile();
     $("scene-title").textContent = location.name || player.location || "未知地点";
     $("scene-description").textContent = location.description || "这里没有更多描述。";
     $("scene-eyebrow").textContent = player.location_safe ? "安全地点" : "你在这里";
@@ -1109,6 +1488,8 @@
         label: metric.label || base.label || humanizeKey(key),
         unit: metric.format || base.unit,
         max: metric.max ?? base.max,
+        true_label: metric.true_label ?? base.true_label,
+        false_label: metric.false_label ?? base.false_label,
       };
       const numeric = Number(properties[key]);
       const danger = Number(metric.danger_below);
@@ -1120,7 +1501,7 @@
       if (metric.hint) card.title = String(metric.hint);
       card.append(el("span", "crisis-label", meta.label));
       let display = formatWorldProperty(properties[key], meta);
-      if (meta.max && meta.unit !== "percent" && meta.unit !== "hours") display += ` / ${meta.max}`;
+      if (meta.max && !["percent", "hours", "bool"].includes(meta.unit)) display += ` / ${meta.max}`;
       card.append(el("strong", "", display));
       const track = el("div", "crisis-track");
       const fill = el("span");
@@ -1404,6 +1785,11 @@
   function formatWorldProperty(value, meta = {}) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) return String(value ?? "—");
+    if (meta.unit === "bool") {
+      if (numeric > 0 && meta.true_label) return String(meta.true_label);
+      if (numeric <= 0 && meta.false_label) return String(meta.false_label);
+      return numeric > 0 ? "已启用" : "未启用";
+    }
     if (meta.unit === "percent") return `${Math.round(numeric * 100)}%`;
     if (meta.unit === "hours") return `${Math.round(numeric * 10) / 10} 小时`;
     return `${Math.round(numeric * 10) / 10}`;
@@ -1720,7 +2106,7 @@
     const label = meta.label || humanizeKey(key);
     const numeric = Number(value);
     let display = formatWorldProperty(value, meta);
-    if (meta.max && meta.unit !== "percent" && meta.unit !== "hours") display += ` / ${meta.max}`;
+    if (meta.max && !["percent", "hours", "bool"].includes(meta.unit)) display += ` / ${meta.max}`;
     const row = el("div", "world-prop");
     row.append(el("span", "", label));
     row.append(el("strong", "", display));
@@ -1764,6 +2150,116 @@
       root.append(el("div", "world-group-title", group));
       for (const [key, value] of rows) appendWorldProperty(root, key, value, labels[key] || {});
     }
+  }
+
+  const FACILITY_STATUS = {
+    damaged: ["受损", "warning"],
+    offline: ["未修复", "warning"],
+    dim: ["暗淡", "warning"],
+    partial: ["残缺", "warning"],
+    repaired: ["已修复", "good"],
+    working: ["运转中", "good"],
+    tuned: ["已校准", "good"],
+    braced: ["加固中", "good"],
+    stocked: ["可领取", "good"],
+    empty: ["已空", "danger"],
+    open: ["开放", "good"],
+    closed: ["封闭", "danger"],
+  };
+
+  function renderFacilities() {
+    const panel = $("facility-panel");
+    const root = $("facility-grid");
+    if (!panel || !root) return;
+    const facilities = Array.isArray(state.view?.facilities) ? state.view.facilities : [];
+    if (!facilities.length) {
+      panel.classList.add("hidden");
+      return;
+    }
+    panel.classList.remove("hidden");
+    root.replaceChildren();
+    for (const item of facilities) {
+      const card = el("article", "facility-card");
+      card.dataset.status = String(item.status || "");
+      if (item.description) card.title = String(item.description);
+      const head = el("div", "facility-head");
+      head.append(el("strong", "", item.name || item.id || "设施"));
+      const status = FACILITY_STATUS[item.status] || [item.status ? humanizeKey(item.status) : "待检查", "neutral"];
+      head.append(el("span", `facility-status ${status[1]}`, status[0]));
+      card.append(head);
+      if (item.location) card.append(el("span", "facility-location", item.location));
+      const values = el("div", "facility-values");
+      for (const prop of item.properties || []) {
+        const value = el("div", "facility-value");
+        value.append(el("span", "", prop.label || humanizeKey(prop.property)));
+        let display = formatWorldProperty(prop.value, {
+          unit: prop.unit,
+          true_label: prop.true_label,
+          false_label: prop.false_label,
+        });
+        if (prop.max && !["percent", "hours", "bool"].includes(prop.unit)) display += ` / ${prop.max}`;
+        value.append(el("strong", "", display));
+        values.append(value);
+      }
+      if (!values.children.length && item.stock !== null && item.stock !== undefined) {
+        const value = el("div", "facility-value");
+        value.append(el("span", "", "库存"));
+        value.append(el("strong", "", String(item.stock)));
+        values.append(value);
+      }
+      if (values.children.length) card.append(values);
+      root.append(card);
+    }
+  }
+
+  function renderEnding() {
+    const overlay = $("ending-overlay");
+    if (!overlay) return;
+    const chapter = state.view?.chapter || null;
+    if (!chapter || chapter.kind !== "ending") {
+      if (!overlay.classList.contains("hidden")) closeEnding(false);
+      state.endingKey = "";
+      return;
+    }
+    const key = String(chapter.id || chapter.title || "ending");
+    const stored = storageGet(`${ENDING_KEY}.${state.playerId || "guest"}`, "");
+    if (stored === key) {
+      if (!overlay.classList.contains("hidden")) closeEnding(false);
+      return;
+    }
+    if (state.endingKey === key && !overlay.classList.contains("hidden")) return;
+    state.endingKey = key;
+    $("ending-title").textContent = chapter.title || "季末结局";
+    $("ending-summary").textContent = chapter.summary || "";
+    const goal = String(chapter.goal_hint || "").trim();
+    $("ending-goal").textContent = goal;
+    $("ending-goal").classList.toggle("hidden", !goal);
+    const stats = Array.isArray(chapter.stats) ? chapter.stats : [];
+    const root = $("ending-stats");
+    root.replaceChildren();
+    for (const item of stats) {
+      const property = String(item?.property || "");
+      if (!property || state.view?.world_properties?.[property] === undefined) continue;
+      const meta = state.view?.world_property_labels?.[property] || {};
+      const card = el("div", "ending-stat");
+      card.append(el("span", "", item.label || meta.label || humanizeKey(property)));
+      card.append(el("strong", "", formatWorldProperty(state.view.world_properties[property], meta)));
+      root.append(card);
+    }
+    root.classList.toggle("hidden", !root.children.length);
+    overlay.classList.remove("hidden");
+    document.body.classList.add("ending-open");
+    window.setTimeout(() => $("ending-continue")?.focus(), 30);
+  }
+
+  function closeEnding(markSeen = true) {
+    const overlay = $("ending-overlay");
+    if (!overlay) return;
+    if (markSeen && state.endingKey && state.playerId) {
+      storageSet(`${ENDING_KEY}.${state.playerId}`, state.endingKey);
+    }
+    overlay.classList.add("hidden");
+    document.body.classList.remove("ending-open");
   }
 
   /* ---------- Talk ---------- */
@@ -2667,14 +3163,27 @@
     $("hud-refresh").innerHTML = icon("refresh");
     $("hud-worlds").innerHTML = icon("globe");
     $("hud-editor").innerHTML = icon("pen");
+    $("hud-sound").innerHTML = icon("soundOff");
     $("hud-settings").innerHTML = icon("settings");
     $("settings-close").innerHTML = "";
     $("entry-worlds-refresh").innerHTML = icon("refresh");
 
+    state.soundOn = Boolean(storageGet(SOUND_KEY, false));
+    renderSoundButton();
+
     $("hud-refresh").addEventListener("click", () => refreshAll());
     $("hud-worlds").addEventListener("click", () => openWorldHub());
     $("hud-editor").addEventListener("click", () => openEditor());
+    $("hud-sound").addEventListener("click", toggleSound);
     $("hud-settings").addEventListener("click", openSettings);
+    $("ending-continue").addEventListener("click", () => closeEnding(true));
+    $("ending-ledger").addEventListener("click", () => {
+      closeEnding(true);
+      document.querySelector(".world-panel")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    $("ending-overlay").addEventListener("click", (event) => {
+      if (event.target === $("ending-overlay")) closeEnding(true);
+    });
     $("settings-close").addEventListener("click", closeSettings);
     for (const scrim of document.querySelectorAll("[data-close-drawer]")) scrim.addEventListener("click", closeSettings);
     $("settings-provider").addEventListener("change", () => {
@@ -2777,6 +3286,10 @@
 
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
+      if (!$("ending-overlay").classList.contains("hidden")) {
+        closeEnding(true);
+        return;
+      }
       if (!$("editor-overlay").classList.contains("hidden")) {
         closeEditor();
         return;
@@ -2806,6 +3319,7 @@
       state.operatorToken = null;
     }
     wireUi();
+    armSoundOnGesture();
     await unlockFromOwnerLink();
     await loadEntryContext();
     const restored = await restorePlayer();

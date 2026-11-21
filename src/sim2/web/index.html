@@ -6,7 +6,7 @@
   <meta name="description" content="sim2 游戏客户端">
   <title>sim2</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230b2426'/%3E%3Cpath d='M8 39c8-8 16 8 24 0s16 8 24 0' fill='none' stroke='%2365d8c2' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='46' cy='18' r='5' fill='%23efb26f'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/app.css?v=21">
+  <link rel="stylesheet" href="/app.css?v=22">
 </head>
 <body>
   <a class="skip-link" href="#center-stage">跳到主要画面</a>
@@ -28,6 +28,7 @@
       <span id="conn-dot" class="conn-dot offline" title="连接状态"></span>
       <button id="hud-worlds" class="icon-button" type="button" title="世界大厅" aria-label="世界大厅"></button>
       <button id="hud-editor" class="icon-button" type="button" title="世界编辑器" aria-label="世界编辑器"></button>
+      <button id="hud-sound" class="icon-button" type="button" title="环境音" aria-label="切换环境音" aria-pressed="false"></button>
       <button id="hud-refresh" class="icon-button" type="button" title="刷新世界" aria-label="刷新世界"></button>
       <button id="hud-settings" class="icon-button" type="button" title="设置与管理" aria-label="设置与管理"></button>
     </div>
@@ -56,6 +57,13 @@
           <button id="player-details" class="text-button" type="button">角色详情</button>
           <button id="player-leave" class="text-button" type="button">世界大厅</button>
         </div>
+      </section>
+      <section id="facility-panel" class="panel facility-panel hidden" aria-label="公共设施">
+        <div class="panel-title">
+          <div><span class="eyebrow">公共账目</span><h2>公共设施</h2></div>
+          <span class="hint">状态与数值</span>
+        </div>
+        <div id="facility-grid" class="facility-grid"></div>
       </section>
     </aside>
 
@@ -202,7 +210,7 @@
   </main>
 
   <footer class="footer">
-    <span>sim2 · 事实来自 Platform · <span id="js-build">web-game-v21</span></span>
+    <span>sim2 · 事实来自 Platform · <span id="js-build">web-game-v22</span></span>
     <span id="last-update">尚未同步</span>
   </footer>
 
@@ -417,9 +425,23 @@
     <button id="mobile-more" class="mobile-more-button" type="button" aria-label="查看全部行动">更多</button>
   </div>
 
+  <div id="ending-overlay" class="ending-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="ending-title" aria-describedby="ending-summary">
+    <div class="ending-sheet">
+      <span class="eyebrow">季末结局</span>
+      <h2 id="ending-title">—</h2>
+      <p id="ending-summary" class="ending-summary"></p>
+      <p id="ending-goal" class="ending-goal"></p>
+      <div id="ending-stats" class="ending-stats"></div>
+      <div class="ending-actions">
+        <button id="ending-continue" class="button primary" type="button">继续观察世界</button>
+        <button id="ending-ledger" class="button ghost" type="button">查看公共账目</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
   <!-- bump ?v= whenever app.js/app.css changes so stale tabs refetch -->
-  <script src="/app.js?v=21" defer></script>
+  <script src="/app.js?v=22" defer></script>
 </body>
 </html>

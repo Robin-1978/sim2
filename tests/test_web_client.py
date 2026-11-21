@@ -747,6 +747,9 @@ def test_web_full_client_surfaces_new_panels(tmp_path: Path):
             'id="map-canvas"',
             'id="task-panel"',
             'id="settings-drawer"',
+            'id="hud-sound"',
+            'id="facility-panel"',
+            'id="ending-overlay"',
             "下一步",
         ):
             assert marker in html, marker

@@ -1057,6 +1057,20 @@ def test_player_view_exposes_crisis_metrics_and_readable_action_impacts(tmp_path
             "commons_tool_kits",
         ]
         assert all(item["property"] in view["world_properties"] for item in metrics)
+        facilities = view["facilities"]
+        assert [item["id"] for item in facilities] == [
+            "tide_gate",
+            "rain_catcher",
+            "signal_lens",
+            "commons_tool_rack",
+        ]
+        assert facilities[0]["status"] == "damaged"
+        assert facilities[0]["properties"][0]["property"] == "tide_gate_integrity"
+        assert facilities[1]["properties"][0]["property"] == "fresh_water_reserve"
+        assert facilities[1]["properties"][0]["value"] == 24
+        assert view["world_property_labels"]["rain_catcher_repaired"]["false_label"] == "未修复"
+        assert facilities[3]["stock"] == 2
+        assert facilities[3]["properties"][0]["value"] == 2
 
         _set_world_properties(platform, maintenance_evidence=1)
         mara = platform.decision_view("mara")
@@ -1076,5 +1090,11 @@ def test_player_view_exposes_crisis_metrics_and_readable_action_impacts(tmp_path
         ending = service.player_view("hero")["chapter"]
         assert ending["kind"] == "ending"
         assert ending["goal_hint"]
+        assert [item["property"] for item in ending["stats"]] == [
+            "tide_gate_integrity",
+            "public_confidence",
+            "signal_reach",
+            "storm_cycle",
+        ]
     finally:
         service.close()

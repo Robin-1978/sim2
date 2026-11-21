@@ -91,6 +91,11 @@ endings:
   condition: world.signal_reach >= 0.7
   trigger_event: signal.route_open
   kind: ending
+  stats:
+  - {property: tide_gate_integrity, label: 潮门完整性}
+  - {property: public_confidence, label: 公共信心}
+  - {property: signal_reach, label: 信号覆盖}
+  - {property: storm_cycle, label: 风暴轮次}
 # Story chapters are not pre-authored here.  The Story Agent receives verified
 # source events and proposes emergent beats from those facts.  Keeping this list
 # empty prevents the runtime from cycling through a fixed plot after the first

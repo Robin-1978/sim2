@@ -141,6 +141,35 @@ class EntitiesRepository:
                 })
         return result
 
+    def list_facilities(self) -> list[dict[str, Any]]:
+        """Return entities that declare public facility metadata.
+
+        Only fields needed by the presentation layer are exposed.  The raw
+        entity payload can hold internal flags and behavior bindings, so the
+        repository deliberately projects a small, explicit view.
+        """
+
+        rows = self.store.connection.execute(
+            "SELECT id,entity_type,name,data_json FROM entity ORDER BY id"
+        ).fetchall()
+        result = []
+        for row in rows:
+            data = json.loads(row["data_json"])
+            facility = data.get("facility")
+            if not isinstance(facility, dict):
+                continue
+            state = data.get("initial_state") if isinstance(data.get("initial_state"), dict) else {}
+            result.append({
+                "id": row["id"],
+                "entity_type": row["entity_type"],
+                "name": row["name"],
+                "description": str(data.get("description") or ""),
+                "initial_state": state,
+                "amount": data.get("amount"),
+                "facility": facility,
+            })
+        return result
+
     def entities_of_type(self, entity_type: str) -> list[dict[str, Any]]:
         rows = self.store.connection.execute(
             "SELECT id,entity_type,name,data_json FROM entity WHERE entity_type=? ORDER BY id",

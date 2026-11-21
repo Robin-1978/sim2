@@ -7,6 +7,11 @@ objects:
     location_id: gatehouse
     status: damaged
     repaired: false
+  facility:
+    order: 1
+    properties:
+    - {key: tide_gate_integrity, label: 完整性}
+    - {key: gate_repairs, label: 已修复}
 - id: drowned_chart
   type: document
   name: 沉没海图
@@ -31,6 +36,10 @@ objects:
     location_id: workshop
     status: offline
     repaired: false
+  facility:
+    order: 2
+    properties:
+    - {key: fresh_water_reserve, label: 淡水储备}
 - id: signal_lens
   type: machine
   name: 季节信号透镜
@@ -39,3 +48,7 @@ objects:
     location_id: gatehouse
     status: dim
     tuned: false
+  facility:
+    order: 3
+    properties:
+    - {key: signal_reach, label: 信号覆盖}

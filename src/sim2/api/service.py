@@ -126,6 +126,14 @@ def _configured_ending(platform: Platform, player_id: str) -> dict[str, Any] | N
             "title": str(ending.get("title") or ending["id"]),
             "summary": str(ending.get("summary") or ""),
             "goal_hint": str(ending.get("goal_hint") or ""),
+            "stats": [
+                {
+                    "property": str(item.get("property")),
+                    "label": str(item.get("label") or ""),
+                }
+                for item in (ending.get("stats") or [])
+                if isinstance(item, dict) and item.get("property")
+            ],
             "event_type": "story.ending",
             "event_id": trigger_id,
             "world_minute": int(platform.store.repositories.metadata.get("world_minute", 0) or 0),
@@ -174,6 +182,70 @@ def _onboarding_step(platform: Platform, agent: dict[str, Any]) -> dict[str, Any
             "total": len([item for item in steps if isinstance(item, dict) and item.get("id")]),
         }
     return None
+
+
+def _facility_cards(
+    platform: Platform,
+    location_names: dict[str, str],
+    world_properties: dict[str, Any],
+    world_property_labels: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Project configured public facilities for the player scene.
+
+    A facility is declared by world data, not by an entity-id branch in the
+    client.  Each card carries its location, readable status, and the world
+    properties the world chose to expose with it.
+    """
+
+    cards: list[dict[str, Any]] = []
+    for entity in platform.store.repositories.entities.list_facilities():
+        facility = entity.get("facility") if isinstance(entity.get("facility"), dict) else {}
+        state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
+        location_id = str(state.get("location_id") or "")
+        properties: list[dict[str, Any]] = []
+        for item in (facility.get("properties") or []):
+            if isinstance(item, str):
+                key = item
+                override = ""
+            elif isinstance(item, dict):
+                key = str(item.get("key") or "")
+                override = str(item.get("label") or "")
+            else:
+                continue
+            if not key or key not in world_properties:
+                continue
+            meta = dict(world_property_labels.get(key) or {})
+            if override:
+                meta["label"] = override
+            properties.append({
+                "property": key,
+                "label": str(meta.get("label") or key),
+                "value": world_properties.get(key),
+                "unit": meta.get("unit"),
+                "max": meta.get("max"),
+                "true_label": meta.get("true_label"),
+                "false_label": meta.get("false_label"),
+            })
+        quantity = state.get("quantity", entity.get("amount"))
+        if not isinstance(quantity, (int, float)) or isinstance(quantity, bool):
+            quantity = None
+        status = str(state.get("status") or "")
+        if entity.get("entity_type") == "resource":
+            status = "stocked" if (quantity or 0) > 0 else "empty"
+        cards.append({
+            "id": str(entity.get("id") or ""),
+            "name": str(entity.get("name") or entity.get("id") or ""),
+            "type": str(entity.get("entity_type") or ""),
+            "description": str(entity.get("description") or ""),
+            "location_id": location_id,
+            "location": location_names.get(location_id, location_id),
+            "status": status,
+            "stock": quantity,
+            "properties": properties[:4],
+            "order": int(facility.get("order") or 999),
+        })
+    cards.sort(key=lambda item: (item["order"], item["name"]))
+    return cards[:12]
 
 
 def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
@@ -274,6 +346,11 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         for key, value in (rules.get("world_property_labels") or {}).items()
         if str(key) and isinstance(value, dict)
     }
+    location_names = {
+        str(key): str((node or {}).get("name") or key)
+        for key, node in nodes.items()
+    }
+    world_properties = platform.store.repositories.metadata.get("world_properties", {}) or {}
     alert_thresholds = {
         str(key): float(value)
         for key, value in (rules.get("context_values") or {}).items()
@@ -316,8 +393,9 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         "actions": actions[:24],
         "unavailable_actions": unavailable_actions[:12],
         "location": location,
-        "world_properties": platform.store.repositories.metadata.get("world_properties", {}),
+        "world_properties": world_properties,
         "world_property_labels": world_property_labels,
+        "facilities": _facility_cards(platform, location_names, world_properties, world_property_labels),
         "ui": dict(setting.get("ui") or {}),
         "alert_thresholds": alert_thresholds,
         "routes": routes,
@@ -391,6 +469,7 @@ class ControlService:
                 "calendar": dict(setting.get("calendar") or {}),
                 "world_clock": dict(setting.get("world_clock") or {}),
                 "world_minute": int(metadata.get("world_minute", 0) or 0),
+                "ui": dict(setting.get("ui") or {}),
             }
 
     def player_entry(self) -> dict[str, Any]:
