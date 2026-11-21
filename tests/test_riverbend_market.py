@@ -364,3 +364,20 @@ def test_low_hydration_keeps_drink_water_in_the_visible_actions(tmp_path: Path) 
         assert refs.index("behavior:drink_water") < 6
     finally:
         service.close()
+
+
+def test_craft_actions_are_visible_when_inputs_are_available(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "riverbend-craft-visible", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "miner", name="阿岚")["status"] == "accepted"
+        with platform.store.transaction():
+            agent = platform.store.repositories.entities.get_agent("hero")
+            agent["inventory"].update({"iron_ore": 2, "coal": 1, "herb": 2})
+            platform.store.repositories.entities.put_agent("hero", agent, "阿岚")
+        view = service.player_view("hero")
+        refs = [action["ref"] for action in view["actions"]]
+        assert "behavior:craft_iron_ingot" in refs
+        assert "behavior:craft_tonic" in refs
+    finally:
+        service.close()

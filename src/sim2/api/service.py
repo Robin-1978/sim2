@@ -421,7 +421,7 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         "chapter": _player_chapter(platform, player_id),
         "onboarding": _onboarding_step(platform, agent),
         "active_task": active_task,
-        "actions": actions[:24],
+        "actions": actions[:64],
         "unavailable_actions": unavailable_actions[:12],
         "location": location,
         "world_properties": world_properties,
