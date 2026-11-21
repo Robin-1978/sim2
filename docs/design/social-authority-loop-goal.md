@@ -224,3 +224,4 @@ world-pack lint covers every `worlds/*/actions.yaml`.
 - Agent 可见性：`/observer/timeline` 增加结构化 `activity`（行为开始/完成/失败、God 规则、Story 章节），右栏“人物”tab 渲染“居民动向”（角色、行为、公开理由、时间）；场景人物 chip 与角色卡显示 `active_behavior_label`、进度和当前打算；世界脉搏在没有更大事件时退回最近一条居民行动。背景 `bt:` 人口不进入居民动向，避免“后台控制器”式噪音。
 - 手动时间：世界状态面板增加“等待 1 小时 / 4 小时”，`ManualTaskRunner` 区分“跟随当前长行动”与“空闲等待完整时长”，因此空闲时也能推进 NPC 决策；等待进度显示在按钮旁，完成后提示实际推进分钟与居民决策次数。
 - 公共淡水：`fresh_water_reserve` 是共享 `fresh_water` 的只读投影。新增 `draw_water` 行为在安全地点从公共储备领取 1 份随身淡水（10 分钟，储备 -1，随身少于 2 份时出现），沼泽采集仍是补充储备的主要方式；配给、抢修、风暴和集雨器都会改变储备，低于 8 触发 `resource.safety_low`。标签改为“公共淡水”，并带说明 tooltip。
+- 潮门改为两段式公共工程：`tide_gate_integrity`（结构，目标 80%）与 `gate_supports`（临时支撑，目标 40%）必须同时达标；`brace_gate` 主要加支撑 15%，`repair_priority_today` 加支撑 10%，风暴后支撑按 30%/50%/60% 衰减。`storm_eta_hours <= 6` 时开启 `storm_final_watch`，玩家在“通宵抢修 / 撤走物资 / 让居民避风”中三选一；`storm_prepared` 让失败分支的物资损失减半。设计、数值与验证见 `docs/design/tidebound-gate-loop.md`。

@@ -39,6 +39,9 @@ initial_bt_ids:
   - repair_priority_today
   - marsh_rest_today
   - rest_at_hearth
+  - final_night_repair
+  - evacuate_supplies
+  - shelter_residents
 knowledge_seed: []
 origins:
   - id: steward

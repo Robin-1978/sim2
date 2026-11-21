@@ -129,6 +129,10 @@ wakes:
   - signal.tuned
   - signal.route_open
   - storm.warning
+  - storm.final_watch
+  - storm.final_repair
+  - storm.supplies_evacuated
+  - storm.shelters_opened
   - storm.breached
   - storm.held
   - storm.flooded
@@ -186,6 +190,10 @@ wakes:
   - signal.tuned
   - signal.route_open
   - storm.warning
+  - storm.final_watch
+  - storm.final_repair
+  - storm.supplies_evacuated
+  - storm.shelters_opened
   - storm.breached
   - storm.held
   - storm.flooded

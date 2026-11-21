@@ -33,7 +33,7 @@ export function renderTaskHint() {
 
   /* ---------- Actions ---------- */
 
-export const CATEGORY_ORDER = ["移动", "采集", "制作", "公共", "交易", "社交", "恢复", "其他"];
+export const CATEGORY_ORDER = ["移动", "采集", "制作", "公共", "决策", "交易", "社交", "恢复", "其他"];
 
 
 export function actionCategory(action) {
@@ -43,6 +43,7 @@ export function actionCategory(action) {
       ...(Array.isArray(action.drive_tags) ? action.drive_tags : []),
       ...(Array.isArray(action.tags) ? action.tags : []),
     ].map((item) => String(item).toLowerCase()));
+    if (tags.has("decision")) return "决策";
     if (tags.has("trade") || tags.has("market")) return "交易";
     if (tags.has("recovery") || tags.has("rest") || tags.has("food") || tags.has("water")) return "恢复";
     if (tags.has("resource") || tags.has("supply") || tags.has("gathering") || tags.has("gather")) return "采集";
@@ -68,6 +69,7 @@ export function actionButtonLabel(category, action) {
     if (category === "交易") return "交换";
     if (category === "恢复") return String(action.ref || "").includes("draw") ? "领取" : "立即使用";
     if (category === "公共") return "执行";
+    if (category === "决策") return "决定";
     return "开始";
   }
 

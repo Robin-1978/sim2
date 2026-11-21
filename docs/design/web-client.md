@@ -186,7 +186,8 @@ ID 分支。
 ```yaml
 ui:
   crisis_metrics:
-  - {property: tide_gate_integrity, label: 潮门完整性, format: percent, danger_below: 0.2, warning_below: 0.8, hint: 目标 80%}
+  - {property: tide_gate_integrity, label: 潮门完整性, format: percent, danger_below: 0.2, warning_below: 0.8, hint: 目标 80% · 支撑 40%}
+  - {property: gate_supports, label: 临时支撑, format: percent, danger_below: 0.2, warning_below: 0.4, hint: 目标 40%}
   - {property: storm_eta_hours, label: 风暴倒计时, format: hours, danger_below: 3, warning_below: 8}
 ```
 
@@ -204,6 +205,7 @@ ui:
     order: 1
     properties:
     - {key: tide_gate_integrity, label: 完整性}
+    - {key: gate_supports, label: 临时支撑}
     - {key: gate_repairs, label: 已修复}
 
 # locations.yaml resources

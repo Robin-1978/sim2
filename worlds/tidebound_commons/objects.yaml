@@ -11,6 +11,7 @@ objects:
     order: 1
     properties:
     - {key: tide_gate_integrity, label: 完整性}
+    - {key: gate_supports, label: 临时支撑}
     - {key: gate_repairs, label: 已修复}
 - id: drowned_chart
   type: document

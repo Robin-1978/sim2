@@ -108,6 +108,7 @@ def test_storm_clock_teaches_the_difference_between_a_patch_and_a_real_repair(tm
             storm_eta_hours=0,
             storm_pressure=1.0,
             tide_gate_integrity=0.5,
+            gate_supports=0.1,
             public_confidence=0.5,
         )
         unprepared.step()
@@ -138,6 +139,7 @@ def test_storm_clock_teaches_the_difference_between_a_patch_and_a_real_repair(tm
             storm_eta_hours=0,
             storm_pressure=1.0,
             tide_gate_integrity=0.85,
+            gate_supports=0.5,
             public_confidence=0.5,
         )
         prepared.step()
@@ -549,7 +551,7 @@ def test_situation_anchors_follow_storm_outcomes_without_a_model(tmp_path: Path)
         assert chapter["id"] == "storm_watch"
         assert chapter["title"] == "风暴季警戒"
 
-        _set_world_properties(platform, tide_gate_integrity=0.85)
+        _set_world_properties(platform, tide_gate_integrity=0.85, gate_supports=0.5)
         platform.step()
         chapter = service.player_view("hero")["chapter"]
         assert chapter["id"] == "gate_ready"
@@ -563,13 +565,14 @@ def test_situation_anchors_follow_storm_outcomes_without_a_model(tmp_path: Path)
             if integrity == 0.85:
                 # Crossing the 80% threshold is its own edge-triggered chapter.
                 # Settle it first so the following storm event is the newest.
-                _set_world_properties(platform, tide_gate_integrity=0.85)
+                _set_world_properties(platform, tide_gate_integrity=0.85, gate_supports=0.5)
                 platform.step()
             _set_world_properties(
                 platform,
                 storm_eta_hours=0,
                 storm_pressure=1.0,
                 tide_gate_integrity=integrity,
+                gate_supports=0.5 if integrity >= 0.8 else 0.1,
                 public_confidence=0.5,
             )
             platform.step()
@@ -683,7 +686,7 @@ def test_onboarding_projection_follows_world_state(tmp_path: Path) -> None:
         assert service.player_view("hero")["onboarding"]["id"] == "first_decision"
         _set_world_properties(platform, public_decision_open=0)
         assert service.player_view("hero")["onboarding"]["id"] == "brace_the_gate"
-        _set_world_properties(platform, tide_gate_integrity=0.85)
+        _set_world_properties(platform, tide_gate_integrity=0.85, gate_supports=0.5)
         assert service.player_view("hero")["onboarding"]["id"] == "wait_for_storm"
         _set_world_properties(platform, storm_eta_hours=0)
         assert service.player_view("hero")["onboarding"] is None
@@ -794,7 +797,7 @@ def test_opening_anchors_expire_but_agent_story_continues(tmp_path: Path) -> Non
 
 
 def test_first_storm_coop_path_uses_the_public_tool_rack(tmp_path: Path) -> None:
-    """The intended first storm is two repairs: player and Mara, one each."""
+    """The intended first storm is two repairs plus one support brace."""
 
     from sim2.api.service import ControlService
 
@@ -819,6 +822,15 @@ def test_first_storm_coop_path_uses_the_public_tool_rack(tmp_path: Path) -> None
         assert round(properties["tide_gate_integrity"], 3) == 0.89
         assert properties["gate_repairs"] == 2
         assert platform.store.repositories.entities.get_entity("commons_tool_rack")["initial_state"]["quantity"] == 0
+
+        hero = platform.store.repositories.entities.get_agent("hero")
+        hero["inventory"]["gate_brace"] = 1
+        with platform.store.transaction():
+            platform.store.repositories.entities.put_agent("hero", hero, hero["name"])
+        _start_and_finish(platform, "hero", "brace_gate", "coop-player-brace")
+        properties = platform.store.repositories.metadata.get("world_properties")
+        assert round(properties["gate_supports"], 3) == 0.40
+        assert round(properties["tide_gate_integrity"], 3) == 0.91
 
         _set_world_properties(platform, storm_eta_hours=0, storm_pressure=1.0)
         platform.step()
@@ -938,7 +950,8 @@ def test_gate_brace_recipe_feeds_a_non_kit_repair(tmp_path: Path) -> None:
 
         _start_and_finish(platform, "hero", "brace_gate", "brace-use")
         properties = platform.store.repositories.metadata.get("world_properties")
-        assert round(properties["tide_gate_integrity"], 3) == 0.36
+        assert round(properties["tide_gate_integrity"], 3) == 0.30
+        assert round(properties["gate_supports"], 3) == 0.30
         assert platform.store.repositories.entities.get_agent("hero")["inventory"].get("gate_brace", 0) == 0
     finally:
         platform.close()
@@ -1052,9 +1065,9 @@ def test_player_view_exposes_crisis_metrics_and_readable_action_impacts(tmp_path
         metrics = view["ui"]["crisis_metrics"]
         assert [item["property"] for item in metrics] == [
             "tide_gate_integrity",
+            "gate_supports",
             "storm_eta_hours",
             "public_confidence",
-            "commons_tool_kits",
         ]
         assert all(item["property"] in view["world_properties"] for item in metrics)
         facilities = view["facilities"]
@@ -1092,6 +1105,7 @@ def test_player_view_exposes_crisis_metrics_and_readable_action_impacts(tmp_path
         assert ending["goal_hint"]
         assert [item["property"] for item in ending["stats"]] == [
             "tide_gate_integrity",
+            "gate_supports",
             "public_confidence",
             "signal_reach",
             "storm_cycle",
@@ -1172,3 +1186,115 @@ def test_public_water_reserve_can_be_drawn_at_a_safe_location(tmp_path: Path) ->
         assert int(properties["fresh_water_reserve"]) == before - 1
     finally:
         service.close()
+
+
+def test_gate_supports_are_required_and_final_watch_evacuation_reduces_losses(tmp_path: Path) -> None:
+    """Structure alone cannot hold; the last-six-hours choice must change the outcome."""
+
+    from sim2.api.service import ControlService
+    from sim2.world.navigation import location_is_open
+
+    service = ControlService(create_instance(WORLD, "tidebound-two-track-storm", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "forager", name="守夜人")["status"] == "accepted"
+        _set_world_properties(
+            platform,
+            storm_eta_hours=6.0,
+            storm_pressure=1.0,
+            tide_gate_integrity=0.5,
+            gate_supports=0.2,
+            public_confidence=0.5,
+            storm_final_watch=0,
+            storm_prepared=0,
+        )
+        platform.step()
+        properties = platform.store.repositories.metadata.get("world_properties")
+        assert properties["storm_final_watch"] == 1
+        assert any(
+            event["event_type"] == "storm.final_watch"
+            for event in platform.store.repositories.events.recent_events(limit=20)
+        )
+        final_goal = next(goal for goal in service.player_view("hero")["goals"] if goal["id"] == "storm_final_watch")
+        assert set(final_goal["ready_behavior_refs"]) == {
+            "behavior:final_night_repair",
+            "behavior:evacuate_supplies",
+            "behavior:shelter_residents",
+        }
+        _start_and_finish(platform, "hero", "evacuate_supplies", "final-evacuation")
+        properties = platform.store.repositories.metadata.get("world_properties")
+        assert properties["storm_prepared"] == 1
+        assert properties["storm_final_watch"] == 2
+
+        before_shellfish = platform.store.repositories.entities.get_entity("shellfish")["initial_state"]["quantity"]
+        _set_world_properties(platform, storm_eta_hours=0, storm_pressure=1.0)
+        platform.step()
+        after = platform.store.repositories.metadata.get("world_properties")
+        assert round(after["tide_gate_integrity"], 3) == 0.4
+        assert after["storm_final_watch"] == 0
+        assert after["storm_prepared"] == 0
+        assert platform.store.repositories.entities.get_entity("shellfish")["initial_state"]["quantity"] == before_shellfish - 4
+        event = next(
+            item for item in platform.store.repositories.events.recent_events(limit=30)
+            if item["event_type"] == "storm.breached"
+        )
+        assert event["severity"] == "breached_prepared"
+        assert location_is_open(platform.store.repositories.entities.get_entity("marsh_edge")) is False
+    finally:
+        service.close()
+
+
+def test_structure_alone_breaches_when_supports_are_missing(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "tidebound-supports-required", tmp_path / "runtime"))
+    try:
+        _set_world_properties(
+            platform,
+            storm_eta_hours=0,
+            storm_pressure=1.0,
+            tide_gate_integrity=0.85,
+            gate_supports=0.15,
+            public_confidence=0.5,
+        )
+        platform.step()
+        assert any(
+            event["event_type"] == "storm.breached"
+            for event in platform.store.repositories.events.recent_events(limit=30)
+        )
+        assert not any(
+            event["event_type"] == "storm.held"
+            for event in platform.store.repositories.events.recent_events(limit=30)
+        )
+    finally:
+        platform.close()
+
+
+def test_final_night_repair_can_close_the_last_gap(tmp_path: Path) -> None:
+    platform = Platform(create_instance(WORLD, "tidebound-final-night-repair", tmp_path / "runtime"))
+    try:
+        assert platform.enter_player("hero", "steward", name="夜班")["status"] == "accepted"
+        _set_world_properties(
+            platform,
+            storm_eta_hours=5.0,
+            storm_pressure=1.0,
+            tide_gate_integrity=0.7,
+            gate_supports=0.25,
+            public_confidence=0.5,
+            storm_final_watch=1,
+            storm_prepared=0,
+        )
+        _start_and_finish(platform, "hero", "final_night_repair", "final-night")
+        properties = platform.store.repositories.metadata.get("world_properties")
+        assert round(properties["tide_gate_integrity"], 3) == 0.8
+        assert round(properties["gate_supports"], 3) == 0.4
+        assert properties["storm_final_watch"] == 2
+
+        _set_world_properties(platform, storm_eta_hours=0)
+        platform.step()
+        assert any(
+            event["event_type"] == "storm.held"
+            for event in platform.store.repositories.events.recent_events(limit=40)
+        )
+        after = platform.store.repositories.metadata.get("world_properties")
+        assert round(after["gate_supports"], 3) == 0.1
+    finally:
+        platform.close()

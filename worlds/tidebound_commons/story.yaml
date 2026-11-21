@@ -10,6 +10,10 @@ emergent_source_event_types:
 - signal.tuned
 - signal.route_open
 - storm.warning
+- storm.final_watch
+- storm.final_repair
+- storm.supplies_evacuated
+- storm.shelters_opened
 - storm.breached
 - storm.held
 - storm.flooded
@@ -35,25 +39,25 @@ situation_anchor_window_minutes: 10080
 situation_anchors:
 - id: storm_watch
   title: 风暴季警戒
-  summary: 潮门只剩两成多完整度，第一场风暴正在靠近。先测量，再决定材料用在哪儿。
-  goal_hint: 测量潮门，并把完整性修到八成以上。
+  summary: 潮门只剩两成多完整度，临时支撑也不足，第一场风暴正在靠近。先测量，再决定材料用在哪儿。
+  goal_hint: 测量潮门，把结构修到八成、临时支撑加到四成。
   trigger_events:
   - storm.watch_begun
 - id: gate_ready
   title: 潮门已加固
-  summary: 潮门完整性回到八成以上。接下来要看它能不能真的挡住风暴。
+  summary: 潮门结构与临时支撑都到了目标线。接下来要看它能不能真的挡住风暴。
   goal_hint: 等风暴结算，或者趁余量补全海图。
   trigger_events:
   - tide_gate.ready
 - id: storm_held
   title: 潮门守住了
-  summary: 风暴过去，潮门没有失守。公社第一次证明，公开维护的代价能换来真实的安稳。
+  summary: 风暴过去，潮门的结构和支撑都撑住了。公社第一次证明，公开维护的代价能换来真实的安稳。
   goal_hint: 趁下一轮风暴前补全海图，或继续加固潮门。
   trigger_events:
   - storm.held
 - id: storm_breached
   title: 潮门被撕开
-  summary: 风暴撕开了潮门缺口。闸室还能站人，但下一次风暴会从同一个地方进来。
+  summary: 风暴撕开了潮门缺口。闸室还能站人，但下一次风暴会从同一个地方进来；结构、支撑或两者都不够。
   goal_hint: 先补潮门，再谈海图和信号。
   trigger_events:
   - storm.breached
@@ -93,6 +97,7 @@ endings:
   kind: ending
   stats:
   - {property: tide_gate_integrity, label: 潮门完整性}
+  - {property: gate_supports, label: 临时支撑}
   - {property: public_confidence, label: 公共信心}
   - {property: signal_reach, label: 信号覆盖}
   - {property: storm_cycle, label: 风暴轮次}

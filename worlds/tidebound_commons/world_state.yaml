@@ -5,7 +5,10 @@ world_state:
     storm_cycle: 0
     public_decision_open: 1
     tide_gate_integrity: 0.28
+    gate_supports: 0.15
     gate_repairs: 0
+    storm_final_watch: 0
+    storm_prepared: 0
     public_confidence: 0.48
     signal_reach: 0.18
     fresh_water_reserve: 20

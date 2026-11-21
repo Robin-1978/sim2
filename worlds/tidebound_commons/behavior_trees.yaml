@@ -75,7 +75,7 @@ behavior_trees:
 - id: brace_gate
   agent_label: 临时加固潮门
   summary: 临时加固潮门
-  description: 带上一件潮门支撑件到闸室，给潮门加一道临时支撑；不消耗工具包，但每次只能补 8%。
+  description: 带上一件潮门支撑件到闸室，给潮门加一道临时支撑；不消耗工具包，每次提高 15% 支撑。
   entry_conditions:
   - actor.can_repair
   - actor.alive
@@ -792,6 +792,7 @@ behavior_trees:
   - decision_failed
   - interrupted
   goal_tags:
+  - decision
   - supply
   - public
   drive_tags:
@@ -799,7 +800,7 @@ behavior_trees:
 - id: repair_priority_today
   agent_label: 优先抢修
   summary: 优先抢修
-  description: 把今天的人力集中到潮门，先用公共劳力补最危险的缺口。
+  description: 把今天的人力集中到潮门，补 5% 结构并加 10% 临时支撑，先用公共劳力补最危险的缺口。
   purpose: 每天只有一次公共决策；选完后今天的决策窗口关闭。
   entry_conditions:
   - actor.alive
@@ -816,6 +817,7 @@ behavior_trees:
   - decision_failed
   - interrupted
   goal_tags:
+  - decision
   - repair
   - safety
   drive_tags:
@@ -840,12 +842,103 @@ behavior_trees:
   - decision_failed
   - interrupted
   goal_tags:
+  - decision
   - recovery
   - public
   drive_tags:
   - belonging
   - purpose
 
+- id: final_night_repair
+  agent_label: 通宵抢修潮门
+  summary: 通宵抢修潮门
+  description: 风暴前最后一夜，带人赶到闸室，同时补结构和临时支撑；会消耗所有人的精力。
+  purpose: 把最后六小时押在潮门上，接受疲惫换防线。
+  entry_conditions:
+  - actor.alive
+  - world.storm_final_watch >= 1
+  - actor.need.hydration > 30
+  - actor.need.satiety > 30
+  estimated_minutes: 240
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: gatehouse
+  - type: action
+    action_id: final_night_repair
+    parameters: {}
+  success_results:
+  - final_repair_decided
+  failure_results:
+  - decision_failed
+  - interrupted
+  goal_tags:
+  - decision
+  - repair
+  - defense
+  - safety
+  drive_tags:
+  - purpose
+- id: evacuate_supplies
+  agent_label: 撤走公共物资
+  summary: 撤走公共物资
+  description: 风暴前最后一夜，把淡水、口粮和工具搬上高地，减少风暴潮损失。
+  purpose: 潮门未必守得住，但家底可以先保住。
+  entry_conditions:
+  - actor.alive
+  - world.storm_final_watch >= 1
+  estimated_minutes: 120
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: commons_quay
+  - type: action
+    action_id: evacuate_supplies
+    parameters: {}
+  success_results:
+  - supplies_evacuated
+  failure_results:
+  - decision_failed
+  - interrupted
+  goal_tags:
+  - decision
+  - supply
+  - safety
+  drive_tags:
+  - belonging
+- id: shelter_residents
+  agent_label: 让居民避风
+  summary: 让居民避风
+  description: 风暴前最后一夜，把居民撤进灯笼巷，稳住人心；潮门只能靠现有结构硬扛。
+  purpose: 先保人，再谈设施。
+  entry_conditions:
+  - actor.alive
+  - world.storm_final_watch >= 1
+  estimated_minutes: 150
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: lantern_row
+  - type: action
+    action_id: shelter_residents
+    parameters: {}
+  success_results:
+  - residents_sheltered
+  failure_results:
+  - decision_failed
+  - interrupted
+  goal_tags:
+  - decision
+  - social
+  - recovery
+  drive_tags:
+  - belonging
 - id: rest_at_hearth
   agent_label: 休息一会儿
   summary: 休息一会儿

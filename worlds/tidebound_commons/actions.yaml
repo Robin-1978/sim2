@@ -336,9 +336,9 @@ actions:
 - id: brace_tide_gate
   verb: repair
   version: 1
-  description: 用一件潮门支撑件给潮门加一道临时支撑，不消耗修理工具包。
+  description: 用一件潮门支撑件给潮门加一道临时支撑，不消耗修理工具包；主要提高临时支撑，顺带稳住局部结构。
   parameters: {}
-  preconditions: [actor.can_repair, actor.alive, location.tag.infrastructure, actor.inventory.gate_brace >= 1, world.tide_gate_integrity < 1]
+  preconditions: [actor.can_repair, actor.alive, location.tag.infrastructure, actor.inventory.gate_brace >= 1, world.gate_supports < 1]
   duration: {minutes: 50}
   costs:
     reserve: {gate_brace: 1}
@@ -347,7 +347,8 @@ actions:
     on_failure: {}
     refund: {}
   effects:
-  - {type: world_property_delta, property: tide_gate_integrity, delta: 0.08, maximum: 1}
+  - {type: world_property_delta, property: tide_gate_integrity, delta: 0.02, maximum: 1}
+  - {type: world_property_delta, property: gate_supports, delta: 0.15, maximum: 1}
   - {type: world_property_delta, property: public_confidence, delta: 0.02, maximum: 1}
   - {type: entity_state_set, entity_id: tide_gate, state: status, value: braced}
   success: {condition: actor.alive, result: gate_braced}
@@ -423,6 +424,7 @@ actions:
   effects:
   - {type: world_property_delta, property: public_decision_open, delta: -1, minimum: 0}
   - {type: world_property_delta, property: tide_gate_integrity, delta: 0.05, maximum: 1}
+  - {type: world_property_delta, property: gate_supports, delta: 0.10, maximum: 1}
   - {type: world_resource_delta, resource_id: fresh_water, delta: -4, minimum: 0}
   - {type: world_property_delta, property: decision_repair, delta: 1, maximum: 1}
   - type: public_event
@@ -465,6 +467,89 @@ actions:
   kind: atomic
   executor: effect_pipeline
 
+- id: final_night_repair
+  verb: repair
+  version: 1
+  description: 风暴前最后一夜，把所有还能动的人叫到闸室，通宵补结构与临时支撑；代价是所有人的精力。
+  parameters: {}
+  preconditions: [actor.alive, world.storm_final_watch == 1, location.tag.infrastructure]
+  duration: {minutes: 180}
+  costs:
+    reserve: {}
+    per_minute: {stamina: 0.22}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_delta, property: tide_gate_integrity, delta: 0.10, maximum: 1}
+  - {type: world_property_delta, property: gate_supports, delta: 0.15, maximum: 1}
+  - {type: world_property_delta, property: public_confidence, delta: 0.05, maximum: 1}
+  - {type: world_property_delta, property: storm_final_watch, delta: 1}
+  - type: public_event
+    event: storm.final_repair
+    summary: 公社把最后一夜押在潮门上。结构和临时支撑都被重新加固，居民带着疲惫等第一阵风。
+    data: {decision: final_repair}
+  success: {condition: actor.alive, result: final_repair_decided}
+  failure: {condition: actor.incapacitated, result: decision_failed}
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: evacuate_supplies
+  verb: allocate
+  version: 1
+  description: 风暴前最后一夜，把公共淡水、口粮和工具搬上高地，减少风暴潮造成的损失。
+  parameters: {}
+  preconditions: [actor.alive, world.storm_final_watch == 1, location.safe]
+  duration: {minutes: 90}
+  costs:
+    reserve: {}
+    per_minute: {stamina: 0.12}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_delta, property: storm_prepared, delta: 1, maximum: 1}
+  - {type: world_property_delta, property: public_confidence, delta: 0.02, maximum: 1}
+  - {type: world_property_delta, property: storm_final_watch, delta: 1}
+  - {type: need_delta, need: purpose, delta: 0.5}
+  - type: public_event
+    event: storm.supplies_evacuated
+    summary: 公社把淡水、口粮和工具搬上高地。潮门仍要经受风暴，但至少家底不会全泡在水里。
+    data: {decision: evacuate_supplies}
+  success: {condition: actor.alive, result: supplies_evacuated}
+  failure: {condition: actor.incapacitated, result: decision_failed}
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: shelter_residents
+  verb: rest
+  version: 1
+  description: 风暴前最后一夜，让居民先撤进灯笼巷，稳住人心；潮门只能靠现有结构硬扛。
+  parameters: {}
+  preconditions: [actor.alive, world.storm_final_watch == 1, location.tag.home]
+  duration: {minutes: 120}
+  costs:
+    reserve: {}
+    per_minute: {stamina: 0.04}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_delta, property: public_confidence, delta: 0.12, maximum: 1}
+  - {type: world_property_delta, property: storm_final_watch, delta: 1}
+  - {type: need_delta, need: belonging, delta: 3}
+  - type: public_event
+    event: storm.shelters_opened
+    summary: 公社把居民先撤进灯笼巷。潮门没有人再冒险去补，但所有人都知道该往哪里走。
+    data: {decision: shelter_residents}
+  success: {condition: actor.alive, result: residents_sheltered}
+  failure: {condition: actor.incapacitated, result: decision_failed}
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
 - id: rest_at_hearth
   verb: rest
   version: 1

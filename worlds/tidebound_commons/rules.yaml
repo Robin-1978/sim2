@@ -57,15 +57,18 @@ item_labels:
   gate_brace: 潮门支撑件
 world_property_labels:
   tide_gate_integrity: {label: 潮门完整性, unit: percent, max: 1, group: 防线, group_order: 1, order: 2}
-  gate_repairs: {label: 已修复次数, unit: amount, max: 3, group: 防线, group_order: 1, order: 3}
+  gate_supports: {label: 临时支撑, unit: percent, max: 1, group: 防线, group_order: 1, order: 3}
+  gate_repairs: {label: 已修复次数, unit: amount, max: 3, group: 防线, group_order: 1, order: 4}
   signal_reach: {label: 信号覆盖, unit: percent, max: 1, group: 进展, group_order: 3, order: 1}
   fresh_water_reserve: {label: 公共淡水, unit: amount, group: 储备, group_order: 2, order: 1, prompt: 沼泽水洼与集雨器的公共存量；在安全地点领取会消耗它。}
   maintenance_evidence: {label: 维护记录, unit: amount, max: 3, group: 进展, group_order: 3, order: 2}
   commons_tool_kits: {label: 公共工具包, unit: amount, max: 3, group: 储备, group_order: 2, order: 2}
-  storm_pressure: {label: 风暴压力, unit: percent, max: 1, group: 防线, group_order: 1, order: 5}
+  storm_pressure: {label: 风暴压力, unit: percent, max: 1, group: 防线, group_order: 1, order: 6}
   storm_eta_hours: {label: 风暴倒计时, unit: hours, max: 48, alert: true, group: 防线, group_order: 1, order: 1}
-  storm_cycle: {label: 风暴轮次, unit: amount, max: 3, group: 防线, group_order: 1, order: 6}
-  public_confidence: {label: 公共信心, unit: percent, max: 1, group: 防线, group_order: 1, order: 4}
+  storm_cycle: {label: 风暴轮次, unit: amount, max: 3, group: 防线, group_order: 1, order: 7}
+  public_confidence: {label: 公共信心, unit: percent, max: 1, group: 防线, group_order: 1, order: 5}
+  storm_final_watch: {label: 风暴最后决策, unit: bool, hidden: true}
+  storm_prepared: {label: 风暴准备, unit: bool, hidden: true}
   rain_catcher_repaired: {label: 集雨器, unit: bool, max: 1, true_label: 已修复, false_label: 未修复, group: 储备, group_order: 2, order: 3}
   market_trades: {label: 集市交换, unit: amount, group: 储备, group_order: 2, order: 4}
   public_decision_open: {label: 公共决策窗口, unit: bool, hidden: true}
@@ -122,7 +125,7 @@ resource_property_projections:
   commons_tool_rack: commons_tool_kits
 world_rules:
 - id: gate_ready
-  condition: world.tide_gate_integrity >= 0.8
+  condition: world.tide_gate_integrity >= 0.8 and world.gate_supports >= 0.4
   effect: tide_gate.ready
   event_type: tide_gate.ready
   wake:
@@ -137,14 +140,22 @@ world_rules:
   - story
   - god
   description: 风暴压力越过警戒线，公社必须公开回应。
+- id: storm_final_watch
+  condition: world.storm_eta_hours <= 6 and world.storm_eta_hours > 0
+  effect: storm.final_watch
+  event_type: storm.final_watch
+  wake:
+  - story
+  - god
+  description: 风暴进入最后六小时。公社只能再做一件事：通宵抢修、撤走物资，或让居民先避风。
 - id: gate_repair_needed
-  condition: world.tide_gate_integrity < 0.8 and world.maintenance_evidence >= 1 and world.commons_tool_kits >= 1
+  condition: world.tide_gate_integrity < 0.8 and world.maintenance_evidence >= 1 and world.commons_tool_kits >= 1 or world.gate_supports < 0.4 and world.maintenance_evidence >= 1 and world.commons_tool_kits >= 1
   effect: gate.repair_needed
   event_type: gate.repair_needed
   wake:
   - story
   - god
-  description: 潮门低于八成，公共工具架还有工具包；单靠一次修复挡不住风暴，需要两个人各修一次。
+  description: 潮门结构或临时支撑不足，公共工具架还有工具包；只修结构挡不住风暴，需要有人补支撑。
 - id: confidence_crisis
   condition: world.public_confidence < 0.25
   effect: confidence.low
@@ -315,14 +326,26 @@ minute_effects:
     property: storm_pressure
     delta: 0.004
     maximum: 1
+- id: storm_final_watch_open
+  scope: world
+  every_minutes: 1
+  condition: world.storm_eta_hours <= 6 and world.storm_eta_hours > 0 and world.storm_final_watch < 1
+  effect:
+    type: world_property_delta
+    property: storm_final_watch
+    delta: 1
+    maximum: 1
 - id: storm_floods_the_quay
   scope: world
   every_minutes: 1
-  condition: world.storm_eta_hours <= 0 and world.tide_gate_integrity < 0.2
+  condition: world.storm_eta_hours <= 0 and world.tide_gate_integrity < 0.2 and world.storm_prepared < 1
   effects:
   - {type: world_property_delta, property: public_confidence, delta: -0.22, minimum: 0}
   - {type: world_resource_delta, resource_id: driftwood, delta: -8, minimum: 0}
   - {type: world_resource_delta, resource_id: fresh_water, delta: -6, minimum: 0}
+  - {type: world_property_delta, property: gate_supports, delta: -0.6, minimum: 0}
+  - {type: world_property_delta, property: storm_final_watch, delta: -2, minimum: 0}
+  - {type: world_property_delta, property: storm_prepared, delta: -1, minimum: 0}
   - {type: entity_state_set, entity_id: commons_quay, state: open, value: false}
   - {type: entity_state_set, entity_id: commons_quay, state: closed_reason, value: 风暴潮淹没了码头}
   - {type: entity_state_set, entity_id: tide_gate, state: status, value: damaged}
@@ -330,14 +353,35 @@ minute_effects:
   event_summary: 风暴潮越过失守的潮门，码头和粮仓进水，公社的信心明显动摇。
   event_data:
     severity: flooded
+- id: storm_floods_the_quay_prepared
+  scope: world
+  every_minutes: 1
+  condition: world.storm_eta_hours <= 0 and world.tide_gate_integrity < 0.2 and world.storm_prepared >= 1
+  effects:
+  - {type: world_property_delta, property: public_confidence, delta: -0.10, minimum: 0}
+  - {type: world_resource_delta, resource_id: driftwood, delta: -3, minimum: 0}
+  - {type: world_resource_delta, resource_id: fresh_water, delta: -2, minimum: 0}
+  - {type: world_property_delta, property: gate_supports, delta: -0.6, minimum: 0}
+  - {type: world_property_delta, property: storm_final_watch, delta: -2, minimum: 0}
+  - {type: world_property_delta, property: storm_prepared, delta: -1, minimum: 0}
+  - {type: entity_state_set, entity_id: commons_quay, state: open, value: false}
+  - {type: entity_state_set, entity_id: commons_quay, state: closed_reason, value: 风暴潮淹没了码头}
+  - {type: entity_state_set, entity_id: tide_gate, state: status, value: damaged}
+  event_type: storm.flooded
+  event_summary: 风暴潮越过失守的潮门，但公共物资已经搬上高地，损失被压住了。
+  event_data:
+    severity: flooded_prepared
 - id: storm_breaches_the_gate
   scope: world
   every_minutes: 1
-  condition: world.storm_eta_hours <= 0 and world.tide_gate_integrity >= 0.2 and world.tide_gate_integrity < 0.8
+  condition: world.storm_eta_hours <= 0 and world.tide_gate_integrity >= 0.2 and world.tide_gate_integrity < 0.8 and world.storm_prepared < 1 or world.storm_eta_hours <= 0 and world.tide_gate_integrity >= 0.2 and world.gate_supports < 0.4 and world.storm_prepared < 1
   effects:
   - {type: world_property_delta, property: tide_gate_integrity, delta: -0.16, minimum: 0}
+  - {type: world_property_delta, property: gate_supports, delta: -0.5, minimum: 0}
   - {type: world_resource_delta, resource_id: shellfish, delta: -10, minimum: 0}
   - {type: world_resource_delta, resource_id: marsh_reed, delta: -8, minimum: 0}
+  - {type: world_property_delta, property: storm_final_watch, delta: -2, minimum: 0}
+  - {type: world_property_delta, property: storm_prepared, delta: -1, minimum: 0}
   - {type: entity_state_set, entity_id: marsh_edge, state: open, value: false}
   - {type: entity_state_set, entity_id: marsh_edge, state: closed_reason, value: 潮沟被风暴撕开}
   - {type: entity_state_set, entity_id: tide_gate, state: status, value: damaged}
@@ -345,12 +389,33 @@ minute_effects:
   event_summary: 风暴撕开了潮门缺口。闸室还能站人，但下一次风暴会更危险。
   event_data:
     severity: breached
+- id: storm_breaches_the_gate_prepared
+  scope: world
+  every_minutes: 1
+  condition: world.storm_eta_hours <= 0 and world.tide_gate_integrity >= 0.2 and world.tide_gate_integrity < 0.8 and world.storm_prepared >= 1 or world.storm_eta_hours <= 0 and world.tide_gate_integrity >= 0.2 and world.gate_supports < 0.4 and world.storm_prepared >= 1
+  effects:
+  - {type: world_property_delta, property: tide_gate_integrity, delta: -0.10, minimum: 0}
+  - {type: world_property_delta, property: gate_supports, delta: -0.5, minimum: 0}
+  - {type: world_resource_delta, resource_id: shellfish, delta: -4, minimum: 0}
+  - {type: world_resource_delta, resource_id: marsh_reed, delta: -3, minimum: 0}
+  - {type: world_property_delta, property: storm_final_watch, delta: -2, minimum: 0}
+  - {type: world_property_delta, property: storm_prepared, delta: -1, minimum: 0}
+  - {type: entity_state_set, entity_id: marsh_edge, state: open, value: false}
+  - {type: entity_state_set, entity_id: marsh_edge, state: closed_reason, value: 潮沟被风暴撕开}
+  - {type: entity_state_set, entity_id: tide_gate, state: status, value: damaged}
+  event_type: storm.breached
+  event_summary: 潮门被撕开，但提前撤离让公共物资少损失了一半。
+  event_data:
+    severity: breached_prepared
 - id: storm_holds_the_gate
   scope: world
   every_minutes: 1
-  condition: world.storm_eta_hours <= 0 and world.tide_gate_integrity >= 0.8
+  condition: world.storm_eta_hours <= 0 and world.tide_gate_integrity >= 0.8 and world.gate_supports >= 0.4
   effects:
   - {type: world_property_delta, property: public_confidence, delta: 0.05, maximum: 1}
+  - {type: world_property_delta, property: gate_supports, delta: -0.3, minimum: 0}
+  - {type: world_property_delta, property: storm_final_watch, delta: -2, minimum: 0}
+  - {type: world_property_delta, property: storm_prepared, delta: -1, minimum: 0}
   - {type: entity_state_set, entity_id: commons_quay, state: open, value: true}
   - {type: entity_state_set, entity_id: commons_quay, state: closed_reason, value: ""}
   - {type: entity_state_set, entity_id: marsh_edge, state: open, value: true}
@@ -559,20 +624,26 @@ onboarding:
   goal_id: daily_public_decision
 - id: brace_the_gate
   title: 第一道缺口：谁先修？
-  body: 一次修复只能把潮门抬高 28%。玛拉会从公共工具架取另一只工具包；你们各修一次，才能把完整性推到 80% 以上。
+  body: 一次修复只能把结构抬高 28%。玛拉会从公共工具架取另一只工具包；修复之外，还要有人把临时支撑加到 40%，风暴才会真正被挡住。
   when: world.maintenance_evidence >= 1 and world.public_decision_open < 1 and world.gate_repairs < 1 and world.tide_gate_integrity < 0.8
   action_ref: behavior:repair_gate
   goal_id: hold_the_first_storm
 - id: second_gate_repair
   title: 还差一次修复
-  body: 潮门已经修复过，但完整性还低于 80%。单靠一个人修不到八成：去闸室公共工具架取工具包，或把工具包放回工具架让玛拉去修；玛拉通常会补第二道缺口，第二个人再修一次就能撑过风暴。
+  body: 潮门已经修复过，但结构还低于 80% 或支撑不到 40%。先去闸室公共工具架取工具包补结构，再用浮木和芦苇绳做支撑件加固；玛拉通常会补其中一道缺口。
   when: world.gate_repairs >= 1 and world.tide_gate_integrity < 0.8
   action_ref: behavior:repair_gate
   goal_id: hold_the_first_storm
+- id: raise_gate_supports
+  title: 给潮门加临时支撑
+  body: 结构到八成还不够，临时支撑也要到四成。用浮木和芦苇绳做支撑件，或让公共劳力选“优先抢修”补 10%。
+  when: world.maintenance_evidence >= 1 and world.tide_gate_integrity >= 0.8 and world.gate_supports < 0.4
+  action_ref: behavior:craft_gate_brace
+  goal_id: hold_the_first_storm
 - id: wait_for_storm
   title: 等待第一场风暴
-  body: 潮门已经加固到八成以上。风暴会检验它是否真的守得住。
-  when: world.storm_cycle < 1 and world.tide_gate_integrity >= 0.8 and world.storm_eta_hours > 0
+  body: 潮门结构到了八成、临时支撑到了四成。风暴会检验它是否真的守得住。
+  when: world.storm_cycle < 1 and world.tide_gate_integrity >= 0.8 and world.gate_supports >= 0.4 and world.storm_eta_hours > 0
   goal_id: hold_the_first_storm
 - id: open_outer_route
   title: 把航路消息送出去
@@ -598,6 +669,18 @@ progression:
   - ration_today
   - repair_priority_today
   - marsh_rest_today
+  support_behaviors: []
+- id: storm_final_watch
+  label: 风暴最后六小时
+  summary: 通宵抢修、撤走物资，或让居民先避风——只能选一件。
+  priority: 0.99
+  audience:
+  - player
+  visible_when: world.storm_final_watch == 1
+  target_behaviors:
+  - final_night_repair
+  - evacuate_supplies
+  - shelter_residents
   support_behaviors: []
 - id: steward_first_rope
   label: 搓出第一段公共用绳
@@ -675,6 +758,8 @@ progression:
   requires_goal: steward_first_rope
   target_behaviors:
   - repair_gate
+  - brace_gate
+  - craft_gate_brace
   support_behaviors:
   - gather_driftwood
   - gather_reed
@@ -752,7 +837,7 @@ progression:
     count: 1
 - id: hold_the_first_storm
   label: 让潮门撑过第一场风暴
-  summary: 一次修复只能抬高 28%。第一场风暴前需要两次修复：你和玛拉各修一次，或轮流从工坊的公共工具架取工具包。
+  summary: 结构要修到 80%，临时支撑要加到 40%；修复、支撑件和公共抢修决策可以组合使用。
   priority: 0.94
   audience:
   - player
@@ -867,7 +952,7 @@ progression:
     count: 2
 - id: tune_seasonal_signal
   label: 校准季节信号
-  summary: 先把潮门修到八成以上，再消耗工具包校准信号；公共信心低于 35% 时，居民不会把航路消息送出去。
+  summary: 先把潮门结构修到八成以上，再消耗工具包校准信号；公共信心低于 35% 时，居民不会把航路消息送出去。
   priority: 0.82
   audience:
   - player

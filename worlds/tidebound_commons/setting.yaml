@@ -4,10 +4,10 @@ genre: 海岸生存与公共抉择
 locale: zh-CN
 ui:
   crisis_metrics:
-  - {property: tide_gate_integrity, label: 潮门完整性, format: percent, danger_below: 0.2, warning_below: 0.8, hint: 目标 80%}
+  - {property: tide_gate_integrity, label: 潮门完整性, format: percent, danger_below: 0.2, warning_below: 0.8, hint: 目标 80% · 支撑 40%}
+  - {property: gate_supports, label: 临时支撑, format: percent, danger_below: 0.2, warning_below: 0.4, hint: 目标 40%}
   - {property: storm_eta_hours, label: 风暴倒计时, format: hours, danger_below: 3, warning_below: 8, hint: 下一次风暴}
   - {property: public_confidence, label: 公共信心, format: percent, danger_below: 0.25, warning_below: 0.35, hint: 低于 35% 无法校准信号}
-  - {property: commons_tool_kits, label: 公共工具包, format: amount, max: 3, danger_below: 1, warning_below: 2, hint: 闸室公共工具架}
   tagline: 风暴季正在逼近。潮门、海图和人心，只能先救一样。
   cast_order: [mara, ivo, selene, taro, dockhand_nia, dockhand_ren]
   event_kinds:
@@ -33,6 +33,9 @@ ui:
     rationing_decided: 配给已调整
     repair_priority_decided: 抢修已完成
     marsh_rest_decided: 休养已安排
+    final_repair_decided: 通宵抢修已安排
+    supplies_evacuated: 物资已撤上高地
+    residents_sheltered: 居民已避风
   reason_labels:
     station.available: 工坊当前不可用
 ui_text:
