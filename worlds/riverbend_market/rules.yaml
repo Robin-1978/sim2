@@ -730,7 +730,7 @@ progression:
     count: 1
 - id: smithy_order
   label: 铁匠铺的订单
-  summary: 把四份矿石或煤卖给周铁山，让铁匠铺先达到备货线。
+  summary: 把五份矿石或煤卖给周铁山，让铁匠铺先达到备货线。
   priority: 0.94
   audience:
   - player
@@ -745,10 +745,10 @@ progression:
     event_type: trade.sold
     match:
       shop: smithy
-    count: 4
+    count: 5
 - id: tavern_order
   label: 食铺的订单
-  summary: 把四份麦子或河鱼卖给阿芹，让食铺先达到备货线。
+  summary: 把五份麦子或河鱼卖给阿芹，让食铺先达到备货线。
   priority: 0.93
   audience:
   - player
@@ -763,10 +763,10 @@ progression:
     event_type: trade.sold
     match:
       shop: tavern
-    count: 4
+    count: 5
 - id: clinic_order
   label: 医馆的订单
-  summary: 把三份草药卖给白芷，让医馆先达到备货线。
+  summary: 把五份草药卖给白芷，让医馆先达到备货线。
   priority: 0.92
   audience:
   - player
@@ -779,10 +779,10 @@ progression:
     event_type: trade.sold
     match:
       shop: clinic
-    count: 3
+    count: 5
 - id: inn_order
   label: 旅店的订单
-  summary: 把三份柴火或麦酒卖给老陶，让旅店先达到备货线。
+  summary: 把五份柴火或麦酒卖给老陶，让旅店先达到备货线。
   priority: 0.91
   audience:
   - player
@@ -797,10 +797,10 @@ progression:
     event_type: trade.sold
     match:
       shop: inn
-    count: 3
+    count: 5
 - id: market_order
   label: 集市的订单
-  summary: 把两份成品卖给金算盘，让集市达到备货线；礼箱需要集市的验货。
+  summary: 把五份成品卖给金算盘，让集市达到备货线；礼箱需要集市的验货。
   priority: 0.9
   audience:
   - player
@@ -819,7 +819,7 @@ progression:
     event_type: trade.sold
     match:
       shop: market
-    count: 2
+    count: 5
 - id: peddler_first_sale
   label: 第一笔买卖
   summary: 把一份货卖给需要的店，让钱袋里出现第一枚自己挣来的金币。
@@ -898,9 +898,22 @@ onboarding:
 - id: first_tool
   title: 买一把趁手的工具
   body: 铁匠铺的声望已经起步。花十枚金币买一把铁镐，深巷里的矿石会让后面的日子好过很多。
-  when: world.smithy_rep >= 0.16 and world.fair_act < 4
+  when: world.smithy_rep >= 0.16 and world.fair_act < 4 and actor.inventory.pickaxe
+    < 1
   action_ref: behavior:buy_pickaxe
   goal_id: smithy_order
+- id: drink_water
+  title: 先喝水
+  body: 去旅店或河滩，点“喝水”，10 分钟回复 25 水分。麦酒不解渴；只有水点才能喝。
+  when: actor.need.hydration < 45
+  action_ref: behavior:drink_water
+  goal_id: fair_preparation
+- id: stock_four_shops
+  title: 把四家店推到备货线
+  body: 每家店声望到 40% 就算备货。卖一份货加 8%，大约五次；买货也会加一点。先把“备货店铺”推到至少 4/5，再去凑礼箱。
+  when: world.fair_ready < 4 and world.fair_act < 4
+  action_ref: behavior:gather_iron_ore
+  goal_id: fair_preparation
 - id: fair_crate
   title: 凑齐桥市礼箱
   body: 桥市前夜到了。把铁锭、药剂、炖菜、麦酒和十枚金币装进礼箱，再确认至少四家店已经备好货。

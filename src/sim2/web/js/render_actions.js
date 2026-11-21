@@ -12,16 +12,22 @@ export function renderTask() {
       $("task-progress-bar").style.width = "0%";
       return;
     }
-    const remaining = Number(task.remaining_minutes || 0);
-    const total = Math.max(1, Number(task.total_minutes || state.taskTotal || remaining || 1));
+    const live = state.advancing ? state.taskProgress : null;
+    const completed = Math.max(0, Number(live?.completed_minutes || 0));
+    const baseRemaining = Number(task.remaining_minutes || 0);
+    const remaining = live ? Math.max(0, baseRemaining - completed) : baseRemaining;
+    const total = Math.max(1, Number(task.total_minutes || state.taskTotal || baseRemaining || 1));
     $("task-name").textContent = task.bt || "行动中";
     const provider = selectedProvider();
     const manualHint = state.runtime?.running ? "" : " · 手动模式：点“推进到完成”走完剩余时间";
-    $("task-detail").textContent = `${task.action || "推进中"} · 还需 ${remaining} 分钟${state.advancing ? ` · 同步推进世界${provider ? `（${provider}）` : ""}` : manualHint}`;
+    const advancingHint = state.advancing ? ` · 同步推进世界${provider ? `（${provider}）` : ""}` : manualHint;
+    $("task-detail").textContent = `${task.action || "推进中"} · 还需 ${remaining} 分钟${advancingHint}`;
     const ratio = Number(task.progress);
-    const progress = Number.isFinite(ratio) && ratio > 0
-      ? clamp(ratio * 100, 2, 100)
-      : clamp(((total - remaining) / total) * 100, 2, 100);
+    const baseProgress = Number.isFinite(ratio) && ratio > 0
+      ? ratio
+      : (total - baseRemaining) / total;
+    const liveProgress = live ? (total - remaining) / total : baseProgress;
+    const progress = clamp(Math.max(baseProgress, liveProgress) * 100, 2, 100);
     $("task-progress-bar").style.width = `${progress}%`;
     const running = Boolean(state.runtime?.running);
     $("task-advance").disabled = running || state.advancing;

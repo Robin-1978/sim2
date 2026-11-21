@@ -78,6 +78,11 @@ def test_riverbend_market_is_a_complete_five_shop_package(tmp_path: Path) -> Non
     assert rules["item_labels"]["coin"] == "金币"
     assert rules["world_property_labels"]["days_to_fair"]["unit"] == "amount"
     assert rules["world_property_labels"]["days_to_fair"]["alert"] is True
+    orders = {goal["id"]: goal for goal in rules["progression"]}
+    for order_id in ("smithy_order", "tavern_order", "clinic_order", "inn_order", "market_order"):
+        assert orders[order_id]["complete_when"]["count"] == 5
+    # Five sales at +0.08 reputation reach the 0.4 stocking line exactly.
+    assert round(5 * 0.08, 2) == 0.4
 
     platform = Platform(create_instance(WORLD, "riverbend-package", tmp_path / "runtime"))
     try:

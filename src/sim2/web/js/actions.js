@@ -196,6 +196,7 @@ export async function restorePlayer() {
 export function startStream() {
     if (state.stream || typeof EventSource === "undefined") return;
     let source;
+    let lastViewRefresh = 0;
     try {
       source = new EventSource(`/api/v1/stream?after=${state.streamCursor || 0}&session_token=${encodeURIComponent(state.playerToken || state.operatorToken || "")}`);
     } catch (error) {
@@ -212,7 +213,10 @@ export function startStream() {
       try { payload = JSON.parse(event.data || "{}"); } catch (error) { return; }
       const revision = Number(payload.revision || 0);
       if (revision && revision <= Number(state.view?.revision || 0)) return;
-      if (document.hidden || state.advancing) return;
+      if (document.hidden) return;
+      const now = Date.now();
+      if (now - lastViewRefresh < (state.advancing ? 1000 : 250)) return;
+      lastViewRefresh = now;
       loadView().catch(() => {});
     });
     source.addEventListener("task.progress", (event) => {
