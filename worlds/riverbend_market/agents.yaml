@@ -1,0 +1,361 @@
+agents:
+- id: zhou
+  name: 周铁山
+  role: 铁匠
+  controller: llm
+  ultimate_goal: 让铁匠铺在桥市前拿出足够多的工具和铁锭，证明河湾镇的手艺还值钱。
+  traits:
+    固执: 0.82
+    手稳: 0.9
+    寡言: 0.7
+  beliefs:
+  - id: zhou_belief
+    statement: 好铁不会骗人；一把镐能用多久，比一句承诺更可靠。
+    confidence: 0.78
+  needs:
+    hydration: 78
+    satiety: 76
+    belonging: 62
+    purpose: 80
+  capabilities:
+    crafting: 0.9
+    gathering: 0.55
+    trade: 0.4
+    conversation: 0.3
+  initial_bt_ids:
+  - travel
+  - gather_iron_ore
+  - gather_coal
+  - craft_iron_ingot
+  - craft_pickaxe
+  - buy_meal
+  - rest_at_inn
+  - eat_meal
+  - drink_water
+  - collect_smithy_income
+  - work_tavern
+  - work_market
+  initial_state:
+    location_id: smithy
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    coin: 14
+    iron_ore: 2
+    coal: 1
+  faction_ids:
+  - riverbend_traders
+- id: qin
+  name: 阿芹
+  role: 食铺老板
+  controller: llm
+  ultimate_goal: 让食铺在桥市期间一直有热饭和麦酒，也让自己不再欠码头的人情。
+  traits:
+    热心: 0.85
+    精明: 0.72
+    嘴快: 0.8
+  beliefs:
+  - id: qin_belief
+    statement: 一锅热饭能把人留在镇上；留得住人，桥市才有盼头。
+    confidence: 0.78
+  needs:
+    hydration: 80
+    satiety: 74
+    belonging: 70
+    purpose: 72
+  capabilities:
+    crafting: 0.8
+    gathering: 0.45
+    trade: 0.5
+    conversation: 0.7
+  initial_bt_ids:
+  - travel
+  - gather_grain
+  - gather_fish
+  - craft_meal
+  - craft_stew
+  - craft_ale
+  - buy_meal
+  - rest_at_inn
+  - eat_meal
+  - drink_water
+  - collect_tavern_income
+  - work_tavern
+  - work_market
+  initial_state:
+    location_id: tavern
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    coin: 12
+    grain: 2
+    river_fish: 1
+  faction_ids:
+  - riverbend_traders
+- id: baizhi
+  name: 白芷
+  role: 医师
+  controller: llm
+  ultimate_goal: 让医馆在桥市前备足草药和药剂，不让任何一个赶路的人因为小伤倒下。
+  traits:
+    冷静: 0.86
+    谨慎: 0.78
+    心软: 0.65
+  beliefs:
+  - id: baizhi_belief
+    statement: 草药要留根，人也是；把最后一束药用在最需要的人身上。
+    confidence: 0.78
+  needs:
+    hydration: 76
+    satiety: 72
+    belonging: 60
+    purpose: 78
+  capabilities:
+    medicine: 0.9
+    gathering: 0.55
+    crafting: 0.5
+    trade: 0.35
+    conversation: 0.45
+  initial_bt_ids:
+  - travel
+  - gather_herb
+  - craft_tonic
+  - treat
+  - buy_meal
+  - rest_at_inn
+  - eat_meal
+  - drink_water
+  - collect_clinic_income
+  - use_tonic
+  - work_tavern
+  - work_market
+  initial_state:
+    location_id: clinic
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    coin: 12
+    herb: 2
+    herb_sickle: 1
+  faction_ids:
+  - riverbend_traders
+- id: tao
+  name: 老陶
+  role: 旅店老板
+  controller: llm
+  ultimate_goal: 让旅店在桥市那晚住满人，也让自己听到的消息比商队更早到。
+  traits:
+    健谈: 0.88
+    圆滑: 0.7
+    怕麻烦: 0.45
+  beliefs:
+  - id: tao_belief
+    statement: 消息和床铺一样，留一晚就该收一晚的钱；但欠人情比欠钱麻烦。
+    confidence: 0.78
+  needs:
+    hydration: 82
+    satiety: 78
+    belonging: 68
+    purpose: 66
+  capabilities:
+    trade: 0.6
+    conversation: 0.75
+    gathering: 0.4
+    crafting: 0.3
+  initial_bt_ids:
+  - travel
+  - gather_firewood
+  - buy_ale
+  - buy_meal
+  - rest_at_inn
+  - eat_meal
+  - drink_water
+  - collect_inn_income
+  - work_tavern
+  - work_market
+  initial_state:
+    location_id: inn
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    coin: 10
+    firewood: 2
+    ale: 1
+  faction_ids:
+  - riverbend_traders
+- id: jin
+  name: 金算盘
+  role: 集市经纪人
+  controller: llm
+  ultimate_goal: 让河湾镇重新出现在商路地图上，哪怕要先替所有人垫一笔小钱。
+  traits:
+    精明: 0.9
+    爱面子: 0.75
+    记仇: 0.5
+  beliefs:
+  - id: jin_belief
+    statement: 商队只认准备好的镇子；准备好不是口号，是账本上能对上数的货。
+    confidence: 0.78
+  needs:
+    hydration: 78
+    satiety: 76
+    belonging: 64
+    purpose: 82
+  capabilities:
+    trade: 0.9
+    conversation: 0.8
+    crafting: 0.2
+    gathering: 0.2
+  initial_bt_ids:
+  - travel
+  - buy_meal
+  - buy_ale
+  - buy_tonic
+  - rest_at_inn
+  - eat_meal
+  - drink_water
+  - collect_market_income
+  - work_tavern
+  - work_market
+  initial_state:
+    location_id: market_square
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    coin: 18
+    meal: 1
+  faction_ids:
+  - riverbend_traders
+- id: ashi
+  name: 阿石
+  role: 矿工
+  controller: bt
+  ultimate_goal: 在北山矿场多出几筐好矿，让铁匠铺和集市都有东西可卖。
+  traits:
+    耐劳: 0.88
+    直脾气: 0.65
+    怕欠债: 0.55
+  beliefs:
+  - id: ashi_belief
+    statement: 矿脉不会自己走，但人会把好矿先卖给熟人。
+    confidence: 0.78
+  needs:
+    hydration: 74
+    satiety: 70
+    belonging: 55
+    purpose: 70
+  capabilities:
+    gathering: 0.85
+    crafting: 0.3
+    trade: 0.35
+    conversation: 0.25
+  initial_bt_ids:
+  - travel
+  - gather_iron_ore
+  - gather_coal
+  - deep_mine
+  - sell_ore_to_smith
+  - sell_coal_to_smith
+  - buy_meal
+  - rest_at_inn
+  - eat_meal
+  - drink_water
+  - work_tavern
+  - work_market
+  initial_state:
+    location_id: north_mine
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    coin: 4
+    pickaxe: 1
+- id: xiaohe
+  name: 小禾
+  role: 农夫
+  controller: bt
+  ultimate_goal: 把麦田里的收成变成食铺的存粮，让镇上的人先吃饱再谈桥市。
+  traits:
+    勤快: 0.86
+    胆小: 0.55
+    实在: 0.8
+  beliefs:
+  - id: xiaohe_belief
+    statement: 麦子要一茬一茬收；日子也是。
+    confidence: 0.78
+  needs:
+    hydration: 76
+    satiety: 74
+    belonging: 60
+    purpose: 68
+  capabilities:
+    gathering: 0.8
+    crafting: 0.3
+    trade: 0.35
+    conversation: 0.3
+  initial_bt_ids:
+  - travel
+  - gather_grain
+  - sell_grain_to_tavern
+  - buy_meal
+  - rest_at_inn
+  - eat_meal
+  - drink_water
+  - work_tavern
+  - work_market
+  initial_state:
+    location_id: barley_field
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    coin: 4
+    grain: 2
+- id: luhua
+  name: 芦花
+  role: 渔娘
+  controller: bt
+  ultimate_goal: 让河滩的鱼和浮木稳定进镇，也让自己攒够钱在桥市那晚住一次旅店。
+  traits:
+    爽利: 0.82
+    爱笑: 0.6
+    认死理: 0.5
+  beliefs:
+  - id: luhua_belief
+    statement: 河水给什么就收什么，但别把一网鱼当最后一网。
+    confidence: 0.78
+  needs:
+    hydration: 80
+    satiety: 72
+    belonging: 58
+    purpose: 66
+  capabilities:
+    gathering: 0.85
+    crafting: 0.3
+    trade: 0.35
+    conversation: 0.35
+  initial_bt_ids:
+  - travel
+  - gather_fish
+  - gather_firewood
+  - sell_fish_to_tavern
+  - sell_firewood_to_inn
+  - buy_meal
+  - rest_at_inn
+  - eat_meal
+  - drink_water
+  - work_tavern
+  - work_market
+  initial_state:
+    location_id: riverbank
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    coin: 4
+    fishing_rod: 1

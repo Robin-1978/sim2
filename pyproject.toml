@@ -36,6 +36,7 @@ sim2 = ["world_builder/*.yaml", "web/*.html", "web/*.css", "web/*.js", "web/js/*
 "worlds.three_lanterns_town" = ["*.yaml"]
 "worlds.aster_relay" = ["*.yaml"]
 "worlds.tidebound_commons" = ["*.yaml"]
+"worlds.riverbend_market" = ["*.yaml", "prompts/*.yaml"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

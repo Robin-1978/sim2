@@ -1,0 +1,148 @@
+entry_location_id: stone_bridge
+controller: manual
+capabilities:
+  gathering: 0.35
+  crafting: 0.35
+  trade: 0.35
+  medicine: 0.2
+  conversation: 0.4
+inventory:
+  coin: 8
+  meal: 1
+initial_bt_ids:
+- travel
+- gather_iron_ore
+- gather_coal
+- gather_herb
+- gather_grain
+- gather_fish
+- gather_firewood
+- deep_mine
+- deep_herb
+- deep_fish
+- sell_ore_to_smith
+- sell_coal_to_smith
+- sell_grain_to_tavern
+- sell_fish_to_tavern
+- sell_herb_to_clinic
+- sell_firewood_to_inn
+- sell_ale_to_inn
+- sell_ingot_to_market
+- sell_tonic_to_market
+- sell_stew_to_market
+- sell_ale_to_market
+- buy_pickaxe
+- buy_herb_sickle
+- buy_fishing_rod
+- buy_meal
+- buy_stew
+- buy_ale
+- buy_tonic
+- buy_spice
+- eat_meal
+- drink_ale
+- drink_water
+- rest_rough
+- rest_at_inn
+- treat
+- use_tonic
+- work_tavern
+- work_inn
+- work_market
+- craft_iron_ingot
+- craft_pickaxe
+- craft_herb_sickle
+- craft_fishing_rod
+- craft_meal
+- craft_stew
+- craft_ale
+- craft_tonic
+- assemble_fair_crate
+origins:
+- id: peddler
+  name: 行脚货郎
+  description: 你跟着上一支商队走过这条路，知道五家店缺什么，也知道金币该先落在谁手里。
+  starting_goal: 在七天内让至少四家店备好桥市，并凑出一个桥市礼箱。
+  traits:
+    会算账: 0.8
+    脸皮厚: 0.65
+  capabilities:
+    trade: 0.55
+    conversation: 0.5
+    crafting: 0.3
+    gathering: 0.3
+    medicine: 0.2
+  inventory:
+    coin: 14
+    meal: 1
+  knowledge_seed:
+  - 金算盘说过：桥市只认准备好的镇子，账本上对不上数的货，商队不会收。
+  opening:
+    event_type: origin.peddler
+    summary: 你以行脚货郎的身份走进河湾镇。钱袋里有十四枚金币，七天后商队就到；先去集市看告示板。
+- id: miner
+  name: 北山矿工
+  description: 你在北山矿场干过活，知道哪一层矿石最整，也知道没有好镐的矿工一天能白跑几趟。
+  starting_goal: 用矿石换到第一把铁镐，再让铁匠铺在桥市前备足原料。
+  traits:
+    耐劳: 0.85
+    认路: 0.7
+  capabilities:
+    gathering: 0.55
+    crafting: 0.35
+    trade: 0.3
+    conversation: 0.25
+    medicine: 0.2
+  inventory:
+    coin: 6
+    iron_ore: 2
+  knowledge_seed:
+  - 老矿工说过：先卖两筐矿换镐，再进深巷；空手进深巷只会把力气赔进去。
+  opening:
+    event_type: origin.miner
+    summary: 你以矿工的身份回到河湾镇。先卖两筐矿石，凑钱买一把铁镐，再谈桥市。
+- id: herbalist
+  name: 采药人
+  description: 你熟悉草药沼泽的干地和烂泥，知道哪些根能卖，哪些根要留给明年。
+  starting_goal: 让医馆在桥市前备足草药和药剂，同时不把沼泽采空。
+  traits:
+    细心: 0.82
+    耐得住: 0.7
+  capabilities:
+    medicine: 0.55
+    gathering: 0.5
+    crafting: 0.35
+    trade: 0.3
+    conversation: 0.3
+  inventory:
+    coin: 6
+    herb: 2
+    tonic: 1
+    herb_sickle: 1
+  knowledge_seed:
+  - 白芷说过：采药要留根；把最后一束药卖出去，下一场热病就没药可用了。
+  opening:
+    event_type: origin.herbalist
+    summary: 你以采药人的身份来到河湾镇。医馆的药材架还空着一半，先去沼泽补第一束草药。
+- id: cook
+  name: 食铺帮厨
+  description: 你在食铺后厨干过，知道一锅热饭要用多少麦子和鱼，也知道饿着肚子的人不会听桥市的大道理。
+  starting_goal: 让食铺在桥市前备足热饭和麦酒，再帮集市凑齐礼箱。
+  traits:
+    手快: 0.8
+    会招呼人: 0.7
+  capabilities:
+    crafting: 0.55
+    trade: 0.4
+    gathering: 0.3
+    conversation: 0.45
+    medicine: 0.2
+  inventory:
+    coin: 8
+    grain: 2
+    river_fish: 1
+  knowledge_seed:
+  - 阿芹说过：桥市那晚，热饭比金币更能留住人；但账也要算平。
+  opening:
+    event_type: origin.cook
+    summary: 你以帮厨的身份进了河湾镇。先把手里的麦子和鱼变成热饭，再让食铺在桥市前站稳。

@@ -143,6 +143,20 @@ Creating a place or resource emits a typed follow-up event, so dynamic content
 gets an activity instead of becoming a dead room. All of these mechanics live
 in YAML.
 
+[`worlds/riverbend_market`](worlds/riverbend_market/) is the five-shop gold
+economy world. The player arrives with a small purse seven days before a
+caravan returns, and must move coin between a smithy, tavern, clinic, inn and
+market: gather raw goods, sell them into shop tills, buy tools, meals, beds,
+treatment and spice, craft ingots, food and medicine, then assemble a fair
+crate from the smithy's ingot, the clinic's tonic, the tavern's food and ale,
+the market's spice, and a ready inn. Shops restock and pay wages, a relief fund
+and market short-work prevent hard locks, and the deterministic seven-day clock
+owns the fair acts. Story turns verified trades and shortages into grounded
+beats, the Director chooses one structural growth cell per plan, and God adds
+one playable economic unit without minting coin. The full loop, prices and
+agent contracts are in
+[the Riverbend design](docs/design/riverbend-market-loop.md).
+
 To add a world, provide a package with `manifest.yaml`, setting and world state, locations, objects, factions, agents, actions, behavior trees, rules, evolution schedule, player template, and optional prompts. `manifest.config_version` is recorded in the new SQLite instance. Reusing an instance ID is rejected; initialize a new ID for every world instance.
 
 Use `sim2 world-schema`, `sim2 build-world`, `sim2 validate-world` and

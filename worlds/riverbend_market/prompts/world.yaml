@@ -1,0 +1,15 @@
+world_prompt:
+  config_version: riverbend-market-0.1
+  public_tone: warm_frontier_economy
+  god_agent_constraints:
+  - 金币只在玩家钱袋、店铺钱柜和救济金之间转移；不得凭空增加金币。
+  - 新内容必须是一单位可玩经济内容：订单、服务、配方、顾客或规则。
+  - 新交易必须保留金币成本，并引用现有钱柜；不得绕开钱柜直接发钱。
+  - 新地点必须带路线和一个可执行行为；不能创建死地点。
+  - 不要用叙事事件代替库存、价格、关系或规则变化。
+  public_themes:
+  - seven_day_deadline
+  - shop_trust
+  - small_town_economy
+  - visible_work
+  - soft_failure_and_rebuild

@@ -1,0 +1,38 @@
+capabilities:
+- id: gathering
+  name: 采集
+  description: 在河滩、麦田、矿场和沼泽收集原料。
+  uses:
+  - gather_node
+  - deep_mine
+  - deep_herb
+  - deep_fish
+  xp_rule: verified_outcome
+- id: crafting
+  name: 制作
+  description: 把原料做成食物、工具和成品。
+  uses:
+  - craft_recipe
+  xp_rule: verified_outcome
+- id: trade
+  name: 交易
+  description: 在五家店之间买卖，让金币转起来。
+  uses:
+  - sell_to_smith
+  - sell_to_market
+  - buy_meal
+  xp_rule: verified_outcome
+- id: medicine
+  name: 医术
+  description: 处理草药、药剂和简单治疗。
+  uses:
+  - treat
+  - craft_recipe
+  xp_rule: verified_outcome
+- id: conversation
+  name: 交涉
+  description: 和店主、工人交换消息，维持关系。
+  uses:
+  - work_tavern
+  - work_inn
+  xp_rule: verified_outcome

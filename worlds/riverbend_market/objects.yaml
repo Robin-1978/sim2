@@ -1,0 +1,71 @@
+objects:
+- id: smithy_sign
+  type: facility
+  name: 铁匠铺
+  initial_state:
+    location_id: smithy
+  facility:
+    order: 1
+    properties:
+    - key: smithy_rep
+      label: 声望
+    - key: smithy_stock
+      label: 原料
+    - key: smithy_till
+      label: 钱柜
+- id: tavern_sign
+  type: facility
+  name: 食铺
+  initial_state:
+    location_id: tavern
+  facility:
+    order: 2
+    properties:
+    - key: tavern_rep
+      label: 声望
+    - key: tavern_stock
+      label: 食材
+    - key: tavern_till
+      label: 钱柜
+- id: clinic_sign
+  type: facility
+  name: 医馆
+  initial_state:
+    location_id: clinic
+  facility:
+    order: 3
+    properties:
+    - key: clinic_rep
+      label: 声望
+    - key: clinic_stock
+      label: 药材
+    - key: clinic_till
+      label: 钱柜
+- id: inn_sign
+  type: facility
+  name: 旅店
+  initial_state:
+    location_id: inn
+  facility:
+    order: 4
+    properties:
+    - key: inn_rep
+      label: 声望
+    - key: inn_stock
+      label: 柴酒
+    - key: inn_till
+      label: 钱柜
+- id: market_board
+  type: facility
+  name: 桥市告示板
+  initial_state:
+    location_id: market_square
+  facility:
+    order: 0
+    properties:
+    - key: fair_ready
+      label: 备货店铺
+    - key: town_prosperity
+      label: 小镇繁荣
+    - key: fair_crate
+      label: 礼箱

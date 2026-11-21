@@ -6,7 +6,7 @@ from worlds import world_path
 
 
 def test_bundled_worlds_are_importable_world_packages():
-    for world_id in ("starter_village", "tidebound_commons"):
+    for world_id in ("starter_village", "tidebound_commons", "riverbend_market"):
         path = world_path(world_id)
         assert (path / "manifest.yaml").is_file()
         assert (path / "actions.yaml").is_file()

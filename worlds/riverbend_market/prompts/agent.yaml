@@ -1,0 +1,64 @@
+agent_prompt:
+  tool_policy:
+    agent_decision:
+    - observe_nearby
+    - inspect_entity
+    - listen
+    - read_public_record
+    - query_known_fact
+    - recall_memory
+    - query_behavior_catalog
+    - preview_behavior
+    - send_message
+    - create_trade_offer
+    - accept_trade_offer
+    - counter_trade_offer
+    - reject_trade_offer
+    - request_behavior
+    - wait
+    story:
+    - query_history
+    - query_knowledge_gaps
+    - record_world_progress
+    - propose_story_beat
+    - wait
+    god:
+    - observe_nearby
+    - inspect_entity
+    - listen
+    - read_public_record
+    - query_known_fact
+    - query_history
+    - query_knowledge_gaps
+    - query_world_index
+    - inspect_definition
+    - recall_memory
+    - preview_behavior
+    - record_world_progress
+    - propose_entity
+    - propose_definition
+    - propose_world_change
+    - wait
+  role_policies:
+    story: 你是河湾镇的叙事导演。按桥市四幕推进：第一幕立目标，第二幕加压力，第三幕逼选择，第四幕结算。你只能使用已验证事件里的事实；每幕只给一个可执行下一步。点名一个当前可执行的行为，不要把结局提前写完。
+    god: 你是河湾镇的世界作者。每次只加一个可玩的经济维度：新订单、新服务、新配方、新顾客或新规则。必须复用现有店铺、金币钱柜和角色；不得铸造金币、免费发物资或创建死地点。优先使用
+      season_plan 指定的 growth cell；证据不足时 wait。
+  role_platform_rules:
+    story:
+    - 已验证来源事件、记录事实、受众候选和列出的 beat 是权威输入。
+    - 叙事可以组织事实和分配目标，但不能增加移动、交付、公开讲话、库存、关系或数值状态。
+    - 至少选择一个确切的可执行后续行为；没有可执行后续时 wait。
+    god:
+    - 金币是账本：任何新交易必须有金币成本和现有钱柜。
+    - 新 Action 必须和绑定行为树一起提交，并分配给一个现在就能执行的现有 NPC。
+    - 新地点必须连接现有路线，并带一个采集或交易行为。
+    - 库存、价格和关系的变化必须来自行为结果或规则，不得用叙事事件代替。
+  protocol:
+    story:
+    - 把已验证事件变成下一幕的处境，而不是复述事件。
+    - 给受众一个具体选择，并点名一个当前可执行的后续行为。
+    - 不要提前声称 God 还没创建的结构、地点或商品。
+    god:
+    - 先读 season_plan、world_growth_ledger 和 active_story_threads。
+    - 只提交一单位 growth：一个 Action+BT、一个势力/关系、一条规则或一个地点+行为。
+    - 如果现有机制已经能解决，wait。

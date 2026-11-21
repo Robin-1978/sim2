@@ -1,0 +1,288 @@
+locations:
+- id: stone_bridge
+  name: 石桥镇口
+  description: 断桥只剩半截桥墩，渡口的木牌上还留着去年商队写的日期。所有进镇的人都要从这里走过。
+  public: true
+  safe: true
+  tags:
+  - public
+  - safe
+  - road
+  - home
+  routes:
+  - market_square
+  route_distances:
+    market_square: 1
+  initial_state:
+    open: true
+  map_position:
+    x: 0
+    y: 0
+- id: market_square
+  name: 河湾集市
+  description: 五家店围着的一块青石空地。金算盘的摊位在最中间，桥市告示板就钉在旧旗杆上。
+  public: true
+  safe: true
+  tags:
+  - public
+  - safe
+  - market
+  - social
+  routes:
+  - stone_bridge
+  - smithy
+  - tavern
+  - clinic
+  - inn
+  - riverbank
+  - barley_field
+  - north_mine
+  - herb_marsh
+  route_distances:
+    stone_bridge: 1
+    smithy: 1
+    tavern: 1
+    clinic: 1
+    inn: 1
+    riverbank: 1
+    barley_field: 1
+    north_mine: 1
+    herb_marsh: 1
+  initial_state:
+    open: true
+  map_position:
+    x: 1
+    y: 0
+- id: smithy
+  name: 铁匠铺
+  description: 炉火从早烧到晚。周铁山把矿石、煤和旧铁器分门别类堆在墙边，墙上挂着一排待修的农具。
+  public: true
+  safe: true
+  tags:
+  - public
+  - safe
+  - shop
+  - smithy
+  - forge
+  routes:
+  - market_square
+  route_distances:
+    market_square: 1
+  initial_state:
+    open: true
+  map_position:
+    x: 2
+    y: -1
+- id: tavern
+  name: 食铺
+  description: 阿芹的食铺只有六张桌子，锅里永远炖着东西。麦子、河鱼和闲话都在这里交换。
+  public: true
+  safe: true
+  tags:
+  - public
+  - safe
+  - shop
+  - tavern
+  - kitchen
+  - social
+  routes:
+  - market_square
+  route_distances:
+    market_square: 1
+  initial_state:
+    open: true
+  map_position:
+    x: 2
+    y: 0
+- id: clinic
+  name: 医馆
+  description: 白芷把晒干的草药一束束挂在梁上。医馆不大，但镇上的人受了伤、发了热，最后都会来这里。
+  public: true
+  safe: true
+  tags:
+  - public
+  - safe
+  - shop
+  - clinic
+  - health
+  routes:
+  - market_square
+  route_distances:
+    market_square: 1
+  initial_state:
+    open: true
+  map_position:
+    x: 2
+    y: 1
+- id: inn
+  name: 旅店
+  description: 老陶的旅店兼卖热水和消息。楼下的长桌是镇上晚上最亮的地方，楼上的床铺按夜收钱。
+  public: true
+  safe: true
+  tags:
+  - public
+  - safe
+  - shop
+  - inn
+  - home
+  - water
+  routes:
+  - market_square
+  route_distances:
+    market_square: 1
+  initial_state:
+    open: true
+  map_position:
+    x: 1
+    y: 1
+- id: riverbank
+  name: 河滩
+  description: 浅水里有河鱼，退水后能捡到浮木。孩子们在石头上晒网，渔娘在这里分鱼。
+  public: true
+  safe: false
+  tags:
+  - resource
+  - water
+  - fishing
+  - wood
+  routes:
+  - market_square
+  route_distances:
+    market_square: 1
+  initial_state:
+    open: true
+  map_position:
+    x: -1
+    y: 1
+- id: barley_field
+  name: 麦田
+  description: 河湾镇唯一一片成规模的耕地。小禾一家守着它，麦子既是口粮，也是麦酒的起点。
+  public: true
+  safe: false
+  tags:
+  - resource
+  - farm
+  - grain
+  routes:
+  - market_square
+  route_distances:
+    market_square: 1
+  initial_state:
+    open: true
+  map_position:
+    x: -1
+    y: 0
+- id: north_mine
+  name: 北山矿场
+  description: 半塌的旧矿口，矿石和煤露在岩层里。越往里走，石头越松，但矿石也越整。
+  public: true
+  safe: false
+  tags:
+  - resource
+  - mine
+  - ore
+  routes:
+  - market_square
+  route_distances:
+    market_square: 1
+  initial_state:
+    open: true
+  map_position:
+    x: -2
+    y: -1
+- id: herb_marsh
+  name: 草药沼泽
+  description: 水汽终年不散，草药长得密，路也烂得厉害。白芷说，采药要留根，不然明年就只剩泥。
+  public: true
+  safe: false
+  tags:
+  - resource
+  - herb
+  - marsh
+  routes:
+  - market_square
+  route_distances:
+    market_square: 1
+  initial_state:
+    open: true
+  map_position:
+    x: -2
+    y: 1
+resources:
+- id: iron_vein
+  type: resource
+  name: 北山铁矿
+  location_id: north_mine
+  initial_state:
+    location_id: north_mine
+    quantity: 40
+- id: coal_seam
+  type: resource
+  name: 北山煤层
+  location_id: north_mine
+  initial_state:
+    location_id: north_mine
+    quantity: 30
+- id: herb_patch
+  type: resource
+  name: 草药丛
+  location_id: herb_marsh
+  initial_state:
+    location_id: herb_marsh
+    quantity: 30
+- id: grain_field
+  type: resource
+  name: 麦田
+  location_id: barley_field
+  initial_state:
+    location_id: barley_field
+    quantity: 40
+- id: river_fish
+  type: resource
+  name: 河鱼滩
+  location_id: riverbank
+  initial_state:
+    location_id: riverbank
+    quantity: 30
+- id: driftwood
+  type: resource
+  name: 浮木滩
+  location_id: riverbank
+  initial_state:
+    location_id: riverbank
+    quantity: 30
+- id: smithy_stock
+  type: resource
+  name: 铁匠铺原料
+  location_id: smithy
+  initial_state:
+    location_id: smithy
+    quantity: 6
+- id: tavern_stock
+  type: resource
+  name: 食铺食材
+  location_id: tavern
+  initial_state:
+    location_id: tavern
+    quantity: 6
+- id: clinic_stock
+  type: resource
+  name: 医馆药材
+  location_id: clinic
+  initial_state:
+    location_id: clinic
+    quantity: 4
+- id: inn_stock
+  type: resource
+  name: 旅店柴酒
+  location_id: inn
+  initial_state:
+    location_id: inn
+    quantity: 4
+- id: market_stock
+  type: resource
+  name: 集市存货
+  location_id: market_square
+  initial_state:
+    location_id: market_square
+    quantity: 8

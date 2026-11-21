@@ -1,0 +1,166 @@
+recipes:
+- id: iron_ingot
+  name: 铁锭
+  station_tags:
+  - forge
+  inputs:
+  - item: iron_ore
+    quantity: 2
+  - item: coal
+    quantity: 1
+  outputs:
+  - item: iron_ingot
+    quantity: 1
+  requires:
+  - capability: crafting
+    min_level: 0.2
+  duration_minutes: 45
+  effects:
+  - op: capability.add_xp
+    capability: crafting
+    value: 0.02
+- id: pickaxe
+  name: 铁镐
+  station_tags:
+  - forge
+  inputs:
+  - item: iron_ingot
+    quantity: 1
+  - item: firewood
+    quantity: 1
+  outputs:
+  - item: pickaxe
+    quantity: 1
+  limits:
+  - item: pickaxe
+    max_total: 4
+  requires:
+  - capability: crafting
+    min_level: 0.25
+  duration_minutes: 60
+  effects:
+  - op: capability.add_xp
+    capability: crafting
+    value: 0.03
+- id: herb_sickle
+  name: 药锄
+  station_tags:
+  - forge
+  inputs:
+  - item: iron_ingot
+    quantity: 1
+  - item: firewood
+    quantity: 1
+  outputs:
+  - item: herb_sickle
+    quantity: 1
+  limits:
+  - item: herb_sickle
+    max_total: 4
+  requires:
+  - capability: crafting
+    min_level: 0.25
+  duration_minutes: 60
+  effects:
+  - op: capability.add_xp
+    capability: crafting
+    value: 0.03
+- id: fishing_rod
+  name: 鱼竿
+  station_tags:
+  - forge
+  inputs:
+  - item: iron_ingot
+    quantity: 1
+  - item: firewood
+    quantity: 1
+  outputs:
+  - item: fishing_rod
+    quantity: 1
+  limits:
+  - item: fishing_rod
+    max_total: 4
+  requires:
+  - capability: crafting
+    min_level: 0.2
+  duration_minutes: 50
+  effects:
+  - op: capability.add_xp
+    capability: crafting
+    value: 0.03
+- id: meal
+  name: 热饭
+  station_tags:
+  - kitchen
+  inputs:
+  - item: grain
+    quantity: 1
+  - item: river_fish
+    quantity: 1
+  outputs:
+  - item: meal
+    quantity: 2
+  requires:
+  - capability: crafting
+    min_level: 0.15
+  duration_minutes: 30
+  effects:
+  - op: capability.add_xp
+    capability: crafting
+    value: 0.02
+- id: stew
+  name: 炖菜
+  station_tags:
+  - kitchen
+  inputs:
+  - item: grain
+    quantity: 1
+  - item: river_fish
+    quantity: 2
+  outputs:
+  - item: stew
+    quantity: 1
+  requires:
+  - capability: crafting
+    min_level: 0.25
+  duration_minutes: 45
+  effects:
+  - op: capability.add_xp
+    capability: crafting
+    value: 0.03
+- id: ale
+  name: 麦酒
+  station_tags:
+  - kitchen
+  inputs:
+  - item: grain
+    quantity: 2
+  outputs:
+  - item: ale
+    quantity: 2
+  requires:
+  - capability: crafting
+    min_level: 0.2
+  duration_minutes: 60
+  effects:
+  - op: capability.add_xp
+    capability: crafting
+    value: 0.02
+- id: tonic
+  name: 药剂
+  station_tags:
+  - health
+  inputs:
+  - item: herb
+    quantity: 2
+  outputs:
+  - item: tonic
+    quantity: 1
+  requires:
+  - capability: medicine
+    min_level: 0.2
+  duration_minutes: 40
+  effects:
+  - op: capability.add_xp
+    capability: medicine
+    value: 0.03

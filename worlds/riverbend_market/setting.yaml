@@ -1,0 +1,151 @@
+name: 河湾镇
+premise: 断桥把河湾镇挡在商路之外一年了。七天后，今年第一支商队会来到渡口验货；铁匠铺、食铺、医馆、旅店和集市必须一起准备好，否则商队会绕道去下游。
+genre: 小镇经营与金币循环
+locale: zh-CN
+ui:
+  crisis_metrics:
+  - property: days_to_fair
+    label: 桥市倒计时
+    format: amount
+    max: 7
+    danger_below: 2
+    warning_below: 4
+    hint: 七天后商队抵达
+  - property: town_prosperity
+    label: 小镇繁荣
+    format: percent
+    danger_below: 0.25
+    warning_below: 0.45
+    hint: 目标 60%
+  - property: fair_ready
+    label: 备货店铺
+    format: amount
+    max: 5
+    danger_below: 1
+    warning_below: 4
+    hint: 目标 4 家
+  - property: market_till
+    label: 集市钱柜
+    format: amount
+    danger_below: 8
+    warning_below: 20
+    hint: 集市钱柜
+  tagline: 七天后商队就到。五家店、一个钱袋，桥市只认准备好的镇子。
+  cast_order:
+  - zhou
+  - qin
+  - baizhi
+  - tao
+  - jin
+  - ashi
+  - xiaohe
+  - luhua
+  event_kinds:
+    economy:
+    - trade.
+    - shop.
+    - market.
+    fair:
+    - fair.
+    - town.morning
+    - town.decline
+    - town.boom
+    work:
+    - work.
+    - clinic.
+    - inn.
+    - meal.
+    - water.
+    resource:
+    - resource.
+    story:
+    - story.
+    - beat.
+    origin:
+    - origin.
+  event_titles:
+    economy: 买卖与店铺
+    fair: 桥市
+    work: 工作与服务
+    resource: 采集
+    story: 世界剧情
+    origin: 出身
+  pulse_prefixes:
+  - trade.
+  - shop.
+  - fair.
+  - town.
+  - work.
+  - clinic.
+  - inn.
+  - story.
+  - world.change
+  - civilization
+  - evolution
+  - resource.
+  result_labels:
+    resource_gathered: 采集完成
+    ore_sold: 矿石已卖出
+    coal_sold: 煤已卖出
+    grain_sold: 麦子已卖出
+    fish_sold: 河鱼已卖出
+    herb_sold: 草药已卖出
+    firewood_sold: 柴火已卖出
+    ale_sold: 麦酒已卖出
+    ingot_sold: 铁锭已卖出
+    tonic_sold: 药剂已卖出
+    stew_sold: 炖菜已卖出
+    crafted_sold: 成品已卖出
+    tool_bought: 工具已买到
+    meal_bought: 热饭已买到
+    stew_bought: 炖菜已买到
+    ale_bought: 麦酒已买到
+    tonic_bought: 药剂已买到
+    spice_bought: 香料已买到
+    meal_eaten: 吃过热饭
+    ale_drunk: 喝过麦酒
+    water_drunk: 喝过水
+    rested: 休息过了
+    treated: 治疗完成
+    worked: 帮工完成
+    crate_assembled: 桥市礼箱已备好
+    recipe_completed: 制作完成
+    gathering_failed: 采集失败
+    trade_failed: 交易未完成
+    crafting_failed: 制作失败
+    rest_failed: 休息被打断
+    treatment_failed: 治疗未完成
+    income_collected: 店主收入已领取
+    tonic_used: 药剂已服用
+    work_failed: 帮工未完成
+    eating_failed: 没有食物
+    drinking_failed: 没有饮品
+    arrived: 已抵达
+  reason_labels:
+    station.available: 当前地点没有对应工作台
+ui_text:
+  travel_choice: 前往 {name}
+  travel_summary: 沿已知路线前往 {name}。
+  travel_purpose: 移动到另一个已知地点
+  travel_time: 预计 {minutes} 分钟
+  travel_impact: 抵达目标地点
+  world_label: 世界
+calendar:
+  minutes_per_day: 1440
+  day_phases:
+  - id: dawn
+    start_minute: 300
+    end_minute: 480
+  - id: workday
+    start_minute: 480
+    end_minute: 1080
+  - id: evening
+    start_minute: 1080
+    end_minute: 1320
+  - id: night
+    start_minute: 1320
+    end_minute: 300
+world_clock:
+  start_day: 1
+  start_minute: 420
+  season: 桥市季

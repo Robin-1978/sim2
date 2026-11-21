@@ -1,0 +1,158 @@
+emergent_source_event_types:
+- trade.sold
+- trade.bought
+- shop.ready
+- resource.gathered
+- resource.safety_low
+- work.shift
+- clinic.treated
+- inn.rested
+- craft.completed
+- fair.act_two
+- fair.act_three
+- fair.eve
+- fair.crate_assembled
+- fair.success
+- fair.quiet
+- fair.failed
+- fair.ready
+- town.decline
+- town.boom
+- civilization.milestone
+- clinic.stock.low
+situation_anchor_window_minutes: 10080
+situation_anchors:
+- id: fair_watch
+  title: 七日桥市
+  summary: 断桥之后，今年第一支商队会在七天后到达渡口。五家店必须在桥市前备好货；至少四家店和一个桥市礼箱，商队才会留下。
+  goal_hint: 先采一份原料，卖给需要的店；再用金币买工具、热饭和床位，把五家店的声望推过备货线。
+  trigger_events:
+  - town.fair_begun
+beats:
+- id: first_coin
+  agent_label: 第一枚金币
+  summary: 第一笔买卖完成，钱袋里有了自己挣来的金币。
+  trigger_events:
+  - trade.sold
+  audience: []
+  fact: 玩家把一份货卖给了镇上的店，换回了金币。
+  goal_hint: 把第一笔收入变成工具、热饭或下一批货；别让钱袋空着过夜。
+  public_event: story.first_coin
+- id: shop_ready
+  agent_label: 一家店备好了
+  summary: 五家店里已经有一家达到桥市备货线。
+  trigger_events:
+  - shop.ready
+  audience: []
+  fact: 一家店已经达到桥市备货线。
+  goal_hint: 去下一家还没备好的店；桥市至少需要四家。
+  public_event: story.shop_ready
+- id: supply_shortage
+  agent_label: 有家店的库存见底
+  summary: 一家店的关键库存已经低于安全线，桥市备货出现了缺口。
+  trigger_events:
+  - resource.safety_low
+  audience: []
+  fact: 一家店的关键库存已经低于安全线。
+  goal_hint: 先补最缺的那家店；别让桥市前夜才发现锅是空的。
+  public_event: story.supply_shortage
+- id: clinic_shortage
+  agent_label: 医馆的药材不够了
+  summary: 医馆的药材库存已经低于安全线，白芷需要有人去草药沼泽补货。
+  trigger_events:
+  - clinic.stock.low
+  audience:
+  - baizhi
+  fact: 医馆的药材库存已经低于安全线。
+  goal_hint: 去草药沼泽采药，别把最后一束药留到桥市当天。
+  unlock_behavior_ids:
+  - gather_herb
+  followup_behaviors:
+  - 采草药
+  public_event: story.clinic_shortage
+- id: caravan_early
+  agent_label: 商队前夜
+  summary: 桥市前夜到了，最后一班补货要赶在商队验货前送到铁匠铺。
+  trigger_events:
+  - fair.eve
+  audience:
+  - ashi
+  fact: 桥市前夜到了，最后一班补货还没送完。
+  goal_hint: 进北山深巷敲一筐矿，赶在验货前送到铁匠铺。
+  unlock_behavior_ids:
+  - deep_mine
+  followup_behaviors:
+  - 进北山深巷
+  public_event: story.caravan_early
+- id: fair_success
+  agent_label: 桥市重开
+  summary: 商队验过礼箱，四家店备好了货。河湾镇重新出现在商路地图上。
+  trigger_events:
+  - fair.success
+  audience: []
+  fact: 桥市成功，商队留下了。
+  goal_hint: 下一趟商队会带来新订单；先让五家店把这一轮的账算平。
+  public_event: story.fair_success
+- id: fair_quiet
+  agent_label: 只停一夜
+  summary: 商队收下礼箱，只答应停一夜；河湾镇还活着，但还没有真正回到商路上。
+  trigger_events:
+  - fair.quiet
+  audience: []
+  fact: 桥市只换来商队停一夜。
+  goal_hint: 下一轮至少要让四家店备好货，再凑一个礼箱。
+  public_event: story.fair_quiet
+- id: fair_failed
+  agent_label: 商队绕道
+  summary: 商队没有停留，沿着下游绕道走了。河湾镇还在，但下一趟商队要等很久。
+  trigger_events:
+  - fair.failed
+  audience: []
+  fact: 桥市失败，商队绕道。
+  goal_hint: 先让店铺活下去：用短工换饭钱，用原料换工具，再准备下一轮桥市。
+  public_event: story.fair_failed
+endings:
+- id: bridge_fair_reopened
+  title: 第一季：桥市重开
+  summary: 商队验过礼箱，四家店备好了货。断桥还没有修好，但河湾镇重新出现在商路地图上；下一趟商队会带来新的订单。
+  goal_hint: 第一季已完成。世界继续运行：守住五家店的声望，补上断桥，或让新的商队带来第六种生意。
+  condition: world.fair_stage == 2
+  trigger_event: fair.success
+  kind: ending
+  stats:
+  - property: town_prosperity
+    label: 小镇繁荣
+  - property: fair_ready
+    label: 备货店铺
+  - property: smithy_rep
+    label: 铁匠铺声望
+  - property: market_rep
+    label: 集市声望
+- id: bridge_fair_quiet
+  title: 第一季：商队只停一夜
+  summary: 商队收下礼箱，只答应停一夜。河湾镇没有被商路彻底遗忘，但下一趟商队要等很久。
+  goal_hint: 下一轮至少让四家店备好货，再凑一个礼箱；先补最弱的店。
+  condition: world.fair_stage == 3
+  trigger_event: fair.quiet
+  kind: ending
+  stats:
+  - property: town_prosperity
+    label: 小镇繁荣
+  - property: fair_ready
+    label: 备货店铺
+  - property: fair_crate
+    label: 桥市礼箱
+- id: bridge_fair_failed
+  title: 第一季：商队绕道
+  summary: 商队没有停留，沿着下游绕道走了。河湾镇还在，但店铺缩减了库存，下一趟商队要等很久。
+  goal_hint: 先让店铺活下去：用短工换饭钱，用原料换工具，再准备下一轮桥市。
+  condition: world.fair_stage == 4
+  trigger_event: fair.failed
+  kind: ending
+  stats:
+  - property: town_prosperity
+    label: 小镇繁荣
+  - property: fair_ready
+    label: 备货店铺
+  - property: relief_fund
+    label: 救济金

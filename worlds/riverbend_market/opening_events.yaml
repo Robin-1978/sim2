@@ -1,0 +1,8 @@
+opening_events:
+- type: town.fair_begun
+  world_minute: 0
+  payload:
+    summary: 断桥之后，今年第一支商队会在七天后到达渡口。五家店必须在桥市前备好货；至少四家店和一个桥市礼箱，商队才会留下。
+    days_to_fair: 7
+    fair_ready_target: 4
+  id: fair_begun

@@ -1,0 +1,242 @@
+cadence:
+  reflection: 1d
+  innovation: 7d
+  god: 3d
+  god_structural: 14d
+stagnation:
+  window: 2d
+  max_interval: 4d
+  growth: structural
+  progress_event_types:
+  - trade.sold
+  - trade.bought
+  - shop.ready
+  - work.shift
+  - clinic.treated
+  - inn.rested
+  - fair.crate_assembled
+  - fair.success
+  - fair.quiet
+  - fair.failed
+  - civilization.milestone
+  - world.change.world_property
+  - world.change.rule
+  - world.change.relationship
+  - world.change.faction
+director:
+  cadence: 2d
+  window: 4d
+  targets:
+  - verb
+  - social
+  - rule
+  - place
+  policy: llm
+  max_cell_units: 0
+limits:
+  max_ready_god_tasks: 2
+contracts:
+  god_structural:
+    tools:
+    - query_history
+    - query_knowledge_gaps
+    - propose_entity
+    - propose_definition
+    - propose_world_change
+    - wait
+    max_proposals: 3
+    required_content:
+      growth_cell: true
+    purpose: 按 season_plan 的目标 cell 给河湾镇增加一个新的可玩经济维度，而不是再写一个研究源。
+    result: 读取 season_plan 和 world_growth_ledger。只提交一个 growth unit：如果目标是 verb，创建一个非研究
+      Action 和绑定行为树；如果是 social，创建一个势力或关系并让它改变一次买卖；如果是 rule，创建一条会改变桥市结果的规则；如果是 place，创建一个可达地点并绑定一个采集或交易行为。新内容必须复用现有金币钱柜，不能铸造金币，现有角色现在就能执行。证据不足时
+      wait。
+    assign_to:
+    - 金算盘
+wakes:
+- id: story_after_trade
+  'on':
+  - trade.sold
+  for: story
+  count: 3
+  every: 6h
+  distinct_by:
+  - shop
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  purpose: 三笔不同店铺的买卖已经发生；把金币流动变成桥市筹备的下一段公共剧情。
+- id: story_after_shop_ready
+  'on':
+  - shop.ready
+  for: story
+  every: 6h
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  purpose: 一家店达到备货线；让镇上看见还差哪几家。
+- id: story_after_act
+  'on':
+  - fair.act_two
+  - fair.act_three
+  for: story
+  every: 6h
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  purpose: 桥市进入新的一幕；用已验证的店铺状态推动一个具体选择。
+- id: story_after_eve
+  'on':
+  - fair.eve
+  for: story
+  every: 1h
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  purpose: 桥市前夜；提醒最后一个可执行的补货或礼箱动作。
+- id: story_after_fair
+  'on':
+  - fair.success
+  - fair.quiet
+  - fair.failed
+  for: story
+  every: 1h
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  purpose: 桥市已经结算；给玩家一个下一轮的目标，而不是停在结局卡上。
+- id: god_after_supply
+  'on':
+  - resource.safety_low
+  for: god
+  count: 2
+  every: 1d
+  distinct_by:
+  - resource_id
+  tools:
+  - query_history
+  - query_knowledge_gaps
+  - propose_entity
+  - propose_definition
+  - propose_world_change
+  - wait
+  purpose: 两家店的关键库存见底；给河湾镇增加一个可执行的补货或保存方式，而不是直接刷库存。
+- id: god_after_fair_failure
+  'on':
+  - fair.failed
+  for: god
+  tools:
+  - query_history
+  - query_knowledge_gaps
+  - propose_entity
+  - propose_definition
+  - propose_world_change
+  - wait
+  purpose: 桥市失败；给小镇一个新的可执行生计或重建项目，让失败变成下一轮起点。
+- id: god_after_milestone
+  'on':
+  - civilization.milestone
+  for: god
+  tools:
+  - query_history
+  - query_knowledge_gaps
+  - propose_entity
+  - propose_definition
+  - propose_world_change
+  - wait
+  purpose: 一条公共进度完成；用一个可玩的新经济维度承接它，而不是写一段总结。
+- id: god_on_stagnation
+  'on':
+  - world.stagnation
+  for: god
+  tools:
+  - query_history
+  - query_knowledge_gaps
+  - propose_entity
+  - propose_definition
+  - propose_world_change
+  - wait
+  purpose: 世界长时间没有新的可执行选择；按 season_plan 补一个可玩维度。
+- id: story_after_milestone
+  'on':
+  - civilization.milestone
+  for: story
+  every: 1d
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  purpose: 一条公共进度完成；把它变成桥市下一段可执行的公共目标。
+- id: story_after_fair_ready
+  'on':
+  - fair.ready
+  for: story
+  every: 6h
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  purpose: 至少四家店备好且礼箱已装好；在结算前给最后一个确认或准备动作。
+- id: story_after_town_change
+  'on':
+  - town.decline
+  - town.boom
+  for: story
+  every: 1d
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  purpose: 小镇繁荣度出现明显变化；让居民对变好或变坏给出一个具体反应。
+- id: god_after_fair
+  'on':
+  - fair.success
+  - fair.quiet
+  for: god
+  every: 1d
+  tools:
+  - query_history
+  - query_knowledge_gaps
+  - propose_entity
+  - propose_definition
+  - propose_world_change
+  - wait
+  purpose: 桥市成功或只停一夜；给河湾镇增加一单位下一轮可玩经济内容。
+- id: god_after_town_change
+  'on':
+  - town.decline
+  - town.boom
+  for: god
+  every: 1d
+  tools:
+  - query_history
+  - query_knowledge_gaps
+  - propose_entity
+  - propose_definition
+  - propose_world_change
+  - wait
+  purpose: 小镇繁荣度出现明显变化；用可玩内容承接，而不是只写叙事。
+- id: story_after_clinic_stock
+  'on':
+  - clinic.stock.low
+  for: story
+  every: 12h
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  purpose: 医馆药材低于安全线；把补药变成一个白芷现在就能执行的目标。

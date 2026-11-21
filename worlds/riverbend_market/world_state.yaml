@@ -1,0 +1,62 @@
+world_state:
+  properties:
+    days_to_fair: 7
+    fair_act: 1
+    fair_stage: 0
+    fair_ready: 0
+    fair_crate: 0
+    town_prosperity: 0.3
+    smithy_rep: 0.0
+    tavern_rep: 0.0
+    clinic_rep: 0.0
+    inn_rep: 0.0
+    market_rep: 0.0
+    smithy_ready: 0
+    tavern_ready: 0
+    clinic_ready: 0
+    inn_ready: 0
+    market_ready: 0
+    smithy_till: 30
+    tavern_till: 24
+    clinic_till: 24
+    inn_till: 20
+    market_till: 36
+    relief_fund: 12
+    smithy_stock: 6
+    tavern_stock: 6
+    clinic_stock: 4
+    inn_stock: 4
+    market_stock: 8
+  initial_facts:
+  - id: broken_bridge
+    subject: riverbend_bridge
+    predicate: status
+    object: collapsed
+    source_type: public
+  - id: caravan_deadline
+    subject: spring_caravan
+    predicate: arrives_in_days
+    object: '7'
+    source_type: public
+  - id: fair_rule
+    subject: riverbend_market
+    predicate: public_rule
+    object: four_shops_ready_and_one_crate
+    source_type: public
+  initial_spawn:
+  - entity_id: zhou
+    location_id: smithy
+  - entity_id: qin
+    location_id: tavern
+  - entity_id: baizhi
+    location_id: clinic
+  - entity_id: tao
+    location_id: inn
+  - entity_id: jin
+    location_id: market_square
+  - entity_id: ashi
+    location_id: north_mine
+  - entity_id: xiaohe
+    location_id: barley_field
+  - entity_id: luhua
+    location_id: riverbank

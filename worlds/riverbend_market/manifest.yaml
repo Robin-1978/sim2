@@ -1,0 +1,26 @@
+config_version: riverbend-market-0.1
+world_id: riverbend_market
+order: 0
+name: 河湾镇
+random_seed: 50721
+time_unit: minute
+start_world_minute: 0
+files:
+- setting.yaml
+- world_state.yaml
+- locations.yaml
+- objects.yaml
+- factions.yaml
+- capabilities.yaml
+- attributes.yaml
+- recipes.yaml
+- agents.yaml
+- actions.yaml
+- behavior_trees.yaml
+- rules.yaml
+- opening_events.yaml
+- player_template.yaml
+- prompts/world.yaml
+- prompts/agent.yaml
+- evolution.yaml
+- story.yaml

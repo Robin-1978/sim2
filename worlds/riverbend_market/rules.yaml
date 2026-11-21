@@ -1,0 +1,919 @@
+capability_aliases:
+  gather:
+  - gathering
+  craft:
+  - crafting
+  trade:
+  - trade
+  heal:
+  - medicine
+  treat:
+  - medicine
+  speak:
+  - conversation
+item_labels:
+  coin: 金币
+  iron_ore: 铁矿石
+  coal: 煤
+  herb: 草药
+  grain: 麦子
+  river_fish: 河鱼
+  firewood: 柴火
+  iron_ingot: 铁锭
+  pickaxe: 铁镐
+  herb_sickle: 药锄
+  fishing_rod: 鱼竿
+  meal: 热饭
+  stew: 炖菜
+  ale: 麦酒
+  tonic: 药剂
+  spice: 香料
+world_property_labels:
+  days_to_fair:
+    label: 桥市倒计时
+    unit: amount
+    max: 7
+    alert: true
+    group: 桥市
+    group_order: 1
+    order: 1
+    prompt: 距离商队抵达还有几天；归零时结算桥市。
+  town_prosperity:
+    label: 小镇繁荣
+    unit: percent
+    max: 1
+    group: 桥市
+    group_order: 1
+    order: 2
+  fair_ready:
+    label: 备货店铺
+    unit: amount
+    max: 5
+    group: 桥市
+    group_order: 1
+    order: 3
+  fair_crate:
+    label: 桥市礼箱
+    unit: bool
+    hidden: true
+  fair_act:
+    label: 桥市幕次
+    unit: amount
+    max: 4
+    hidden: true
+  fair_stage:
+    label: 桥市结局
+    unit: amount
+    max: 4
+    hidden: true
+  smithy_rep:
+    label: 铁匠铺声望
+    unit: percent
+    max: 1
+    group: 店铺
+    group_order: 2
+    order: 1
+  tavern_rep:
+    label: 食铺声望
+    unit: percent
+    max: 1
+    group: 店铺
+    group_order: 2
+    order: 2
+  clinic_rep:
+    label: 医馆声望
+    unit: percent
+    max: 1
+    group: 店铺
+    group_order: 2
+    order: 3
+  inn_rep:
+    label: 旅店声望
+    unit: percent
+    max: 1
+    group: 店铺
+    group_order: 2
+    order: 4
+  market_rep:
+    label: 集市声望
+    unit: percent
+    max: 1
+    group: 店铺
+    group_order: 2
+    order: 5
+  smithy_ready:
+    label: 铁匠铺备货
+    unit: bool
+    hidden: true
+  tavern_ready:
+    label: 食铺备货
+    unit: bool
+    hidden: true
+  clinic_ready:
+    label: 医馆备货
+    unit: bool
+    hidden: true
+  inn_ready:
+    label: 旅店备货
+    unit: bool
+    hidden: true
+  market_ready:
+    label: 集市备货
+    unit: bool
+    hidden: true
+  smithy_till:
+    label: 铁匠铺钱柜
+    unit: amount
+    group: 钱柜
+    group_order: 3
+    order: 1
+  tavern_till:
+    label: 食铺钱柜
+    unit: amount
+    group: 钱柜
+    group_order: 3
+    order: 2
+  clinic_till:
+    label: 医馆钱柜
+    unit: amount
+    group: 钱柜
+    group_order: 3
+    order: 3
+  inn_till:
+    label: 旅店钱柜
+    unit: amount
+    group: 钱柜
+    group_order: 3
+    order: 4
+  market_till:
+    label: 集市钱柜
+    unit: amount
+    group: 钱柜
+    group_order: 3
+    order: 5
+  relief_fund:
+    label: 救济金
+    unit: amount
+    group: 钱柜
+    group_order: 3
+    order: 6
+  smithy_stock:
+    label: 铁匠铺原料
+    unit: amount
+    group: 库存
+    group_order: 4
+    order: 1
+  tavern_stock:
+    label: 食铺食材
+    unit: amount
+    group: 库存
+    group_order: 4
+    order: 2
+  clinic_stock:
+    label: 医馆药材
+    unit: amount
+    group: 库存
+    group_order: 4
+    order: 3
+  inn_stock:
+    label: 旅店柴酒
+    unit: amount
+    group: 库存
+    group_order: 4
+    order: 4
+  market_stock:
+    label: 集市存货
+    unit: amount
+    group: 库存
+    group_order: 4
+    order: 5
+resource_property_projections:
+  smithy_stock: smithy_stock
+  tavern_stock: tavern_stock
+  clinic_stock: clinic_stock
+  inn_stock: inn_stock
+  market_stock: market_stock
+resource_caps:
+  iron_vein:
+    max: 60
+    min: 0
+  coal_seam:
+    max: 50
+    min: 0
+  herb_patch:
+    max: 50
+    min: 0
+  grain_field:
+    max: 60
+    min: 0
+  river_fish:
+    max: 50
+    min: 0
+  driftwood:
+    max: 50
+    min: 0
+  smithy_stock:
+    max: 30
+    min: 0
+  tavern_stock:
+    max: 30
+    min: 0
+  clinic_stock:
+    max: 30
+    min: 0
+  inn_stock:
+    max: 30
+    min: 0
+  market_stock:
+    max: 30
+    min: 0
+resource_regeneration:
+- resource_id: iron_vein
+  every_minutes: 480
+  amount: 8
+  cap: 60
+- resource_id: coal_seam
+  every_minutes: 420
+  amount: 6
+  cap: 50
+- resource_id: herb_patch
+  every_minutes: 360
+  amount: 6
+  cap: 50
+- resource_id: grain_field
+  every_minutes: 420
+  amount: 8
+  cap: 60
+- resource_id: river_fish
+  every_minutes: 360
+  amount: 7
+  cap: 50
+- resource_id: driftwood
+  every_minutes: 480
+  amount: 6
+  cap: 50
+resource_safety:
+- resource_id: smithy_stock
+  minimum_reserve: 2
+  repeat_every_minutes: 720
+  event_type: resource.safety_low
+- resource_id: tavern_stock
+  minimum_reserve: 2
+  repeat_every_minutes: 720
+  event_type: resource.safety_low
+- resource_id: clinic_stock
+  minimum_reserve: 2
+  repeat_every_minutes: 720
+  event_type: resource.safety_low
+- resource_id: inn_stock
+  minimum_reserve: 2
+  repeat_every_minutes: 720
+  event_type: resource.safety_low
+needs:
+- id: hydration
+  target: 72
+  minimum: 0
+  gamma: 1.4
+  critical_threshold: 0.4
+  critical_gain: 1.0
+- id: satiety
+  target: 70
+  minimum: 0
+  gamma: 1.4
+  critical_threshold: 0.4
+  critical_gain: 1.0
+- id: belonging
+  target: 68
+  minimum: 0
+  gamma: 1.3
+  critical_threshold: 0.5
+  critical_gain: 1.0
+- id: purpose
+  target: 70
+  minimum: 0
+  gamma: 1.4
+  critical_threshold: 0.5
+  critical_gain: 1.0
+motivation_model:
+  family: hybrid_need_utility_appraisal
+  no_fixed_hierarchy: true
+  dimensions:
+  - sustenance
+  - relatedness
+  - competence
+  - meaning_and_goal_progress
+incapacitation:
+  recovery:
+    after_minutes: 720
+    vital_fraction: 0.25
+capability_progression:
+  gathering:
+    minimum_completed_outcomes: 2
+    max_delta: 0.08
+    max_value: 1.0
+  crafting:
+    minimum_completed_outcomes: 2
+    max_delta: 0.08
+    max_value: 1.0
+  trade:
+    minimum_completed_outcomes: 2
+    max_delta: 0.08
+    max_value: 1.0
+  medicine:
+    minimum_completed_outcomes: 2
+    max_delta: 0.08
+    max_value: 1.0
+  conversation:
+    minimum_completed_outcomes: 4
+    max_delta: 0.08
+    max_value: 1.0
+minute_effects:
+- id: satiety_decay
+  scope: agent
+  every_minutes: 1
+  effect:
+    type: need_delta
+    need: satiety
+    delta: -0.02
+- id: hydration_decay
+  scope: agent
+  every_minutes: 1
+  effect:
+    type: need_delta
+    need: hydration
+    delta: -0.03
+- id: stamina_recovery
+  scope: agent
+  every_minutes: 30
+  effect:
+    type: attribute_delta
+    attribute: stamina
+    delta: 2
+    maximum: 100
+- id: fair_clock
+  scope: world
+  every_minutes: 1440
+  effects:
+  - type: world_property_delta
+    property: days_to_fair
+    delta: -1
+    minimum: 0
+- id: fair_act_two
+  scope: world
+  every_minutes: 1
+  condition: world.fair_act < 2 and world.days_to_fair <= 5
+  effects:
+  - type: world_property_delta
+    property: fair_act
+    delta: 1
+    maximum: 4
+- id: fair_act_three
+  scope: world
+  every_minutes: 1
+  condition: world.fair_act < 3 and world.days_to_fair <= 3
+  effects:
+  - type: world_property_delta
+    property: fair_act
+    delta: 1
+    maximum: 4
+- id: fair_act_four
+  scope: world
+  every_minutes: 1
+  condition: world.fair_act < 4 and world.days_to_fair <= 1
+  effects:
+  - type: world_property_delta
+    property: fair_act
+    delta: 1
+    maximum: 4
+- id: daily_restock
+  scope: world
+  every_minutes: 1440
+  effects:
+  - type: world_property_delta
+    property: smithy_till
+    delta: 6
+  - type: world_property_delta
+    property: tavern_till
+    delta: 5
+  - type: world_property_delta
+    property: clinic_till
+    delta: 5
+  - type: world_property_delta
+    property: inn_till
+    delta: 4
+  - type: world_property_delta
+    property: market_till
+    delta: 8
+  - type: world_property_delta
+    property: relief_fund
+    delta: 3
+    maximum: 30
+  - type: world_resource_delta
+    resource_id: smithy_stock
+    delta: 2
+    maximum: 30
+  - type: world_resource_delta
+    resource_id: tavern_stock
+    delta: 2
+    maximum: 30
+  - type: world_resource_delta
+    resource_id: clinic_stock
+    delta: 2
+    maximum: 30
+  - type: world_resource_delta
+    resource_id: inn_stock
+    delta: 2
+    maximum: 30
+  - type: world_resource_delta
+    resource_id: market_stock
+    delta: 2
+    maximum: 30
+  event_type: town.morning
+  event_summary: 天亮了，五家店补货、开柜，桥市又近了一天。
+- id: fair_success
+  scope: world
+  every_minutes: 1
+  condition: world.fair_stage < 2 and world.days_to_fair <= 0 and world.fair_crate
+    >= 1 and world.fair_ready >= 4 and world.town_prosperity >= 0.6
+  effects:
+  - type: world_property_delta
+    property: fair_stage
+    delta: 2
+  - type: world_property_delta
+    property: town_prosperity
+    delta: 0.15
+    maximum: 1
+- id: fair_quiet
+  scope: world
+  every_minutes: 1
+  condition: world.fair_stage < 2 and world.days_to_fair <= 0 and world.fair_crate
+    >= 1 and world.fair_ready >= 2 and world.town_prosperity >= 0.4 and (world.fair_ready
+    < 4 or world.town_prosperity < 0.6)
+  effects:
+  - type: world_property_delta
+    property: fair_stage
+    delta: 3
+  - type: world_property_delta
+    property: town_prosperity
+    delta: 0.03
+    maximum: 1
+- id: fair_failed
+  scope: world
+  every_minutes: 1
+  condition: world.fair_stage < 2 and world.days_to_fair <= 0 and (world.fair_crate
+    < 1 or world.fair_ready < 2 or world.town_prosperity < 0.4)
+  effects:
+  - type: world_property_delta
+    property: fair_stage
+    delta: 4
+  - type: world_property_delta
+    property: town_prosperity
+    delta: -0.15
+    minimum: 0
+- id: smithy_ready_flag
+  scope: world
+  every_minutes: 1
+  condition: world.smithy_rep >= 0.4 and world.smithy_ready < 1
+  effects:
+  - type: world_property_delta
+    property: smithy_ready
+    delta: 1
+    maximum: 1
+  - type: world_property_delta
+    property: fair_ready
+    delta: 1
+    maximum: 5
+- id: tavern_ready_flag
+  scope: world
+  every_minutes: 1
+  condition: world.tavern_rep >= 0.4 and world.tavern_ready < 1
+  effects:
+  - type: world_property_delta
+    property: tavern_ready
+    delta: 1
+    maximum: 1
+  - type: world_property_delta
+    property: fair_ready
+    delta: 1
+    maximum: 5
+- id: clinic_ready_flag
+  scope: world
+  every_minutes: 1
+  condition: world.clinic_rep >= 0.4 and world.clinic_ready < 1
+  effects:
+  - type: world_property_delta
+    property: clinic_ready
+    delta: 1
+    maximum: 1
+  - type: world_property_delta
+    property: fair_ready
+    delta: 1
+    maximum: 5
+- id: inn_ready_flag
+  scope: world
+  every_minutes: 1
+  condition: world.inn_rep >= 0.4 and world.inn_ready < 1
+  effects:
+  - type: world_property_delta
+    property: inn_ready
+    delta: 1
+    maximum: 1
+  - type: world_property_delta
+    property: fair_ready
+    delta: 1
+    maximum: 5
+- id: market_ready_flag
+  scope: world
+  every_minutes: 1
+  condition: world.market_rep >= 0.4 and world.market_ready < 1
+  effects:
+  - type: world_property_delta
+    property: market_ready
+    delta: 1
+    maximum: 1
+  - type: world_property_delta
+    property: fair_ready
+    delta: 1
+    maximum: 5
+world_rules:
+- id: town_decline
+  condition: world.town_prosperity < 0.2
+  effect: town.decline
+  event_type: town.decline
+  wake:
+  - story
+  - god
+  description: 小镇繁荣度过低；店铺开始缩短营业，居民需要一个新的解决办法。
+- id: town_boom
+  condition: world.town_prosperity >= 0.75
+  effect: town.boom
+  event_type: town.boom
+  wake:
+  - story
+  - god
+  description: 小镇繁荣度很高；商队、顾客和新的生意开始出现。
+- id: fair_ready_signal
+  condition: world.fair_ready >= 4 and world.fair_crate >= 1
+  effect: fair.ready
+  event_type: fair.ready
+  wake:
+  - story
+  description: 至少四家店备好货，礼箱也已经装好；桥市已经具备成功条件。
+- id: fair_act_two_signal
+  condition: world.fair_act >= 2
+  effect: fair.act_two
+  event_type: fair.act_two
+  wake:
+  - story
+  description: 桥市进入第二幕，店铺开始感到原料压力。
+- id: fair_act_three_signal
+  condition: world.fair_act >= 3
+  effect: fair.act_three
+  event_type: fair.act_three
+  wake:
+  - story
+  description: 桥市进入第三幕，镇上必须决定先保哪家店。
+- id: fair_eve_signal
+  condition: world.fair_act >= 4
+  effect: fair.eve
+  event_type: fair.eve
+  wake:
+  - story
+  description: 桥市前夜到了，礼箱还差什么今晚就得补上。
+- id: smithy_ready_signal
+  condition: world.smithy_ready >= 1
+  effect: shop.ready.smithy
+  event_type: shop.ready
+  event_data:
+    shop: smithy
+  wake:
+  - story
+  description: 铁匠铺已经备好桥市所需的工具和原料。
+- id: tavern_ready_signal
+  condition: world.tavern_ready >= 1
+  effect: shop.ready.tavern
+  event_type: shop.ready
+  event_data:
+    shop: tavern
+  wake:
+  - story
+  description: 食铺已经备好桥市所需的热饭和麦酒。
+- id: clinic_ready_signal
+  condition: world.clinic_ready >= 1
+  effect: shop.ready.clinic
+  event_type: shop.ready
+  event_data:
+    shop: clinic
+  wake:
+  - story
+  description: 医馆已经备好桥市所需的草药和药剂。
+- id: inn_ready_signal
+  condition: world.inn_ready >= 1
+  effect: shop.ready.inn
+  event_type: shop.ready
+  event_data:
+    shop: inn
+  wake:
+  - story
+  description: 旅店已经备好桥市所需的柴火和麦酒。
+- id: market_ready_signal
+  condition: world.market_ready >= 1
+  effect: shop.ready.market
+  event_type: shop.ready
+  event_data:
+    shop: market
+  wake:
+  - story
+  description: 集市已经备好桥市所需的成品和验货能力。
+- id: fair_success_signal
+  condition: world.fair_stage == 2
+  effect: fair.success
+  event_type: fair.success
+  wake:
+  - story
+  - god
+  description: 商队验过礼箱，河湾镇重新出现在商路地图上。
+- id: fair_quiet_signal
+  condition: world.fair_stage == 3
+  effect: fair.quiet
+  event_type: fair.quiet
+  wake:
+  - story
+  - god
+  description: 商队只答应停一夜，河湾镇还没有真正回到商路上。
+- id: fair_failed_signal
+  condition: world.fair_stage == 4
+  effect: fair.failed
+  event_type: fair.failed
+  wake:
+  - story
+  - god
+  description: 商队绕道走了，河湾镇需要一条新的生路。
+- id: clinic_stock_low
+  condition: world.clinic_stock <= 2
+  effect: clinic.stock_low
+  event_type: clinic.stock.low
+  wake:
+  - story
+  description: 医馆药材低于安全线，白芷需要有人去草药沼泽补货。
+civilization_progress:
+  market_revival:
+    required: 5
+    evidence_value: 1
+    description: 金币重新在五家店之间流动，买卖和帮工都算数。
+    evidence_event_types:
+    - trade.sold
+    - trade.bought
+    - work.shift
+    wake:
+    - story
+    - god
+  town_trust:
+    required: 4
+    evidence_value: 1
+    description: 治疗、住店、帮工和备货让居民相信这家店靠得住。
+    evidence_event_types:
+    - clinic.treated
+    - inn.rested
+    - work.shift
+    - shop.ready
+    wake:
+    - story
+    - god
+  bridge_fair:
+    required: 5
+    evidence_value: 1
+    description: 礼箱、备货和桥市结果构成河湾镇重新开市的公共进度。
+    evidence_event_types:
+    - fair.crate_assembled
+    - shop.ready
+    - fair.success
+    - fair.quiet
+    - fair.failed
+    wake:
+    - story
+    - god
+progression:
+- id: fair_preparation
+  label: 七日桥市
+  summary: 让至少四家店备好货，并在第七天前装好桥市礼箱：铁锭、药剂、炖菜、麦酒、香料和十枚金币。
+  priority: 0.99
+  audience:
+  - player
+  visible_when: world.fair_stage < 2
+  target_behaviors:
+  - assemble_fair_crate
+  support_behaviors:
+  - gather_iron_ore
+  - gather_coal
+  - gather_herb
+  - gather_grain
+  - gather_fish
+  - gather_firewood
+  - sell_ore_to_smith
+  - sell_coal_to_smith
+  - sell_grain_to_tavern
+  - sell_fish_to_tavern
+  - sell_herb_to_clinic
+  - sell_firewood_to_inn
+  - sell_ale_to_inn
+  - sell_ingot_to_market
+  - sell_tonic_to_market
+  - sell_stew_to_market
+  - sell_ale_to_market
+  - craft_iron_ingot
+  - craft_tonic
+  - craft_stew
+  - craft_ale
+  complete_when:
+    event_type: fair.crate_assembled
+    count: 1
+- id: smithy_order
+  label: 铁匠铺的订单
+  summary: 把四份矿石或煤卖给周铁山，让铁匠铺先达到备货线。
+  priority: 0.94
+  audience:
+  - player
+  visible_when: world.smithy_ready < 1 and world.fair_stage < 2
+  target_behaviors:
+  - sell_ore_to_smith
+  - sell_coal_to_smith
+  support_behaviors:
+  - gather_iron_ore
+  - gather_coal
+  complete_when:
+    event_type: trade.sold
+    match:
+      shop: smithy
+    count: 4
+- id: tavern_order
+  label: 食铺的订单
+  summary: 把四份麦子或河鱼卖给阿芹，让食铺先达到备货线。
+  priority: 0.93
+  audience:
+  - player
+  visible_when: world.tavern_ready < 1 and world.fair_stage < 2
+  target_behaviors:
+  - sell_grain_to_tavern
+  - sell_fish_to_tavern
+  support_behaviors:
+  - gather_grain
+  - gather_fish
+  complete_when:
+    event_type: trade.sold
+    match:
+      shop: tavern
+    count: 4
+- id: clinic_order
+  label: 医馆的订单
+  summary: 把三份草药卖给白芷，让医馆先达到备货线。
+  priority: 0.92
+  audience:
+  - player
+  visible_when: world.clinic_ready < 1 and world.fair_stage < 2
+  target_behaviors:
+  - sell_herb_to_clinic
+  support_behaviors:
+  - gather_herb
+  complete_when:
+    event_type: trade.sold
+    match:
+      shop: clinic
+    count: 3
+- id: inn_order
+  label: 旅店的订单
+  summary: 把三份柴火或麦酒卖给老陶，让旅店先达到备货线。
+  priority: 0.91
+  audience:
+  - player
+  visible_when: world.inn_ready < 1 and world.fair_stage < 2
+  target_behaviors:
+  - sell_firewood_to_inn
+  - sell_ale_to_inn
+  support_behaviors:
+  - gather_firewood
+  - craft_ale
+  complete_when:
+    event_type: trade.sold
+    match:
+      shop: inn
+    count: 3
+- id: market_order
+  label: 集市的订单
+  summary: 把两份成品卖给金算盘，让集市达到备货线；礼箱需要集市的验货。
+  priority: 0.9
+  audience:
+  - player
+  visible_when: world.market_ready < 1 and world.fair_stage < 2
+  target_behaviors:
+  - sell_ingot_to_market
+  - sell_tonic_to_market
+  - sell_stew_to_market
+  - sell_ale_to_market
+  support_behaviors:
+  - craft_iron_ingot
+  - craft_tonic
+  - craft_stew
+  - craft_ale
+  complete_when:
+    event_type: trade.sold
+    match:
+      shop: market
+    count: 2
+- id: peddler_first_sale
+  label: 第一笔买卖
+  summary: 把一份货卖给需要的店，让钱袋里出现第一枚自己挣来的金币。
+  priority: 0.96
+  audience:
+  - player
+  origins:
+  - peddler
+  target_behaviors:
+  - sell_ore_to_smith
+  - sell_grain_to_tavern
+  - sell_herb_to_clinic
+  support_behaviors: []
+  complete_when:
+    event_type: trade.sold
+    self_only: true
+    count: 1
+- id: miner_first_ore
+  label: 第一筐矿石
+  summary: 去北山矿场敲一份铁矿石，证明自己还能靠矿吃饭。
+  priority: 0.96
+  audience:
+  - player
+  origins:
+  - miner
+  target_behaviors:
+  - gather_iron_ore
+  support_behaviors: []
+  complete_when:
+    event_type: resource.gathered
+    match:
+      item: iron_ore
+    self_only: true
+    count: 1
+- id: herbalist_first_herb
+  label: 第一束草药
+  summary: 去草药沼泽采一份草药，先让医馆的药材架有东西。
+  priority: 0.96
+  audience:
+  - player
+  origins:
+  - herbalist
+  target_behaviors:
+  - gather_herb
+  support_behaviors: []
+  complete_when:
+    event_type: resource.gathered
+    match:
+      item: herb
+    self_only: true
+    count: 1
+- id: cook_first_meal
+  label: 第一锅热饭
+  summary: 在食铺把麦子和河鱼做成热饭，让桥市先有一口热的。
+  priority: 0.96
+  audience:
+  - player
+  origins:
+  - cook
+  target_behaviors:
+  - craft_meal
+  support_behaviors:
+  - gather_grain
+  - gather_fish
+  complete_when:
+    event_type: craft.completed
+    self_only: true
+    count: 1
+onboarding:
+- id: first_coin
+  title: 先让钱转起来
+  body: 去北山矿场、麦田或河滩采一份原料，卖给需要的店。第一枚自己挣来的金币，是桥市的起点。
+  when: world.fair_stage < 2 and world.smithy_rep < 0.16
+  action_ref: behavior:gather_iron_ore
+  goal_id: smithy_order
+- id: first_tool
+  title: 买一把趁手的工具
+  body: 铁匠铺的声望已经起步。花十枚金币买一把铁镐，深巷里的矿石会让后面的日子好过很多。
+  when: world.smithy_rep >= 0.16 and world.fair_act < 4
+  action_ref: behavior:buy_pickaxe
+  goal_id: smithy_order
+- id: fair_crate
+  title: 凑齐桥市礼箱
+  body: 桥市前夜到了。把铁锭、药剂、炖菜、麦酒和十枚金币装进礼箱，再确认至少四家店已经备好货。
+  when: world.fair_act >= 4 and world.fair_crate < 1
+  action_ref: behavior:assemble_fair_crate
+  goal_id: fair_preparation
+memory_quality:
+  ranking:
+    relevance: 0.62
+    importance: 0.18
+    recency: 0.12
+    access: 0.08
+    half_life_minutes: 1440
+    diversity: 0.12
+vital_attribute: integrity
+capacity_attribute: stamina

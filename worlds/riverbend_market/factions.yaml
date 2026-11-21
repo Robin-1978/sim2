@@ -1,0 +1,30 @@
+factions:
+- id: riverbend_traders
+  name: 河湾商户
+  description: 五家店共同维持桥市的非正式联盟。金算盘负责对外，其他人负责货。
+  leader_id: jin
+relationships:
+- from: zhou
+  to: qin
+  type: supplier
+  relation_strength: 0.55
+- from: qin
+  to: tao
+  type: supplier
+  relation_strength: 0.5
+- from: baizhi
+  to: xiaohe
+  type: neighbor
+  relation_strength: 0.45
+- from: jin
+  to: tao
+  type: informant
+  relation_strength: 0.6
+- from: ashi
+  to: zhou
+  type: supplier
+  relation_strength: 0.65
+- from: luhua
+  to: qin
+  type: supplier
+  relation_strength: 0.6
