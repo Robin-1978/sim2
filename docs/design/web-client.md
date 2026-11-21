@@ -14,6 +14,9 @@
 游戏客户端不承担设计工作台职责。需要 Schema、草稿编译、smoke、快照或
 原始命令时，从游戏内“设置 → 开发工具”打开运营台。
 
+Web/API 的版本化契约、统一 SSE 和可恢复长任务设计见
+[web-api-v1-refactor.md](web-api-v1-refactor.md)。
+
 ## 总体结构
 
 ```text
