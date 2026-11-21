@@ -8,6 +8,31 @@ ui:
   - {property: storm_eta_hours, label: 风暴倒计时, format: hours, danger_below: 3, warning_below: 8, hint: 下一次风暴}
   - {property: public_confidence, label: 公共信心, format: percent, danger_below: 0.25, warning_below: 0.35, hint: 低于 35% 无法校准信号}
   - {property: commons_tool_kits, label: 公共工具包, format: amount, max: 3, danger_below: 1, warning_below: 2, hint: 闸室公共工具架}
+  event_kinds:
+    weather: [storm., weather., season.]
+    decision: [public_decision, decision., confidence.]
+    dialogue: [dialogue., conversation.]
+    resource: [resource., ration, rope.]
+    repair: [tide_gate., repair, signal., gate., gate_brace., rain_catcher., rainwater., commons.volunteer]
+    trade: [market., trade.]
+    story: [story., beat.]
+    origin: [origin.]
+  event_titles:
+    weather: 风暴
+    decision: 公共决策
+    dialogue: 对话
+    resource: 采集与制作
+    repair: 公共设施
+    trade: 交易
+    story: 世界剧情
+    origin: 出身
+  pulse_prefixes: [storm, story, world.change, civilization, evolution, gate., confidence., season., signal., rain, market., commons.]
+  result_labels:
+    rationing_decided: 配给已调整
+    repair_priority_decided: 抢修已完成
+    marsh_rest_decided: 休养已安排
+  reason_labels:
+    station.available: 工坊当前不可用
 ui_text:
   travel_choice: "前往 {name}"
   travel_summary: "沿已知路线前往 {name}。"

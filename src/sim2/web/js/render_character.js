@@ -77,7 +77,6 @@ export function renderCharacter() {
 
 export function barTone(id, value) {
     const key = String(id || "").toLowerCase();
-    if (key.includes("belonging") || key.includes("purpose") || key.includes("归属") || key.includes("意义")) return value <= 30 ? "low" : "quiet";
     const threshold = Number(state.view?.alert_thresholds?.[`${key}_alert_threshold`]);
     if (Number.isFinite(threshold)) {
       if (value <= threshold * 0.6) return "low";

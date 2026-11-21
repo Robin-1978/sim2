@@ -179,6 +179,41 @@ export function translateTime(text) {
   }
 
 
+function normalizedAttributeKey(value) {
+  return String(value || "").replace(/_/g, " ").trim().toLowerCase();
+}
+
+
+function configuredAttribute(name) {
+  const wanted = normalizedAttributeKey(name);
+  return (state.view?.player?.attributes || []).find((item) =>
+    normalizedAttributeKey(item.id) === wanted || normalizedAttributeKey(item.label) === wanted
+  ) || null;
+}
+
+
+function attributeText(name) {
+  return configuredAttribute(name)?.label || humanizeKey(String(name || "").trim());
+}
+
+
+export function translateCost(text) {
+  let value = String(text || "").trim();
+  if (!value) return value;
+  const perMinute = value.match(/^(.+?) ([\d.]+) \(per minute\)\.?$/i);
+  if (perMinute && configuredAttribute(perMinute[1])) {
+    const sign = configuredAttribute(perMinute[1])?.cost_mode === "increase" ? "+" : "−";
+    return `${attributeText(perMinute[1])} ${sign}${perMinute[2]}/分钟`;
+  }
+  const fixed = value.match(/^(.+?) (-?[\d.]+)\.?$/i);
+  if (fixed && configuredAttribute(fixed[1])) {
+    const sign = configuredAttribute(fixed[1])?.cost_mode === "increase" ? "+" : "−";
+    return `${attributeText(fixed[1])} ${sign}${Math.abs(Number(fixed[2]))}`;
+  }
+  return translateImpact(value);
+}
+
+
 export function translateImpact(text) {
     let value = String(text || "").trim();
     if (!value) return value;
@@ -186,17 +221,25 @@ export function translateImpact(text) {
       [/^Arrive at the selected location\.?$/i, "抵达目的地"],
       [/^No direct resource cost\.?$/i, "无直接消耗"],
       [/^Records the configured information result\.?$/i, "记录情报"],
-      [/^World maintenance evidence changes by (\d+)\.?$/i, "维护记录 +$1"],
       [/^Source stock -(\d+).*$/i, "资源点 -$1"],
-      [/^Stamina ([\d.]+) \(per minute\)\.?$/i, "精力 -$1/分钟"],
-      [/^Integrity ([\d.]+)\.?$/i, "体力 -$1"],
-      [/^Hydration ([\d.]+)\.?$/i, "水分 +$1"],
-      [/^Satiety ([\d.]+)\.?$/i, "饱食 +$1"],
-      [/^Belonging ([\d.]+)\.?$/i, "归属 +$1"],
-      [/^Purpose ([\d.]+)\.?$/i, "意义 +$1"],
     ];
     for (const [pattern, replacement] of direct) {
       if (pattern.test(value)) return value.replace(pattern, replacement);
+    }
+    const perMinute = value.match(/^(.+?) ([\d.]+) \(per minute\)\.?$/i);
+    if (perMinute && configuredAttribute(perMinute[1])) {
+      const sign = configuredAttribute(perMinute[1])?.cost_mode === "increase" ? "+" : "−";
+      return `${attributeText(perMinute[1])} ${sign}${perMinute[2]}/分钟`;
+    }
+    const changes = value.match(/^(.+?) changes by (-?[\d.]+)\.?$/i);
+    if (changes && configuredAttribute(changes[1])) {
+      const delta = Number(changes[2]);
+      return `${attributeText(changes[1])} ${delta >= 0 ? "+" : "−"}${Math.abs(delta)}`;
+    }
+    const amount = value.match(/^(.+?) (-?[\d.]+)\.?$/i);
+    if (amount && configuredAttribute(amount[1])) {
+      const delta = Number(amount[2]);
+      return `${attributeText(amount[1])} ${delta >= 0 ? "+" : "−"}${Math.abs(delta)}`;
     }
     const worldChange = value.match(/^World (.+) changes by (-?\d+(?:\.\d+)?)\.?$/i);
     if (worldChange) {
@@ -254,21 +297,7 @@ export function translateNarrative(text) {
     value = value.replace(/: arrived\.?$/i, "：抵达。");
     value = value.replace(/Configured background controller selected the highest-priority executable behavior\.?/gi, "后台控制器选择了当前可执行的最高优先行动。");
     value = value.replace(/Player selected this action from the web client\.?/gi, "玩家从游戏界面选择了这个行动。");
-    const resultWords = {
-      inspection_completed: "检查完成",
-      resource_collected: "采集完成",
-      recipe_completed: "制作完成",
-      route_traversed: "抵达目的地",
-      trade_completed: "交易完成",
-      research_completed: "研究完成",
-      research_progressed: "研究推进",
-      information_recorded: "情报已记录",
-      rationing_decided: "配给已调整",
-      repair_priority_decided: "抢修已完成",
-      marsh_rest_decided: "休养已安排",
-      decision_failed: "决策中断",
-    };
-    for (const [code, label] of Object.entries(resultWords)) {
+    for (const [code, label] of Object.entries(mergedResultLabels())) {
       value = value.replace(new RegExp(`\\b${code}\\b`, "gi"), label);
     }
     value = value.replace(/\bworld property changed\b/gi, "世界状态发生变化");
@@ -277,6 +306,40 @@ export function translateNarrative(text) {
     value = value.replace(/\.\s*$/, "。");
     return value;
   }
+
+
+export const BASE_RESULT_LABELS = {
+  inspected: "检查完成",
+  inspection_completed: "检查完成",
+  resource_collected: "采集完成",
+  recipe_completed: "制作完成",
+  route_traversed: "抵达目的地",
+  arrived: "抵达目的地",
+  trade_completed: "交易完成",
+  research_completed: "研究完成",
+  research_progressed: "研究推进",
+  information_recorded: "情报已记录",
+  repaired: "修复完成",
+  decision_failed: "决策中断",
+};
+
+
+/** World configuration and the current player projection's UI block. */
+export function uiConfig() {
+  return { ...(state.world?.ui || {}), ...(state.view?.ui || {}) };
+}
+
+
+export function mergedResultLabels() {
+  return { ...BASE_RESULT_LABELS, ...(uiConfig().result_labels || {}) };
+}
+
+
+export function resultLabel(code) {
+  const key = String(code || "");
+  if (!key) return "";
+  return mergedResultLabels()[key] || "";
+}
 
 
 export function describeError(error, fallback = "操作失败") {

@@ -1,5 +1,5 @@
 import { beginAction, selectedProvider } from "./actions.js";
-import { $, clamp, el, formatMinute, humanizeKey, icon, itemLabel, state, toast, translateImpact, translateTime } from "./core.js";
+import { $, clamp, el, formatMinute, humanizeKey, icon, itemLabel, resultLabel, state, toast, translateCost, translateImpact, translateTime, uiConfig } from "./core.js";
 
 
 export function renderTask() {
@@ -38,13 +38,24 @@ export const CATEGORY_ORDER = ["移动", "采集", "制作", "公共", "交易",
 
 export function actionCategory(action) {
     if (action.kind === "travel" || action.ref === "behavior:travel") return "移动";
+    const tags = new Set([
+      ...(Array.isArray(action.goal_tags) ? action.goal_tags : []),
+      ...(Array.isArray(action.drive_tags) ? action.drive_tags : []),
+      ...(Array.isArray(action.tags) ? action.tags : []),
+    ].map((item) => String(item).toLowerCase()));
+    if (tags.has("trade") || tags.has("market")) return "交易";
+    if (tags.has("recovery") || tags.has("rest") || tags.has("food") || tags.has("water")) return "恢复";
+    if (tags.has("resource") || tags.has("supply") || tags.has("gathering") || tags.has("gather")) return "采集";
+    if (tags.has("craft") || tags.has("crafting")) return "制作";
+    if (tags.has("social") || tags.has("dialogue") || tags.has("conversation")) return "社交";
+    if (tags.has("public") || tags.has("defense") || tags.has("infrastructure") || tags.has("research") || tags.has("repair")) return "公共";
     const ref = String(action.ref || "");
     if (ref.includes("market") || ref.includes("trade") || ref.includes("barter")) return "交易";
     if (ref.includes("gather")) return "采集";
     if (ref.includes("craft")) return "制作";
     if (ref.includes("communicate")) return "社交";
     if (ref.includes("eat") || ref.includes("drink")) return "恢复";
-    if (ref.includes("inspect") || ref.includes("repair") || ref.includes("research") || ref.includes("explore") || ref.includes("tune") || ref.includes("brace") || ref.includes("stock")) return "公共";
+    if (ref.includes("inspect") || ref.includes("repair") || ref.includes("research") || ref.includes("explore") || ref.includes("stock")) return "公共";
     return "其他";
   }
 
@@ -132,7 +143,7 @@ export function chooseRecommendedAction(actions) {
 
 export function actionChips(action, limit = 4) {
     const chips = [];
-    for (const value of action.cost || []) chips.push(translateImpact(value));
+    for (const value of action.cost || []) chips.push(translateCost(value));
     for (const value of (action.impact || []).slice(0, 2)) chips.push(translateImpact(value));
     return [...new Set(chips.filter(Boolean))].slice(0, limit);
   }
@@ -186,24 +197,6 @@ export function actionRow(action) {
   }
 
 
-export const RESULT_LABELS = {
-    resource_collected: "采集完成",
-    recipe_completed: "制作完成",
-    route_traversed: "抵达目的地",
-    arrived: "抵达目的地",
-    inspected: "检查完成",
-    inspection_completed: "检查完成",
-    research_progressed: "研究推进",
-    research_completed: "研究完成",
-    repaired: "修复完成",
-    information_recorded: "情报已记录",
-    rationing_decided: "配给已调整",
-    repair_priority_decided: "抢修已完成",
-    marsh_rest_decided: "休养已安排",
-    decision_failed: "决策中断",
-  };
-
-
 export function renderResultBeat() {
     const panel = $("result-beat");
     if (!panel) return;
@@ -227,7 +220,7 @@ export function renderResultBeat() {
       || "行动完成";
     $("result-detail").textContent = failed
       ? `行动未完成${result ? ` · ${result}` : ""}`
-      : (RESULT_LABELS[result] || humanizeKey(result || "completed"));
+      : (resultLabel(result) || humanizeKey(result || "completed"));
 
     const deltas = $("result-deltas");
     deltas.replaceChildren();
@@ -241,17 +234,15 @@ export function renderResultBeat() {
       if (!diff) continue;
       chips.push(`${itemLabel(key)} ${diff > 0 ? "+" : "−"}${Math.abs(diff)}`);
     }
-    const needNames = { hydration: "水分", satiety: "饱食", belonging: "归属", purpose: "意义" };
     for (const [key, change] of Object.entries(delta.needs || {})) {
       const diff = Number(change?.after || 0) - Number(change?.before || 0);
       if (Math.abs(diff) < 1) continue;
-      chips.push(`${needNames[key] || humanizeKey(key)} ${diff > 0 ? "+" : "−"}${Math.abs(Math.round(diff))}`);
+      chips.push(`${attributeLabel(key)} ${diff > 0 ? "+" : "−"}${Math.abs(Math.round(diff))}`);
     }
-    const attributeNames = { stamina: "精力", integrity: "体力" };
     for (const [key, change] of Object.entries(delta.attributes || {})) {
       const diff = Number(change?.after || 0) - Number(change?.before || 0);
       if (Math.abs(diff) < 0.01) continue;
-      chips.push(`${attributeNames[key] || humanizeKey(key)} ${diff > 0 ? "+" : "−"}${Math.abs(diff).toFixed(2)}`);
+      chips.push(`${attributeLabel(key)} ${diff > 0 ? "+" : "−"}${Math.abs(diff).toFixed(2)}`);
     }
     for (const chip of chips.slice(0, 4)) deltas.append(el("span", "badge", chip));
     if (!chips.length) deltas.append(el("span", "badge", result || "世界已记录"));
@@ -296,8 +287,19 @@ export function formatWorldProperty(value, meta = {}) {
   }
 
 
+export function attributeLabel(id) {
+    const key = String(id || "");
+    const attribute = (state.view?.player?.attributes || []).find((item) => String(item.id || "") === key);
+    return attribute?.label || humanizeKey(key);
+  }
+
+
 export function humanizeReason(reason) {
     let text = String(reason || "").trim().replace(/^Configured condition:\s*/i, "").replace(/\.\s*$/, "");
+    const configuredReasons = uiConfig().reason_labels || {};
+    for (const [pattern, label] of Object.entries(configuredReasons)) {
+      if (pattern && text.includes(pattern)) return text.replace(pattern, String(label));
+    }
     let match = text.match(/^cooldown until world minute (\d+)$/i);
     if (match) {
       const current = Number(state.view?.world_time?.minute || 0);
@@ -321,9 +323,8 @@ export function humanizeReason(reason) {
     }
     match = text.match(/^actor\.need\.(\w+) ([<>]=?) (\d+(?:\.\d+)?)$/);
     if (match) {
-      const needNames = { hydration: "水分", satiety: "饱食", belonging: "归属", purpose: "意义" };
       const symbol = match[2].includes("<") ? "低于或等于" : "高于";
-      return `需要${needNames[match[1]] || match[1]}${symbol} ${match[3]}`;
+      return `需要${attributeLabel(match[1])}${symbol} ${match[3]}`;
     }
     match = text.match(/^(?:Actor|actor) inventory ([A-Za-z0-9_ .-]+?) (>=|<=) (-?\d+(?:\.\d+)?)$/);
     if (match) {
@@ -332,15 +333,14 @@ export function humanizeReason(reason) {
     }
     match = text.match(/^(?:Actor|actor) need (\w+) ([<>]=?) (-?\d+(?:\.\d+)?)$/);
     if (match) {
-      const needNames = { hydration: "水分", satiety: "饱食", belonging: "归属", purpose: "意义" };
-      return `需要${needNames[match[1]] || match[1]}${match[2].includes("<") ? "低于或等于" : "高于"} ${match[3]}`;
+      return `需要${attributeLabel(match[1])}${match[2].includes("<") ? "低于或等于" : "高于"} ${match[3]}`;
     }
     match = text.match(/^actor\.inventory\.(\w+) >= (\d+(?:\.\d+)?)$/);
     if (match) return `需要 ${itemLabel(match[1])} 至少 ${match[2]} 个`;
     const words = [
       [/recipe\.available/, "配方当前不可用"],
       [/inputs\.available/, "随身材料不足"],
-      [/station\.available/, "工坊当前不可用"],
+      [/station\.available/, "站点当前不可用"],
       [/object\.available/, "目标设施不可用"],
       [/route\.known/, "路线尚未确认"],
       [/actor\.alive/, "角色状态不允许"],

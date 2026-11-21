@@ -205,7 +205,7 @@
                 <div class="write-more-block">
                   <span class="eyebrow">让 AI 起草</span>
                   <p class="hint">写一句世界简述。点击后才会调用模型。</p>
-                  <textarea id="builder-brief" placeholder="例如：一座漂浮在盐海上的小型气象站，三名角色依靠风帆和潮汐协作…"></textarea>
+                  <textarea id="builder-brief" placeholder="例如：一座边境小镇，几名角色围绕水源、贸易和公共维护协作…"></textarea>
                   <button id="build-world" type="button" class="button wide">AI 起草世界</button>
                 </div>
                 <details class="schema-details">
@@ -299,7 +299,7 @@
           <article class="panel">
             <div class="panel-heading"><div><span class="panel-kicker">INIT / SNAPSHOT</span><h2>实例与快照</h2></div><span class="badge">init · snapshot · restore</span></div>
             <div class="console-form">
-              <label>世界模板 ID<input id="console-init-package" placeholder="starter_village" autocomplete="off"></label>
+              <label>世界模板 ID<input id="console-init-package" placeholder="my_world" autocomplete="off"></label>
               <label>新实例 ID<input id="console-init-instance" placeholder="my-world-001" autocomplete="off"></label>
               <label class="check"><input id="console-init-activate" type="checkbox" checked> 创建后切换到该实例</label>
               <button id="console-init" class="button primary wide">初始化世界 (init)</button>
@@ -323,7 +323,7 @@
           <article class="panel">
             <div class="panel-heading"><div><span class="panel-kicker">PACKAGE</span><h2>世界包</h2></div><span class="badge">validate · describe</span></div>
             <div class="console-form">
-              <label>包 ID<input id="console-pkg-id" placeholder="starter_village" autocomplete="off"></label>
+              <label>包 ID<input id="console-pkg-id" placeholder="my_world" autocomplete="off"></label>
               <label>或受限路径<input id="console-pkg-path" placeholder="worlds/my_world" autocomplete="off"></label>
               <div class="console-row"><button id="console-validate" class="button ghost">校验 (validate)</button><button id="console-describe" class="button ghost">详情 (describe)</button><button id="console-schema" class="button ghost">schema</button></div>
               <label>输出目录名<input id="console-build-output" placeholder="my_new_world" autocomplete="off"></label>

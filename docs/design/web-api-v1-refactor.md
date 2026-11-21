@@ -36,7 +36,7 @@
 | 实时读模型 | 游戏客户端通过 `/api/v1/stream` 接收 `player.view.changed`、`task.progress`、`runtime.changed` 等事件；行动完成后 1 秒内触发视图刷新 |
 | 可恢复长任务 | `/player/{id}/wait` 在 2 秒内返回 202 与 `task_id`；推进由后台任务分块执行，任何单次锁持有不超过 2 秒；任务运行时廉价 GET 的 p95 低于 200 ms，完整玩家投影中位数低于 200 ms |
 | 前端可维护 | 游戏端拆为 API、状态、流、渲染、音频、场景模块；`app.js` 只保留启动与路由 |
-| 质量门禁 | 当前全量测试 1377 项通过；新增契约/Auth/SSE/Task 测试通过；1000 agents / 5 runs 的 p95 不高于 220 ms |
+| 质量门禁 | 当前全量测试 1378 项通过；新增契约/Auth/SSE/Task 测试通过；1000 agents / 5 runs 的 p95 不高于 220 ms |
 
 范围外事项：不引入 FastAPI、uvicorn、GraphQL、ORM 或消息队列；不重写 Platform 的事务、规则、Agent 或世界配置；不改变 SQLite schema；不保留旧 API 的长期双栈。
 
@@ -280,7 +280,7 @@ src/sim2/web/
 | 前端拆分引入加载顺序问题 | 使用原生 ES modules，入口只依赖稳定模块；`node --check` 与两档浏览器回归作为门禁 |
 | 一次性 cutover 影响外部脚本 | 本产品只有本地游戏端与管理端；CLI/TUI 不使用 HTTP，旧路径不保留 |
 
-交付负责人为 Web/API 重构任务组；目标版本为 `0.2.0`；证据回填位置为 `docs/design/web-api-v1-refactor.md` 与 `tests/test_web_client.py`。关闭条件为 Phase 0-4 验收全部通过、当前全量测试 1377 项通过、两档浏览器回归通过、1000 agents / 5 runs 的 p95 不高于 220 ms。
+交付负责人为 Web/API 重构任务组；目标版本为 `0.2.0`；证据回填位置为 `docs/design/web-api-v1-refactor.md` 与 `tests/test_web_client.py`。关闭条件为 Phase 0-4 验收全部通过、当前全量测试 1378 项通过、两档浏览器回归通过、1000 agents / 5 runs 的 p95 不高于 220 ms。
 
 ## 实施结果
 

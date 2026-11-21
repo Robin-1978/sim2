@@ -157,7 +157,7 @@ class AgentViewCompiler(
                 value = sum(float(inventory.get(item, 0) or 0) for item in definition.get("items", []) or [])
             else:
                 continue
-            values.append({"label": definition.get("label", definition["id"]), "value": value, "unit": definition.get("unit", ""), "kind": kind, "meaning": definition.get("prompt", "")})
+            values.append({"id": definition["id"], "label": definition.get("label", definition["id"]), "value": value, "unit": definition.get("unit", ""), "kind": kind, "cost_mode": definition.get("cost_mode"), "meaning": definition.get("prompt", "")})
         return values
 
     def _attribute_schema(self) -> AttributeSchema:

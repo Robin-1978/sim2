@@ -122,6 +122,31 @@ minute_effects:
 显示一位小数，避免慢速变化被整数四舍五入掩盖。`stamina_alert_threshold` 让
 客户端在低精力时切换琥珀/红色状态。
 
+事件分类和结果文案也由世界包声明，不是网页里的世界分支：
+
+```yaml
+ui:
+  event_kinds:
+    weather: [storm., weather., season.]
+    repair: [tide_gate., repair, signal., gate.]
+  event_titles:
+    weather: 风暴
+    repair: 公共设施
+  pulse_prefixes: [storm, story, gate., signal.]
+  result_labels:
+    marsh_rest_decided: 休养已安排
+  reason_labels:
+    station.available: 工坊当前不可用
+```
+
+`render_panels.eventKind`/`eventTitle` 读取 `ui.event_kinds`/`ui.event_titles`，
+`renderWorldPulse` 读取 `ui.pulse_prefixes`；世界没有配置时使用
+“天气 / 决策 / 对话 / 资源 / 交易 / 剧情 / 其他”的通用默认值。
+`resultLabel` 从 `ui.result_labels` 读取行动结果文案，`humanizeReason` 从
+`ui.reason_labels` 读取条件失败文案；属性名来自
+`/player/view.player.attributes[].label`，行动成本的正负来自 `cost_mode`。
+因此新增世界只需写配置，不需要改 `app.js` 或 `admin.js`。
+
 视觉语义由通用字段驱动：地点 `tags` 决定场景色调，物品名来自
 `rules.item_labels`，世界数值名来自 `rules.world_property_labels`，饮水/进食
 警戒线来自 `rules.context_values.*_threshold`。世界数值标签可以声明

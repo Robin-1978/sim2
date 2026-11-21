@@ -1,5 +1,5 @@
 import { loadDialogue, loadTrades, travelToNode } from "./actions.js";
-import { $, el, formatMinute, itemLabel, state, translateNarrative } from "./core.js";
+import { $, el, formatMinute, itemLabel, state, translateNarrative, uiConfig } from "./core.js";
 
 
   /* ---------- Talk ---------- */
@@ -126,37 +126,59 @@ export function parseBundle(text) {
   }
 
 
+const DEFAULT_EVENT_KINDS = {
+    weather: ["weather.", "storm."],
+    decision: ["decision.", "public_decision"],
+    dialogue: ["dialogue.", "conversation."],
+    resource: ["resource."],
+    trade: ["market.", "trade."],
+    story: ["story.", "beat."],
+    origin: ["origin."],
+  };
+
+  const DEFAULT_EVENT_TITLES = {
+    weather: "天气",
+    decision: "公共决策",
+    dialogue: "对话",
+    resource: "资源",
+    trade: "交易",
+    story: "世界剧情",
+    origin: "出身",
+    behavior: "角色行动",
+    need: "需求",
+    player: "角色",
+    world: "世界",
+  };
+
+  const DEFAULT_PULSE_PREFIXES = ["weather", "story", "world.change", "civilization", "evolution", "decision", "trade"];
+
+
 export function eventKind(type) {
     const value = String(type || "");
-    if (value.startsWith("public_decision") || value.startsWith("decision.")) return "decision";
-    if (value.startsWith("storm.") || value.startsWith("weather.")) return "storm";
-    if (value.startsWith("dialogue.") || value.startsWith("conversation.")) return "dialogue";
-    if (value.startsWith("resource.") || value.startsWith("ration") || value.startsWith("rope.")) return "resource";
-    if (value.startsWith("tide_gate.") || value.startsWith("repair") || value.startsWith("signal.") || value.startsWith("gate.") || value.startsWith("gate_brace.") || value.startsWith("rain_catcher.") || value.startsWith("rainwater.") || value.startsWith("commons.volunteer")) return "repair";
-    if (value.startsWith("market.") || value.startsWith("trade.")) return "trade";
-    if (value.startsWith("confidence.")) return "decision";
-    if (value.startsWith("season.")) return "storm";
-    if (value.startsWith("story.") || value.startsWith("beat.")) return "story";
-    if (value.startsWith("origin.")) return "origin";
+    const configured = uiConfig().event_kinds || {};
+    for (const [kind, prefixes] of Object.entries(configured)) {
+      for (const prefix of Array.isArray(prefixes) ? prefixes : [prefixes]) {
+        if (prefix && value.startsWith(String(prefix))) return kind;
+      }
+    }
+    for (const [kind, prefixes] of Object.entries(DEFAULT_EVENT_KINDS)) {
+      for (const prefix of prefixes) {
+        if (value.startsWith(prefix)) return kind;
+      }
+    }
     return "";
   }
 
 
 export function eventTitle(type) {
     const kind = eventKind(type);
-    if (kind === "decision") return "公共决策";
-    if (kind === "storm") return "风暴";
-    if (kind === "dialogue") return "对话";
-    if (kind === "resource") return "采集与制作";
-    if (kind === "repair") return "公共设施";
-    if (kind === "trade") return "交易";
-    if (kind === "story") return "世界剧情";
-    if (kind === "origin") return "出身";
-    if (type.startsWith("behavior.")) return "角色行动";
-    if (type.startsWith("trade.")) return "交易";
-    if (type.startsWith("need.")) return "需求";
-    if (type.startsWith("player.")) return "角色";
-    return "世界";
+    const titles = { ...DEFAULT_EVENT_TITLES, ...(uiConfig().event_titles || {}) };
+    if (kind && titles[kind]) return titles[kind];
+    if (type.startsWith("behavior.")) return titles.behavior;
+    if (type.startsWith("trade.")) return titles.trade;
+    if (type.startsWith("need.")) return titles.need;
+    if (type.startsWith("player.")) return titles.player;
+    return titles.world;
   }
 
 
@@ -223,21 +245,11 @@ export function renderWorldPulse() {
     root.replaceChildren();
     const events = state.feedEvents.slice(0, 30);
     const currentMinute = Number(state.view?.world_time?.minute || 0);
+    const pulsePrefixes = uiConfig().pulse_prefixes || DEFAULT_PULSE_PREFIXES;
     const important = events.find((event) => {
       if (currentMinute - Number(event.world_minute || 0) > 720) return false;
       const type = String(event.event_type || "");
-      return type.includes("storm")
-        || type.includes("story")
-        || type.includes("world.change")
-        || type.includes("civilization")
-        || type.includes("evolution")
-        || type.startsWith("gate.")
-        || type.startsWith("confidence.")
-        || type.startsWith("season.")
-        || type.startsWith("signal.")
-        || type.startsWith("rain")
-        || type.startsWith("market.")
-        || type.startsWith("commons.");
+      return pulsePrefixes.some((prefix) => type.includes(String(prefix)));
     }) || events[0];
     if (!important) {
       root.className = "world-pulse empty";
