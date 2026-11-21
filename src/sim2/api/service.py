@@ -106,13 +106,28 @@ def _configured_ending(platform: Platform, player_id: str) -> dict[str, Any] | N
             visible = False
         if not visible:
             continue
+        trigger_event = str(ending.get("trigger_event") or "").strip()
+        trigger_id = 0
+        if trigger_event:
+            trigger_rows = platform.store.repositories.events.recent_events_by_types([trigger_event], limit=1)
+            trigger_id = int((trigger_rows[0].get("event_id", 0) if trigger_rows else 0) or 0)
+            if trigger_id:
+                for beat in platform.store.repositories.events.recent_events_by_types(["story.beat.activated"], limit=24):
+                    audience = [str(item) for item in (beat.get("audience") or []) if str(item)]
+                    if audience and player_id not in audience and "player" not in audience:
+                        continue
+                    if int(beat.get("event_id", 0) or 0) > trigger_id:
+                        # A Story beat proposed after the ending wins the
+                        # chapter card.  The ending remains the fallback for
+                        # players who have not received post-ending content.
+                        return None
         return {
             "id": str(ending["id"]),
             "title": str(ending.get("title") or ending["id"]),
             "summary": str(ending.get("summary") or ""),
             "goal_hint": str(ending.get("goal_hint") or ""),
             "event_type": "story.ending",
-            "event_id": 0,
+            "event_id": trigger_id,
             "world_minute": int(platform.store.repositories.metadata.get("world_minute", 0) or 0),
             "kind": str(ending.get("kind") or "ending"),
             "ended": True,

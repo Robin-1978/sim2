@@ -269,7 +269,9 @@ Story/God 和目标系统。网页把它显示为“上手提示”，而不是�
 `story.endings` 是另一层只读投影：当 `world.signal_reach >= 0.7` 时，玩家
 章节卡显示“第一季：外海航路重开”，并标注“季末结局”。结局不会暂停世界，
 下一轮风暴、集雨器、公共工具架和 Story/God 仍会继续运行；`goal_hint` 明确
-提示下一季仍要维护潮门。
+提示下一季仍要维护潮门。结局配置了 `trigger_event: signal.route_open`：如果
+Story 在结局之后提出新的章节，新的 `story.beat.activated` 会重新占据章节卡；
+结局只在还没有后续 Story 时作为兜底。
 
 优先级是：**玩家可读的 `story.beat.activated` 永远优先**；没有 Story 章节时
 才投影态势锚点。锚点不推进状态、不发放资源、不解锁行为、不阻止目标，也不影响

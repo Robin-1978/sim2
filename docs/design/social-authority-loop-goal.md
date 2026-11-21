@@ -177,10 +177,11 @@ world-pack lint covers every `worlds/*/actions.yaml`.
 - 新增可修复集雨器（每 6 小时 +6 淡水）、码头口粮换芦苇绳、潮门支撑件配方与 `brace_gate`、季末结局投影；`tune_signal` 门槛从 0.56 提高到 0.80。
 - 表现层：出身专属 onboarding 覆盖、行为冷却显示为剩余时间、按属性合并 per-minute 成本行。
 - 条件引擎接受 `world["property"]` 与 `world.property` 两种写法；God 规则不再出现“叙事生效、机制不生效”。
-- 聚焦回归：`tests/test_tidebound_commons.py` 28 项、`tests/test_condition_engine.py` 3 项全部通过。全量门禁 **1477 passed**（4 个隔离 worker）；`compileall`、`git diff --check` 干净；平台基准 p95 **185.377 ms**（1000 agents / 5 runs）。
+- 聚焦回归：`tests/test_tidebound_commons.py` 29 项、`tests/test_condition_engine.py` 3 项全部通过。全量门禁 **1478 passed**（4 个隔离 worker）；`compileall`、`git diff --check` 干净；平台基准 p95 **185.377 ms**（1000 agents / 5 runs）。
 - 远程 360 分钟最终代码审计（`deepseek-v4.1-flash`）：玛拉测量并修复，`gate.repair_needed` 规则触发，伊沃制作并放回工具包，市场交换 2 次、Story 2 条，无空轮次。第一次 720 分钟审计还记录了 5 条 Story 和 1 个 God 定义。
 - 确定性 3 天 smoke：潮门完整性 0.96、公共信心 0.77、风暴轮次 2、公共工具架 3（上限生效），无退化标记。
 - 确定性首场风暴回归：沼泽采集者玩家与玛拉各修一次，潮门 0.61 → 0.89，`storm.held`；同一角色仍受 720 分钟冷却限制。
+- 季末结局不再吞掉后续章节：`signal.route_open` 之后由 Story 生成的 `story.beat.activated` 会替换结局卡；没有后续 Story 时结局卡继续作为兜底。
 
 ### 2026-11-18
 

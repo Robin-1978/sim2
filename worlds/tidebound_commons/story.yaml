@@ -89,6 +89,7 @@ endings:
   summary: 季节信号越过海面，另一处聚落沿着低潮通道抵达公社。潮门、集雨器和公共工具架一起撑过了第一季；接下来是下一轮风暴季。
   goal_hint: 第一季已完成。世界继续运行：守住下一轮风暴，补全海图，或让新来的聚落加入公共维护。
   condition: world.signal_reach >= 0.7
+  trigger_event: signal.route_open
   kind: ending
 # Story chapters are not pre-authored here.  The Story Agent receives verified
 # source events and proposes emergent beats from those facts.  Keeping this list

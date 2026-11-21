@@ -1005,3 +1005,36 @@ def test_repair_works_from_a_carried_kit_when_the_rack_is_empty(tmp_path: Path) 
         assert platform.store.repositories.entities.get_agent("hero")["inventory"].get("repair_kit", 0) == 0
     finally:
         platform.close()
+
+
+def test_story_after_the_ending_can_replace_the_epilogue_card(tmp_path: Path) -> None:
+    from sim2.api.service import ControlService
+
+    service = ControlService(create_instance(WORLD, "tidebound-post-ending", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "chart_keeper", name="试玩者")["status"] == "accepted"
+        _set_world_properties(platform, signal_reach=0.7)
+        with platform.store.transaction():
+            platform.store.repositories.events.append_event(
+                "signal.route_open", "mara", 100,
+                {"route": "outer_sea"},
+            )
+        assert service.player_view("hero")["chapter"]["kind"] == "ending"
+
+        with platform.store.transaction():
+            platform.store.repositories.events.append_event(
+                "story.beat.activated", "story", 101,
+                {
+                    "beat_id": "emergent_next_season",
+                    "title": "下一季的第一条消息",
+                    "summary": "新来的聚落带来了外海的潮汐记录，公社开始准备下一轮风暴季。",
+                    "goal_hint": "把新记录并入海图，并检查集雨器。",
+                    "audience": ["hero"],
+                },
+            )
+        chapter = service.player_view("hero")["chapter"]
+        assert chapter["kind"] == "story"
+        assert chapter["title"] == "下一季的第一条消息"
+    finally:
+        service.close()
