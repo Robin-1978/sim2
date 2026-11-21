@@ -20,6 +20,10 @@ def _operator_headers(server: ControlHTTPServer) -> dict[str, str]:
     return {"x-sim2-session": server.issue_session("operator")}
 
 
+def _observer_headers(server: ControlHTTPServer) -> dict[str, str]:
+    return {"x-sim2-session": server.issue_session("observer")}
+
+
 def _json_request(url: str, payload: dict, headers: dict[str, str] | None = None) -> dict:
     request = Request(
         url,
@@ -47,44 +51,44 @@ def test_web_launcher_starts_without_an_instance_and_creates_the_first_world(tmp
             html = response.read().decode("utf-8")
         assert 'id="entry-create-panel"' in html
         assert "创建一个世界" in html or "创建新世界" in html
-        with urlopen(base + "/status") as response:
+        with urlopen(base + "/api/v1/status") as response:
             assert json.loads(response.read())["status"] == "no_world"
-        with urlopen(base + "/world") as response:
+        with urlopen(base + "/api/v1/world") as response:
             assert json.loads(response.read())["status"] == "no_world"
-        with urlopen(base + "/player/entry") as response:
+        with urlopen(base + "/api/v1/player/entry") as response:
             entry = json.loads(response.read())
         assert entry["status"] == "no_world" and entry["players"] == []
-        with urlopen(base + "/instances") as response:
+        with urlopen(base + "/api/v1/instances") as response:
             instances = json.loads(response.read())
         assert instances["active_db"] == "" and instances["instances"] == []
-        with urlopen(base + "/worlds") as response:
+        with urlopen(base + "/api/v1/worlds") as response:
             catalog = json.loads(response.read())
         assert catalog["status"] == "ok"
         assert any(item["id"] == "starter_village" for item in catalog["worlds"])
-        with urlopen(base + "/authoring/schema") as response:
+        with urlopen(base + "/api/v1/authoring/schema") as response:
             assert json.loads(response.read())["status"] == "ok"
-        with urlopen(base + "/authoring/catalog") as response:
+        with urlopen(base + "/api/v1/authoring/catalog") as response:
             packages = json.loads(response.read())["packages"]
         assert any(item["id"] == "starter_village" for item in packages)
 
         created = _json_request(
-            base + "/instances/init",
+            base + "/api/v1/instances/init",
             {"package_id": "starter_village", "instance_id": "first-web-world", "activate": True},
         )
         assert created["status"] == "passed"
         assert created["activation"]["status"] == "accepted"
         assert created["active"] is True
 
-        with urlopen(base + "/world") as response:
+        with urlopen(base + "/api/v1/world") as response:
             world = json.loads(response.read())
         assert world["status"] == "ok" and world["world_id"] == "starter_village"
-        with urlopen(base + "/instances") as response:
+        with urlopen(base + "/api/v1/instances") as response:
             instances = json.loads(response.read())
         assert instances["active_db"].endswith("first-web-world/world.sqlite3")
 
         # Once a world exists, another instance needs the operator boundary.
         with pytest.raises(HTTPError) as forbidden:
-            _json_request(base + "/instances/init", {"package_id": "starter_village", "instance_id": "second-web-world"})
+            _json_request(base + "/api/v1/instances/init", {"package_id": "starter_village", "instance_id": "second-web-world"})
         assert forbidden.value.code == 403
     finally:
         server.close()
@@ -99,21 +103,21 @@ def test_player_entry_offers_the_existing_character_for_resume(tmp_path: Path):
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
     try:
-        with urlopen(base + "/player/entry") as response:
+        with urlopen(base + "/api/v1/player/entry") as response:
             entry = json.loads(response.read())
         assert entry["players"] == [] and entry["can_create_player"] is True
         origin = entry["origins"][0]["id"]
 
-        entered = _json_request(base + "/players", {"player_id": "resume-me", "origin_id": origin, "name": "归来的旅人"})
+        entered = _json_request(base + "/api/v1/player/enter", {"player_id": "resume-me", "origin_id": origin, "name": "归来的旅人"})
         assert entered["status"] == "accepted"
 
-        with urlopen(base + "/player/entry") as response:
+        with urlopen(base + "/api/v1/player/entry") as response:
             entry = json.loads(response.read())
         assert entry["can_create_player"] is False
         assert entry["players"][0]["id"] == "resume-me"
         assert entry["players"][0]["name"] == "归来的旅人"
 
-        rejected = _json_request(base + "/players", {"player_id": "another-player", "origin_id": origin})
+        rejected = _json_request(base + "/api/v1/player/enter", {"player_id": "another-player", "origin_id": origin})
         assert rejected["status"] == "rejected"
         assert rejected["failed_check"] == "player_limit"
     finally:
@@ -163,46 +167,46 @@ def test_http_serves_runtime_and_authoring_workbench(tmp_path: Path):
         assert ".readiness-item" in admin_css
         with urlopen(base + "/app.css") as response:
             assert b"--cyan" in response.read()
-        with urlopen(base + "/authoring/schema") as response:
+        with urlopen(base + "/api/v1/authoring/schema") as response:
             schema = json.loads(response.read())
         assert schema["status"] == "ok"
         assert "behavior_trees" in schema["schema"]["properties"]
-        with urlopen(base + "/authoring/catalog") as response:
+        with urlopen(base + "/api/v1/authoring/catalog") as response:
             catalog = json.loads(response.read())
         assert catalog["status"] == "ok"
         assert any(item["id"] == "starter_village" for item in catalog["packages"])
 
-        opened = _json_request(base + "/authoring/open", {}, headers=operator)
+        opened = _json_request(base + "/api/v1/authoring/open", {}, headers=operator)
         assert opened["status"] == "passed"
         assert opened["template"]["world"]["id"] == "starter_village"
-        opened_compile = _json_request(base + "/authoring/compile", {"template": opened["template"], "source_path": opened["source_path"]}, headers=operator)
+        opened_compile = _json_request(base + "/api/v1/authoring/compile", {"template": opened["template"], "source_path": opened["source_path"]}, headers=operator)
         assert opened_compile["status"] == "passed"
 
-        compiled = _json_request(base + "/authoring/compile", {"template": template, "draft_revision": 4}, headers=operator)
+        compiled = _json_request(base + "/api/v1/authoring/compile", {"template": template, "draft_revision": 4}, headers=operator)
         assert compiled["status"] == "passed"
         assert compiled["draft_revision"] == 4
         assert "manifest.yaml" in compiled["files"]
         assert compiled["diagnostics"] == []
 
-        rejected = _json_request(base + "/authoring/compile", {"template": {"world": {}}, "draft_revision": 5}, headers=operator)
+        rejected = _json_request(base + "/api/v1/authoring/compile", {"template": {"world": {}}, "draft_revision": 5}, headers=operator)
         assert rejected["status"] == "rejected"
         assert rejected["diagnostics"]
         assert rejected["diagnostics"][0]["code"] == "template_validation_error"
 
-        smoke = _json_request(base + "/authoring/smoke", {"template": template, "minutes": 1}, headers=operator)
+        smoke = _json_request(base + "/api/v1/authoring/smoke", {"template": template, "minutes": 1}, headers=operator)
         assert smoke["status"] == "passed"
         assert smoke["smoke"]["world_minute"] == 1
 
-        exported = _json_request(base + "/authoring/export", {"template": template}, headers=operator)
+        exported = _json_request(base + "/api/v1/authoring/export", {"template": template}, headers=operator)
         assert exported["status"] == "passed"
         assert exported["package_format"] == "yaml-files"
         assert "manifest.yaml" in exported["files"]
 
-        build_rejected = _json_request(base + "/authoring/build", {"brief": ""}, headers=operator)
+        build_rejected = _json_request(base + "/api/v1/authoring/build", {"brief": ""}, headers=operator)
         assert build_rejected["status"] == "rejected"
         assert "brief" in build_rejected["errors"][0]
         try:
-            _json_request(base + "/dialogue", {"speaker_id": "god", "listener_id": "nobody", "message": "test"})
+            _json_request(base + "/api/v1/operator/dialogue", {"speaker_id": "god", "listener_id": "nobody", "message": "test"})
         except HTTPError as error:
             assert error.code == 403
         else:
@@ -233,17 +237,17 @@ def test_web_catalog_can_create_an_independent_instance_from_a_template(tmp_path
     operator = _operator_headers(server)
     try:
         try:
-            _json_request(base + "/authoring/create", {"package_id": "starter_village", "instance_id": "unauthorized-child"})
+            _json_request(base + "/api/v1/authoring/create", {"package_id": "starter_village", "instance_id": "unauthorized-child"})
         except HTTPError as error:
             assert error.code == 403
         else:
             raise AssertionError("authoring create must require an operator session")
-        with urlopen(base + "/authoring/catalog") as response:
+        with urlopen(base + "/api/v1/authoring/catalog") as response:
             catalog = json.loads(response.read())
         assert catalog["status"] == "ok"
         starter = next(item for item in catalog["packages"] if item["id"] == "starter_village")
         assert starter["status"] == "passed"
-        created = _json_request(base + "/authoring/create", {"package_id": "starter_village", "instance_id": "catalog-child"}, headers=operator)
+        created = _json_request(base + "/api/v1/authoring/create", {"package_id": "starter_village", "instance_id": "catalog-child"}, headers=operator)
         assert created["status"] == "passed"
         assert Path(created["db_path"]).is_file()
         assert created["instance_id"] == "catalog-child"
@@ -260,28 +264,28 @@ def test_web_player_loop_exposes_actions_and_submits_through_platform(tmp_path: 
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
     try:
-        with urlopen(base + "/player/entry") as response:
+        with urlopen(base + "/api/v1/player/entry") as response:
             entry = json.loads(response.read())
         assert entry["status"] == "ok"
         assert entry["origins"]
-        entered = _json_request(base + "/players", {"player_id": "web_player", "origin_id": entry["origins"][0]["id"], "name": "Web Player"})
+        entered = _json_request(base + "/api/v1/player/enter", {"player_id": "web_player", "origin_id": entry["origins"][0]["id"], "name": "Web Player"})
         assert entered["status"] == "accepted"
         try:
-            urlopen(base + "/player/view?player_id=web_player")
+            urlopen(base + "/api/v1/player/web_player/view")
         except HTTPError as error:
             assert error.code == 403
         else:
             raise AssertionError("player view must require a local player session")
         player_headers = {"x-sim2-session": entered["session_token"]}
-        with urlopen(Request(base + "/player/view?player_id=web_player", headers=player_headers)) as response:
+        with urlopen(Request(base + "/api/v1/player/web_player/view", headers=player_headers)) as response:
             view = json.loads(response.read())
         assert view["status"] == "ok"
         assert view["player"]["name"] == "Web Player"
         assert view["actions"]
         travel = next(item for item in view["actions"] if item.get("kind") == "travel")
-        acted = _json_request(base + "/player/act", {"player_id": "web_player", "behavior_ref": travel["ref"], "parameters": travel["parameters"], "confidence": 1, "reason": "Player chose the route."}, headers=player_headers)
+        acted = _json_request(base + "/api/v1/player/web_player/actions", {"behavior_ref": travel["ref"], "parameters": travel["parameters"], "confidence": 1, "reason": "Player chose the route."}, headers=player_headers)
         assert acted["status"] == "accepted"
-        with urlopen(Request(base + "/player/view?player_id=web_player", headers=player_headers)) as response:
+        with urlopen(Request(base + "/api/v1/player/web_player/view", headers=player_headers)) as response:
             active_view = json.loads(response.read())
         assert active_view["active_task"]["action"] or active_view["active_task"]["bt"]
         assert not any(item.get("kind") == "travel" for item in active_view["actions"])
@@ -330,19 +334,19 @@ def test_web_console_covers_all_cli_commands(tmp_path: Path):
         assert "console-result" in html
         assert "console-init" in html
 
-        validated = _json_request(base + "/authoring/validate", {"package_id": "starter_village"}, headers=operator)
+        validated = _json_request(base + "/api/v1/authoring/validate", {"package_id": "starter_village"}, headers=operator)
         assert validated["status"] == "passed", validated
-        described = _json_request(base + "/authoring/describe", {"package_id": "starter_village"}, headers=operator)
+        described = _json_request(base + "/api/v1/authoring/describe", {"package_id": "starter_village"}, headers=operator)
         assert described["status"] == "passed", described
         assert described["world_id"] == "starter_village"
 
-        with urlopen(base + "/authoring/schema") as response:
+        with urlopen(base + "/api/v1/authoring/schema") as response:
             assert json.loads(response.read())["status"] == "ok"
 
-        opened = _json_request(base + "/authoring/open", {}, headers=operator)
+        opened = _json_request(base + "/api/v1/authoring/open", {}, headers=operator)
         assert opened["status"] == "passed"
         built = _json_request(
-            base + "/authoring/build-world",
+            base + "/api/v1/authoring/build-world",
             {"template": opened["template"], "source_path": opened["source_path"], "output": "console_built", "overwrite": True},
             headers=operator,
         )
@@ -350,48 +354,48 @@ def test_web_console_covers_all_cli_commands(tmp_path: Path):
         assert (worlds_root / "console_built" / "manifest.yaml").is_file()
 
         inited = _json_request(
-            base + "/instances/init",
+            base + "/api/v1/instances/init",
             {"package_id": "starter_village", "instance_id": "console-init-child"},
             headers=operator,
         )
         assert inited["status"] == "passed", inited
 
-        observer = json.loads(urlopen(base + "/observer?limit=5").read())
+        observer = json.loads(urlopen(Request(base + "/api/v1/observer/summary?limit=5", headers=operator)).read())
         agent_id = observer["agents"][0]["id"]
-        decided = _json_request(base + "/decide", {"agent_id": agent_id, "role": "agent_decision"}, headers=operator)
+        decided = _json_request(base + "/api/v1/operator/decide", {"agent_id": agent_id, "role": "agent_decision"}, headers=operator)
         assert decided["result"]["status"] in {"accepted", "wait", "skipped", "rejected"}, decided
 
-        simulated = _json_request(base + "/simulate", {"minutes": 2}, headers=operator)
+        simulated = _json_request(base + "/api/v1/operator/simulate", {"minutes": 2}, headers=operator)
         assert simulated["status"] == "ok", simulated
         assert simulated["report"]["end_minute"] >= simulated["report"]["start_minute"] + 2
 
-        created = _json_request(base + "/snapshots", {"label": "console"}, headers=operator)
+        created = _json_request(base + "/api/v1/operator/snapshots", {"label": "console"}, headers=operator)
         assert created["status"] == "ok", created
-        listed = json.loads(Request(base + "/snapshots", headers=operator).get_full_url() and urlopen(Request(base + "/snapshots", headers=operator)).read())
+        listed = json.loads(Request(base + "/api/v1/operator/snapshots", headers=operator).get_full_url() and urlopen(Request(base + "/api/v1/operator/snapshots", headers=operator)).read())
         assert any(item["snapshot_id"] == created["snapshot_id"] for item in listed["snapshots"])
-        restored = _json_request(base + "/restore", {"snapshot_id": created["snapshot_id"]}, headers=operator)
+        restored = _json_request(base + f"/api/v1/operator/snapshots/{created['snapshot_id']}/restore", {"snapshot_id": created["snapshot_id"]}, headers=operator)
         assert restored["status"] == "ok", restored
 
-        with urlopen(base + "/player/entry") as response:
+        with urlopen(base + "/api/v1/player/entry") as response:
             entry = json.loads(response.read())
         player_headers = {}
-        entered = _json_request(base + "/players", {"player_id": "console_p1", "origin_id": entry["origins"][0]["id"]}, headers=None)
+        entered = _json_request(base + "/api/v1/player/enter", {"player_id": "console_p1", "origin_id": entry["origins"][0]["id"]}, headers=None)
         assert entered["status"] == "accepted"
         player_headers = {"x-sim2-session": entered["session_token"]}
-        with urlopen(Request(base + "/trade/offers?agent_id=console_p1", headers=player_headers)) as response:
+        with urlopen(Request(base + "/api/v1/player/console_p1/trades", headers=player_headers)) as response:
             assert json.loads(response.read())["status"] == "ok"
         # Invalid offer still goes through Platform validation instead of 500.
         bad_counter = _json_request(
-            base + "/trade/counter",
-            {"counterparty_id": "console_p1", "offer_id": "missing", "give": {}, "want": {}},
+            base + "/api/v1/player/console_p1/trades/missing/counter",
+            {"give": {}, "want": {}},
             headers=player_headers,
         )
         assert bad_counter["status"] == "rejected"
         bad_reject = _json_request(
-            base + "/trade/reject", {"recipient_id": "console_p1", "offer_id": "missing"}, headers=player_headers
+            base + "/api/v1/player/console_p1/trades/missing/reject", {}, headers=player_headers
         )
         assert bad_reject["status"] == "rejected"
-        injected = _json_request(base + "/events", {"event_type": "story.note", "payload": {"text": "console"}}, headers=operator)
+        injected = _json_request(base + "/api/v1/operator/events", {"event_type": "story.note", "payload": {"text": "console"}}, headers=operator)
         assert injected["status"] in {"accepted", "rejected"}, injected
     finally:
         server.close()
@@ -417,13 +421,13 @@ def test_web_runtime_controls_and_instance_hot_switch(tmp_path: Path):
     operator = _operator_headers(server)
     try:
         try:
-            _json_request(base + "/runtime/start", {"max_world_minutes": 2, "max_llm_calls": 20})
+            _json_request(base + "/api/v1/runtime/start", {"max_world_minutes": 2, "max_llm_calls": 20})
         except HTTPError as error:
             assert error.code == 403
         else:
             raise AssertionError("runtime start must require an operator session")
 
-        with urlopen(base + "/instances") as response:
+        with urlopen(base + "/api/v1/instances") as response:
             instances = json.loads(response.read())
         assert instances["status"] == "ok"
         assert {item["instance_id"] for item in instances["instances"]} >= {"web-first", "web-second"}
@@ -431,71 +435,75 @@ def test_web_runtime_controls_and_instance_hot_switch(tmp_path: Path):
 
         stale_player_token = server.issue_session("player", player_id="han_qiu")
 
-        switched = _json_request(base + "/instances/activate", {"instance_id": "web-second"}, headers=operator)
+        switched = _json_request(base + "/api/v1/instances/activate", {"instance_id": "web-second"}, headers=operator)
         assert switched["status"] == "accepted", switched
         assert server.database_path == runtime_root.resolve() / "instances" / "web-second" / "world.sqlite3"
         assert server.registry.latest() == server.database_path
         try:
-            urlopen(Request(base + "/player/view?player_id=han_qiu", headers={"x-sim2-session": stale_player_token}))
+            urlopen(Request(base + "/api/v1/player/han_qiu/view", headers={"x-sim2-session": stale_player_token}))
         except HTTPError as error:
             assert error.code == 403
         else:
             raise AssertionError("player sessions must be scoped to one world instance")
 
-        stopped_without_worker = _json_request(base + "/runtime/stop", {"reason": "test-idle-stop"}, headers=operator)
+        stopped_without_worker = _json_request(base + "/api/v1/runtime/stop", {"reason": "test-idle-stop"}, headers=operator)
         assert stopped_without_worker["state"] == "stopped", stopped_without_worker
-        assert json.loads(urlopen(base + "/status").read())["status"] == "paused"
+        assert json.loads(urlopen(base + "/api/v1/status").read())["status"] == "paused"
 
         budget_run = _json_request(
-            base + "/runtime/start",
+            base + "/api/v1/runtime/start",
             {"max_world_minutes": 100, "max_llm_calls": 1},
             headers=operator,
         )
         assert budget_run["status"] == "accepted", budget_run
-        _wait_until(lambda: not json.loads(urlopen(base + "/runtime").read())["running"])
-        assert json.loads(urlopen(base + "/runtime").read())["state"] == "paused_budget"
+        _wait_until(lambda: not json.loads(urlopen(base + "/api/v1/runtime").read())["running"])
+        assert json.loads(urlopen(base + "/api/v1/runtime").read())["state"] == "paused_budget"
 
         started = _json_request(
-            base + "/runtime/start",
+            base + "/api/v1/runtime/start",
             {"max_world_minutes": 100, "max_llm_calls": 200},
             headers=operator,
         )
         assert started["status"] == "accepted", started
         duplicate = _json_request(
-            base + "/runtime/start",
+            base + "/api/v1/runtime/start",
             {"max_world_minutes": 100, "max_llm_calls": 200},
             headers=operator,
         )
         assert duplicate["status"] == "rejected"
         assert duplicate["failed_check"] == "already_running"
-        manual_wait = _json_request(
-            base + "/player/wait",
-            {"player_id": "han_qiu"},
-            headers=operator,
-        )
-        assert manual_wait["status"] == "rejected"
-        assert manual_wait["failed_check"] == "runtime_running"
-        _wait_until(lambda: json.loads(urlopen(base + "/runtime").read())["state"] in {"running", "pausing", "paused"})
+        try:
+            _json_request(
+                base + "/api/v1/player/han_qiu/wait",
+                {},
+                headers=operator,
+            )
+        except HTTPError as error:
+            assert error.code == 409
+            assert json.loads(error.read())["failed_check"] == "runtime_running"
+        else:
+            raise AssertionError("manual wait must be rejected while the runtime is running")
+        _wait_until(lambda: json.loads(urlopen(base + "/api/v1/runtime").read())["state"] in {"running", "pausing", "paused"})
 
-        paused = _json_request(base + "/runtime/pause", {"reason": "test"}, headers=operator)
+        paused = _json_request(base + "/api/v1/runtime/pause", {"reason": "test"}, headers=operator)
         assert paused["status"] in {"pausing", "paused"}, paused
-        _wait_until(lambda: not json.loads(urlopen(base + "/runtime").read())["running"])
-        runtime = json.loads(urlopen(base + "/runtime").read())
+        _wait_until(lambda: not json.loads(urlopen(base + "/api/v1/runtime").read())["running"])
+        runtime = json.loads(urlopen(base + "/api/v1/runtime").read())
         assert runtime["state"] in {"paused", "cooldown", "paused_budget"}
 
-        resumed = _json_request(base + "/runtime/resume", {"reason": "test"}, headers=operator)
+        resumed = _json_request(base + "/api/v1/runtime/resume", {"reason": "test"}, headers=operator)
         assert resumed["status"] == "accepted", resumed
         assert resumed["run_id"] == started["run_id"]
         assert resumed["llm_calls_this_run"] >= runtime["llm_calls_this_run"]
-        _wait_until(lambda: json.loads(urlopen(base + "/runtime").read())["running"])
+        _wait_until(lambda: json.loads(urlopen(base + "/api/v1/runtime").read())["running"])
 
-        stopped = _json_request(base + "/runtime/stop", {"reason": "test-stop"}, headers=operator)
+        stopped = _json_request(base + "/api/v1/runtime/stop", {"reason": "test-stop"}, headers=operator)
         assert stopped["status"] == "accepted", stopped
-        _wait_until(lambda: not json.loads(urlopen(base + "/runtime").read())["running"])
-        assert json.loads(urlopen(base + "/runtime").read())["state"] == "stopped"
+        _wait_until(lambda: not json.loads(urlopen(base + "/api/v1/runtime").read())["running"])
+        assert json.loads(urlopen(base + "/api/v1/runtime").read())["state"] == "stopped"
 
-        before_step = json.loads(urlopen(base + "/runtime").read())["world_minute"]
-        stepped = _json_request(base + "/runtime/step", {}, headers=operator)
+        before_step = json.loads(urlopen(base + "/api/v1/runtime").read())["world_minute"]
+        stepped = _json_request(base + "/api/v1/runtime/step", {}, headers=operator)
         assert stepped["to_minute"] == before_step + 1
         assert stepped["runtime"]["state"] == "paused"
     finally:
@@ -513,20 +521,20 @@ def test_web_dialogue_accepts_names_and_reports_missing_participant(tmp_path: Pa
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
     try:
-        with urlopen(base + "/player/entry") as response:
+        with urlopen(base + "/api/v1/player/entry") as response:
             entry = json.loads(response.read())
-        entered = _json_request(base + "/players", {"player_id": "player_one", "origin_id": entry["origins"][0]["id"], "name": "Ari"})
+        entered = _json_request(base + "/api/v1/player/enter", {"player_id": "player_one", "origin_id": entry["origins"][0]["id"], "name": "Ari"})
         assert entered["status"] == "accepted"
         player_headers = {"x-sim2-session": entered["session_token"]}
         by_names = _json_request(
-            base + "/dialogue",
-            {"speaker_id": "Ari", "listener_id": "玛拉", "topic": "general", "message": "hi by names"},
+            base + "/api/v1/player/player_one/dialogue",
+            {"listener_id": "玛拉", "topic": "general", "message": "hi by names"},
             headers=player_headers,
         )
         assert by_names["status"] == "accepted", by_names
         missing = _json_request(
-            base + "/dialogue",
-            {"speaker_id": "player_one", "listener_id": "nobody_xyz", "topic": "general", "message": "hi"},
+            base + "/api/v1/player/player_one/dialogue",
+            {"listener_id": "nobody_xyz", "topic": "general", "message": "hi"},
             headers=player_headers,
         )
         assert missing["status"] == "rejected", missing
@@ -549,15 +557,15 @@ def test_observer_feeds_show_npc_dialogue_and_decisions(tmp_path: Path):
             html = response.read().decode("utf-8")
         assert "NPC 对话" in html
         assert "决策动态" in html
-        with urlopen(base + "/observer/dialogue?limit=10") as response:
+        with urlopen(Request(base + "/api/v1/observer/dialogue?limit=10", headers=_observer_headers(server))) as response:
             assert json.loads(response.read())["exchanges"] == []
         assert server.control.platform.submit_dialogue("mara", "selene", "general", "The tide is turning.")["status"] == "accepted"
-        with urlopen(base + "/observer/dialogue?limit=10") as response:
+        with urlopen(Request(base + "/api/v1/observer/dialogue?limit=10", headers=_observer_headers(server))) as response:
             exchanges = json.loads(response.read())["exchanges"]
         assert exchanges[-1]["message"] == "The tide is turning."
         assert exchanges[-1]["speaker"] == "玛拉"
         server.control.platform.inject_event("behavior.completed", {"behavior_id": "travel", "result": "arrived safely"}, actor_id="mara")
-        with urlopen(base + "/observer/decisions?limit=10") as response:
+        with urlopen(Request(base + "/api/v1/observer/decisions?limit=10", headers=_observer_headers(server))) as response:
             decisions = json.loads(response.read())["decisions"]
         assert decisions[-1]["actor"] == "玛拉"
         assert decisions[-1]["event_type"] == "behavior.completed"
@@ -600,21 +608,24 @@ def test_web_sse_pushes_timeline_deltas(tmp_path: Path):
     operator = _operator_headers(server)
     conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=12)
     try:
-        conn.request("GET", "/events/stream?after=0")
+        conn.request("GET", "/api/v1/stream?after=0")
         response = conn.getresponse()
         assert response.status == 200
         assert response.getheader("content-type", "").startswith("text/event-stream")
         name, payload = _sse_read_event(response.fp, _time.monotonic() + 8)
         assert name == "ready", payload
-        assert json.loads(payload)["after"] == 0
-        injected = _json_request(base + "/events", {"event_type": "story.note", "payload": {"text": "sse-ping"}}, headers=operator)
+        ready = json.loads(payload)
+        assert ready["data"]["after"] == 0
+        assert ready["cursor"] >= 0
+        injected = _json_request(base + "/api/v1/operator/events", {"event_type": "story.note", "payload": {"text": "sse-ping"}}, headers=operator)
         assert injected["status"] == "accepted"
         deadline = _time.monotonic() + 10
         seen = False
         while _time.monotonic() < deadline and not seen:
             name, payload = _sse_read_event(response.fp, deadline)
             if name == "timeline":
-                seen = any(item.get("event_id") == injected["event_id"] for item in json.loads(payload).get("events", []))
+                envelope = json.loads(payload)
+                seen = any(item.get("event_id") == injected["event_id"] for item in envelope.get("data", {}).get("events", []))
         assert seen, "SSE did not push the injected event"
     finally:
         conn.close()
@@ -631,14 +642,14 @@ def test_web_idempotency_key_dedupes_retries(tmp_path: Path):
     base = f"http://127.0.0.1:{server.server_port}"
     operator = _operator_headers(server)
     try:
-        before = json.loads(urlopen(base + "/timeline?limit=500").read())
+        before = json.loads(urlopen(Request(base + "/api/v1/observer/timeline?limit=500", headers=operator)).read())
         before_ids = {item["event_id"] for item in before["events"]}
-        first = _json_request(base + "/events", {"event_type": "story.note", "payload": {"n": 1}, "idempotency_key": "retry-1"}, headers=operator)
-        second = _json_request(base + "/events", {"event_type": "story.note", "payload": {"n": 2}, "idempotency_key": "retry-1"}, headers=operator)
+        first = _json_request(base + "/api/v1/operator/events", {"event_type": "story.note", "payload": {"n": 1}, "idempotency_key": "retry-1"}, headers=operator)
+        second = _json_request(base + "/api/v1/operator/events", {"event_type": "story.note", "payload": {"n": 2}, "idempotency_key": "retry-1"}, headers=operator)
         assert first["event_id"] == second["event_id"]
-        third = _json_request(base + "/events", {"event_type": "story.note", "payload": {"n": 3}, "idempotency_key": "retry-2"}, headers=operator)
+        third = _json_request(base + "/api/v1/operator/events", {"event_type": "story.note", "payload": {"n": 3}, "idempotency_key": "retry-2"}, headers=operator)
         assert third["event_id"] != first["event_id"]
-        after = json.loads(urlopen(base + "/timeline?limit=500").read())
+        after = json.loads(urlopen(Request(base + "/api/v1/observer/timeline?limit=500", headers=operator)).read())
         new_ids = {item["event_id"] for item in after["events"]} - before_ids
         assert new_ids == {first["event_id"], third["event_id"]}
     finally:
@@ -655,14 +666,14 @@ def test_web_event_related_traces_causal_chain(tmp_path: Path):
     base = f"http://127.0.0.1:{server.server_port}"
     operator = _operator_headers(server)
     try:
-        first = _json_request(base + "/events", {"event_type": "behavior.started", "payload": {"behavior_id": "travel", "correlation_id": "chain-9"}}, headers=operator)
-        second = _json_request(base + "/events", {"event_type": "behavior.completed", "payload": {"behavior_id": "travel", "result": "ok", "correlation_id": "chain-9"}}, headers=operator)
-        with urlopen(base + f"/events/related?event_id={second['event_id']}") as response:
+        first = _json_request(base + "/api/v1/operator/events", {"event_type": "behavior.started", "payload": {"behavior_id": "travel", "correlation_id": "chain-9"}}, headers=operator)
+        second = _json_request(base + "/api/v1/operator/events", {"event_type": "behavior.completed", "payload": {"behavior_id": "travel", "result": "ok", "correlation_id": "chain-9"}}, headers=operator)
+        with urlopen(Request(base + f"/api/v1/events/{second['event_id']}/related", headers=_observer_headers(server))) as response:
             chain = json.loads(response.read())
         assert chain["status"] == "ok"
         assert chain["event"]["event_id"] == second["event_id"]
         assert first["event_id"] in [item["event_id"] for item in chain["related"]]
-        with urlopen(base + "/events/related?event_id=999999999") as response:
+        with urlopen(Request(base + "/api/v1/events/999999999/related", headers=_observer_headers(server))) as response:
             missing = json.loads(response.read())
         assert missing["status"] == "rejected"
     finally:
@@ -684,26 +695,26 @@ def test_web_runtime_history_and_snapshot_download(tmp_path: Path):
     base = f"http://127.0.0.1:{server.server_port}"
     operator = _operator_headers(server)
     try:
-        started = _json_request(base + "/runtime/start", {"max_world_minutes": 50, "max_llm_calls": 1}, headers=operator)
+        started = _json_request(base + "/api/v1/runtime/start", {"max_world_minutes": 50, "max_llm_calls": 1}, headers=operator)
         assert started["status"] == "accepted", started
-        _wait_until(lambda: not json.loads(urlopen(base + "/runtime").read())["running"])
-        stopped = _json_request(base + "/runtime/stop", {"reason": "hist-stop"}, headers=operator)
+        _wait_until(lambda: not json.loads(urlopen(base + "/api/v1/runtime").read())["running"])
+        stopped = _json_request(base + "/api/v1/runtime/stop", {"reason": "hist-stop"}, headers=operator)
         assert stopped["status"] == "accepted", stopped
-        history = json.loads(urlopen(base + "/runtime").read()).get("history", [])
+        history = json.loads(urlopen(base + "/api/v1/runtime").read()).get("history", [])
         assert history, "runtime history should record finished segments"
         assert history[0]["run_id"] == started["run_id"]
         assert "llm_calls" in history[0] and "prompt_tokens" in history[0]
 
-        created = _json_request(base + "/snapshots", {"label": "hist-dl"}, headers=operator)
+        created = _json_request(base + "/api/v1/operator/snapshots", {"label": "hist-dl"}, headers=operator)
         assert created["status"] == "ok", created
-        download = Request(base + f"/snapshots/download?snapshot_id={created['snapshot_id']}", headers=operator)
+        download = Request(base + f"/api/v1/operator/snapshots/{created['snapshot_id']}/download", headers=operator)
         with urlopen(download) as response:
             assert response.status == 200
             assert response.headers.get("content-type") == "application/octet-stream"
             assert "attachment" in (response.headers.get("content-disposition") or "")
             assert response.read()[:16] == b"SQLite format 3\x00"
         try:
-            urlopen(base + f"/snapshots/download?snapshot_id={created['snapshot_id']}")
+            urlopen(base + f"/api/v1/operator/snapshots/{created['snapshot_id']}/download")
         except HTTPError as error:
             assert error.code == 403
         else:
@@ -767,12 +778,13 @@ def test_web_client_keeps_session_header_when_posting_with_idempotency_key():
     dialog even though unlocking had succeeded.
     """
 
-    source = (Path(__file__).parents[1] / "src" / "sim2" / "web" / "app.js").read_text(encoding="utf-8")
-    request_body = source.split("async function request(", 1)[1].split("function newIdempotencyKey", 1)[0]
+    web = Path(__file__).parents[1] / "src" / "sim2" / "web"
+    source = (web / "js" / "api.js").read_text(encoding="utf-8")
+    request_body = source.split("export async function request(", 1)[1].split("export async function write", 1)[0]
     fetch_body = request_body.split("await fetch(path, {", 1)[1].split("});", 1)[0]
     assert "x-sim2-session" in fetch_body
     assert fetch_body.index("...options") < fetch_body.index("headers:")
-    admin_source = (Path(__file__).parents[1] / "src" / "sim2" / "web" / "admin.js").read_text(encoding="utf-8")
+    admin_source = (web / "js" / "admin_core.js").read_text(encoding="utf-8")
     assert "rememberOperatorToken(result.session_token)" in admin_source
 
 
@@ -784,10 +796,10 @@ def test_operator_session_exchange_and_dialog_wiring(tmp_path: Path):
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
     try:
-        ok = _json_request(base + "/session", {"role": "operator", "operator_token": "fixed-test-token"})
+        ok = _json_request(base + "/api/v1/session", {"role": "operator", "operator_token": "fixed-test-token"})
         assert ok["status"] == "ok" and ok["role"] == "operator" and ok["session_token"]
         try:
-            _json_request(base + "/session", {"role": "operator", "operator_token": "wrong-token"})
+            _json_request(base + "/api/v1/session", {"role": "operator", "operator_token": "wrong-token"})
         except HTTPError as error:
             assert error.code == 403
         else:
@@ -828,12 +840,12 @@ def test_http_request_log_names_session_state_without_tokens(tmp_path: Path):
     try:
         for headers, expected in ((None, "session=none"), ({"x-sim2-session": "stale-token"}, "session=invalid")):
             try:
-                _json_request(base + "/runtime/start", {"max_world_minutes": 1}, headers=headers)
+                _json_request(base + "/api/v1/runtime/start", {"max_world_minutes": 1}, headers=headers)
             except HTTPError as error:
                 assert error.code == 403
             else:
                 raise AssertionError("runtime start without an operator session must be rejected")
-            rejected = [message for message in messages if "POST /runtime/start" in message]
+            rejected = [message for message in messages if "POST /api/v1/runtime/start" in message]
             assert rejected, messages
             assert "-> 403" in rejected[-1]
             assert expected in rejected[-1]
@@ -856,21 +868,21 @@ def test_web_can_resume_an_existing_player(tmp_path: Path):
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
     try:
-        created = _json_request(base + "/players", {"player_id": "web_player", "origin_id": "forager", "name": "Ari"})
+        created = _json_request(base + "/api/v1/player/enter", {"player_id": "web_player", "origin_id": "forager", "name": "Ari"})
         assert created["status"] == "accepted"
         assert created["resumed"] is False
         assert created["session_token"]
 
-        resumed = _json_request(base + "/players", {"player_id": "web_player"})
+        resumed = _json_request(base + "/api/v1/player/enter", {"player_id": "web_player"})
         assert resumed["status"] == "accepted"
         assert resumed["resumed"] is True
         assert resumed["session_token"]
 
         request = Request(
-            base + "/player/view?player_id=web_player",
+            base + "/api/v1/player/web_player/view",
             headers={"x-sim2-session": resumed["session_token"]},
         )
-        with urlopen(base + "/world") as response:
+        with urlopen(base + "/api/v1/world") as response:
             world = json.loads(response.read())
         assert world["title"] == "潮汐公社"
         assert world["locale"] == "zh-CN"
@@ -924,19 +936,120 @@ def test_web_manual_wait_runs_the_same_npc_ticks(tmp_path: Path):
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
     try:
-        created = _json_request(base + "/players", {"player_id": "web_player", "origin_id": "forager"})
+        created = _json_request(base + "/api/v1/player/enter", {"player_id": "web_player", "origin_id": "forager"})
         token = created["session_token"]
-        result = _json_request(
-            base + "/player/wait",
-            {"player_id": "web_player", "minutes": 2, "provider": "remote"},
+        accepted = _json_request(
+            base + "/api/v1/player/web_player/wait",
+            {"minutes": 2, "provider": "remote"},
             headers={"x-sim2-session": token},
         )
-        assert result["status"] == "accepted"
-        assert result["report"]["start_minute"] < result["report"]["end_minute"]
+        assert accepted["status"] == "accepted"
+        task_id = accepted["task"]["task_id"]
+        deadline = time.monotonic() + 10
+        task = accepted["task"]
+        while time.monotonic() < deadline and task["state"] not in {"completed", "failed", "cancelled"}:
+            time.sleep(0.05)
+            task = json.loads(urlopen(Request(
+                base + f"/api/v1/player/web_player/tasks/{task_id}",
+                headers={"x-sim2-session": token},
+            )).read())["task"]
+        assert task["state"] == "completed", task
+        assert task["result"]["report"]["start_minute"] < task["result"]["report"]["end_minute"]
         assert provider_names[-1] == "remote"
         assert provider.contexts
         assert all('"web_player"' not in context for context in provider.contexts)
         assert any(name in context for context in provider.contexts for name in ("玛拉", "伊沃", "塞琳", "塔罗", "妮娅", "伦"))
+    finally:
+        server.close()
+        thread.join(timeout=3)
+
+
+def test_wait_task_returns_fast_and_keeps_concurrent_reads_responsive(tmp_path: Path):
+    """A manual wait must not serialize the HTTP server behind one long request."""
+
+    config = Path(__file__).parents[1] / "worlds" / "tidebound_commons"
+    db_path = create_instance(config, "web-task-latency", tmp_path / "runtime")
+
+    class SlowProvider:
+        cooldown_remaining = 0.0
+
+        def complete_json(self, *, system, context, tools=None, messages=None):
+            time.sleep(0.05)
+            return {"intent_type": "wait", "reason": "Keep NPC decisions short but non-zero."}
+
+    def providers(_name):
+        provider = SlowProvider()
+        return {role: provider for role in ("agent_decision", "agent_reflection", "god", "story")}
+
+    server = ControlHTTPServer(
+        ("127.0.0.1", 0),
+        db_path,
+        runtime_provider_factory=providers,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        entered = _json_request(base + "/api/v1/player/enter", {"player_id": "hero", "origin_id": "steward"})
+        token = entered["session_token"]
+        headers = {"x-sim2-session": token}
+        view = json.loads(urlopen(Request(base + "/api/v1/player/hero/view", headers=headers)).read())
+        travel = next(item for item in view["actions"] if item.get("kind") == "travel")
+        _json_request(
+            base + "/api/v1/player/hero/actions",
+            {"behavior_ref": travel["ref"], "parameters": travel["parameters"], "confidence": 1},
+            headers=headers,
+        )
+
+        started = time.monotonic()
+        accepted = _json_request(
+            base + "/api/v1/player/hero/wait",
+            {"minutes": 60, "provider": "remote"},
+            headers=headers,
+        )
+        elapsed = time.monotonic() - started
+        assert elapsed < 2.0, elapsed
+        assert accepted["status"] == "accepted"
+        task_id = accepted["task"]["task_id"]
+
+        for _ in range(3):
+            urlopen(Request(base + "/api/v1/player/hero/view", headers=headers)).read()
+        samples: list[float] = []
+        runtime_samples: list[float] = []
+        task = accepted["task"]
+        deadline = time.monotonic() + 30
+        index = 0
+        while time.monotonic() < deadline and task["state"] not in {"completed", "failed", "cancelled"}:
+            begin = time.monotonic()
+            with urlopen(Request(base + "/api/v1/player/hero/view", headers=headers)) as response:
+                assert json.loads(response.read())["status"] == "ok"
+            samples.append((time.monotonic() - begin) * 1000)
+            begin = time.monotonic()
+            with urlopen(base + "/api/v1/runtime") as response:
+                assert json.loads(response.read())["state"]
+            runtime_samples.append((time.monotonic() - begin) * 1000)
+            index += 1
+            time.sleep(0.02)
+            if index % 10 == 0:
+                task = json.loads(urlopen(Request(
+                    base + f"/api/v1/player/hero/tasks/{task_id}",
+                    headers=headers,
+                )).read())["task"]
+        if task["state"] not in {"completed", "failed", "cancelled"}:
+            task = json.loads(urlopen(Request(
+                base + f"/api/v1/player/hero/tasks/{task_id}",
+                headers=headers,
+            )).read())["task"]
+        assert task["state"] == "completed", task
+        assert samples and runtime_samples
+        # The wait task must not serialize cheap reads behind the full player
+        # projection.  The projection itself is CPU-bound (~100 ms median), so
+        # its gate is the median; the runtime read is the lock-contention gate.
+        ordered = sorted(samples)
+        view_median = ordered[len(ordered) // 2]
+        assert view_median < 200.0, (view_median, ordered[-1], len(samples))
+        runtime_p95 = sorted(runtime_samples)[min(len(runtime_samples) - 1, int(len(runtime_samples) * 0.95))]
+        assert runtime_p95 < 200.0, (runtime_p95, len(runtime_samples))
     finally:
         server.close()
         thread.join(timeout=3)

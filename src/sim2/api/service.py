@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import copy
+import threading
+
 from pathlib import Path
 from typing import Any
 
@@ -379,6 +382,9 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
     }
     return {
         "status": "ok",
+        "revision": int(platform.store.repositories.metadata.get("world_revision", 0) or 0),
+        "last_event_id": platform.store.repositories.events.latest_event_id(),
+        "server_minute": int(platform.store.repositories.metadata.get("world_minute", 0) or 0),
         "world_id": map_view.get("world_id"),
         "world_time": decision.get("world_time"),
         "player": player_projection,
@@ -423,6 +429,8 @@ class ControlService:
                 if candidate.is_dir():
                     authoring_root = candidate
         self.authoring = AuthoringService(authoring_root, runtime_root=runtime_root)
+        self._view_cache: dict[tuple[str, int], dict[str, Any]] = {}
+        self._view_cache_lock = threading.RLock()
 
     def close(self) -> None:
         self.platform.close()
@@ -529,9 +537,28 @@ class ControlService:
         }
 
     def player_view(self, player_id: str) -> dict[str, Any]:
-        """Build a compact, playable projection for one player."""
+        """Build a compact, playable projection for one player.
 
-        return build_player_view(self.platform, player_id)
+        ``world_revision`` advances on every committed transaction, so it is a
+        safe cache key for a read model that only depends on current state.
+        The cache mainly serves SSE-driven refresh bursts; it never replaces a
+        write or bypasses a Platform visibility boundary.
+        """
+
+        with self.platform.store.read_transaction():
+            revision = int(self.platform.store.repositories.metadata.get("world_revision", 0) or 0)
+        key = (str(player_id), revision)
+        with self._view_cache_lock:
+            cached = self._view_cache.get(key)
+            if cached is not None:
+                return copy.deepcopy(cached)
+        view = build_player_view(self.platform, player_id)
+        if view.get("status") == "ok":
+            with self._view_cache_lock:
+                if len(self._view_cache) >= 128:
+                    self._view_cache.pop(next(iter(self._view_cache)))
+                self._view_cache[key] = view
+        return view
 
     def player_act(self, body: dict[str, Any]) -> dict[str, Any]:
         player_id = str(body.get("player_id") or "").strip()
@@ -783,6 +810,8 @@ class ControlService:
         return str(self.platform.snapshot(destination))
 
     def restore(self, source: Path) -> dict[str, Any]:
+        with self._view_cache_lock:
+            self._view_cache.clear()
         return self.platform.restore_snapshot(source)
 
     def authoring_schema(self) -> dict[str, Any]:

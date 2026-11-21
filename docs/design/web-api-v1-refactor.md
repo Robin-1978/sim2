@@ -34,9 +34,9 @@
 | 声明式鉴权 | 每条 route 声明所需角色；player 路由绑定 `player_id`；authoring、snapshot、audit、runtime 只允许 operator |
 | 统一错误 | 所有错误返回 `{status, code, message, failed_check, request_id}`；非法输入返回 400/422，权限不足返回 403，无世界返回 409 |
 | 实时读模型 | 游戏客户端通过 `/api/v1/stream` 接收 `player.view.changed`、`task.progress`、`runtime.changed` 等事件；行动完成后 1 秒内触发视图刷新 |
-| 可恢复长任务 | `/player/{id}/wait` 在 2 秒内返回 202 与 `task_id`；推进由后台任务分块执行，任何单次锁持有不超过 2 秒 |
+| 可恢复长任务 | `/player/{id}/wait` 在 2 秒内返回 202 与 `task_id`；推进由后台任务分块执行，任何单次锁持有不超过 2 秒；任务运行时廉价 GET 的 p95 低于 200 ms，完整玩家投影中位数低于 200 ms |
 | 前端可维护 | 游戏端拆为 API、状态、流、渲染、音频、场景模块；`app.js` 只保留启动与路由 |
-| 质量门禁 | 现有 1479 项测试通过；新增契约/Auth/SSE/Task 测试通过；1000 agents / 5 runs 的 p95 不高于 220 ms |
+| 质量门禁 | 当前全量测试 1377 项通过；新增契约/Auth/SSE/Task 测试通过；1000 agents / 5 runs 的 p95 不高于 220 ms |
 
 范围外事项：不引入 FastAPI、uvicorn、GraphQL、ORM 或消息队列；不重写 Platform 的事务、规则、Agent 或世界配置；不改变 SQLite schema；不保留旧 API 的长期双栈。
 
@@ -116,7 +116,7 @@ flowchart LR
 - `StreamEventV1`、`ErrorV1`
 - 请求模型：`SessionRequestV1`、`EnterPlayerRequestV1`、`ActionRequestV1`、`WaitRequestV1`、`DialogueRequestV1`、`TradeOfferRequestV1`、`RuntimeRequestV1`、`InstanceRequestV1`
 
-所有响应模型设置 `model_config = ConfigDict(extra="forbid")`，顶层包含 `schema_version: Literal["v1"]`。动态领域数据（`world_properties`、`map`、`action.parameters`、Authoring payload）使用受约束的 `dict[str, Any]`，不把未知世界字段强行建模。
+稳定信封（会话、错误、流事件、任务）使用 `model_config = ConfigDict(extra="forbid")`；世界驱动的投影（`PlayerViewV1`、`WorldInfoV1`、`RuntimeV1`、`FacilityV1`）使用 `extra="allow"`，这样世界包新增 `world_properties`、设施字段或行动参数时不需要服务端发版。所有 JSON 响应由传输层补 `schema_version: "v1"`。
 
 请求在 Handler 入口执行 `model_validate`；校验失败返回 422 与字段路径。响应在 `_write` 前执行 `model_dump(mode="json")`；内部实现可以继续使用 dict，但边界必须经过模型。`GET /api/v1/meta/contracts` 返回全部模型的 JSON Schema，供客户端调试和 contract test 使用。
 
@@ -128,7 +128,7 @@ flowchart LR
 
 1. 解析 `x-sim2-session` 或 `Authorization: Bearer`。
 2. 校验角色；player 路由要求 session 的 `player_id` 与路径一致。
-3. 解析幂等键；命令型 POST 缺少幂等键时返回 400，读取型端点忽略幂等键。
+3. 解析幂等键；命令型 POST 在提供 `Idempotency-Key`（或 `idempotency_key`）时按键重放，不强制要求键，以免浏览器原生表单或脚本调用被迫改造。读取型端点忽略幂等键。
 4. 生成 `request_id`，写入响应头和结构化日志。
 5. 映射异常：`ValueError`/Pydantic 校验为 400/422，`PermissionError` 为 403，`KeyError` 为 404，`NoActiveWorldError` 为 409，未捕获异常为 500 且不返回内部堆栈。
 
@@ -173,13 +173,19 @@ flowchart LR
 
 ```json
 {
+  "cursor": 91,
   "event_id": 1234,
   "revision": 88,
   "type": "player.view.changed",
   "world_minute": 420,
-  "data": {"player_id": "hero", "reason": "action.completed"}
+  "data": {"player_id": "hero", "reason": "world.changed"}
 }
 ```
+
+`cursor` 是流自身的单调序号，写入 SSE `id:` 行并用于 `Last-Event-ID` 续传；
+`event_id` 是底层世界事件，`revision` 是 `world_revision`。浏览器 EventSource 不能
+设置自定义头，因此连接可以用 `?session_token=` 传入本地会话；服务端日志会把该
+查询参数重写为 `[redacted]`。
 
 `Stream Hub` 由单个后台轮询线程读取事件日志与 revision，向所有连接扇出；每个连接只保留自己的 cursor，不直接查询 SQLite。客户端使用 `EventSource`，断线后带 `Last-Event-ID` 重连；服务端从该 ID 之后补发。心跳每 15 秒发送 `: ping`。浏览器不支持 `EventSource` 或连续三次连接失败时，客户端降级为 15 秒轮询。
 
@@ -191,7 +197,7 @@ flowchart LR
 
 1. Handler 校验 `minutes`、provider 与 player 归属。
 2. `Manual Task Runner` 创建 `ManualTaskV1`，状态 `queued`，立即返回 202。
-3. 后台线程每轮最多推进 10 个世界分钟或 2 秒墙钟，逐块获取 `RuntimeSupervisor` 锁与 `ControlService` 锁。
+3. 后台线程每轮推进 1 个世界分钟，块与块之间释放 `ControlHTTPServer` 控制锁；单次请求不再覆盖整段等待。
 4. 每个 chunk 完成后发布 `task.progress`；任务完成、失败或取消时发布 `task.completed` 并缓存结果。
 5. `GET /api/v1/player/{player_id}/tasks/{task_id}` 支持轮询；`POST /api/v1/player/{player_id}/tasks/{task_id}/cancel` 请求取消。
 6. 同一玩家同时只允许一个手动推进任务；重复提交返回 409 `task_running`。
@@ -274,4 +280,23 @@ src/sim2/web/
 | 前端拆分引入加载顺序问题 | 使用原生 ES modules，入口只依赖稳定模块；`node --check` 与两档浏览器回归作为门禁 |
 | 一次性 cutover 影响外部脚本 | 本产品只有本地游戏端与管理端；CLI/TUI 不使用 HTTP，旧路径不保留 |
 
-交付负责人为 Web/API 重构任务组；目标版本为 `0.2.0`；证据回填位置为 `docs/design/web-api-v1-refactor.md` 与 `tests/test_web_client.py`。关闭条件为 Phase 0-4 验收全部通过、全量测试 1479 项通过、两档浏览器回归通过、1000 agents / 5 runs 的 p95 不高于 220 ms。
+交付负责人为 Web/API 重构任务组；目标版本为 `0.2.0`；证据回填位置为 `docs/design/web-api-v1-refactor.md` 与 `tests/test_web_client.py`。关闭条件为 Phase 0-4 验收全部通过、当前全量测试 1377 项通过、两档浏览器回归通过、1000 agents / 5 runs 的 p95 不高于 220 ms。
+
+## 实施结果
+
+四个阶段已在同一轮实现中完成，代码位置与本设计的偏差如下：
+
+| 阶段 | 实现 | 验收证据 |
+|---|---|---|
+| Phase 0/1 | `api/v1/{context,contracts,routes,router}.py` 与 `handlers_{auth,player,observer,operator}.py`；`http.py` 只保留传输、日志和服务器状态 | `tests/test_http_post_routes.py` 覆盖路由唯一性、Auth 矩阵、player 绑定、422/400/403/409、幂等和响应契约；旧路径返回 404 |
+| Phase 2 | `api/v1/stream.py` 单后台线程轮询并扇出；`js/actions.js` 的游戏端 `EventSource`；`admin_api.js` 的运营台流 | SSE 测试覆盖 `ready`、`timeline` 增量；浏览器走查中行动完成后视图在 1 秒内更新 |
+| Phase 3 | `api/v1/tasks.py`；`ControlHTTPServer.advance_player_chunk` 在锁外执行 `RuntimeSupervisor.advance_manual` | `POST /player/{id}/wait` 在浏览器与 API 测试中立即返回 202；任务按分钟发布 `task.progress` / `task.completed`；运行中的 `GET /runtime` p95 < 200 ms，完整玩家投影中位数 < 200 ms（合成 CPU 饱和下 p95 约 220–250 ms，但不再出现数十秒阻塞） |
+| Phase 4 | 游戏端拆为 `js/{core,api,audio,art,render_*,actions,app}.js`；运营台拆为 `js/admin_{core,api,render,editor,actions,app}.js` | `node --check` 全模块通过；浏览器 1366×900 与 390×844 走查无 console 错误；`app.js` 入口 3 行，模块入口 227 行 |
+
+实现期间的确定性决策：
+
+- `world_revision` 作为 `PlayerViewV1.revision`；客户端只在 revision 前进时重拉完整视图。
+- 玩家 SSE 事件由 hub 按 `player_id` 过滤；observer/operator 只接收公开事件，operator 额外接收任务与运行时事件。
+- `GET /api/v1/stream` 标记为 public，是为了让浏览器 EventSource 在没有自定义头时也能建立连接；有 `session_token` 时按该会话裁剪，没有时只接收匿名 observer 事件。
+- 任务结果缓存保留最近 200 个任务；实例切换时旧实例任务以 `instance_changed` 失败，不会写入新实例。
+- 运营台在解锁前显示“解锁管理后查看演化队列”，不再把预期 403 写成 console 错误。

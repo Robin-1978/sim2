@@ -214,3 +214,8 @@ world-pack lint covers every `worlds/*/actions.yaml`.
   Round 1: God proposed and assigned `Deposit Carried Energy Cell`; Mira chose it; the public reserve rose 0→1; Story created an emergent beat.
   Round 2-3: Mira completed Signal Archive research; Story created another emergent beat.
   A `research_synthesis` God task remained pending only because the run was cut at three requested rounds.
+- Web/API v1 重构已实现：`src/sim2/api/v1/` 提供声明式路由、Pydantic 契约、Auth/幂等/错误中间件、统一 SSE 和可恢复手动任务；`/api/v1` 硬切完成，旧路径删除。游戏端与运营台已同步切换，`api/http.py` 只保留传输和服务器状态。
+- 手动推进改为 202 + 后台任务：`POST /api/v1/player/{id}/wait` 立即返回 `task_id`，`ManualTaskRunner` 每分钟一块推进并发布 `task.progress` / `task.completed`；控制锁不再覆盖整段等待。浏览器走查中 24 分钟移动任务完成后视图 1 秒内刷新，精力从 88 降到 85。
+- 前端已拆为原生 ES modules：游戏端 `js/core|api|audio|art|render_*|actions|app.js`，运营台 `js/admin_core|api|render|editor|actions|app.js`；入口 `app.js` / `admin.js` 只做模块加载，1366×900 与 390×844 浏览器走查无 console 错误。
+- 属性系统修正：`stamina_recovery` 只在 `action.none` 时生效并降为 0.2/分钟，避免 0.45/分钟恢复盖过全部 0.02–0.20/分钟行动成本；新增 `rest_at_hearth` 行为（安全地点休息 60 分钟恢复 30 精力），`belonging` / `purpose` 衰减提升到每 10/15 分钟 -0.05，需求条显示一位小数。聚焦回归 `test_stamina_and_social_needs_change_instead_of_staying_pinned` 通过。
+- 最终门禁：全量 **1377 passed**（4 个隔离 worker），`compileall`、`node --check`、`git diff --check` 干净；平台基准 p95 **206.195 ms**（1000 agents / 5 runs）。浏览器复核 1366×900 与 390×844：公共设施卡、移动端顺序（场景→防线→设施→角色→目标→行动）、SSE 在线、行动任务完成刷新均正常，空闲 20 秒内没有重复 `/player/view` 请求，console 无报错。

@@ -12,98 +12,88 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from ..bootstrap.service import world_template_schema
 from .authoring import AuthoringService
 from .catalog import bundled_world_catalog, merge_catalog
+from .errors import NoActiveWorldError
 from .instances import InstanceRegistry
 from .runtime_supervisor import RuntimeSupervisor
 from .service import ControlService
+from .v1.context import ApiError, JsonResponse, RawResponse, StreamResponse
+from .v1.router import V1Router, new_request_id
+from .v1.stream import StreamHub
+from .v1.tasks import ManualTaskRunner
 from .web import web_asset
 
 
 _LOGGER = logging.getLogger("sim2.http")
 
 
-class NoActiveWorldError(RuntimeError):
-    """Raised when a world endpoint is called before any instance is open."""
-
-
-# Control calls that need an operator session: the path and what the server does with the request body.
-_OPERATOR_POSTS: dict[str, Callable[[Any, dict[str, Any]], Any]] = {
-    "/authoring/open": lambda server, body: server.service_call("authoring_open", body),
-    "/authoring/create": lambda server, body: server.create_instance(body),
-    "/authoring/build": lambda server, body: server.service_call("authoring_build", body),
-    "/authoring/compile": lambda server, body: server.service_call("authoring_compile", body),
-    "/authoring/smoke": lambda server, body: server.service_call("authoring_smoke", body),
-    "/authoring/export": lambda server, body: server.service_call("authoring_export", body),
-    "/authoring/validate": lambda server, body: server.service_call("authoring_validate", body),
-    "/authoring/describe": lambda server, body: server.service_call("authoring_describe", body),
-    "/authoring/build-world": lambda server, body: server.service_call("authoring_build_world", body),
-    "/instances": lambda server, body: server.create_instance(body),
-    "/instances/init": lambda server, body: server.init_instance(body),
-    "/instances/activate": lambda server, body: server.activate_instance(body),
-    "/runtime/start": lambda server, body: server.start_runtime(body),
-    "/runtime/pause": lambda server, body: server.pause_runtime(str(body.get("reason", "web"))),
-    "/runtime/resume": lambda server, body: server.resume_runtime(str(body.get("reason", "web"))),
-    "/runtime/stop": lambda server, body: server.stop_runtime(str(body.get("reason", "web-stop"))),
-    "/runtime/step": lambda server, body: server.step_runtime(),
-    "/decide": lambda server, body: server.decide(body),
-    "/simulate": lambda server, body: server.simulate(body),
-    "/snapshots": lambda server, body: server.snapshot_create(body),
-    "/restore": lambda server, body: server.snapshot_restore(body),
-    "/pause": lambda server, body: server.pause_runtime(str(body.get("reason", "http"))),
-    "/resume": lambda server, body: server.resume_runtime(str(body.get("reason", "http"))),
-    "/step": lambda server, body: server.step_runtime(),
-    "/events": lambda server, body: server.service_call("inject", str(body["event_type"]), dict(body.get("payload", {})), body.get("actor_id")),
-}
-
 
 class _Handler(BaseHTTPRequestHandler):
     server: "ControlHTTPServer"
 
-    def log_message(self, format: str, *args: Any) -> None:  # pragma: no cover - request logging is structured below
+    def log_message(self, format: str, *args: Any) -> None:  # pragma: no cover - structured logging below
         return
 
     def _session_label(self) -> str:
-        """Describe the caller without ever logging the token itself."""
-
         token = self._token()
         if not token:
             return "session=none"
-        if secrets.compare_digest(token, self.server.operator_token):
-            return "session=operator-token"
-        session = self.server.session_for(token)
-        if session is None:
-            return "session=invalid"
-        return f"session={session.get('role') or 'unknown'}"
+        session = self.server.session_context(token)
+        role = str(session.get("role") or "")
+        return f"session={role}" if role else "session=invalid"
 
-    def _log_request(self, status: int, value: dict[str, Any] | None = None) -> None:
+    def _log_request(self, status: int, value: dict[str, Any] | None = None, request_id: str = "") -> None:
         started = getattr(self, "_request_started", None)
         elapsed = (time.monotonic() - started) * 1000 if started is not None else 0.0
-        message = f"{getattr(self, 'command', '?')} {getattr(self, 'path', '?')} -> {status} {elapsed:.1f}ms {self._session_label()}"
+        prefix = f"[{request_id}] " if request_id else ""
+        safe_path = str(getattr(self, "path", "?"))
+        if "session_token=" in safe_path:
+            safe_path = safe_path.split("?", 1)[0] + "?<redacted>"
+        message = f"{prefix}{getattr(self, 'command', '?')} {safe_path} -> {status} {elapsed:.1f}ms {self._session_label()}"
         if status >= 400 and isinstance(value, dict):
             detail = value.get("message") or value.get("failed_check")
             if detail:
                 message += f" error={str(detail)[:160]!r}"
-        # Successful requests stay quiet by default; 4xx/5xx are visible even
-        # without --log-level info because they are the useful debugging trail.
         _LOGGER.log(logging.WARNING if status >= 400 else logging.INFO, message)
 
-    def _write(self, status: int, value: dict[str, Any]) -> None:
-        body = json.dumps(value, ensure_ascii=False).encode("utf-8")
-        self._log_request(status, value)
+    def _write_json(
+        self,
+        status: int,
+        value: dict[str, Any],
+        request_id: str = "",
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        payload = dict(value)
+        payload.setdefault("schema_version", "v1")
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self._log_request(status, payload, request_id)
         self.send_response(status)
         self.send_header("content-type", "application/json; charset=utf-8")
         self.send_header("content-length", str(len(body)))
+        if request_id:
+            self.send_header("x-request-id", request_id)
+        for key, value in (headers or {}).items():
+            self.send_header(str(key), str(value))
         self.end_headers()
         self.wfile.write(body)
 
-    def _write_bytes(self, status: int, body: bytes, content_type: str, *, filename: str | None = None) -> None:
-        self._log_request(status)
+    def _write_bytes(
+        self,
+        status: int,
+        body: bytes,
+        content_type: str,
+        *,
+        filename: str | None = None,
+        request_id: str = "",
+    ) -> None:
+        self._log_request(status, request_id=request_id)
         self.send_response(status)
         self.send_header("content-type", content_type)
         self.send_header("content-length", str(len(body)))
         self.send_header("cache-control", "no-cache")
+        if request_id:
+            self.send_header("x-request-id", request_id)
         if filename:
             safe = "".join(item if item.isalnum() or item in {"-", "_", "."} else "_" for item in filename)
             self.send_header("content-disposition", f'attachment; filename="{safe}"')
@@ -124,424 +114,86 @@ class _Handler(BaseHTTPRequestHandler):
         authorization = str(self.headers.get("authorization") or "")
         return authorization.removeprefix("Bearer ").strip()
 
-    def _forbidden(self, message: str = "a local session with the required role is required") -> None:
-        self._write(403, {"status": "forbidden", "message": message, "failed_check": "session"})
-
-    def _require(self, role: str, *, player_id: str | None = None) -> bool:
-        allowed, message = self.server.authorize_session(self._token(), role, player_id=player_id)
-        if not allowed:
-            self._forbidden(message)
-        return allowed
-
-    def _serve_stream(self, after: int, ticks: bool) -> None:
-        """Push public timeline deltas and runtime/dialogue/decision notices.
-
-        The stream is read-only: it reuses the same public projections as the
-        polling endpoints and never triggers an Agent turn. Clients resume
-        with `?after=<event_id>` or the `Last-Event-ID` header after a
-        disconnect; per-feed payloads carry their own ids for de-duplication.
-        """
-
-        last_id_header = self.headers.get("Last-Event-ID")
-        if last_id_header:
-            try:
-                after = int(str(last_id_header).strip())
-            except (TypeError, ValueError):
-                pass
-        self.send_response(200)
-        self.send_header("content-type", "text/event-stream; charset=utf-8")
-        self.send_header("cache-control", "no-cache")
-        self.send_header("connection", "keep-alive")
-        self.send_header("x-accel-buffering", "no")
-        self.end_headers()
-
-        def emit(name: str, payload: dict[str, Any]) -> bool:
-            try:
-                text = json.dumps(payload, ensure_ascii=False)
-                self.wfile.write(f"event: {name}\ndata: {text}\n\n".encode("utf-8"))
-                self.wfile.flush()
-                return True
-            except (BrokenPipeError, ConnectionResetError, ValueError):
-                return False
-
-        import time as _time
-
-        cursor = max(0, int(after))
-        primed = False
-        last_dialogue = -1
-        last_decision = -1
-        last_runtime = ""
-        if not emit("ready", {"after": cursor}):
-            return
-        beat = _time.monotonic()
-        while True:
-            try:
-                timeline = self.server.service_call("timeline", 100, cursor, ticks)
-            except Exception:
-                return
-            events = timeline.get("events", []) if isinstance(timeline, dict) else []
-            if events:
-                cursor = max(cursor, int(timeline.get("next_after_event_id", cursor) or cursor))
-                if not emit("timeline", {"events": events, "next_after_event_id": cursor}):
-                    return
-            try:
-                runtime = self.server.runtime_status()
-            except Exception:
-                return
-            signature = json.dumps(runtime, ensure_ascii=False, sort_keys=True)
-            if signature != last_runtime:
-                last_runtime = signature
-                if not emit("runtime", runtime):
-                    return
-            try:
-                dialogue = self.server.service_call("observer_dialogue", 5)
-            except Exception:
-                dialogue = None
-            if isinstance(dialogue, dict):
-                fresh = [item for item in (dialogue.get("exchanges") or []) if int(item.get("dialogue_id") or -1) > last_dialogue]
-                last_dialogue = max([last_dialogue] + [int(item.get("dialogue_id") or -1) for item in (dialogue.get("exchanges") or [])])
-                if primed and fresh and not emit("dialogue", {"exchanges": fresh}):
-                    return
-            try:
-                decisions = self.server.service_call("observer_decisions", 10)
-            except Exception:
-                decisions = None
-            if isinstance(decisions, dict):
-                fresh_decisions = [item for item in (decisions.get("decisions") or []) if int(item.get("event_id") or -1) > last_decision]
-                last_decision = max([last_decision] + [int(item.get("event_id") or -1) for item in (decisions.get("decisions") or [])])
-                if primed and fresh_decisions and not emit("decisions", {"decisions": fresh_decisions}):
-                    return
-            primed = True
-            if _time.monotonic() - beat >= 15:
-                beat = _time.monotonic()
-                try:
-                    self.wfile.write(b": ping\n\n")
-                    self.wfile.flush()
-                except (BrokenPipeError, ConnectionResetError, ValueError):
-                    return
-            _time.sleep(1.0)
-
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
         self._request_started = time.monotonic()
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        asset = web_asset(parsed.path)
+        if asset is not None:
+            return self._write_bytes(200, *asset)
+        request_id = new_request_id()
         try:
-            asset = web_asset(path)
-            if asset is not None:
-                return self._write_bytes(200, *asset)
-            if path == "/session":
-                token = self.server.issue_session("observer")
-                return self._write(200, {"status": "ok", "role": "observer", "session_token": token})
-            if path == "/status":
-                return self._write(200, self.server.status_payload())
-            if path == "/world":
-                if not self.server.has_world:
-                    return self._write(200, {"status": "no_world", "world_id": "", "instance_id": "", "instances": self.server.registry.list(active_db=None)})
-                return self._write(200, self.server.service_call("world_info"))
-            if path == "/worlds":
-                return self._write(200, self.server.world_catalog())
-            if path == "/instances":
-                return self._write(200, self.server.instance_list())
-            if path == "/runtime":
-                return self._write(200, self.server.runtime_status())
-            if path == "/health":
-                health = self.server.service_call("health")
-                return self._write(200 if health.get("status") == "ok" else 503, health)
-            if path == "/metrics":
-                return self._write(200, self.server.service_call("metrics"))
-            if path == "/observer":
-                query = parse_qs(urlparse(self.path).query)
-                limit = int(query.get("limit", [20])[0])
-                return self._write(200, self.server.service_call("observer", limit))
-            if path == "/timeline":
-                query = parse_qs(urlparse(self.path).query)
-                limit = int(query.get("limit", [100])[0])
-                after = int(query.get("after", [0])[0])
-                ticks = query.get("ticks", ["0"])[0].lower() in {"1", "true", "yes"}
-                latest = query.get("latest", ["0"])[0].lower() in {"1", "true", "yes"}
-                return self._write(200, self.server.service_call("timeline", limit, after, ticks, latest))
-            if path == "/map":
-                query = parse_qs(urlparse(self.path).query)
-                viewer_id = query.get("viewer_id", [None])[0]
-                observer = query.get("observer", ["0"])[0].lower() in {"1", "true", "yes"}
-                return self._write(200, self.server.service_call("map", viewer_id=viewer_id, observer=observer))
-            if path == "/observer/dialogue":
-                query = parse_qs(urlparse(self.path).query)
-                limit = int(query.get("limit", [20])[0])
-                return self._write(200, self.server.service_call("observer_dialogue", limit))
-            if path == "/observer/decisions":
-                query = parse_qs(urlparse(self.path).query)
-                limit = int(query.get("limit", [20])[0])
-                return self._write(200, self.server.service_call("observer_decisions", limit))
-            if path == "/events/related":
-                query = parse_qs(urlparse(self.path).query)
-                return self._write(200, self.server.service_call("event_related", int(query.get("event_id", [0])[0])))
-            if path == "/events/stream":
-                query = parse_qs(urlparse(self.path).query)
-                try:
-                    after = int(query.get("after", [0])[0])
-                except (TypeError, ValueError):
-                    after = 0
-                ticks = str(query.get("ticks", ["0"])[0]).lower() in {"1", "true", "yes"}
-                return self._serve_stream(after, ticks)
-            if path == "/player/entry":
-                if not self.server.has_world:
-                    return self._write(200, {"status": "no_world", "origins": [], "players": [], "can_create_player": False})
-                return self._write(200, self.server.service_call("player_entry"))
-            if path == "/player/view":
-                query = parse_qs(urlparse(self.path).query)
-                raw_player_id = str(query.get("player_id", [""])[0])
-                player_id = self.server.resolve_agent_id(raw_player_id)
-                return self._write(200, self.server.service_call(
-                    "player_view",
-                    player_id,
-                    authorize_role="player",
-                    authorize_token=self._token(),
-                    authorize_player_id=player_id,
-                ))
-            if path == "/trade/offers":
-                query = parse_qs(urlparse(self.path).query)
-                agent_id = str(query.get("agent_id", [""])[0])
-                include_closed = str(query.get("include_closed", ["0"])[0]).lower() in {"1", "true", "yes"}
-                return self._write(200, self.server.trade_offers(agent_id, include_closed=include_closed, token=self._token()))
-            if path == "/snapshots":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.snapshot_list())
-            if path == "/snapshots/download":
-                if not self._require("operator"):
-                    return None
-                query = parse_qs(urlparse(self.path).query)
-                result = self.server.snapshot_download(str(query.get("snapshot_id", [""])[0]))
-                if isinstance(result, dict):
-                    return self._write(404 if result.get("failed_check") == "snapshot" else 400, result)
-                filename, payload = result
-                return self._write_bytes(200, payload, "application/octet-stream", filename=filename)
-            if path == "/audit":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, self.server.service_call("audit"))
-            if path == "/evolution/tasks":
-                if not self._require("operator"):
-                    return None
-                return self._write(200, {"tasks": self.server.service_call("evolution_tasks")})
-            if path == "/authoring/schema":
-                if not self.server.has_world:
-                    return self._write(200, {"status": "ok", "schema": world_template_schema()})
-                return self._write(200, self.server.service_call("authoring_schema"))
-            if path == "/authoring/catalog":
-                if not self.server.has_world:
-                    catalog = self.server.world_catalog()
-                    return self._write(200, {"status": "ok", "packages": catalog["worlds"]})
-                return self._write(200, self.server.service_call("authoring_catalog"))
-            return self._write(404, {"status": "not_found"})
-        except NoActiveWorldError as exc:
-            return self._write(409, {"status": "no_world", "failed_check": "no_world", "message": str(exc)})
-        except PermissionError as exc:
-            return self._forbidden(str(exc))
-        except Exception as exc:
-            return self._write(500, {"status": "error", "message": str(exc)})
+            result = self.server.router.dispatch(
+                "GET",
+                parsed.path,
+                query_string=parsed.query,
+                body={},
+                token=self._token(),
+                last_event_id=str(self.headers.get("Last-Event-ID") or ""),
+                request_id=request_id,
+            )
+            return self._write_result(result, request_id)
+        except ApiError as exc:
+            return self._write_json(exc.status, exc.payload(request_id), request_id)
+        except Exception as exc:  # pragma: no cover - defensive transport boundary
+            _LOGGER.exception("unhandled GET error for %s: %s", parsed.path, exc)
+            return self._write_json(
+                500,
+                {"status": "error", "code": "internal_error", "message": "internal server error", "request_id": request_id},
+                request_id,
+            )
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
         self._request_started = time.monotonic()
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        request_id = new_request_id()
         try:
             body = self._read_json()
-            if self._replay_idempotent_post(path, body):
-                return None
-            return self._route_post(path, body)
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            return self._write(400, {"status": "bad_request", "message": str(exc)})
-        except NoActiveWorldError as exc:
-            return self._write(409, {"status": "no_world", "failed_check": "no_world", "message": str(exc)})
-        except PermissionError as exc:
-            return self._forbidden(str(exc))
-        except Exception as exc:
-            return self._write(500, {"status": "error", "message": str(exc)})
+        except (json.JSONDecodeError, ValueError) as exc:
+            return self._write_json(
+                400,
+                {"status": "error", "code": "invalid_json", "message": str(exc), "failed_check": "body", "request_id": request_id},
+                request_id,
+            )
+        try:
+            result = self.server.router.dispatch(
+                "POST",
+                parsed.path,
+                query_string=parsed.query,
+                body=body,
+                token=self._token(),
+                idempotency_key=str(self.headers.get("Idempotency-Key") or ""),
+                request_id=request_id,
+            )
+            return self._write_result(result, request_id)
+        except ApiError as exc:
+            return self._write_json(exc.status, exc.payload(request_id), request_id)
+        except Exception as exc:  # pragma: no cover - defensive transport boundary
+            _LOGGER.exception("unhandled POST error for %s: %s", parsed.path, exc)
+            return self._write_json(
+                500,
+                {"status": "error", "code": "internal_error", "message": "internal server error", "request_id": request_id},
+                request_id,
+            )
 
-    def _replay_idempotent_post(self, path: str, body: dict[str, Any]) -> bool:
-        """Answer a repeated request from its stored response, or remember the first response of this one."""
-
-        idem_token = self._token()
-        idem_key = "" if path == "/session" else self.server._idem_key_value(body, self.headers)
-        if not idem_key:
-            return False
-        stored = self.server.idem_lookup(idem_token, idem_key)
-        if stored is not None:
-            self._write(stored["status"], stored["value"])
-            return True
-
-        captured: dict[str, Any] = {}
-        _original_write = self._write
-
-        def _capturing_write(status: int, value: dict[str, Any]):  # type: ignore[no-redef]
-            if "done" not in captured:
-                captured["done"] = True
-                self.server.idem_store(idem_token, idem_key, status, value)
-            return _original_write(status, value)
-
-        self._write = _capturing_write  # type: ignore[method-assign]
-        return False
-
-    def _route_post(self, path: str, body: dict[str, Any]) -> None:
-        """Dispatch a POST: the session, an operator call, a player action or not found."""
-
-        if path == "/session":
-            return self._post_session(body)
-        # A fresh install has no world to protect yet.  The launcher may create
-        # its first instance without an operator token; every later instance
-        # operation keeps the normal local operator boundary.
-        if path == "/instances/init" and not self.server.has_world:
-            return self._write(200, self.server.init_instance(body))
-        operator_call = _OPERATOR_POSTS.get(path)
-        if (operator_call is not None or path.startswith("/authoring/")) and not self._require("operator"):
-            return None
-        if operator_call is not None:
-            return self._write(200, operator_call(self.server, body))
-        player_post = self._PLAYER_POSTS.get(path)
-        if player_post is not None:
-            return player_post(self, body)
-        return self._write(404, {"status": "not_found"})
-
-    def _post_session(self, body: dict[str, Any]) -> None:
-        """Create an observer session, or an operator session for the operator token."""
-
-        role = str(body.get("role") or "observer")
-        if role == "operator":
-            supplied = str(body.get("operator_token") or "")
-            if not secrets.compare_digest(supplied, self.server.operator_token):
-                return self._forbidden("operator token is invalid")
-            token = self.server.issue_session("operator")
-            return self._write(200, {"status": "ok", "role": "operator", "session_token": token})
-        if role != "observer":
-            return self._forbidden("only observer sessions may be created without a player")
-        token = self.server.issue_session("observer")
-        return self._write(200, {"status": "ok", "role": "observer", "session_token": token})
-
-    def _post_enter_player(self, body: dict[str, Any]) -> None:
-        """Enter a player into the world and hand back its session."""
-
-        return self._write(200, self.server.enter_player(body))
-
-    def _post_player_act(self, body: dict[str, Any]) -> None:
-        """Submit a player action for the authorized player."""
-
-        player_id = self.server.resolve_agent_id(str(body.get("player_id") or ""))
-        body = {**body, "player_id": player_id}
-        return self._write(200, self.server.service_call(
-            "player_act",
-            body,
-            authorize_role="player",
-            authorize_token=self._token(),
-            authorize_player_id=player_id,
-        ))
-
-    def _post_player_wait(self, body: dict[str, Any]) -> None:
-        """Advance the world by hand for the minutes a player waits."""
-
-        return self._write(200, self.server.player_wait(
-            str(body.get("player_id") or ""),
-            minutes=int(body.get("minutes", 1) or 1),
-            provider_name=body.get("provider"),
-            authorize_token=self._token(),
-        ))
-
-    def _post_dialogue(self, body: dict[str, Any]) -> None:
-        """Say something to another character as a player, or as God for an operator."""
-
-        raw_speaker_id = str(body.get("speaker_id") or "")
-        speaker_id = self.server.resolve_agent_id(raw_speaker_id) or raw_speaker_id
-        listener_id = self.server.resolve_agent_id(str(body.get("listener_id") or "")) or str(body.get("listener_id") or "")
-        role = "operator" if raw_speaker_id.strip().casefold() == "god" else "player"
-        result = self.server.service_call(
-            "dialogue",
-            speaker_id,
-            listener_id,
-            str(body.get("topic", "general")),
-            str(body["message"]),
-            authorize_role=role,
-            authorize_token=self._token(),
-            authorize_player_id=speaker_id,
+    def _write_result(self, result: Any, request_id: str) -> None:
+        if isinstance(result, StreamResponse):
+            subscription = self.server.stream.subscribe(result.role, result.player_id, result.after, result.ticks)
+            return self.server.stream.serve(self, subscription)
+        if isinstance(result, RawResponse):
+            return self._write_bytes(
+                result.status,
+                result.body,
+                result.content_type,
+                filename=result.filename,
+                request_id=request_id,
+            )
+        if isinstance(result, JsonResponse):
+            return self._write_json(result.status, result.payload, request_id, result.headers)
+        return self._write_json(
+            500,
+            {"status": "error", "code": "internal_error", "message": "invalid route result", "request_id": request_id},
+            request_id,
         )
-        if result.get("status") == "accepted" and role == "player":
-            result = {
-                **result,
-                "reply": self.server.resolve_dialogue_reply(
-                    speaker_id,
-                    provider_name=body.get("provider"),
-                    token=self._token(),
-                ),
-            }
-        return self._write(200, result)
-
-    def _post_trade_offer(self, body: dict[str, Any]) -> None:
-        """Offer a trade to another character."""
-
-        offerer_id = self.server.resolve_agent_id(str(body.get("offerer_id") or "")) or str(body.get("offerer_id") or "")
-        recipient_raw = str(body.get("recipient_id") or "")
-        recipient_id = self.server.resolve_agent_id(recipient_raw) or recipient_raw
-        return self._write(200, self.server.service_call(
-            "trade_offer",
-            offerer_id,
-            recipient_id,
-            dict(body.get("give", {})),
-            dict(body.get("want", {})),
-            authorize_role="player",
-            authorize_token=self._token(),
-            authorize_player_id=offerer_id,
-        ))
-
-    def _post_trade_accept(self, body: dict[str, Any]) -> None:
-        """Accept a trade offer."""
-
-        recipient_id = self.server.resolve_agent_id(str(body.get("recipient_id") or "")) or str(body.get("recipient_id") or "")
-        return self._write(200, self.server.service_call(
-            "trade_accept",
-            recipient_id,
-            str(body["offer_id"]),
-            authorize_role="player",
-            authorize_token=self._token(),
-            authorize_player_id=recipient_id,
-        ))
-
-    def _post_trade_counter(self, body: dict[str, Any]) -> None:
-        """Counter a trade offer."""
-
-        counterparty_raw = str(body.get("counterparty_id") or body.get("recipient_id") or "")
-        counterparty_id = self.server.resolve_agent_id(counterparty_raw) or counterparty_raw
-        return self._write(200, self.server.service_call(
-            "trade_counter",
-            counterparty_id,
-            str(body["offer_id"]),
-            dict(body.get("give", {})),
-            dict(body.get("want", {})),
-            authorize_role="player",
-            authorize_token=self._token(),
-            authorize_player_id=counterparty_id,
-        ))
-
-    def _post_trade_reject(self, body: dict[str, Any]) -> None:
-        """Reject a trade offer."""
-
-        recipient_id = self.server.resolve_agent_id(str(body.get("recipient_id") or "")) or str(body.get("recipient_id") or "")
-        return self._write(200, self.server.service_call(
-            "trade_reject",
-            recipient_id,
-            str(body["offer_id"]),
-            authorize_role="player",
-            authorize_token=self._token(),
-            authorize_player_id=recipient_id,
-        ))
-
-    _PLAYER_POSTS: dict[str, Callable[[Any, dict[str, Any]], None]] = {
-        "/players": _post_enter_player,
-        "/player/act": _post_player_act,
-        "/player/wait": _post_player_wait,
-        "/dialogue": _post_dialogue,
-        "/trade/offers": _post_trade_offer,
-        "/trade/accept": _post_trade_accept,
-        "/trade/counter": _post_trade_counter,
-        "/trade/reject": _post_trade_reject,
-    }
 
 
 class ControlHTTPServer(ThreadingHTTPServer):
@@ -594,7 +246,20 @@ class ControlHTTPServer(ThreadingHTTPServer):
         self._idem_lock = RLock()
         self._idem_store: dict[tuple[str, str], dict[str, Any]] = {}
         self._closed = False
+        self.router = V1Router(self)
+        self.stream = StreamHub(self)
+        self.tasks = ManualTaskRunner(self)
         super().__init__(address, _Handler)
+
+    def session_context(self, token: str) -> dict[str, str]:
+        """Describe a session without ever exposing the token."""
+
+        raw = str(token or "")
+        if not raw:
+            return {}
+        if secrets.compare_digest(raw, self.operator_token):
+            return {"role": "operator", "instance_id": self.instance_id}
+        return dict(self.session_for(raw) or {})
 
     @property
     def has_world(self) -> bool:
@@ -769,6 +434,7 @@ class ControlHTTPServer(ThreadingHTTPServer):
                 return {"status": "rejected", "message": str(exc), "failed_check": "instance"}
             if target == self.database_path:
                 return {"status": "accepted", "already_active": True, "runtime": self.runtime_status()}
+            self.tasks.cancel_all()
             previous = self.control
             if self.runtime is not None:
                 self.runtime.close()
@@ -851,24 +517,79 @@ class ControlHTTPServer(ThreadingHTTPServer):
         with self._control_lock:
             return self._resolve_agent_id_locked(value)
 
-    def player_wait(self, player_id: str, *, minutes: int = 1, provider_name: str | None = None, authorize_token: str | None = None) -> dict[str, Any]:
+    def world_revision(self) -> int:
+        with self._control_lock:
+            if self.control is None:
+                return 0
+            return int(self.control.platform.store.repositories.metadata.get("world_revision", 0) or 0)
+
+    def player_state(self, player_id: str) -> dict[str, Any]:
+        """Return whether a player exists and is currently executing a task."""
+
+        with self._control_lock:
+            if self.control is None:
+                return {"exists": False, "active": False, "world_minute": 0, "world_revision": 0}
+            resolved = self._resolve_agent_id_locked(player_id)
+            try:
+                agent = self.control.platform.store.repositories.entities.get_agent(resolved)
+            except KeyError:
+                return {"exists": False, "active": False, "world_minute": 0, "world_revision": 0}
+            state = agent.get("initial_state", {}) or {}
+            active = bool(
+                state.get("status") in {"executing", "paused"}
+                or state.get("active_action")
+                or state.get("active_bt_instance")
+            )
+            return {
+                "exists": True,
+                "active": active,
+                "world_minute": int(self.control.platform.store.repositories.metadata.get("world_minute", 0) or 0),
+                "world_revision": int(self.control.platform.store.repositories.metadata.get("world_revision", 0) or 0),
+            }
+
+    def advance_player_chunk(
+        self,
+        player_id: str,
+        minutes: int = 1,
+        *,
+        provider_name: str | None = None,
+        instance_id: str = "",
+    ) -> dict[str, Any]:
+        """Advance one bounded chunk without holding the server control lock.
+
+        The runtime object is validated under the lock and used outside it, so
+        read requests can interleave between world minutes instead of waiting
+        for a whole 480-step manual wait.
+        """
+
         with self._control_lock:
             runtime = self._runtime_or_error()
+            if instance_id and str(instance_id) != str(self.instance_id):
+                return {
+                    "status": "rejected",
+                    "failed_check": "instance_changed",
+                    "message": "the world instance changed before the manual task finished",
+                }
             resolved = self._resolve_agent_id_locked(player_id)
-            allowed, message = self.authorize_session(
-                str(authorize_token or ""),
-                "player",
-                player_id=resolved,
-            )
-            if not allowed:
-                raise PermissionError(message)
+            if not resolved:
+                return {"status": "rejected", "failed_check": "player_id", "message": "player_id is required"}
             if runtime.running:
                 return {
                     "status": "rejected",
                     "failed_check": "runtime_running",
                     "message": "The autonomous world is already advancing; pause or stop it before using manual wait.",
                 }
-            return runtime.advance_manual(minutes, provider_name=provider_name, reason="web-player-wait")
+        return runtime.advance_manual(minutes, provider_name=provider_name, reason="web-player-wait")
+
+    def player_wait(self, player_id: str, *, minutes: int = 1, provider_name: str | None = None, authorize_token: str | None = None) -> dict[str, Any]:
+        """Synchronous wait kept for internal callers; HTTP uses tasks."""
+
+        return self.advance_player_chunk(
+            player_id,
+            minutes,
+            provider_name=provider_name,
+            instance_id=self.instance_id,
+        )
 
     def resolve_dialogue_reply(self, player_id: str, *, provider_name: str | None = None, token: str | None = None) -> dict[str, Any]:
         with self._control_lock:
@@ -877,7 +598,8 @@ class ControlHTTPServer(ThreadingHTTPServer):
             allowed, message = self.authorize_session(str(token or ""), "player", player_id=resolved)
             if not allowed:
                 raise PermissionError(message)
-            return runtime.resolve_pending_interactions(provider_name)
+        # Provider calls must not hold the server control lock.
+        return runtime.resolve_pending_interactions(provider_name)
 
     def trade_offers(self, agent_id: str, *, include_closed: bool = False, token: str | None = None) -> dict[str, Any]:
         with self._control_lock:
@@ -1105,6 +827,7 @@ class ControlHTTPServer(ThreadingHTTPServer):
             self._idem_store[(str(token or ""), key)] = {"status": int(status), "value": dict(value)}
 
     def close(self) -> None:
+        self._close_background()
         self._close_control()
         self.shutdown()
         self.server_close()
@@ -1112,8 +835,15 @@ class ControlHTTPServer(ThreadingHTTPServer):
     def close_after_serve_forever(self) -> None:
         """Close resources after Ctrl-C has already exited serve_forever()."""
 
+        self._close_background()
         self._close_control()
         self.server_close()
+
+    def _close_background(self) -> None:
+        try:
+            self.tasks.close()
+        finally:
+            self.stream.close()
 
     def _close_control(self) -> None:
         with self._control_lock:

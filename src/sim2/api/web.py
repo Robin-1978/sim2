@@ -5,23 +5,32 @@ from pathlib import Path
 
 _WEB_ROOT = Path(__file__).resolve().parents[1] / "web"
 _ASSET_TYPES = {
-    "index.html": "text/html; charset=utf-8",
-    "app.css": "text/css; charset=utf-8",
-    "app.js": "text/javascript; charset=utf-8",
-    "admin.html": "text/html; charset=utf-8",
-    "admin.css": "text/css; charset=utf-8",
-    "admin.js": "text/javascript; charset=utf-8",
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".svg": "image/svg+xml",
 }
 
 
 def web_asset(path: str) -> tuple[bytes, str] | None:
-    """Return one bundled browser asset, rejecting path traversal."""
+    """Return one bundled browser asset, rejecting path traversal.
+
+    The game and admin clients load native ES modules from ``web/js``; the
+    resolver therefore accepts nested files under the web root while still
+    refusing absolute paths, parent traversal and unknown extensions.
+    """
 
     name = "index.html" if path in {"", "/", "/index.html"} else path.removeprefix("/")
-    if name not in _ASSET_TYPES:
+    if not name or name.startswith("/"):
         return None
-    file_path = (_WEB_ROOT / name).resolve()
-    if file_path.parent != _WEB_ROOT or not file_path.is_file():
+    candidate = (_WEB_ROOT / name).resolve()
+    try:
+        candidate.relative_to(_WEB_ROOT)
+    except ValueError:
         return None
-    return file_path.read_bytes(), _ASSET_TYPES[name]
-
+    if not candidate.is_file():
+        return None
+    content_type = _ASSET_TYPES.get(candidate.suffix.lower())
+    if content_type is None:
+        return None
+    return candidate.read_bytes(), content_type

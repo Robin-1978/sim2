@@ -80,8 +80,8 @@ Browser
   布局，隐藏长提示文本，提示仍保留在卡片的 `title` 中。
 - **设置抽屉**：实例切换、同步推进模型、自动运行控制、Operator 解锁、世界编辑器入口。
 
-小地图直接复用 `/player/view` 的 `map` 投影，不额外读取 SQLite；每次行动完成或
-自动刷新后随角色视图一起更新。点击可前往节点会提交同样的 `behavior:travel`
+小地图直接复用 `/api/v1/player/{id}/view` 的 `map` 投影，不额外读取 SQLite；
+每次行动完成或自动刷新后随角色视图一起更新。点击可前往节点会提交同样的 `behavior:travel`
 意图，因此地图、行动卡和 TUI 共享同一条 Platform 校验路径。
 
 入口页的程序化封面由世界 ID 的稳定 hash 选择调色板和山脊形状，不包含任何世界
@@ -100,6 +100,27 @@ Browser
 动态流只保留叙事和结果类事件；`behavior.started`、能力更新、记忆记录、
 `world.property_changed`、`resource.regenerated`、演化任务到期和注册类系统
 事件不再铺满玩家信息流。
+
+### 属性与需求
+
+角色的 `attributes` 不是装饰。`rules.capacity_attribute`（潮汐公社为 `stamina`）
+被 Platform 用作行动容量：任何按分钟消耗超过当前值的行动会被隐藏或拒绝。
+因此精力恢复必须只在非执行状态发生：
+
+```yaml
+minute_effects:
+- id: stamina_recovery
+  scope: agent
+  every_minutes: 1
+  condition: action.none
+  effect: {type: attribute_delta, attribute: stamina, delta: 0.2, maximum: 100}
+```
+
+行动成本为 0.02–0.20/分钟，所以在执行长行动时精力净下降；空闲或等待时恢复。
+当精力低于 70 时，世界包的 `rest_at_hearth` 行为出现，用一小时恢复 30 点。
+`belonging` 与 `purpose` 每 10/15 分钟下降 0.05，社交和公共行动再补充；需求条
+显示一位小数，避免慢速变化被整数四舍五入掩盖。`stamina_alert_threshold` 让
+客户端在低精力时切换琥珀/红色状态。
 
 视觉语义由通用字段驱动：地点 `tags` 决定场景色调，物品名来自
 `rules.item_labels`，世界数值名来自 `rules.world_property_labels`，饮水/进食
@@ -197,18 +218,21 @@ endings:
 ### 手动推进与世界同步
 
 玩家角色使用 `controller: manual`，自动运行不会替玩家角色做 LLM 决策。
-提交行动后，客户端按剩余分钟分块调用 `/player/wait`；服务端使用与自动运行
-相同的 `SimulationRunner`，所以每个 tick 同时推进：
+提交行动后，客户端调用 `POST /api/v1/player/{id}/wait`；服务端返回 `202` 和
+`task_id`，由 `ManualTaskRunner` 在后台以一分钟为一块推进，并使用与自动运行
+相同的 `SimulationRunner`。每个 tick 同时推进：
 
 - 世界分钟与分钟效果、资源再生；
 - NPC 的 Agent 决策、当前行为与行动；
 - 对话、交易等即时交互；
 - Story/God 的自动演化任务。
 
-手动推进不是玩家私有时钟。`/player/wait` 接受可选 `provider`，游戏客户端
-把设置中选择的模型传给决策、反思、Story 和 God 角色；默认优先选择可用的
-`remote`，也可以在设置里改回服务端默认。客户端每块请求后更新世界时间、
-任务进度和 NPC 决策/错误计数，结束后明确显示成功或模型失败原因。
+手动推进不是玩家私有时钟。任务接受可选 `provider`，游戏客户端把设置中选择
+的模型传给决策、反思、Story 和 God 角色；默认优先选择可用的 `remote`，也可以
+在设置里改回服务端默认。客户端通过 `task.progress` / `task.completed` 或
+`GET /api/v1/player/{id}/tasks/{task_id}` 更新世界时间和任务进度，结束后明确
+显示成功或模型失败原因。任务运行期间任何单个请求都不会长期持有控制锁；同一
+玩家同时只允许一个任务。
 
 ### 服务端投影
 
@@ -223,14 +247,16 @@ endings:
 | `chapter` | 优先投影玩家可读的 `story.beat.activated`；没有时退回 `story.situation_anchors` 的只读态势旁白 |
 | `alert_thresholds` | 需求条警戒线 |
 | `world_properties` / `world_property_labels` | 右侧公共账目 |
+| `facilities` | 世界包声明为 `facility` 的公共设施卡 |
+| `revision` / `last_event_id` | 客户端只在 revision 前进时重拉整个视图 |
 | `unavailable_actions` | 不可执行行为及失败原因 |
 
-`GET /world` 提供进入界面需要的事实：世界标题、premise、题材、locale、
+`GET /api/v1/world` 提供进入界面需要的事实：世界标题、premise、题材、locale、
 日历、起始分钟和当前实例；没有活动实例时返回 `status: "no_world"`。
-`GET /player/entry` 返回配置的出身，以及当前实例已有的玩家角色
+`GET /api/v1/player/entry` 返回配置的出身，以及当前实例已有的玩家角色
 （`players`、`can_create_player`），页面据此直接显示“继续游戏”，而不是要求
-玩家记住 ID。`GET /worlds` 返回可创建的内置世界与受 `--authoring-root`
-约束的自建包摘要。
+玩家记住 ID。`GET /api/v1/worlds` 返回可创建的内置世界与受
+`--authoring-root` 约束的自建包摘要。
 
 ## 启动与首次游玩
 
@@ -242,9 +268,9 @@ endings:
 - 一个实例都不存在时，服务器进入 launcher 状态，`/` 仍然可用，页面直接显示
   世界模板；首次 `POST /instances/init` 可无 Operator session 执行，创建后
   自动激活。此后创建或切换实例继续要求 Operator session。
-- 没有 `~/.sim2/llm.json` 时，`/runtime` 返回 `llm_configured: false`；时钟、
-  需求、长行动和 `bt` 控制器角色仍推进，LLM 驱动的 NPC 决策与 Story/God
-  暂停等待配置。
+- 没有 `~/.sim2/llm.json` 时，`/api/v1/runtime` 返回
+  `llm_configured: false`；时钟、需求、长行动和 `bt` 控制器角色仍推进，
+  LLM 驱动的 NPC 决策与 Story/God 暂停等待配置。
 
 ## 自动演化
 
@@ -283,8 +309,32 @@ endings:
 - 全量 CLI 等价命令；
 - Schema 驱动的世界设计、编译、smoke、导出和 AI 草稿。
 
-运营台使用独立静态资源 `admin.html` / `admin.js` / `admin.css`，不会与游戏
-客户端争用 DOM 或状态。管理写操作仍需 Operator Token 解锁。
+运营台使用独立静态资源 `admin.html` / `admin.css`；入口 `admin.js` 只加载
+`js/admin_app.js`，其余代码拆在 `admin_api.js`、`admin_core.js`、
+`admin_render.js`、`admin_editor.js` 和 `admin_actions.js`。它不会与游戏客户端
+争用 DOM 或状态。管理写操作仍需 Operator Token 解锁。
+
+## 前端模块
+
+游戏与运营台都使用浏览器原生 ES modules，不引入 bundler、npm 或 TypeScript：
+
+```text
+src/sim2/web/
+  app.js                 仅 import ./js/app.js
+  js/app.js              boot、wireUi、renderAll
+  js/core.js             共享 state、DOM/格式化/存储/提示
+  js/api.js              fetch、错误信封、幂等键、owner link
+  js/audio.js            Web Audio 环境音
+  js/art.js              世界调色板与分层 SVG 场景
+  js/render_*.js         入口、角色、场景、世界、行动、侧栏渲染
+  js/actions.js          进入、视图、任务、对话、交易、地图、设置
+  admin.js               仅 import ./js/admin_app.js
+  js/admin_*.js          运营台 transport/core/render/editor/actions
+```
+
+`index.html` 和 `admin.html` 以 `type="module"` 加载入口。`web_asset` 只允许
+web 根目录内的 `.html`、`.css`、`.js` 和 `.svg`，拒绝路径穿越。修改任一模块后
+仍要提升 `index.html` / `admin.html` 中的 `?v=` 和页脚构建标记。
 
 ## HTTP 面
 
@@ -292,24 +342,32 @@ endings:
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/world` | 世界展示事实与起始时钟；无实例时为 `no_world` |
-| GET | `/worlds` | 可创建的世界模板摘要 |
-| GET | `/player/entry` | 玩家出身、入口地点与已有玩家 |
-| POST | `/players` | 新建或恢复玩家，返回 Player session |
-| GET | `/player/view` | 玩家投影、行动、目标、物品标签、世界数值 |
-| POST | `/player/act` | 提交 Platform 校验的行为 |
-| POST | `/player/wait` | 以共享世界 tick 推进，可指定 provider |
-| GET | `/map` | 玩家可见地点、路线与占用者 |
-| GET | `/timeline` | 公开事件流 |
-| GET | `/observer/dialogue` | 公开对话记录 |
-| POST | `/dialogue` / `/trade/*` | 即时对话与交易 |
-| GET | `/runtime` | 运行时状态、可用 Provider 与 `llm_configured` |
-| POST | `/runtime/*` | 需要 Operator session |
-| POST | `/instances/init` | 创建实例；launcher 状态下首次创建免 Operator |
-| POST | `/instances/activate` | 需要 Operator session |
+| GET | `/api/v1/world` | 世界展示事实与起始时钟；无实例时为 `no_world` |
+| GET | `/api/v1/worlds` | 可创建的世界模板摘要 |
+| GET | `/api/v1/player/entry` | 玩家出身、入口地点与已有玩家 |
+| POST | `/api/v1/player/enter` | 新建或恢复玩家，返回 Player session |
+| GET | `/api/v1/player/{id}/view` | 玩家投影、行动、目标、物品标签、世界数值 |
+| POST | `/api/v1/player/{id}/actions` | 提交 Platform 校验的行为 |
+| POST | `/api/v1/player/{id}/wait` | 返回 202 + task_id；后台按分钟推进 |
+| GET | `/api/v1/player/{id}/tasks/{task_id}` | 任务进度与最终结果 |
+| GET | `/api/v1/player/{id}/trades` | 玩家交易报价 |
+| POST | `/api/v1/player/{id}/trades[/{offer_id}/{accept,counter,reject}]` | 发起或回应交易 |
+| POST | `/api/v1/player/{id}/dialogue` | 即时对话 |
+| GET | `/api/v1/map` | 玩家可见地点、路线与占用者 |
+| GET | `/api/v1/observer/timeline` | 公开事件流 |
+| GET | `/api/v1/observer/dialogue` | 公开对话记录 |
+| GET | `/api/v1/stream` | 统一 SSE；按 session 角色裁剪事件 |
+| GET | `/api/v1/runtime` | 运行时状态、可用 Provider 与 `llm_configured` |
+| POST | `/api/v1/runtime/*` | 需要 Operator session |
+| GET | `/api/v1/operator/metrics` | 运营指标，需要 Operator session |
+| GET | `/api/v1/operator/audit` | 审计导出，需要 Operator session |
+| POST | `/api/v1/instances/init` | 创建实例；launcher 状态下首次创建免 Operator |
+| POST | `/api/v1/instances/activate` | 需要 Operator session |
+| GET | `/api/v1/meta/contracts` | 请求/响应 JSON Schema |
 
-`/admin.html` 额外使用 `/authoring/*`、`/snapshots*`、`/audit`、`/decisions`
-等运营端点。
+`/admin.html` 额外使用 `/api/v1/authoring/*`、`/api/v1/operator/snapshots*`、
+`/api/v1/operator/audit` 和 `/api/v1/operator/events` 等运营端点。旧的无版本
+路径已删除，不提供别名。
 
 ## 缓存与构建标记
 

@@ -1,3 +1,6 @@
+> 说明：本文件记录 v1 之前的端点规划。当前实际 API 已硬切到 `/api/v1`，
+> 以 [`web-api-v1-refactor.md`](web-api-v1-refactor.md) 和 `GET /api/v1/meta/contracts` 为准。
+
 # sim2 全功能网页客户端实施规划
 
 > 目标：以网页作为本地单人运行的首选客户端。用户只需启动一次本地服务，

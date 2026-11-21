@@ -8,13 +8,19 @@ import yaml
 
 ROOT = Path(__file__).parents[1]
 WEB = ROOT / "src" / "sim2" / "web"
-ASSETS = ("index.html", "app.js", "admin.html", "admin.js")
 # Wording that once leaked from one world into the client: the placeholder genre and the empty-scene line.
 LEAKED_WORDS = ("海岸生存", "潮声", "公社")
 
 
 def _read_assets() -> dict[str, str]:
-    return {name: (WEB / name).read_text(encoding="utf-8") for name in ASSETS}
+    """Read every shipped browser asset, including native ES modules."""
+
+    result: dict[str, str] = {}
+    for path in sorted(WEB.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in {".html", ".css", ".js"}:
+            continue
+        result[str(path.relative_to(WEB))] = path.read_text(encoding="utf-8")
+    return result
 
 
 def _world_names() -> dict[str, list[str]]:
@@ -30,6 +36,7 @@ def _world_names() -> dict[str, list[str]]:
 
 def test_static_client_assets_name_no_shipped_world():
     assets = _read_assets()
+    assert "index.html" in assets and "js/app.js" in assets and "js/admin_app.js" in assets
     worlds = _world_names()
     assert worlds  # the check must actually look at the shipped worlds
     for world, values in worlds.items():
@@ -44,4 +51,4 @@ def test_static_client_assets_name_no_shipped_world():
 def test_map_dialog_heading_is_filled_from_the_world_title():
     assets = _read_assets()
     assert 'id="map-world-title"' in assets["index.html"]
-    assert '$("map-world-title").textContent = state.world?.title' in assets["app.js"]
+    assert '$("map-world-title").textContent = state.world?.title' in assets["js/render_panels.js"]

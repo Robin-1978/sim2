@@ -174,65 +174,76 @@ and **生成并打开游戏** to write the package and activate a new instance. 
 full JSON remains available behind the form; the source package is never
 edited as a side effect.
 
-`sim2 serve` now creates a local in-memory session boundary. `GET /session`
+`sim2 serve` exposes one versioned boundary under `/api/v1`. `POST /api/v1/session`
 returns a read-only observer token; entering a player returns a player token that
-is required for that player's view, actions, waiting and dialogue. Operator
-commands (`runtime/start`, `runtime/pause`, `runtime/resume`, `runtime/stop`,
-`runtime/step`, instance creation/switching, `events`, `audit`) require the startup
-`operator_token` printed by the server or `SIM2_OPERATOR_TOKEN`. This is a local
-development boundary, not a replacement for production login and deployment
-authentication.
+is required for that player's view, actions, manual advance and dialogue. Operator
+commands (`runtime/*`, instance creation/switching, `operator/events`, `operator/audit`,
+snapshots and authoring) require the startup `operator_token` printed by the server
+or `SIM2_OPERATOR_TOKEN`. This is a local development boundary, not a replacement
+for production login and deployment authentication.
 
-When `~/.sim2/llm.json` is absent, `/runtime` reports `llm_configured: false`.
-The Platform clock, needs, long actions and authored background BT actors still
-advance, so the page remains playable; only LLM-driven NPC decisions, Story/God
-turns and automatic dialogue replies stay idle until a provider is configured.
+When `~/.sim2/llm.json` is absent, `/api/v1/runtime` reports
+`llm_configured: false`. The Platform clock, needs, long actions and authored
+background BT actors still advance, so the page remains playable; only LLM-driven
+NPC decisions, Story/God turns and automatic dialogue replies stay idle until a
+provider is configured.
 
 One server process owns at most one autonomous runtime thread. Start accepts a
 provider name plus world-minute and LLM-call budgets. Pause finishes the current
 complete minute, including already-started Agent decisions, and then stops the
 worker. Continue preserves the same `run_id`, starting minute, target minute and
 LLM budget. Stop leaves committed history intact and pauses the persisted world.
-Manual wait returns `runtime_running` while the autonomous worker owns the clock.
-Switching an instance first stops and closes the old runtime, opens the replacement
-SQLite database, and scopes every player session to that one instance.
+Manual advance is a background task: `POST /api/v1/player/{id}/wait` returns
+`202` with a task id, and the task advances one world minute per chunk without
+holding the control lock for the whole request. A second task for the same player
+returns `409 task_running`; a running autonomous worker returns `409 runtime_running`.
+Switching an instance closes the old runtime, opens the replacement SQLite database,
+and scopes every player session to that one instance.
 
 The **命令** tab covers every `sim2` CLI instruction without leaving the browser:
-`init` (`POST /instances/init`), `validate-world`/`describe-world`
-(`POST /authoring/validate|describe`), `world-schema` (`GET /authoring/schema`),
-`build-world --template` (`POST /authoring/build-world` from the current draft),
-`decide` (`POST /decide`), `simulate` (`POST /simulate`, rejected while the
-autonomous runner owns the clock), `snapshot`/`restore` (`POST /snapshots`,
-`GET /snapshots`, `POST /restore`), full trade (`GET /trade/offers`,
-`POST /trade/offers|counter|accept|reject`), `inject` (`POST /events`) and the
-read-only `status`/`health`/`metrics`/`audit` probes. `mud`/`tui` are client
-modes: the play view is the web `mud` and the runtime view is the web `tui`.
+`init` (`POST /api/v1/instances/init`), `validate-world`/`describe-world`
+(`POST /api/v1/authoring/validate|describe`), `world-schema`
+(`GET /api/v1/authoring/schema`), `build-world --template`
+(`POST /api/v1/authoring/build-world` from the current draft), `decide`
+(`POST /api/v1/operator/decide`), `simulate` (`POST /api/v1/operator/simulate`,
+rejected while the autonomous runner owns the clock), `snapshot`/`restore`
+(`POST /api/v1/operator/snapshots`, `GET /api/v1/operator/snapshots`,
+`POST /api/v1/operator/snapshots/{id}/restore`), full trade
+(`GET|POST /api/v1/player/{id}/trades` and
+`POST /api/v1/player/{id}/trades/{offer_id}/{counter,accept,reject}`), `inject`
+(`POST /api/v1/operator/events`) and the read-only
+`status`/`health`/`metrics`/`audit` probes. `mud`/`tui` are client modes: the
+play view is the web `mud` and the runtime view is the web `tui`.
 All management writes require the Operator session; all player writes require
-the matching Player session. Every `POST` (except `/session`) accepts an
-`Idempotency-Key` header (or `idempotency_key` field): the same session token
-plus the same key executes once and replays the same response, so browser
-retries never duplicate a behavior or trade. The web client sends a fresh key
-per user action, retries network failures once with the same key, and disables
-the clicked button while the request is in flight.
+the matching Player session. Every command route accepts an `Idempotency-Key`
+header (or `idempotency_key` field): the same session token plus the same key
+executes once and replays the same response, so browser retries never duplicate a
+behavior or trade. The web client sends a fresh key per user action, retries
+network failures once with the same key, and disables the clicked button while the
+request is in flight.
 
-The observer keeps a 4-second polling baseline plus an SSE live layer
-(`GET /events/stream`): timeline deltas and runtime changes arrive within a
-second and merge by `event_id`; three consecutive stream errors fall back to
-polling. The stream is read-only and never triggers a model call.
+The game client opens one SSE connection to `GET /api/v1/stream`. Events carry
+`cursor`, `event_id`, `revision`, `type` and `data`; the browser reconnects with
+`Last-Event-ID` and the hub replays the missing window. `player.view.changed`
+triggers a read-model refresh only when `revision` advances, so an idle page does
+no polling. `task.progress` and `task.completed` drive the manual-advance UI, and
+`runtime`, `feed.append`, `trade.changed`, `dialogue.append` and `chapter.changed`
+update their panels directly. Three consecutive stream errors fall back to the
+15-second polling loop. The stream is read-only and never triggers a model call.
 
 网页默认先打开 **世界大厅**：已有角色时一键继续，否则选择出身进入；出身卡
 同时显示个人目标和“第一件事”。进入后
 页面显示角色目标、需求条、当前位置、常驻路线小地图、当前篇章和行动卡；
-小地图节点与行动卡走同一个 `/player/act` 校验路径。篇章标题和摘要位于
-世界目标上方，目标区在行动区上方，默认显示前三项，包含状态、进度、可读的
-缺失条件和可执行按钮；多选目标会并列显示最多三个选项（例如每日公共决策）。
-推荐行动卡会标注它推进的篇章目标。行动区默认突出一个推荐行动和最多五个
-备选行动，完成后“上一拍”显示结果与资源/需求变化；移动端底部固定一个推荐
-行动或“推进当前行动”按钮。物品和能力收进“角色详情”侧栏，点击附近人物会
-从右侧滑出角色侧栏，
-查看该角色的对话记录并直接发送消息，而不是切到单独 tab。每张行动卡通过
-`/player/act` 提交到 Platform；行动结果回到玩家事件流。行内还有交易抽屉：
-待处理报价列表、发起/接受/反报价/拒绝都走同一幂等通道。
+小地图节点与行动卡走同一个 `/api/v1/player/{id}/actions` 校验路径。篇章标题
+和摘要位于世界目标上方，目标区在行动区上方，默认显示前三项，包含状态、进度、
+可读的缺失条件和可执行按钮；多选目标会并列显示最多三个选项（例如每日公共
+决策）。推荐行动卡会标注它推进的篇章目标。行动区默认突出一个推荐行动和最多
+五个备选行动，完成后“上一拍”显示结果与资源/需求变化；移动端底部固定一个
+推荐行动或“推进当前行动”按钮。物品和能力收进“角色详情”侧栏，点击附近人物会
+从右侧滑出角色侧栏，查看该角色的对话记录并直接发送消息，而不是切到单独 tab。
+每张行动卡通过 `/api/v1/player/{id}/actions` 提交到 Platform；行动结果回到玩家
+事件流。行内还有交易抽屉：待处理报价列表、发起/接受/反报价/拒绝都走同一幂等
+通道。
 
 主游戏页的 HUD、设置抽屉和世界大厅都有 **世界编辑器** 入口：编辑器以全屏
 overlay 内嵌运营台的“设计世界”页，直接用当前 Operator session 打开，不需要

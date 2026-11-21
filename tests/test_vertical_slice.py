@@ -4350,13 +4350,13 @@ def test_local_http_control_adapter_uses_platform(tmp_path: Path):
     thread.start()
     base = f"http://127.0.0.1:{server.server_port}"
     try:
-        with urlopen(base + "/status") as response:
+        with urlopen(base + "/api/v1/status") as response:
             status = json.loads(response.read())
         assert status["status"] == "running"
-        with urlopen(base + "/health") as response:
+        with urlopen(base + "/api/v1/health") as response:
             health = json.loads(response.read())
         assert health["status"] == "ok"
-        request = Request(base + "/pause", data=b'{"reason":"test"}', headers={"content-type": "application/json", "x-sim2-session": server.operator_token}, method="POST")
+        request = Request(base + "/api/v1/runtime/pause", data=b'{"reason":"test"}', headers={"content-type": "application/json", "x-sim2-session": server.operator_token}, method="POST")
         with urlopen(request) as response:
             paused = json.loads(response.read())
         assert paused["status"] == "paused"

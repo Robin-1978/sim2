@@ -41,6 +41,12 @@ class EventsRepository:
         ).fetchall()
         return [{"event_id": row["event_id"], "event_type": row["event_type"], "actor_id": row["actor_id"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
 
+    def latest_event_id(self) -> int:
+        """Return the newest committed event id, or zero for an empty log."""
+
+        row = self.store.connection.execute("SELECT MAX(event_id) AS latest FROM event_log").fetchone()
+        return int((row["latest"] if row is not None else 0) or 0)
+
     def events_by_ids(self, event_ids: list[int]) -> list[dict[str, Any]]:
         values = list(dict.fromkeys(int(value) for value in event_ids if int(value) > 0))
         if not values:
