@@ -13,11 +13,15 @@ export function renderTask() {
       return;
     }
     const remaining = Number(task.remaining_minutes || 0);
-    const total = Math.max(1, Number(state.taskTotal || remaining || 1));
+    const total = Math.max(1, Number(task.total_minutes || state.taskTotal || remaining || 1));
     $("task-name").textContent = task.bt || "行动中";
     const provider = selectedProvider();
-    $("task-detail").textContent = `${task.action || "推进中"} · 还需 ${remaining} 分钟${state.advancing ? ` · 同步推进世界${provider ? `（${provider}）` : ""}` : ""}`;
-    const progress = clamp(((total - remaining) / total) * 100, 2, 100);
+    const manualHint = state.runtime?.running ? "" : " · 手动模式：点“推进到完成”走完剩余时间";
+    $("task-detail").textContent = `${task.action || "推进中"} · 还需 ${remaining} 分钟${state.advancing ? ` · 同步推进世界${provider ? `（${provider}）` : ""}` : manualHint}`;
+    const ratio = Number(task.progress);
+    const progress = Number.isFinite(ratio) && ratio > 0
+      ? clamp(ratio * 100, 2, 100)
+      : clamp(((total - remaining) / total) * 100, 2, 100);
     $("task-progress-bar").style.width = `${progress}%`;
     const running = Boolean(state.runtime?.running);
     $("task-advance").disabled = running || state.advancing;

@@ -269,6 +269,13 @@ class AgentViewCompiler(
         capability_update_candidates = self._capability_update_candidates(agent_id, agent, rules)
         pending_institutions, active_institutions, institution_ledgers = self._institution_view()
         story_goals, behavior_assignments, active_story_beats, active_story_threads = self._agent_story_view(agent_id, agent)
+        active_remaining = int(state.get("remaining_minutes", 0) or 0)
+        active_duration = int(state.get("active_action_duration", 0) or 0)
+        active_progress = (
+            max(0.0, min(1.0, (active_duration - active_remaining) / active_duration))
+            if active_duration > 0
+            else 0.0
+        )
         result = {
             "context_version": "1", "role": role,
             "world_revision": int(self.store.repositories.metadata.get("world_revision", 0) or 0),
@@ -287,7 +294,13 @@ class AgentViewCompiler(
             "denial_memories": denial_memories,
             "pending_access_requests": pending_access_requests,
             "active_delegations": active_delegations,
-            "active_task": {"bt": active_behavior.get("summary") or ("in progress" if active_behavior_id else None), "action": active_action.get("description") or (label(str(active_action_id)) if active_action_id else None), "remaining_minutes": state.get("remaining_minutes", 0)},
+            "active_task": {
+                "bt": active_behavior.get("summary") or ("in progress" if active_behavior_id else None),
+                "action": active_action.get("description") or (label(str(active_action_id)) if active_action_id else None),
+                "remaining_minutes": active_remaining,
+                "total_minutes": active_duration,
+                "progress": round(active_progress, 4),
+            },
             "open_trade_offers": self._trade_offer_view(agent_id),
             "available_actions": available_actions if role == "agent_reflection" else [],
             "active_world_rules": self.rule_compiler.model_view(

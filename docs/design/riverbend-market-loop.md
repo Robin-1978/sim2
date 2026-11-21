@@ -281,7 +281,7 @@ God 的唤醒：
 
 ### 验证方式
 
-聚焦测试 `tests/test_riverbend_market.py`，9 项全部通过：
+聚焦测试 `tests/test_riverbend_market.py`，10 项全部通过：
 
 1. 世界包完整：10 地点、8 NPC、46 Action、53 行为树、8 配方、11 资源。
 2. 采集→卖矿→买镐→打铁锭：金币、钱柜、库存、声望和输入消耗都正确。
@@ -292,6 +292,7 @@ God 的唤醒：
 7. Story 只能提交与来源事件匹配的 beat；医馆 beat 绑定 `clinic.stock.low`，并分配给白芷。
 8. Director 在第 2880 分钟写出 `verb` 计划，并创建 `god_structural` 任务。
 9. 玩家视图显示四项桥市指标、五家店设施卡、六个筹备目标和首个上手提示。
+10. 长行动返回 `total_minutes` 和真实 `progress`；刷新或断线后进度条不会从剩余分钟重新开始。
 
 远程 Provider 验证（`sim2 simulate --provider remote --minutes 90`，新实例）：
 

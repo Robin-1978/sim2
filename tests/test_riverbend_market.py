@@ -323,3 +323,21 @@ def test_fair_quiet_is_a_partial_result(tmp_path: Path) -> None:
         assert service.player_view("hero")["chapter"]["id"] == "bridge_fair_quiet"
     finally:
         service.close()
+
+
+def test_active_task_reports_persisted_progress_for_long_actions(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "riverbend-task-progress", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "miner", name="阿岚")["status"] == "accepted"
+        started = _start(platform, "hero", "gather_iron_ore", "task-progress")
+        assert started["status"] == "accepted"
+        for _ in range(8):
+            platform.step()
+        task = service.player_view("hero")["active_task"]
+        assert task["bt"] == "采铁矿石"
+        assert task["total_minutes"] == 60
+        assert 0 < task["progress"] < 1
+        assert task["remaining_minutes"] < 60
+    finally:
+        service.close()
