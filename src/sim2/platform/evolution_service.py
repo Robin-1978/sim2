@@ -167,10 +167,16 @@ class EvolutionService(PlatformService):
         scheduled_minute = max(minute, int(retry_minute))
         with self.store.transaction():
             row = self.store.connection.execute(
-                "SELECT data_json FROM evolution_task WHERE task_id=?", (task_id,)
+                "SELECT role,actor_id,task_type,data_json FROM evolution_task WHERE task_id=?", (task_id,)
             ).fetchone()
             data: dict[str, Any] = {}
+            task_meta: dict[str, Any] = {}
             if row is not None:
+                task_meta = {
+                    "role": str(row["role"] or ""),
+                    "actor_id": row["actor_id"],
+                    "task_type": str(row["task_type"] or ""),
+                }
                 try:
                     parsed = json.loads(row["data_json"] or "{}")
                     if isinstance(parsed, dict):
@@ -194,5 +200,6 @@ class EvolutionService(PlatformService):
                     "retry_minute": scheduled_minute,
                     "reason": str(reason),
                     "retry_count": data["retry_count"],
+                    **task_meta,
                 },
             )

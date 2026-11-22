@@ -3748,6 +3748,12 @@ def test_evolution_retry_tracks_backoff_and_clears_after_success(tmp_path: Path)
         assert row["due_minute"] == 60
         assert data["retry_count"] == 1
         assert data["source_events"][0]["event_id"] == 42
+        retry_event = next(
+            event for event in platform.store.repositories.events.recent_events(limit=10)
+            if event["event_type"] == "evolution.task_retry"
+        )
+        assert retry_event["role"] == "god"
+        assert retry_event["task_type"] == "event_group:research_synthesis"
         assert platform.store.connection.execute(
             "SELECT COUNT(*) AS n FROM event_log WHERE event_type='evolution.task_retry'",
         ).fetchone()["n"] == 1

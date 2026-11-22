@@ -216,6 +216,54 @@ export async function restorePlayer() {
 
   /* ---------- View ---------- */
 
+export function isSessionError(error) {
+    return Number(error?.status) === 401 || Number(error?.status) === 403;
+  }
+
+
+export async function recoverPlayerSession() {
+    const saved = storageGet(PLAYER_KEY, null);
+    if (!saved?.id) return false;
+    try {
+      // A server restart drops in-memory sessions; the player row is durable.
+      // Re-enter by id to get a fresh session without creating a new character.
+      const result = await write("/api/v1/player/enter", { player_id: saved.id });
+      if (result.status !== "accepted" || !result.session_token) return false;
+      state.playerId = String(result.player_id || saved.id);
+      state.playerName = String(result.name || saved.name || state.playerId);
+      state.playerToken = String(result.session_token);
+      storageSet(PLAYER_KEY, { id: state.playerId, token: state.playerToken, name: state.playerName });
+      restartStream();
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+
+function expirePlayerSession() {
+    state.playerId = null;
+    state.playerToken = null;
+    state.view = null;
+    storageSet(PLAYER_KEY, null);
+    showEntry("角色会话已失效，请重新进入。");
+  }
+
+
+async function handleWaitFailure(error, fallback) {
+    if (!isSessionError(error)) {
+      toast(describeError(error, fallback), "error");
+      return;
+    }
+    if (await recoverPlayerSession()) {
+      toast("角色会话已刷新；刚才的推进任务已中断，请再点一次。", "error", 7000);
+      await loadView().catch(() => {});
+      return;
+    }
+    expirePlayerSession();
+  }
+
+
 export function startStream() {
     if (state.stream || typeof EventSource === "undefined") return;
     let source;
@@ -335,10 +383,12 @@ export async function loadView() {
     try {
       view = await request(`/api/v1/player/${encodeURIComponent(state.playerId)}/view`);
     } catch (error) {
-      if (error.status === 401 || error.status === 403) {
-        showEntry("角色会话已失效，请重新进入。");
+      if (!isSessionError(error)) throw error;
+      if (!await recoverPlayerSession()) {
+        expirePlayerSession();
+        throw error;
       }
-      throw error;
+      view = await request(`/api/v1/player/${encodeURIComponent(state.playerId)}/view`);
     }
     if (view.status !== "ok") throw new Error(view.message || "无法读取角色状态");
     state.view = view;
@@ -457,7 +507,8 @@ export async function awaitWaitTask(task, { onProgress } = {}) {
         const response = await request(await taskPath(current.task_id));
         current = response.task || current;
       } catch (error) {
-        if (error.status === 404) throw error;
+        const status = Number(error?.status || 0);
+        if (status >= 400 && status < 500) throw error;
       }
     }
     onProgress?.(current);
@@ -497,7 +548,7 @@ export async function advanceTask(prefix = "") {
       }
       await Promise.allSettled([loadFeed(), loadTrades()]);
     } catch (error) {
-      toast(describeError(error, "无法推进世界"), "error", 7000);
+      await handleWaitFailure(error, "无法推进世界");
     } finally {
       state.taskProgress = null;
       state.advancing = false;
@@ -517,7 +568,7 @@ export async function waitOneMinute(button) {
         toast(`世界向前推进了一分钟${decisions ? `，NPC 决策 ${decisions} 次` : ""}。`, "ok");
         await Promise.allSettled([loadFeed(), loadDialogue()]);
       } catch (error) {
-        toast(describeError(error, "无法推进世界"), "error");
+        await handleWaitFailure(error, "无法推进世界");
       }
     });
   }
@@ -549,7 +600,7 @@ export async function waitFor(minutes, button) {
           toast(`世界推进了 ${advanced} 分钟${decisions ? `，居民做了 ${decisions} 次决策` : ""}。`, "ok");
           await Promise.allSettled([loadFeed(), loadDialogue()]);
         } catch (error) {
-          toast(describeError(error, "无法推进世界"), "error");
+          await handleWaitFailure(error, "无法推进世界");
         }
       });
     } finally {
@@ -744,7 +795,10 @@ export async function loadFeed(force = false) {
     try {
       const response = await request("/api/v1/observer/timeline?limit=80&after=0&latest=1");
       const all = Array.isArray(response.events) ? response.events : [];
-      const events = all.filter((event) => !SKIP_EVENTS.has(String(event.event_type || "")));
+      const events = all.filter((event) => {
+        const type = String(event.event_type || "");
+        return !SKIP_EVENTS.has(type) && !type.startsWith("evolution.") && !type.startsWith("runtime.");
+      });
       state.feedEvents = events.slice().reverse();
       state.agentEvents = all
         .filter((event) => {

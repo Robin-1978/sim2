@@ -1152,3 +1152,49 @@ def test_web_can_delete_an_inactive_instance_but_not_the_active_one(tmp_path: Pa
     finally:
         server.close()
         thread.join(timeout=2)
+
+
+def test_task_polling_stops_on_expired_player_session_and_recovers():
+    """A restarted server drops sessions; task polling must not loop on 403."""
+
+    web = Path(__file__).parents[1] / "src" / "sim2" / "web"
+    source = (web / "js" / "actions.js").read_text(encoding="utf-8")
+    poll = source.split("export async function awaitWaitTask(", 1)[1].split(
+        "export async function advanceTask(", 1
+    )[0]
+    assert "status >= 400 && status < 500" in poll
+    assert "recoverPlayerSession" in source
+    assert 'write("/api/v1/player/enter", { player_id: saved.id })' in source
+    assert "handleWaitFailure" in source
+
+
+def test_evolution_retry_is_explained_in_the_timeline_not_leaked_as_raw_bookkeeping(tmp_path: Path):
+    from sim2.api.timeline import build_timeline
+    from sim2.platform.runtime import Platform
+
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "timeline-evolution-retry", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        with platform.store.transaction():
+            platform.store.repositories.events.append_event(
+                "evolution.task_retry", "lin_bo", 782,
+                {
+                    "role": "agent_decision",
+                    "actor_id": "lin_bo",
+                    "task_type": "behavior_assigned:definition_123",
+                    "retry_minute": 902,
+                    "reason": "Platform is already executing a behavior; wait for completion or an interrupt.",
+                    "retry_count": 2,
+                },
+            )
+        timeline = build_timeline(platform.store, limit=10, latest=True)
+        event = next(item for item in timeline["events"] if item["event_type"] == "evolution.task_retry")
+        assert "林泊 deferred an assigned behavior review" in event["narrative"]
+        assert "next attempt at world minute 902" in event["narrative"]
+        assert "evolution task retry" not in event["narrative"]
+    finally:
+        platform.close()
+
+    source = (Path(__file__).parents[1] / "src" / "sim2" / "web" / "js" / "actions.js").read_text(encoding="utf-8")
+    assert '!type.startsWith("evolution.")' in source

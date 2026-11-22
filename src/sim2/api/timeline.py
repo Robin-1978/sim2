@@ -148,6 +148,22 @@ def build_timeline(store: Any, *, limit: int = 100, after_event_id: int = 0, inc
             sentence = f"{actor} followed through on a development with {label}."
         elif event_type == "evolution.task_due":
             sentence = "A scheduled world review became due."
+        elif event_type == "evolution.task_retry":
+            task_type = str(event.get("task_type") or "scheduled review")
+            if task_type.startswith("behavior_assigned"):
+                task_type = "an assigned behavior review"
+            elif ":" in task_type:
+                task_type = task_type.split(":", 1)[1].replace("_", " ")
+            retry_minute = int(event.get("retry_minute", 0) or 0)
+            sentence = f"{actor} deferred {task_type} ({clip(event.get('reason'), 120)}); next attempt at world minute {retry_minute}."
+            activity = {
+                "kind": "evolution",
+                "status": "retry",
+                "actor": actor,
+                "actor_id": event.get("actor_id"),
+                "label": task_type,
+                "summary": clip(event.get("reason"), 120),
+            }
         elif event_type in {"civilization.milestone", "civilization.progressed"}:
             sentence = f"{'Civilization milestone' if event_type == 'civilization.milestone' else 'Civilization progress'}: {clip(event.get('progress_key'), 60)} — {clip(event.get('evidence'), 160)}"
         elif event_type == "world.rule.followed":
