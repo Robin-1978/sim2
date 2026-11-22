@@ -1056,3 +1056,72 @@ def test_assigned_definition_event_wakes_character_by_visible_name(tmp_path: Pat
         assert "mei_lan" not in runner._wait_streak
     finally:
         platform.close()
+
+
+class PlayerOriginReplyProvider:
+    """Answer one explicit player message, then stop the bounded chain."""
+
+    def __init__(self):
+        self.calls = []
+        self.replies = []
+
+    def complete_json(self, *, system, context, tools=None, messages=None):
+        self.calls.append(context)
+        if "from: 费兰" not in str(context):
+            return {"intent_type": "wait", "reason": "No new decision is needed."}
+        self.replies.append(context)
+        return {
+            "tool_calls": [{
+                "id": f"reply-{len(self.calls)}",
+                "type": "function",
+                "function": {
+                    "name": "send_message",
+                    "arguments": {
+                        "recipient": "费兰",
+                        "topic": "route",
+                        "message": "The report is received; the road stays open.",
+                    },
+                },
+            }],
+        }
+
+
+def test_two_runners_resolve_one_player_message_only_once(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "interaction-single-claim", tmp_path / "runtime"))
+    provider = PlayerOriginReplyProvider()
+    try:
+        first = SimulationRunner(platform, {"agent_decision": provider})
+        second = SimulationRunner(platform, {"agent_decision": provider})
+        sent = platform.submit_dialogue("fei_lan", "yu_ge", "route", "The western road is open.")
+        assert sent["status"] == "accepted"
+
+        first.resolve_pending_interactions()
+        second.resolve_pending_interactions()
+
+        assert len(provider.replies) == 1
+        transcript = platform.store.repositories.social.list_dialogue_exchanges("fei_lan")
+        assert [item["speaker_id"] for item in transcript] == ["fei_lan", "yu_ge"]
+    finally:
+        platform.close()
+
+
+def test_instant_interactions_never_reply_as_the_player(tmp_path: Path):
+    platform = Platform(create_instance(_config(), "player-never-auto-replies", tmp_path / "runtime"))
+    provider = PlayerOriginReplyProvider()
+    try:
+        assert platform.enter_player("player_one", "courier", name="Ari")["status"] == "accepted"
+        with platform.store.transaction():
+            player = platform.store.repositories.entities.get_agent("player_one")
+            player["initial_state"]["location_id"] = "inn"
+            platform.store.repositories.entities.put_agent("player_one", player, "Ari")
+        sent = platform.submit_dialogue("yu_ge", "player_one", "general", "Welcome to the inn.")
+        assert sent["status"] == "accepted"
+
+        report = SimulationRunner(platform, {"agent_decision": provider}).resolve_pending_interactions()
+
+        assert provider.calls == []
+        assert report.end_minute == report.start_minute
+        transcript = platform.store.repositories.social.list_dialogue_exchanges("player_one")
+        assert [item["speaker_id"] for item in transcript] == ["yu_ge"]
+    finally:
+        platform.close()

@@ -235,3 +235,5 @@ world-pack lint covers every `worlds/*/actions.yaml`.
 - 首屏优化（2026-11-22）：入口“进入世界”改为固定底部主按钮；游戏内把行动区移到目标/地图之前，首屏可见“下一步”；推荐行动优先跟随 `onboarding.action_ref`/目标 ready refs，其次生产性行动，需求不低时不再默认“使用随身物品”。聚焦回归 128 项通过。
 - 实例管理（2026-11-22）：Web 存档卡片可删除非当前实例；后端只接受 `instance_id`、拒绝当前实例和越界路径，删除整个实例目录（数据库与快照）；实例描述新增 `world_title` 供存档列表展示。
 - 首小时体验 P1-P3（2026-11-22）：`onboarding_checklist`/`onboarding_progress` 支持 3 步勾选与 `complete_when` 契约；`setting.ui.celebrations` 驱动金币/盖章/礼花/章节卡；`relationships` 暴露信任条；`recap` 提供最近一天回访摘要；账本汇总设施/配方/目标；`countdown` 场景主视觉和 Web Share 章节分享。所有内容标签和事件映射来自世界配置，平台不写死世界名。
+- 对话去重与玩家主权（2026-11-22）：`interaction_claim` 原子领取零分钟交互事件，后台回复线程与手动推进并发时同一句只回答一次；`SimulationRunner` 跳过 `role=player` / `controller=manual` 的收件人，自动运行不再替玩家角色回复。复现实例 `riverbend_market_p6wh` 中每条玩家消息出现两条 NPC 回复及玩家自动回复；聚焦回归覆盖双 runner 竞争与玩家收件人跳过。
+- 背景 NPC 移动空转（2026-11-22）：`riverbend_market_p6wh` 的阿石每分钟执行 `travel → north_mine` 并原地 `arrived`，因为 `travel_to` 未声明目的地的自检、移动候选包含当前地点、且背景控制器在没有 `bt_priority` 时默认选目录第一项。`parameter_options.location_id` 现在排除当前地点并提供显式 `value`；无紧迫需求时控制器不再默认纯移动；河湾镇三名背景 NPC 补上 `bt_priority`（采集优先，移动最后）。聚焦回归覆盖候选过滤、优先级选择和无优先级旧存档回退。

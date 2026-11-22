@@ -574,9 +574,15 @@ class BehaviorViewMixin:
         if location_keys & set(params):
             locations = []
             for location_id in frame.known_route_destinations or []:
+                # A destination choice must actually move the actor.  Offering
+                # the current location turns travel into a permanent no-op
+                # loop for background controllers and a pointless dialog
+                # option for the player.
+                if str(location_id) == str(frame.location_id or ""):
+                    continue
                 name = self._entity_name(location_id)
                 if name:
-                    locations.append({"name": name})
+                    locations.append({"name": name, "value": str(location_id)})
             if locations:
                 for key in location_keys & set(params):
                     parameter_options[key] = locations[:8]

@@ -41,6 +41,35 @@ class EventsRepository:
         ).fetchall()
         return [{"event_id": row["event_id"], "event_type": row["event_type"], "actor_id": row["actor_id"], "world_minute": row["world_minute"], **json.loads(row["data_json"])} for row in rows]
 
+    def claim_interaction(self, event_id: int, world_minute: int) -> bool:
+        """Claim one zero-minute interaction for exactly one runner.
+
+        Dialogue replies and manual advancement can resolve the same event
+        concurrently.  The in-memory seen set is per runner and therefore not
+        enough; this durable claim makes the winner unique across runners,
+        threads and processes.
+        """
+
+        with self.store.transaction():
+            self.store.connection.execute(
+                "DELETE FROM interaction_claim WHERE claimed_minute < ?",
+                (int(world_minute) - 43200,),
+            )
+            cursor = self.store.connection.execute(
+                "INSERT OR IGNORE INTO interaction_claim(event_id,claimed_minute) VALUES (?,?)",
+                (int(event_id), int(world_minute)),
+            )
+            return cursor.rowcount == 1
+
+    def release_interaction(self, event_id: int) -> None:
+        """Return an unanswerable interaction to the queue after a provider error."""
+
+        with self.store.transaction():
+            self.store.connection.execute(
+                "DELETE FROM interaction_claim WHERE event_id=?",
+                (int(event_id),),
+            )
+
     def latest_event_id(self) -> int:
         """Return the newest committed event id, or zero for an empty log."""
 

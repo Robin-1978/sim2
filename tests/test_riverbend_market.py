@@ -9,6 +9,7 @@ from sim2.api.service import ControlService
 from sim2.bootstrap.service import create_instance, describe_config, validate_config
 from sim2.intents.models import BehaviorIntent
 from sim2.platform.runtime import Platform
+from sim2.simulation.runner import SimulationReport, SimulationRunner
 
 WORLD = Path(__file__).parents[1] / "worlds" / "riverbend_market"
 
@@ -549,5 +550,54 @@ def test_player_view_exposes_dialogue_relationship_and_recipe_ledger(tmp_path: P
         assert len(view["recipes"]) == 8
         assert any(recipe["id"] == "iron_ingot" for recipe in view["recipes"])
         assert view["recap"]["latest_event_id"] >= 1
+    finally:
+        service.close()
+
+
+def test_travel_options_exclude_the_current_location(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "riverbend-travel-options", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        view = platform.decision_view("ashi")
+        travel = next(item for item in view["executable_behaviors"] if item["ref"] == "behavior:travel")
+        options = travel["parameter_options"]["location_id"]
+        assert {"name", "value"} <= set(options[0])
+        assert "north_mine" not in {option["value"] for option in options}
+    finally:
+        service.close()
+
+
+def test_background_miner_chooses_configured_work_over_travel(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "riverbend-bt-priority", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        agent = platform.store.repositories.entities.get_agent("ashi")
+        assert agent["bt_priority"][0] == "gather"
+        assert SimulationRunner(platform, {})._run_bt_only_decision(agent, SimulationReport(0, 0), 0)
+
+        updated = platform.store.repositories.entities.get_agent("ashi")
+        state = updated["initial_state"]
+        assert state["active_behavior_id"] in {"gather", "deep_gather"}
+        assert state["active_parameters"]["entry_id"].startswith("gather_")
+    finally:
+        service.close()
+
+
+def test_background_miner_without_priority_does_not_default_to_travel(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "riverbend-bt-fallback", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        with platform.store.transaction():
+            agent = platform.store.repositories.entities.get_agent("ashi")
+            agent.pop("bt_priority")
+            platform.store.repositories.entities.put_agent("ashi", agent, agent.get("name") or "阿石")
+
+        agent = platform.store.repositories.entities.get_agent("ashi")
+        assert SimulationRunner(platform, {})._run_bt_only_decision(agent, SimulationReport(0, 0), 0)
+
+        updated = platform.store.repositories.entities.get_agent("ashi")
+        state = updated["initial_state"]
+        assert state["active_behavior_id"] != "travel"
+        assert state["active_parameters"]["entry_id"].startswith("gather_")
     finally:
         service.close()

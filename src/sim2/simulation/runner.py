@@ -261,12 +261,24 @@ class SimulationRunner:
                 continue
             if event.get("event_type") not in {"dialogue.completed", "trade.offer_created", "trade.countered"}:
                 continue
-            self._interaction_events_seen.add(event_id)
-            self._persist_scheduler_state()
             minute = int(self.platform.store.repositories.metadata.get("world_minute", 0))
             actor_id = str(event.get("actor_id") or "")
             recipient_id = str(event.get("target_id") or event.get("recipient_id") or "")
             if not actor_id or not recipient_id or actor_id == recipient_id:
+                self._interaction_events_seen.add(event_id)
+                self._persist_scheduler_state()
+                continue
+            if not self.platform.store.repositories.events.claim_interaction(event_id, minute):
+                # A concurrent runner (dialogue reply thread or manual
+                # advancement) already owns this interaction.  Never answer
+                # the same message twice.
+                self._interaction_events_seen.add(event_id)
+                continue
+            self._interaction_events_seen.add(event_id)
+            self._persist_scheduler_state()
+            if self._is_player_controlled(recipient_id):
+                # A human-controlled character answers through player intents.
+                # Record the incoming message, but never speak for the player.
                 continue
             pair = tuple(sorted((actor_id, recipient_id)))
             dialogue = None
@@ -323,6 +335,7 @@ class SimulationRunner:
                 # A provider outage must not consume the interaction event;
                 # it remains eligible after the scheduler backoff.
                 self._interaction_events_seen.discard(event_id)
+                self.platform.store.repositories.events.release_interaction(event_id)
                 self._persist_scheduler_state()
                 return False
             if turn.result.get("status") == "accepted" and (
@@ -374,6 +387,18 @@ class SimulationRunner:
             if minute - previous_minute <= self.interaction_thread_window_minutes and self._message_similarity(message, previous) >= 0.72:
                 return True
         return False
+
+    def _is_player_controlled(self, agent_id: str) -> bool:
+        """Return True when a human player owns this character's decisions."""
+
+        try:
+            agent = self.platform.store.repositories.entities.get_agent(str(agent_id))
+        except (KeyError, TypeError):
+            return False
+        state = agent.get("initial_state") if isinstance(agent.get("initial_state"), dict) else {}
+        role = str(agent.get("role") or state.get("role") or "").casefold()
+        controller = str(agent.get("controller") or state.get("controller") or "").casefold()
+        return role == "player" or controller in {"manual", "player"}
 
     def _visible_name(self, actor_id: str) -> str:
         try:
@@ -492,7 +517,20 @@ class SimulationRunner:
         # another optional trip when a survival action is executable.
         selected = max(scored, key=lambda value: value[:3])[3]
         if not any(score > 0.02 for score, *_ in scored):
-            selected = next((ranked[item] for item in priority if item in ranked), options[0])
+            configured = next((ranked[item] for item in priority if item in ranked), None)
+            if configured is not None:
+                selected = configured
+            else:
+                # With no urgent drive and no configured priority, the first
+                # catalog entry is usually travel.  Pacing to the same place
+                # every minute starves configured work such as gathering.
+                # Prefer a stationary behavior when one is executable.
+                stationary = [
+                    item for score, _priority, _index, item in scored
+                    if "movement" not in {str(tag) for tag in (item.get("goal_tags") or [])}
+                ]
+                if stationary:
+                    selected = stationary[0]
         parameters = dict(selected.get("parameter_values") or {})
         for key, choices in (selected.get("parameter_options") or {}).items():
             if key in parameters or not isinstance(choices, list) or not choices:

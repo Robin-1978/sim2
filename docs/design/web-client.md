@@ -307,6 +307,11 @@ SSE 通过两类事件通知客户端：
 - `dialogue.append`：后台回复任务完成或失败；带 `player_id`，按玩家裁剪。
   失败时客户端清除 typing 并提示“NPC 回复暂不可用”。
 
+每个 `dialogue.completed` / 交易事件会在 `interaction_claim` 中原子领取，只有
+一个 runner 会调用 LLM。后台回复线程与“推进到完成 / 等待”的手动推进即使同时
+运行，也不会把同一句话回答两次。零分钟交互还会跳过 `controller: manual` 或
+`role: player` 的收件人：玩家只通过自己的输入回复，自动运行不会替玩家说话。
+
 客户端在发送前显示 typing，POST 返回后立即渲染玩家消息；30 秒没有回复会
 自动清除 typing，避免界面像卡死。对话仍不推进世界分钟。
 
