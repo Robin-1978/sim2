@@ -269,6 +269,21 @@ endings:
 
 ### 手动推进与世界同步
 
+### 对话：消息先上屏，回复走 SSE
+
+`POST /api/v1/player/{id}/dialogue` 只负责记录玩家消息并返回
+`{"status":"accepted","reply":{"status":"pending"}}`。NPC 回复由服务端短线程在
+后台运行 `resolve_pending_interactions`，不阻塞 HTTP 请求，也不推进世界时间。
+SSE 通过两类事件通知客户端：
+
+- `dialogue`：`dialogue.completed` 产生的新交换记录；玩家自己的消息先到，
+  客户端保留“正在输入…”；只有 `speaker_id` 不是玩家时才清除 typing。
+- `dialogue.append`：后台回复任务完成或失败；带 `player_id`，按玩家裁剪。
+  失败时客户端清除 typing 并提示“NPC 回复暂不可用”。
+
+客户端在发送前显示 typing，POST 返回后立即渲染玩家消息；30 秒没有回复会
+自动清除 typing，避免界面像卡死。对话仍不推进世界分钟。
+
 玩家角色使用 `controller: manual`，自动运行不会替玩家角色做 LLM 决策。
 提交行动后，客户端调用 `POST /api/v1/player/{id}/wait`；服务端返回 `202` 和
 `task_id`，由 `ManualTaskRunner` 在后台以一分钟为一块推进，并使用与自动运行
@@ -418,7 +433,7 @@ web 根目录内的 `.html`、`.css`、`.js` 和 `.svg`，拒绝路径穿越。�
 | GET | `/api/v1/player/{id}/tasks/{task_id}` | 任务进度与最终结果 |
 | GET | `/api/v1/player/{id}/trades` | 玩家交易报价 |
 | POST | `/api/v1/player/{id}/trades[/{offer_id}/{accept,counter,reject}]` | 发起或回应交易 |
-| POST | `/api/v1/player/{id}/dialogue` | 即时对话 |
+| POST | `/api/v1/player/{id}/dialogue` | 记录消息并立即返回 pending；回复走 SSE |
 | GET | `/api/v1/map` | 玩家可见地点、路线与占用者 |
 | GET | `/api/v1/observer/timeline` | 公开事件流 |
 | GET | `/api/v1/observer/dialogue` | 公开对话记录 |

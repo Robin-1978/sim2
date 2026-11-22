@@ -157,6 +157,9 @@ class FakeServer:
     def resolve_dialogue_reply(self, player_id, *, provider_name=None, token=None):
         return {"status": "accepted"}
 
+    def queue_dialogue_reply(self, player_id, *, provider_name=None, token=None):
+        return None
+
     def snapshot_list(self):
         return {"status": "ok", "snapshots": [], "instance_id": "inst-1"}
 

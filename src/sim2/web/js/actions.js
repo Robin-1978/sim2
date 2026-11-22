@@ -236,6 +236,31 @@ export function startStream() {
         waiter(payload.data.task);
       }
     });
+    source.addEventListener("dialogue", (event) => {
+      let payload = {};
+      try { payload = JSON.parse(event.data || "{}"); } catch (error) { return; }
+      const exchanges = Array.isArray(payload.data?.exchanges) ? payload.data.exchanges : [];
+      if (!exchanges.some((item) => item.speaker_id === state.playerId || item.listener_id === state.playerId)) return;
+      const replyArrived = exchanges.some(
+        (item) => item.listener_id === state.playerId && item.speaker_id !== state.playerId,
+      );
+      if (replyArrived) {
+        state.dialogueTyping = false;
+        if (state.dialogueReplyTimer) window.clearTimeout(state.dialogueReplyTimer);
+        state.dialogueReplyTimer = null;
+      }
+      loadDialogue(state.selectedCharacter?.id || state.dialogueTypingTarget || "").catch(() => {});
+    });
+    source.addEventListener("dialogue.append", (event) => {
+      let payload = {};
+      try { payload = JSON.parse(event.data || "{}"); } catch (error) { return; }
+      if (payload.data?.player_id && payload.data.player_id !== state.playerId) return;
+      state.dialogueTyping = false;
+      if (state.dialogueReplyTimer) window.clearTimeout(state.dialogueReplyTimer);
+      state.dialogueReplyTimer = null;
+      if (payload.data?.status === "failed") toast("NPC 回复暂不可用。", "error");
+      loadDialogue(state.selectedCharacter?.id || state.dialogueTypingTarget || "").catch(() => {});
+    });
     source.addEventListener("runtime", (event) => {
       try {
         state.runtime = JSON.parse(event.data || "{}").data || state.runtime;
@@ -523,7 +548,8 @@ export async function loadDialogue(characterId = state.selectedCharacter?.id || 
         .filter((item) => !characterId || item.speaker_id === characterId || item.listener_id === characterId)
         .slice(-30);
       root.replaceChildren();
-      if (!exchanges.length) {
+      const typing = state.dialogueTyping && (!characterId || state.dialogueTypingTarget === characterId);
+      if (!exchanges.length && !typing) {
         const who = characterId ? personName(characterId) : "任何人";
         root.append(el("p", "dialogue-empty", `还没有和 ${who} 的对话。先开口吧。`));
         return;
@@ -535,6 +561,12 @@ export async function loadDialogue(characterId = state.selectedCharacter?.id || 
         bubble.append(el("strong", "", speaker));
         if (item.topic && item.topic !== "general") bubble.append(el("span", "dialogue-topic", item.topic));
         bubble.append(el("p", "", item.message || ""));
+        root.append(bubble);
+      }
+      if (typing) {
+        const bubble = el("div", "dialogue-bubble theirs typing");
+        bubble.append(el("strong", "", characterId ? personName(characterId) : "对方"));
+        bubble.append(el("p", "", "正在输入…"));
         root.append(bubble);
       }
       root.scrollTop = root.scrollHeight;
@@ -551,6 +583,17 @@ export async function sendDialogue(form) {
     if (!message) return toast("先说点什么。", "error");
     const button = $("talk-send");
     await withPending(button, async () => {
+      state.dialogueTyping = true;
+      state.dialogueTypingTarget = target;
+      if (state.dialogueReplyTimer) window.clearTimeout(state.dialogueReplyTimer);
+      state.dialogueReplyTimer = window.setTimeout(() => {
+        if (!state.dialogueTyping) return;
+        state.dialogueTyping = false;
+        state.dialogueReplyTimer = null;
+        loadDialogue(target).catch(() => {});
+        toast("NPC 回复暂不可用。", "error");
+      }, 30000);
+      await loadDialogue(target);
       try {
         const result = await write(`/api/v1/player/${encodeURIComponent(state.playerId)}/dialogue`, {
           listener_id: target,
@@ -561,12 +604,21 @@ export async function sendDialogue(form) {
         if (result.status !== "accepted") throw new Error(result.message || "对话未发送");
         $("talk-message").value = "";
         const reply = result.reply || {};
-        toast(reply.status === "rejected" ? "消息已记录，但 NPC 回复暂不可用。" : "对话已发送。", reply.status === "rejected" ? "error" : "ok");
+        if (reply.status === "rejected") {
+          state.dialogueTyping = false;
+          if (state.dialogueReplyTimer) window.clearTimeout(state.dialogueReplyTimer);
+          state.dialogueReplyTimer = null;
+        }
+        toast(reply.status === "pending" ? "消息已发送，对方正在回复…" : "对话已发送。", reply.status === "rejected" ? "error" : "ok");
         await Promise.allSettled([loadView(), loadFeed()]);
         const selected = nearbyParticipants().find((item) => item.id === target);
         if (selected && state.selectedCharacter?.id === target) updateCharacterSheet(selected);
         await loadDialogue(target);
       } catch (error) {
+        state.dialogueTyping = false;
+        if (state.dialogueReplyTimer) window.clearTimeout(state.dialogueReplyTimer);
+        state.dialogueReplyTimer = null;
+        await loadDialogue(target).catch(() => {});
         toast(describeError(error, "对话未发送"), "error");
       }
     });

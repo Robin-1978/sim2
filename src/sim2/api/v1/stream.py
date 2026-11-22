@@ -17,6 +17,7 @@ _PLAYER_TYPES = {
     "runtime",
     "player.view.changed",
     "feed.append",
+    "dialogue",
     "dialogue.append",
     "trade.changed",
     "chapter.changed",

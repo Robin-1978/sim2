@@ -78,14 +78,12 @@ def player_dialogue(ctx: RequestContext) -> dict[str, Any]:
         str(ctx.body.get("message") or ""),
     )
     if result.get("status") == "accepted":
-        result = {
-            **result,
-            "reply": ctx.server.resolve_dialogue_reply(
-                player_id,
-                provider_name=ctx.body.get("provider"),
-                token=ctx.token,
-            ),
-        }
+        ctx.server.queue_dialogue_reply(
+            player_id,
+            provider_name=ctx.body.get("provider"),
+            token=ctx.token,
+        )
+        result = {**result, "reply": {"status": "pending", "message": "NPC 正在回复。"}}
     return result
 
 

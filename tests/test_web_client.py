@@ -539,6 +539,7 @@ def test_web_dialogue_accepts_names_and_reports_missing_participant(tmp_path: Pa
             headers=player_headers,
         )
         assert by_names["status"] == "accepted", by_names
+        assert by_names["reply"]["status"] == "pending"
         missing = _json_request(
             base + "/api/v1/player/player_one/dialogue",
             {"listener_id": "nobody_xyz", "topic": "general", "message": "hi"},
@@ -1068,3 +1069,12 @@ def test_wait_task_returns_fast_and_keeps_concurrent_reads_responsive(tmp_path: 
     finally:
         server.close()
         thread.join(timeout=3)
+
+
+def test_player_stream_accepts_dialogue_events():
+    from sim2.api.v1.stream import Subscription
+
+    sub = Subscription("player", "player_one", False)
+    assert sub.accepts({"type": "dialogue", "data": {}})
+    assert sub.accepts({"type": "dialogue.append", "data": {"player_id": "player_one"}})
+    assert not sub.accepts({"type": "dialogue.append", "data": {"player_id": "other_player"}})

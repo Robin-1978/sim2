@@ -6,7 +6,7 @@ import os
 import secrets
 import time
 from collections.abc import Callable
-from threading import RLock
+from threading import RLock, Thread
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -249,6 +249,9 @@ class ControlHTTPServer(ThreadingHTTPServer):
         self.router = V1Router(self)
         self.stream = StreamHub(self)
         self.tasks = ManualTaskRunner(self)
+        self._dialogue_reply_lock = RLock()
+        self._dialogue_threads_lock = RLock()
+        self._dialogue_threads: set[Thread] = set()
         super().__init__(address, _Handler)
 
     def session_context(self, token: str) -> dict[str, str]:
@@ -601,6 +604,40 @@ class ControlHTTPServer(ThreadingHTTPServer):
         # Provider calls must not hold the server control lock.
         return runtime.resolve_pending_interactions(provider_name)
 
+    def queue_dialogue_reply(self, player_id: str, *, provider_name: str | None = None, token: str | None = None) -> None:
+        """Generate one NPC reply in the background and publish it on the stream.
+
+        The dialogue POST returns as soon as the player's message is recorded.
+        A short-lived daemon thread runs the bounded interaction turn; the
+        stream hub also sees the new ``dialogue.completed`` event and publishes
+        the refreshed exchange list.
+        """
+
+        def run() -> None:
+            try:
+                with self._dialogue_reply_lock:
+                    reply = self.resolve_dialogue_reply(player_id, provider_name=provider_name, token=token)
+                self.stream.publish("dialogue.append", {
+                    "player_id": str(player_id),
+                    "status": str((reply or {}).get("status") or "accepted"),
+                    "reply": reply,
+                })
+            except Exception as exc:  # noqa: BLE001 - a failed reply must not kill the server
+                _LOGGER.warning("dialogue reply failed for %s: %s", player_id, exc)
+                self.stream.publish("dialogue.append", {
+                    "player_id": str(player_id),
+                    "status": "failed",
+                    "message": "NPC 回复暂不可用。",
+                })
+            finally:
+                with self._dialogue_threads_lock:
+                    self._dialogue_threads.discard(thread)
+
+        thread = Thread(target=run, name=f"sim2-dialogue-{player_id}", daemon=True)
+        with self._dialogue_threads_lock:
+            self._dialogue_threads.add(thread)
+        thread.start()
+
     def trade_offers(self, agent_id: str, *, include_closed: bool = False, token: str | None = None) -> dict[str, Any]:
         with self._control_lock:
             if self.control is None:
@@ -840,6 +877,17 @@ class ControlHTTPServer(ThreadingHTTPServer):
         self.server_close()
 
     def _close_background(self) -> None:
+        # Dialogue replies are short provider turns.  Let them finish before
+        # closing SQLite so a test/server shutdown cannot collide with a
+        # background write and leave a WAL lock behind.
+        deadline = time.monotonic() + 15.0
+        while time.monotonic() < deadline:
+            with self._dialogue_threads_lock:
+                threads = list(self._dialogue_threads)
+            if not threads:
+                break
+            for thread in threads:
+                thread.join(timeout=0.2)
         try:
             self.tasks.close()
         finally:
