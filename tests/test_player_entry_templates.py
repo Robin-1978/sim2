@@ -428,3 +428,19 @@ def test_dialogue_resolves_names_and_reports_missing_participant(tmp_path: Path)
         assert bad_trade["missing"] == "nobody_xyz"
     finally:
         platform.close()
+
+
+def test_player_entry_generates_an_internal_id_when_only_a_name_is_supplied(tmp_path: Path):
+    db_path = create_instance(WORLDS / "tidebound_commons", "generated-player-id", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        result = platform.enter_player("", "forager", name="Ari")
+
+        assert result["status"] == "accepted"
+        assert result["player_id"].startswith("player_")
+        assert result["name"] == "Ari"
+        agent = platform.store.repositories.entities.get_agent(result["player_id"])
+        assert agent["name"] == "Ari"
+        assert agent["role"] == "player"
+    finally:
+        platform.close()

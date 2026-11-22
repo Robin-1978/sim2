@@ -413,13 +413,22 @@ class ControlHTTPServer(ThreadingHTTPServer):
         with self._control_lock:
             if self.control is None:
                 raise NoActiveWorldError("no world instance is open")
-            player_id = str(body["player_id"])
+            requested_id = str(body.get("player_id") or "").strip()
+            name = str(body.get("name") or "").strip()
+            if not requested_id and not name:
+                return {
+                    "status": "rejected",
+                    "message": "A character name is required for a new player.",
+                    "failed_check": "name",
+                    "retryable": True,
+                }
             result = self.control.enter_player(
-                player_id,
+                requested_id,
                 str(body.get("origin_id") or ""),
-                body.get("name"),
+                name or None,
             )
             if result.get("status") == "accepted":
+                player_id = str(result.get("player_id") or requested_id)
                 result = {
                     **result,
                     "session_token": self.issue_session("player", player_id=player_id),

@@ -1078,3 +1078,39 @@ def test_player_stream_accepts_dialogue_events():
     assert sub.accepts({"type": "dialogue", "data": {}})
     assert sub.accepts({"type": "dialogue.append", "data": {"player_id": "player_one"}})
     assert not sub.accepts({"type": "dialogue.append", "data": {"player_id": "other_player"}})
+
+
+def test_player_entry_generates_an_id_when_only_a_character_name_is_supplied(tmp_path: Path):
+    config = Path(__file__).parents[1] / "worlds" / "starter_village"
+    db_path = create_instance(config, "auto-player-id", tmp_path / "runtime")
+    server = ControlHTTPServer(("127.0.0.1", 0), db_path)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with urlopen(base + "/api/v1/player/entry") as response:
+            entry = json.loads(response.read())
+        origin = entry["origins"][0]["id"]
+
+        missing_name = _json_request(base + "/api/v1/player/enter", {"origin_id": origin})
+        assert missing_name["status"] == "rejected"
+        assert missing_name["failed_check"] == "name"
+
+        created = _json_request(base + "/api/v1/player/enter", {"origin_id": origin, "name": "无名旅人"})
+        assert created["status"] == "accepted", created
+        player_id = created["player_id"]
+        assert player_id.startswith("player_")
+        assert created["name"] == "无名旅人"
+        assert created["session_token"]
+
+        with urlopen(Request(
+            base + f"/api/v1/player/{player_id}/view",
+            headers={"x-sim2-session": created["session_token"]},
+        )) as response:
+            view = json.loads(response.read())
+        assert view["status"] == "ok"
+        assert view["player"]["id"] == player_id
+        assert view["player"]["name"] == "无名旅人"
+    finally:
+        server.close()
+        thread.join(timeout=2)

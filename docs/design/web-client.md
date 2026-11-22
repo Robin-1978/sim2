@@ -255,8 +255,9 @@ endings:
              → Platform 校验并启动行为 → 查看进度与结果 → 选择下一步
 ```
 
-- 已有玩家 ID 再次提交会恢复角色，并补齐当前 `player_template` 中缺失的
-  能力、物资、行为和 controller。
+- 新角色只需要角色名和出身；内部玩家 ID 由 Platform 生成（`player_<12 hex>`），
+  不再要求玩家填写。已有角色再次进入时按 ID 恢复，并补齐当前
+  `player_template` 中缺失的能力、物资、行为和 controller。
 - 行动区先给出一个推荐行动，再以紧凑列表展示最多五个备选；其余按分类筛选或
   展开。所有行动仍只来自 Platform 判定可执行的行为，条件不足的行为保留在
   可展开列表并显示失败谓词的可读原因。
@@ -426,7 +427,7 @@ web 根目录内的 `.html`、`.css`、`.js` 和 `.svg`，拒绝路径穿越。�
 | GET | `/api/v1/world` | 世界展示事实与起始时钟；无实例时为 `no_world` |
 | GET | `/api/v1/worlds` | 可创建的世界模板摘要 |
 | GET | `/api/v1/player/entry` | 玩家出身、入口地点与已有玩家 |
-| POST | `/api/v1/player/enter` | 新建或恢复玩家，返回 Player session |
+| POST | `/api/v1/player/enter` | 新建（名称+出身，ID 自动生成）或恢复玩家，返回 Player session |
 | GET | `/api/v1/player/{id}/view` | 玩家投影、行动、目标、物品标签、世界数值 |
 | POST | `/api/v1/player/{id}/actions` | 提交 Platform 校验的行为 |
 | POST | `/api/v1/player/{id}/wait` | 返回 202 + task_id；后台按分钟推进 |

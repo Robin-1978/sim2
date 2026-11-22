@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Callable
+from uuid import uuid4
 
 from ..actions.capacity import check_action_capacity
 from ..behavior.estimator import BehaviorDurationEstimator
@@ -172,16 +173,18 @@ class RuntimeApiService(PlatformService):
     def enter_player(self, player_id: str, origin_id: str, *, name: str | None = None) -> dict[str, Any]:
         """Instantiate a player or resume an existing one from the template.
 
-        A player session is local and browser-held.  Re-entering an existing
-        player id used to be impossible after the browser lost its session
-        token; this method now treats an existing player as a resume and
-        backfills any template capabilities, inventory or behaviors that were
-        introduced after the character was created.
+        A new character normally supplies only a display name and origin; the
+        internal id is generated here so it is not a player-facing field.  A
+        supplied id still supports explicit tooling and resuming an existing
+        browser-held character.  Re-entering an existing player id used to be
+        impossible after the browser lost its session token; this method now
+        treats an existing player as a resume and backfills any template
+        capabilities, inventory or behaviors introduced after creation.
         """
 
         player_id = str(player_id or "").strip()
         if not player_id:
-            raise ValueError("player_id is required")
+            player_id = self._new_player_id()
         try:
             existing = self.store.repositories.entities.get_agent(player_id)
         except KeyError:
@@ -281,7 +284,25 @@ class RuntimeApiService(PlatformService):
                         "summary": str(opening["summary"]),
                     },
                 )
-        return {"status": "accepted", "player_id": player_id, "origin_id": origin_id, "location_id": location_id, "resumed": False}
+        return {
+            "status": "accepted",
+            "player_id": player_id,
+            "name": str(agent["name"]),
+            "origin_id": origin_id,
+            "location_id": location_id,
+            "resumed": False,
+        }
+
+    def _new_player_id(self) -> str:
+        """Return an unused stable id for a newly created character."""
+
+        for _ in range(16):
+            candidate = f"player_{uuid4().hex[:12]}"
+            try:
+                self.store.repositories.entities.get_agent(candidate)
+            except KeyError:
+                return candidate
+        return f"player_{uuid4().hex}"
 
     @staticmethod
     def _player_capabilities(template: dict[str, Any], origin: dict[str, Any] | None) -> dict[str, float]:

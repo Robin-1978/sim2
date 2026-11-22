@@ -231,3 +231,4 @@ world-pack lint covers every `worlds/*/actions.yaml`.
 - Riverbend 采集目录新增显式 `resource_id`；包校验与模板校验会拒绝未知资源、地点/资源地点不一致、`resource_withdrawal` 指向别的资源、缺少产出物品或未在 `item_labels` 声明的产出。
 - 采集目录的 `requires` 现在校验条件路径：未知命名空间、未声明状态/需求/世界属性、未声明物品不再静默变成 false。
 - 玩家视图按绑定资源的当前库存过滤采集条目；资源不足一次采集量时不再出现在下拉框。聚焦回归 `tests/test_riverbend_market.py` 17 项、`tests/test_world_authoring.py` 12 项通过；相关世界/打包校验共 80 项通过。
+- 玩家初始化改为“角色名 + 出身”：新角色的内部 ID 由 Platform 生成（`player_<12 hex>`），网页入口不再要求填写玩家 ID；已有角色仍按 ID 恢复。API 的 `player_id` 变为可选，缺名且缺 ID 时返回 `failed_check: name`。回归：`test_player_entry_templates.py` 18 项、`test_web_client.py`/`test_http_post_routes.py`/`test_play_without_llm.py` 合计 118 项通过。

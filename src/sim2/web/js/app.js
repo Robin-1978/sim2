@@ -70,9 +70,6 @@ export function wireUi() {
     });
 
     $("entry-submit").addEventListener("click", (event) => submitEntry(event.currentTarget));
-    $("entry-id").addEventListener("keydown", (event) => {
-      if (event.key === "Enter") submitEntry($("entry-submit"));
-    });
     $("entry-name").addEventListener("keydown", (event) => {
       if (event.key === "Enter") submitEntry($("entry-submit"));
     });

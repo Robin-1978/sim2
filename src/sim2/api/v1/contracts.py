@@ -234,7 +234,7 @@ class SessionRequest(SessionRequestV1):
 
 
 class EnterPlayerRequestV1(WireModel):
-    player_id: str
+    player_id: str = ""
     origin_id: str = ""
     name: str | None = None
     idempotency_key: str | None = None

@@ -126,7 +126,7 @@ export function renderContinue(players) {
     for (const player of players) {
       const card = el("div", "continue-card-inner");
       card.append(el("strong", "", player.name || player.id));
-      const meta = [player.location ? `位于 ${player.location}` : "", `角色 ID ${player.id}`].filter(Boolean).join(" · ");
+      const meta = player.location ? `位于 ${player.location}` : "";
       card.append(el("p", "", meta));
       const button = el("button", "button primary wide", `继续 ${player.name || player.id}`);
       button.type = "button";
@@ -144,7 +144,7 @@ export function renderOrigins(entry) {
     const list = $("origin-list");
     list.replaceChildren();
     if (!origins.length) {
-      list.append(el("p", "hint", "该世界没有配置出身；输入玩家 ID 即可进入。"));
+      list.append(el("p", "hint", "该世界没有配置出身；输入角色名即可进入。"));
       return;
     }
     if (!origins.some((item) => item.id === state.selectedOrigin)) {

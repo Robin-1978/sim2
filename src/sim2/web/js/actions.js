@@ -69,23 +69,22 @@ export function enterGame() {
 
 
 export async function submitEntry(button, forcedPlayerId = null) {
-    const playerId = String(forcedPlayerId || $("entry-id").value || "").trim();
-    const name = forcedPlayerId ? "" : String($("entry-name").value || "").trim();
-    const originId = forcedPlayerId ? "" : state.selectedOrigin;
+    const resumingId = String(forcedPlayerId || "").trim();
+    const name = resumingId ? "" : String($("entry-name").value || "").trim();
+    const originId = resumingId ? "" : state.selectedOrigin;
     $("entry-error").textContent = "";
-    if (!playerId) {
-      $("entry-error").textContent = "请输入玩家 ID。";
-      return;
-    }
-    if (!/^[A-Za-z0-9_.-]{2,64}$/.test(playerId)) {
-      $("entry-error").textContent = "玩家 ID 只能包含字母、数字、下划线、点和连字符，长度 2-64。";
+    if (!resumingId && !name) {
+      $("entry-error").textContent = "请输入角色名。";
       return;
     }
     await withPending(button, async () => {
       try {
-        const result = await write("/api/v1/player/enter", { player_id: playerId, origin_id: originId, name: name || undefined });
+        const payload = resumingId
+          ? { player_id: resumingId }
+          : { origin_id: originId, name };
+        const result = await write("/api/v1/player/enter", payload);
         if (result.status !== "accepted") throw new Error(result.message || "无法进入世界");
-        state.playerId = result.player_id || playerId;
+        state.playerId = result.player_id || resumingId;
         state.playerName = result.name || name || state.playerId;
         state.playerToken = result.session_token || null;
         state.entry = {

@@ -100,21 +100,25 @@ export async function enterPlayer() {
     const originId = $("play-player-origin")?.value;
     const name = $("play-player-name")?.value.trim();
     const resultBox = $("play-notice") || $("interaction-result");
-    if (!playerId) { setPlayerResult("需要填写玩家 ID", false); return; }
+    if (!playerId && !name) { setPlayerResult("新角色需要填写名字", false); return; }
     try {
-      const result = await write("/api/v1/player/enter", { player_id: playerId, origin_id: originId || undefined, name: name || undefined });
+      const payload = playerId
+        ? { player_id: playerId, origin_id: originId || undefined, name: name || undefined }
+        : { origin_id: originId || undefined, name };
+      const result = await write("/api/v1/player/enter", payload);
       if (result.status !== "accepted") throw new Error(result.message || "玩家进入失败");
-      state.playerId = playerId;
+      const resolvedId = result.player_id || playerId;
+      state.playerId = resolvedId;
       state.playerToken = result.session_token || state.playerToken;
       state.sessionToken = state.playerToken || state.observerToken;
-      localStorage.setItem("sim2_player_id", playerId);
+      localStorage.setItem("sim2_player_id", resolvedId);
       if (result.session_token) localStorage.setItem("sim2_player_token", result.session_token);
       await loadPlayerView();
       switchView("play-view");
       if (result.resumed) {
-        setPlayerResult(result.migrated ? `已恢复角色 ${result.name || playerId}，并补齐了模板能力与物资。` : `已恢复角色 ${result.name || playerId}。`, true);
+        setPlayerResult(result.migrated ? `已恢复角色 ${result.name || resolvedId}，并补齐了模板能力与物资。` : `已恢复角色 ${result.name || resolvedId}。`, true);
       } else {
-        setPlayerResult("你已经进入世界。先看看周围，再选择下一步。", true);
+        setPlayerResult(`你已经以 ${result.name || resolvedId} 的身份进入世界。先看看周围，再选择下一步。`, true);
       }
     } catch (error) { setPlayerResult(error.message || "玩家进入失败", false); }
   }
