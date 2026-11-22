@@ -394,9 +394,9 @@ behavior_trees:
   - belonging
   - purpose
 - id: trade_smithy
-  agent_label: smithy买卖
-  summary: smithy买卖
-  description: 在smithy选择一个可见报价，买或卖。
+  agent_label: 铁匠铺交易
+  summary: 在铁匠铺买卖矿石、煤和工具
+  description: 把矿石或煤卖给周铁山，买工具和铁锭。
   entry_conditions:
   - actor.alive
   - location.tag.smithy
@@ -427,9 +427,9 @@ behavior_trees:
   - purpose
   - autonomy
 - id: trade_tavern
-  agent_label: tavern买卖
-  summary: tavern买卖
-  description: 在tavern选择一个可见报价，买或卖。
+  agent_label: 食铺交易
+  summary: 在食铺买卖食材、热饭和麦酒
+  description: 把麦子或河鱼卖给阿芹，买热饭、炖菜和麦酒。
   entry_conditions:
   - actor.alive
   - location.tag.tavern
@@ -460,9 +460,9 @@ behavior_trees:
   - purpose
   - autonomy
 - id: trade_clinic
-  agent_label: clinic买卖
-  summary: clinic买卖
-  description: 在clinic选择一个可见报价，买或卖。
+  agent_label: 医馆交易
+  summary: 在医馆买卖草药和药剂
+  description: 把草药卖给白芷，买药剂。
   entry_conditions:
   - actor.alive
   - location.tag.clinic
@@ -493,9 +493,9 @@ behavior_trees:
   - purpose
   - autonomy
 - id: trade_inn
-  agent_label: inn买卖
-  summary: inn买卖
-  description: 在inn选择一个可见报价，买或卖。
+  agent_label: 旅店交易
+  summary: 在旅店买卖柴火和麦酒
+  description: 把柴火或麦酒卖给老陶。
   entry_conditions:
   - actor.alive
   - location.tag.inn
@@ -526,9 +526,9 @@ behavior_trees:
   - purpose
   - autonomy
 - id: trade_market
-  agent_label: market买卖
-  summary: market买卖
-  description: 在market选择一个可见报价，买或卖。
+  agent_label: 集市交易
+  summary: 在集市买卖桥市货物
+  description: 在金算盘的摊位买卖桥市货物；香料、铁锭和成品都能在这里找到买家。
   entry_conditions:
   - actor.alive
   - location.tag.market

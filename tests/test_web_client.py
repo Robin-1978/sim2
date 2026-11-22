@@ -1197,4 +1197,4 @@ def test_evolution_retry_is_explained_in_the_timeline_not_leaked_as_raw_bookkeep
         platform.close()
 
     source = (Path(__file__).parents[1] / "src" / "sim2" / "web" / "js" / "actions.js").read_text(encoding="utf-8")
-    assert '!type.startsWith("evolution.")' in source
+    assert 'type.startsWith("evolution.")' in source

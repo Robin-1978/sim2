@@ -28,6 +28,25 @@ item_labels:
   ale: 麦酒
   tonic: 药剂
   spice: 香料
+  spiced_stew: 香炖菜
+item_uses:
+  coin: [所有交易]
+  iron_ore: [炼成铁锭, 卖给铁匠铺]
+  coal: [炼成铁锭, 卖给铁匠铺]
+  herb: [制作药剂, 卖给医馆]
+  grain: [做热饭、炖菜或麦酒, 卖给食铺]
+  river_fish: [做热饭或炖菜, 卖给食铺]
+  firewood: [制作工具, 卖给旅店]
+  iron_ingot: [制作工具, 装进桥市礼箱, 卖给集市]
+  pickaxe: [北山深采]
+  herb_sickle: [沼泽深采]
+  fishing_rod: [河湾深捕]
+  meal: [吃掉恢复饱食]
+  stew: [吃掉恢复饱食, 装进桥市礼箱]
+  ale: [喝掉恢复归属, 装进桥市礼箱]
+  tonic: [治疗伤势, 装进桥市礼箱]
+  spice: [装进桥市礼箱, 在食铺做成香炖菜]
+  spiced_stew: [吃掉恢复饱食, 卖给食铺]
 world_property_labels:
   days_to_fair:
     label: 桥市倒计时
@@ -1351,6 +1370,7 @@ action_catalogs:
     label: 花十枚金币，从周铁山手里买一把铁镐。
     location: smithy
     requires:
+    - actor.inventory.pickaxe < 1
     - world.smithy_stock >= 2
     costs:
       reserve:
@@ -1387,6 +1407,7 @@ action_catalogs:
     label: 花十枚金币，从周铁山手里买一把药锄。
     location: smithy
     requires:
+    - actor.inventory.herb_sickle < 1
     - world.smithy_stock >= 2
     costs:
       reserve:
@@ -1423,6 +1444,7 @@ action_catalogs:
     label: 花十枚金币，从周铁山手里买一根鱼竿。
     location: smithy
     requires:
+    - actor.inventory.fishing_rod < 1
     - world.smithy_stock >= 2
     costs:
       reserve:
@@ -1600,7 +1622,7 @@ action_catalogs:
       price: 9
       item: tonic
   - id: buy_spice
-    label: 花六枚金币，从金算盘手里买一包香料。
+    label: 花六枚金币，从金算盘手里买一包香料；可以装进桥市礼箱，也能在食铺做成香炖菜。
     location: market_square
     requires: []
     costs:
@@ -1630,6 +1652,45 @@ action_catalogs:
       shop: market
       price: 6
       item: spice
+  - id: sell_spiced_stew_to_tavern
+    label: 把香炖菜卖给阿芹，换九枚金币；食铺会把它记进桥市菜单。
+    location: tavern
+    requires:
+    - actor.inventory.spiced_stew >= 1
+    - world.tavern_till >= 9
+    - world.tavern_stock < 30
+    costs:
+      reserve:
+        spiced_stew: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_resource_delta
+      resource_id: tavern_stock
+      delta: 1
+      maximum: 30
+    - type: inventory_add
+      item: coin
+      quantity: 9
+    - type: world_property_delta
+      property: tavern_till
+      delta: -9
+      minimum: 0
+    - type: world_property_delta
+      property: tavern_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: town_prosperity
+      delta: 0.01
+      maximum: 1
+    event_type: trade.sold
+    event_data:
+      shop: tavern
+      item: spiced_stew
+      price: 9
   gather:
   - id: gather_iron_ore
     label: 在北山矿场敲下两份铁矿石。
@@ -1976,6 +2037,29 @@ action_catalogs:
     event_type: stew.eaten
     event_data:
       item: stew
+  - id: eat_spiced_stew
+    label: 吃一份香炖菜（饱食 +60，归属 +10）
+    requires:
+    - actor.inventory.spiced_stew >= 1
+    costs:
+      reserve:
+        spiced_stew: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: need_delta
+      need: satiety
+      delta: 60
+      maximum: 100
+    - type: need_delta
+      need: belonging
+      delta: 10
+      maximum: 100
+    event_type: spiced_stew.eaten
+    event_data:
+      item: spiced_stew
 relationship_effects:
   dialogue.completed:
   - relation: trust

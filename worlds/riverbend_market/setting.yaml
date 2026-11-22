@@ -55,6 +55,7 @@ ui:
     - clinic.
     - inn.
     - meal.
+    - spiced_stew.
     - water.
     resource:
     - resource.

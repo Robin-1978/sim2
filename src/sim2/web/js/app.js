@@ -7,7 +7,7 @@ import { renderActions, renderMobileActionBar, renderResultBeat, renderTask, ren
 import { renderCharacter, renderClock } from "./render_character.js";
 import { closeLedger, openLedger, renderLedger } from "./render_ledger.js";
 import { openCreatePanel } from "./render_entry.js";
-import { closeCharacter, closePlayerSheet, nearbyParticipants, openPlayerSheet, renderFeed, renderMiniMap, renderPeople, renderTalkTargets, switchTab, updateCharacterSheet } from "./render_panels.js";
+import { closeCharacter, closePlayerSheet, nearbyParticipants, openPlayerSheet, renderFeed, renderMiniMap, renderNpcIntentions, renderPeople, renderTalkTargets, switchTab, updateCharacterSheet } from "./render_panels.js";
 import { renderCrisisStrip, renderScene } from "./render_scene.js";
 import { closeEnding, dismissRecap, renderEnding, renderFacilities, renderGoals, renderOnboarding, renderRecap, renderWorldProperties } from "./render_world.js";
 
@@ -17,6 +17,7 @@ export function renderAll() {
     renderClock();
     renderCharacter();
     renderScene();
+    renderNpcIntentions();
     renderCrisisStrip();
     renderMiniMap();
     renderTask();

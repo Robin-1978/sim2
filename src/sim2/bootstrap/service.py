@@ -1052,6 +1052,55 @@ def write_world_package_from_template(
     return output_dir
 
 
+def upgrade_instance(config_dir: Path, db_path: Path) -> dict[str, Any]:
+    """Apply a world package's declarative config to an existing save.
+
+    Definitions and presentation metadata are upserted; entities, agents,
+    inventories, world properties, memories, relationships and story state are
+    preserved. Runtime-authored rules under ``world_rules`` survive the merge.
+    Stop the HTTP/play server before calling this function.
+    """
+
+    config_dir = Path(config_dir).resolve()
+    validation = validate_config(config_dir)
+    if not validation["valid"]:
+        raise ValueError("Invalid world configuration: " + "; ".join(validation["errors"]))
+    db_path = Path(db_path)
+    if not db_path.exists():
+        raise FileNotFoundError(f"world instance database does not exist: {db_path}")
+    store = WorldStore(db_path)
+    try:
+        manifest = validation["manifest"]
+        existing_rules = dict(store.repositories.metadata.get("rules", {}) or {})
+        next_rules = dict(load_yaml(config_dir, "rules.yaml", {}))
+        for key, value in existing_rules.items():
+            if key not in next_rules:
+                next_rules[key] = value
+        if existing_rules.get("world_rules"):
+            next_rules["world_rules"] = existing_rules["world_rules"]
+        next_setting = dict(store.repositories.metadata.get("setting", {}) or {})
+        next_setting.update(load_yaml(config_dir, "setting.yaml", {}))
+        counts: dict[str, int] = {}
+        with store.transaction():
+            store.repositories.metadata.set("setting", next_setting)
+            store.repositories.metadata.set("rules", next_rules)
+            for filename, key, table in (
+                ("recipes.yaml", "recipes", "recipe_def"),
+                ("actions.yaml", "actions", "action_def"),
+                ("behavior_trees.yaml", "behavior_trees", "bt_def"),
+            ):
+                items = load_yaml(config_dir, filename, {}).get(key, [])
+                for item in items:
+                    if isinstance(item, dict) and item.get("id"):
+                        store.repositories.entities.put_definition(table, str(item["id"]), item)
+                counts[table] = len(items)
+            store.repositories.metadata.set("config_hash", config_hash(config_dir))
+            store.repositories.metadata.set("config_version", manifest.get("config_version", "unknown"))
+        return {"status": "ok", "db_path": str(db_path), "config_hash": config_hash(config_dir), **counts}
+    finally:
+        store.close()
+
+
 def create_instance_from_template(template: dict[str, Any], instance_id: str, runtime_root: Path | None = None) -> Path:
     """Compile a WorldBuilder draft and bootstrap one independent instance."""
 

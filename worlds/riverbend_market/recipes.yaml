@@ -164,3 +164,23 @@ recipes:
   - op: capability.add_xp
     capability: medicine
     value: 0.03
+- id: spiced_stew
+  name: 香炖菜
+  station_tags:
+  - kitchen
+  inputs:
+  - item: stew
+    quantity: 1
+  - item: spice
+    quantity: 1
+  outputs:
+  - item: spiced_stew
+    quantity: 1
+  requires:
+  - capability: crafting
+    min_level: 0.25
+  duration_minutes: 20
+  effects:
+  - op: capability.add_xp
+    capability: crafting
+    value: 0.02

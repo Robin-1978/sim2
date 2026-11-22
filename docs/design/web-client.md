@@ -295,6 +295,16 @@ endings:
   显示世界自己的倒计时，不在平台代码里写死“桥市”。
 - **章节分享**：结局面板和章节庆祝卡使用 Web Share API，失败时复制文本。
 
+### 居民打算与物品用途
+
+- `player_view.item_uses` 由世界配置 `rules.item_uses` 提供；角色详情里的每件物品
+  显示“用途：…”，避免玩家买到不知道做什么的物品。服务端不写死物品名。
+- 首页“镇上的打算”读取观察者时间线里 `behavior.started` 的 `decision.reason`，
+  只展示非 `bt:` 的 LLM 决策，最多三张卡；点击附近的居民卡会打开角色侧栏。
+- `observer/timeline` 事件新增 `actor` 字段；动态和“世界脉搏”用 `itemLabel` 与
+  事件数据生成中文短句，不再直接显示 `trade bought`、`resource withdrawal completed`
+  这类内部词。NPC 的 `behavior.failed` 不进入玩家动态，避免暴露目录键名。
+
 ### 对话：消息先上屏，回复走 SSE
 
 `POST /api/v1/player/{id}/dialogue` 只负责记录玩家消息并返回

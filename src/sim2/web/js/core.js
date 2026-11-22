@@ -224,6 +224,8 @@ export function translateImpact(text) {
     const direct = [
       [/^Arrive at the selected location\.?$/i, "抵达目的地"],
       [/^No direct resource cost\.?$/i, "无直接消耗"],
+      [/^Platform applies configured catalog action effect\.?$/i, "按当前选择结算"],
+      [/^Platform applies configured effects and records events\.?$/i, "由平台结算并记录事件"],
       [/^Records the configured information result\.?$/i, "记录情报"],
       [/^Source stock -(\d+).*$/i, "资源点 -$1"],
     ];

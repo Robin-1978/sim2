@@ -1064,15 +1064,17 @@ class AgentEngine:
             player_message = str((context.get("interaction") or {}).get("origin") or "") == "player"
             context["prompt_protocol"] = [
                 "This is one bounded instant message response.",
-                "This is a direct player message; always send one short acknowledgement or reply. If no new fact is available, say that clearly instead of returning wait." if player_message else "Send one short reply only when the incoming message adds information or needs a decision; otherwise wait.",
-                "State concrete facts only when they appear in the incoming message, known facts, or retained memory. A rumor label has no unstated details; ask a question or say the detail is unknown instead of inventing it.",
-                "Never invent sensory or operational details about a route, bridge, building, item, weather, material, timing, quantity, or cause. If those details are absent, say they are unknown.",
-                "A message may propose or promise terms, but it cannot transfer items or currency, collect payment, sign a contract, or complete a trade. Describe those outcomes as pending until a Platform transaction confirms them.",
+                "This is a direct player message; always send one short reply." if player_message else "Send one short reply only when the incoming message adds information or needs a decision; otherwise wait.",
+                "Reply in the character's own first-person voice; use your role, traits, current work, or a memory when relevant.",
+                "You may state feelings, preferences, suspicions, plans, and what you want from the player. Never invent hard facts (names, quantities, prices, routes, ownership) that are absent from this context.",
+                "Never invent sensory or operational details about a route, bridge, building, item, weather, material, timing, quantity, or cause. If those details are absent, say so briefly and add a reaction or question.",
+                "If a hard detail is unknown, say so briefly and add a reaction, question, or next step. Never reply with only that you do not know.",
+                "A message cannot transfer items or currency, collect payment, sign a contract, or complete a trade; describe those outcomes as pending until a Platform transaction confirms them.",
                 "Use the exact visible participant name; Platform owns every state change and world time.",
             ]
         context["platform_rules"] = [
             "Only the incoming interaction is being handled; do not start an unrelated behavior.",
-            "A reply is at most two concise sentences. A direct player message always receives an acknowledgement; repeating known information is otherwise a reason to wait.",
+            "A reply is at most two concise sentences and stays in first person.",
             "Do not add a new name, number, appearance, location, cause, possession, or event unless it is visible in this context.",
             "Do not embellish a known fact with invented physical conditions, travel times, materials, quantities, or weather.",
             "send_message records testimony only. Never say payment, delivery, ownership, a signed contract, or a trade has completed without a visible Platform result confirming it.",

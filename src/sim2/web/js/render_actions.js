@@ -105,7 +105,13 @@ export function renderActions() {
       filterRoot.append(button);
     }
 
-    const filtered = actions.filter((action) => state.actionFilter === "全部" || actionCategory(action) === state.actionFilter);
+    const genericTravel = actions.find((action) => action.ref === "behavior:travel" && action.kind !== "travel");
+    const filtered = actions
+      .filter((action) => state.actionFilter === "全部" || actionCategory(action) === state.actionFilter)
+      // Route cards are useful as direct recommendations, but nine separate
+      // destination cards bury shops and work. Keep the generic travel card
+      // with its destination dialog when the view offers one.
+      .filter((action) => !(genericTravel && action.kind === "travel"));
     const taskActive = Boolean(view?.active_task?.bt || view?.active_task?.action);
     const featured = !taskActive && filtered.length ? chooseRecommendedAction(filtered) : null;
     const recommended = $("recommended-action");
@@ -491,7 +497,8 @@ export function openActionDialog(action) {
           fields.append(el("p", "hint", "当前地点没有可用选项。"));
           continue;
         }
-        const label = el("label", "", name === "source_id" ? "研究来源" : name);
+        const parameterLabels = { location_id: "目的地", entry_id: "选择", recipe_id: "配方", item_id: "物品", source_id: "研究来源" };
+        const label = el("label", "", parameterLabels[name] || name);
         const select = document.createElement("select");
         select.dataset.param = name;
         for (const option of options) {

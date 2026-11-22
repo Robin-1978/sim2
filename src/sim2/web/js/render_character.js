@@ -101,6 +101,8 @@ export function renderInventory() {
       const copy = el("div", "item-copy");
       copy.append(el("strong", "", label));
       copy.append(el("span", "", `× ${Number(amount)}`));
+      const uses = Array.isArray(state.view?.item_uses?.[itemId]) ? state.view.item_uses[itemId] : [];
+      if (uses.length) copy.append(el("small", "item-use", `用途：${uses.slice(0, 2).join(" · ")}`));
       item.append(copy);
       grid.append(item);
     }

@@ -1,5 +1,5 @@
 import { loadDialogue, loadTrades, travelToNode } from "./actions.js";
-import { $, el, formatMinute, itemLabel, state, translateNarrative, uiConfig } from "./core.js";
+import { $, el, formatMinute, itemLabel, state, toast, translateNarrative, uiConfig } from "./core.js";
 
 
   /* ---------- Talk ---------- */
@@ -279,6 +279,7 @@ export const SKIP_EVENTS = new Set([
     "snapshot.restored",
     "resource.changed",
     "resource.regenerated",
+    "resource.withdrawal.completed",
     "world.property_changed",
     "entity.state_changed",
     "player.entered",
@@ -293,6 +294,89 @@ export const SKIP_EVENTS = new Set([
   ]);
 
 
+export function eventNarrative(event) {
+    const type = String(event?.event_type || "");
+    const data = event?.public || {};
+    const actor = String(event?.actor || event?.activity?.actor || "有人");
+    if (type === "trade.bought" || type === "trade.sold") {
+      const item = itemLabel(data.item || "");
+      if (item) {
+        const price = Number(data.price || 0);
+        const verb = type === "trade.bought" ? "买下" : "卖出";
+        const money = price ? (type === "trade.bought" ? `，花了 ${price} 枚金币` : `，换到 ${price} 枚金币`) : "";
+        return `${actor}${verb}${item}${money}。`;
+      }
+    }
+    if (type === "resource.gathered") {
+      const item = itemLabel(data.item || "");
+      const quantity = Number(data.quantity || 0);
+      if (item) return `${actor}采集到${quantity ? `${quantity} 份` : ""}${item}。`;
+    }
+    if (type === "meal.eaten") return `${actor}吃了一顿热饭。`;
+    if (type === "stew.eaten") return `${actor}吃了一锅炖菜。`;
+    if (type === "spiced_stew.eaten") return `${actor}吃了一锅香炖菜。`;
+    if (type === "ale.drunk") return `${actor}喝了一壶麦酒。`;
+    if (type === "tonic.used") return `${actor}用了药剂。`;
+    return translateNarrative(data.summary || event?.narrative || "");
+  }
+
+
+export function renderNpcIntentions() {
+    const panel = $("intention-panel");
+    const root = $("intention-list");
+    if (!panel || !root) return;
+    const seen = new Set();
+    const items = [];
+    for (const event of state.agentEvents || []) {
+      const activity = event.activity || {};
+      if (activity.kind !== "behavior" || activity.status !== "started") continue;
+      const actorId = String(activity.actor_id || "");
+      if (!actorId || actorId === state.playerId || seen.has(actorId)) continue;
+      if (String(event.public?.correlation_id || "").startsWith("bt:")) continue;
+      const reason = String(activity.reason || "").trim();
+      if (!reason) continue;
+      seen.add(actorId);
+      items.push({
+        actorId,
+        actor: String(activity.actor || "居民"),
+        behavior: String(activity.behavior || "行动"),
+        reason,
+        minute: Number(event.world_minute || 0),
+      });
+      if (items.length >= 3) break;
+    }
+    panel.classList.toggle("hidden", !items.length);
+    if (!items.length) return;
+    root.replaceChildren();
+    for (const item of items) {
+      const card = el("article", "intention-card");
+      card.tabIndex = 0;
+      const head = el("div", "intention-head");
+      head.append(el("span", "intention-avatar", item.actor.slice(0, 1)));
+      const who = el("div", "intention-who");
+      who.append(el("strong", "", item.actor));
+      who.append(el("small", "", item.behavior));
+      head.append(who);
+      card.append(head);
+      card.append(el("blockquote", "", translateNarrative(item.reason)));
+      card.append(el("time", "", formatMinute(item.minute)));
+      const open = () => {
+        const person = nearbyParticipants().find((candidate) => candidate.id === item.actorId);
+        if (person) openCharacter(person);
+        else toast(`${item.actor}现在不在附近。`, "ok");
+      };
+      card.addEventListener("click", open);
+      card.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open();
+        }
+      });
+      root.append(card);
+    }
+  }
+
+
 export function renderFeed() {
     const root = $("world-feed");
     if (!root) return;
@@ -305,7 +389,7 @@ export function renderFeed() {
     }
     for (const event of events) {
       const type = String(event.event_type || "");
-      const narrative = translateNarrative(event.public?.summary || event.narrative || "");
+      const narrative = eventNarrative(event);
       if (!narrative) continue;
       const item = el("article", "feed-item");
       item.dataset.kind = eventKind(type);
@@ -317,6 +401,7 @@ export function renderFeed() {
       root.append(item);
     }
     if (!root.children.length) root.append(el("p", "feed-empty", "世界还没有留下可读的记录。"));
+    renderNpcIntentions();
     const more = $("feed-more");
     if (more) more.classList.toggle("hidden", state.feedEvents.length <= state.feedLimit);
   }

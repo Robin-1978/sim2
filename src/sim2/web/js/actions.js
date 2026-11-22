@@ -797,7 +797,12 @@ export async function loadFeed(force = false) {
       const all = Array.isArray(response.events) ? response.events : [];
       const events = all.filter((event) => {
         const type = String(event.event_type || "");
-        return !SKIP_EVENTS.has(type) && !type.startsWith("evolution.") && !type.startsWith("runtime.");
+        if (SKIP_EVENTS.has(type) || type.startsWith("evolution.") || type.startsWith("runtime.")) return false;
+        if (type === "behavior.failed") {
+          const actorId = String(event.actor_id || event.activity?.actor_id || "");
+          if (actorId && actorId !== state.playerId) return false;
+        }
+        return true;
       });
       state.feedEvents = events.slice().reverse();
       state.agentEvents = all

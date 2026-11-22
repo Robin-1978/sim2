@@ -177,6 +177,7 @@ class PlayerViewV1(ProjectionModel):
     relationships: list[dict[str, Any]] = Field(default_factory=list)
     recap: dict[str, Any] = Field(default_factory=dict)
     recipes: list[dict[str, Any]] = Field(default_factory=list)
+    item_uses: dict[str, list[str]] = Field(default_factory=dict)
     active_task: dict[str, Any] = Field(default_factory=dict)
     actions: list[dict[str, Any]] = Field(default_factory=list)
     unavailable_actions: list[dict[str, Any]] = Field(default_factory=list)

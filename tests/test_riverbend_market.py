@@ -73,7 +73,7 @@ def test_riverbend_market_is_a_complete_five_shop_package(tmp_path: Path) -> Non
     assert description["counts"]["agents"] == 8
     assert description["counts"]["actions"] == 19
     assert description["counts"]["behavior_trees"] == 23
-    assert description["counts"]["recipes"] == 8
+    assert description["counts"]["recipes"] == 9
     assert description["counts"]["resources"] == 11
 
     rules = yaml.safe_load((WORLD / "rules.yaml").read_text(encoding="utf-8"))
@@ -547,9 +547,11 @@ def test_player_view_exposes_dialogue_relationship_and_recipe_ledger(tmp_path: P
         assert relationship["relation"] == "trust"
         assert relationship["strength"] > 0
         assert relationship["description"]
-        assert len(view["recipes"]) == 8
+        assert len(view["recipes"]) == 9
         assert any(recipe["id"] == "iron_ingot" for recipe in view["recipes"])
         assert view["recap"]["latest_event_id"] >= 1
+        assert any("香炖菜" in use for use in view["item_uses"]["spice"])
+        assert any("桥市礼箱" in use for use in view["item_uses"]["spice"])
     finally:
         service.close()
 
@@ -601,3 +603,126 @@ def test_background_miner_without_priority_does_not_default_to_travel(tmp_path: 
         assert state["active_parameters"]["entry_id"].startswith("gather_")
     finally:
         service.close()
+
+
+def test_every_riverbend_item_has_a_source_and_a_sink() -> None:
+    rules = yaml.safe_load((WORLD / "rules.yaml").read_text(encoding="utf-8"))
+    recipes = yaml.safe_load((WORLD / "recipes.yaml").read_text(encoding="utf-8"))["recipes"]
+    actions = yaml.safe_load((WORLD / "actions.yaml").read_text(encoding="utf-8"))["actions"]
+    agents = yaml.safe_load((WORLD / "agents.yaml").read_text(encoding="utf-8"))["agents"]
+    labels = set(rules["item_labels"])
+    catalogs = rules["action_catalogs"]
+    producers: set[str] = set()
+    consumers: set[str] = set()
+
+    for recipe in recipes:
+        for entry in recipe.get("inputs") or []:
+            consumers.add(str(entry["item"]))
+        for entry in recipe.get("outputs") or []:
+            producers.add(str(entry["item"]))
+    for entry in catalogs["gather"]:
+        for effect in entry.get("effects") or []:
+            item = effect.get("output_item") or effect.get("item")
+            if item:
+                producers.add(str(item))
+        for condition in entry.get("requires") or []:
+            for item in labels:
+                if f"actor.inventory.{item}" in str(condition):
+                    consumers.add(item)
+    for entry in catalogs["trade_offers"]:
+        for item in (entry.get("costs", {}).get("reserve") or {}):
+            consumers.add(str(item))
+        for effect in entry.get("effects") or []:
+            if effect.get("type") == "inventory_add" and effect.get("item"):
+                producers.add(str(effect["item"]))
+    for entry in catalogs["consume"]:
+        for item in (entry.get("costs", {}).get("reserve") or {}):
+            consumers.add(str(item))
+    for action in actions:
+        for item in (action.get("costs", {}).get("reserve") or {}):
+            consumers.add(str(item))
+        for effect in action.get("effects") or []:
+            if effect.get("type") == "inventory_add" and effect.get("item"):
+                producers.add(str(effect["item"]))
+    for agent in agents:
+        for item in (agent.get("inventory") or {}):
+            producers.add(str(item))
+
+    assert producers >= labels - {"coin"}
+    assert consumers >= labels - {"coin"}
+    spice_recipe = next(recipe for recipe in recipes if recipe["id"] == "spiced_stew")
+    assert any(entry["item"] == "spice" for entry in spice_recipe["inputs"])
+
+
+def test_spice_has_a_repeatable_cooking_and_sale_loop(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "riverbend-spice-loop", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "miner", name="阿岚")["status"] == "accepted"
+        with platform.store.transaction():
+            agent = platform.store.repositories.entities.get_agent("hero")
+            agent["initial_state"]["location_id"] = "tavern"
+            agent["inventory"].update({"stew": 1, "spice": 1})
+            platform.store.repositories.entities.put_agent("hero", agent, "阿岚")
+
+        _start_and_finish(platform, "hero", "craft", "spice-craft", {"recipe_id": "spiced_stew"})
+        agent = platform.store.repositories.entities.get_agent("hero")
+        assert agent["inventory"]["spice"] == 0
+        assert agent["inventory"]["stew"] == 0
+        assert agent["inventory"]["spiced_stew"] == 1
+
+        coin_before = float(agent["inventory"].get("coin", 0) or 0)
+        _start_and_finish(platform, "hero", "trade_tavern", "spice-sale", {"entry_id": "sell_spiced_stew_to_tavern"})
+        agent = platform.store.repositories.entities.get_agent("hero")
+        assert agent["inventory"]["spiced_stew"] == 0
+        assert float(agent["inventory"]["coin"]) == coin_before + 9
+    finally:
+        service.close()
+
+
+def test_tool_offers_refuse_a_duplicate_when_one_is_already_carried() -> None:
+    rules = yaml.safe_load((WORLD / "rules.yaml").read_text(encoding="utf-8"))
+    offers = {entry["id"]: entry for entry in rules["action_catalogs"]["trade_offers"]}
+    for offer_id, item in (("buy_pickaxe", "pickaxe"), ("buy_herb_sickle", "herb_sickle"), ("buy_fishing_rod", "fishing_rod")):
+        assert f"actor.inventory.{item} < 1" in offers[offer_id]["requires"]
+
+
+def test_upgrade_instance_adds_new_config_without_resetting_world_state(tmp_path: Path) -> None:
+    from sim2.bootstrap.service import upgrade_instance
+
+    db_path = create_instance(WORLD, "riverbend-upgrade", tmp_path / "runtime")
+    platform = Platform(db_path)
+    try:
+        assert platform.enter_player("hero", "miner", name="阿岚")["status"] == "accepted"
+        with platform.store.transaction():
+            properties = dict(platform.store.repositories.metadata.get("world_properties") or {})
+            properties["days_to_fair"] = 3
+            platform.store.repositories.metadata.set("world_properties", properties)
+            platform.store.connection.execute("DELETE FROM recipe_def WHERE id='spiced_stew'")
+            rules = dict(platform.store.repositories.metadata.get("rules") or {})
+            rules.pop("item_uses", None)
+            rules["world_rules"] = [{"id": "emergent_rule", "description": "runtime rule"}]
+            platform.store.repositories.metadata.set("rules", rules)
+            agent = platform.store.repositories.entities.get_agent("hero")
+            agent["inventory"]["spice"] = 2
+            platform.store.repositories.entities.put_agent("hero", agent, "阿岚")
+        minute_before = int(platform.store.repositories.metadata.get("world_minute", 0))
+    finally:
+        platform.close()
+
+    result = upgrade_instance(WORLD, db_path)
+    assert result["status"] == "ok"
+    platform = Platform(db_path)
+    try:
+        recipes = {item["id"] for item in platform.store.repositories.entities.get_definitions("recipe_def")}
+        assert "spiced_stew" in recipes
+        rules = platform.store.repositories.metadata.get("rules") or {}
+        assert "item_uses" in rules
+        assert rules["world_rules"][0]["id"] == "emergent_rule"
+        properties = platform.store.repositories.metadata.get("world_properties") or {}
+        assert properties["days_to_fair"] == 3
+        assert int(platform.store.repositories.metadata.get("world_minute", 0)) == minute_before
+        agent = platform.store.repositories.entities.get_agent("hero")
+        assert agent["inventory"]["spice"] == 2
+    finally:
+        platform.close()

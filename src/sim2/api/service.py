@@ -264,6 +264,23 @@ def _onboarding_step(platform: Platform, agent: dict[str, Any]) -> dict[str, Any
     return None
 
 
+def _player_item_uses(platform: Platform) -> dict[str, list[str]]:
+    """Return world-authored item purposes for the inventory sheet."""
+
+    rules = platform.store.repositories.metadata.get("rules", {}) or {}
+    configured = rules.get("item_uses") if isinstance(rules, dict) else None
+    if not isinstance(configured, dict):
+        return {}
+    result: dict[str, list[str]] = {}
+    for key, values in configured.items():
+        if isinstance(values, str):
+            values = [values]
+        uses = [str(item) for item in (values or []) if str(item).strip()]
+        if uses:
+            result[str(key)] = uses
+    return result
+
+
 def _player_relationships(platform: Platform, agent_id: str) -> list[dict[str, Any]]:
     """Expose the player's configured social relationships as UI data."""
 
@@ -607,6 +624,7 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         "relationships": _player_relationships(platform, player_id),
         "recap": _player_recap(platform),
         "recipes": _player_recipes(platform, agent),
+        "item_uses": _player_item_uses(platform),
         "active_task": active_task,
         "actions": actions[:64],
         "unavailable_actions": unavailable_actions[:12],
