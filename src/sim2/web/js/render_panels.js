@@ -124,6 +124,21 @@ export function updateCharacterSheet(person) {
       ? `${place} · 还剩 ${Math.ceil(remaining)} 分钟`
       : place;
     $("character-status").textContent = personActivityLine(person);
+    const relationshipCard = $("character-relationship");
+    if (relationshipCard) {
+      const relationship = (state.view?.relationships || []).find((item) => item.person === person?.id);
+      const strength = Number(relationship?.strength || 0);
+      const labels = uiConfig().relationship_labels || {};
+      const defaults = { trust: "信任", affinity: "好感", respect: "尊重", friendship: "友谊" };
+      const relation = String(relationship?.relation || "初次见面");
+      $("relationship-label").textContent = relationship
+        ? (labels[relation] || defaults[relation] || relation.replace(/_/g, " "))
+        : "初次见面";
+      $("relationship-fill").style.width = `${Math.max(0, Math.min(100, (strength + 1) * 50))}%`;
+      $("relationship-note").textContent = relationship?.description
+        || (relationship ? "这次互动会被记住。" : "还没有互动记录。");
+      relationshipCard.classList.remove("hidden");
+    }
     const intent = $("character-intent");
     if (intent) {
       const detail = translateNarrative(String(latestActivityFor(person?.id)?.activity?.reason || "").trim());

@@ -126,6 +126,58 @@ ui:
     action_failed: 行动失败
   reason_labels:
     station.available: 当前地点没有对应工作台
+  recap_label: 昨夜河湾
+  ledger_label: 桥市账本
+  countdown:
+    property: days_to_fair
+    label: 商队抵达
+    format: amount
+    max: 7
+    hint: 七天桥市倒计时
+    suffix: ' 天'
+  celebrations:
+    trade.sold:
+      kind: coin
+      title: 钱袋响了
+      detail: 一笔买卖进了账。
+      player_only: true
+    shop.ready:
+      kind: stamp
+      title: 一家店备好了
+      detail: 桥市备货又向前一步。
+      player_only: true
+    fair.crate_assembled:
+      kind: confetti
+      title: 桥市礼箱封好
+      detail: 商队要的东西已经装齐。
+      player_only: true
+    fair.success:
+      kind: chapter
+      title: 商队留下了
+      detail: 河湾镇重新回到商路。
+      share: true
+    fair.quiet:
+      kind: chapter
+      title: 商队只停一夜
+      detail: 桥市没有完全打开，但镇子还在。
+      share: true
+    fair.failed:
+      kind: chapter
+      title: 商队绕道了
+      detail: 下一趟商队要等很久。
+      share: true
+  relationship_labels:
+    trust: 信任
+  recap_event_types:
+  - story.
+  - trade.
+  - shop.
+  - fair.
+  - world.change.
+  - resource.
+  - relationship.
+  - craft.
+  - town.
 ui_text:
   travel_choice: 前往 {name}
   travel_summary: 沿已知路线前往 {name}。

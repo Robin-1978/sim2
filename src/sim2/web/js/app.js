@@ -1,13 +1,15 @@
 import { activateInstance, advanceTask, beginAction, closeEditor, closeSettings, createWorldInstance, loadDialogue, loadEntryContext, loadFeed, loadInstances, loadRuntime, loadTrades, loadView, openAdmin, openEditor, openMap, openSettings, openWorldHub, refreshAll, restorePlayer, returnToGame, runtimeCommand, selectedProvider, sendDialogue, sendTrade, showEntry, startStream, submitEntry, unlockOperator, unlockOperatorFromEntry, waitFor, waitOneMinute } from "./actions.js";
 import { unlockFromOwnerLink } from "./api.js";
 import { armSoundOnGesture, renderSoundButton, toggleSound } from "./audio.js";
+import { shareChapter } from "./celebration.js";
 import { $, OPERATOR_KEY, SOUND_KEY, icon, state, storageGet, toast, worldIsOpen } from "./core.js";
 import { renderActions, renderMobileActionBar, renderResultBeat, renderTask, renderTaskHint } from "./render_actions.js";
 import { renderCharacter, renderClock } from "./render_character.js";
+import { closeLedger, openLedger, renderLedger } from "./render_ledger.js";
 import { openCreatePanel } from "./render_entry.js";
 import { closeCharacter, closePlayerSheet, nearbyParticipants, openPlayerSheet, renderFeed, renderMiniMap, renderPeople, renderTalkTargets, switchTab, updateCharacterSheet } from "./render_panels.js";
 import { renderCrisisStrip, renderScene } from "./render_scene.js";
-import { closeEnding, renderEnding, renderFacilities, renderGoals, renderOnboarding, renderWorldProperties } from "./render_world.js";
+import { closeEnding, dismissRecap, renderEnding, renderFacilities, renderGoals, renderOnboarding, renderRecap, renderWorldProperties } from "./render_world.js";
 
 
 export function renderAll() {
@@ -22,9 +24,11 @@ export function renderAll() {
     renderResultBeat();
     renderMobileActionBar();
     renderOnboarding();
+    renderRecap();
     renderGoals();
     renderWorldProperties();
     renderFacilities();
+    renderLedger();
     renderEnding();
     renderTalkTargets();
     renderPeople();
@@ -52,10 +56,15 @@ export function wireUi() {
     $("hud-editor").addEventListener("click", () => openEditor());
     $("hud-sound").addEventListener("click", toggleSound);
     $("hud-settings").addEventListener("click", openSettings);
+    $("recap-dismiss").addEventListener("click", dismissRecap);
+    $("open-ledger").addEventListener("click", openLedger);
+    $("ledger-close").addEventListener("click", closeLedger);
+    for (const scrim of document.querySelectorAll("[data-close-ledger]")) scrim.addEventListener("click", closeLedger);
     $("ending-continue").addEventListener("click", () => closeEnding(true));
+    $("ending-share").addEventListener("click", () => shareChapter().catch(() => {}));
     $("ending-ledger").addEventListener("click", () => {
       closeEnding(true);
-      document.querySelector(".world-panel")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      openLedger();
     });
     $("ending-overlay").addEventListener("click", (event) => {
       if (event.target === $("ending-overlay")) closeEnding(true);

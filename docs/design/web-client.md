@@ -275,6 +275,26 @@ endings:
 
 ### 手动推进与世界同步
 
+### 首小时体验与回访
+
+- **3 步上手清单**：`rules.onboarding` 的每一步可以声明 `complete_when`（事件契约）
+  或 `done_when`（条件）。`player_view.onboarding_checklist` 只返回当前未完成步骤
+  中的 3 步，`onboarding_progress` 返回已完成数量；完成的动作会显示勾选。
+- **庆祝反馈**：`setting.ui.celebrations` 按事件类型声明 `kind/title/detail`。
+  浏览器在 `feed.append` 到达时播放金币、盖章、礼花或章节卡；`prefers-reduced-motion`
+  会关闭粒子和动画。`player_only: true` 的庆祝只对玩家自己的事件出现。
+- **回访摘要**：`player_view.recap` 返回最近一天公开事件；客户端只在非首次进入且
+  有新事件时显示 `ui.recap_label` 卡片，收起后记住最新事件 ID。
+- **今天只做一件事**：上手卡使用 `ui.one_thing_label` 作为标题，内容来自
+  `rules.onboarding` 当前步骤。
+- **账本**：角色栏“账本”打开设施、配方和公开目标的收集视图；数据来自
+  `player_view.facilities/recipes/goals`，不写死世界内容。
+- **关系**：`player_view.relationships` 暴露角色与 NPC 的配置关系强度、描述和
+  最近变化；角色侧栏显示信任条和“这次互动会被记住”。
+- **桥市倒计时**：`setting.ui.countdown` 声明属性、标签、后缀和提示；场景顶部
+  显示世界自己的倒计时，不在平台代码里写死“桥市”。
+- **章节分享**：结局面板和章节庆祝卡使用 Web Share API，失败时复制文本。
+
 ### 对话：消息先上屏，回复走 SSE
 
 `POST /api/v1/player/{id}/dialogue` 只负责记录玩家消息并返回
@@ -413,7 +433,8 @@ src/sim2/web/
   js/api.js              fetch、错误信封、幂等键、owner link
   js/audio.js            Web Audio 环境音
   js/art.js              世界调色板与分层 SVG 场景
-  js/render_*.js         入口、角色、场景、世界、行动、侧栏渲染
+  js/render_*.js         入口、角色、场景、世界、行动、侧栏、账本渲染
+  js/celebration.js      金币/盖章/礼花/章节庆祝、分享卡
   js/actions.js          进入、视图、任务、对话、交易、地图、设置
   admin.js               仅 import ./js/admin_app.js
   js/admin_*.js          运营台 transport/core/render/editor/actions

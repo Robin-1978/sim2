@@ -869,6 +869,10 @@ onboarding:
   when: world.fair_stage < 2 and world.smithy_rep < 0.16
   action_ref: behavior:gather
   goal_id: smithy_order
+  complete_when:
+    event_type: trade.sold
+    self_only: true
+    count: 1
 - id: first_tool
   title: 买一把趁手的工具
   body: 铁匠铺的声望已经起步。花十枚金币买一把铁镐，深巷里的矿石会让后面的日子好过很多。
@@ -876,24 +880,32 @@ onboarding:
     < 1
   action_ref: behavior:trade_smithy
   goal_id: smithy_order
+  complete_when:
+    condition: actor.inventory.pickaxe >= 1
 - id: drink_water
   title: 先喝水
   body: 去旅店或河滩，点“喝水”，10 分钟回复 25 水分。麦酒不解渴；只有水点才能喝。
   when: actor.need.hydration < 45
   action_ref: behavior:drink_water
   goal_id: fair_preparation
+  complete_when:
+    condition: actor.need.hydration >= 50
 - id: stock_four_shops
   title: 把四家店推到备货线
   body: 每家店声望到 40% 就算备货。卖一份货加 8%，大约五次；买货也会加一点。先把“备货店铺”推到至少 4/5，再去凑礼箱。
   when: world.fair_ready < 4 and world.fair_act < 4
   action_ref: behavior:trade_smithy
   goal_id: fair_preparation
+  complete_when:
+    condition: world.fair_ready >= 4
 - id: fair_crate
   title: 凑齐桥市礼箱
   body: 桥市前夜到了。把铁锭、药剂、炖菜、麦酒和十枚金币装进礼箱，再确认至少四家店已经备好货。
   when: world.fair_act >= 4 and world.fair_crate < 1
   action_ref: behavior:assemble_fair_crate
   goal_id: fair_preparation
+  complete_when:
+    condition: world.fair_crate >= 1
 memory_quality:
   ranking:
     relevance: 0.62
@@ -1964,3 +1976,8 @@ action_catalogs:
     event_type: stew.eaten
     event_data:
       item: stew
+relationship_effects:
+  dialogue.completed:
+  - relation: trust
+    delta: 0.04
+    description: 你们聊过桥市和最近的生意；这次交谈会被记住。

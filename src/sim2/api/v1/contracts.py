@@ -77,6 +77,8 @@ class WorldInfoV1(ProjectionModel):
 
 class InstanceV1(ProjectionModel):
     instance_id: str = ""
+    world_id: str = ""
+    world_title: str = ""
     db_path: str = ""
     active: bool = False
 
@@ -170,6 +172,11 @@ class PlayerViewV1(ProjectionModel):
     goals: list[dict[str, Any]] = Field(default_factory=list)
     chapter: dict[str, Any] | None = None
     onboarding: dict[str, Any] | None = None
+    onboarding_checklist: list[dict[str, Any]] = Field(default_factory=list)
+    onboarding_progress: dict[str, int] = Field(default_factory=dict)
+    relationships: list[dict[str, Any]] = Field(default_factory=list)
+    recap: dict[str, Any] = Field(default_factory=dict)
+    recipes: list[dict[str, Any]] = Field(default_factory=list)
     active_task: dict[str, Any] = Field(default_factory=dict)
     actions: list[dict[str, Any]] = Field(default_factory=list)
     unavailable_actions: list[dict[str, Any]] = Field(default_factory=list)

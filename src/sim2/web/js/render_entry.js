@@ -164,6 +164,8 @@ export function renderOrigins(entry) {
       card.type = "button";
       card.append(el("strong", "", origin.name || origin.id));
       if (origin.description) card.append(el("small", "", origin.description));
+      const kit = (origin.starting_items || []).map((item) => `${item.label || item.item}×${item.quantity}`).join(" · ");
+      if (kit) card.append(el("div", "origin-kit", `起始：${kit}`));
       if (origin.goal) card.append(el("div", "origin-goal", `目标：${origin.goal}`));
       if (origin.first_task) card.append(el("div", "origin-first-task", `第一件事：${origin.first_task}`));
       card.addEventListener("click", () => {

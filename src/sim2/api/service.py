@@ -11,6 +11,7 @@ from ..platform.runtime import Platform
 from ..world.player_template import PlayerTemplateError, parse_player_template
 from ..world.ui_text import UiText
 from .authoring import AuthoringService
+from .timeline import build_timeline
 
 
 def _player_chapter(platform: Platform, player_id: str) -> dict[str, Any] | None:
@@ -146,45 +147,226 @@ def _configured_ending(platform: Platform, player_id: str) -> dict[str, Any] | N
     return None
 
 
-def _onboarding_step(platform: Platform, agent: dict[str, Any]) -> dict[str, Any] | None:
-    """Project the first matching configurable onboarding step for one player."""
+def _condition_holds(platform: Platform, agent: dict[str, Any], condition: str, *, world: dict[str, Any]) -> bool:
+    text = str(condition or "").strip()
+    if not text:
+        return True
+    try:
+        return bool(platform.view.conditions.evaluate(
+            text, agent=agent, target={}, world=world, context={},
+        ))
+    except Exception:
+        return False
+
+
+def _onboarding_contract_done(platform: Platform, agent: dict[str, Any], step: dict[str, Any], *, world: dict[str, Any]) -> bool:
+    """Evaluate one onboarding step's declarative completion contract."""
+
+    contract = step.get("complete_when")
+    if isinstance(contract, dict):
+        condition = str(contract.get("condition") or "").strip()
+        if condition and _condition_holds(platform, agent, condition, world=world):
+            return True
+        event_type = str(contract.get("event_type") or "").strip()
+        if event_type:
+            count = max(1, int(contract.get("count", 1) or 1))
+            match = contract.get("match") if isinstance(contract.get("match"), dict) else None
+            distinct_by = contract.get("distinct_by") if isinstance(contract.get("distinct_by"), list) else None
+            actor_id = str(agent.get("id") or "") if contract.get("self_only") else ""
+            return platform.store.repositories.events.matching_event_count(
+                event_type=event_type,
+                match=match,
+                distinct_by=distinct_by,
+                actor_id=actor_id,
+            ) >= count
+    done_when = str(step.get("done_when") or "").strip()
+    return bool(done_when) and _condition_holds(platform, agent, done_when, world=world)
+
+
+def _onboarding_checklist(platform: Platform, agent: dict[str, Any]) -> list[dict[str, Any]]:
+    """Project the current three onboarding steps with done/current state.
+
+    The selection is intentionally small: the current pending step plus the
+    next pending steps.  Completion is declared by the world package through
+    ``complete_when`` or ``done_when``; the platform only evaluates it.
+    """
 
     rules = platform.store.repositories.metadata.get("rules", {}) or {}
     steps = rules.get("onboarding") if isinstance(rules, dict) else []
     if not isinstance(steps, list) or not steps:
-        return None
+        return []
     window = rules.get("onboarding_window_minutes") if isinstance(rules, dict) else None
     if isinstance(window, (int, float)) and not isinstance(window, bool):
         current_minute = int(platform.store.repositories.metadata.get("world_minute", 0) or 0)
         if current_minute > int(window):
-            return None
+            return []
     world = platform.store.repositories.metadata.get("world_properties", {}) or {}
-    for index, raw in enumerate(steps):
-        if not isinstance(raw, dict) or not raw.get("id"):
-            continue
-        condition = str(raw.get("when") or "").strip()
-        try:
-            visible = not condition or platform.view.conditions.evaluate(
-                condition, agent=agent, target={}, world=world, context={},
-            )
-        except Exception:
-            visible = False
-        if not visible:
-            continue
+    configured = [item for item in steps if isinstance(item, dict) and item.get("id")]
+    if not configured:
+        return []
+    rows: list[dict[str, Any]] = []
+    current_index = None
+    for index, raw in enumerate(configured):
+        done = _onboarding_contract_done(platform, agent, raw, world=world)
+        visible = _condition_holds(platform, agent, str(raw.get("when") or ""), world=world)
+        if not done and visible and current_index is None:
+            current_index = index
+        rows.append({"raw": raw, "done": done, "visible": visible, "index": index})
+    pending = [row for row in rows if not row["done"]]
+    if not pending or current_index is None:
+        return []
+    current_pending = next(
+        (position for position, row in enumerate(pending) if row["index"] == current_index),
+        0,
+    )
+    start = max(0, min(current_pending, len(pending) - 3))
+    selected = pending[start:start + 3]
+    result = []
+    for row in selected:
+        raw = row["raw"]
         override = raw.get("origin_overrides") if isinstance(raw.get("origin_overrides"), dict) else {}
         origin_id = str(agent.get("origin_id") or "")
         chosen = override.get(origin_id) if isinstance(override.get(origin_id), dict) else {}
         payload = {**raw, **chosen}
-        return {
+        status = "done" if row["done"] else ("current" if row["index"] == current_index else "upcoming")
+        result.append({
             "id": str(payload["id"]),
             "title": str(payload.get("title") or payload["id"]),
             "body": str(payload.get("body") or ""),
             "action_ref": str(payload.get("action_ref") or ""),
             "goal_id": str(payload.get("goal_id") or ""),
-            "step": index + 1,
-            "total": len([item for item in steps if isinstance(item, dict) and item.get("id")]),
-        }
+            "step": row["index"] + 1,
+            "total": len(configured),
+            "status": status,
+            "locked": not row["visible"] and not row["done"],
+        })
+    return result
+
+
+def _onboarding_progress(platform: Platform, agent: dict[str, Any]) -> dict[str, int]:
+    rules = platform.store.repositories.metadata.get("rules", {}) or {}
+    steps = rules.get("onboarding") if isinstance(rules, dict) else []
+    configured = [item for item in steps if isinstance(item, dict) and item.get("id")] if isinstance(steps, list) else []
+    if not configured:
+        return {"done": 0, "total": 0}
+    world = platform.store.repositories.metadata.get("world_properties", {}) or {}
+    done = sum(1 for step in configured if _onboarding_contract_done(platform, agent, step, world=world))
+    return {"done": done, "total": len(configured)}
+
+
+def _onboarding_step(platform: Platform, agent: dict[str, Any]) -> dict[str, Any] | None:
+    """Project the first matching, not-yet-complete onboarding step."""
+
+    checklist = _onboarding_checklist(platform, agent)
+    for item in checklist:
+        if item["status"] == "current":
+            return item
     return None
+
+
+def _player_relationships(platform: Platform, agent_id: str) -> list[dict[str, Any]]:
+    """Expose the player's configured social relationships as UI data."""
+
+    try:
+        relationships = platform.store.repositories.entities.get_related_relationships(agent_id, limit=12)
+    except Exception:
+        return []
+    result = []
+    for relationship in relationships:
+        person_id = str(relationship.get("person") or "")
+        if not person_id or str(relationship.get("relation") or "") == "stewardship":
+            continue
+        try:
+            person = platform.store.repositories.entities.get_agent(person_id)
+            name = str(person.get("name") or person_id)
+            role = str(person.get("role") or "")
+        except KeyError:
+            try:
+                person = platform.store.repositories.entities.get_entity(person_id)
+                name = str(person.get("name") or person_id)
+                role = str(person.get("entity_type") or "")
+            except KeyError:
+                name, role = person_id, ""
+        result.append({
+            "person": person_id,
+            "name": name,
+            "role": role,
+            "relation": str(relationship.get("relation") or "trust"),
+            "direction": str(relationship.get("direction") or "outgoing"),
+            "strength": float(relationship.get("relation_strength", 0) or 0),
+            "description": str(relationship.get("description") or relationship.get("last_description") or ""),
+            "last_changed_minute": int(relationship.get("last_changed_minute", 0) or 0),
+        })
+    return result
+
+
+def _player_recap(platform: Platform) -> dict[str, Any]:
+    """Return the last day's public events as a compact return-session recap."""
+
+    current = int(platform.store.repositories.metadata.get("world_minute", 0) or 0)
+    timeline = build_timeline(platform.store, limit=80, latest=True)
+    events = [
+        item for item in timeline.get("events", [])
+        if current - 1440 <= int(item.get("world_minute", 0) or 0) <= current
+    ][-6:]
+    return {
+        "since_minute": max(0, current - 1440),
+        "world_minute": current,
+        "latest_event_id": max([int(item.get("event_id", 0) or 0) for item in events] or [current]),
+        "events": [
+            {
+                "event_id": int(item.get("event_id", 0) or 0),
+                "world_minute": int(item.get("world_minute", 0) or 0),
+                "event_type": str(item.get("event_type") or ""),
+                "narrative": str(item.get("narrative") or ""),
+            }
+            for item in events
+        ],
+    }
+
+
+def _player_recipes(platform: Platform, agent: dict[str, Any]) -> list[dict[str, Any]]:
+    """Project configured recipes for the player's ledger/codex."""
+
+    rules = platform.store.repositories.metadata.get("rules", {}) or {}
+    labels = {str(key): str(value) for key, value in (rules.get("item_labels") or {}).items()}
+    inventory = agent.get("inventory", {}) or {}
+    result = []
+    for recipe in platform.store.repositories.entities.get_definitions("recipe_def"):
+        outputs = []
+        for item in recipe.get("outputs") or []:
+            if not isinstance(item, dict):
+                continue
+            item_id = str(item.get("item") or "")
+            outputs.append({
+                "item": item_id,
+                "label": labels.get(item_id, item_id.replace("_", " ")),
+                "quantity": float(item.get("quantity", 1) or 1),
+            })
+        inputs = []
+        for item in recipe.get("inputs") or []:
+            if not isinstance(item, dict):
+                continue
+            item_id = str(item.get("item") or "")
+            inputs.append({
+                "item": item_id,
+                "label": labels.get(item_id, item_id.replace("_", " ")),
+                "quantity": float(item.get("quantity", 1) or 1),
+            })
+        produced = any(
+            float(inventory.get(output["item"], 0) or 0) >= output["quantity"]
+            for output in outputs
+        )
+        result.append({
+            "id": str(recipe.get("id") or ""),
+            "name": str(recipe.get("name") or recipe.get("id") or ""),
+            "station_tags": [str(item) for item in (recipe.get("station_tags") or [])],
+            "duration_minutes": int(recipe.get("duration_minutes", 0) or 0),
+            "inputs": inputs,
+            "outputs": outputs,
+            "produced": produced,
+        })
+    return result
 
 
 def _facility_cards(
@@ -420,6 +602,11 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         "goals": decision.get("progression_goals", [])[:8],
         "chapter": _player_chapter(platform, player_id),
         "onboarding": _onboarding_step(platform, agent),
+        "onboarding_checklist": _onboarding_checklist(platform, agent),
+        "onboarding_progress": _onboarding_progress(platform, agent),
+        "relationships": _player_relationships(platform, player_id),
+        "recap": _player_recap(platform),
+        "recipes": _player_recipes(platform, agent),
         "active_task": active_task,
         "actions": actions[:64],
         "unavailable_actions": unavailable_actions[:12],
@@ -551,6 +738,8 @@ class ControlService:
             entry = self.platform.store.repositories.entities.get_entity(entry_id)
         except KeyError:
             entry = {}
+        rules = self.platform.store.repositories.metadata.get("rules", {}) or {}
+        item_labels = {str(key): str(value) for key, value in (rules.get("item_labels") or {}).items()}
         origins = [
             {
                 "id": str(item["id"]),
@@ -561,6 +750,15 @@ class ControlService:
                 "traits": dict(item.get("traits") or {}),
                 "capabilities": dict(item.get("capabilities") or {}),
                 "inventory": dict(item.get("inventory") or {}),
+                "starting_items": [
+                    {
+                        "item": str(key),
+                        "label": item_labels.get(str(key), str(key).replace("_", " ")),
+                        "quantity": float(value),
+                    }
+                    for key, value in (item.get("inventory") or {}).items()
+                    if isinstance(value, (int, float)) and not isinstance(value, bool) and float(value) > 0
+                ],
             }
             for item in player.get("origins", [])
             if item.get("id")

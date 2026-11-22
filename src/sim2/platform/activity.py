@@ -1093,8 +1093,12 @@ class ActivityRuntimeMixin:
         for key in ("from", "to", "type"):
             data.pop(key, None)
         data["relation_strength"] = max(-1.0, min(1.0, float(data.get("relation_strength", 0) or 0) + delta))
+        data["last_changed_minute"] = int(minute)
+        description = str(effect.get("description") or "").strip()
+        if description:
+            data["description"] = description
         self.store.repositories.entities.put_relationship(agent["id"], target_id, relation_type, data)
-        self._context.services["events"].append("relationship.changed", agent["id"], minute, {"target_id": target_id, "relation": relation_type, "delta": delta, "relation_strength": data["relation_strength"]})
+        self._context.services["events"].append("relationship.changed", agent["id"], minute, {"target_id": target_id, "relation": relation_type, "delta": delta, "relation_strength": data["relation_strength"], **({"description": description} if description else {})})
 
     def _advance_information_progress(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> dict[str, Any] | None:
         definition = action.get("progress") or {}

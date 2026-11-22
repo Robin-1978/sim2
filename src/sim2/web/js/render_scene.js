@@ -1,6 +1,6 @@
 import { renderSceneWorldCover } from "./art.js";
 import { applyAmbientProfile } from "./audio.js";
-import { $, clamp, crisisMetrics, crisisMood, el, formatWorldProperty, humanizeKey, state, toast } from "./core.js";
+import { $, clamp, crisisMetrics, crisisMood, el, formatWorldProperty, humanizeKey, state, toast, uiConfig } from "./core.js";
 import { nearbyParticipants, openCharacter } from "./render_panels.js";
 
 
@@ -38,6 +38,29 @@ export function renderSceneAlert() {
     $("scene-alert-hint").textContent = lines.filter(Boolean).join(" · ");
     alert.classList.remove("hidden");
   }
+
+
+export function renderCountdown() {
+    const root = $("scene-countdown");
+    if (!root) return;
+    const config = uiConfig().countdown;
+    const property = String(config?.property || "");
+    const value = property ? state.view?.world_properties?.[property] : undefined;
+    if (!config || !property || value === undefined) {
+      root.classList.add("hidden");
+      return;
+    }
+    const meta = {
+      ...(state.view?.world_property_labels?.[property] || {}),
+      ...config,
+      label: config.label || state.view?.world_property_labels?.[property]?.label || humanizeKey(property),
+    };
+    root.replaceChildren();
+    root.append(el("span", "", meta.label));
+    root.append(el("strong", "", `${formatWorldProperty(value, meta)}${config.suffix || ""}`));
+    if (config.hint) root.append(el("span", "hint", config.hint));
+    root.classList.remove("hidden");
+}
 
 
 export function renderScene() {
@@ -127,6 +150,7 @@ export function renderScene() {
       resources.append(chip);
     }
     renderSceneAlert();
+    renderCountdown();
   }
 
 

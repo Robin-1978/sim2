@@ -1,5 +1,5 @@
 import { actionForRef, beginAction } from "./actions.js";
-import { $, ENDING_KEY, clamp, el, formatWorldProperty, humanizeKey, state, storageGet, storageSet } from "./core.js";
+import { $, ENDING_KEY, clamp, el, formatMinute, formatWorldProperty, humanizeKey, state, storageGet, storageSet, translateNarrative, uiConfig } from "./core.js";
 import { humanizeReason, renderMobileActionBar } from "./render_actions.js";
 
 
@@ -12,9 +12,30 @@ export function renderOnboarding() {
       return;
     }
     card.classList.remove("hidden");
+    const eyebrow = $("onboarding-eyebrow");
+    if (eyebrow) eyebrow.textContent = uiConfig().one_thing_label || "今天只做一件事";
     $("onboarding-step").textContent = `${step.step || 1}/${step.total || 1}`;
     $("onboarding-title").textContent = step.title || "序章";
     $("onboarding-body").textContent = step.body || "";
+    const checklistRoot = $("onboarding-checklist");
+    if (checklistRoot) {
+      checklistRoot.replaceChildren();
+      const checklist = Array.isArray(state.view?.onboarding_checklist) ? state.view.onboarding_checklist : [];
+      checklistRoot.classList.toggle("hidden", !checklist.length);
+      const progress = state.view?.onboarding_progress || {};
+      if (Number(progress.done || 0) > 0) {
+        const doneRow = el("div", "onboarding-step done");
+        doneRow.append(el("i", "", "✓"));
+        doneRow.append(el("span", "", `已完成 ${progress.done} / ${progress.total} 步`));
+        checklistRoot.append(doneRow);
+      }
+      for (const item of checklist) {
+        const row = el("div", `onboarding-step ${item.status || "upcoming"}${item.locked ? " locked" : ""}`);
+        row.append(el("i", "", item.status === "done" ? "✓" : String(item.step || "")));
+        row.append(el("span", "", item.title || item.id || ""));
+        checklistRoot.append(row);
+      }
+    }
     const action = step.action_ref ? actionForRef(step.action_ref) : null;
     const button = $("onboarding-action");
     button.classList.toggle("hidden", !action);
@@ -24,6 +45,51 @@ export function renderOnboarding() {
     }
   }
 
+
+export function renderRecap() {
+    const card = $("recap-card");
+    if (!card) return;
+    const recap = state.view?.recap || {};
+    const events = Array.isArray(recap.events) ? recap.events : [];
+    const latest = Number(recap.latest_event_id || 0);
+    const key = `sim2.game.recap.${state.playerId || "anonymous"}`;
+    const seen = Number(storageGet(key, 0) || 0);
+    if (!events.length || !latest || latest <= seen) {
+      card.classList.add("hidden");
+      return;
+    }
+    if (!seen) {
+      // The first visit is onboarding, not a return session.
+      storageSet(key, latest);
+      card.classList.add("hidden");
+      return;
+    }
+    const prefixes = Array.isArray(uiConfig().recap_event_types) ? uiConfig().recap_event_types : [];
+    const interesting = events.filter((item) => {
+      const eventType = String(item.event_type || "");
+      return !prefixes.length || prefixes.some((prefix) => eventType.startsWith(String(prefix)));
+    });
+    if (!interesting.length) {
+      card.classList.add("hidden");
+      return;
+    }
+    $("recap-title").textContent = uiConfig().recap_label || "最近发生";
+    const list = $("recap-list");
+    list.replaceChildren();
+    for (const item of interesting.slice(-4)) {
+      const row = el("div", "recap-row");
+      row.append(el("time", "", formatMinute(item.world_minute)));
+      row.append(el("span", "", translateNarrative(item.narrative || item.event_type || "")));
+      list.append(row);
+    }
+    card.classList.remove("hidden");
+}
+
+export function dismissRecap() {
+    const latest = Number(state.view?.recap?.latest_event_id || 0);
+    if (latest) storageSet(`sim2.game.recap.${state.playerId || "anonymous"}`, latest);
+    $("recap-card")?.classList.add("hidden");
+}
 
 export function renderGoals() {
     const root = $("goal-list");

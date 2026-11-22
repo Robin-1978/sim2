@@ -299,6 +299,7 @@ def test_player_view_exposes_fair_metrics_shops_and_goals(tmp_path: Path) -> Non
         entry = service.player_entry()
         assert [origin["id"] for origin in entry["origins"]] == ["peddler", "miner", "herbalist", "cook"]
         assert len({origin["first_task"] for origin in entry["origins"]}) == 4
+        assert any(item["item"] == "coin" for item in entry["origins"][0]["starting_items"])
         assert service.enter_player("hero", "peddler", name="阿岚")["status"] == "accepted"
         view = service.player_view("hero")
         assert [metric["property"] for metric in view["ui"]["crisis_metrics"]] == [
@@ -501,5 +502,52 @@ def test_depleted_resource_is_not_offered_as_a_gather_choice(tmp_path: Path) -> 
 
         assert "gather_iron_ore" not in choices
         assert "gather_coal" in choices
+    finally:
+        service.close()
+
+
+def test_onboarding_checklist_tracks_done_and_current_steps(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "riverbend-checklist", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "miner", name="阿岚")["status"] == "accepted"
+        view = service.player_view("hero")
+        checklist = view["onboarding_checklist"]
+        assert len(checklist) == 3
+        assert checklist[0]["status"] == "current"
+        assert [item["status"] for item in checklist].count("current") == 1
+        assert view["onboarding_progress"]["total"] == 5
+
+        with platform.store.transaction():
+            platform.store.repositories.events.append_event("trade.sold", "hero", 1, {"item": "iron_ore", "price": 3})
+        view = service.player_view("hero")
+        checklist = view["onboarding_checklist"]
+        assert len(checklist) == 3
+        assert sum(item["status"] == "current" for item in checklist) == 1
+        assert any(item["id"] == "stock_four_shops" and item["status"] == "current" for item in checklist)
+        assert view["onboarding_progress"]["done"] >= 1
+    finally:
+        service.close()
+
+
+def test_player_view_exposes_dialogue_relationship_and_recipe_ledger(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "riverbend-relationship", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "miner", name="阿岚")["status"] == "accepted"
+        with platform.store.transaction():
+            agent = platform.store.repositories.entities.get_agent("hero")
+            agent["initial_state"]["location_id"] = "smithy"
+            platform.store.repositories.entities.put_agent("hero", agent, "阿岚")
+        assert platform.submit_dialogue("hero", "zhou", "general", "桥市前还缺什么？")["status"] == "accepted"
+
+        view = service.player_view("hero")
+        relationship = next(item for item in view["relationships"] if item["person"] == "zhou")
+        assert relationship["relation"] == "trust"
+        assert relationship["strength"] > 0
+        assert relationship["description"]
+        assert len(view["recipes"]) == 8
+        assert any(recipe["id"] == "iron_ingot" for recipe in view["recipes"])
+        assert view["recap"]["latest_event_id"] >= 1
     finally:
         service.close()

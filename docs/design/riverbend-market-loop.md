@@ -135,6 +135,23 @@ flowchart LR
 
 Platform 通过通用 `catalog_action` 效果执行目录条目：先校验位置/`requires`/成本，再用现有效果管线应用库存、钱柜、声望和事件。玩家界面只显示当前地点、当前库存足够且条件满足的条目；采空的资源节点不会继续出现在采集下拉框里。选择值使用稳定 ID，标签保持人类可读。`requires` 的条件路径在建包时校验：未知命名空间、未声明状态/需求/世界属性、未声明物品都会被拒绝，避免拼写错误静默变成 false。
 
+### 首小时、回访与收集层
+
+- `rules.onboarding[].complete_when` 为每步声明完成契约。当前五步分别是：`trade.sold`
+  （第一枚金币）、拥有铁镐、水分恢复、`fair_ready >= 4`、`fair_crate >= 1`。玩家视图
+  返回 3 步未完成清单和已完成数量；完成步骤显示勾选。
+- `rules.relationship_effects["dialogue.completed"]` 让交谈产生 `trust` 关系；角色侧栏
+  显示信任条和最近一次关系描述，说明“这次互动会被记住”。
+- `setting.ui.countdown` 把 `days_to_fair` 投影成场景顶部的“商队抵达 7 天”主视觉；
+  平台不写死桥市字段。
+- `setting.ui.celebrations` 按事件类型驱动金币、盖章、礼花和章节卡；`player_only`
+  避免 NPC 交易也弹出玩家的钱袋庆祝。
+- `setting.ui.recap_label` / `recap_event_types` 控制“昨夜河湾”回访摘要；
+  `setting.ui.one_thing_label` 控制“今天只做一件事”的上手卡。
+- 角色栏“账本”把 `facilities`、`recipes`、`goals` 组织成店铺/配方/桥市收集视图；
+  `setting.ui.ledger_label` 提供世界自己的账本名。
+- 结局面板和章节庆祝卡支持 Web Share API；不支持时复制章节文字。
+
 ### 七天桥市
 
 | 幕 | 触发 | 世界变化 |

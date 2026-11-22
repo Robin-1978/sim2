@@ -2,6 +2,7 @@ import { request, write } from "./api.js";
 import { renderAll } from "./app.js";
 import { $, OPERATOR_KEY, PLAYER_KEY, describeError, el, setOnline, state, storageGet, storageSet, toast, withPending, worldIsOpen } from "./core.js";
 import { openActionDialog, renderTask } from "./render_actions.js";
+import { maybeCelebrateEvents } from "./celebration.js";
 import { openCreatePanel, renderEntry, renderEntryInstances } from "./render_entry.js";
 import { SKIP_EVENTS, bundleText, closeCharacter, closePlayerSheet, nearbyParticipants, parseBundle, personName, renderFeed, renderMap, showMapDialog, updateCharacterSheet } from "./render_panels.js";
 
@@ -87,6 +88,7 @@ export async function submitEntry(button, forcedPlayerId = null) {
         state.playerId = result.player_id || resumingId;
         state.playerName = result.name || name || state.playerId;
         state.playerToken = result.session_token || null;
+        restartStream();
         state.entry = {
           ...(state.entry || {}),
           players: [{ id: state.playerId, name: state.playerName, status: "idle" }],
@@ -291,7 +293,9 @@ export function startStream() {
     source.addEventListener("feed.append", (event) => {
       try {
         const payload = JSON.parse(event.data || "{}");
-        if (typeof mergeFeedEvents === "function") mergeFeedEvents(payload.data?.events || []);
+        const events = Array.isArray(payload.data?.events) ? payload.data.events : [];
+        if (typeof mergeFeedEvents === "function") mergeFeedEvents(events);
+        maybeCelebrateEvents(events);
       } catch (error) { /* polling fallback */ }
     });
     source.addEventListener("trade.changed", () => {
@@ -311,6 +315,17 @@ export function startStream() {
         state.stream = null;
       }
     };
+  }
+
+
+export function restartStream() {
+    if (state.stream) {
+      try { state.stream.close(); } catch (error) { /* ignore */ }
+      state.stream = null;
+    }
+    state.streamConnected = false;
+    state.streamFailures = 0;
+    startStream();
   }
 
 

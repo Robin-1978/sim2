@@ -234,3 +234,4 @@ world-pack lint covers every `worlds/*/actions.yaml`.
 - 玩家初始化改为“角色名 + 出身”：新角色的内部 ID 由 Platform 生成（`player_<12 hex>`），网页入口不再要求填写玩家 ID；已有角色仍按 ID 恢复。API 的 `player_id` 变为可选，缺名且缺 ID 时返回 `failed_check: name`。回归：`test_player_entry_templates.py` 18 项、`test_web_client.py`/`test_http_post_routes.py`/`test_play_without_llm.py` 合计 118 项通过。
 - 首屏优化（2026-11-22）：入口“进入世界”改为固定底部主按钮；游戏内把行动区移到目标/地图之前，首屏可见“下一步”；推荐行动优先跟随 `onboarding.action_ref`/目标 ready refs，其次生产性行动，需求不低时不再默认“使用随身物品”。聚焦回归 128 项通过。
 - 实例管理（2026-11-22）：Web 存档卡片可删除非当前实例；后端只接受 `instance_id`、拒绝当前实例和越界路径，删除整个实例目录（数据库与快照）；实例描述新增 `world_title` 供存档列表展示。
+- 首小时体验 P1-P3（2026-11-22）：`onboarding_checklist`/`onboarding_progress` 支持 3 步勾选与 `complete_when` 契约；`setting.ui.celebrations` 驱动金币/盖章/礼花/章节卡；`relationships` 暴露信任条；`recap` 提供最近一天回访摘要；账本汇总设施/配方/目标；`countdown` 场景主视觉和 Web Share 章节分享。所有内容标签和事件映射来自世界配置，平台不写死世界名。

@@ -6,7 +6,7 @@
   <meta name="description" content="sim2 游戏客户端">
   <title>sim2</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230b2426'/%3E%3Cpath d='M8 39c8-8 16 8 24 0s16 8 24 0' fill='none' stroke='%2365d8c2' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='46' cy='18' r='5' fill='%23efb26f'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/app.css?v=23">
+  <link rel="stylesheet" href="/app.css?v=24">
 </head>
 <body>
   <a class="skip-link" href="#center-stage">跳到主要画面</a>
@@ -54,6 +54,7 @@
         </div>
         <div class="character-actions">
           <span id="player-loadout" class="character-loadout">—</span>
+          <button id="open-ledger" class="text-button" type="button">账本</button>
           <button id="player-details" class="text-button" type="button">角色详情</button>
           <button id="player-leave" class="text-button" type="button">世界大厅</button>
         </div>
@@ -69,6 +70,7 @@
 
     <section id="center-stage" class="center-stage" aria-label="场景与行动">
       <section class="panel scene-panel">
+        <div id="scene-countdown" class="scene-countdown hidden"></div>
         <div id="scene-art" class="scene-art" data-scene="harbor">
           <div id="scene-world-cover" class="scene-world-cover" aria-hidden="true"></div>
           <div class="scene-backdrop"></div>
@@ -134,9 +136,10 @@
 
       <section id="onboarding-card" class="panel onboarding-card hidden" aria-live="polite">
         <div class="onboarding-copy">
-          <span class="eyebrow">上手提示 · <span id="onboarding-step">1/1</span></span>
+          <span class="eyebrow"><span id="onboarding-eyebrow">今天只做一件事</span> · <span id="onboarding-step">1/1</span></span>
           <strong id="onboarding-title">—</strong>
           <p id="onboarding-body" class="hint">—</p>
+          <div id="onboarding-checklist" class="onboarding-checklist"></div>
         </div>
         <button id="onboarding-action" class="button primary" type="button">去做</button>
       </section>
@@ -180,6 +183,10 @@
     </section>
 
     <aside class="right-rail" aria-label="世界动态">
+      <section id="recap-card" class="panel recap-card hidden" aria-live="polite">
+        <div class="panel-title"><div><span class="eyebrow">回来啦</span><h2 id="recap-title">最近发生</h2></div><button id="recap-dismiss" class="text-button" type="button">收起</button></div>
+        <div id="recap-list" class="recap-list"></div>
+      </section>
       <section class="panel world-panel">
         <div class="panel-title"><h2>世界状态</h2><span class="hint">公共账目</span></div>
         <div id="world-pulse" class="world-pulse empty">
@@ -235,7 +242,7 @@
   </main>
 
   <footer class="footer">
-    <span>sim2 · 事实来自 Platform · <span id="js-build">web-game-v23</span></span>
+    <span>sim2 · 事实来自 Platform · <span id="js-build">web-game-v24</span></span>
     <span id="last-update">尚未同步</span>
   </footer>
 
@@ -414,6 +421,11 @@
         <button id="character-close" class="icon-button close" type="button" aria-label="关闭人物侧栏"></button>
       </div>
       <div class="character-sheet-body">
+        <div id="character-relationship" class="relationship-card hidden">
+          <div class="relationship-head"><span class="eyebrow">关系</span><strong id="relationship-label">初次见面</strong></div>
+          <div class="relationship-track"><span id="relationship-fill"></span></div>
+          <p id="relationship-note" class="hint"></p>
+        </div>
         <span class="scene-label">对话记录</span>
         <div id="dialogue-list" class="dialogue-list character-dialogue" aria-live="polite"></div>
         <form id="talk-form" class="stack-form character-talk-form">
@@ -421,6 +433,24 @@
           <label>消息<textarea id="talk-message" rows="3" placeholder="说点什么…" maxlength="240"></textarea></label>
           <button id="talk-send" class="button primary wide" type="submit">发送对话</button>
         </form>
+      </div>
+    </aside>
+  </div>
+
+  <div id="ledger-drawer" class="character-drawer hidden" role="dialog" aria-modal="true" aria-labelledby="ledger-title">
+    <div class="character-drawer-scrim" data-close-ledger></div>
+    <aside class="character-sheet ledger-sheet">
+      <div class="character-sheet-head">
+        <div><span class="eyebrow">收集与进度</span><h2 id="ledger-title">账本</h2><p class="hint">店铺、配方和世界目标</p></div>
+        <button id="ledger-close" class="icon-button close" type="button" aria-label="关闭账本"></button>
+      </div>
+      <div class="character-sheet-body">
+        <span class="scene-label">店铺</span>
+        <div id="ledger-shops" class="ledger-grid"></div>
+        <span class="scene-label">配方</span>
+        <div id="ledger-recipes" class="ledger-grid"></div>
+        <span class="scene-label">世界目标</span>
+        <div id="ledger-goals" class="ledger-grid"></div>
       </div>
     </aside>
   </div>
@@ -468,14 +498,16 @@
       <div id="ending-stats" class="ending-stats"></div>
       <div class="ending-actions">
         <button id="ending-continue" class="button primary" type="button">继续观察世界</button>
+        <button id="ending-share" class="button ghost" type="button">分享这一季</button>
         <button id="ending-ledger" class="button ghost" type="button">查看公共账目</button>
       </div>
     </div>
   </div>
 
+  <div id="celebration-layer" class="celebration-layer" aria-live="polite"></div>
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
   <!-- bump ?v= whenever app.js/app.css changes so stale tabs refetch -->
-  <script type="module" src="/app.js?v=23"></script>
+  <script type="module" src="/app.js?v=24"></script>
 </body>
 </html>
