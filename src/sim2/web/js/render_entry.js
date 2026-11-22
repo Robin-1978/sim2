@@ -1,4 +1,4 @@
-import { activateWorldInstance, returnToGame, submitEntry } from "./actions.js";
+import { activateWorldInstance, deleteWorldInstance, returnToGame, submitEntry } from "./actions.js";
 import { paintWorldCard, renderEntryCover } from "./art.js";
 import { $, crisisMetrics, el, formatClock, humanizeKey, resolveWorldTemplate, state, worldIsOpen } from "./core.js";
 
@@ -94,7 +94,7 @@ export function renderEntryInstances() {
     }
     for (const item of state.instances) {
       const card = el("article", `instance-card${item.active ? " active" : ""}`);
-      card.append(el("strong", "", item.world_id || item.instance_id || "世界"));
+      card.append(el("strong", "", item.world_title || item.world_id || item.instance_id || "世界"));
       const day = Math.floor(Number(item.world_minute || 0) / 1440) + 1;
       card.append(el("small", "", `${item.instance_id || "实例"} · 第 ${day} 天 · ${item.runtime_status || "未知状态"}`));
       const players = Array.isArray(state.entry?.players) ? state.entry.players : [];
@@ -111,7 +111,16 @@ export function renderEntryInstances() {
       } else {
         button.addEventListener("click", () => activateWorldInstance(item.instance_id, button));
       }
-      card.append(button);
+      const actions = el("div", "instance-actions");
+      actions.append(button);
+      if (!item.active) {
+        const remove = el("button", "text-button danger", "删除");
+        remove.type = "button";
+        remove.title = `删除存档 ${item.instance_id}`;
+        remove.addEventListener("click", () => deleteWorldInstance(item.instance_id, remove));
+        actions.append(remove);
+      }
+      card.append(actions);
       list.append(card);
     }
   }

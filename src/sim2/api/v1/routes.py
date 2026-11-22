@@ -64,6 +64,7 @@ ROUTES: tuple[Route, ...] = (
     Route("POST", "/api/v1/instances", "operator", operator.instance_create, request_model="instance", idempotent=True, name="instances.create"),
     Route("POST", "/api/v1/instances/init", "launcher", operator.instance_init, request_model="instance", idempotent=True, name="instances.init"),
     Route("POST", "/api/v1/instances/activate", "operator", operator.instance_activate, request_model="instance", idempotent=True, name="instances.activate"),
+    Route("POST", "/api/v1/instances/delete", "operator", operator.instance_delete, request_model="instance", idempotent=True, name="instances.delete"),
     Route("POST", "/api/v1/runtime/start", "operator", operator.runtime_start, request_model="runtime_start", idempotent=True, name="runtime.start"),
     Route("POST", "/api/v1/runtime/pause", "operator", operator.runtime_pause, request_model="reason", idempotent=True, name="runtime.pause"),
     Route("POST", "/api/v1/runtime/resume", "operator", operator.runtime_resume, request_model="reason", idempotent=True, name="runtime.resume"),

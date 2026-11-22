@@ -258,6 +258,11 @@ endings:
 - 新角色只需要角色名和出身；内部玩家 ID 由 Platform 生成（`player_<12 hex>`），
   不再要求玩家填写。已有角色再次进入时按 ID 恢复，并补齐当前
   `player_template` 中缺失的能力、物资、行为和 controller。
+- 入口页的“进入世界”固定在视口底部，避免角色名和出身选完后还要滚动才能提交；
+  旧实例卡片提供删除入口，但只对非当前实例显示，后端也会再次拒绝删除当前实例。
+- 游戏内推荐行动优先跟随上手目标和当前目标，其次是可推进生产/交易的行动；
+  需求不低时不会把“使用随身物品”当作默认下一步。行动区放在目标与地图之前，
+  首屏就能看到“下一步”。
 - 行动区先给出一个推荐行动，再以紧凑列表展示最多五个备选；其余按分类筛选或
   展开。所有行动仍只来自 Platform 判定可执行的行为，条件不足的行为保留在
   可展开列表并显示失败谓词的可读原因。
@@ -445,6 +450,7 @@ web 根目录内的 `.html`、`.css`、`.js` 和 `.svg`，拒绝路径穿越。�
 | GET | `/api/v1/operator/audit` | 审计导出，需要 Operator session |
 | POST | `/api/v1/instances/init` | 创建实例；launcher 状态下首次创建免 Operator |
 | POST | `/api/v1/instances/activate` | 需要 Operator session |
+| POST | `/api/v1/instances/delete` | 删除非当前实例；需要 Operator session |
 | GET | `/api/v1/meta/contracts` | 请求/响应 JSON Schema |
 
 `/admin.html` 额外使用 `/api/v1/authoring/*`、`/api/v1/operator/snapshots*`、

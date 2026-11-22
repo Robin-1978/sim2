@@ -151,6 +151,9 @@ class FakeServer:
     def enter_player(self, body):
         return {"status": "accepted", "player_id": body["player_id"], "session_token": "player-token", "resumed": False}
 
+    def delete_instance(self, body):
+        return {"status": "rejected", "failed_check": "instance_id"}
+
     def trade_offers(self, agent_id, *, include_closed=False, token=None):
         return {"status": "ok", "offers": [{"offer_id": "o1", "include_closed": include_closed}]}
 

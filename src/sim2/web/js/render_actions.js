@@ -149,7 +149,50 @@ export function renderActions() {
 
 
 export function chooseRecommendedAction(actions) {
-    return actions.find((action) => actionCategory(action) !== "移动") || actions[0] || null;
+    if (!Array.isArray(actions) || !actions.length) return null;
+    const view = state.view || {};
+    const onboardingRef = String(view.onboarding?.action_ref || "");
+    const desiredCategory = onboardingRef ? actionCategory({ ref: onboardingRef }) : "";
+    if (onboardingRef) {
+      const onboarding = actions.find((action) => action.ref === onboardingRef);
+      if (onboarding) return onboarding;
+      const sameCategory = actions.find((action) => actionCategory(action) === desiredCategory);
+      if (sameCategory) return sameCategory;
+    }
+    const goals = Array.isArray(view.goals) ? view.goals : [];
+    const readyRefs = new Set(
+      goals.flatMap((goal) => Array.isArray(goal.ready_behavior_refs) ? goal.ready_behavior_refs : []),
+    );
+    const ready = actions.find((action) => readyRefs.has(action.ref));
+    if (ready) return ready;
+
+    const needs = view.player?.needs || {};
+    const need = (id) => Number(needs[id] ?? 100);
+    const attributes = Array.isArray(view.player?.attributes) ? view.player.attributes : [];
+    const attribute = (id) => {
+      const item = attributes.find((entry) => String(entry.id || "") === id);
+      return Number(item?.value ?? item?.current ?? 100);
+    };
+    const urgent = need("hydration") < 30
+      || need("satiety") < 30
+      || attribute("stamina") < 25
+      || attribute("energy") < 25
+      || attribute("integrity") < 30;
+    if (urgent) {
+      const recovery = actions.find((action) => actionCategory(action) === "恢复");
+      if (recovery) return recovery;
+    }
+
+    const travel = actions.find((action) => actionCategory(action) === "移动");
+    if (desiredCategory && desiredCategory !== "其他") {
+      return travel || actions[0] || null;
+    }
+
+    // A consumable is not a good default when nothing is low: it spends time
+    // without advancing a shop, the fair or the current onboarding step.
+    const productive = actions.find((action) => !["移动", "恢复"].includes(actionCategory(action)));
+    if (productive) return productive;
+    return travel || actions[0] || null;
   }
 
 
@@ -172,6 +215,9 @@ export function recommendedActionCard(action) {
     const meta = el("div", "badge-row");
     const goal = (state.view?.goals || []).find((item) => (item.ready_behavior_refs || []).includes(action.ref));
     if (goal) meta.append(el("span", "badge accent", `推进：${goal.label || goal.id}`));
+    if (state.view?.onboarding?.action_ref === action.ref) {
+      meta.append(el("span", "badge accent", "上手目标"));
+    }
     meta.append(el("span", "badge", translateTime(action.time || "时间未知")));
     for (const chip of actionChips(action, 3)) meta.append(el("span", "badge", chip));
     copy.append(meta);
@@ -298,7 +344,25 @@ export function humanizeReason(reason) {
     for (const [pattern, label] of Object.entries(configuredReasons)) {
       if (pattern && text.includes(pattern)) return text.replace(pattern, String(label));
     }
-    let match = text.match(/^cooldown until world minute (\d+)$/i);
+    let match = text.match(/^(?:Location tag|location\.tag\.)\s*([A-Za-z0-9_-]+)\.?$/i);
+    if (match) {
+      const tag = match[1].toLowerCase();
+      const labels = {
+        resource: "资源点",
+        shop: "店铺",
+        craft: "工坊或店铺",
+        safe: "安全地点",
+        water: "水源",
+        market: "集市",
+        social: "社交场所",
+        home: "住屋",
+        defense: "防线",
+        infrastructure: "公共设施",
+        research: "研究点",
+      };
+      return `需要到达${labels[tag] || humanizeKey(tag)}`;
+    }
+    match = text.match(/^cooldown until world minute (\d+)$/i);
     if (match) {
       const current = Number(state.view?.world_time?.minute || 0);
       const remaining = Math.max(0, Number(match[1]) - current);

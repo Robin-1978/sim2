@@ -104,9 +104,6 @@
         </div>
       </section>
 
-      <section id="crisis-strip" class="panel crisis-strip hidden" aria-label="关键世界指标">
-        <div id="crisis-metrics" class="crisis-metrics"></div>
-      </section>
 
       <section id="task-panel" class="panel task-panel hidden" aria-live="polite">
         <div class="task-copy">
@@ -144,6 +141,24 @@
         <button id="onboarding-action" class="button primary" type="button">去做</button>
       </section>
 
+      <section class="panel actions-panel">
+        <div class="panel-title actions-heading">
+          <div><span class="eyebrow">平台已校验</span><h2>下一步</h2></div>
+          <div id="action-filters" class="segmented" role="tablist" aria-label="行动筛选"></div>
+        </div>
+        <div id="recommended-action" class="recommended-action"></div>
+        <div id="action-grid" class="action-list"></div>
+        <button id="action-more" class="text-button wide action-more hidden" type="button">显示更多行动</button>
+        <details id="locked-actions" class="locked-actions hidden">
+          <summary>条件不足的行动 <span id="locked-count"></span></summary>
+          <div id="locked-list" class="locked-list"></div>
+        </details>
+      </section>
+
+      <section id="crisis-strip" class="panel crisis-strip hidden" aria-label="关键世界指标">
+        <div id="crisis-metrics" class="crisis-metrics"></div>
+      </section>
+
       <section class="panel goals-panel">
         <div class="panel-title goals-heading">
           <div><span id="chapter-eyebrow" class="eyebrow">当前态势</span><h2 id="chapter-title">世界目标</h2></div>
@@ -162,19 +177,6 @@
         <div id="mini-map" class="mini-map" aria-label="世界路线小地图"></div>
       </section>
 
-      <section class="panel actions-panel">
-        <div class="panel-title actions-heading">
-          <div><span class="eyebrow">平台已校验</span><h2>下一步</h2></div>
-          <div id="action-filters" class="segmented" role="tablist" aria-label="行动筛选"></div>
-        </div>
-        <div id="recommended-action" class="recommended-action"></div>
-        <div id="action-grid" class="action-list"></div>
-        <button id="action-more" class="text-button wide action-more hidden" type="button">显示更多行动</button>
-        <details id="locked-actions" class="locked-actions hidden">
-          <summary>条件不足的行动 <span id="locked-count"></span></summary>
-          <div id="locked-list" class="locked-list"></div>
-        </details>
-      </section>
     </section>
 
     <aside class="right-rail" aria-label="世界动态">
@@ -285,7 +287,6 @@
             <div id="origin-list" class="origin-list"></div>
           </div>
 
-          <button id="entry-submit" class="button primary wide entry-submit" type="button">进入世界</button>
         </div>
 
         <p id="entry-error" class="form-error" role="alert"></p>
@@ -326,6 +327,7 @@
         </section>
       </aside>
     </div>
+    <button id="entry-submit" class="button primary entry-submit" type="button">进入世界</button>
   </div>
 
   <div id="settings-drawer" class="drawer hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">

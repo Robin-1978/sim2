@@ -1114,3 +1114,41 @@ def test_player_entry_generates_an_id_when_only_a_character_name_is_supplied(tmp
     finally:
         server.close()
         thread.join(timeout=2)
+
+
+def test_web_can_delete_an_inactive_instance_but_not_the_active_one(tmp_path: Path):
+    world = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+    runtime_root = tmp_path / "runtime"
+    first = create_instance(world, "delete-active", runtime_root)
+    second = create_instance(world, "delete-old", runtime_root)
+    server = ControlHTTPServer(("127.0.0.1", 0), first)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    operator = _operator_headers(server)
+    try:
+        with pytest.raises(HTTPError) as anonymous:
+            _json_request(base + "/api/v1/instances/delete", {"instance_id": "delete-old"})
+        assert anonymous.value.code == 403
+
+        active = _json_request(
+            base + "/api/v1/instances/delete",
+            {"instance_id": "delete-active"},
+            headers=operator,
+        )
+        assert active["status"] == "rejected"
+        assert active["failed_check"] == "active_instance"
+        assert first.is_file()
+
+        deleted = _json_request(
+            base + "/api/v1/instances/delete",
+            {"instance_id": "delete-old"},
+            headers=operator,
+        )
+        assert deleted["status"] == "accepted", deleted
+        assert not second.parent.exists()
+        assert first.is_file()
+        assert {item["instance_id"] for item in deleted["instances"]} == {"delete-active"}
+    finally:
+        server.close()
+        thread.join(timeout=2)

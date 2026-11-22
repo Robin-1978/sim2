@@ -69,6 +69,10 @@ def instance_activate(ctx: RequestContext) -> dict[str, Any]:
     return ctx.server.activate_instance(dict(ctx.body))
 
 
+def instance_delete(ctx: RequestContext) -> dict[str, Any]:
+    return ctx.server.delete_instance(dict(ctx.body))
+
+
 def runtime_start(ctx: RequestContext) -> dict[str, Any]:
     return ctx.server.start_runtime(dict(ctx.body))
 

@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import secrets
+import shutil
 import time
 from collections.abc import Callable
 from threading import RLock, Thread
@@ -470,6 +471,54 @@ class ControlHTTPServer(ThreadingHTTPServer):
                 "status": "accepted",
                 "instance": self.registry.describe(target),
                 "runtime": self.runtime.status(),
+            }
+
+    def delete_instance(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Delete one inactive instance directory from the runtime root.
+
+        The active instance owns the open SQLite connection and runtime
+        supervisor, so deletion is refused until the operator switches away.
+        Only ``instance_id`` is accepted; a caller cannot delete an arbitrary
+        path outside ``runtime_root/instances``.
+        """
+
+        with self._control_lock:
+            instance_id = str(body.get("instance_id") or "").strip()
+            if not instance_id:
+                return {
+                    "status": "rejected",
+                    "message": "instance_id is required",
+                    "failed_check": "instance_id",
+                }
+            try:
+                target = self.registry.resolve(instance_id=instance_id)
+            except (OSError, ValueError) as exc:
+                return {"status": "rejected", "message": str(exc), "failed_check": "instance_id"}
+            if target == self.database_path:
+                return {
+                    "status": "rejected",
+                    "message": "Switch away from this instance before deleting it.",
+                    "failed_check": "active_instance",
+                }
+            instance_dir = target.parent.resolve()
+            if instance_dir == self.registry.instances_root or not instance_dir.is_relative_to(self.registry.instances_root):
+                return {
+                    "status": "rejected",
+                    "message": "Refusing to delete an instance outside the configured instance root.",
+                    "failed_check": "instance_path",
+                }
+            try:
+                shutil.rmtree(instance_dir)
+            except OSError as exc:
+                return {
+                    "status": "rejected",
+                    "message": f"cannot delete instance: {exc}",
+                    "failed_check": "instance_delete",
+                }
+            return {
+                "status": "accepted",
+                "instance_id": instance_id,
+                "instances": self.registry.list(active_db=self.database_path),
             }
 
     def _runtime_or_error(self) -> RuntimeSupervisor:

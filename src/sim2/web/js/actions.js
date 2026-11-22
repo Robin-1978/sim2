@@ -132,6 +132,28 @@ export async function activateWorldInstance(instanceId, button = null) {
   }
 
 
+export async function deleteWorldInstance(instanceId, button = null) {
+    if (!instanceId) return;
+    if (!state.operatorToken) {
+      openCreatePanel();
+      $("entry-admin").open = true;
+      $("new-instance-error").textContent = "删除存档需要先在“管理权限”解锁。";
+      return;
+    }
+    if (!window.confirm(`删除存档 ${instanceId}？这会同时删除该实例的存档和快照，无法撤销。`)) return;
+    await withPending(button, async () => {
+      try {
+        const result = await write("/api/v1/instances/delete", { instance_id: instanceId });
+        if (result.status !== "accepted") throw new Error(result.message || "删除失败");
+        toast(`已删除存档 ${instanceId}。`, "ok");
+        await loadEntryContext();
+      } catch (error) {
+        toast(describeError(error, "删除存档失败"), "error");
+      }
+    });
+  }
+
+
 export async function createWorldInstance(button) {
     const packageId = state.selectedWorldPackage;
     const instanceId = String($("new-instance-id").value || "").trim();

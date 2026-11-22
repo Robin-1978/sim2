@@ -1092,7 +1092,7 @@ select.compact-select, .compact-select { padding: 8px 10px; }
   z-index: 40;
   display: grid;
   place-items: center;
-  padding: 32px 20px;
+  padding: 32px 20px 112px;
   overflow-y: auto;
   background:
     radial-gradient(1000px 620px at 18% 8%, rgba(45, 126, 118, 0.3), transparent 62%),
@@ -1198,7 +1198,19 @@ select.compact-select, .compact-select { padding: 8px 10px; }
 .entry-cast-copy small { display: block; color: var(--faint); font-size: 8.5px; }
 .entry-body { display: grid; grid-template-columns: minmax(260px, 0.9fr) 1.1fr; gap: 24px; margin-top: 24px; }
 .entry-body > .continue-card:only-child { grid-column: 1 / -1; }
-.entry-submit { grid-column: 1 / -1; margin-top: 2px; }
+.entry-submit {
+  position: fixed;
+  left: 50%;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  z-index: 55;
+  width: min(420px, calc(100vw - 40px));
+  margin: 0;
+  padding: 13px 18px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  font-size: 13px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.48), 0 0 0 1px rgba(239, 178, 111, 0.18);
+}
 .entry-form { display: flex; flex-direction: column; gap: 12px; }
 .entry-form input { padding: 10px 12px; }
 .entry-form .hint { line-height: 1.6; }
@@ -1258,6 +1270,10 @@ select.compact-select, .compact-select { padding: 8px 10px; }
   background: rgba(255, 255, 255, 0.024);
 }
 .instance-card.active { border-color: rgba(101, 216, 194, 0.44); background: rgba(101, 216, 194, 0.07); }
+.instance-actions { display: flex; flex-direction: row; align-items: center; justify-content: flex-end; gap: 8px; }
+.instance-actions .button { white-space: nowrap; }
+.text-button.danger { color: var(--red); }
+.text-button.danger:hover { color: #ff9b8c; }
 .instance-card strong { font-size: 12px; }
 .instance-card small { color: var(--faint); font-size: 9.5px; }
 .instance-card .button { grid-row: 1 / span 2; grid-column: 2; align-self: center; padding: 6px 10px; font-size: 9px; }
@@ -1498,9 +1514,9 @@ body.ending-open { overflow: hidden; }
   .onboarding-card .button { width: 100%; }
   .task-panel { order: 5; }
   .result-beat { order: 6; }
-  .character-panel { order: 7; }
-  .goals-panel { order: 8; }
-  .actions-panel { order: 9; }
+  .actions-panel { order: 7; }
+  .character-panel { order: 8; }
+  .goals-panel { order: 9; }
   .mini-map-panel { order: 10; }
   .right-rail { grid-template-columns: 1fr; }
   .scene-footer { grid-template-columns: 1fr; }

@@ -71,9 +71,11 @@ class InstanceRegistry:
         path = Path(path).resolve()
         stat = path.stat()
         metadata = self._metadata(path)
+        setting = metadata.get("setting") if isinstance(metadata.get("setting"), dict) else {}
         return {
             "instance_id": str(metadata.get("instance_id") or path.parent.name),
             "world_id": str(metadata.get("world_id") or ""),
+            "world_title": str(setting.get("name") or metadata.get("world_id") or ""),
             "world_minute": int(metadata.get("world_minute", 0) or 0),
             "runtime_status": str(metadata.get("runtime_status", "running") or "running"),
             "config_version": str(metadata.get("config_version") or ""),
