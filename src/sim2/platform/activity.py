@@ -102,6 +102,9 @@ class ActivityRuntimeMixin:
                 "resource.here": resource_is_at_location(self.store, resource_id, location_id),
             })
         condition_context.update(configured_context_values(self.store.repositories.metadata.get("rules", {}) or {}, agent))
+        for key, value in parameters.items():
+            if isinstance(value, (str, int, float)) and not isinstance(value, bool):
+                condition_context.setdefault(str(key), value)
         condition_context.update(self._institution_action_context(action, parameters))
         if (
             action.get("duration", {}).get("mode") == "recipe_duration"
@@ -603,29 +606,59 @@ class ActivityRuntimeMixin:
                 self.apply_relationship_effect(agent, target or effect_target, effect, minute)
             elif effect_type == "public_event":
                 event_type = str(effect.get("event") or "public.event")
+
+                def _resolve_public_value(value: Any) -> Any:
+                    if isinstance(value, str) and value.startswith("context."):
+                        return parameters.get(value.removeprefix("context."), value)
+                    if isinstance(value, dict):
+                        return {key: _resolve_public_value(item) for key, item in value.items()}
+                    if isinstance(value, list):
+                        return [_resolve_public_value(item) for item in value]
+                    return value
+
                 payload = {
-                    **(dict(effect.get("data") or {}) if isinstance(effect.get("data"), dict) else {}),
+                    **_resolve_public_value(dict(effect.get("data") or {}) if isinstance(effect.get("data"), dict) else {}),
                     "action_id": action.get("id"),
                     "parameters": parameters,
                 }
                 summary = str(effect.get("summary") or "").strip()
                 if summary:
                     payload["summary"] = summary
-                self._context.services["events"].append(event_type, agent["id"], minute, payload)
+                self._context.services["events"].publish(event_type, agent["id"], minute, payload, wake="configured")
             elif effect_type == "world_property_delta":
-                property_id = str(effect.get("property") or effect.get("world_property") or "")
+                # A living-world Action may bind the target property as a
+                # parameter (for example a generated case slot).  Resolve it
+                # through the same context binding used by inventory and
+                # resource effects instead of creating a literal
+                # ``context.case_slot`` property.
+                property_id = str(resolved_effect.get("property") or resolved_effect.get("world_property") or "")
                 if property_id:
                     properties = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
                     before_value = properties.get(property_id)
-                    value = float(before_value or 0) + float(effect.get("delta", effect.get("value", 0)) or 0)
-                    if isinstance(effect.get("minimum"), (int, float)):
-                        value = max(float(effect["minimum"]), value)
-                    if isinstance(effect.get("maximum"), (int, float)):
-                        value = min(float(effect["maximum"]), value)
+                    value = float(before_value or 0) + float(resolved_effect.get("delta", resolved_effect.get("value", 0)) or 0)
+                    if isinstance(resolved_effect.get("minimum"), (int, float)):
+                        value = max(float(resolved_effect["minimum"]), value)
+                    if isinstance(resolved_effect.get("maximum"), (int, float)):
+                        value = min(float(resolved_effect["maximum"]), value)
                     self._context.services["tick"].set_world_property(property_id, value)
                     self._context.services["events"].append(
                         "world.property_changed", agent["id"], minute,
                         {"property": property_id, "before": before_value, "after": value, "delta": value - float(before_value or 0), "source": action.get("id")},
+                    )
+            elif effect_type == "world_property_set":
+                property_id = str(resolved_effect.get("property") or resolved_effect.get("world_property") or "")
+                if property_id:
+                    properties = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
+                    before_value = properties.get(property_id)
+                    value = resolved_effect.get("value")
+                    if "value_from" in resolved_effect:
+                        value = parameters.get(str(resolved_effect.get("value_from") or ""))
+                    if isinstance(value, str) and value.startswith("context."):
+                        value = parameters.get(value.removeprefix("context."), value)
+                    self._context.services["tick"].set_world_property(property_id, value)
+                    self._context.services["events"].append(
+                        "world.property_changed", agent["id"], minute,
+                        {"property": property_id, "before": before_value, "after": value, "delta": None, "source": action.get("id"), "mode": "set"},
                     )
             elif effect_type == "world_resource_delta":
                 # Public work may deliberately move a shared stock (for
@@ -761,7 +794,7 @@ class ActivityRuntimeMixin:
                                         "entry_label": str(entry.get("label") or ""),
                                         "action_id": str(action.get("id") or ""),
                                     })
-                                    self._context.services["events"].append(event_type, agent["id"], minute, payload)
+                                    self._context.services["events"].publish(event_type, agent["id"], minute, payload, wake="configured")
             elif effect_type == "resource_transfer":
                 # ResourceLedger has already reserved/removed any carried
                 # source item before success effects run.  This primitive
@@ -950,7 +983,7 @@ class ActivityRuntimeMixin:
                 bound_entity = {}
             bound_state = bound_entity.get("initial_state") if isinstance(bound_entity.get("initial_state"), dict) else {}
             resource_amount = float(bound_state.get("quantity", bound_state.get("amount", 0)) or 0)
-        return {
+        context = {
             "location_id": location_id,
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "source_id": source_id,
@@ -976,6 +1009,14 @@ class ActivityRuntimeMixin:
             "target.refused": "target_refused" in (state.get("conditions") or []),
             "known_route_destinations": reachable_locations(self.store, location_id),
         }
+        # Generic living-world Actions bind case slots, item ids and faction
+        # properties as parameters.  Expose every scalar parameter to the same
+        # condition context so predicates can use world[context.case_slot] or
+        # actor.inventory[context.item_id] without a world-specific branch.
+        for key, value in parameters.items():
+            if isinstance(value, (str, int, float)) and not isinstance(value, bool):
+                context.setdefault(str(key), value)
+        return context
 
     def _action_failure_reason(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], target: dict[str, Any] | None) -> str | None:
         condition = str((action.get("failure") or {}).get("condition") or "").strip()

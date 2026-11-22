@@ -1,0 +1,8199 @@
+vital_attribute: integrity
+incapacitation:
+  recovery:
+    after_minutes: 720
+    vital_fraction: 0.25
+capability_aliases:
+  trade:
+  - trade
+  appraise:
+  - appraisal
+  speak:
+  - conversation
+  pay:
+  - trade
+  upgrade:
+  - trade
+  pact:
+  - conversation
+  study:
+  - appraisal
+  open:
+  - appraisal
+  close:
+  - trade
+  bribe:
+  - conversation
+  work:
+  - trade
+  rest:
+  - conversation
+  wait:
+  - conversation
+  move:
+  - trade
+item_labels:
+  coin: 金币
+  silver_thimble: 银顶针
+  captains_compass: 船长罗盘
+  medicine_bottle: 药瓶
+  glass_eye: 玻璃眼
+  missing_ledger: 缺页账本
+  chart_fragment: 海图残页
+  silver_ship: 银船模型
+  wedding_ring: 婚礼戒指
+  brass_leg: 铜制义肢
+  tide_bell: 潮汐钟
+  smuggling_manifest: 走私货单
+  gambling_note: 赌债借据
+  lamp_oil: 灯油样本
+  old_watch: 旧怀表
+  sea_glass: 海玻璃
+  tide_watch: 潮汐怀表
+  ebony_comb: 黑檀梳
+  raven_mask: 鸦羽面具
+  blank_ticket: 空白当票
+  sealed_letter: 封蜡信
+  brass_key: 铜钥匙
+item_uses:
+  coin:
+  - 所有交易
+  - 还债
+  - 升级
+  silver_thimble:
+  - 还给苏晚
+  - 卖给灰袍修会
+  captains_compass:
+  - 交给港务局
+  - 卖给港务局
+  medicine_bottle:
+  - 还给白鹭
+  - 卖给灰袍修会
+  glass_eye:
+  - 卖给收藏家
+  - 还给罗七
+  missing_ledger:
+  - 读完缺页
+  - 交给港务局
+  chart_fragment:
+  - 交给阿雾
+  - 卖给灰袍修会
+  silver_ship:
+  - 还给无名客
+  - 卖给收藏家
+  wedding_ring:
+  - 还给苏晚
+  - 卖给灰袍修会
+  brass_leg:
+  - 还给顾沉
+  - 卖给港务局
+  tide_bell:
+  - 还给白鹭
+  - 卖给灰袍修会
+  smuggling_manifest:
+  - 交给港务局
+  - 卖给收藏家
+  gambling_note:
+  - 交给港务局
+  - 还给沈先生
+  lamp_oil:
+  - 交给阿雾
+  - 卖给灰袍修会
+  old_watch:
+  - 还给无名客
+  - 卖给收藏家
+  sea_glass:
+  - 还给苏晚
+  - 卖给灰袍修会
+  tide_watch:
+  - 还给顾沉
+  - 卖给港务局
+  ebony_comb:
+  - 还给白鹭
+  - 卖给灰袍修会
+  raven_mask:
+  - 卖给收藏家
+  - 交给港务局
+  blank_ticket:
+  - 交给港务局
+  - 还给沈先生
+  sealed_letter:
+  - 读完信
+  - 还给阿雾
+  brass_key:
+  - 打开旧灯塔海门
+  - 卖给收藏家
+world_property_labels:
+  night:
+    label: 第几夜
+    unit: amount
+    max: 21
+    alert: true
+    group: 审计
+    group_order: 1
+    order: 1
+    prompt: 闭港审计前的第几夜；第 21 夜结束。
+  night_actions:
+    label: 今晚行动
+    unit: amount
+    max: 5
+    alert: true
+    group: 审计
+    group_order: 1
+    order: 2
+    prompt: 今晚还能处理几件事；用完就关店。
+  debt_owed:
+    label: 剩余债务
+    unit: amount
+    max: 290
+    alert: true
+    group: 债务
+    group_order: 2
+    order: 1
+    prompt: 三笔债总计 290 枚金币，分别在第 7/14/21 夜到期。
+  suspicion:
+    label: 港务局怀疑
+    unit: percent
+    max: 1
+    alert: true
+    group: 风险
+    group_order: 3
+    order: 1
+    prompt: 卖出来路不明的东西会上升；60% 会引来搜查，100% 会被查封。
+  clues:
+    label: 线索
+    unit: amount
+    max: 10
+    group: 调查
+    group_order: 4
+    order: 1
+    prompt: 鉴定和读账本会积累线索；7 条能读姑妈的缺页账本，10 条能打开海门。
+  act:
+    label: 幕次
+    unit: amount
+    max: 3
+    hidden: true
+  ledger_level:
+    label: 账本
+    unit: amount
+    max: 2
+    group: 当铺
+    group_order: 5
+    order: 1
+  appraisal_level:
+    label: 鉴定台
+    unit: amount
+    max: 2
+    group: 当铺
+    group_order: 5
+    order: 2
+  safe_level:
+    label: 暗格
+    unit: amount
+    max: 2
+    group: 当铺
+    group_order: 5
+    order: 3
+  watch_rep:
+    label: 港务局声望
+    unit: percent
+    max: 1
+    group: 阵营
+    group_order: 6
+    order: 1
+  chapel_rep:
+    label: 修会声望
+    unit: percent
+    max: 1
+    group: 阵营
+    group_order: 6
+    order: 2
+  collector_rep:
+    label: 收藏家声望
+    unit: percent
+    max: 1
+    group: 阵营
+    group_order: 6
+    order: 3
+  aunt_ledger_read:
+    label: 姑妈账本
+    unit: bool
+    true_label: 已读
+    false_label: 缺页
+    hidden: true
+  sea_gate_open:
+    label: 海门
+    unit: bool
+    true_label: 已开
+    false_label: 紧闭
+    hidden: true
+  debt_stage:
+    label: 已还债务
+    unit: amount
+    max: 3
+    hidden: true
+  defaults:
+    label: 违约次数
+    unit: amount
+    max: 3
+    hidden: true
+  campaign_over:
+    label: 审计结束
+    unit: bool
+    hidden: true
+  raid_done:
+    label: 搜查
+    unit: bool
+    hidden: true
+  bribe_used:
+    label: 今晚打点
+    unit: bool
+    hidden: true
+  faction_pact:
+    label: 阵营契约
+    unit: amount
+    max: 3
+    hidden: true
+  debt_checked_1:
+    label: 第一笔债检查
+    unit: bool
+    hidden: true
+  debt_checked_2:
+    label: 第二笔债检查
+    unit: bool
+    hidden: true
+  season:
+    label: 第几季
+    unit: amount
+    max: 99
+    group: 审计
+    group_order: 1
+    order: 0
+  dyn_case_1:
+    label: 活世界案子 1
+    hidden: true
+  dyn_case_2:
+    label: 活世界案子 2
+    hidden: true
+  dyn_case_3:
+    label: 活世界案子 3
+    hidden: true
+  dyn_case_4:
+    label: 活世界案子 4
+    hidden: true
+  dyn_case_5:
+    label: 活世界案子 5
+    hidden: true
+  case_1:
+    label: 案子 1
+    hidden: true
+  appraised_1:
+    label: 鉴定 1
+    hidden: true
+  case_2:
+    label: 案子 2
+    hidden: true
+  appraised_2:
+    label: 鉴定 2
+    hidden: true
+  case_3:
+    label: 案子 3
+    hidden: true
+  appraised_3:
+    label: 鉴定 3
+    hidden: true
+  case_4:
+    label: 案子 4
+    hidden: true
+  appraised_4:
+    label: 鉴定 4
+    hidden: true
+  case_5:
+    label: 案子 5
+    hidden: true
+  appraised_5:
+    label: 鉴定 5
+    hidden: true
+  case_6:
+    label: 案子 6
+    hidden: true
+  appraised_6:
+    label: 鉴定 6
+    hidden: true
+  case_7:
+    label: 案子 7
+    hidden: true
+  appraised_7:
+    label: 鉴定 7
+    hidden: true
+  case_8:
+    label: 案子 8
+    hidden: true
+  appraised_8:
+    label: 鉴定 8
+    hidden: true
+  case_9:
+    label: 案子 9
+    hidden: true
+  appraised_9:
+    label: 鉴定 9
+    hidden: true
+  case_10:
+    label: 案子 10
+    hidden: true
+  appraised_10:
+    label: 鉴定 10
+    hidden: true
+  case_11:
+    label: 案子 11
+    hidden: true
+  appraised_11:
+    label: 鉴定 11
+    hidden: true
+  case_12:
+    label: 案子 12
+    hidden: true
+  appraised_12:
+    label: 鉴定 12
+    hidden: true
+  case_13:
+    label: 案子 13
+    hidden: true
+  appraised_13:
+    label: 鉴定 13
+    hidden: true
+  case_14:
+    label: 案子 14
+    hidden: true
+  appraised_14:
+    label: 鉴定 14
+    hidden: true
+  case_15:
+    label: 案子 15
+    hidden: true
+  appraised_15:
+    label: 鉴定 15
+    hidden: true
+  case_16:
+    label: 案子 16
+    hidden: true
+  appraised_16:
+    label: 鉴定 16
+    hidden: true
+  case_17:
+    label: 案子 17
+    hidden: true
+  appraised_17:
+    label: 鉴定 17
+    hidden: true
+  case_18:
+    label: 案子 18
+    hidden: true
+  appraised_18:
+    label: 鉴定 18
+    hidden: true
+  case_19:
+    label: 案子 19
+    hidden: true
+  appraised_19:
+    label: 鉴定 19
+    hidden: true
+  case_20:
+    label: 案子 20
+    hidden: true
+  appraised_20:
+    label: 鉴定 20
+    hidden: true
+  case_21:
+    label: 案子 21
+    hidden: true
+  appraised_21:
+    label: 鉴定 21
+    hidden: true
+  trust_su_wan:
+    label: 苏晚的信任
+    unit: amount
+    max: 3
+    hidden: true
+  trust_gu_chen:
+    label: 顾沉的信任
+    unit: amount
+    max: 3
+    hidden: true
+  trust_bai_lu:
+    label: 白鹭的信任
+    unit: amount
+    max: 3
+    hidden: true
+  trust_luo_qi:
+    label: 罗七的信任
+    unit: amount
+    max: 3
+    hidden: true
+  trust_shen:
+    label: 沈先生的信任
+    unit: amount
+    max: 3
+    hidden: true
+  trust_a_wu:
+    label: 阿雾的信任
+    unit: amount
+    max: 3
+    hidden: true
+  trust_stranger:
+    label: 无名客的信任
+    unit: amount
+    max: 3
+    hidden: true
+resource_property_projections: {}
+resource_caps: {}
+resource_regeneration: []
+resource_safety: []
+needs:
+- id: hydration
+  target: 72
+  minimum: 0
+  gamma: 1.4
+  critical_threshold: 0.4
+  critical_gain: 1.0
+- id: satiety
+  target: 70
+  minimum: 0
+  gamma: 1.4
+  critical_threshold: 0.4
+  critical_gain: 1.0
+- id: belonging
+  target: 68
+  minimum: 0
+  gamma: 1.3
+  critical_threshold: 0.5
+  critical_gain: 1.0
+- id: purpose
+  target: 70
+  minimum: 0
+  gamma: 1.4
+  critical_threshold: 0.5
+  critical_gain: 1.0
+motivation_model:
+  family: hybrid_need_utility_appraisal
+  no_fixed_hierarchy: true
+  dimensions:
+  - sustenance
+  - relatedness
+  - competence
+  - meaning_and_goal_progress
+capability_progression:
+  trade:
+    minimum_completed_outcomes: 2
+    max_delta: 0.08
+    max_value: 1.0
+  conversation:
+    minimum_completed_outcomes: 4
+    max_delta: 0.08
+    max_value: 1.0
+  appraisal:
+    minimum_completed_outcomes: 3
+    max_delta: 0.08
+    max_value: 1.0
+minute_effects:
+- id: stamina_recovery
+  scope: agent
+  every_minutes: 1
+  condition: action.none
+  effect:
+    type: attribute_delta
+    attribute: stamina
+    delta: 0.2
+    maximum: 100
+- id: hydration_decay
+  scope: agent
+  every_minutes: 1
+  effect:
+    type: need_delta
+    need: hydration
+    delta: -0.01
+- id: satiety_decay
+  scope: agent
+  every_minutes: 1
+  effect:
+    type: need_delta
+    need: satiety
+    delta: -0.008
+- id: belonging_decay
+  scope: agent
+  every_minutes: 10
+  effect:
+    type: need_delta
+    need: belonging
+    delta: -0.02
+- id: purpose_decay
+  scope: agent
+  every_minutes: 15
+  effect:
+    type: need_delta
+    need: purpose
+    delta: -0.02
+- id: act_two
+  scope: world
+  every_minutes: 1
+  condition: world.night >= 8 and world.act < 2 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: act
+    delta: 1
+    maximum: 3
+  event_type: act.two
+  event_summary: 第二幕开始：港务局、修会和收藏家都开始往当铺里看。
+- id: act_three
+  scope: world
+  every_minutes: 1
+  condition: world.night >= 15 and world.act < 3 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: act
+    delta: 1
+    maximum: 3
+  event_type: act.three
+  event_summary: 第三幕开始：无名客带来了铜钥匙，审计只剩七夜。
+- id: debt_check_1
+  scope: world
+  every_minutes: 1
+  condition: world.night >= 8 and world.debt_stage < 1 and world.debt_checked_1 < 1 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: debt_checked_1
+    delta: 1
+    maximum: 1
+  - type: world_property_delta
+    property: defaults
+    delta: 1
+    maximum: 3
+  - type: world_property_delta
+    property: suspicion
+    delta: 0.1
+    maximum: 1
+  event_type: debt.missed
+  event_summary: 第一笔债没有按时还上；港务局在账本上记了一笔违约。
+- id: debt_check_2
+  scope: world
+  every_minutes: 1
+  condition: world.night >= 15 and world.debt_stage < 2 and world.debt_checked_2 < 1 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: debt_checked_2
+    delta: 1
+    maximum: 1
+  - type: world_property_delta
+    property: defaults
+    delta: 1
+    maximum: 3
+  - type: world_property_delta
+    property: suspicion
+    delta: 0.1
+    maximum: 1
+  event_type: debt.missed
+  event_summary: 第二笔债没有按时还上；港务局的耐心又少了一截。
+- id: raid_level_0
+  scope: world
+  every_minutes: 1
+  condition: world.suspicion >= 0.6 and world.raid_done < 1 and world.safe_level == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: night_actions
+    delta: -2
+    minimum: 0
+  - type: world_property_delta
+    property: suspicion
+    delta: -0.25
+    minimum: 0
+  - type: world_property_delta
+    property: raid_done
+    delta: 1
+    maximum: 1
+  event_type: watch.raid
+  event_summary: 港务局没有预约就推门进来；没有暗格，你只能站在柜台前看他们翻。
+- id: raid_level_1
+  scope: world
+  every_minutes: 1
+  condition: world.suspicion >= 0.6 and world.raid_done < 1 and world.safe_level == 1 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: night_actions
+    delta: -1
+    minimum: 0
+  - type: world_property_delta
+    property: suspicion
+    delta: -0.25
+    minimum: 0
+  - type: world_property_delta
+    property: raid_done
+    delta: 1
+    maximum: 1
+  event_type: watch.raid
+  event_summary: 港务局推门进来；暗格里只藏了一半账，他们翻了很久，但你还有时间。
+- id: raid_level_2
+  scope: world
+  every_minutes: 1
+  condition: world.suspicion >= 0.6 and world.raid_done < 1 and world.safe_level == 2 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: suspicion
+    delta: -0.2
+    minimum: 0
+  - type: world_property_delta
+    property: raid_done
+    delta: 1
+    maximum: 1
+  event_type: watch.raid
+  event_summary: 港务局推门进来；暗格是空的，他们只能带走一盏灯。
+- id: suspicion_collapse
+  scope: world
+  every_minutes: 1
+  condition: world.suspicion >= 1 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: campaign_over
+    delta: 1
+    maximum: 1
+  event_type: campaign.seized
+  event_summary: 怀疑压过了所有账目；港务局在审计前就封了当铺。
+- id: case_expiry_1
+  scope: world
+  every_minutes: 1
+  condition: world.night > 3 and world.case_1 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_1
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 苏晚等不到柜台，抱着银顶针离开了。
+  event_data:
+    case: 1
+    client: 苏晚
+    item: 银顶针
+    summary: 银顶针过期了。
+- id: case_expiry_2
+  scope: world
+  every_minutes: 1
+  condition: world.night > 4 and world.case_2 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_2
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 顾沉等不到柜台，抱着船长罗盘离开了。
+  event_data:
+    case: 2
+    client: 顾沉
+    item: 船长罗盘
+    summary: 船长罗盘过期了。
+- id: case_expiry_3
+  scope: world
+  every_minutes: 1
+  condition: world.night > 5 and world.case_3 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_3
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 白鹭等不到柜台，抱着药瓶离开了。
+  event_data:
+    case: 3
+    client: 白鹭
+    item: 药瓶
+    summary: 药瓶过期了。
+- id: case_expiry_4
+  scope: world
+  every_minutes: 1
+  condition: world.night > 6 and world.case_4 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_4
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 罗七等不到柜台，抱着玻璃眼离开了。
+  event_data:
+    case: 4
+    client: 罗七
+    item: 玻璃眼
+    summary: 玻璃眼过期了。
+- id: case_expiry_5
+  scope: world
+  every_minutes: 1
+  condition: world.night > 7 and world.case_5 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_5
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 沈先生等不到柜台，抱着缺页账本离开了。
+  event_data:
+    case: 5
+    client: 沈先生
+    item: 缺页账本
+    summary: 缺页账本过期了。
+- id: case_expiry_6
+  scope: world
+  every_minutes: 1
+  condition: world.night > 8 and world.case_6 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_6
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 阿雾等不到柜台，抱着海图残页离开了。
+  event_data:
+    case: 6
+    client: 阿雾
+    item: 海图残页
+    summary: 海图残页过期了。
+- id: case_expiry_7
+  scope: world
+  every_minutes: 1
+  condition: world.night > 9 and world.case_7 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_7
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 无名客等不到柜台，抱着银船模型离开了。
+  event_data:
+    case: 7
+    client: 无名客
+    item: 银船模型
+    summary: 银船模型过期了。
+- id: case_expiry_8
+  scope: world
+  every_minutes: 1
+  condition: world.night > 10 and world.case_8 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_8
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 苏晚等不到柜台，抱着婚礼戒指离开了。
+  event_data:
+    case: 8
+    client: 苏晚
+    item: 婚礼戒指
+    summary: 婚礼戒指过期了。
+- id: case_expiry_9
+  scope: world
+  every_minutes: 1
+  condition: world.night > 11 and world.case_9 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_9
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 顾沉等不到柜台，抱着铜制义肢离开了。
+  event_data:
+    case: 9
+    client: 顾沉
+    item: 铜制义肢
+    summary: 铜制义肢过期了。
+- id: case_expiry_10
+  scope: world
+  every_minutes: 1
+  condition: world.night > 12 and world.case_10 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_10
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 白鹭等不到柜台，抱着潮汐钟离开了。
+  event_data:
+    case: 10
+    client: 白鹭
+    item: 潮汐钟
+    summary: 潮汐钟过期了。
+- id: case_expiry_11
+  scope: world
+  every_minutes: 1
+  condition: world.night > 13 and world.case_11 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_11
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 罗七等不到柜台，抱着走私货单离开了。
+  event_data:
+    case: 11
+    client: 罗七
+    item: 走私货单
+    summary: 走私货单过期了。
+- id: case_expiry_12
+  scope: world
+  every_minutes: 1
+  condition: world.night > 14 and world.case_12 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_12
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 沈先生等不到柜台，抱着赌债借据离开了。
+  event_data:
+    case: 12
+    client: 沈先生
+    item: 赌债借据
+    summary: 赌债借据过期了。
+- id: case_expiry_13
+  scope: world
+  every_minutes: 1
+  condition: world.night > 15 and world.case_13 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_13
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 阿雾等不到柜台，抱着灯油样本离开了。
+  event_data:
+    case: 13
+    client: 阿雾
+    item: 灯油样本
+    summary: 灯油样本过期了。
+- id: case_expiry_14
+  scope: world
+  every_minutes: 1
+  condition: world.night > 16 and world.case_14 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_14
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 无名客等不到柜台，抱着旧怀表离开了。
+  event_data:
+    case: 14
+    client: 无名客
+    item: 旧怀表
+    summary: 旧怀表过期了。
+- id: case_expiry_15
+  scope: world
+  every_minutes: 1
+  condition: world.night > 17 and world.case_15 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_15
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 苏晚等不到柜台，抱着海玻璃离开了。
+  event_data:
+    case: 15
+    client: 苏晚
+    item: 海玻璃
+    summary: 海玻璃过期了。
+- id: case_expiry_16
+  scope: world
+  every_minutes: 1
+  condition: world.night > 18 and world.case_16 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_16
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 顾沉等不到柜台，抱着潮汐怀表离开了。
+  event_data:
+    case: 16
+    client: 顾沉
+    item: 潮汐怀表
+    summary: 潮汐怀表过期了。
+- id: case_expiry_17
+  scope: world
+  every_minutes: 1
+  condition: world.night > 19 and world.case_17 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_17
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 白鹭等不到柜台，抱着黑檀梳离开了。
+  event_data:
+    case: 17
+    client: 白鹭
+    item: 黑檀梳
+    summary: 黑檀梳过期了。
+- id: case_expiry_18
+  scope: world
+  every_minutes: 1
+  condition: world.night > 20 and world.case_18 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_18
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 罗七等不到柜台，抱着鸦羽面具离开了。
+  event_data:
+    case: 18
+    client: 罗七
+    item: 鸦羽面具
+    summary: 鸦羽面具过期了。
+- id: case_expiry_19
+  scope: world
+  every_minutes: 1
+  condition: world.night > 21 and world.case_19 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_19
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 沈先生等不到柜台，抱着空白当票离开了。
+  event_data:
+    case: 19
+    client: 沈先生
+    item: 空白当票
+    summary: 空白当票过期了。
+- id: case_expiry_20
+  scope: world
+  every_minutes: 1
+  condition: world.night > 21 and world.case_20 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_20
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 阿雾等不到柜台，抱着封蜡信离开了。
+  event_data:
+    case: 20
+    client: 阿雾
+    item: 封蜡信
+    summary: 封蜡信过期了。
+- id: case_expiry_21
+  scope: world
+  every_minutes: 1
+  condition: world.night > 21 and world.case_21 == 0 and world.campaign_over < 1
+  effects:
+  - type: world_property_delta
+    property: case_21
+    delta: 9
+    maximum: 9
+  event_type: case.expired
+  event_summary: 无名客等不到柜台，抱着铜钥匙离开了。
+  event_data:
+    case: 21
+    client: 无名客
+    item: 铜钥匙
+    summary: 铜钥匙过期了。
+action_catalogs:
+  appraise:
+  - id: appraise_1
+    label: 鉴定苏晚的银顶针，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_1 == 0
+    - world.appraised_1 < 1
+    - world.night_actions >= 1
+    - world.night >= 1
+    - world.night <= 3
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_1
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 1
+      client: 苏晚
+      item: 银顶针
+      clue: 顶针内侧刻着“晚”字，和姑妈账本上的签名是同一种写法。
+      summary: 你鉴定了苏晚的银顶针：顶针内侧刻着“晚”字，和姑妈账本上的签名是同一种写法。
+  - id: appraise_2
+    label: 鉴定顾沉的船长罗盘，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_2 == 0
+    - world.appraised_2 < 1
+    - world.night_actions >= 1
+    - world.night >= 2
+    - world.night <= 4
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_2
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 2
+      client: 顾沉
+      item: 船长罗盘
+      clue: 罗盘背面刻着港务局的旧编号，说明它不属于顾沉。
+      summary: 你鉴定了顾沉的船长罗盘：罗盘背面刻着港务局的旧编号，说明它不属于顾沉。
+  - id: appraise_3
+    label: 鉴定白鹭的药瓶，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_3 == 0
+    - world.appraised_3 < 1
+    - world.night_actions >= 1
+    - world.night >= 3
+    - world.night <= 5
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_3
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 3
+      client: 白鹭
+      item: 药瓶
+      clue: 药瓶标签被撕掉一半，剩下“灰袍”二字，和修会的旧药方一致。
+      summary: 你鉴定了白鹭的药瓶：药瓶标签被撕掉一半，剩下“灰袍”二字，和修会的旧药方一致。
+  - id: appraise_4
+    label: 鉴定罗七的玻璃眼，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_4 == 0
+    - world.appraised_4 < 1
+    - world.night_actions >= 1
+    - world.night >= 4
+    - world.night <= 6
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_4
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 4
+      client: 罗七
+      item: 玻璃眼
+      clue: 玻璃眼背面有收藏家的印记，罗七不是第一个持有人。
+      summary: 你鉴定了罗七的玻璃眼：玻璃眼背面有收藏家的印记，罗七不是第一个持有人。
+  - id: appraise_5
+    label: 鉴定沈先生的缺页账本，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_5 == 0
+    - world.appraised_5 < 1
+    - world.night_actions >= 1
+    - world.night >= 5
+    - world.night <= 7
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_5
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 5
+      client: 沈先生
+      item: 缺页账本
+      clue: 缺页账本的纸边和姑妈账本吻合，缺的正是最后一页。
+      summary: 你鉴定了沈先生的缺页账本：缺页账本的纸边和姑妈账本吻合，缺的正是最后一页。
+  - id: appraise_6
+    label: 鉴定阿雾的海图残页，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_6 == 0
+    - world.appraised_6 < 1
+    - world.night_actions >= 1
+    - world.night >= 6
+    - world.night <= 8
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_6
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 6
+      client: 阿雾
+      item: 海图残页
+      clue: 海图残页标出一条绕过审计的暗礁航线，终点是旧灯塔。
+      summary: 你鉴定了阿雾的海图残页：海图残页标出一条绕过审计的暗礁航线，终点是旧灯塔。
+  - id: appraise_7
+    label: 鉴定无名客的银船模型，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_7 == 0
+    - world.appraised_7 < 1
+    - world.night_actions >= 1
+    - world.night >= 7
+    - world.night <= 9
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_7
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 7
+      client: 无名客
+      item: 银船模型
+      clue: 船底刻着当铺的旧地址，模型是姑妈做的。
+      summary: 你鉴定了无名客的银船模型：船底刻着当铺的旧地址，模型是姑妈做的。
+  - id: appraise_8
+    label: 鉴定苏晚的婚礼戒指，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_8 == 0
+    - world.appraised_8 < 1
+    - world.night_actions >= 1
+    - world.night >= 8
+    - world.night <= 10
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_8
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 8
+      client: 苏晚
+      item: 婚礼戒指
+      clue: 戒指内圈刻着沉船日期，正是姑妈失踪的那一晚。
+      summary: 你鉴定了苏晚的婚礼戒指：戒指内圈刻着沉船日期，正是姑妈失踪的那一晚。
+  - id: appraise_9
+    label: 鉴定顾沉的铜制义肢，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_9 == 0
+    - world.appraised_9 < 1
+    - world.night_actions >= 1
+    - world.night >= 9
+    - world.night <= 11
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_9
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 9
+      client: 顾沉
+      item: 铜制义肢
+      clue: 义肢关节里藏着一枚当票，日期是姑妈失踪前一周。
+      summary: 你鉴定了顾沉的铜制义肢：义肢关节里藏着一枚当票，日期是姑妈失踪前一周。
+  - id: appraise_10
+    label: 鉴定白鹭的潮汐钟，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_10 == 0
+    - world.appraised_10 < 1
+    - world.night_actions >= 1
+    - world.night >= 10
+    - world.night <= 12
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_10
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 10
+      client: 白鹭
+      item: 潮汐钟
+      clue: 钟内刻着七个名字，其中一个是姑妈；另外六个都是闭港前的失踪者。
+      summary: 你鉴定了白鹭的潮汐钟：钟内刻着七个名字，其中一个是姑妈；另外六个都是闭港前的失踪者。
+  - id: appraise_11
+    label: 鉴定罗七的走私货单，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_11 == 0
+    - world.appraised_11 < 1
+    - world.night_actions >= 1
+    - world.night >= 11
+    - world.night <= 13
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_11
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 11
+      client: 罗七
+      item: 走私货单
+      clue: 货单上有一批“灯油”从未入港，收货人写着姑妈的名字。
+      summary: 你鉴定了罗七的走私货单：货单上有一批“灯油”从未入港，收货人写着姑妈的名字。
+  - id: appraise_12
+    label: 鉴定沈先生的赌债借据，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_12 == 0
+    - world.appraised_12 < 1
+    - world.night_actions >= 1
+    - world.night >= 12
+    - world.night <= 14
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_12
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 12
+      client: 沈先生
+      item: 赌债借据
+      clue: 借据上的担保人签名是港务局副局长的笔迹。
+      summary: 你鉴定了沈先生的赌债借据：借据上的担保人签名是港务局副局长的笔迹。
+  - id: appraise_13
+    label: 鉴定阿雾的灯油样本，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_13 == 0
+    - world.appraised_13 < 1
+    - world.night_actions >= 1
+    - world.night >= 13
+    - world.night <= 15
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_13
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 13
+      client: 阿雾
+      item: 灯油样本
+      clue: 灯油里混着海盐，说明旧灯塔还在被人使用。
+      summary: 你鉴定了阿雾的灯油样本：灯油里混着海盐，说明旧灯塔还在被人使用。
+  - id: appraise_14
+    label: 鉴定无名客的旧怀表，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_14 == 0
+    - world.appraised_14 < 1
+    - world.night_actions >= 1
+    - world.night >= 14
+    - world.night <= 16
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_14
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 14
+      client: 无名客
+      item: 旧怀表
+      clue: 怀表盖里是姑妈和一个小女孩的合影；照片背面写着“别让她回来”。
+      summary: 你鉴定了无名客的旧怀表：怀表盖里是姑妈和一个小女孩的合影；照片背面写着“别让她回来”。
+  - id: appraise_15
+    label: 鉴定苏晚的海玻璃，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_15 == 0
+    - world.appraised_15 < 1
+    - world.night_actions >= 1
+    - world.night >= 15
+    - world.night <= 17
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_15
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 15
+      client: 苏晚
+      item: 海玻璃
+      clue: 海玻璃里夹着一小片灯油纸，来自旧灯塔。
+      summary: 你鉴定了苏晚的海玻璃：海玻璃里夹着一小片灯油纸，来自旧灯塔。
+  - id: appraise_16
+    label: 鉴定顾沉的潮汐怀表，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_16 == 0
+    - world.appraised_16 < 1
+    - world.night_actions >= 1
+    - world.night >= 16
+    - world.night <= 18
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_16
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 16
+      client: 顾沉
+      item: 潮汐怀表
+      clue: 怀表停在凌晨两点十七分，和姑妈离开的时间一致。
+      summary: 你鉴定了顾沉的潮汐怀表：怀表停在凌晨两点十七分，和姑妈离开的时间一致。
+  - id: appraise_17
+    label: 鉴定白鹭的黑檀梳，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_17 == 0
+    - world.appraised_17 < 1
+    - world.night_actions >= 1
+    - world.night >= 17
+    - world.night <= 19
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_17
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 17
+      client: 白鹭
+      item: 黑檀梳
+      clue: 梳齿间缠着一根灰白头发，属于一位还活着的人。
+      summary: 你鉴定了白鹭的黑檀梳：梳齿间缠着一根灰白头发，属于一位还活着的人。
+  - id: appraise_18
+    label: 鉴定罗七的鸦羽面具，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_18 == 0
+    - world.appraised_18 < 1
+    - world.night_actions >= 1
+    - world.night >= 18
+    - world.night <= 20
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_18
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 18
+      client: 罗七
+      item: 鸦羽面具
+      clue: 面具内侧缝着姑妈的旧手帕，手帕上有一盏灯的绣纹。
+      summary: 你鉴定了罗七的鸦羽面具：面具内侧缝着姑妈的旧手帕，手帕上有一盏灯的绣纹。
+  - id: appraise_19
+    label: 鉴定沈先生的空白当票，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_19 == 0
+    - world.appraised_19 < 1
+    - world.night_actions >= 1
+    - world.night >= 19
+    - world.night <= 21
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_19
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 19
+      client: 沈先生
+      item: 空白当票
+      clue: 空白当票的水印是当铺旧版，只有姑妈会用。
+      summary: 你鉴定了沈先生的空白当票：空白当票的水印是当铺旧版，只有姑妈会用。
+  - id: appraise_20
+    label: 鉴定阿雾的封蜡信，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_20 == 0
+    - world.appraised_20 < 1
+    - world.night_actions >= 1
+    - world.night >= 20
+    - world.night <= 21
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_20
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 20
+      client: 阿雾
+      item: 封蜡信
+      clue: 信上是姑妈的笔迹，收信人写着“给还愿意点灯的人”。
+      summary: 你鉴定了阿雾的封蜡信：信上是姑妈的笔迹，收信人写着“给还愿意点灯的人”。
+  - id: appraise_21
+    label: 鉴定无名客的铜钥匙，看清它的来历。
+    location: pawnshop_backroom
+    requires:
+    - world.case_21 == 0
+    - world.appraised_21 < 1
+    - world.night_actions >= 1
+    - world.night >= 21
+    - world.night <= 21
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: appraised_21
+      delta: 1
+      maximum: 1
+    - type: world_property_delta
+      property: clues
+      delta: 1
+      maximum: 10
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    event_type: case.appraised
+    event_data:
+      case: 21
+      client: 无名客
+      item: 铜钥匙
+      clue: 钥匙齿纹和旧灯塔的锁孔一致；无名客说“她让我把它交给你”。
+      summary: 你鉴定了无名客的铜钥匙：钥匙齿纹和旧灯塔的锁孔一致；无名客说“她让我把它交给你”。
+  trade_offers:
+  - id: pawn_1
+    label: 先付 10 枚金币，收下苏晚的银顶针。
+    location: pawnshop
+    requires:
+    - world.case_1 == 0
+    - world.night >= 1
+    - world.night <= 3
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 10
+    costs:
+      reserve:
+        coin: 10
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: silver_thimble
+      quantity: 1
+    - type: world_property_delta
+      property: case_1
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下苏晚的银顶针，把 10 枚金币推过柜台。
+      data:
+        case: 1
+        client: 苏晚
+        item: 银顶针
+    event_type: case.pawned
+    event_data:
+      case: 1
+      client: 苏晚
+      item: 银顶针
+      price: 10
+      summary: 收下苏晚的银顶针。
+  - id: return_1
+    label: 把银顶针还给苏晚，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_1 == 0
+    - world.night >= 1
+    - world.night <= 3
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_1
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_su_wan
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 苏晚把银顶针抱了回去；你没有收当金。
+      data:
+        case: 1
+        client: 苏晚
+        item: 银顶针
+        outcome: returned
+        summary: 苏晚把银顶针抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 1
+      client: 苏晚
+      item: 银顶针
+      summary: 归还银顶针给苏晚。
+  - id: sell_low_1
+    label: 把银顶针低价转给灰袍修会，换 18 枚金币。
+    location: grey_chapel
+    requires:
+    - world.case_1 == 1
+    - world.night_actions >= 1
+    - actor.inventory.silver_thimble >= 1
+    costs:
+      reserve:
+        silver_thimble: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_1
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 18
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 银顶针低价转给了灰袍修会，换回 18 枚金币。
+      data:
+        case: 1
+        client: 苏晚
+        item: 银顶针
+        outcome: sold_low
+        summary: 银顶针低价转给了灰袍修会，换回 18 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 1
+      client: 苏晚
+      item: 银顶针
+      faction: grey_order
+      price: 18
+      summary: 低价卖出银顶针。
+  - id: sell_high_1
+    label: 按鉴定价把银顶针卖给灰袍修会，换 30 枚金币。
+    location: grey_chapel
+    requires:
+    - world.case_1 == 1
+    - world.appraised_1 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.silver_thimble >= 1
+    costs:
+      reserve:
+        silver_thimble: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_1
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 30
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 银顶针按鉴定价卖给灰袍修会，换回 30 枚金币。
+      data:
+        case: 1
+        client: 苏晚
+        item: 银顶针
+        outcome: sold_high
+        summary: 银顶针按鉴定价卖给灰袍修会，换回 30 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 1
+      client: 苏晚
+      item: 银顶针
+      faction: grey_order
+      price: 30
+      summary: 高价卖出银顶针。
+  - id: redeem_1
+    label: 让苏晚赎回银顶针，收 15 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_1 == 1
+    - world.night >= 5
+    - world.night_actions >= 1
+    - actor.inventory.silver_thimble >= 1
+    costs:
+      reserve:
+        silver_thimble: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_1
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 15
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_su_wan
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 苏晚赎回银顶针，留下 15 枚金币。
+      data:
+        case: 1
+        client: 苏晚
+        item: 银顶针
+        outcome: redeemed
+        summary: 苏晚赎回银顶针，留下 15 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 1
+      client: 苏晚
+      item: 银顶针
+      price: 15
+      summary: 苏晚赎回银顶针。
+  - id: report_1
+    label: 把苏晚和银顶针的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_1 == 0
+    - world.night >= 1
+    - world.night <= 3
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_1
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_su_wan
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 苏晚和银顶针的事进了港务局的记录。
+      data:
+        case: 1
+        client: 苏晚
+        item: 银顶针
+        outcome: reported
+        summary: 苏晚和银顶针的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 1
+      client: 苏晚
+      item: 银顶针
+      summary: 举报苏晚的银顶针。
+  - id: pawn_2
+    label: 先付 14 枚金币，收下顾沉的船长罗盘。
+    location: pawnshop
+    requires:
+    - world.case_2 == 0
+    - world.night >= 2
+    - world.night <= 4
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 14
+    costs:
+      reserve:
+        coin: 14
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: captains_compass
+      quantity: 1
+    - type: world_property_delta
+      property: case_2
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下顾沉的船长罗盘，把 14 枚金币推过柜台。
+      data:
+        case: 2
+        client: 顾沉
+        item: 船长罗盘
+    event_type: case.pawned
+    event_data:
+      case: 2
+      client: 顾沉
+      item: 船长罗盘
+      price: 14
+      summary: 收下顾沉的船长罗盘。
+  - id: return_2
+    label: 把船长罗盘还给顾沉，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_2 == 0
+    - world.night >= 2
+    - world.night <= 4
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_2
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_gu_chen
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 顾沉把船长罗盘抱了回去；你没有收当金。
+      data:
+        case: 2
+        client: 顾沉
+        item: 船长罗盘
+        outcome: returned
+        summary: 顾沉把船长罗盘抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 2
+      client: 顾沉
+      item: 船长罗盘
+      summary: 归还船长罗盘给顾沉。
+  - id: sell_low_2
+    label: 把船长罗盘低价转给港务局，换 24 枚金币。
+    location: watchhouse
+    requires:
+    - world.case_2 == 1
+    - world.night_actions >= 1
+    - actor.inventory.captains_compass >= 1
+    costs:
+      reserve:
+        captains_compass: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_2
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 24
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 船长罗盘低价转给了港务局，换回 24 枚金币。
+      data:
+        case: 2
+        client: 顾沉
+        item: 船长罗盘
+        outcome: sold_low
+        summary: 船长罗盘低价转给了港务局，换回 24 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 2
+      client: 顾沉
+      item: 船长罗盘
+      faction: harbor_watch
+      price: 24
+      summary: 低价卖出船长罗盘。
+  - id: sell_high_2
+    label: 按鉴定价把船长罗盘卖给港务局，换 38 枚金币。
+    location: watchhouse
+    requires:
+    - world.case_2 == 1
+    - world.appraised_2 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.captains_compass >= 1
+    costs:
+      reserve:
+        captains_compass: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_2
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 38
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 船长罗盘按鉴定价卖给港务局，换回 38 枚金币。
+      data:
+        case: 2
+        client: 顾沉
+        item: 船长罗盘
+        outcome: sold_high
+        summary: 船长罗盘按鉴定价卖给港务局，换回 38 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 2
+      client: 顾沉
+      item: 船长罗盘
+      faction: harbor_watch
+      price: 38
+      summary: 高价卖出船长罗盘。
+  - id: redeem_2
+    label: 让顾沉赎回船长罗盘，收 20 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_2 == 1
+    - world.night >= 6
+    - world.night_actions >= 1
+    - actor.inventory.captains_compass >= 1
+    costs:
+      reserve:
+        captains_compass: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_2
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 20
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_gu_chen
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 顾沉赎回船长罗盘，留下 20 枚金币。
+      data:
+        case: 2
+        client: 顾沉
+        item: 船长罗盘
+        outcome: redeemed
+        summary: 顾沉赎回船长罗盘，留下 20 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 2
+      client: 顾沉
+      item: 船长罗盘
+      price: 20
+      summary: 顾沉赎回船长罗盘。
+  - id: report_2
+    label: 把顾沉和船长罗盘的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_2 == 0
+    - world.night >= 2
+    - world.night <= 4
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_2
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_gu_chen
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 顾沉和船长罗盘的事进了港务局的记录。
+      data:
+        case: 2
+        client: 顾沉
+        item: 船长罗盘
+        outcome: reported
+        summary: 顾沉和船长罗盘的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 2
+      client: 顾沉
+      item: 船长罗盘
+      summary: 举报顾沉的船长罗盘。
+  - id: pawn_3
+    label: 先付 12 枚金币，收下白鹭的药瓶。
+    location: pawnshop
+    requires:
+    - world.case_3 == 0
+    - world.night >= 3
+    - world.night <= 5
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 12
+    costs:
+      reserve:
+        coin: 12
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: medicine_bottle
+      quantity: 1
+    - type: world_property_delta
+      property: case_3
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下白鹭的药瓶，把 12 枚金币推过柜台。
+      data:
+        case: 3
+        client: 白鹭
+        item: 药瓶
+    event_type: case.pawned
+    event_data:
+      case: 3
+      client: 白鹭
+      item: 药瓶
+      price: 12
+      summary: 收下白鹭的药瓶。
+  - id: return_3
+    label: 把药瓶还给白鹭，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_3 == 0
+    - world.night >= 3
+    - world.night <= 5
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_3
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_bai_lu
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 白鹭把药瓶抱了回去；你没有收当金。
+      data:
+        case: 3
+        client: 白鹭
+        item: 药瓶
+        outcome: returned
+        summary: 白鹭把药瓶抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 3
+      client: 白鹭
+      item: 药瓶
+      summary: 归还药瓶给白鹭。
+  - id: sell_low_3
+    label: 把药瓶低价转给灰袍修会，换 22 枚金币。
+    location: grey_chapel
+    requires:
+    - world.case_3 == 1
+    - world.night_actions >= 1
+    - actor.inventory.medicine_bottle >= 1
+    costs:
+      reserve:
+        medicine_bottle: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_3
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 22
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 药瓶低价转给了灰袍修会，换回 22 枚金币。
+      data:
+        case: 3
+        client: 白鹭
+        item: 药瓶
+        outcome: sold_low
+        summary: 药瓶低价转给了灰袍修会，换回 22 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 3
+      client: 白鹭
+      item: 药瓶
+      faction: grey_order
+      price: 22
+      summary: 低价卖出药瓶。
+  - id: sell_high_3
+    label: 按鉴定价把药瓶卖给灰袍修会，换 35 枚金币。
+    location: grey_chapel
+    requires:
+    - world.case_3 == 1
+    - world.appraised_3 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.medicine_bottle >= 1
+    costs:
+      reserve:
+        medicine_bottle: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_3
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 35
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 药瓶按鉴定价卖给灰袍修会，换回 35 枚金币。
+      data:
+        case: 3
+        client: 白鹭
+        item: 药瓶
+        outcome: sold_high
+        summary: 药瓶按鉴定价卖给灰袍修会，换回 35 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 3
+      client: 白鹭
+      item: 药瓶
+      faction: grey_order
+      price: 35
+      summary: 高价卖出药瓶。
+  - id: redeem_3
+    label: 让白鹭赎回药瓶，收 18 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_3 == 1
+    - world.night >= 7
+    - world.night_actions >= 1
+    - actor.inventory.medicine_bottle >= 1
+    costs:
+      reserve:
+        medicine_bottle: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_3
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 18
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_bai_lu
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 白鹭赎回药瓶，留下 18 枚金币。
+      data:
+        case: 3
+        client: 白鹭
+        item: 药瓶
+        outcome: redeemed
+        summary: 白鹭赎回药瓶，留下 18 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 3
+      client: 白鹭
+      item: 药瓶
+      price: 18
+      summary: 白鹭赎回药瓶。
+  - id: report_3
+    label: 把白鹭和药瓶的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_3 == 0
+    - world.night >= 3
+    - world.night <= 5
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_3
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_bai_lu
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 白鹭和药瓶的事进了港务局的记录。
+      data:
+        case: 3
+        client: 白鹭
+        item: 药瓶
+        outcome: reported
+        summary: 白鹭和药瓶的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 3
+      client: 白鹭
+      item: 药瓶
+      summary: 举报白鹭的药瓶。
+  - id: pawn_4
+    label: 先付 16 枚金币，收下罗七的玻璃眼。
+    location: pawnshop
+    requires:
+    - world.case_4 == 0
+    - world.night >= 4
+    - world.night <= 6
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 16
+    costs:
+      reserve:
+        coin: 16
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: glass_eye
+      quantity: 1
+    - type: world_property_delta
+      property: case_4
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下罗七的玻璃眼，把 16 枚金币推过柜台。
+      data:
+        case: 4
+        client: 罗七
+        item: 玻璃眼
+    event_type: case.pawned
+    event_data:
+      case: 4
+      client: 罗七
+      item: 玻璃眼
+      price: 16
+      summary: 收下罗七的玻璃眼。
+  - id: return_4
+    label: 把玻璃眼还给罗七，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_4 == 0
+    - world.night >= 4
+    - world.night <= 6
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_4
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_luo_qi
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 罗七把玻璃眼抱了回去；你没有收当金。
+      data:
+        case: 4
+        client: 罗七
+        item: 玻璃眼
+        outcome: returned
+        summary: 罗七把玻璃眼抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 4
+      client: 罗七
+      item: 玻璃眼
+      summary: 归还玻璃眼给罗七。
+  - id: sell_low_4
+    label: 把玻璃眼低价转给收藏家，换 28 枚金币。
+    location: collector_salon
+    requires:
+    - world.case_4 == 1
+    - world.night_actions >= 1
+    - actor.inventory.glass_eye >= 1
+    costs:
+      reserve:
+        glass_eye: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_4
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 28
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 玻璃眼低价转给了收藏家，换回 28 枚金币。
+      data:
+        case: 4
+        client: 罗七
+        item: 玻璃眼
+        outcome: sold_low
+        summary: 玻璃眼低价转给了收藏家，换回 28 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 4
+      client: 罗七
+      item: 玻璃眼
+      faction: collector_circle
+      price: 28
+      summary: 低价卖出玻璃眼。
+  - id: sell_high_4
+    label: 按鉴定价把玻璃眼卖给收藏家，换 44 枚金币。
+    location: collector_salon
+    requires:
+    - world.case_4 == 1
+    - world.appraised_4 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.glass_eye >= 1
+    costs:
+      reserve:
+        glass_eye: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_4
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 44
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 玻璃眼按鉴定价卖给收藏家，换回 44 枚金币。
+      data:
+        case: 4
+        client: 罗七
+        item: 玻璃眼
+        outcome: sold_high
+        summary: 玻璃眼按鉴定价卖给收藏家，换回 44 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 4
+      client: 罗七
+      item: 玻璃眼
+      faction: collector_circle
+      price: 44
+      summary: 高价卖出玻璃眼。
+  - id: redeem_4
+    label: 让罗七赎回玻璃眼，收 24 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_4 == 1
+    - world.night >= 8
+    - world.night_actions >= 1
+    - actor.inventory.glass_eye >= 1
+    costs:
+      reserve:
+        glass_eye: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_4
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 24
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_luo_qi
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 罗七赎回玻璃眼，留下 24 枚金币。
+      data:
+        case: 4
+        client: 罗七
+        item: 玻璃眼
+        outcome: redeemed
+        summary: 罗七赎回玻璃眼，留下 24 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 4
+      client: 罗七
+      item: 玻璃眼
+      price: 24
+      summary: 罗七赎回玻璃眼。
+  - id: report_4
+    label: 把罗七和玻璃眼的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_4 == 0
+    - world.night >= 4
+    - world.night <= 6
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_4
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_luo_qi
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 罗七和玻璃眼的事进了港务局的记录。
+      data:
+        case: 4
+        client: 罗七
+        item: 玻璃眼
+        outcome: reported
+        summary: 罗七和玻璃眼的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 4
+      client: 罗七
+      item: 玻璃眼
+      summary: 举报罗七的玻璃眼。
+  - id: pawn_5
+    label: 先付 15 枚金币，收下沈先生的缺页账本。
+    location: pawnshop
+    requires:
+    - world.case_5 == 0
+    - world.night >= 5
+    - world.night <= 7
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 15
+    costs:
+      reserve:
+        coin: 15
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: missing_ledger
+      quantity: 1
+    - type: world_property_delta
+      property: case_5
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下沈先生的缺页账本，把 15 枚金币推过柜台。
+      data:
+        case: 5
+        client: 沈先生
+        item: 缺页账本
+    event_type: case.pawned
+    event_data:
+      case: 5
+      client: 沈先生
+      item: 缺页账本
+      price: 15
+      summary: 收下沈先生的缺页账本。
+  - id: return_5
+    label: 把缺页账本还给沈先生，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_5 == 0
+    - world.night >= 5
+    - world.night <= 7
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_5
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_shen
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 沈先生把缺页账本抱了回去；你没有收当金。
+      data:
+        case: 5
+        client: 沈先生
+        item: 缺页账本
+        outcome: returned
+        summary: 沈先生把缺页账本抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 5
+      client: 沈先生
+      item: 缺页账本
+      summary: 归还缺页账本给沈先生。
+  - id: sell_low_5
+    label: 把缺页账本低价转给港务局，换 26 枚金币。
+    location: watchhouse
+    requires:
+    - world.case_5 == 1
+    - world.night_actions >= 1
+    - actor.inventory.missing_ledger >= 1
+    costs:
+      reserve:
+        missing_ledger: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_5
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 26
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 缺页账本低价转给了港务局，换回 26 枚金币。
+      data:
+        case: 5
+        client: 沈先生
+        item: 缺页账本
+        outcome: sold_low
+        summary: 缺页账本低价转给了港务局，换回 26 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 5
+      client: 沈先生
+      item: 缺页账本
+      faction: harbor_watch
+      price: 26
+      summary: 低价卖出缺页账本。
+  - id: sell_high_5
+    label: 按鉴定价把缺页账本卖给港务局，换 40 枚金币。
+    location: watchhouse
+    requires:
+    - world.case_5 == 1
+    - world.appraised_5 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.missing_ledger >= 1
+    costs:
+      reserve:
+        missing_ledger: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_5
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 40
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 缺页账本按鉴定价卖给港务局，换回 40 枚金币。
+      data:
+        case: 5
+        client: 沈先生
+        item: 缺页账本
+        outcome: sold_high
+        summary: 缺页账本按鉴定价卖给港务局，换回 40 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 5
+      client: 沈先生
+      item: 缺页账本
+      faction: harbor_watch
+      price: 40
+      summary: 高价卖出缺页账本。
+  - id: redeem_5
+    label: 让沈先生赎回缺页账本，收 22 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_5 == 1
+    - world.night >= 9
+    - world.night_actions >= 1
+    - actor.inventory.missing_ledger >= 1
+    costs:
+      reserve:
+        missing_ledger: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_5
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 22
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_shen
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 沈先生赎回缺页账本，留下 22 枚金币。
+      data:
+        case: 5
+        client: 沈先生
+        item: 缺页账本
+        outcome: redeemed
+        summary: 沈先生赎回缺页账本，留下 22 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 5
+      client: 沈先生
+      item: 缺页账本
+      price: 22
+      summary: 沈先生赎回缺页账本。
+  - id: report_5
+    label: 把沈先生和缺页账本的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_5 == 0
+    - world.night >= 5
+    - world.night <= 7
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_5
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_shen
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 沈先生和缺页账本的事进了港务局的记录。
+      data:
+        case: 5
+        client: 沈先生
+        item: 缺页账本
+        outcome: reported
+        summary: 沈先生和缺页账本的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 5
+      client: 沈先生
+      item: 缺页账本
+      summary: 举报沈先生的缺页账本。
+  - id: pawn_6
+    label: 先付 18 枚金币，收下阿雾的海图残页。
+    location: pawnshop
+    requires:
+    - world.case_6 == 0
+    - world.night >= 6
+    - world.night <= 8
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 18
+    costs:
+      reserve:
+        coin: 18
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: chart_fragment
+      quantity: 1
+    - type: world_property_delta
+      property: case_6
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下阿雾的海图残页，把 18 枚金币推过柜台。
+      data:
+        case: 6
+        client: 阿雾
+        item: 海图残页
+    event_type: case.pawned
+    event_data:
+      case: 6
+      client: 阿雾
+      item: 海图残页
+      price: 18
+      summary: 收下阿雾的海图残页。
+  - id: return_6
+    label: 把海图残页还给阿雾，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_6 == 0
+    - world.night >= 6
+    - world.night <= 8
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_6
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_a_wu
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 阿雾把海图残页抱了回去；你没有收当金。
+      data:
+        case: 6
+        client: 阿雾
+        item: 海图残页
+        outcome: returned
+        summary: 阿雾把海图残页抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 6
+      client: 阿雾
+      item: 海图残页
+      summary: 归还海图残页给阿雾。
+  - id: sell_low_6
+    label: 把海图残页低价转给灰袍修会，换 30 枚金币。
+    location: pier
+    requires:
+    - world.case_6 == 1
+    - world.night_actions >= 1
+    - actor.inventory.chart_fragment >= 1
+    costs:
+      reserve:
+        chart_fragment: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_6
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 30
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 海图残页低价转给了灰袍修会，换回 30 枚金币。
+      data:
+        case: 6
+        client: 阿雾
+        item: 海图残页
+        outcome: sold_low
+        summary: 海图残页低价转给了灰袍修会，换回 30 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 6
+      client: 阿雾
+      item: 海图残页
+      faction: grey_order
+      price: 30
+      summary: 低价卖出海图残页。
+  - id: sell_high_6
+    label: 按鉴定价把海图残页卖给灰袍修会，换 48 枚金币。
+    location: pier
+    requires:
+    - world.case_6 == 1
+    - world.appraised_6 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.chart_fragment >= 1
+    costs:
+      reserve:
+        chart_fragment: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_6
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 48
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 海图残页按鉴定价卖给灰袍修会，换回 48 枚金币。
+      data:
+        case: 6
+        client: 阿雾
+        item: 海图残页
+        outcome: sold_high
+        summary: 海图残页按鉴定价卖给灰袍修会，换回 48 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 6
+      client: 阿雾
+      item: 海图残页
+      faction: grey_order
+      price: 48
+      summary: 高价卖出海图残页。
+  - id: redeem_6
+    label: 让阿雾赎回海图残页，收 26 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_6 == 1
+    - world.night >= 10
+    - world.night_actions >= 1
+    - actor.inventory.chart_fragment >= 1
+    costs:
+      reserve:
+        chart_fragment: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_6
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 26
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_a_wu
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 阿雾赎回海图残页，留下 26 枚金币。
+      data:
+        case: 6
+        client: 阿雾
+        item: 海图残页
+        outcome: redeemed
+        summary: 阿雾赎回海图残页，留下 26 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 6
+      client: 阿雾
+      item: 海图残页
+      price: 26
+      summary: 阿雾赎回海图残页。
+  - id: report_6
+    label: 把阿雾和海图残页的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_6 == 0
+    - world.night >= 6
+    - world.night <= 8
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_6
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_a_wu
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 阿雾和海图残页的事进了港务局的记录。
+      data:
+        case: 6
+        client: 阿雾
+        item: 海图残页
+        outcome: reported
+        summary: 阿雾和海图残页的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 6
+      client: 阿雾
+      item: 海图残页
+      summary: 举报阿雾的海图残页。
+  - id: pawn_7
+    label: 先付 20 枚金币，收下无名客的银船模型。
+    location: pawnshop
+    requires:
+    - world.case_7 == 0
+    - world.night >= 7
+    - world.night <= 9
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 20
+    costs:
+      reserve:
+        coin: 20
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: silver_ship
+      quantity: 1
+    - type: world_property_delta
+      property: case_7
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下无名客的银船模型，把 20 枚金币推过柜台。
+      data:
+        case: 7
+        client: 无名客
+        item: 银船模型
+    event_type: case.pawned
+    event_data:
+      case: 7
+      client: 无名客
+      item: 银船模型
+      price: 20
+      summary: 收下无名客的银船模型。
+  - id: return_7
+    label: 把银船模型还给无名客，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_7 == 0
+    - world.night >= 7
+    - world.night <= 9
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_7
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_stranger
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 无名客把银船模型抱了回去；你没有收当金。
+      data:
+        case: 7
+        client: 无名客
+        item: 银船模型
+        outcome: returned
+        summary: 无名客把银船模型抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 7
+      client: 无名客
+      item: 银船模型
+      summary: 归还银船模型给无名客。
+  - id: sell_low_7
+    label: 把银船模型低价转给收藏家，换 34 枚金币。
+    location: collector_salon
+    requires:
+    - world.case_7 == 1
+    - world.night_actions >= 1
+    - actor.inventory.silver_ship >= 1
+    costs:
+      reserve:
+        silver_ship: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_7
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 34
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 银船模型低价转给了收藏家，换回 34 枚金币。
+      data:
+        case: 7
+        client: 无名客
+        item: 银船模型
+        outcome: sold_low
+        summary: 银船模型低价转给了收藏家，换回 34 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 7
+      client: 无名客
+      item: 银船模型
+      faction: collector_circle
+      price: 34
+      summary: 低价卖出银船模型。
+  - id: sell_high_7
+    label: 按鉴定价把银船模型卖给收藏家，换 54 枚金币。
+    location: collector_salon
+    requires:
+    - world.case_7 == 1
+    - world.appraised_7 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.silver_ship >= 1
+    costs:
+      reserve:
+        silver_ship: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_7
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 54
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 银船模型按鉴定价卖给收藏家，换回 54 枚金币。
+      data:
+        case: 7
+        client: 无名客
+        item: 银船模型
+        outcome: sold_high
+        summary: 银船模型按鉴定价卖给收藏家，换回 54 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 7
+      client: 无名客
+      item: 银船模型
+      faction: collector_circle
+      price: 54
+      summary: 高价卖出银船模型。
+  - id: redeem_7
+    label: 让无名客赎回银船模型，收 30 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_7 == 1
+    - world.night >= 11
+    - world.night_actions >= 1
+    - actor.inventory.silver_ship >= 1
+    costs:
+      reserve:
+        silver_ship: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_7
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 30
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_stranger
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 无名客赎回银船模型，留下 30 枚金币。
+      data:
+        case: 7
+        client: 无名客
+        item: 银船模型
+        outcome: redeemed
+        summary: 无名客赎回银船模型，留下 30 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 7
+      client: 无名客
+      item: 银船模型
+      price: 30
+      summary: 无名客赎回银船模型。
+  - id: report_7
+    label: 把无名客和银船模型的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_7 == 0
+    - world.night >= 7
+    - world.night <= 9
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_7
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_stranger
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 无名客和银船模型的事进了港务局的记录。
+      data:
+        case: 7
+        client: 无名客
+        item: 银船模型
+        outcome: reported
+        summary: 无名客和银船模型的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 7
+      client: 无名客
+      item: 银船模型
+      summary: 举报无名客的银船模型。
+  - id: pawn_8
+    label: 先付 18 枚金币，收下苏晚的婚礼戒指。
+    location: pawnshop
+    requires:
+    - world.case_8 == 0
+    - world.night >= 8
+    - world.night <= 10
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 18
+    costs:
+      reserve:
+        coin: 18
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: wedding_ring
+      quantity: 1
+    - type: world_property_delta
+      property: case_8
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下苏晚的婚礼戒指，把 18 枚金币推过柜台。
+      data:
+        case: 8
+        client: 苏晚
+        item: 婚礼戒指
+    event_type: case.pawned
+    event_data:
+      case: 8
+      client: 苏晚
+      item: 婚礼戒指
+      price: 18
+      summary: 收下苏晚的婚礼戒指。
+  - id: return_8
+    label: 把婚礼戒指还给苏晚，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_8 == 0
+    - world.night >= 8
+    - world.night <= 10
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_8
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_su_wan
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 苏晚把婚礼戒指抱了回去；你没有收当金。
+      data:
+        case: 8
+        client: 苏晚
+        item: 婚礼戒指
+        outcome: returned
+        summary: 苏晚把婚礼戒指抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 8
+      client: 苏晚
+      item: 婚礼戒指
+      summary: 归还婚礼戒指给苏晚。
+  - id: sell_low_8
+    label: 把婚礼戒指低价转给灰袍修会，换 30 枚金币。
+    location: grey_chapel
+    requires:
+    - world.case_8 == 1
+    - world.night_actions >= 1
+    - actor.inventory.wedding_ring >= 1
+    costs:
+      reserve:
+        wedding_ring: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_8
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 30
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 婚礼戒指低价转给了灰袍修会，换回 30 枚金币。
+      data:
+        case: 8
+        client: 苏晚
+        item: 婚礼戒指
+        outcome: sold_low
+        summary: 婚礼戒指低价转给了灰袍修会，换回 30 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 8
+      client: 苏晚
+      item: 婚礼戒指
+      faction: grey_order
+      price: 30
+      summary: 低价卖出婚礼戒指。
+  - id: sell_high_8
+    label: 按鉴定价把婚礼戒指卖给灰袍修会，换 48 枚金币。
+    location: grey_chapel
+    requires:
+    - world.case_8 == 1
+    - world.appraised_8 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.wedding_ring >= 1
+    costs:
+      reserve:
+        wedding_ring: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_8
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 48
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 婚礼戒指按鉴定价卖给灰袍修会，换回 48 枚金币。
+      data:
+        case: 8
+        client: 苏晚
+        item: 婚礼戒指
+        outcome: sold_high
+        summary: 婚礼戒指按鉴定价卖给灰袍修会，换回 48 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 8
+      client: 苏晚
+      item: 婚礼戒指
+      faction: grey_order
+      price: 48
+      summary: 高价卖出婚礼戒指。
+  - id: redeem_8
+    label: 让苏晚赎回婚礼戒指，收 26 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_8 == 1
+    - world.night >= 12
+    - world.night_actions >= 1
+    - actor.inventory.wedding_ring >= 1
+    costs:
+      reserve:
+        wedding_ring: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_8
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 26
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_su_wan
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 苏晚赎回婚礼戒指，留下 26 枚金币。
+      data:
+        case: 8
+        client: 苏晚
+        item: 婚礼戒指
+        outcome: redeemed
+        summary: 苏晚赎回婚礼戒指，留下 26 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 8
+      client: 苏晚
+      item: 婚礼戒指
+      price: 26
+      summary: 苏晚赎回婚礼戒指。
+  - id: report_8
+    label: 把苏晚和婚礼戒指的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_8 == 0
+    - world.night >= 8
+    - world.night <= 10
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_8
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_su_wan
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 苏晚和婚礼戒指的事进了港务局的记录。
+      data:
+        case: 8
+        client: 苏晚
+        item: 婚礼戒指
+        outcome: reported
+        summary: 苏晚和婚礼戒指的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 8
+      client: 苏晚
+      item: 婚礼戒指
+      summary: 举报苏晚的婚礼戒指。
+  - id: pawn_9
+    label: 先付 20 枚金币，收下顾沉的铜制义肢。
+    location: pawnshop
+    requires:
+    - world.case_9 == 0
+    - world.night >= 9
+    - world.night <= 11
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 20
+    costs:
+      reserve:
+        coin: 20
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: brass_leg
+      quantity: 1
+    - type: world_property_delta
+      property: case_9
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下顾沉的铜制义肢，把 20 枚金币推过柜台。
+      data:
+        case: 9
+        client: 顾沉
+        item: 铜制义肢
+    event_type: case.pawned
+    event_data:
+      case: 9
+      client: 顾沉
+      item: 铜制义肢
+      price: 20
+      summary: 收下顾沉的铜制义肢。
+  - id: return_9
+    label: 把铜制义肢还给顾沉，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_9 == 0
+    - world.night >= 9
+    - world.night <= 11
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_9
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_gu_chen
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 顾沉把铜制义肢抱了回去；你没有收当金。
+      data:
+        case: 9
+        client: 顾沉
+        item: 铜制义肢
+        outcome: returned
+        summary: 顾沉把铜制义肢抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 9
+      client: 顾沉
+      item: 铜制义肢
+      summary: 归还铜制义肢给顾沉。
+  - id: sell_low_9
+    label: 把铜制义肢低价转给港务局，换 32 枚金币。
+    location: watchhouse
+    requires:
+    - world.case_9 == 1
+    - world.night_actions >= 1
+    - actor.inventory.brass_leg >= 1
+    costs:
+      reserve:
+        brass_leg: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_9
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 32
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 铜制义肢低价转给了港务局，换回 32 枚金币。
+      data:
+        case: 9
+        client: 顾沉
+        item: 铜制义肢
+        outcome: sold_low
+        summary: 铜制义肢低价转给了港务局，换回 32 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 9
+      client: 顾沉
+      item: 铜制义肢
+      faction: harbor_watch
+      price: 32
+      summary: 低价卖出铜制义肢。
+  - id: sell_high_9
+    label: 按鉴定价把铜制义肢卖给港务局，换 50 枚金币。
+    location: watchhouse
+    requires:
+    - world.case_9 == 1
+    - world.appraised_9 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.brass_leg >= 1
+    costs:
+      reserve:
+        brass_leg: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_9
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 50
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 铜制义肢按鉴定价卖给港务局，换回 50 枚金币。
+      data:
+        case: 9
+        client: 顾沉
+        item: 铜制义肢
+        outcome: sold_high
+        summary: 铜制义肢按鉴定价卖给港务局，换回 50 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 9
+      client: 顾沉
+      item: 铜制义肢
+      faction: harbor_watch
+      price: 50
+      summary: 高价卖出铜制义肢。
+  - id: redeem_9
+    label: 让顾沉赎回铜制义肢，收 28 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_9 == 1
+    - world.night >= 13
+    - world.night_actions >= 1
+    - actor.inventory.brass_leg >= 1
+    costs:
+      reserve:
+        brass_leg: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_9
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 28
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_gu_chen
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 顾沉赎回铜制义肢，留下 28 枚金币。
+      data:
+        case: 9
+        client: 顾沉
+        item: 铜制义肢
+        outcome: redeemed
+        summary: 顾沉赎回铜制义肢，留下 28 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 9
+      client: 顾沉
+      item: 铜制义肢
+      price: 28
+      summary: 顾沉赎回铜制义肢。
+  - id: report_9
+    label: 把顾沉和铜制义肢的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_9 == 0
+    - world.night >= 9
+    - world.night <= 11
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_9
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_gu_chen
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 顾沉和铜制义肢的事进了港务局的记录。
+      data:
+        case: 9
+        client: 顾沉
+        item: 铜制义肢
+        outcome: reported
+        summary: 顾沉和铜制义肢的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 9
+      client: 顾沉
+      item: 铜制义肢
+      summary: 举报顾沉的铜制义肢。
+  - id: pawn_10
+    label: 先付 18 枚金币，收下白鹭的潮汐钟。
+    location: pawnshop
+    requires:
+    - world.case_10 == 0
+    - world.night >= 10
+    - world.night <= 12
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 18
+    costs:
+      reserve:
+        coin: 18
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: tide_bell
+      quantity: 1
+    - type: world_property_delta
+      property: case_10
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下白鹭的潮汐钟，把 18 枚金币推过柜台。
+      data:
+        case: 10
+        client: 白鹭
+        item: 潮汐钟
+    event_type: case.pawned
+    event_data:
+      case: 10
+      client: 白鹭
+      item: 潮汐钟
+      price: 18
+      summary: 收下白鹭的潮汐钟。
+  - id: return_10
+    label: 把潮汐钟还给白鹭，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_10 == 0
+    - world.night >= 10
+    - world.night <= 12
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_10
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_bai_lu
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 白鹭把潮汐钟抱了回去；你没有收当金。
+      data:
+        case: 10
+        client: 白鹭
+        item: 潮汐钟
+        outcome: returned
+        summary: 白鹭把潮汐钟抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 10
+      client: 白鹭
+      item: 潮汐钟
+      summary: 归还潮汐钟给白鹭。
+  - id: sell_low_10
+    label: 把潮汐钟低价转给灰袍修会，换 30 枚金币。
+    location: grey_chapel
+    requires:
+    - world.case_10 == 1
+    - world.night_actions >= 1
+    - actor.inventory.tide_bell >= 1
+    costs:
+      reserve:
+        tide_bell: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_10
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 30
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 潮汐钟低价转给了灰袍修会，换回 30 枚金币。
+      data:
+        case: 10
+        client: 白鹭
+        item: 潮汐钟
+        outcome: sold_low
+        summary: 潮汐钟低价转给了灰袍修会，换回 30 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 10
+      client: 白鹭
+      item: 潮汐钟
+      faction: grey_order
+      price: 30
+      summary: 低价卖出潮汐钟。
+  - id: sell_high_10
+    label: 按鉴定价把潮汐钟卖给灰袍修会，换 48 枚金币。
+    location: grey_chapel
+    requires:
+    - world.case_10 == 1
+    - world.appraised_10 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.tide_bell >= 1
+    costs:
+      reserve:
+        tide_bell: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_10
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 48
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 潮汐钟按鉴定价卖给灰袍修会，换回 48 枚金币。
+      data:
+        case: 10
+        client: 白鹭
+        item: 潮汐钟
+        outcome: sold_high
+        summary: 潮汐钟按鉴定价卖给灰袍修会，换回 48 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 10
+      client: 白鹭
+      item: 潮汐钟
+      faction: grey_order
+      price: 48
+      summary: 高价卖出潮汐钟。
+  - id: redeem_10
+    label: 让白鹭赎回潮汐钟，收 26 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_10 == 1
+    - world.night >= 14
+    - world.night_actions >= 1
+    - actor.inventory.tide_bell >= 1
+    costs:
+      reserve:
+        tide_bell: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_10
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 26
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_bai_lu
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 白鹭赎回潮汐钟，留下 26 枚金币。
+      data:
+        case: 10
+        client: 白鹭
+        item: 潮汐钟
+        outcome: redeemed
+        summary: 白鹭赎回潮汐钟，留下 26 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 10
+      client: 白鹭
+      item: 潮汐钟
+      price: 26
+      summary: 白鹭赎回潮汐钟。
+  - id: report_10
+    label: 把白鹭和潮汐钟的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_10 == 0
+    - world.night >= 10
+    - world.night <= 12
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_10
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_bai_lu
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 白鹭和潮汐钟的事进了港务局的记录。
+      data:
+        case: 10
+        client: 白鹭
+        item: 潮汐钟
+        outcome: reported
+        summary: 白鹭和潮汐钟的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 10
+      client: 白鹭
+      item: 潮汐钟
+      summary: 举报白鹭的潮汐钟。
+  - id: pawn_11
+    label: 先付 22 枚金币，收下罗七的走私货单。
+    location: pawnshop
+    requires:
+    - world.case_11 == 0
+    - world.night >= 11
+    - world.night <= 13
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 22
+    costs:
+      reserve:
+        coin: 22
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: smuggling_manifest
+      quantity: 1
+    - type: world_property_delta
+      property: case_11
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下罗七的走私货单，把 22 枚金币推过柜台。
+      data:
+        case: 11
+        client: 罗七
+        item: 走私货单
+    event_type: case.pawned
+    event_data:
+      case: 11
+      client: 罗七
+      item: 走私货单
+      price: 22
+      summary: 收下罗七的走私货单。
+  - id: return_11
+    label: 把走私货单还给罗七，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_11 == 0
+    - world.night >= 11
+    - world.night <= 13
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_11
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_luo_qi
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 罗七把走私货单抱了回去；你没有收当金。
+      data:
+        case: 11
+        client: 罗七
+        item: 走私货单
+        outcome: returned
+        summary: 罗七把走私货单抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 11
+      client: 罗七
+      item: 走私货单
+      summary: 归还走私货单给罗七。
+  - id: sell_low_11
+    label: 把走私货单低价转给收藏家，换 36 枚金币。
+    location: collector_salon
+    requires:
+    - world.case_11 == 1
+    - world.night_actions >= 1
+    - actor.inventory.smuggling_manifest >= 1
+    costs:
+      reserve:
+        smuggling_manifest: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_11
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 36
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 走私货单低价转给了收藏家，换回 36 枚金币。
+      data:
+        case: 11
+        client: 罗七
+        item: 走私货单
+        outcome: sold_low
+        summary: 走私货单低价转给了收藏家，换回 36 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 11
+      client: 罗七
+      item: 走私货单
+      faction: collector_circle
+      price: 36
+      summary: 低价卖出走私货单。
+  - id: sell_high_11
+    label: 按鉴定价把走私货单卖给收藏家，换 58 枚金币。
+    location: collector_salon
+    requires:
+    - world.case_11 == 1
+    - world.appraised_11 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.smuggling_manifest >= 1
+    costs:
+      reserve:
+        smuggling_manifest: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_11
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 58
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 走私货单按鉴定价卖给收藏家，换回 58 枚金币。
+      data:
+        case: 11
+        client: 罗七
+        item: 走私货单
+        outcome: sold_high
+        summary: 走私货单按鉴定价卖给收藏家，换回 58 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 11
+      client: 罗七
+      item: 走私货单
+      faction: collector_circle
+      price: 58
+      summary: 高价卖出走私货单。
+  - id: redeem_11
+    label: 让罗七赎回走私货单，收 32 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_11 == 1
+    - world.night >= 15
+    - world.night_actions >= 1
+    - actor.inventory.smuggling_manifest >= 1
+    costs:
+      reserve:
+        smuggling_manifest: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_11
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 32
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_luo_qi
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 罗七赎回走私货单，留下 32 枚金币。
+      data:
+        case: 11
+        client: 罗七
+        item: 走私货单
+        outcome: redeemed
+        summary: 罗七赎回走私货单，留下 32 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 11
+      client: 罗七
+      item: 走私货单
+      price: 32
+      summary: 罗七赎回走私货单。
+  - id: report_11
+    label: 把罗七和走私货单的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_11 == 0
+    - world.night >= 11
+    - world.night <= 13
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_11
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_luo_qi
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 罗七和走私货单的事进了港务局的记录。
+      data:
+        case: 11
+        client: 罗七
+        item: 走私货单
+        outcome: reported
+        summary: 罗七和走私货单的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 11
+      client: 罗七
+      item: 走私货单
+      summary: 举报罗七的走私货单。
+  - id: pawn_12
+    label: 先付 20 枚金币，收下沈先生的赌债借据。
+    location: pawnshop
+    requires:
+    - world.case_12 == 0
+    - world.night >= 12
+    - world.night <= 14
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 20
+    costs:
+      reserve:
+        coin: 20
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: gambling_note
+      quantity: 1
+    - type: world_property_delta
+      property: case_12
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下沈先生的赌债借据，把 20 枚金币推过柜台。
+      data:
+        case: 12
+        client: 沈先生
+        item: 赌债借据
+    event_type: case.pawned
+    event_data:
+      case: 12
+      client: 沈先生
+      item: 赌债借据
+      price: 20
+      summary: 收下沈先生的赌债借据。
+  - id: return_12
+    label: 把赌债借据还给沈先生，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_12 == 0
+    - world.night >= 12
+    - world.night <= 14
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_12
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_shen
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 沈先生把赌债借据抱了回去；你没有收当金。
+      data:
+        case: 12
+        client: 沈先生
+        item: 赌债借据
+        outcome: returned
+        summary: 沈先生把赌债借据抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 12
+      client: 沈先生
+      item: 赌债借据
+      summary: 归还赌债借据给沈先生。
+  - id: sell_low_12
+    label: 把赌债借据低价转给港务局，换 34 枚金币。
+    location: watchhouse
+    requires:
+    - world.case_12 == 1
+    - world.night_actions >= 1
+    - actor.inventory.gambling_note >= 1
+    costs:
+      reserve:
+        gambling_note: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_12
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 34
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 赌债借据低价转给了港务局，换回 34 枚金币。
+      data:
+        case: 12
+        client: 沈先生
+        item: 赌债借据
+        outcome: sold_low
+        summary: 赌债借据低价转给了港务局，换回 34 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 12
+      client: 沈先生
+      item: 赌债借据
+      faction: harbor_watch
+      price: 34
+      summary: 低价卖出赌债借据。
+  - id: sell_high_12
+    label: 按鉴定价把赌债借据卖给港务局，换 54 枚金币。
+    location: watchhouse
+    requires:
+    - world.case_12 == 1
+    - world.appraised_12 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.gambling_note >= 1
+    costs:
+      reserve:
+        gambling_note: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_12
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 54
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 赌债借据按鉴定价卖给港务局，换回 54 枚金币。
+      data:
+        case: 12
+        client: 沈先生
+        item: 赌债借据
+        outcome: sold_high
+        summary: 赌债借据按鉴定价卖给港务局，换回 54 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 12
+      client: 沈先生
+      item: 赌债借据
+      faction: harbor_watch
+      price: 54
+      summary: 高价卖出赌债借据。
+  - id: redeem_12
+    label: 让沈先生赎回赌债借据，收 30 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_12 == 1
+    - world.night >= 16
+    - world.night_actions >= 1
+    - actor.inventory.gambling_note >= 1
+    costs:
+      reserve:
+        gambling_note: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_12
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 30
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_shen
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 沈先生赎回赌债借据，留下 30 枚金币。
+      data:
+        case: 12
+        client: 沈先生
+        item: 赌债借据
+        outcome: redeemed
+        summary: 沈先生赎回赌债借据，留下 30 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 12
+      client: 沈先生
+      item: 赌债借据
+      price: 30
+      summary: 沈先生赎回赌债借据。
+  - id: report_12
+    label: 把沈先生和赌债借据的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_12 == 0
+    - world.night >= 12
+    - world.night <= 14
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_12
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_shen
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 沈先生和赌债借据的事进了港务局的记录。
+      data:
+        case: 12
+        client: 沈先生
+        item: 赌债借据
+        outcome: reported
+        summary: 沈先生和赌债借据的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 12
+      client: 沈先生
+      item: 赌债借据
+      summary: 举报沈先生的赌债借据。
+  - id: pawn_13
+    label: 先付 22 枚金币，收下阿雾的灯油样本。
+    location: pawnshop
+    requires:
+    - world.case_13 == 0
+    - world.night >= 13
+    - world.night <= 15
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 22
+    costs:
+      reserve:
+        coin: 22
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: lamp_oil
+      quantity: 1
+    - type: world_property_delta
+      property: case_13
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下阿雾的灯油样本，把 22 枚金币推过柜台。
+      data:
+        case: 13
+        client: 阿雾
+        item: 灯油样本
+    event_type: case.pawned
+    event_data:
+      case: 13
+      client: 阿雾
+      item: 灯油样本
+      price: 22
+      summary: 收下阿雾的灯油样本。
+  - id: return_13
+    label: 把灯油样本还给阿雾，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_13 == 0
+    - world.night >= 13
+    - world.night <= 15
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_13
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_a_wu
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 阿雾把灯油样本抱了回去；你没有收当金。
+      data:
+        case: 13
+        client: 阿雾
+        item: 灯油样本
+        outcome: returned
+        summary: 阿雾把灯油样本抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 13
+      client: 阿雾
+      item: 灯油样本
+      summary: 归还灯油样本给阿雾。
+  - id: sell_low_13
+    label: 把灯油样本低价转给灰袍修会，换 36 枚金币。
+    location: pier
+    requires:
+    - world.case_13 == 1
+    - world.night_actions >= 1
+    - actor.inventory.lamp_oil >= 1
+    costs:
+      reserve:
+        lamp_oil: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_13
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 36
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 灯油样本低价转给了灰袍修会，换回 36 枚金币。
+      data:
+        case: 13
+        client: 阿雾
+        item: 灯油样本
+        outcome: sold_low
+        summary: 灯油样本低价转给了灰袍修会，换回 36 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 13
+      client: 阿雾
+      item: 灯油样本
+      faction: grey_order
+      price: 36
+      summary: 低价卖出灯油样本。
+  - id: sell_high_13
+    label: 按鉴定价把灯油样本卖给灰袍修会，换 58 枚金币。
+    location: pier
+    requires:
+    - world.case_13 == 1
+    - world.appraised_13 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.lamp_oil >= 1
+    costs:
+      reserve:
+        lamp_oil: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_13
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 58
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 灯油样本按鉴定价卖给灰袍修会，换回 58 枚金币。
+      data:
+        case: 13
+        client: 阿雾
+        item: 灯油样本
+        outcome: sold_high
+        summary: 灯油样本按鉴定价卖给灰袍修会，换回 58 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 13
+      client: 阿雾
+      item: 灯油样本
+      faction: grey_order
+      price: 58
+      summary: 高价卖出灯油样本。
+  - id: redeem_13
+    label: 让阿雾赎回灯油样本，收 32 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_13 == 1
+    - world.night >= 17
+    - world.night_actions >= 1
+    - actor.inventory.lamp_oil >= 1
+    costs:
+      reserve:
+        lamp_oil: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_13
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 32
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_a_wu
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 阿雾赎回灯油样本，留下 32 枚金币。
+      data:
+        case: 13
+        client: 阿雾
+        item: 灯油样本
+        outcome: redeemed
+        summary: 阿雾赎回灯油样本，留下 32 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 13
+      client: 阿雾
+      item: 灯油样本
+      price: 32
+      summary: 阿雾赎回灯油样本。
+  - id: report_13
+    label: 把阿雾和灯油样本的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_13 == 0
+    - world.night >= 13
+    - world.night <= 15
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_13
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_a_wu
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 阿雾和灯油样本的事进了港务局的记录。
+      data:
+        case: 13
+        client: 阿雾
+        item: 灯油样本
+        outcome: reported
+        summary: 阿雾和灯油样本的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 13
+      client: 阿雾
+      item: 灯油样本
+      summary: 举报阿雾的灯油样本。
+  - id: pawn_14
+    label: 先付 24 枚金币，收下无名客的旧怀表。
+    location: pawnshop
+    requires:
+    - world.case_14 == 0
+    - world.night >= 14
+    - world.night <= 16
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 24
+    costs:
+      reserve:
+        coin: 24
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: old_watch
+      quantity: 1
+    - type: world_property_delta
+      property: case_14
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下无名客的旧怀表，把 24 枚金币推过柜台。
+      data:
+        case: 14
+        client: 无名客
+        item: 旧怀表
+    event_type: case.pawned
+    event_data:
+      case: 14
+      client: 无名客
+      item: 旧怀表
+      price: 24
+      summary: 收下无名客的旧怀表。
+  - id: return_14
+    label: 把旧怀表还给无名客，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_14 == 0
+    - world.night >= 14
+    - world.night <= 16
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_14
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_stranger
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 无名客把旧怀表抱了回去；你没有收当金。
+      data:
+        case: 14
+        client: 无名客
+        item: 旧怀表
+        outcome: returned
+        summary: 无名客把旧怀表抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 14
+      client: 无名客
+      item: 旧怀表
+      summary: 归还旧怀表给无名客。
+  - id: sell_low_14
+    label: 把旧怀表低价转给收藏家，换 38 枚金币。
+    location: collector_salon
+    requires:
+    - world.case_14 == 1
+    - world.night_actions >= 1
+    - actor.inventory.old_watch >= 1
+    costs:
+      reserve:
+        old_watch: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_14
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 38
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 旧怀表低价转给了收藏家，换回 38 枚金币。
+      data:
+        case: 14
+        client: 无名客
+        item: 旧怀表
+        outcome: sold_low
+        summary: 旧怀表低价转给了收藏家，换回 38 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 14
+      client: 无名客
+      item: 旧怀表
+      faction: collector_circle
+      price: 38
+      summary: 低价卖出旧怀表。
+  - id: sell_high_14
+    label: 按鉴定价把旧怀表卖给收藏家，换 60 枚金币。
+    location: collector_salon
+    requires:
+    - world.case_14 == 1
+    - world.appraised_14 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.old_watch >= 1
+    costs:
+      reserve:
+        old_watch: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_14
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 60
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 旧怀表按鉴定价卖给收藏家，换回 60 枚金币。
+      data:
+        case: 14
+        client: 无名客
+        item: 旧怀表
+        outcome: sold_high
+        summary: 旧怀表按鉴定价卖给收藏家，换回 60 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 14
+      client: 无名客
+      item: 旧怀表
+      faction: collector_circle
+      price: 60
+      summary: 高价卖出旧怀表。
+  - id: redeem_14
+    label: 让无名客赎回旧怀表，收 34 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_14 == 1
+    - world.night >= 18
+    - world.night_actions >= 1
+    - actor.inventory.old_watch >= 1
+    costs:
+      reserve:
+        old_watch: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_14
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 34
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_stranger
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 无名客赎回旧怀表，留下 34 枚金币。
+      data:
+        case: 14
+        client: 无名客
+        item: 旧怀表
+        outcome: redeemed
+        summary: 无名客赎回旧怀表，留下 34 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 14
+      client: 无名客
+      item: 旧怀表
+      price: 34
+      summary: 无名客赎回旧怀表。
+  - id: report_14
+    label: 把无名客和旧怀表的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_14 == 0
+    - world.night >= 14
+    - world.night <= 16
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_14
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_stranger
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 无名客和旧怀表的事进了港务局的记录。
+      data:
+        case: 14
+        client: 无名客
+        item: 旧怀表
+        outcome: reported
+        summary: 无名客和旧怀表的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 14
+      client: 无名客
+      item: 旧怀表
+      summary: 举报无名客的旧怀表。
+  - id: pawn_15
+    label: 先付 12 枚金币，收下苏晚的海玻璃。
+    location: pawnshop
+    requires:
+    - world.case_15 == 0
+    - world.night >= 15
+    - world.night <= 17
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 12
+    costs:
+      reserve:
+        coin: 12
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: sea_glass
+      quantity: 1
+    - type: world_property_delta
+      property: case_15
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下苏晚的海玻璃，把 12 枚金币推过柜台。
+      data:
+        case: 15
+        client: 苏晚
+        item: 海玻璃
+    event_type: case.pawned
+    event_data:
+      case: 15
+      client: 苏晚
+      item: 海玻璃
+      price: 12
+      summary: 收下苏晚的海玻璃。
+  - id: return_15
+    label: 把海玻璃还给苏晚，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_15 == 0
+    - world.night >= 15
+    - world.night <= 17
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_15
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_su_wan
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 苏晚把海玻璃抱了回去；你没有收当金。
+      data:
+        case: 15
+        client: 苏晚
+        item: 海玻璃
+        outcome: returned
+        summary: 苏晚把海玻璃抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 15
+      client: 苏晚
+      item: 海玻璃
+      summary: 归还海玻璃给苏晚。
+  - id: sell_low_15
+    label: 把海玻璃低价转给灰袍修会，换 22 枚金币。
+    location: grey_chapel
+    requires:
+    - world.case_15 == 1
+    - world.night_actions >= 1
+    - actor.inventory.sea_glass >= 1
+    costs:
+      reserve:
+        sea_glass: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_15
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 22
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 海玻璃低价转给了灰袍修会，换回 22 枚金币。
+      data:
+        case: 15
+        client: 苏晚
+        item: 海玻璃
+        outcome: sold_low
+        summary: 海玻璃低价转给了灰袍修会，换回 22 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 15
+      client: 苏晚
+      item: 海玻璃
+      faction: grey_order
+      price: 22
+      summary: 低价卖出海玻璃。
+  - id: sell_high_15
+    label: 按鉴定价把海玻璃卖给灰袍修会，换 36 枚金币。
+    location: grey_chapel
+    requires:
+    - world.case_15 == 1
+    - world.appraised_15 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.sea_glass >= 1
+    costs:
+      reserve:
+        sea_glass: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_15
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 36
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 海玻璃按鉴定价卖给灰袍修会，换回 36 枚金币。
+      data:
+        case: 15
+        client: 苏晚
+        item: 海玻璃
+        outcome: sold_high
+        summary: 海玻璃按鉴定价卖给灰袍修会，换回 36 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 15
+      client: 苏晚
+      item: 海玻璃
+      faction: grey_order
+      price: 36
+      summary: 高价卖出海玻璃。
+  - id: redeem_15
+    label: 让苏晚赎回海玻璃，收 18 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_15 == 1
+    - world.night >= 19
+    - world.night_actions >= 1
+    - actor.inventory.sea_glass >= 1
+    costs:
+      reserve:
+        sea_glass: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_15
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 18
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_su_wan
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 苏晚赎回海玻璃，留下 18 枚金币。
+      data:
+        case: 15
+        client: 苏晚
+        item: 海玻璃
+        outcome: redeemed
+        summary: 苏晚赎回海玻璃，留下 18 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 15
+      client: 苏晚
+      item: 海玻璃
+      price: 18
+      summary: 苏晚赎回海玻璃。
+  - id: report_15
+    label: 把苏晚和海玻璃的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_15 == 0
+    - world.night >= 15
+    - world.night <= 17
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_15
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_su_wan
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 苏晚和海玻璃的事进了港务局的记录。
+      data:
+        case: 15
+        client: 苏晚
+        item: 海玻璃
+        outcome: reported
+        summary: 苏晚和海玻璃的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 15
+      client: 苏晚
+      item: 海玻璃
+      summary: 举报苏晚的海玻璃。
+  - id: pawn_16
+    label: 先付 22 枚金币，收下顾沉的潮汐怀表。
+    location: pawnshop
+    requires:
+    - world.case_16 == 0
+    - world.night >= 16
+    - world.night <= 18
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 22
+    costs:
+      reserve:
+        coin: 22
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: tide_watch
+      quantity: 1
+    - type: world_property_delta
+      property: case_16
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下顾沉的潮汐怀表，把 22 枚金币推过柜台。
+      data:
+        case: 16
+        client: 顾沉
+        item: 潮汐怀表
+    event_type: case.pawned
+    event_data:
+      case: 16
+      client: 顾沉
+      item: 潮汐怀表
+      price: 22
+      summary: 收下顾沉的潮汐怀表。
+  - id: return_16
+    label: 把潮汐怀表还给顾沉，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_16 == 0
+    - world.night >= 16
+    - world.night <= 18
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_16
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_gu_chen
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 顾沉把潮汐怀表抱了回去；你没有收当金。
+      data:
+        case: 16
+        client: 顾沉
+        item: 潮汐怀表
+        outcome: returned
+        summary: 顾沉把潮汐怀表抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 16
+      client: 顾沉
+      item: 潮汐怀表
+      summary: 归还潮汐怀表给顾沉。
+  - id: sell_low_16
+    label: 把潮汐怀表低价转给港务局，换 36 枚金币。
+    location: watchhouse
+    requires:
+    - world.case_16 == 1
+    - world.night_actions >= 1
+    - actor.inventory.tide_watch >= 1
+    costs:
+      reserve:
+        tide_watch: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_16
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 36
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 潮汐怀表低价转给了港务局，换回 36 枚金币。
+      data:
+        case: 16
+        client: 顾沉
+        item: 潮汐怀表
+        outcome: sold_low
+        summary: 潮汐怀表低价转给了港务局，换回 36 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 16
+      client: 顾沉
+      item: 潮汐怀表
+      faction: harbor_watch
+      price: 36
+      summary: 低价卖出潮汐怀表。
+  - id: sell_high_16
+    label: 按鉴定价把潮汐怀表卖给港务局，换 56 枚金币。
+    location: watchhouse
+    requires:
+    - world.case_16 == 1
+    - world.appraised_16 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.tide_watch >= 1
+    costs:
+      reserve:
+        tide_watch: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_16
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 56
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 潮汐怀表按鉴定价卖给港务局，换回 56 枚金币。
+      data:
+        case: 16
+        client: 顾沉
+        item: 潮汐怀表
+        outcome: sold_high
+        summary: 潮汐怀表按鉴定价卖给港务局，换回 56 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 16
+      client: 顾沉
+      item: 潮汐怀表
+      faction: harbor_watch
+      price: 56
+      summary: 高价卖出潮汐怀表。
+  - id: redeem_16
+    label: 让顾沉赎回潮汐怀表，收 32 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_16 == 1
+    - world.night >= 20
+    - world.night_actions >= 1
+    - actor.inventory.tide_watch >= 1
+    costs:
+      reserve:
+        tide_watch: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_16
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 32
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_gu_chen
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 顾沉赎回潮汐怀表，留下 32 枚金币。
+      data:
+        case: 16
+        client: 顾沉
+        item: 潮汐怀表
+        outcome: redeemed
+        summary: 顾沉赎回潮汐怀表，留下 32 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 16
+      client: 顾沉
+      item: 潮汐怀表
+      price: 32
+      summary: 顾沉赎回潮汐怀表。
+  - id: report_16
+    label: 把顾沉和潮汐怀表的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_16 == 0
+    - world.night >= 16
+    - world.night <= 18
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_16
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_gu_chen
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 顾沉和潮汐怀表的事进了港务局的记录。
+      data:
+        case: 16
+        client: 顾沉
+        item: 潮汐怀表
+        outcome: reported
+        summary: 顾沉和潮汐怀表的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 16
+      client: 顾沉
+      item: 潮汐怀表
+      summary: 举报顾沉的潮汐怀表。
+  - id: pawn_17
+    label: 先付 24 枚金币，收下白鹭的黑檀梳。
+    location: pawnshop
+    requires:
+    - world.case_17 == 0
+    - world.night >= 17
+    - world.night <= 19
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 24
+    costs:
+      reserve:
+        coin: 24
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: ebony_comb
+      quantity: 1
+    - type: world_property_delta
+      property: case_17
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下白鹭的黑檀梳，把 24 枚金币推过柜台。
+      data:
+        case: 17
+        client: 白鹭
+        item: 黑檀梳
+    event_type: case.pawned
+    event_data:
+      case: 17
+      client: 白鹭
+      item: 黑檀梳
+      price: 24
+      summary: 收下白鹭的黑檀梳。
+  - id: return_17
+    label: 把黑檀梳还给白鹭，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_17 == 0
+    - world.night >= 17
+    - world.night <= 19
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_17
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_bai_lu
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 白鹭把黑檀梳抱了回去；你没有收当金。
+      data:
+        case: 17
+        client: 白鹭
+        item: 黑檀梳
+        outcome: returned
+        summary: 白鹭把黑檀梳抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 17
+      client: 白鹭
+      item: 黑檀梳
+      summary: 归还黑檀梳给白鹭。
+  - id: sell_low_17
+    label: 把黑檀梳低价转给灰袍修会，换 38 枚金币。
+    location: grey_chapel
+    requires:
+    - world.case_17 == 1
+    - world.night_actions >= 1
+    - actor.inventory.ebony_comb >= 1
+    costs:
+      reserve:
+        ebony_comb: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_17
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 38
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 黑檀梳低价转给了灰袍修会，换回 38 枚金币。
+      data:
+        case: 17
+        client: 白鹭
+        item: 黑檀梳
+        outcome: sold_low
+        summary: 黑檀梳低价转给了灰袍修会，换回 38 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 17
+      client: 白鹭
+      item: 黑檀梳
+      faction: grey_order
+      price: 38
+      summary: 低价卖出黑檀梳。
+  - id: sell_high_17
+    label: 按鉴定价把黑檀梳卖给灰袍修会，换 60 枚金币。
+    location: grey_chapel
+    requires:
+    - world.case_17 == 1
+    - world.appraised_17 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.ebony_comb >= 1
+    costs:
+      reserve:
+        ebony_comb: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_17
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 60
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 黑檀梳按鉴定价卖给灰袍修会，换回 60 枚金币。
+      data:
+        case: 17
+        client: 白鹭
+        item: 黑檀梳
+        outcome: sold_high
+        summary: 黑檀梳按鉴定价卖给灰袍修会，换回 60 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 17
+      client: 白鹭
+      item: 黑檀梳
+      faction: grey_order
+      price: 60
+      summary: 高价卖出黑檀梳。
+  - id: redeem_17
+    label: 让白鹭赎回黑檀梳，收 34 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_17 == 1
+    - world.night >= 21
+    - world.night_actions >= 1
+    - actor.inventory.ebony_comb >= 1
+    costs:
+      reserve:
+        ebony_comb: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_17
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 34
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_bai_lu
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 白鹭赎回黑檀梳，留下 34 枚金币。
+      data:
+        case: 17
+        client: 白鹭
+        item: 黑檀梳
+        outcome: redeemed
+        summary: 白鹭赎回黑檀梳，留下 34 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 17
+      client: 白鹭
+      item: 黑檀梳
+      price: 34
+      summary: 白鹭赎回黑檀梳。
+  - id: report_17
+    label: 把白鹭和黑檀梳的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_17 == 0
+    - world.night >= 17
+    - world.night <= 19
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_17
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_bai_lu
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 白鹭和黑檀梳的事进了港务局的记录。
+      data:
+        case: 17
+        client: 白鹭
+        item: 黑檀梳
+        outcome: reported
+        summary: 白鹭和黑檀梳的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 17
+      client: 白鹭
+      item: 黑檀梳
+      summary: 举报白鹭的黑檀梳。
+  - id: pawn_18
+    label: 先付 26 枚金币，收下罗七的鸦羽面具。
+    location: pawnshop
+    requires:
+    - world.case_18 == 0
+    - world.night >= 18
+    - world.night <= 20
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 26
+    costs:
+      reserve:
+        coin: 26
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: raven_mask
+      quantity: 1
+    - type: world_property_delta
+      property: case_18
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下罗七的鸦羽面具，把 26 枚金币推过柜台。
+      data:
+        case: 18
+        client: 罗七
+        item: 鸦羽面具
+    event_type: case.pawned
+    event_data:
+      case: 18
+      client: 罗七
+      item: 鸦羽面具
+      price: 26
+      summary: 收下罗七的鸦羽面具。
+  - id: return_18
+    label: 把鸦羽面具还给罗七，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_18 == 0
+    - world.night >= 18
+    - world.night <= 20
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_18
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_luo_qi
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 罗七把鸦羽面具抱了回去；你没有收当金。
+      data:
+        case: 18
+        client: 罗七
+        item: 鸦羽面具
+        outcome: returned
+        summary: 罗七把鸦羽面具抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 18
+      client: 罗七
+      item: 鸦羽面具
+      summary: 归还鸦羽面具给罗七。
+  - id: sell_low_18
+    label: 把鸦羽面具低价转给收藏家，换 42 枚金币。
+    location: collector_salon
+    requires:
+    - world.case_18 == 1
+    - world.night_actions >= 1
+    - actor.inventory.raven_mask >= 1
+    costs:
+      reserve:
+        raven_mask: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_18
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 42
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 鸦羽面具低价转给了收藏家，换回 42 枚金币。
+      data:
+        case: 18
+        client: 罗七
+        item: 鸦羽面具
+        outcome: sold_low
+        summary: 鸦羽面具低价转给了收藏家，换回 42 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 18
+      client: 罗七
+      item: 鸦羽面具
+      faction: collector_circle
+      price: 42
+      summary: 低价卖出鸦羽面具。
+  - id: sell_high_18
+    label: 按鉴定价把鸦羽面具卖给收藏家，换 68 枚金币。
+    location: collector_salon
+    requires:
+    - world.case_18 == 1
+    - world.appraised_18 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.raven_mask >= 1
+    costs:
+      reserve:
+        raven_mask: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_18
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 68
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 鸦羽面具按鉴定价卖给收藏家，换回 68 枚金币。
+      data:
+        case: 18
+        client: 罗七
+        item: 鸦羽面具
+        outcome: sold_high
+        summary: 鸦羽面具按鉴定价卖给收藏家，换回 68 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 18
+      client: 罗七
+      item: 鸦羽面具
+      faction: collector_circle
+      price: 68
+      summary: 高价卖出鸦羽面具。
+  - id: redeem_18
+    label: 让罗七赎回鸦羽面具，收 38 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_18 == 1
+    - world.night >= 21
+    - world.night_actions >= 1
+    - actor.inventory.raven_mask >= 1
+    costs:
+      reserve:
+        raven_mask: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_18
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 38
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_luo_qi
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 罗七赎回鸦羽面具，留下 38 枚金币。
+      data:
+        case: 18
+        client: 罗七
+        item: 鸦羽面具
+        outcome: redeemed
+        summary: 罗七赎回鸦羽面具，留下 38 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 18
+      client: 罗七
+      item: 鸦羽面具
+      price: 38
+      summary: 罗七赎回鸦羽面具。
+  - id: report_18
+    label: 把罗七和鸦羽面具的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_18 == 0
+    - world.night >= 18
+    - world.night <= 20
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_18
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_luo_qi
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 罗七和鸦羽面具的事进了港务局的记录。
+      data:
+        case: 18
+        client: 罗七
+        item: 鸦羽面具
+        outcome: reported
+        summary: 罗七和鸦羽面具的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 18
+      client: 罗七
+      item: 鸦羽面具
+      summary: 举报罗七的鸦羽面具。
+  - id: pawn_19
+    label: 先付 24 枚金币，收下沈先生的空白当票。
+    location: pawnshop
+    requires:
+    - world.case_19 == 0
+    - world.night >= 19
+    - world.night <= 21
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 24
+    costs:
+      reserve:
+        coin: 24
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: blank_ticket
+      quantity: 1
+    - type: world_property_delta
+      property: case_19
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下沈先生的空白当票，把 24 枚金币推过柜台。
+      data:
+        case: 19
+        client: 沈先生
+        item: 空白当票
+    event_type: case.pawned
+    event_data:
+      case: 19
+      client: 沈先生
+      item: 空白当票
+      price: 24
+      summary: 收下沈先生的空白当票。
+  - id: return_19
+    label: 把空白当票还给沈先生，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_19 == 0
+    - world.night >= 19
+    - world.night <= 21
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_19
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_shen
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 沈先生把空白当票抱了回去；你没有收当金。
+      data:
+        case: 19
+        client: 沈先生
+        item: 空白当票
+        outcome: returned
+        summary: 沈先生把空白当票抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 19
+      client: 沈先生
+      item: 空白当票
+      summary: 归还空白当票给沈先生。
+  - id: sell_low_19
+    label: 把空白当票低价转给港务局，换 40 枚金币。
+    location: watchhouse
+    requires:
+    - world.case_19 == 1
+    - world.night_actions >= 1
+    - actor.inventory.blank_ticket >= 1
+    costs:
+      reserve:
+        blank_ticket: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_19
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 40
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 空白当票低价转给了港务局，换回 40 枚金币。
+      data:
+        case: 19
+        client: 沈先生
+        item: 空白当票
+        outcome: sold_low
+        summary: 空白当票低价转给了港务局，换回 40 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 19
+      client: 沈先生
+      item: 空白当票
+      faction: harbor_watch
+      price: 40
+      summary: 低价卖出空白当票。
+  - id: sell_high_19
+    label: 按鉴定价把空白当票卖给港务局，换 64 枚金币。
+    location: watchhouse
+    requires:
+    - world.case_19 == 1
+    - world.appraised_19 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.blank_ticket >= 1
+    costs:
+      reserve:
+        blank_ticket: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_19
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 64
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 空白当票按鉴定价卖给港务局，换回 64 枚金币。
+      data:
+        case: 19
+        client: 沈先生
+        item: 空白当票
+        outcome: sold_high
+        summary: 空白当票按鉴定价卖给港务局，换回 64 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 19
+      client: 沈先生
+      item: 空白当票
+      faction: harbor_watch
+      price: 64
+      summary: 高价卖出空白当票。
+  - id: redeem_19
+    label: 让沈先生赎回空白当票，收 36 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_19 == 1
+    - world.night >= 21
+    - world.night_actions >= 1
+    - actor.inventory.blank_ticket >= 1
+    costs:
+      reserve:
+        blank_ticket: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_19
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 36
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_shen
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 沈先生赎回空白当票，留下 36 枚金币。
+      data:
+        case: 19
+        client: 沈先生
+        item: 空白当票
+        outcome: redeemed
+        summary: 沈先生赎回空白当票，留下 36 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 19
+      client: 沈先生
+      item: 空白当票
+      price: 36
+      summary: 沈先生赎回空白当票。
+  - id: report_19
+    label: 把沈先生和空白当票的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_19 == 0
+    - world.night >= 19
+    - world.night <= 21
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_19
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_shen
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 沈先生和空白当票的事进了港务局的记录。
+      data:
+        case: 19
+        client: 沈先生
+        item: 空白当票
+        outcome: reported
+        summary: 沈先生和空白当票的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 19
+      client: 沈先生
+      item: 空白当票
+      summary: 举报沈先生的空白当票。
+  - id: pawn_20
+    label: 先付 26 枚金币，收下阿雾的封蜡信。
+    location: pawnshop
+    requires:
+    - world.case_20 == 0
+    - world.night >= 20
+    - world.night <= 21
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 26
+    costs:
+      reserve:
+        coin: 26
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: sealed_letter
+      quantity: 1
+    - type: world_property_delta
+      property: case_20
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下阿雾的封蜡信，把 26 枚金币推过柜台。
+      data:
+        case: 20
+        client: 阿雾
+        item: 封蜡信
+    event_type: case.pawned
+    event_data:
+      case: 20
+      client: 阿雾
+      item: 封蜡信
+      price: 26
+      summary: 收下阿雾的封蜡信。
+  - id: return_20
+    label: 把封蜡信还给阿雾，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_20 == 0
+    - world.night >= 20
+    - world.night <= 21
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_20
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_a_wu
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 阿雾把封蜡信抱了回去；你没有收当金。
+      data:
+        case: 20
+        client: 阿雾
+        item: 封蜡信
+        outcome: returned
+        summary: 阿雾把封蜡信抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 20
+      client: 阿雾
+      item: 封蜡信
+      summary: 归还封蜡信给阿雾。
+  - id: sell_low_20
+    label: 把封蜡信低价转给灰袍修会，换 42 枚金币。
+    location: pier
+    requires:
+    - world.case_20 == 1
+    - world.night_actions >= 1
+    - actor.inventory.sealed_letter >= 1
+    costs:
+      reserve:
+        sealed_letter: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_20
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 42
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 封蜡信低价转给了灰袍修会，换回 42 枚金币。
+      data:
+        case: 20
+        client: 阿雾
+        item: 封蜡信
+        outcome: sold_low
+        summary: 封蜡信低价转给了灰袍修会，换回 42 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 20
+      client: 阿雾
+      item: 封蜡信
+      faction: grey_order
+      price: 42
+      summary: 低价卖出封蜡信。
+  - id: sell_high_20
+    label: 按鉴定价把封蜡信卖给灰袍修会，换 68 枚金币。
+    location: pier
+    requires:
+    - world.case_20 == 1
+    - world.appraised_20 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.sealed_letter >= 1
+    costs:
+      reserve:
+        sealed_letter: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_20
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 68
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 封蜡信按鉴定价卖给灰袍修会，换回 68 枚金币。
+      data:
+        case: 20
+        client: 阿雾
+        item: 封蜡信
+        outcome: sold_high
+        summary: 封蜡信按鉴定价卖给灰袍修会，换回 68 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 20
+      client: 阿雾
+      item: 封蜡信
+      faction: grey_order
+      price: 68
+      summary: 高价卖出封蜡信。
+  - id: redeem_20
+    label: 让阿雾赎回封蜡信，收 38 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_20 == 1
+    - world.night >= 21
+    - world.night_actions >= 1
+    - actor.inventory.sealed_letter >= 1
+    costs:
+      reserve:
+        sealed_letter: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_20
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 38
+    - type: world_property_delta
+      property: chapel_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_a_wu
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 阿雾赎回封蜡信，留下 38 枚金币。
+      data:
+        case: 20
+        client: 阿雾
+        item: 封蜡信
+        outcome: redeemed
+        summary: 阿雾赎回封蜡信，留下 38 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 20
+      client: 阿雾
+      item: 封蜡信
+      price: 38
+      summary: 阿雾赎回封蜡信。
+  - id: report_20
+    label: 把阿雾和封蜡信的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_20 == 0
+    - world.night >= 20
+    - world.night <= 21
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_20
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_a_wu
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 阿雾和封蜡信的事进了港务局的记录。
+      data:
+        case: 20
+        client: 阿雾
+        item: 封蜡信
+        outcome: reported
+        summary: 阿雾和封蜡信的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 20
+      client: 阿雾
+      item: 封蜡信
+      summary: 举报阿雾的封蜡信。
+  - id: pawn_21
+    label: 先付 30 枚金币，收下无名客的铜钥匙。
+    location: pawnshop
+    requires:
+    - world.case_21 == 0
+    - world.night >= 21
+    - world.night <= 21
+    - world.night_actions >= 1
+    - actor.inventory.coin >= 30
+    costs:
+      reserve:
+        coin: 30
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: inventory_add
+      item: brass_key
+      quantity: 1
+    - type: world_property_delta
+      property: case_21
+      delta: 1
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.01
+      maximum: 1
+    - type: public_event
+      event: case.pawned
+      summary: 你收下无名客的铜钥匙，把 30 枚金币推过柜台。
+      data:
+        case: 21
+        client: 无名客
+        item: 铜钥匙
+    - type: public_event
+      event: key.pawned
+      summary: 铜钥匙进了当铺的抽屉。无名客没有回头。
+      data:
+        case: 21
+        item: 铜钥匙
+    event_type: case.pawned
+    event_data:
+      case: 21
+      client: 无名客
+      item: 铜钥匙
+      price: 30
+      summary: 收下无名客的铜钥匙。
+  - id: return_21
+    label: 把铜钥匙还给无名客，不收当金。
+    location: pawnshop
+    requires:
+    - world.case_21 == 0
+    - world.night >= 21
+    - world.night <= 21
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_21
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.04
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.02
+      minimum: 0
+    - type: world_property_delta
+      property: trust_stranger
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 无名客把铜钥匙抱了回去；你没有收当金。
+      data:
+        case: 21
+        client: 无名客
+        item: 铜钥匙
+        outcome: returned
+        summary: 无名客把铜钥匙抱了回去；你没有收当金。
+    event_type: case.returned
+    event_data:
+      case: 21
+      client: 无名客
+      item: 铜钥匙
+      summary: 归还铜钥匙给无名客。
+  - id: sell_low_21
+    label: 把铜钥匙低价转给收藏家，换 48 枚金币。
+    location: collector_salon
+    requires:
+    - world.case_21 == 1
+    - world.night_actions >= 1
+    - actor.inventory.brass_key >= 1
+    costs:
+      reserve:
+        brass_key: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_21
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 48
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.02
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.03
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 铜钥匙低价转给了收藏家，换回 48 枚金币。
+      data:
+        case: 21
+        client: 无名客
+        item: 铜钥匙
+        outcome: sold_low
+        summary: 铜钥匙低价转给了收藏家，换回 48 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 21
+      client: 无名客
+      item: 铜钥匙
+      faction: collector_circle
+      price: 48
+      summary: 低价卖出铜钥匙。
+  - id: sell_high_21
+    label: 按鉴定价把铜钥匙卖给收藏家，换 78 枚金币。
+    location: collector_salon
+    requires:
+    - world.case_21 == 1
+    - world.appraised_21 >= 1
+    - world.night_actions >= 1
+    - actor.inventory.brass_key >= 1
+    costs:
+      reserve:
+        brass_key: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_21
+      delta: 2
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 78
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.06
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: 0.05
+      maximum: 1
+    - type: public_event
+      event: case.resolved
+      summary: 铜钥匙按鉴定价卖给收藏家，换回 78 枚金币。
+      data:
+        case: 21
+        client: 无名客
+        item: 铜钥匙
+        outcome: sold_high
+        summary: 铜钥匙按鉴定价卖给收藏家，换回 78 枚金币。
+    event_type: case.sold
+    event_data:
+      case: 21
+      client: 无名客
+      item: 铜钥匙
+      faction: collector_circle
+      price: 78
+      summary: 高价卖出铜钥匙。
+  - id: redeem_21
+    label: 让无名客赎回铜钥匙，收 42 枚金币。
+    location: pawnshop
+    requires:
+    - world.case_21 == 1
+    - world.night >= 21
+    - world.night_actions >= 1
+    - actor.inventory.brass_key >= 1
+    costs:
+      reserve:
+        brass_key: 1
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_21
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: inventory_add
+      item: coin
+      quantity: 42
+    - type: world_property_delta
+      property: collector_rep
+      delta: 0.03
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.01
+      minimum: 0
+    - type: world_property_delta
+      property: trust_stranger
+      delta: 1
+      maximum: 3
+    - type: public_event
+      event: case.resolved
+      summary: 无名客赎回铜钥匙，留下 42 枚金币。
+      data:
+        case: 21
+        client: 无名客
+        item: 铜钥匙
+        outcome: redeemed
+        summary: 无名客赎回铜钥匙，留下 42 枚金币。
+    event_type: case.redeemed
+    event_data:
+      case: 21
+      client: 无名客
+      item: 铜钥匙
+      price: 42
+      summary: 无名客赎回铜钥匙。
+  - id: report_21
+    label: 把无名客和铜钥匙的事报给港务局。
+    location: watchhouse
+    requires:
+    - world.case_21 == 0
+    - world.night >= 21
+    - world.night <= 21
+    - world.night_actions >= 1
+    costs:
+      reserve: {}
+      per_minute: {}
+      on_success: {}
+      on_failure: {}
+      refund: {}
+    effects:
+    - type: world_property_delta
+      property: case_21
+      delta: 4
+      maximum: 9
+    - type: world_property_delta
+      property: night_actions
+      delta: -1
+      minimum: 0
+    - type: world_property_delta
+      property: watch_rep
+      delta: 0.08
+      maximum: 1
+    - type: world_property_delta
+      property: suspicion
+      delta: -0.05
+      minimum: 0
+    - type: world_property_delta
+      property: trust_stranger
+      delta: -1
+      minimum: 0
+    - type: public_event
+      event: case.resolved
+      summary: 无名客和铜钥匙的事进了港务局的记录。
+      data:
+        case: 21
+        client: 无名客
+        item: 铜钥匙
+        outcome: reported
+        summary: 无名客和铜钥匙的事进了港务局的记录。
+    event_type: case.reported
+    event_data:
+      case: 21
+      client: 无名客
+      item: 铜钥匙
+      summary: 举报无名客的铜钥匙。
+progression:
+- id: first_case
+  label: 第一夜：柜台前的人
+  summary: 七位客人已经带着东西来了。先听一个人说完，再决定收不收，或者让他把东西带回去。
+  priority: 0.99
+  audience:
+  - player
+  visible_when: world.night <= 3
+  target_behaviors:
+  - trade_pawnshop
+  - appraise_item
+  support_behaviors: []
+  complete_when:
+    event_type: case.resolved
+    count: 1
+- id: first_debt
+  label: 第一笔债
+  summary: 第 7 夜前把 60 枚金币放到港务局的账台上；别让第一张催缴单变成违约记录。
+  priority: 0.96
+  audience:
+  - player
+  visible_when: world.night >= 4 and world.debt_stage < 1
+  target_behaviors:
+  - pay_debt_1
+  support_behaviors:
+  - trade_pawnshop
+  complete_when:
+    event_type: debt.paid
+    count: 1
+- id: faction_pact
+  label: 三方都在等
+  summary: 第 10 夜后选一个阵营签约；港务局、修会、收藏家，你只能欠一个人情。
+  priority: 0.94
+  audience:
+  - player
+  visible_when: world.night >= 8 and world.faction_pact == 0
+  target_behaviors:
+  - pact_watch
+  - pact_chapel
+  - pact_collector
+  support_behaviors:
+  - trade_offer
+  complete_when:
+    event_type: faction.pact
+    count: 1
+- id: aunt_ledger
+  label: 缺页账本
+  summary: 收集 7 条线索，翻开姑妈留下的缺页账本；最后一页会告诉你钥匙是做什么的。
+  priority: 0.93
+  audience:
+  - player
+  visible_when: world.clues >= 3 and world.aunt_ledger_read < 1
+  target_behaviors:
+  - appraise_item
+  - read_aunt_ledger
+  support_behaviors:
+  - trade_pawnshop
+  complete_when:
+    event_type: aunt.ledger_read
+    count: 1
+- id: final_audit
+  label: 第 21 夜
+  summary: 还清最后一笔债，决定钥匙和海门。审计官已经在门外。
+  priority: 0.99
+  audience:
+  - player
+  visible_when: world.night >= 19
+  target_behaviors:
+  - pay_debt_3
+  - open_sea_gate
+  - finish_campaign
+  support_behaviors:
+  - trade_pawnshop
+  complete_when:
+    event_type: campaign.closed
+    count: 1

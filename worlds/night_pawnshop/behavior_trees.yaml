@@ -1,0 +1,652 @@
+behavior_trees:
+- id: travel
+  agent_label: 前往
+  summary: 沿已知路线前往一个地点
+  description: 在雾港的石板路上换一个地点。
+  entry_conditions:
+  - route.known
+  - actor.mobile
+  estimated_minutes: 10
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: context.location_id
+  success_results: &id001
+  - completed
+  failure_results: &id002
+  - action_failed
+  - interrupted
+  goal_tags:
+  - travel
+  drive_tags:
+  - autonomy
+- id: appraise_item
+  agent_label: 鉴定物品
+  summary: 在账房鉴定一件东西
+  description: 把东西放到鉴定镜下，读出刻字、纸边和来路。
+  entry_conditions:
+  - actor.alive
+  - location.tag.appraisal
+  estimated_minutes: 20
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: appraise_item
+    parameters:
+      entry_id: context.entry_id
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - public
+  - investigation
+  drive_tags:
+  - purpose
+  catalog: appraise
+  agent_parameters:
+    entry_id:
+      type: string
+      required: true
+      max_length: 120
+      description: 选择一件当前可鉴定的东西。
+- id: trade_pawnshop
+  agent_label: 当铺柜台
+  summary: 在柜台收当、归还或赎回
+  description: 在柜台前处理客人的东西：收当、归还、赎回。
+  entry_conditions:
+  - actor.alive
+  - location.tag.pawnshop
+  estimated_minutes: 5
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: trade_offer
+    parameters:
+      entry_id: context.entry_id
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - trade
+  drive_tags:
+  - purpose
+  catalog: trade_offers
+  agent_parameters:
+    entry_id:
+      type: string
+      required: true
+      max_length: 160
+      description: 选择一个当前可见的柜台报价。
+- id: trade_watch
+  agent_label: 港务局交易
+  summary: 在港务局卖出或举报
+  description: 把东西交给港务局，或把人和东西一起报上去。
+  entry_conditions:
+  - actor.alive
+  - location.tag.watch
+  estimated_minutes: 5
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: trade_offer
+    parameters:
+      entry_id: context.entry_id
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - trade
+  drive_tags:
+  - purpose
+  catalog: trade_offers
+  agent_parameters:
+    entry_id:
+      type: string
+      required: true
+      max_length: 160
+      description: 选择一个当前可见的港务局报价。
+- id: trade_chapel
+  agent_label: 修会交易
+  summary: 在修会卖出或归还
+  description: 把东西交给灰袍修会，换金币或他们的信任。
+  entry_conditions:
+  - actor.alive
+  - location.tag.chapel
+  estimated_minutes: 5
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: trade_offer
+    parameters:
+      entry_id: context.entry_id
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - trade
+  drive_tags:
+  - purpose
+  catalog: trade_offers
+  agent_parameters:
+    entry_id:
+      type: string
+      required: true
+      max_length: 160
+      description: 选择一个当前可见的修会报价。
+- id: trade_collector
+  agent_label: 收藏家交易
+  summary: 在沙龙卖出或谈价
+  description: 把东西卖给收藏家，换更高的价钱和更高的怀疑。
+  entry_conditions:
+  - actor.alive
+  - location.tag.collector
+  estimated_minutes: 5
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: trade_offer
+    parameters:
+      entry_id: context.entry_id
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - trade
+  drive_tags:
+  - purpose
+  catalog: trade_offers
+  agent_parameters:
+    entry_id:
+      type: string
+      required: true
+      max_length: 160
+      description: 选择一个当前可见的收藏家报价。
+- id: pay_debt_1
+  agent_label: 还第一笔债
+  summary: 把 60 枚金币交给港务局
+  description: 第一笔债在第 7 夜到期；还清才能谈以后。
+  entry_conditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.night >= 7
+  - world.debt_stage == 0
+  - actor.inventory.coin >= 60
+  estimated_minutes: 30
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: pay_debt_1
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - decision
+  drive_tags:
+  - purpose
+- id: pay_debt_2
+  agent_label: 还第二笔债
+  summary: 把 90 枚金币交给港务局
+  description: 第二笔债在第 14 夜到期；还清才能撑到审计。
+  entry_conditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.night >= 14
+  - world.debt_stage == 1
+  - actor.inventory.coin >= 90
+  estimated_minutes: 30
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: pay_debt_2
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - decision
+  drive_tags:
+  - purpose
+- id: pay_debt_3
+  agent_label: 还最后一笔债
+  summary: 把 140 枚金币交给港务局
+  description: 最后一笔债在第 21 夜到期；还清才有资格选择结局。
+  entry_conditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.night >= 21
+  - world.debt_stage == 2
+  - actor.inventory.coin >= 140
+  estimated_minutes: 30
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: pay_debt_3
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - decision
+  drive_tags:
+  - purpose
+- id: upgrade_ledger_1
+  agent_label: 换厚账本
+  summary: 花 40 金币，每夜多一个行动
+  description: 账本越厚，能同时处理的客人越多。
+  entry_conditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.ledger_level == 0
+  - actor.inventory.coin >= 40
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: upgrade_ledger_1
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - craft
+  drive_tags:
+  - purpose
+- id: upgrade_ledger_2
+  agent_label: 换活页账本
+  summary: 花 80 金币，每夜再多一个行动
+  description: 活页账本能同时夹住更多当票，也更容易被抽查。
+  entry_conditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.ledger_level == 1
+  - actor.inventory.coin >= 80
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: upgrade_ledger_2
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - craft
+  drive_tags:
+  - purpose
+- id: upgrade_appraisal_2
+  agent_label: 装黄铜放大镜
+  summary: 花 60 金币，鉴定台升级
+  description: 纸纤维里的旧水印，只有放大镜看得清。
+  entry_conditions:
+  - actor.alive
+  - location.tag.appraisal
+  - world.appraisal_level == 1
+  - actor.inventory.coin >= 60
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: upgrade_appraisal_2
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - craft
+  drive_tags:
+  - purpose
+- id: upgrade_safe_1
+  agent_label: 加一层暗格
+  summary: 花 35 金币，减少搜查损失
+  description: 柜台下多一层暗格，搜查时至少能保住时间。
+  entry_conditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.safe_level == 0
+  - actor.inventory.coin >= 35
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: upgrade_safe_1
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - craft
+  drive_tags:
+  - purpose
+- id: upgrade_safe_2
+  agent_label: 扩墙里暗格
+  summary: 花 70 金币，搜查不再损失时间
+  description: 墙里的暗格足够放下整本账。
+  entry_conditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.safe_level == 1
+  - actor.inventory.coin >= 70
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: upgrade_safe_2
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - craft
+  drive_tags:
+  - purpose
+- id: close_night_basic
+  agent_label: 关店，等天亮
+  summary: 结束今晚，基本账本恢复 3 个行动
+  description: 灯灭之后，新案子会在明天出现；旧案子会过期。
+  entry_conditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.night < 21
+  - world.ledger_level == 0
+  - world.campaign_over < 1
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: close_night_basic
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - decision
+  drive_tags:
+  - autonomy
+- id: close_night_ledger1
+  agent_label: 关店，等天亮
+  summary: 结束今晚，厚账本恢复 4 个行动
+  description: 灯灭之后，新案子会在明天出现；旧案子会过期。
+  entry_conditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.night < 21
+  - world.ledger_level == 1
+  - world.campaign_over < 1
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: close_night_ledger1
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - decision
+  drive_tags:
+  - autonomy
+- id: close_night_ledger2
+  agent_label: 关店，等天亮
+  summary: 结束今晚，活页账本恢复 5 个行动
+  description: 灯灭之后，新案子会在明天出现；旧案子会过期。
+  entry_conditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.night < 21
+  - world.ledger_level == 2
+  - world.campaign_over < 1
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: close_night_ledger2
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - decision
+  drive_tags:
+  - autonomy
+- id: bribe_watch
+  agent_label: 打点港务局
+  summary: 花 30 金币，降低怀疑
+  description: 值夜书吏收钱办事；但一晚只能打点一次。
+  entry_conditions:
+  - actor.alive
+  - location.tag.watch
+  - world.bribe_used < 1
+  - world.suspicion >= 0.2
+  - actor.inventory.coin >= 30
+  estimated_minutes: 20
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: bribe_watch
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - decision
+  drive_tags:
+  - purpose
+- id: odd_job
+  agent_label: 在夜市做短工
+  summary: 花 1 个行动换 6 金币
+  description: 当铺没生意时，夜市还有搬货、修锁和写信的活。
+  entry_conditions:
+  - actor.alive
+  - location.tag.work
+  - world.night_actions >= 1
+  estimated_minutes: 120
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: odd_job
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - trade
+  drive_tags:
+  - autonomy
+- id: pact_watch
+  agent_label: 和港务局签约
+  summary: 第 10 夜后三选一
+  description: 用一点自由换一点喘息；港务局会记住这份人情。
+  entry_conditions:
+  - actor.alive
+  - location.tag.watch
+  - world.night >= 10
+  - world.faction_pact == 0
+  - world.watch_rep >= 0.2
+  estimated_minutes: 30
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: pact_watch
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - decision
+  drive_tags:
+  - purpose
+- id: pact_chapel
+  agent_label: 和灰袍修会签约
+  summary: 第 10 夜后三选一
+  description: 把后门借给病人；修会会记住这盏灯。
+  entry_conditions:
+  - actor.alive
+  - location.tag.chapel
+  - world.night >= 10
+  - world.faction_pact == 0
+  - world.chapel_rep >= 0.2
+  estimated_minutes: 30
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: pact_chapel
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - decision
+  drive_tags:
+  - purpose
+- id: pact_collector
+  agent_label: 和收藏家签约
+  summary: 第 10 夜后三选一
+  description: 收下银票，替他们留一件“有门”的东西。
+  entry_conditions:
+  - actor.alive
+  - location.tag.collector
+  - world.night >= 10
+  - world.faction_pact == 0
+  - world.collector_rep >= 0.2
+  estimated_minutes: 30
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: pact_collector
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - decision
+  drive_tags:
+  - purpose
+- id: read_aunt_ledger
+  agent_label: 读姑妈的账本
+  summary: 7 条线索后读缺页账本
+  description: 缺页账本里藏着姑妈最后一句交代。
+  entry_conditions:
+  - actor.alive
+  - location.tag.appraisal
+  - world.clues >= 7
+  - world.aunt_ledger_read < 1
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: read_aunt_ledger
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - public
+  drive_tags:
+  - purpose
+- id: open_sea_gate
+  agent_label: 打开海门
+  summary: 第 21 夜，持钥匙和 10 条线索
+  description: 铜钥匙不是用来锁门的，是用来放人走的。
+  entry_conditions:
+  - actor.alive
+  - location.tag.pier
+  - world.night >= 21
+  - world.clues >= 10
+  - world.aunt_ledger_read >= 1
+  - world.sea_gate_open < 1
+  - actor.inventory.brass_key >= 1
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: open_sea_gate
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - decision
+  drive_tags:
+  - purpose
+- id: finish_campaign
+  agent_label: 关店，迎接审计
+  summary: 结束这一季，进入章节结局
+  description: 把账本、钥匙和这一夜的灯一起摆上柜台。
+  entry_conditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.night >= 21
+  - world.campaign_over < 1
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: finish_campaign
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - decision
+  drive_tags:
+  - purpose
+- id: begin_next_season
+  agent_label: 开始下一季
+  summary: 保留当铺、客人和账本，开始新一季
+  description: 审计只是章节，不是世界末日。新一季的债务会重新压在柜台上。
+  entry_conditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.campaign_over >= 1
+  - world.season < 99
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: begin_next_season
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - decision
+  drive_tags:
+  - purpose
+- id: rest_at_shop
+  agent_label: 在柜台后休息
+  summary: 恢复精力
+  description: 靠一会儿，听外面的雨。
+  entry_conditions:
+  - actor.alive
+  - location.tag.pawnshop
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: rest_at_shop
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - recovery
+  drive_tags:
+  - safety
+- id: tea_at_stall
+  agent_label: 在夜市喝茶
+  summary: 花 2 金币恢复水分和饱食
+  description: 热茶和咸饼是雾港夜里最便宜的一点安慰。
+  entry_conditions:
+  - actor.alive
+  - location.tag.food
+  - actor.inventory.coin >= 2
+  estimated_minutes: 15
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: tea_at_stall
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - recovery
+  - food
+  drive_tags:
+  - safety
+- id: linger_at_counter
+  agent_label: 在柜台前等候
+  summary: 坐在当铺长凳上等下一个客人
+  description: 客人抱着东西，安静地等柜台后的灯抬起来。
+  entry_conditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - actor.role == "裁缝" or actor.role == "码头工" or actor.role == "修会医士" or actor.role == "走私掮客" or actor.role == "失势书吏" or actor.role == "守塔人之女" or actor.role == "蒙面收藏家"
+  estimated_minutes: 120
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: linger
+    parameters: {}
+  success_results: *id001
+  failure_results: *id002
+  goal_tags:
+  - social
+  drive_tags:
+  - belonging

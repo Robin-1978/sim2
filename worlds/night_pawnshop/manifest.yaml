@@ -1,0 +1,26 @@
+config_version: night-pawnshop-0.1
+world_id: night_pawnshop
+order: 2
+name: 长夜当铺
+time_unit: minute
+start_world_minute: 0
+random_seed: 21117
+files:
+- setting.yaml
+- world_state.yaml
+- locations.yaml
+- objects.yaml
+- factions.yaml
+- capabilities.yaml
+- attributes.yaml
+- recipes.yaml
+- agents.yaml
+- actions.yaml
+- behavior_trees.yaml
+- rules.yaml
+- opening_events.yaml
+- player_template.yaml
+- prompts/world.yaml
+- prompts/agent.yaml
+- evolution.yaml
+- story.yaml

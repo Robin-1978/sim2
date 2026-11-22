@@ -194,6 +194,15 @@ class WorldTickService(PlatformService):
             if abs(after - before) > 1e-12:
                 self.set_world_property(str(key), after)
             return {"type": effect_type, "property": str(key), "before": before, "after": after}
+        if effect_type == "world_property_set":
+            properties = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
+            key = definition.get("world_property") or definition.get("property") or definition.get("need")
+            if not key:
+                return None
+            before = properties.get(str(key))
+            value = definition.get("value")
+            self.set_world_property(str(key), value)
+            return {"type": effect_type, "property": str(key), "before": before, "after": value}
         if effect_type == "world_resource_delta":
             resource_ref = definition.get("resource_id") or definition.get("resource")
             resource_id = str(resource_ref or "")

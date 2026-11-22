@@ -264,20 +264,49 @@ def _onboarding_step(platform: Platform, agent: dict[str, Any]) -> dict[str, Any
     return None
 
 
+def _item_entities(platform: Platform) -> dict[str, dict[str, Any]]:
+    """Return God-created item entities keyed by id.
+
+    A living world may grow a new item at runtime without editing the package's
+    static ``item_labels`` map.  The entity is the source of truth for its
+    visible name and authored uses, so the player inventory stays readable.
+    """
+
+    result: dict[str, dict[str, Any]] = {}
+    for entity_type in ("item", "artifact", "relic"):
+        for summary in platform.store.repositories.entities.entities_of_type(entity_type):
+            entity_id = str(summary.get("id") or "").strip()
+            if not entity_id:
+                continue
+            try:
+                result[entity_id] = platform.store.repositories.entities.get_entity(entity_id)
+            except KeyError:
+                result[entity_id] = summary
+    return result
+
+
 def _player_item_uses(platform: Platform) -> dict[str, list[str]]:
     """Return world-authored item purposes for the inventory sheet."""
 
     rules = platform.store.repositories.metadata.get("rules", {}) or {}
     configured = rules.get("item_uses") if isinstance(rules, dict) else None
-    if not isinstance(configured, dict):
-        return {}
     result: dict[str, list[str]] = {}
-    for key, values in configured.items():
-        if isinstance(values, str):
-            values = [values]
-        uses = [str(item) for item in (values or []) if str(item).strip()]
-        if uses:
-            result[str(key)] = uses
+    if isinstance(configured, dict):
+        for key, values in configured.items():
+            if isinstance(values, str):
+                values = [values]
+            uses = [str(item) for item in (values or []) if str(item).strip()]
+            if uses:
+                result[str(key)] = uses
+    for entity_id, entity in _item_entities(platform).items():
+        state = entity.get("initial_state") if isinstance(entity.get("initial_state"), dict) else {}
+        uses = state.get("uses")
+        if isinstance(uses, str):
+            uses = [uses]
+        if isinstance(uses, list):
+            cleaned = [str(item) for item in uses if str(item).strip()]
+            if cleaned:
+                result[entity_id] = cleaned
     return result
 
 
@@ -568,6 +597,10 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         for key, value in (rules.get("item_labels") or {}).items()
         if str(key) and str(value)
     }
+    for entity_id, entity in _item_entities(platform).items():
+        name = str(entity.get("name") or "").strip()
+        if name:
+            item_labels[entity_id] = name
     world_property_labels = {
         str(key): dict(value)
         for key, value in (rules.get("world_property_labels") or {}).items()

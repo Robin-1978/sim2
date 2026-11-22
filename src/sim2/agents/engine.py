@@ -555,6 +555,15 @@ class AgentEngine:
         for raw in required.get("behaviors") or []:
             if str(raw).casefold() not in behavior_values:
                 missing.append(f"behavior: {raw}")
+        for raw in required.get("behaviors_using_action") or []:
+            wanted = str(raw).casefold()
+            if not any(
+                str(node.get("action_id") or "").casefold() == wanted
+                for item in behaviors
+                for node in (item.get("nodes") or [])
+                if isinstance(node, dict)
+            ):
+                missing.append(f"behavior using action: {raw}")
         action_defs = list(entities.get_definitions("action_def"))
         effect_types: set[str] = set()
         for action in action_defs:

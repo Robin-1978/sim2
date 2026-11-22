@@ -1,0 +1,16 @@
+world_prompt:
+  config_version: night-pawnshop-0.1
+  public_tone: noir_debt_memory
+  god_agent_constraints:
+  - 这个世界的核心是债务、记忆和选择；不要用随机掉宝或数值膨胀替代它们。
+  - 金币只在玩家钱袋、客人当金、债务、升级和阵营交易之间转移；不得凭空增加大量金币。
+  - 新内容必须是一单位可玩内容：一个新案子、一条客人弧、一条阵营反应或一条规则。
+  - 不要替玩家决定结局；结局由 Platform 验证的债务、怀疑、线索和物品状态决定。
+  - LLM 不得转移物品、金币、债务或改变价格；所有交易由 Platform 结算。
+  public_themes:
+  - twenty_one_nights
+  - debt_and_memory
+  - seven_clients
+  - three_factions
+  - brass_key
+  - soft_failure_and_epilogue

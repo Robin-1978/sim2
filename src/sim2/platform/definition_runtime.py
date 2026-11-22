@@ -247,12 +247,80 @@ class DefinitionRuntimeMixin:
             self._refresh_attribute_dependencies()
         return result
 
+    def _canonicalize_visible_item_references(self, definition_type: str, definition: dict[str, Any]) -> dict[str, Any]:
+        """Replace visible item names in LLM-authored behavior references.
+
+        A generated case often names the item ("封蜡灯") while the inventory
+        key is the entity id.  Canonicalize the entry condition and node
+        parameters at registration so the behavior becomes executable when the
+        item is actually held, without teaching every condition site about
+        every generated item.
+        """
+
+        if definition_type != "behavior":
+            return definition
+        aliases: dict[str, str] = {}
+        for entity_type in ("item", "artifact", "relic", "object"):
+            for summary in self.store.repositories.entities.entities_of_type(entity_type):
+                name = str(summary.get("name") or "").strip()
+                entity_id = str(summary.get("id") or "").strip()
+                if name and entity_id:
+                    aliases["".join(name.casefold().split())] = entity_id
+        if not aliases:
+            return definition
+        import re
+
+        result = copy.deepcopy(definition)
+
+        def replace_condition(text: str) -> str:
+            def replace(match: re.Match[str]) -> str:
+                prefix, name = match.group(1), match.group(2)
+                normalized = "".join(name.casefold().split())
+                canonical = aliases.get(normalized)
+                if not canonical:
+                    candidates = {
+                        entity_id for entity_name, entity_id in aliases.items()
+                        if normalized and (normalized in entity_name or entity_name in normalized)
+                    }
+                    canonical = next(iter(candidates)) if len(candidates) == 1 else None
+                return f"{prefix}.{canonical}" if canonical else match.group(0)
+            return re.sub(r"(actor\.inventory|target\.inventory)\.([^\s()=<>!]+)", replace, str(text))
+
+        result["entry_conditions"] = [replace_condition(item) for item in (result.get("entry_conditions") or [])]
+
+        def replace_parameters(node: Any) -> None:
+            if isinstance(node, dict):
+                parameters = node.get("parameters")
+                if isinstance(parameters, dict):
+                    for key in ("item_id", "target_item", "source_item", "inventory_item"):
+                        value = parameters.get(key)
+                        if isinstance(value, str):
+                            normalized = "".join(value.casefold().split())
+                            canonical = aliases.get(normalized)
+                            if not canonical:
+                                candidates = {
+                                    entity_id for entity_name, entity_id in aliases.items()
+                                    if normalized and (normalized in entity_name or entity_name in normalized)
+                                }
+                                canonical = next(iter(candidates)) if len(candidates) == 1 else None
+                            if canonical:
+                                parameters[key] = canonical
+                for value in node.values():
+                    replace_parameters(value)
+            elif isinstance(node, list):
+                for item in node:
+                    replace_parameters(item)
+
+        replace_parameters(result.get("nodes") or [])
+        return result
+
     def _plan_definition(self, actor_id: str, proposal: dict[str, Any]) -> DefinitionPlan:
         """Validate a proposal against the instance and resolve the characters it names."""
 
         definition_type = str(proposal.get("definition_type") or "").casefold()
         name = str(proposal.get("name") or "").strip()
         raw_definition = proposal.get("definition") if isinstance(proposal.get("definition"), dict) else {}
+        raw_definition = self._canonicalize_visible_item_references(definition_type, raw_definition)
         definition, errors = self._validate_definition_proposal(definition_type, name, raw_definition)
         plan = DefinitionPlan(definition_type, name, definition, errors)
         if actor_id != "god":
@@ -515,8 +583,16 @@ class DefinitionRuntimeMixin:
         message_prefix: str,
         message_suffix: str,
     ) -> None:
-        """Raise unless the behavior is in every assigned character's executable catalog."""
+        """Raise unless the behavior is in every assigned character's executable catalog.
 
+        A living world may register a Behavior whose entry conditions become
+        true after a later player decision.  ``deferred: true`` keeps that
+        future stage out of the current executable catalog while preserving
+        the normal executable-catalog check for every immediate Behavior.
+        """
+
+        if definition.get("deferred") is True:
+            return
         unavailable = []
         for agent_id, visible_name in agents:
             candidate = self.view.build_decision_view(agent_id, role="agent_decision", include_diagnostics=True)

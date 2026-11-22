@@ -1,0 +1,101 @@
+name: 长夜当铺
+premise: 闭港审计前的二十一夜，你继承了姑妈留下的一盏灯当铺。七位客人会带着各自的东西回来；三笔债会在第七、十四、二十一夜到期。
+genre: 三幕叙事经营 / 债务与记忆
+locale: zh-CN
+ui:
+  crisis_metrics:
+  - property: night
+    label: 第几夜
+    format: amount
+    max: 21
+    danger_below: 19
+    warning_below: 15
+    hint: 第 21 夜审计
+  - property: debt_owed
+    label: 剩余债务
+    format: amount
+    max: 290
+    danger_below: 140
+    warning_below: 230
+    hint: 第 7/14/21 夜到期
+  - property: suspicion
+    label: 港务局怀疑
+    format: percent
+    danger_below: 0.6
+    warning_below: 0.35
+    hint: 60% 会引来搜查
+  - property: night_actions
+    label: 今晚行动
+    format: amount
+    max: 5
+    danger_below: 1
+    warning_below: 2
+    hint: 用完就关店
+  tagline: 二十一夜，三笔债，一间当铺。雾港只认还得起账的人。
+  cast_order:
+  - su_wan
+  - gu_chen
+  - bai_lu
+  - luo_qi
+  - shen
+  - a_wu
+  - stranger
+  event_kinds:
+    economy:
+    - trade.
+    - case.sold
+    - case.pawned
+    - case.redeemed
+    debt:
+    - debt.
+    - watch.
+    story:
+    - story.
+    - case.returned
+    - case.reported
+    - faction.
+    investigation:
+    - case.appraised
+    - case.expired
+    - aunt.
+    - sea_gate.
+    night:
+    - night.
+    - act.
+  event_titles:
+    economy: 当铺与金币
+    debt: 债务与港务局
+    story: 客人与阵营
+    investigation: 鉴定与线索
+    night: 夜色与幕次
+  pulse_prefixes:
+  - case.
+  - trade.
+  - debt.
+  - faction.
+  - watch.
+ui_text:
+  travel_choice: 前往 {name}
+  travel_summary: 沿雾港的石板路前往 {name}。
+  travel_purpose: 换一个地点继续当铺的生意
+  travel_time: 约 {minutes} 分钟
+  travel_impact: 抵达目的地
+  world_label: 雾港城
+calendar:
+  minutes_per_day: 1440
+  day_phases:
+  - id: night
+    start_minute: 0
+    end_minute: 300
+  - id: dawn
+    start_minute: 300
+    end_minute: 480
+  - id: workday
+    start_minute: 480
+    end_minute: 1080
+  - id: evening
+    start_minute: 1080
+    end_minute: 1320
+  - id: late
+    start_minute: 1320
+    end_minute: 1440

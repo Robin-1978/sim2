@@ -1,0 +1,92 @@
+entry_location_id: pawnshop
+controller: manual
+capabilities:
+  trade: 0.45
+  conversation: 0.45
+  appraisal: 0.35
+inventory:
+  coin: 40
+initial_bt_ids:
+- travel
+- appraise_item
+- trade_pawnshop
+- trade_watch
+- trade_chapel
+- trade_collector
+- pay_debt_1
+- pay_debt_2
+- pay_debt_3
+- upgrade_ledger_1
+- upgrade_ledger_2
+- upgrade_appraisal_2
+- upgrade_safe_1
+- upgrade_safe_2
+- close_night_basic
+- close_night_ledger1
+- close_night_ledger2
+- bribe_watch
+- odd_job
+- pact_watch
+- pact_chapel
+- pact_collector
+- read_aunt_ledger
+- open_sea_gate
+- finish_campaign
+- begin_next_season
+- rest_at_shop
+- tea_at_stall
+origins:
+- id: old_hand
+  name: 旧货商
+  description: 你在别的港口做过当铺伙计，知道一件东西的价钱和它的故事往往不是一回事。
+  starting_goal: 用 55 枚金币撑过第一周，先还上第一笔 60 枚金币的债。
+  traits:
+    会看货: 0.8
+    脸皮厚: 0.7
+  capabilities:
+    trade: 0.6
+    conversation: 0.45
+    appraisal: 0.4
+  inventory:
+    coin: 55
+  knowledge_seed:
+  - 旧货商的经验：收当价越低，客人赎回时越会说你好；但账要算清。
+  opening:
+    event_type: origin.old_hand
+    summary: 你以旧货商的身份接手一盏灯当铺。钱袋里有 55 枚金币，柜台前已经坐了七个人。
+- id: watchmaker
+  name: 修表匠
+  description: 你修过雾港大多数的钟表，知道时间停在什么时候，往往比时间走了多久更重要。
+  starting_goal: 先用鉴定台看清第一件东西的来路，再决定收当还是归还。
+  traits:
+    手稳: 0.85
+    认死理: 0.65
+  capabilities:
+    trade: 0.4
+    conversation: 0.35
+    appraisal: 0.65
+  inventory:
+    coin: 35
+  knowledge_seed:
+  - 修表匠的经验：铜钥匙的齿纹不像门钥匙，更像旧灯塔的灯芯锁。
+  opening:
+    event_type: origin.watchmaker
+    summary: 你以修表匠的身份回到雾港。钱袋里有 35 枚金币，账房的鉴定镜蒙着一层灰。
+- id: dock_fixer
+  name: 码头掮客
+  description: 你在码头替人摆平过太多麻烦，知道港务局的签字、修会的药和收藏家的银票各自值多少。
+  starting_goal: 先和港务局或修会搭上线，再决定这间当铺替谁说话。
+  traits:
+    会说话: 0.82
+    记仇: 0.55
+  capabilities:
+    trade: 0.5
+    conversation: 0.65
+    appraisal: 0.35
+  inventory:
+    coin: 45
+  knowledge_seed:
+  - 码头掮客的经验：港务局的搜查令要副局长签字；沈先生知道那份签名。
+  opening:
+    event_type: origin.dock_fixer
+    summary: 你以码头掮客的身份接手当铺。钱袋里有 45 枚金币，港务局和修会都已经知道这盏灯亮了。

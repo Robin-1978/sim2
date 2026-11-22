@@ -101,6 +101,9 @@ class ActionAvailabilityMixin:
             "recent_event_types": self._recent_event_types(),
         }
         context.update(configured_context_values(self.store.repositories.metadata.get("rules", {}) or {}, agent))
+        for key, value in parameters.items():
+            if isinstance(value, (str, int, float)) and not isinstance(value, bool):
+                context.setdefault(str(key), value)
         for effect in action.get("effects", []) or []:
             if not isinstance(effect, dict) or str(effect.get("type") or effect.get("op") or "") != "institution_allocation":
                 continue

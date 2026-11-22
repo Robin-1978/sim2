@@ -48,14 +48,14 @@ def propose_definition_schema() -> dict[str, Any]:
         },
         "duration": {
             "type": "object",
-            "description": "Action duration: {minutes: positive number} or {mode: route_distance|recipe_duration}.",
+            "description": "Action duration in minutes or a configured mode.",
         },
         "costs": {
             "type": "object",
-            "description": "Action costs. Reserve carried inputs under costs.reserve; use item_parameter and optional item_quantity_parameter.",
+            "description": "Action costs. Reserve carried inputs under costs.reserve.",
         },
         "preconditions": {"type": "array", "items": {"type": "string"}, "description": "Optional machine predicates."},
-        "effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Set fields; bind stock targets via context.<param>; positive delta needs max; withdrawal/take need amount and scope."},
+        "effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Set fields; bind stock targets via context.<param>."},
         "progress_effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Observable effects while a long Action progresses."},
         "success": {"type": "object", "description": "Action success: {condition?: machine predicate, result: short label}."},
         "failure": {"type": "object", "description": "Action failure: {condition?: machine predicate, result: short label}."},
@@ -63,6 +63,10 @@ def propose_definition_schema() -> dict[str, Any]:
             "type": "array",
             "items": {"type": "string"},
             "description": "Behavior: durable predicates, e.g. actor.alive; [] if none.",
+        },
+        "deferred": {
+            "type": "boolean",
+            "description": "Behavior: register now; expose when entry conditions pass.",
         },
         "success_results": {"type": "array", "items": {"type": "string"}, "description": "Behavior: short result labels."},
         "failure_results": {"type": "array", "items": {"type": "string"}, "description": "Behavior: short failure labels."},
@@ -76,7 +80,7 @@ def propose_definition_schema() -> dict[str, Any]:
             "name": {"type": "string", "description": "Short visible name."},
             "definition": {
                 "type": "object",
-                "description": "Declarative fields for the selected type; use exact visible names, never code or internal IDs.",
+                "description": "Declarative fields for the selected type; never code or internal IDs.",
                 "properties": definition_properties,
                 "additionalProperties": True,
             },

@@ -677,7 +677,14 @@ class SimulationRunner:
             source_event_id = task_data.get("source_event_id")
             if source_event_id is None and source_events:
                 source_event_id = source_events[-1].get("event_id")
-            turn = AgentEngine(self.platform, provider).run(
+            engine_kwargs: dict[str, Any] = {}
+            if role == "god":
+                evolution = (self.platform.store.repositories.metadata.get("evolution", {}) or {})
+                evolution = evolution.get("evolution", evolution) if isinstance(evolution, dict) else {}
+                contract = ((evolution.get("contracts") or {}).get("god_structural") if isinstance(evolution, dict) else {}) or {}
+                if isinstance(contract.get("max_tool_calls"), int):
+                    engine_kwargs["max_tool_calls"] = int(contract["max_tool_calls"])
+            turn = AgentEngine(self.platform, provider, **engine_kwargs).run(
                 role=role,
                 actor_id=actor_id,
                 task_type=task_type,

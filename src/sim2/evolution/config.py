@@ -260,7 +260,7 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
         allowed = {
             "tools", "purpose", "result", "assign_to", "required_definition_type",
             "require_story_outcome", "evidence_sources", "continuation", "growth_kind",
-            "required_content", "stages", "max_proposals",
+            "required_content", "stages", "max_proposals", "max_tool_calls",
         }
         for task_type, contract in contracts.items():
             if not isinstance(contract, dict):
@@ -282,6 +282,10 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
                 limit = contract.get("max_proposals")
                 if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
                     raise ValueError(f"contract {task_type}.max_proposals must be a positive integer")
+            if contract.get("max_tool_calls") is not None:
+                limit = contract.get("max_tool_calls")
+                if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+                    raise ValueError(f"contract {task_type}.max_tool_calls must be a positive integer")
 
     cadence = root.get("cadence") if isinstance(root.get("cadence"), dict) else {}
     cadence_known = {"reflection", "innovation", "god", "god_structural"}

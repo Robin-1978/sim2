@@ -1,0 +1,190 @@
+cadence:
+  reflection: 1d
+  innovation: 3d
+  god: 3d
+  god_structural: 7d
+stagnation:
+  window: 3d
+  max_interval: 7d
+  growth: structural
+  progress_event_types:
+  - case.resolved
+  - case.pawned_dynamic
+  - case.sold_dynamic
+  - debt.paid
+  - faction.pact
+  - aunt.ledger_read
+  - season.started
+  - campaign.closed
+limits:
+  max_ready_god_tasks: 3
+director:
+  cadence: 2d
+  window: 7d
+  targets:
+  - social
+  - verb
+  - place
+  - rule
+  - resource
+  policy: llm
+  max_cell_units: 24
+  kickoff: true
+  context_properties:
+  - season
+  - night
+  - debt_owed
+  - suspicion
+  - clues
+  - act
+  - faction_pact
+  - watch_rep
+  - chapel_rep
+  - collector_rep
+contracts:
+  god_structural:
+    tools:
+    - query_history
+    - query_knowledge_gaps
+    - query_world_index
+    - inspect_definition
+    - propose_entity
+    - propose_definition
+    - wait
+    max_proposals: 7
+    max_tool_calls: 30
+    required_content:
+      growth_cell: true
+      behaviors_using_action:
+      - dynamic_pawn
+      - dynamic_return
+      - dynamic_sell
+    purpose: 按 Director 的 season_plan，给长夜当铺增加一个活生生的案子：新客人、新物品、新压力，或三者的组合。
+    result: '读取 season_plan、world_growth_ledger 和最近已结算的案子。只做一个活世界案子单元，优先使用未被占用的 dyn_case_1 到 dyn_case_5（当前值必须为 0）。步骤：1) 用 propose_entity 创建一个 entity_type=item 的物品（必须写 item，不要写 object），name 是可读中文，description 写清它和哪位客人、哪个阵营、哪条线索有关。2) 用 propose_entity 创建一个 entity_type=agent 的新客人（或复用现有客人），location 设为 pawnshop，controller 设为 bt，initial_bt_ids 设为 ["linger_at_counter"]，并写清 role、ultimate_goal、traits、beliefs。3) 用 propose_definition 创建三个 behavior，全部 assign_to ["player"]：收当 behavior 的 definition.id 写 dyn_pawn_N，用 action dynamic_pawn，参数 {item_id: propose_entity 工具返回的 entity_id（不要用中文名）, case_slot: dyn_case_N, faction: 对应阵营属性}，entry_conditions 含 world.dyn_case_N == 0 和 location.tag.pawnshop，agent_label 写“收下{客人}的{物品}”；归还 behavior 的 definition.id 写 dyn_return_N，用 action dynamic_return，参数 {case_slot: dyn_case_N, faction: 对应阵营属性}，entry_conditions 含 world.dyn_case_N == 0 和 location.tag.pawnshop，agent_label 写“把{物品}还给{客人}”；卖出 behavior 的 definition.id 写 dyn_sell_N，deferred 设为 true，用 action dynamic_sell，参数 {item_id:
+      同一个 entity_id, case_slot: dyn_case_N, price: “30” 到 “50” 之间的整数, faction: 对应阵营属性}，entry_conditions 用 world.dyn_case_N == 1、actor.inventory.<entity_id> >= 1、world.night_actions >= 1，nodes 先 Travel 到对应阵营地点再 dynamic_sell，agent_label 写“把{物品}卖给{阵营}”。faction 只能写 watch_rep、chapel_rep 或 collector_rep，不能写阵营名。新案子必须从玩家最近的真实选择里长出来：如果玩家刚举报了某人，就让新客人的东西和港务局有关；如果玩家刚和修会签约，就让新客人带着修会的药或灯；如果玩家刚高价卖出，就让收藏家来收下一件。不要创建新货币、新资源库存或新价格表；不要复制已有物品；不要写死结局。不要提交 relationship 提案，客人所属阵营已经足够；不要创建额外的客人或物品。证据不足时 wait。'
+wakes:
+- id: story_after_case
+  'on':
+  - case.resolved
+  - case.sold_dynamic
+  - case.returned_dynamic
+  for: story
+  count: 1
+  every: 6h
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  external: true
+  purpose: 一件当铺案子已经结算；把客人的反应和下一夜的压力写成可执行的一幕，而不是复述事件。
+- id: story_after_debt
+  'on':
+  - debt.paid
+  - debt.missed
+  for: story
+  every: 6h
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  external: true
+  purpose: 债务状态改变；让港务局、修会或客人对这笔钱给出一个具体反应。
+- id: story_after_act
+  'on':
+  - act.two
+  - act.three
+  - season.started
+  for: story
+  every: 1h
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  external: true
+  purpose: 进入新的一幕或新一季；只推进一个可执行目标，不要提前写完结局。
+- id: story_after_ledger
+  'on':
+  - aunt.ledger_read
+  - sea_gate.opened
+  for: story
+  every: 1h
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  external: true
+  purpose: 姑妈的秘密向前一步；把钥匙、海门和客人的选择变成下一夜的压力。
+- id: god_after_case
+  'on':
+  - case.resolved
+  - case.expired
+  for: god
+  count: 3
+  every: 2d
+  distinct_by:
+  - case
+  tools:
+  - query_history
+  - query_knowledge_gaps
+  - query_world_index
+  - inspect_definition
+  - propose_entity
+  - propose_definition
+  - propose_world_change
+  - wait
+  external: true
+  purpose: 三个案子结算后，柜台上的客人开始变少；如果 dyn_case 空位还够，就从玩家最近的选择里长出一个新案子。
+  result: 按 god_structural 的活世界案子格式，创建一个新客人、新物品和收当/卖出/归还三个玩家行为。优先使用 dyn_case_1 到 dyn_case_5 中值为 0 的槽位。不要复制已有物品或创建新货币。
+- id: god_after_dynamic_pawn
+  'on':
+  - case.pawned_dynamic
+  for: god
+  every: 1h
+  tools:
+  - query_history
+  - inspect_definition
+  - propose_definition
+  - wait
+  external: true
+  purpose: 玩家刚收下一件活世界案子的东西；现在东西在背包里，案子值 1。给这个案子长出下一步：卖给谁、怎么卖、或者怎么报给港务局。
+  result: '读取 case.pawned_dynamic 事件里的 item、slot、faction。只创建一个 behavior，assign_to ["player"]，使用已存在的 action dynamic_sell 或 dynamic_report。dynamic_sell 的 parameters 用 {item_id: 事件里的 item, case_slot: 事件里的 slot, price: “30” 到 “50” 之间的整数, faction: 事件里的 faction}；faction 必须是 watch_rep、chapel_rep 或 collector_rep 之一，不能写阵营名；entry_conditions 用 actor.alive、world.<slot> == 1、actor.inventory.<item> >= 1、world.night_actions >= 1；nodes 先 Travel 到对应阵营地点，再 dynamic_sell。behavior 的 agent_label 写成“把{物品}卖给{阵营}”。不要创建新物品、新货币或新客人。'
+- id: god_after_act
+  'on':
+  - act.two
+  - act.three
+  - season.started
+  for: god
+  every: 2d
+  tools:
+  - query_history
+  - query_knowledge_gaps
+  - query_world_index
+  - inspect_definition
+  - propose_entity
+  - propose_definition
+  - propose_world_change
+  - wait
+  external: true
+  purpose: 进入新一幕或新一季；给当铺增加一个新案子或一条新的阵营压力，让世界继续长。
+  result: 按 god_structural 的活世界案子格式，创建一个新客人、新物品和收当/卖出/归还三个玩家行为。新案子必须承接玩家已经做出的阵营选择。
+- id: god_on_stagnation
+  'on':
+  - world.stagnation
+  for: god
+  every: 2d
+  tools:
+  - query_history
+  - query_knowledge_gaps
+  - query_world_index
+  - inspect_definition
+  - propose_entity
+  - propose_definition
+  - propose_world_change
+  - wait
+  external: true
+  purpose: 世界长时间没有新的可玩选择；给当铺增加一个活世界案子，而不是重复旧案子。
+  result: 按 god_structural 的活世界案子格式，创建一个新客人、新物品和收当/卖出/归还三个玩家行为。

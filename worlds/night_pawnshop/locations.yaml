@@ -1,0 +1,162 @@
+locations:
+- id: pawnshop
+  name: 一盏灯当铺
+  description: 柜台上的黄铜灯已经擦了很多年。七位客人坐在靠墙的长凳上，每个人怀里都抱着一样东西。
+  public: true
+  safe: true
+  tags:
+  - public
+  - safe
+  - shop
+  - pawnshop
+  - home
+  - counter
+  routes:
+  - pawnshop_backroom
+  - night_market
+  - pier
+  - watchhouse
+  - grey_chapel
+  - collector_salon
+  route_distances:
+    pawnshop_backroom: 1
+    night_market: 1
+    pier: 1
+    watchhouse: 1
+    grey_chapel: 1
+    collector_salon: 1
+  initial_state:
+    open: true
+  map_position:
+    x: 0
+    y: 0
+- id: pawnshop_backroom
+  name: 账房
+  description: 姑妈的账本摊在桌上，旁边是一台旧鉴定镜和一排空当票。缺页的地方像被刀割过。
+  public: true
+  safe: true
+  tags:
+  - public
+  - safe
+  - shop
+  - appraisal
+  - study
+  routes:
+  - pawnshop
+  route_distances:
+    pawnshop: 1
+  initial_state:
+    open: true
+  map_position:
+    x: 0
+    y: -1
+- id: night_market
+  name: 夜市
+  description: 审计前的夜市只开半条街。卖热茶的老妇、修锁的匠人和替人写信的少年挤在同一盏灯下。
+  public: true
+  safe: true
+  tags:
+  - public
+  - safe
+  - market
+  - food
+  - work
+  routes:
+  - pawnshop
+  - pier
+  - watchhouse
+  route_distances:
+    pawnshop: 1
+    pier: 1
+    watchhouse: 1
+  initial_state:
+    open: true
+  map_position:
+    x: 1
+    y: 0
+- id: pier
+  name: 旧码头
+  description: 雾从海面压过来。旧灯塔的光在很远的地方一明一灭，像有人在数还有几夜。
+  public: true
+  safe: false
+  tags:
+  - public
+  - unsafe
+  - pier
+  - sea
+  - lighthouse
+  routes:
+  - pawnshop
+  - night_market
+  - grey_chapel
+  route_distances:
+    pawnshop: 1
+    night_market: 1
+    grey_chapel: 1
+  initial_state:
+    open: true
+  map_position:
+    x: 2
+    y: 0
+- id: watchhouse
+  name: 港务局
+  description: 墙上挂着闭港审计的告示，红蜡印还没干。值夜的书吏把每一张当票都当成潜在证据。
+  public: true
+  safe: true
+  tags:
+  - public
+  - safe
+  - watch
+  - law
+  routes:
+  - pawnshop
+  - night_market
+  route_distances:
+    pawnshop: 1
+    night_market: 1
+  initial_state:
+    open: true
+  map_position:
+    x: 1
+    y: -1
+- id: grey_chapel
+  name: 灰袍修会
+  description: 修会的长椅上躺着病人。墙上没有神像，只有一排擦得很亮的灯。白鹭说，灯比神像更能让人安静。
+  public: true
+  safe: true
+  tags:
+  - public
+  - safe
+  - chapel
+  - medicine
+  routes:
+  - pawnshop
+  - pier
+  route_distances:
+    pawnshop: 1
+    pier: 1
+  initial_state:
+    open: true
+  map_position:
+    x: -1
+    y: 0
+- id: collector_salon
+  name: 收藏家沙龙
+  description: 窗帘后没有窗。玻璃柜里摆着别人的记忆，每一件都标着日期和价钱。
+  public: true
+  safe: false
+  tags:
+  - public
+  - unsafe
+  - collector
+  - salon
+  routes:
+  - pawnshop
+  route_distances:
+    pawnshop: 1
+  initial_state:
+    open: true
+  map_position:
+    x: -1
+    y: -1
+resources: []

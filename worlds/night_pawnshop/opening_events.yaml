@@ -1,0 +1,14 @@
+opening_events:
+- type: night.first
+  world_minute: 0
+  payload:
+    summary: 闭港审计前的第一夜。当铺的灯还亮着，七位客人抱着东西坐在长凳上；三笔债会在第 7、14、21 夜到期。
+    night: 1
+    debt_total: 290
+  id: night_first
+- type: debt.scheduled
+  world_minute: 0
+  payload:
+    summary: 港务局的催缴单压在柜台玻璃下：第 7 夜 60 枚，第 14 夜 90 枚，第 21 夜 140 枚。
+    total: 290
+  id: debt_scheduled

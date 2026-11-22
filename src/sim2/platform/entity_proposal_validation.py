@@ -101,7 +101,7 @@ class EntityProposalValidationMixin:
             errors.append("agent.state.ultimate_goal is required")
 
         initial_state = dict(state.get("initial_state") or {})
-        raw_location = proposal.get("location_id") or initial_state.get("location_id")
+        raw_location = proposal.get("location_id") or proposal.get("location") or state.get("place") or state.get("location") or initial_state.get("location_id")
         location_id = self.targets.canonical_id(str(raw_location or ""))
         if not location_id:
             errors.append("agent.state.initial_state.location_id must name an existing location")
@@ -132,7 +132,17 @@ class EntityProposalValidationMixin:
             if attribute_id in initial_state:
                 initial_state[attribute_id] = schema.clamp(attribute_id, initial_state[attribute_id])
 
-        needs = dict(state.get("needs") or {})
+        raw_needs = state.get("needs")
+        if isinstance(raw_needs, dict):
+            needs = dict(raw_needs)
+        elif isinstance(raw_needs, list):
+            needs = {str(item): float(schema.need_defaults().get(str(item), 70) or 70) for item in raw_needs if str(item)}
+        else:
+            needs = {}
+        # A model may describe needs on a 0..1 scale.  Treat that as a ratio
+        # of the configured target instead of leaving the character starving.
+        if needs and all(isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= float(value) <= 1 for value in needs.values()):
+            needs = {key: float(value) * 100 for key, value in needs.items()}
         for need_id, value in schema.need_defaults().items():
             needs.setdefault(need_id, value)
         for item in rules.get("needs", []) or []:
@@ -160,7 +170,10 @@ class EntityProposalValidationMixin:
                 capabilities[capability_id] = float(value)
 
         initial_bt_ids: list[str] = []
-        for value in state.get("initial_bt_ids") or []:
+        raw_behaviors = state.get("initial_bt_ids") or state.get("behaviors") or state.get("behavior_ids") or []
+        if isinstance(raw_behaviors, str):
+            raw_behaviors = [raw_behaviors]
+        for value in raw_behaviors:
             behavior_id, matches = self._context.services["definitions"].resolve_registered_definition("bt_def", value)
             if not behavior_id:
                 errors.append(f"unknown or ambiguous initial behavior: {value}; matches={matches}")
@@ -170,7 +183,7 @@ class EntityProposalValidationMixin:
             errors.append("agent.state.initial_bt_ids must include at least one existing behavior")
 
         faction_ids: list[str] = []
-        for value in state.get("faction_ids") or []:
+        for value in state.get("faction_ids") or state.get("factions") or []:
             faction_id = self.targets.canonical_id(str(value))
             if not faction_id:
                 errors.append(f"unknown faction: {value}")
@@ -184,19 +197,42 @@ class EntityProposalValidationMixin:
             except KeyError:
                 errors.append(f"unknown faction: {value}")
 
+        raw_traits = state.get("traits")
+        if isinstance(raw_traits, dict):
+            traits = dict(raw_traits)
+        elif isinstance(raw_traits, list):
+            traits = {str(item): 0.7 for item in raw_traits if str(item)}
+        else:
+            traits = {}
+        raw_beliefs = state.get("beliefs")
+        if isinstance(raw_beliefs, dict):
+            raw_beliefs = [raw_beliefs]
+        beliefs = []
+        for index, item in enumerate(raw_beliefs if isinstance(raw_beliefs, list) else []):
+            if isinstance(item, dict):
+                beliefs.append(item)
+            elif str(item).strip():
+                beliefs.append({"id": f"belief_{index + 1}", "statement": str(item).strip(), "confidence": 0.7})
+        raw_inventory = state.get("inventory")
+        if isinstance(raw_inventory, dict):
+            inventory = dict(raw_inventory)
+        elif isinstance(raw_inventory, list):
+            inventory = {str(item): 1 for item in raw_inventory if str(item)}
+        else:
+            inventory = {}
         normalized = {
             **state,
             "id": entity_id,
             "name": name,
             "role": role,
             "ultimate_goal": goal,
-            "traits": dict(state.get("traits") or {}),
-            "beliefs": list(state.get("beliefs") or []),
+            "traits": traits,
+            "beliefs": beliefs,
             "needs": needs,
             "capabilities": capabilities,
             "initial_bt_ids": initial_bt_ids,
             "unlocked_bt_ids": [],
-            "inventory": dict(state.get("inventory") or {}),
+            "inventory": inventory,
             "permissions": dict(state.get("permissions") or {}),
             "faction_ids": faction_ids,
             "combat_stats": dict(state.get("combat_stats") or {}),

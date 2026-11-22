@@ -239,3 +239,20 @@ world-pack lint covers every `worlds/*/actions.yaml`.
 - 背景 NPC 移动空转（2026-11-22）：`riverbend_market_p6wh` 的阿石每分钟执行 `travel → north_mine` 并原地 `arrived`，因为 `travel_to` 未声明目的地的自检、移动候选包含当前地点、且背景控制器在没有 `bt_priority` 时默认选目录第一项。`parameter_options.location_id` 现在排除当前地点并提供显式 `value`；无紧迫需求时控制器不再默认纯移动；河湾镇三名背景 NPC 补上 `bt_priority`（采集优先，移动最后）。聚焦回归覆盖候选过滤、优先级选择和无优先级旧存档回退。
 - 物品闭环与 LLM 可见性（2026-11-22）：香料新增“香炖菜”配方、食用入口和阿芹收购报价，工具购买报价拒绝重复购买；`rules.item_uses` 在角色物品栏显示用途，闭包回归覆盖每件非金币物品都有来源和去向。首页新增“镇上的打算”卡片，展示 LLM 居民的 `decision.reason`；贸易/采集/进食事件改为中文短句，NPC 失败和内部事件不再进入玩家动态。远程对话探针（`remote`）验证 NPC 会表达判断并追问，而不是只回答“不知道”。
 - 旧存档配置升级（2026-11-22）：新增 `upgrade_instance()` 与 `scripts/upgrade_instance.py`，只 upsert `setting`、`rules` 和 recipe/action/BT 定义，保留实体、角色、库存、世界属性、记忆、关系、剧情状态和运行时 `world_rules`。在 `riverbend_market_p6wh` 副本上验证：世界分钟/倒计时/玩家库存不变，配方 8→9，`item_uses.spice` 生效，移动候选排除当前地点。
+
+### 2026-11-22 长夜当铺：从写死内容到活世界
+
+- 新增 `worlds/night_pawnshop`：7 位客人、21 件种子物品、3 个阵营、21 夜第一季、6 个章节结局。21 个案子只是**种子**，不是游戏全部。
+- 活世界循环：remote Director 每 2 天选择 growth cell；remote God 按 `dyn_case_1..5` 槽位创建新物品实体、新客人、收当/归还/卖出行为；remote Story 监听 `case.resolved` 并提交下一拍。玩家收当/卖出后，`dyn_case_N` 和阵营声望改变，下一次 Director 计划读取这些事实。
+- 章节继续：`begin_next_season` 保留当铺、库存、升级、关系、线索和已生成案子，只重置夜晚、债务和行动；第 21 夜审计不再是世界终点。
+- DSL 升级（详见 `docs/design/living-world-dsl.md`）：
+  - 条件支持 `world[context.case_slot]`、`actor.inventory[context.item_id]`，Action/Behavior 标量参数进入 `context.*`；
+  - 新增 `world_property_set`，支持 `context.value`；
+  - 新增 `deferred: true`，允许登记未来才满足条件的行为，条件满足后进入玩家行动列表；
+  - 契约新增 `max_tool_calls` 与 `required_content.behaviors_using_action`；
+  - God 创建的 `entity_type=item` 实体把 name/uses 投影到物品栏；
+  - `public_event` 与目录事件改为 `publish(wake="configured")`，`case.pawned_dynamic` 能唤醒后续 God/Story；
+  - `propose_entity` 接受 `location`/`behaviors`/list traits/beliefs/inventory 等 LLM 常见写法；
+  - 可见物品名在 Behavior 注册和 Action 执行时规范化到实体 id，支持唯一模糊匹配。
+- 远程证据：`python scripts/verify_night_pawnshop_growth.py --provider remote` 完成 Director 选 `social` → God 创建物品/客人/3 个行为 → 玩家收当（金币 -20、`dyn_case_1=1`）→ 玩家卖出（金币 +40、`dyn_case_1=3`、阵营声望上升）→ Story `propose_story_beat` accepted。探针没有注入案子或注入行为；God/Story 均由真实 remote provider 调用。
+- 聚焦测试：`test_night_pawnshop.py` 6 项、`test_dsl_living_bindings.py` 3 项；`scripts/test_parallel.py --changed` 通过（除已修复的 schema/liveness 两项外）。

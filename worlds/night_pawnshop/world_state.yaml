@@ -1,0 +1,113 @@
+world_state:
+  properties:
+    season: 1
+    night: 1
+    night_actions: 3
+    ledger_level: 0
+    appraisal_level: 1
+    safe_level: 0
+    debt_stage: 0
+    debt_owed: 290
+    defaults: 0
+    suspicion: 0.1
+    clues: 0
+    act: 1
+    campaign_over: 0
+    raid_done: 0
+    bribe_used: 0
+    faction_pact: 0
+    aunt_ledger_read: 0
+    sea_gate_open: 0
+    watch_rep: 0.2
+    chapel_rep: 0.2
+    collector_rep: 0.2
+    trust_su_wan: 0
+    trust_gu_chen: 0
+    trust_bai_lu: 0
+    trust_luo_qi: 0
+    trust_shen: 0
+    trust_a_wu: 0
+    trust_stranger: 0
+    case_1: 0
+    appraised_1: 0
+    case_2: 0
+    appraised_2: 0
+    case_3: 0
+    appraised_3: 0
+    case_4: 0
+    appraised_4: 0
+    case_5: 0
+    appraised_5: 0
+    case_6: 0
+    appraised_6: 0
+    case_7: 0
+    appraised_7: 0
+    case_8: 0
+    appraised_8: 0
+    case_9: 0
+    appraised_9: 0
+    case_10: 0
+    appraised_10: 0
+    case_11: 0
+    appraised_11: 0
+    case_12: 0
+    appraised_12: 0
+    case_13: 0
+    appraised_13: 0
+    case_14: 0
+    appraised_14: 0
+    case_15: 0
+    appraised_15: 0
+    case_16: 0
+    appraised_16: 0
+    case_17: 0
+    appraised_17: 0
+    case_18: 0
+    appraised_18: 0
+    case_19: 0
+    appraised_19: 0
+    case_20: 0
+    appraised_20: 0
+    case_21: 0
+    appraised_21: 0
+    dyn_case_1: 0
+    dyn_case_2: 0
+    dyn_case_3: 0
+    dyn_case_4: 0
+    dyn_case_5: 0
+  initial_facts:
+  - id: aunt_missing
+    subject: pawnshop
+    predicate: owner_status
+    object: missing
+    source_type: public
+  - id: three_debts
+    subject: harbor_bank
+    predicate: debt_schedule
+    object: night_7_14_21
+    source_type: public
+  - id: curfew
+    subject: fog_harbor
+    predicate: audit_after_nights
+    object: '21'
+    source_type: public
+  - id: collector_warning
+    subject: brass_key
+    predicate: warning
+    object: do_not_give_to_collector
+    source_type: rumor
+  initial_spawn:
+  - entity_id: su_wan
+    location_id: pawnshop
+  - entity_id: gu_chen
+    location_id: pawnshop
+  - entity_id: bai_lu
+    location_id: pawnshop
+  - entity_id: luo_qi
+    location_id: pawnshop
+  - entity_id: shen
+    location_id: pawnshop
+  - entity_id: a_wu
+    location_id: pawnshop
+  - entity_id: stranger
+    location_id: pawnshop

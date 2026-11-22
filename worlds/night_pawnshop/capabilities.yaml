@@ -1,0 +1,20 @@
+capabilities:
+- id: trade
+  name: 交易
+  description: 收当、卖出、赎回，让金币和物品在柜台上转起来。
+  uses:
+  - trade_offer
+  - odd_job
+  xp_rule: verified_outcome
+- id: conversation
+  name: 交涉
+  description: 听客人说完，判断他们有没有说实话。
+  uses:
+  - trade_offer
+  xp_rule: verified_outcome
+- id: appraisal
+  name: 鉴定
+  description: 从物品的磨损、刻字和纸张里读出它的来历。
+  uses:
+  - appraise_item
+  xp_rule: verified_outcome

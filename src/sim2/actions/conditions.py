@@ -16,6 +16,10 @@ from ..world.lifecycle import INACTIVE_STATUSES, INCAPACITATED_CONDITION, is_ina
 
 
 _UNKNOWN = object()
+_DYNAMIC_BRACKET = re.compile(
+    r"\b(world|actor\.inventory|actor\.state|actor\.needs|target\.inventory|target\.state)"
+    r"\[\s*context\.([A-Za-z0-9_]+)\s*\]"
+)
 
 
 def _reference_paths(tree: Expression) -> list[str]:
@@ -60,7 +64,32 @@ class ConditionEngine:
         }
         self.public_locations_are_safe = bool(config.get("public_locations_are_safe", True))
 
+    @staticmethod
+    def resolve_dynamic_references(expression: str, context: dict[str, Any] | None = None) -> str:
+        """Resolve ``world[context.case_slot]`` style parameterised paths.
+
+        Living-world definitions often need one generic predicate for many
+        generated cases.  The bracket form names the parameter, while the
+        evaluator still sees the flat path the rest of the DSL understands.
+        """
+
+        values = context or {}
+
+        def replace(match: re.Match[str]) -> str:
+            prefix = match.group(1)
+            key = match.group(2)
+            value = values.get(key)
+            if value is None or isinstance(value, (dict, list, tuple, bool)):
+                value = "__unresolved__"
+            text = str(value).strip()
+            if not re.fullmatch(r"[\w.-]+", text, re.UNICODE):
+                text = "__unresolved__"
+            return f"{prefix}.{text}"
+
+        return _DYNAMIC_BRACKET.sub(replace, str(expression or ""))
+
     def evaluate(self, expression: str, *, agent: dict[str, Any], target: dict[str, Any] | None = None, world: dict[str, Any] | None = None, context: dict[str, Any] | None = None) -> bool:
+        expression = self.resolve_dynamic_references(expression, context)
         expression = self._normalize_expression(expression)
         if not expression:
             return True
@@ -83,6 +112,7 @@ class ConditionEngine:
         expression is not machine-evaluable with the available projection.
         """
 
+        expression = self.resolve_dynamic_references(expression, context)
         expression = self._normalize_expression(expression)
         if not expression:
             return True
@@ -101,7 +131,8 @@ class ConditionEngine:
         false at runtime.  Unknown bare identifiers are reported too.
         """
 
-        text = self._normalize_expression(expression)
+        text = self.resolve_dynamic_references(expression, context=None)
+        text = self._normalize_expression(text)
         if not text:
             return []
         try:
@@ -241,7 +272,7 @@ class ConditionEngine:
         if path.startswith((
             "actor.need.", "actor.state.", "actor.inventory.",
             "actor.permission.", "actor.knowledge.", "actor.can_", "actor.is_", "world.",
-            "context.", "event.recent.",
+            "context.", "event.recent.", "target.inventory.", "target.state.",
         )):
             return True
         return path in {

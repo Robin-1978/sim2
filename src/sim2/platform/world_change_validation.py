@@ -18,7 +18,7 @@ PROPERTY_CHANGE_TYPES = frozenset({"world_property", "event"})
 OBJECT_PAYLOAD_TYPES = frozenset({"rule", "relationship", "faction"})
 STRUCTURED_MUTATION_TYPES = frozenset({
     "state_delta", "need_delta", "attribute_delta", "attribute_set", "inventory_add",
-    "inventory_remove", "world_property_delta", "relationship_delta", "entity_state_set",
+    "inventory_remove", "world_property_delta", "world_property_set", "relationship_delta", "entity_state_set",
 })
 
 

@@ -1,0 +1,196 @@
+emergent_source_event_types:
+- case.resolved
+- case.appraised
+- case.expired
+- case.pawned
+- case.redeemed
+- debt.paid
+- debt.missed
+- faction.pact
+- watch.raid
+- watch.bribed
+- aunt.ledger_read
+- sea_gate.opened
+- campaign.closed
+- shop.upgraded
+- night.started
+- act.two
+- act.three
+situation_anchor_window_minutes: 30240
+situation_anchors:
+- id: first_night
+  title: 第一夜：柜台前的人
+  summary: 闭港审计前二十一夜，你继承了姑妈的一盏灯当铺。七位客人抱着东西坐在长凳上；三笔债会在第七、十四、二十一夜到期。
+  goal_hint: 先和一位客人说话，再决定是否鉴定、收当或让他把东西带回去。
+  trigger_events:
+  - night.first
+- id: first_debt_paid
+  title: 第一笔债还清了
+  summary: 港务局的账台上少了一张催缴单。你把当铺的灯芯剪短了一点，省下的油还能撑几夜。
+  goal_hint: 继续处理客人的东西；第二笔债在第 14 夜。
+  trigger_events:
+  - debt.paid
+- id: act_two
+  title: 第二幕：三方
+  summary: 港务局、灰袍修会和收藏家都开始往当铺里看。第 10 夜后，你只能和其中一方签约。
+  goal_hint: 先看清三方各自要什么；签约会改变搜查、线索和结局。
+  trigger_events:
+  - act.two
+- id: act_three
+  title: 第三幕：钥匙
+  summary: 无名客带来了铜钥匙。审计只剩七夜，姑妈的缺页账本还在账房里等你。
+  goal_hint: 收集 10 条线索，读姑妈的账本，在第 21 夜决定钥匙给谁。
+  trigger_events:
+  - act.three
+- id: ledger_read
+  title: 缺页账本的最后一句
+  summary: 缺页账本的最后一句写着：钥匙不是用来锁门的，是用来放人走的。
+  goal_hint: 第 21 夜带钥匙去旧码头，打开海门；或者把钥匙留给需要它的人。
+  trigger_events:
+  - aunt.ledger_read
+- id: sea_gate_opened
+  title: 海门后面
+  summary: 铜钥匙转了一圈。海门后面不是海，是一条被灯照亮的石阶。
+  goal_hint: 回当铺关店，等审计官推门；你已经有资格选择自己的结局。
+  trigger_events:
+  - sea_gate.opened
+- id: watch_raid
+  title: 港务局推门进来
+  summary: 没有预约的搜查翻乱了柜台。你保住了什么，取决于暗格有多深。
+  goal_hint: 降低怀疑：举报、归还、打点，或者暂时别卖来路不明的东西。
+  trigger_events:
+  - watch.raid
+- id: debt_missed
+  title: 一张违约记录
+  summary: 港务局在账本上记了一笔违约。雾港不会因为你还得慢就停止审计。
+  goal_hint: 尽快补上欠款；违约会让最好的结局离你远一步。
+  trigger_events:
+  - debt.missed
+beats:
+- id: first_case
+  agent_label: 第一笔当铺生意
+  summary: 你把一件客人的东西过了柜台，也第一次听见它背后的故事。
+  trigger_events:
+  - case.resolved
+  audience: []
+  fact: 玩家处理了第一件当铺案子。
+  goal_hint: 继续听客人说完；鉴定会给你线索，线索会指向姑妈。
+  public_event: story.first_case
+  ttl_minutes: 10080
+  one_shot: true
+- id: first_debt
+  agent_label: 第一笔债
+  summary: 第一笔债还清了，港务局的催缴单暂时从柜台上消失。
+  trigger_events:
+  - debt.paid
+  audience: []
+  fact: 玩家还清了第一笔债。
+  goal_hint: 第二笔债在第 14 夜；别把所有金币都压在货上。
+  public_event: story.first_debt
+  ttl_minutes: 10080
+  one_shot: true
+- id: ledger_found
+  agent_label: 姑妈的账本
+  summary: 缺页账本的最后一句指向旧灯塔的海门；钥匙不是用来锁门的。
+  trigger_events:
+  - aunt.ledger_read
+  audience: []
+  fact: 玩家读完了姑妈留下的缺页账本。
+  goal_hint: 第 21 夜带钥匙去旧码头；或者把钥匙交给一个你信得过的人。
+  public_event: story.ledger_found
+  ttl_minutes: 10080
+  one_shot: true
+- id: key_arrived
+  agent_label: 铜钥匙
+  summary: 无名客把铜钥匙留在柜台，说“她让我把它交给你；别给收藏家”。
+  trigger_events:
+  - key.pawned
+  audience: []
+  fact: 铜钥匙已经进入当铺。
+  goal_hint: 别急着卖；钥匙能打开海门，也能打开收藏家的价码。
+  public_event: story.key_arrived
+  ttl_minutes: 10080
+  one_shot: true
+- id: raid_happened
+  agent_label: 一次搜查
+  summary: 港务局没有预约就推门进来；暗格决定了他们能翻到多深。
+  trigger_events:
+  - watch.raid
+  audience: []
+  fact: 港务局搜查了当铺。
+  goal_hint: 降低怀疑，或者把暗格再挖深一层。
+  public_event: story.raid_happened
+  ttl_minutes: 10080
+  one_shot: true
+- id: audit_closed
+  agent_label: 审计关门
+  summary: 审计官翻开了账本；这一轮的当铺故事到了收束。
+  trigger_events:
+  - campaign.closed
+  audience: []
+  fact: 玩家结束了 21 夜审计。
+  goal_hint: 世界不会停：你可以继续看后续，或开一轮新的当铺。
+  public_event: story.audit_closed
+  ttl_minutes: 10080
+  one_shot: true
+endings:
+- id: seized
+  title: 结局：查封
+  summary: 审计官没有坐下。他在账本上找到足够的违约和怀疑，把当铺的灯摘下来装进证物袋。雾港还在，但这条街少了一盏灯。
+  goal_hint: 下一轮先保债务，再谈线索；怀疑到 60% 前一定要处理。
+  condition: world.campaign_over == 1 and (world.debt_stage < 3 or world.suspicion >= 1 or world.defaults >= 2)
+  trigger_event: campaign.closed
+  kind: ending
+  stats: &id001
+  - property: debt_owed
+    label: 剩余债务
+  - property: suspicion
+    label: 港务局怀疑
+  - property: clues
+    label: 线索
+  - property: chapel_rep
+    label: 修会声望
+  - property: collector_rep
+    label: 收藏家声望
+  - property: night
+    label: 第几夜
+- id: found_aunt
+  title: 结局：找到姑妈
+  summary: 海门后面是一条被灯照亮的石阶。姑妈坐在最下面一级，手里还拿着那盏旧灯。她说：“你来得比我想的晚。”
+  goal_hint: 你找到了她，也放走了她。下一轮可以试试守住当铺，而不是打开海门。
+  condition: world.campaign_over == 1 and world.debt_stage >= 3 and world.defaults == 0 and world.suspicion < 1 and world.sea_gate_open >= 1 and world.clues >= 10
+  trigger_event: campaign.closed
+  kind: ending
+  stats: *id001
+- id: collector_partner
+  title: 结局：同谋
+  summary: 收藏家把钥匙放进玻璃柜，给你留了一个没有窗的位置。你有了钱，也有了名字——只是名字写在别人的账本上。
+  goal_hint: 下一轮可以试试修会或港务局路线，看看同一把钥匙还能开什么门。
+  condition: world.campaign_over == 1 and world.debt_stage >= 3 and world.defaults == 0 and world.collector_rep >= 0.6
+  trigger_event: campaign.closed
+  kind: ending
+  stats: *id001
+- id: keeper
+  title: 结局：守灯人
+  summary: 审计官合上账本，没有摘灯。修会的人和守塔人的女儿站在门外，等你把柜台上的灯重新点亮。
+  goal_hint: 你守住了当铺，也守住了几位客人的秘密。下一轮可以试试把钥匙交出去。
+  condition: world.campaign_over == 1 and world.debt_stage >= 3 and world.defaults == 0 and world.suspicion < 0.6 and world.clues >= 7 and actor.inventory.brass_key >= 1 and world.chapel_rep >= 0.4 and world.trust_bai_lu >= 2 and world.trust_a_wu >= 2
+  trigger_event: campaign.closed
+  kind: ending
+  stats: *id001
+- id: burned_ledger
+  title: 结局：焚账
+  summary: 你把缺页账本一页页放进炉子。火光照亮柜台，也照亮门外那些不想被写进档案的人。当铺没了，客人还在。
+  goal_hint: 你选择了人而不是账。下一轮可以试试留下钥匙，看看海门后面有什么。
+  condition: world.campaign_over == 1 and world.debt_stage >= 3 and world.defaults == 0 and world.aunt_ledger_read >= 1 and actor.inventory.brass_key < 1
+  trigger_event: campaign.closed
+  kind: ending
+  stats: *id001
+- id: left_town
+  title: 结局：离开雾港
+  summary: 账还清了，灯也灭了。你把钥匙留给下一个人，带着一只空箱子和一本没有写完的账本离开雾港。
+  goal_hint: 这一轮你没有走到任何一条路的尽头；下一轮可以更早追线索，或更早站队。
+  condition: world.campaign_over == 1
+  trigger_event: campaign.closed
+  kind: ending
+  stats: *id001

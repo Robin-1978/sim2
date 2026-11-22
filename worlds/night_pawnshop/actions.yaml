@@ -1,0 +1,1470 @@
+actions:
+- id: travel_to
+  verb: move
+  version: 1
+  description: 沿雾港的石板路移动到目标地点。
+  parameters:
+    location_id: string
+  preconditions:
+  - route.known
+  - actor.mobile
+  - destination.reachable
+  duration:
+    minutes: 10
+  costs:
+    reserve: {}
+    per_minute:
+      stamina: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: location_set
+    location_id: context.location_id
+  success:
+    condition: actor.alive
+    result: arrived
+  failure:
+    condition: actor.incapacitated
+    result: route_unknown
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: appraise_item
+  verb: appraise
+  version: 1
+  description: 在账房鉴定一件客人带来的东西，读出它的真实价值和来历。
+  parameters:
+    entry_id: string
+  preconditions:
+  - actor.alive
+  - location.tag.appraisal
+  duration:
+    minutes: 20
+  costs:
+    reserve: {}
+    per_minute:
+      stamina: 0.03
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: catalog_action
+    catalog: appraise
+    entry: context.entry_id
+  success:
+    condition: actor.alive
+    result: appraised
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: case.appraised
+    summary: 鉴定镜下的刻字和纸边，比客人的说法更可靠。
+    result: appraised
+- id: trade_offer
+  verb: trade
+  version: 1
+  description: 在当铺或阵营地点选择一个可见的买卖报价。
+  parameters:
+    entry_id: string
+  preconditions:
+  - actor.alive
+  duration:
+    minutes: 5
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: catalog_action
+    catalog: trade_offers
+    entry: context.entry_id
+  success:
+    condition: actor.alive
+    result: trade_completed
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: trade.completed
+    summary: 一笔当铺交易完成，金币和物品都过了账。
+    result: trade_completed
+- id: pay_debt_1
+  verb: pay
+  version: 1
+  description: 把第一笔 60 枚金币放到港务局的账台上。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.night >= 7
+  - world.debt_stage == 0
+  - actor.inventory.coin >= 60
+  duration:
+    minutes: 30
+  costs:
+    reserve:
+      coin: 60
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: debt_stage
+    delta: 1
+    maximum: 3
+  - type: world_property_delta
+    property: debt_owed
+    delta: -60
+    minimum: 0
+  - type: world_property_delta
+    property: night_actions
+    delta: -1
+    minimum: 0
+  - type: world_property_delta
+    property: suspicion
+    delta: -0.05
+    minimum: 0
+  - type: public_event
+    event: debt.paid
+    summary: 第一笔债还清了，港务局的账台上少了一张催缴单。
+    data:
+      stage: 1
+  success:
+    condition: actor.alive
+    result: debt_paid
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: debt.paid
+    summary: 第一笔债还清了。
+    result: debt_paid
+- id: pay_debt_2
+  verb: pay
+  version: 1
+  description: 把第二笔 90 枚金币放到港务局的账台上。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.night >= 14
+  - world.debt_stage == 1
+  - actor.inventory.coin >= 90
+  duration:
+    minutes: 30
+  costs:
+    reserve:
+      coin: 90
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: debt_stage
+    delta: 1
+    maximum: 3
+  - type: world_property_delta
+    property: debt_owed
+    delta: -90
+    minimum: 0
+  - type: world_property_delta
+    property: night_actions
+    delta: -1
+    minimum: 0
+  - type: world_property_delta
+    property: suspicion
+    delta: -0.05
+    minimum: 0
+  - type: public_event
+    event: debt.paid
+    summary: 第二笔债还清了，副局长在账本上多看了你一眼。
+    data:
+      stage: 2
+  success:
+    condition: actor.alive
+    result: debt_paid
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: debt.paid
+    summary: 第二笔债还清了。
+    result: debt_paid
+- id: pay_debt_3
+  verb: pay
+  version: 1
+  description: 把最后一笔 140 枚金币放到港务局的账台上。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.night >= 21
+  - world.debt_stage == 2
+  - actor.inventory.coin >= 140
+  duration:
+    minutes: 30
+  costs:
+    reserve:
+      coin: 140
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: debt_stage
+    delta: 1
+    maximum: 3
+  - type: world_property_delta
+    property: debt_owed
+    delta: -140
+    minimum: 0
+  - type: world_property_delta
+    property: night_actions
+    delta: -1
+    minimum: 0
+  - type: world_property_delta
+    property: suspicion
+    delta: -0.05
+    minimum: 0
+  - type: public_event
+    event: debt.paid
+    summary: 最后一笔债还清了。审计官来的时候，账台上只剩一盏灯。
+    data:
+      stage: 3
+  success:
+    condition: actor.alive
+    result: debt_paid
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: debt.paid
+    summary: 最后一笔债还清了。
+    result: debt_paid
+- id: upgrade_ledger_1
+  verb: upgrade
+  version: 1
+  description: 换一本更厚的账本，每夜多做一个决定。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.ledger_level == 0
+  - actor.inventory.coin >= 40
+  duration:
+    minutes: 60
+  costs:
+    reserve:
+      coin: 40
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: ledger_level
+    delta: 1
+    maximum: 2
+  - type: world_property_delta
+    property: night_actions
+    delta: 1
+    maximum: 5
+  - type: public_event
+    event: shop.upgraded
+    summary: 柜台上多了一本厚账本；今晚还能再做一个决定。
+    data:
+      upgrade: ledger
+      level: 1
+  success:
+    condition: actor.alive
+    result: upgraded
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: shop.upgraded
+    summary: 账本升级，每夜行动增加。
+    result: upgraded
+- id: upgrade_ledger_2
+  verb: upgrade
+  version: 1
+  description: 把账本换成活页，每夜再多做一个决定。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.ledger_level == 1
+  - actor.inventory.coin >= 80
+  duration:
+    minutes: 60
+  costs:
+    reserve:
+      coin: 80
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: ledger_level
+    delta: 1
+    maximum: 2
+  - type: world_property_delta
+    property: night_actions
+    delta: 1
+    maximum: 5
+  - type: public_event
+    event: shop.upgraded
+    summary: 活页账本翻起来很快；代价是更多双眼睛盯着柜台。
+    data:
+      upgrade: ledger
+      level: 2
+  success:
+    condition: actor.alive
+    result: upgraded
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: shop.upgraded
+    summary: 账本升级，每夜行动增加。
+    result: upgraded
+- id: upgrade_appraisal_2
+  verb: upgrade
+  version: 1
+  description: 给鉴定台装一面黄铜放大镜，能看清纸纤维里的旧水印。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.appraisal
+  - world.appraisal_level == 1
+  - actor.inventory.coin >= 60
+  duration:
+    minutes: 60
+  costs:
+    reserve:
+      coin: 60
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: appraisal_level
+    delta: 1
+    maximum: 2
+  - type: world_property_delta
+    property: clues
+    delta: 1
+    maximum: 10
+  - type: public_event
+    event: shop.upgraded
+    summary: 黄铜放大镜装好了；账本上多出一条能对上号的线索。
+    data:
+      upgrade: appraisal
+      level: 2
+  success:
+    condition: actor.alive
+    result: upgraded
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: shop.upgraded
+    summary: 鉴定台升级，线索增加。
+    result: upgraded
+- id: upgrade_safe_1
+  verb: upgrade
+  version: 1
+  description: 在柜台下加一层暗格，搜查时少损失一些时间。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.safe_level == 0
+  - actor.inventory.coin >= 35
+  duration:
+    minutes: 60
+  costs:
+    reserve:
+      coin: 35
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: safe_level
+    delta: 1
+    maximum: 2
+  - type: public_event
+    event: shop.upgraded
+    summary: 柜台下多了一层暗格；港务局敲门时，你至少能把灯藏起来。
+    data:
+      upgrade: safe
+      level: 1
+  success:
+    condition: actor.alive
+    result: upgraded
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: shop.upgraded
+    summary: 暗格升级，搜查损失降低。
+    result: upgraded
+- id: upgrade_safe_2
+  verb: upgrade
+  version: 1
+  description: 把暗格扩到墙里，搜查时不再丢时间。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.safe_level == 1
+  - actor.inventory.coin >= 70
+  duration:
+    minutes: 60
+  costs:
+    reserve:
+      coin: 70
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: safe_level
+    delta: 1
+    maximum: 2
+  - type: public_event
+    event: shop.upgraded
+    summary: 墙里的暗格足够放下整本账。港务局再来，只能看见一盏灯。
+    data:
+      upgrade: safe
+      level: 2
+  success:
+    condition: actor.alive
+    result: upgraded
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: shop.upgraded
+    summary: 暗格升级，搜查损失降低。
+    result: upgraded
+- id: close_night_basic
+  verb: close
+  version: 1
+  description: 关店，等天亮。基本账本每夜提供 3 个行动。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.night < 21
+  - world.ledger_level == 0
+  - world.campaign_over < 1
+  duration:
+    minutes: 60
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: night
+    delta: 1
+    maximum: 21
+  - type: world_property_delta
+    property: night_actions
+    delta: 3
+    maximum: 3
+  - type: world_property_delta
+    property: bribe_used
+    delta: -1
+    minimum: 0
+  - type: public_event
+    event: night.started
+    summary: 当铺的灯灭了。雾港又少了一夜。
+    data: {}
+  success:
+    condition: actor.alive
+    result: night_closed
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: close_night_ledger1
+  verb: close
+  version: 1
+  description: 关店，等天亮。厚账本每夜提供 4 个行动。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.night < 21
+  - world.ledger_level == 1
+  - world.campaign_over < 1
+  duration:
+    minutes: 60
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: night
+    delta: 1
+    maximum: 21
+  - type: world_property_delta
+    property: night_actions
+    delta: 4
+    maximum: 4
+  - type: world_property_delta
+    property: bribe_used
+    delta: -1
+    minimum: 0
+  - type: public_event
+    event: night.started
+    summary: 当铺的灯灭了。雾港又少了一夜。
+    data: {}
+  success:
+    condition: actor.alive
+    result: night_closed
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: close_night_ledger2
+  verb: close
+  version: 1
+  description: 关店，等天亮。活页账本每夜提供 5 个行动。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.night < 21
+  - world.ledger_level == 2
+  - world.campaign_over < 1
+  duration:
+    minutes: 60
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: night
+    delta: 1
+    maximum: 21
+  - type: world_property_delta
+    property: night_actions
+    delta: 5
+    maximum: 5
+  - type: world_property_delta
+    property: bribe_used
+    delta: -1
+    minimum: 0
+  - type: public_event
+    event: night.started
+    summary: 当铺的灯灭了。雾港又少了一夜。
+    data: {}
+  success:
+    condition: actor.alive
+    result: night_closed
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: bribe_watch
+  verb: bribe
+  version: 1
+  description: 塞给值夜书吏 30 枚金币，让他今晚别往这条街看。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.watch
+  - world.bribe_used < 1
+  - world.suspicion >= 0.2
+  - actor.inventory.coin >= 30
+  duration:
+    minutes: 20
+  costs:
+    reserve:
+      coin: 30
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: suspicion
+    delta: -0.25
+    minimum: 0
+  - type: world_property_delta
+    property: bribe_used
+    delta: 1
+    maximum: 1
+  - type: world_property_delta
+    property: night_actions
+    delta: -1
+    minimum: 0
+  - type: public_event
+    event: watch.bribed
+    summary: 值夜书吏收下金币，把当铺那一页翻了过去。
+    data:
+      price: 30
+  success:
+    condition: actor.alive
+    result: bribed
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: odd_job
+  verb: work
+  version: 1
+  description: 在夜市替人修锁、写信或搬货，换 6 枚金币。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.work
+  - world.night_actions >= 1
+  duration:
+    minutes: 120
+  costs:
+    reserve: {}
+    per_minute:
+      stamina: 0.05
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: coin
+    quantity: 6
+  - type: world_property_delta
+    property: night_actions
+    delta: -1
+    minimum: 0
+  - type: public_event
+    event: work.shift
+    summary: 你在夜市干了一趟短工，换回 6 枚金币。
+    data:
+      price: 6
+  success:
+    condition: actor.alive
+    result: worked
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: work.shift
+    summary: 在夜市干了一趟短活，换回六枚金币。
+    result: worked
+- id: pact_watch
+  verb: pact
+  version: 1
+  description: 和港务局签约：今晚起替他们盯着这条街，换取一点喘息。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.watch
+  - world.night >= 10
+  - world.faction_pact == 0
+  - world.watch_rep >= 0.2
+  duration:
+    minutes: 30
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: faction_pact
+    delta: 1
+    maximum: 3
+  - type: world_property_delta
+    property: suspicion
+    delta: -0.2
+    minimum: 0
+  - type: world_property_delta
+    property: watch_rep
+    delta: 0.15
+    maximum: 1
+  - type: world_property_delta
+    property: night_actions
+    delta: -1
+    minimum: 0
+  - type: public_event
+    event: faction.pact
+    summary: 你在港务局的契约上签了字。从今晚起，这盏灯有一半照向他们。
+    data:
+      faction: harbor_watch
+  success:
+    condition: actor.alive
+    result: pact_signed
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: pact_chapel
+  verb: pact
+  version: 1
+  description: 和灰袍修会签约：把当铺的后门借给病人，换取他们的信任。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.chapel
+  - world.night >= 10
+  - world.faction_pact == 0
+  - world.chapel_rep >= 0.2
+  duration:
+    minutes: 30
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: faction_pact
+    delta: 2
+    maximum: 3
+  - type: world_property_delta
+    property: chapel_rep
+    delta: 0.2
+    maximum: 1
+  - type: world_property_delta
+    property: clues
+    delta: 1
+    maximum: 10
+  - type: world_property_delta
+    property: night_actions
+    delta: -1
+    minimum: 0
+  - type: public_event
+    event: faction.pact
+    summary: 修会的灰袍挂进了后门。白鹭说，灯本来就该照向病人。
+    data:
+      faction: grey_order
+  success:
+    condition: actor.alive
+    result: pact_signed
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: pact_collector
+  verb: pact
+  version: 1
+  description: 和收藏家签约：收下 50 枚金币，替他们留一件“有门”的东西。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.collector
+  - world.night >= 10
+  - world.faction_pact == 0
+  - world.collector_rep >= 0.2
+  duration:
+    minutes: 30
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: faction_pact
+    delta: 3
+    maximum: 3
+  - type: world_property_delta
+    property: collector_rep
+    delta: 0.2
+    maximum: 1
+  - type: inventory_add
+    item: coin
+    quantity: 50
+  - type: world_property_delta
+    property: suspicion
+    delta: 0.1
+    maximum: 1
+  - type: world_property_delta
+    property: night_actions
+    delta: -1
+    minimum: 0
+  - type: public_event
+    event: faction.pact
+    summary: 收藏家的银票落在柜台上。你听见玻璃柜里有什么东西轻轻响了一声。
+    data:
+      faction: collector_circle
+      price: 50
+  success:
+    condition: actor.alive
+    result: pact_signed
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: read_aunt_ledger
+  verb: study
+  version: 1
+  description: 翻开姑妈留下的缺页账本，把已经收集到的线索对上号。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.appraisal
+  - world.clues >= 7
+  - world.aunt_ledger_read < 1
+  duration:
+    minutes: 60
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: aunt_ledger_read
+    delta: 1
+    maximum: 1
+  - type: world_property_delta
+    property: clues
+    delta: 1
+    maximum: 10
+  - type: world_property_delta
+    property: night_actions
+    delta: -1
+    minimum: 0
+  - type: public_event
+    event: aunt.ledger_read
+    summary: 缺页账本的最后一句写着：钥匙不是用来锁门的，是用来放人走的。
+    data:
+      clues: 7
+  success:
+    condition: actor.alive
+    result: ledger_read
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: aunt.ledger_read
+    summary: 你读完了姑妈留下的缺页账本。
+    result: ledger_read
+- id: open_sea_gate
+  verb: open
+  version: 1
+  description: 在旧码头用铜钥匙打开海门，让雾里的灯照进来。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.pier
+  - world.night >= 21
+  - world.clues >= 10
+  - world.aunt_ledger_read >= 1
+  - world.sea_gate_open < 1
+  - actor.inventory.brass_key >= 1
+  duration:
+    minutes: 60
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: sea_gate_open
+    delta: 1
+    maximum: 1
+  - type: world_property_delta
+    property: night_actions
+    delta: -1
+    minimum: 0
+  - type: public_event
+    event: sea_gate.opened
+    summary: 铜钥匙转了一圈。海门后面不是海，是一条被灯照亮的石阶。
+    data:
+      clues: 10
+  success:
+    condition: actor.alive
+    result: gate_opened
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: dynamic_pawn
+  verb: trade
+  version: 1
+  description: 收下一件由世界生成的新东西；当金固定为 20 枚金币。
+  parameters:
+    item_id: string
+    case_slot: string
+    faction: string
+  preconditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.night_actions >= 1
+  - actor.inventory.coin >= 20
+  duration:
+    minutes: 30
+  costs:
+    reserve:
+      coin: 20
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: context.item_id
+    quantity: 1
+  - type: world_property_delta
+    property: night_actions
+    delta: -1
+    minimum: 0
+  - type: world_property_delta
+    property: context.case_slot
+    delta: 1
+    maximum: 9
+  - type: public_event
+    event: case.pawned_dynamic
+    summary: 你收下一件新客人的东西，把它记进活页账本。
+    data:
+      item: context.item_id
+      slot: context.case_slot
+      faction: context.faction
+  success:
+    condition: actor.alive
+    result: dynamic_case_pawned
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: dynamic_sell
+  verb: trade
+  version: 1
+  description: 把一件世界生成的东西卖给出价人。
+  parameters:
+    item_id: string
+    case_slot: string
+    price: string
+    faction: string
+  preconditions:
+  - actor.alive
+  - world.night_actions >= 1
+  - world[context.case_slot] == 1
+  - actor.inventory[context.item_id] >= 1
+  duration:
+    minutes: 15
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_remove
+    item: context.item_id
+    quantity: 1
+  - type: inventory_add
+    item: coin
+    quantity: context.price
+  - type: world_property_delta
+    property: night_actions
+    delta: -1
+    minimum: 0
+  - type: world_property_delta
+    property: context.case_slot
+    delta: 2
+    maximum: 9
+  - type: world_property_delta
+    property: context.faction
+    delta: 0.05
+    maximum: 1
+  - type: public_event
+    event: case.sold_dynamic
+    summary: 一件新东西离开了柜台，换回一叠金币。
+    data:
+      item: context.item_id
+      slot: context.case_slot
+  - type: public_event
+    event: case.resolved
+    summary: 一件活世界案子结算了：东西卖出，金币过账。
+    data:
+      slot: context.case_slot
+      item: context.item_id
+      outcome: sold
+  success:
+    condition: actor.alive
+    result: dynamic_case_sold
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: dynamic_return
+  verb: trade
+  version: 1
+  description: 把一件世界生成的东西还给客人，不收当金。
+  parameters:
+    case_slot: string
+    faction: string
+  preconditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.night_actions >= 1
+  - world[context.case_slot] == 0
+  duration:
+    minutes: 15
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: night_actions
+    delta: -1
+    minimum: 0
+  - type: world_property_delta
+    property: context.case_slot
+    delta: 2
+    maximum: 9
+  - type: world_property_delta
+    property: context.faction
+    delta: 0.04
+    maximum: 1
+  - type: public_event
+    event: case.returned_dynamic
+    summary: 客人把东西抱了回去；柜台少了一笔当金，多了一份人情。
+    data:
+      slot: context.case_slot
+  - type: public_event
+    event: case.resolved
+    summary: 一件活世界案子结算了：东西归还，人情留下。
+    data:
+      slot: context.case_slot
+      outcome: returned
+  success:
+    condition: actor.alive
+    result: dynamic_case_returned
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: dynamic_report
+  verb: trade
+  version: 1
+  description: 把一件世界生成的东西和它的主人报给港务局。
+  parameters:
+    case_slot: string
+  preconditions:
+  - actor.alive
+  - location.tag.watch
+  - world.night_actions >= 1
+  - world[context.case_slot] == 0
+  duration:
+    minutes: 15
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: night_actions
+    delta: -1
+    minimum: 0
+  - type: world_property_delta
+    property: context.case_slot
+    delta: 4
+    maximum: 9
+  - type: world_property_delta
+    property: watch_rep
+    delta: 0.08
+    maximum: 1
+  - type: world_property_delta
+    property: suspicion
+    delta: -0.05
+    minimum: 0
+  - type: public_event
+    event: case.reported_dynamic
+    summary: 港务局把这件事记进了另一本账。
+    data:
+      slot: context.case_slot
+  - type: public_event
+    event: case.resolved
+    summary: 一件活世界案子结算了：人和东西都进了港务局的记录。
+    data:
+      slot: context.case_slot
+      outcome: reported
+  success:
+    condition: actor.alive
+    result: dynamic_case_reported
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: dynamic_appraise
+  verb: appraise
+  version: 1
+  description: 鉴定一件世界生成的东西，读出一条新线索。
+  parameters:
+    case_slot: string
+  preconditions:
+  - actor.alive
+  - location.tag.appraisal
+  - world.night_actions >= 1
+  - world[context.case_slot] == 0
+  duration:
+    minutes: 20
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: night_actions
+    delta: -1
+    minimum: 0
+  - type: world_property_delta
+    property: clues
+    delta: 1
+    maximum: 10
+  - type: public_event
+    event: case.appraised_dynamic
+    summary: 鉴定镜下多了一道刻痕；账本上多了一条线索。
+    data:
+      slot: context.case_slot
+  success:
+    condition: actor.alive
+    result: dynamic_case_appraised
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: begin_next_season
+  verb: close
+  version: 1
+  description: 把这一季的账本合上，开始下一季；世界不会重置。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.campaign_over >= 1
+  - world.season < 99
+  duration:
+    minutes: 60
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: season
+    delta: 1
+    maximum: 99
+  - type: world_property_delta
+    property: campaign_over
+    delta: -1
+    minimum: 0
+  - type: world_property_delta
+    property: night
+    delta: -20
+    minimum: 1
+  - type: world_property_delta
+    property: debt_stage
+    delta: -3
+    minimum: 0
+  - type: world_property_delta
+    property: debt_owed
+    delta: 320
+    maximum: 10000
+  - type: world_property_delta
+    property: defaults
+    delta: -3
+    minimum: 0
+  - type: world_property_delta
+    property: suspicion
+    delta: -0.2
+    minimum: 0
+  - type: world_property_delta
+    property: act
+    delta: -2
+    minimum: 1
+  - type: world_property_delta
+    property: raid_done
+    delta: -1
+    minimum: 0
+  - type: world_property_delta
+    property: faction_pact
+    delta: -3
+    minimum: 0
+  - type: world_property_delta
+    property: night_actions
+    delta: 3
+    maximum: 5
+  - type: public_event
+    event: season.started
+    summary: 新一季的催缴单压在玻璃下；客人会换，账本不会。
+    data:
+      season: 1
+  success:
+    condition: actor.alive
+    result: season_started
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: finish_campaign
+  verb: close
+  version: 1
+  description: 关店，把账本、钥匙和这一夜的灯一起摆上柜台，等审计官推门。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.pawnshop
+  - world.night >= 21
+  - world.campaign_over < 1
+  duration:
+    minutes: 60
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: campaign_over
+    delta: 1
+    maximum: 1
+  - type: public_event
+    event: campaign.closed
+    summary: 审计官在门外停下。你听见他翻开了账本。
+    data:
+      night: 21
+  success:
+    condition: actor.alive
+    result: campaign_closed
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: rest_at_shop
+  verb: rest
+  version: 1
+  description: 在柜台后的小床上靠一会儿，恢复精力。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.pawnshop
+  duration:
+    minutes: 60
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: attribute_delta
+    attribute: stamina
+    delta: 25
+    maximum: 100
+  - type: need_delta
+    need: belonging
+    delta: 2
+    maximum: 100
+  success:
+    condition: actor.alive
+    result: rested
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: tea_at_stall
+  verb: consume
+  version: 1
+  description: 在夜市喝一碗热茶，吃一块咸饼。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.food
+  - actor.inventory.coin >= 2
+  duration:
+    minutes: 15
+  costs:
+    reserve:
+      coin: 2
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: need_delta
+    need: hydration
+    delta: 15
+    maximum: 100
+  - type: need_delta
+    need: satiety
+    delta: 15
+    maximum: 100
+  success:
+    condition: actor.alive
+    result: fed
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: linger
+  verb: wait
+  version: 1
+  description: 在当铺柜台前等下一个客人开口。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.pawnshop
+  duration:
+    minutes: 120
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects: []
+  success:
+    condition: actor.alive
+    result: waited
+  failure:
+    condition: actor.incapacitated
+    result: action_failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline

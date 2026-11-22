@@ -24,7 +24,7 @@ COLLECTION_NAMES = (
 ALLOWED_EFFECTS = frozenset({
     "need_delta", "state_delta", "attribute_delta", "attribute_set",
     "inventory_add", "inventory_remove", "inventory.consume_item",
-    "relationship_delta", "public_event", "world_property_delta",
+    "relationship_delta", "public_event", "world_property_delta", "world_property_set",
     "entity_state_set", "status_add", "status_remove", "location_set",
     "institution_allocation", "catalog_action",
 })

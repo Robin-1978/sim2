@@ -61,6 +61,9 @@ class BehaviorExecutionService(PlatformService):
             "day_phase": world_time_view(self.store).get("day_phase"),
             "conflict": {"available": conflict_available},
         }
+        for key, value in parameters.items():
+            if isinstance(value, (str, int, float)) and not isinstance(value, bool):
+                result.setdefault(str(key), value)
         resource_ref = (
             parameters.get("resource_id")
             or parameters.get("target_resource")
@@ -216,7 +219,36 @@ class BehaviorExecutionService(PlatformService):
             source_state = source.get("initial_state") if isinstance(source.get("initial_state"), dict) else {}
             context.setdefault("source_location_id", source_state.get("location_id") or source.get("location_id"))
 
-        return self._resolve_parameters(parameters, context)
+        resolved = self._resolve_parameters(parameters, context)
+        # LLM-authored living-world content often names a visible item instead
+        # of its machine id.  Canonicalize only when such an entity exists, so
+        # ordinary string parameters keep their wording.
+        for key in ("item_id", "target_item", "source_item", "inventory_item"):
+            value = resolved.get(key)
+            if not isinstance(value, str) or not value.strip():
+                continue
+            try:
+                entity = self.store.repositories.entities.get_entity(value)
+                if entity.get("entity_type") in {"item", "artifact", "relic", "object"}:
+                    continue
+            except KeyError:
+                pass
+            wanted = "".join(value.casefold().split())
+            exact = None
+            fuzzy = set()
+            for entity_type in ("item", "artifact", "relic", "object"):
+                for summary in self.store.repositories.entities.entities_of_type(entity_type):
+                    name = "".join(str(summary.get("name") or "").casefold().split())
+                    if not name:
+                        continue
+                    if name == wanted:
+                        exact = summary.get("id")
+                    elif wanted and (wanted in name or name in wanted):
+                        fuzzy.add(summary.get("id"))
+            match = exact or (next(iter(fuzzy)) if len(fuzzy) == 1 else None)
+            if match:
+                resolved[key] = match
+        return resolved
 
     def route_distance(self, origin: str | None, destination: str | None) -> int:
         """Return baseline minutes for a weighted route.

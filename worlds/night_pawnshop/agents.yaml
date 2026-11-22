@@ -1,0 +1,232 @@
+agents:
+- id: su_wan
+  name: 苏晚
+  role: 裁缝
+  controller: bt
+  ultimate_goal: 把丈夫最后一次出海留下的东西赎回来，同时不再欠修会的人情。
+  traits:
+    念旧: 0.9
+    嘴紧: 0.72
+    手巧: 0.82
+  beliefs:
+  - id: su_wan_belief
+    statement: 东西值多少钱不重要；重要的是它还记不记得人。
+    confidence: 0.8
+  needs:
+    hydration: 86
+    satiety: 82
+    belonging: 70
+    purpose: 78
+  capabilities:
+    conversation: 0.7
+    trade: 0.35
+    appraisal: 0.3
+  initial_bt_ids:
+  - linger_at_counter
+  initial_state:
+    location_id: pawnshop
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    coin: 3
+  faction_ids:
+  - grey_order
+- id: gu_chen
+  name: 顾沉
+  role: 码头工
+  controller: bt
+  ultimate_goal: 查清码头事故是谁签的字，也让自己还能在港务局面前抬起头。
+  traits:
+    硬气: 0.84
+    多疑: 0.66
+    认死理: 0.78
+  beliefs:
+  - id: gu_chen_belief
+    statement: 码头上的每一道伤都有签字的人；找不到签字的人，伤就白受了。
+    confidence: 0.8
+  needs:
+    hydration: 86
+    satiety: 82
+    belonging: 70
+    purpose: 78
+  capabilities:
+    conversation: 0.4
+    trade: 0.45
+    appraisal: 0.4
+  initial_bt_ids:
+  - linger_at_counter
+  initial_state:
+    location_id: pawnshop
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    coin: 3
+  faction_ids:
+  - harbor_watch
+- id: bai_lu
+  name: 白鹭
+  role: 修会医士
+  controller: bt
+  ultimate_goal: 让修会收留的病人活过这个冬天，也不让修会成为收藏家的帮手。
+  traits:
+    温和: 0.86
+    固执: 0.62
+    观察细: 0.88
+  beliefs:
+  - id: bai_lu_belief
+    statement: 药先给最需要的人；账可以以后算。
+    confidence: 0.8
+  needs:
+    hydration: 86
+    satiety: 82
+    belonging: 70
+    purpose: 78
+  capabilities:
+    conversation: 0.8
+    trade: 0.3
+    appraisal: 0.45
+  initial_bt_ids:
+  - linger_at_counter
+  initial_state:
+    location_id: pawnshop
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    coin: 3
+  faction_ids:
+  - grey_order
+- id: luo_qi
+  name: 罗七
+  role: 走私掮客
+  controller: bt
+  ultimate_goal: 在收藏家收网前把手里的货和债都清干净，最好还能带走一件真东西。
+  traits:
+    油滑: 0.9
+    胆小: 0.52
+    记路: 0.8
+  beliefs:
+  - id: luo_qi_belief
+    statement: 雾港没有干净货；只有还没被看见的货。
+    confidence: 0.8
+  needs:
+    hydration: 86
+    satiety: 82
+    belonging: 70
+    purpose: 78
+  capabilities:
+    conversation: 0.75
+    trade: 0.8
+    appraisal: 0.5
+  initial_bt_ids:
+  - linger_at_counter
+  initial_state:
+    location_id: pawnshop
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    coin: 3
+  faction_ids:
+  - collector_circle
+- id: shen
+  name: 沈先生
+  role: 失势书吏
+  controller: bt
+  ultimate_goal: 把赌债从自己名字上挪走，同时保住那份能扳倒副局长的签名。
+  traits:
+    谨慎: 0.82
+    爱面子: 0.64
+    会写字: 0.9
+  beliefs:
+  - id: shen_belief
+    statement: 字据比人可靠；但字据也会咬人。
+    confidence: 0.8
+  needs:
+    hydration: 86
+    satiety: 82
+    belonging: 70
+    purpose: 78
+  capabilities:
+    conversation: 0.55
+    trade: 0.5
+    appraisal: 0.6
+  initial_bt_ids:
+  - linger_at_counter
+  initial_state:
+    location_id: pawnshop
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    coin: 3
+  faction_ids:
+  - harbor_watch
+- id: a_wu
+  name: 阿雾
+  role: 守塔人之女
+  controller: bt
+  ultimate_goal: 证明旧灯塔还在亮，也证明父亲没有在那一夜弃灯。
+  traits:
+    倔强: 0.86
+    怕黑: 0.4
+    认星: 0.78
+  beliefs:
+  - id: a_wu_belief
+    statement: 灯亮着，海上的人就还有回家的路。
+    confidence: 0.8
+  needs:
+    hydration: 86
+    satiety: 82
+    belonging: 70
+    purpose: 78
+  capabilities:
+    conversation: 0.5
+    trade: 0.35
+    appraisal: 0.55
+  initial_bt_ids:
+  - linger_at_counter
+  initial_state:
+    location_id: pawnshop
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    coin: 3
+  faction_ids:
+  - grey_order
+- id: stranger
+  name: 无名客
+  role: 蒙面收藏家
+  controller: bt
+  ultimate_goal: 替收藏家拿到铜钥匙，同时也想看看你会不会走你姑妈的老路。
+  traits:
+    冷静: 0.9
+    礼貌: 0.7
+    不露底: 0.95
+  beliefs:
+  - id: stranger_belief
+    statement: 钥匙不问主人；它只问开门的人准备好了没有。
+    confidence: 0.8
+  needs:
+    hydration: 86
+    satiety: 82
+    belonging: 70
+    purpose: 78
+  capabilities:
+    conversation: 0.85
+    trade: 0.7
+    appraisal: 0.8
+  initial_bt_ids:
+  - linger_at_counter
+  initial_state:
+    location_id: pawnshop
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    coin: 3
+  faction_ids:
+  - collector_circle

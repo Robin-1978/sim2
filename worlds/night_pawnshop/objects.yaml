@@ -1,0 +1,67 @@
+objects:
+- id: pawnshop_counter
+  type: facility
+  name: 当铺柜台
+  initial_state:
+    location_id: pawnshop
+  facility:
+    order: 1
+    properties:
+    - key: night_actions
+      label: 今晚行动
+    - key: debt_owed
+      label: 剩余债务
+    - key: suspicion
+      label: 怀疑
+    - key: clues
+      label: 线索
+- id: ledger_desk
+  type: facility
+  name: 账房鉴定台
+  initial_state:
+    location_id: pawnshop_backroom
+  facility:
+    order: 2
+    properties:
+    - key: ledger_level
+      label: 账本
+    - key: appraisal_level
+      label: 鉴定台
+    - key: clues
+      label: 线索
+- id: hidden_safe
+  type: facility
+  name: 柜台暗格
+  initial_state:
+    location_id: pawnshop_backroom
+  facility:
+    order: 3
+    properties:
+    - key: safe_level
+      label: 暗格
+    - key: suspicion
+      label: 怀疑
+- id: aunt_ledger
+  type: facility
+  name: 姑妈的账本
+  initial_state:
+    location_id: pawnshop_backroom
+  facility:
+    order: 4
+    properties:
+    - key: aunt_ledger_read
+      label: 已读
+    - key: clues
+      label: 线索
+- id: sea_gate_marker
+  type: facility
+  name: 旧灯塔海门
+  initial_state:
+    location_id: pier
+  facility:
+    order: 5
+    properties:
+    - key: sea_gate_open
+      label: 海门
+    - key: clues
+      label: 线索
