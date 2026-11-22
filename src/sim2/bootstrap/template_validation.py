@@ -14,6 +14,7 @@ from typing import Any
 from ..actions.conditions import ConditionEngine
 from ..world.lifecycle import validate_incapacitation_rule
 from ..world.ui_text import validate_ui_text
+from .catalog_validation import validate_action_catalogs
 
 COLLECTION_NAMES = (
     "attributes", "locations", "resources", "objects", "factions", "agents",
@@ -62,6 +63,7 @@ class _TemplateChecks:
         self.check_resources_and_objects()
         self.check_location_connectivity()
         self.check_actions()
+        self.check_action_catalogs()
         self.check_behaviors()
         self.check_agents()
         self.check_recipes()
@@ -359,6 +361,18 @@ class _TemplateChecks:
                 errors.append(f"action {action.get('id')} requires a success condition and result")
             if not isinstance(action.get("failure"), dict) or not isinstance(action.get("failure", {}).get("condition"), str) or not isinstance(action.get("failure", {}).get("result"), str):
                 errors.append(f"action {action.get('id')} requires a failure condition and result")
+
+    def check_action_catalogs(self) -> None:
+        self.errors.extend(validate_action_catalogs(
+            self.rules,
+            resources=self.collections["resources"],
+            location_ids=self.location_ids,
+            condition_engine=self.condition_engine,
+            state_ids=self.state_ids,
+            need_ids=self.need_ids,
+            world_properties=set(self.world_properties),
+            item_labels=self.rules.get("item_labels") if isinstance(self.rules.get("item_labels"), dict) else {},
+        ))
 
     def _check_action_costs(self, action: dict[str, Any]) -> None:
         errors = self.errors

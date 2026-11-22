@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import yaml
@@ -442,3 +443,63 @@ def test_global_story_beat_expires_so_the_same_beat_can_reappear(tmp_path: Path)
         assert int(state["shop_ready"]["started_minute"]) > started
     finally:
         platform.close()
+
+
+def test_validate_config_rejects_a_gather_entry_bound_to_another_location(tmp_path: Path) -> None:
+    package = tmp_path / "bad-gather-location"
+    shutil.copytree(WORLD, package)
+    rules_path = package / "rules.yaml"
+    rules = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
+    entry = next(item for item in rules["action_catalogs"]["gather"] if item["id"] == "gather_iron_ore")
+    entry["location"] = "riverbank"
+    rules_path.write_text(yaml.safe_dump(rules, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+    report = validate_config(package)
+
+    assert report["valid"] is False
+    assert any(
+        "gather_iron_ore" in error
+        and "riverbank" in error
+        and "north_mine" in error
+        for error in report["errors"]
+    )
+
+
+def test_validate_config_rejects_a_gather_entry_without_a_bound_resource_or_known_tool(tmp_path: Path) -> None:
+    package = tmp_path / "bad-gather-binding"
+    shutil.copytree(WORLD, package)
+    rules_path = package / "rules.yaml"
+    rules = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
+    entry = next(item for item in rules["action_catalogs"]["gather"] if item["id"] == "gather_iron_ore")
+    entry.pop("resource_id")
+    entry["requires"].append("actor.inventory.pickaxe_typo >= 1")
+    entry["requires"].append("actor.permissions.mine_access == true")
+    rules_path.write_text(yaml.safe_dump(rules, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+    report = validate_config(package)
+
+    assert report["valid"] is False
+    assert any("gather_iron_ore requires resource_id" in error for error in report["errors"])
+    assert any("pickaxe_typo" in error and "undeclared inventory item" in error for error in report["errors"])
+    assert any("actor.permissions.mine_access" in error and "unsupported condition path" in error for error in report["errors"])
+
+
+def test_depleted_resource_is_not_offered_as_a_gather_choice(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "riverbend-depleted-node", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "miner", name="阿岚")["status"] == "accepted"
+        with platform.store.transaction():
+            agent = platform.store.repositories.entities.get_agent("hero")
+            agent["initial_state"]["location_id"] = "north_mine"
+            platform.store.repositories.entities.put_agent("hero", agent, "阿岚")
+        _set_resource_quantity(platform, "iron_vein", 0)
+
+        view = service.player_view("hero")
+        gather = next(action for action in view["actions"] if action["ref"] == "behavior:gather")
+        choices = {option["value"] for option in gather["parameter_options"]["entry_id"]}
+
+        assert "gather_iron_ore" not in choices
+        assert "gather_coal" in choices
+    finally:
+        service.close()

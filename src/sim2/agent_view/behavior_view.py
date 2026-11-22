@@ -18,7 +18,7 @@ from ..world.navigation import (
     resource_is_at_location,
 )
 from ..world.authorization import authorization_for_behavior
-from ..actions.catalogs import catalog_entries, entry_cost_available, entry_location
+from ..actions.catalogs import catalog_entries, entry_cost_available, entry_location, entry_resource_available
 from ..world.bindings import iter_behavior_actions, resolve_behavior_effect
 from ..world.contested import resource_take_effect
 from ..world.context import configured_context_values
@@ -498,6 +498,8 @@ class BehaviorViewMixin:
                 ):
                     continue
                 if not entry_cost_available(self.store, entry, frame.agent, entity_quantity=self._entity_quantity):
+                    continue
+                if not entry_resource_available(self.store, entry, entity_quantity=self._entity_quantity):
                     continue
                 options.append({
                     "name": str(entry.get("label") or entry.get("id")),

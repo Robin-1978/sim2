@@ -18,6 +18,25 @@ from ..world.lifecycle import INACTIVE_STATUSES, INCAPACITATED_CONDITION, is_ina
 _UNKNOWN = object()
 
 
+def _reference_paths(tree: Expression) -> list[str]:
+    """Collect every configured reference path from one parsed expression."""
+
+    if isinstance(tree, ReferenceExpression):
+        return [str(tree.path)]
+    if isinstance(tree, UnaryExpression):
+        return _reference_paths(tree.operand)
+    if isinstance(tree, BinaryExpression):
+        return [*_reference_paths(tree.left), *_reference_paths(tree.right)]
+    if isinstance(tree, LiteralExpression) and isinstance(tree.value, list):
+        return [
+            path
+            for item in tree.value
+            if isinstance(item, Expression)
+            for path in _reference_paths(item)
+        ]
+    return []
+
+
 class ConditionEngine:
     """Evaluate the small declarative predicate language used by definitions.
 
@@ -73,6 +92,29 @@ class ConditionEngine:
         except (ExpressionSyntaxError, TypeError, ValueError):
             return None
         return None if value is _UNKNOWN else bool(value)
+
+    def unknown_paths(self, expression: str) -> list[str]:
+        """Return reference paths this engine does not recognize.
+
+        Configuration validation uses this to reject a typo such as
+        ``actor.permissions.pickaxe`` instead of silently evaluating it as
+        false at runtime.  Unknown bare identifiers are reported too.
+        """
+
+        text = self._normalize_expression(expression)
+        if not text:
+            return []
+        try:
+            tree = parse_expression(text)
+        except ExpressionSyntaxError:
+            return [text]
+        return list(dict.fromkeys(path for path in _reference_paths(tree) if not self._known_path(path)))
+
+    @staticmethod
+    def normalize_expression(expression: str) -> str:
+        """Normalize the authored bracket notation for callers that inspect paths."""
+
+        return ConditionEngine._normalize_expression(expression)
 
     @staticmethod
     def _normalize_expression(expression: str) -> str:

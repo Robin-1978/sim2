@@ -1623,6 +1623,7 @@ action_catalogs:
     label: 在北山矿场敲下两份铁矿石。
     location: north_mine
     tier: surface
+    resource_id: iron_vein
     requires:
     - actor.can_gather
     - actor.need.hydration > 15
@@ -1649,6 +1650,7 @@ action_catalogs:
     label: 在北山矿场收两份煤。
     location: north_mine
     tier: surface
+    resource_id: coal_seam
     requires:
     - actor.can_gather
     - actor.need.hydration > 15
@@ -1675,6 +1677,7 @@ action_catalogs:
     label: 在草药沼泽采两份草药，留下根。
     location: herb_marsh
     tier: surface
+    resource_id: herb_patch
     requires:
     - actor.can_gather
     - actor.need.hydration > 15
@@ -1701,6 +1704,7 @@ action_catalogs:
     label: 在麦田割两份麦子。
     location: barley_field
     tier: surface
+    resource_id: grain_field
     requires:
     - actor.can_gather
     - actor.need.hydration > 15
@@ -1727,6 +1731,7 @@ action_catalogs:
     label: 在河滩下网，收两份河鱼。
     location: riverbank
     tier: surface
+    resource_id: river_fish
     requires:
     - actor.can_gather
     - actor.need.hydration > 15
@@ -1753,6 +1758,7 @@ action_catalogs:
     label: 在河滩捡两捆浮木。
     location: riverbank
     tier: surface
+    resource_id: driftwood
     requires:
     - actor.can_gather
     - actor.need.hydration > 15
@@ -1779,6 +1785,7 @@ action_catalogs:
     label: 用铁镐进北山深巷，敲下四份铁矿石；松动的岩层会伤到人。
     location: north_mine
     tier: deep
+    resource_id: iron_vein
     requires:
     - actor.inventory.pickaxe >= 1
     - actor.need.hydration > 15
@@ -1810,6 +1817,7 @@ action_catalogs:
     label: 用药锄挖开沼泽深处的药根，收四份草药；湿气会伤身。
     location: herb_marsh
     tier: deep
+    resource_id: herb_patch
     requires:
     - actor.inventory.herb_sickle >= 1
     - actor.need.hydration > 15
@@ -1841,6 +1849,7 @@ action_catalogs:
     label: 用鱼竿在河湾急流下网，收四份河鱼；冷水会让人发抖。
     location: riverbank
     tier: deep
+    resource_id: river_fish
     requires:
     - actor.inventory.fishing_rod >= 1
     - actor.need.hydration > 15

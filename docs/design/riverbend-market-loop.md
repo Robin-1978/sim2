@@ -129,10 +129,11 @@ flowchart LR
 
 - `action_catalogs.trade_offers`：19 条报价，玩家在店铺里选“卖铁矿石给铁匠铺（3 金币）”或“买铁镐（10 金币）”。
 - `action_catalogs.gather`：9 个采集节点，按 `surface/deep` 分层；普通采集和深采各一棵 BT。
+- 每条采集用 `resource_id` 显式绑定资源；包校验会拒绝未知资源、地点与资源地点不一致、`resource_withdrawal` 指向别的资源、缺少产出物品或未在 `item_labels` 声明的产出。
 - `action_catalogs.consume`：热饭、炖菜、麦酒、药剂四种随身物品。
 - `craft` 用 `recipe_id` 选择配方，配方仍由 `recipes.yaml` 定义。
 
-Platform 通过通用 `catalog_action` 效果执行目录条目：先校验位置/`requires`/成本，再用现有效果管线应用库存、钱柜、声望和事件。玩家界面只显示当前地点或当前背包里可用的条目，选择值使用稳定 ID，标签保持人类可读。
+Platform 通过通用 `catalog_action` 效果执行目录条目：先校验位置/`requires`/成本，再用现有效果管线应用库存、钱柜、声望和事件。玩家界面只显示当前地点、当前库存足够且条件满足的条目；采空的资源节点不会继续出现在采集下拉框里。选择值使用稳定 ID，标签保持人类可读。`requires` 的条件路径在建包时校验：未知命名空间、未声明状态/需求/世界属性、未声明物品都会被拒绝，避免拼写错误静默变成 false。
 
 ### 七天桥市
 

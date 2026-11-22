@@ -315,3 +315,37 @@ def test_world_builder_runtime_smoke_rejects_structurally_valid_dead_start():
     errors = smoke_test_world_template(template)
     assert any("no executable initial behavior" in item for item in errors)
     assert any("actor.state.charge < 0" in item for item in errors)
+
+
+def test_world_template_validates_action_catalog_resource_bindings():
+    template = orbital_template()
+    template["resources"] = [{
+        "id": "coolant",
+        "type": "resource",
+        "name": "Coolant",
+        "location_id": "reactor_bay",
+        "initial_state": {"location_id": "reactor_bay", "quantity": 4},
+    }]
+    template["rules"]["item_labels"] = {"coolant": "Coolant"}
+    template["rules"]["action_catalogs"] = {
+        "gather": [{
+            "id": "collect_coolant",
+            "label": "Collect coolant",
+            "location": "docking_ring",
+            "resource_id": "coolant",
+            "tier": "surface",
+            "requires": ["actor.alive"],
+            "effects": [{
+                "type": "resource_withdrawal",
+                "resource_id": "coolant",
+                "amount": 1,
+                "output_item": "coolant",
+            }],
+        }],
+    }
+
+    errors = validate_world_template(template)["errors"]
+
+    assert any("collect_coolant" in error and "docking_ring" in error and "reactor_bay" in error for error in errors)
+    template["rules"]["action_catalogs"]["gather"][0]["location"] = "reactor_bay"
+    assert validate_world_template(template) == {"valid": True, "errors": []}

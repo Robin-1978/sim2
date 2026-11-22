@@ -47,6 +47,37 @@ def entry_location(entry: dict[str, Any]) -> str:
     return str(entry.get("location") or "").strip()
 
 
+def entry_withdrawal_requirement(entry: dict[str, Any]) -> tuple[str, float]:
+    """Return the bound stock and quantity one catalog entry withdraws."""
+
+    resource_id = str(entry.get("resource_id") or "").strip()
+    required = 0.0
+    for effect in entry.get("effects") or []:
+        if not isinstance(effect, dict) or str(effect.get("type") or effect.get("op") or "") != "resource_withdrawal":
+            continue
+        effect_resource = str(effect.get("resource_id") or effect.get("resource") or "").strip()
+        if not effect_resource and resource_id:
+            effect_resource = resource_id
+        if resource_id and effect_resource and effect_resource != resource_id:
+            continue
+        amount = float(effect.get("amount", effect.get("quantity", 0)) or 0)
+        required += max(0.0, amount)
+    return resource_id, required
+
+
+def entry_resource_available(store: Any, entry: dict[str, Any], *, entity_quantity: Any) -> bool:
+    """Whether the stock bound to a catalog entry can pay its withdrawal now."""
+
+    resource_id, required = entry_withdrawal_requirement(entry)
+    if not resource_id:
+        return True
+    try:
+        resource = store.repositories.entities.get_entity(resource_id)
+    except KeyError:
+        return False
+    return float(entity_quantity(resource) or 0) >= required
+
+
 def entry_cost_available(store: Any, entry: dict[str, Any], agent: dict[str, Any], *, entity_quantity: Any) -> bool:
     """Check a catalog entry's static reserve costs without mutating state."""
 

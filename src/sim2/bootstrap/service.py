@@ -7,12 +7,14 @@ from typing import Any
 
 import yaml
 
+from ..actions.conditions import ConditionEngine
 from ..evolution.config import normalize_evolution_config
 from ..persistence.store import WorldStore, config_hash
 from ..world.lifecycle import validate_incapacitation_rule
 from ..world.player_template import PlayerTemplateError, parse_player_template
 from ..world.schema import AttributeSchema
 from ..world.ui_text import validate_ui_text
+from .catalog_validation import validate_action_catalogs
 from .template_validation import validate_world_template
 
 
@@ -654,13 +656,49 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
             errors.append(f"state attribute {attribute.get('id')} must declare cost_mode")
     ids_by_key = {key: _ids(values, key, errors) for key, values in data.items()}
 
+    rules = load_yaml(config_dir, "rules.yaml", {}) or {}
+    resources = load_yaml(config_dir, "locations.yaml", {}).get("resources", [])
+    if not isinstance(resources, list):
+        errors.append("locations.yaml.resources must be a list")
+        resources = []
+    else:
+        for item in resources:
+            if not isinstance(item, dict):
+                errors.append("locations.yaml.resources entries must be objects")
+        resources = [item for item in resources if isinstance(item, dict)]
+    resource_ids = _ids(resources, "resources", errors)
+
     location_ids = ids_by_key["locations"]
     action_ids = ids_by_key["actions"]
     behavior_ids = ids_by_key["behavior_trees"]
     agent_ids = ids_by_key["agents"]
     object_ids = ids_by_key["objects"]
     faction_ids = ids_by_key["factions"]
-    known_entities = location_ids | object_ids | agent_ids | faction_ids
+    known_entities = location_ids | object_ids | agent_ids | faction_ids | resource_ids
+
+    attributes = [item for item in data["attributes"] if isinstance(item, dict)]
+    state_ids = {str(item.get("id")) for item in attributes if item.get("kind") == "state" and item.get("id")}
+    need_ids = {str(item.get("id")) for item in attributes if item.get("kind") == "need" and item.get("id")}
+    need_ids.update(
+        str(item.get("id"))
+        for item in (rules.get("needs") or [])
+        if isinstance(item, dict) and item.get("id")
+    )
+    world_state = load_yaml(config_dir, "world_state.yaml", {}) or {}
+    world_state_root = world_state.get("world_state") if isinstance(world_state, dict) else {}
+    world_properties = set(
+        (((world_state_root or {}).get("properties") or {}) if isinstance(world_state_root, dict) else {}).keys()
+    )
+    errors.extend(validate_action_catalogs(
+        rules,
+        resources=resources,
+        location_ids=location_ids,
+        condition_engine=ConditionEngine(rules),
+        state_ids=state_ids,
+        need_ids=need_ids,
+        world_properties={str(item) for item in world_properties},
+        item_labels=rules.get("item_labels") if isinstance(rules.get("item_labels"), dict) else {},
+    ))
 
     for location in data["locations"]:
         for route in location.get("routes", []):
@@ -731,7 +769,6 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
         if relation.get("to") not in agent_ids and relation.get("to") != "player":
             errors.append(f"relationship references unknown target {relation.get('to')}")
 
-    rules = load_yaml(config_dir, "rules.yaml", {}) or {}
     errors.extend(validate_incapacitation_rule(rules))
     setting = load_yaml(config_dir, "setting.yaml", {})
     errors.extend(validate_ui_text(setting.get("ui_text") if isinstance(setting, dict) else None))

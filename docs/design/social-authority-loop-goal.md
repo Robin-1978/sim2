@@ -1,7 +1,7 @@
 # Social Authority Loop — Current Goal and Open Issues
 
 Status: **ACTIVE**
-Last updated: 2026-11-19
+Last updated: 2026-11-22
 
 ## 1. User goal (verbatim)
 
@@ -225,3 +225,9 @@ world-pack lint covers every `worlds/*/actions.yaml`.
 - 手动时间：世界状态面板增加“等待 1 小时 / 4 小时”，`ManualTaskRunner` 区分“跟随当前长行动”与“空闲等待完整时长”，因此空闲时也能推进 NPC 决策；等待进度显示在按钮旁，完成后提示实际推进分钟与居民决策次数。
 - 公共淡水：`fresh_water_reserve` 是共享 `fresh_water` 的只读投影。新增 `draw_water` 行为在安全地点从公共储备领取 1 份随身淡水（10 分钟，储备 -1，随身少于 2 份时出现），沼泽采集仍是补充储备的主要方式；配给、抢修、风暴和集雨器都会改变储备，低于 8 触发 `resource.safety_low`。标签改为“公共淡水”，并带说明 tooltip。
 - 潮门改为两段式公共工程：`tide_gate_integrity`（结构，目标 80%）与 `gate_supports`（临时支撑，目标 40%）必须同时达标；`brace_gate` 主要加支撑 15%，`repair_priority_today` 加支撑 10%，风暴后支撑按 30%/50%/60% 衰减。`storm_eta_hours <= 6` 时开启 `storm_final_watch`，玩家在“通宵抢修 / 撤走物资 / 让居民避风”中三选一；`storm_prepared` 让失败分支的物资损失减半。设计、数值与验证见 `docs/design/tidebound-gate-loop.md`。
+
+### 2026-11-22
+
+- Riverbend 采集目录新增显式 `resource_id`；包校验与模板校验会拒绝未知资源、地点/资源地点不一致、`resource_withdrawal` 指向别的资源、缺少产出物品或未在 `item_labels` 声明的产出。
+- 采集目录的 `requires` 现在校验条件路径：未知命名空间、未声明状态/需求/世界属性、未声明物品不再静默变成 false。
+- 玩家视图按绑定资源的当前库存过滤采集条目；资源不足一次采集量时不再出现在下拉框。聚焦回归 `tests/test_riverbend_market.py` 17 项、`tests/test_world_authoring.py` 12 项通过；相关世界/打包校验共 80 项通过。
