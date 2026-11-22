@@ -1,0 +1,121 @@
+recipes:
+- id: camp_ration
+  name: 营地口粮
+  station_tags:
+  - kitchen
+  inputs:
+  - item: berries
+    quantity: 2
+  - item: salt
+    quantity: 1
+  outputs:
+  - item: ration
+    quantity: 2
+  requires:
+  - capability: cooking
+    min_level: 0.15
+  duration_minutes: 30
+  effects:
+  - op: capability.add_xp
+    capability: cooking
+    value: 0.02
+- id: mushroom_stew
+  name: 蘑菇炖菜
+  station_tags:
+  - kitchen
+  inputs:
+  - item: mushroom
+    quantity: 2
+  - item: herb
+    quantity: 1
+  - item: salt
+    quantity: 1
+  outputs:
+  - item: stew
+    quantity: 2
+  requires:
+  - capability: cooking
+    min_level: 0.3
+  duration_minutes: 45
+  effects:
+  - op: capability.add_xp
+    capability: cooking
+    value: 0.03
+- id: salve
+  name: 药膏
+  station_tags:
+  - infirmary
+  inputs:
+  - item: herb
+    quantity: 2
+  - item: oil
+    quantity: 1
+  outputs:
+  - item: salve
+    quantity: 1
+  requires:
+  - capability: medicine
+    min_level: 0.2
+  duration_minutes: 40
+  effects:
+  - op: capability.add_xp
+    capability: medicine
+    value: 0.03
+- id: fiber_rope
+  name: 绳索
+  station_tags:
+  - craft
+  inputs:
+  - item: fiber
+    quantity: 3
+  outputs:
+  - item: rope
+    quantity: 1
+  requires:
+  - capability: crafting
+    min_level: 0.1
+  duration_minutes: 30
+  effects:
+  - op: capability.add_xp
+    capability: crafting
+    value: 0.02
+- id: glass_lens
+  name: 透镜
+  station_tags:
+  - craft
+  inputs:
+  - item: glass_sand
+    quantity: 2
+  - item: coal
+    quantity: 1
+  outputs:
+  - item: lens
+    quantity: 1
+  requires:
+  - capability: crafting
+    min_level: 0.25
+  duration_minutes: 60
+  effects:
+  - op: capability.add_xp
+    capability: crafting
+    value: 0.03
+- id: amber_salve
+  name: 琥珀药膏
+  station_tags:
+  - infirmary
+  inputs:
+  - item: amber
+    quantity: 1
+  - item: herb
+    quantity: 2
+  outputs:
+  - item: salve
+    quantity: 2
+  requires:
+  - capability: medicine
+    min_level: 0.35
+  duration_minutes: 60
+  effects:
+  - op: capability.add_xp
+    capability: medicine
+    value: 0.04

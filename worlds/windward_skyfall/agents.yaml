@@ -1,0 +1,326 @@
+agents:
+- id: alan
+  name: 阿岚
+  role: 机械师
+  controller: bt
+  ultimate_goal: 让风脊号重新飞起来，同时不承认自己害怕高度。
+  traits:
+    手巧: 0.9
+    嘴硬: 0.75
+    怕高: 0.4
+  beliefs:
+  - id: alan_belief
+    statement: 船只要能飞，就还有下一次日出。
+    confidence: 0.8
+  needs:
+    hydration: 86
+    satiety: 82
+    belonging: 70
+    purpose: 78
+  capabilities:
+    crafting: 0.7
+    gathering: 0.4
+    exploration: 0.35
+    medicine: 0.3
+    conversation: 0.45
+    cooking: 0.3
+  initial_bt_ids:
+  - eat_ration
+  - drink_water
+  - rest_at_camp
+  - work_camp
+  - patch_hull
+  - stargaze
+  initial_state:
+    location_id: lantern_cape
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    ration: 5
+    water: 5
+- id: yanqiu
+  name: 砚秋
+  role: 制图师
+  controller: bt
+  ultimate_goal: 画完裂天群岛的完整海图，也决定那张旧图要不要给别人看。
+  traits:
+    记路: 0.9
+    谨慎: 0.78
+    藏事: 0.6
+  beliefs:
+  - id: yanqiu_belief
+    statement: 地图不是把地方画下来，是决定谁有资格找到它。
+    confidence: 0.8
+  needs:
+    hydration: 86
+    satiety: 82
+    belonging: 70
+    purpose: 78
+  capabilities:
+    exploration: 0.8
+    crafting: 0.4
+    gathering: 0.45
+    medicine: 0.3
+    conversation: 0.55
+    cooking: 0.3
+  initial_bt_ids:
+  - eat_ration
+  - drink_water
+  - rest_at_camp
+  - work_camp
+  - stargaze
+  initial_state:
+    location_id: lantern_cape
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    ration: 5
+    water: 5
+- id: laotao
+  name: 老陶
+  role: 厨师
+  controller: bt
+  ultimate_goal: 让每个人在坠落前吃上一顿热饭，也让自己记得家的味道。
+  traits:
+    耐得住: 0.85
+    手稳: 0.8
+    念旧: 0.7
+  beliefs:
+  - id: laotao_belief
+    statement: 锅里还有热气，人就不会散。
+    confidence: 0.8
+  needs:
+    hydration: 86
+    satiety: 82
+    belonging: 70
+    purpose: 78
+  capabilities:
+    cooking: 0.85
+    gathering: 0.4
+    crafting: 0.35
+    medicine: 0.3
+    conversation: 0.5
+    exploration: 0.25
+  initial_bt_ids:
+  - eat_ration
+  - drink_water
+  - rest_at_camp
+  - work_camp
+  - cook_meal
+  - stargaze
+  initial_state:
+    location_id: lantern_cape
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    ration: 5
+    water: 5
+- id: baique
+  name: 白雀
+  role: 医士
+  controller: bt
+  ultimate_goal: 把每个伤员都带回去，也把每个没能带回来的人名字记住。
+  traits:
+    温和: 0.88
+    固执: 0.6
+    手稳: 0.82
+  beliefs:
+  - id: baique_belief
+    statement: 药先给最需要的人；名字要留给后来的人。
+    confidence: 0.8
+  needs:
+    hydration: 86
+    satiety: 82
+    belonging: 70
+    purpose: 78
+  capabilities:
+    medicine: 0.8
+    gathering: 0.35
+    crafting: 0.35
+    exploration: 0.4
+    conversation: 0.6
+    cooking: 0.4
+  initial_bt_ids:
+  - eat_ration
+  - drink_water
+  - rest_at_camp
+  - work_camp
+  - tend_infirmary
+  - stargaze
+  initial_state:
+    location_id: lantern_cape
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    ration: 5
+    water: 5
+- id: xiaoman
+  name: 小满
+  role: 孩子
+  controller: bt
+  ultimate_goal: 找到会说话的鸟，也弄清楚风暴为什么总在她睡着时说话。
+  traits:
+    好奇: 0.95
+    怕黑: 0.45
+    耳朵灵: 0.8
+  beliefs:
+  - id: xiaoman_belief
+    statement: 鸟知道风从哪里来；风知道船该往哪里去。
+    confidence: 0.8
+  needs:
+    hydration: 86
+    satiety: 82
+    belonging: 70
+    purpose: 78
+  capabilities:
+    exploration: 0.5
+    conversation: 0.55
+    gathering: 0.35
+    crafting: 0.25
+    medicine: 0.2
+    cooking: 0.25
+  initial_bt_ids:
+  - eat_ration
+  - drink_water
+  - rest_at_camp
+  - work_camp
+  - tend_garden
+  - stargaze
+  initial_state:
+    location_id: lantern_cape
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    ration: 5
+    water: 5
+- id: ke
+  name: 阿筝
+  role: 风筝人斥候
+  controller: bt
+  ultimate_goal: 把所有还能系的岛系在一起，也说服风脊号留下。
+  traits:
+    爽快: 0.8
+    恋家: 0.85
+    会看风: 0.78
+  beliefs:
+  - id: ke_belief
+    statement: 岛可以掉，绳子不能断。
+    confidence: 0.8
+  needs:
+    hydration: 86
+    satiety: 82
+    belonging: 70
+    purpose: 78
+  capabilities:
+    exploration: 0.8
+    conversation: 0.7
+    gathering: 0.5
+    crafting: 0.4
+    medicine: 0.3
+    cooking: 0.3
+  initial_bt_ids:
+  - eat_ration
+  - drink_water
+  - rest_rough
+  - work_camp
+  - stargaze
+  initial_state:
+    location_id: broken_span
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    ration: 6
+    water: 6
+    rope: 2
+  faction_ids:
+  - kite_folk
+- id: forge_master
+  name: 炉七
+  role: 熔炉派工头
+  controller: bt
+  ultimate_goal: 把雷云工坊的引擎拆下来，赶在风暴前离开。
+  traits:
+    现实: 0.9
+    嗓门大: 0.7
+    认货: 0.85
+  beliefs:
+  - id: forge_master_belief
+    statement: 天空不会等人；能带走的才叫财产。
+    confidence: 0.8
+  needs:
+    hydration: 86
+    satiety: 82
+    belonging: 70
+    purpose: 78
+  capabilities:
+    crafting: 0.8
+    gathering: 0.6
+    conversation: 0.6
+    exploration: 0.4
+    medicine: 0.25
+    cooking: 0.3
+  initial_bt_ids:
+  - eat_ration
+  - drink_water
+  - rest_rough
+  - work_camp
+  - stargaze
+  initial_state:
+    location_id: thunderhead_works
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    ration: 6
+    water: 6
+    copper_ore: 2
+  faction_ids:
+  - foundry
+- id: choir_keeper
+  name: 灯婆
+  role: 风歌者守灯人
+  controller: bt
+  ultimate_goal: 让风暴重新呼吸，也让旧灯塔的名字有人记住。
+  traits:
+    安静: 0.9
+    看得远: 0.8
+    记性好: 0.85
+  beliefs:
+  - id: choir_keeper_belief
+    statement: 风不是敌人；风只是找不到出口。
+    confidence: 0.8
+  needs:
+    hydration: 86
+    satiety: 82
+    belonging: 70
+    purpose: 78
+  capabilities:
+    conversation: 0.8
+    exploration: 0.6
+    medicine: 0.4
+    crafting: 0.35
+    gathering: 0.3
+    cooking: 0.3
+  initial_bt_ids:
+  - eat_ration
+  - drink_water
+  - rest_rough
+  - work_camp
+  - stargaze
+  initial_state:
+    location_id: old_lighthouse
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory:
+    ration: 6
+    water: 6
+    oil: 1
+  faction_ids:
+  - choir

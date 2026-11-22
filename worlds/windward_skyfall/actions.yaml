@@ -1,0 +1,2445 @@
+actions:
+- id: travel_to
+  verb: move
+  version: 1
+  description: 沿岛链飞向目标地点。
+  parameters:
+    location_id: string
+  preconditions:
+  - route.known
+  - actor.mobile
+  - destination.reachable
+  duration:
+    minutes: 10
+  costs:
+    reserve: {}
+    per_minute:
+      stamina: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: location_set
+    location_id: context.location_id
+  success:
+    condition: actor.alive
+    result: arrived
+  failure:
+    condition: actor.incapacitated
+    result: route_unknown
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  requires_destination: true
+- id: explore_area
+  verb: explore
+  version: 1
+  description: 花时间勘察一处岛屿，记录资源、遗迹和可以继续走的路。
+  parameters:
+    area_id: string
+  preconditions:
+  - actor.can_explore
+  - actor.alive
+  - route.known
+  - area.not_fully_mapped
+  duration:
+    minutes: 120
+  costs:
+    reserve: {}
+    per_minute:
+      stamina: 0.18
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: need_delta
+    need: purpose
+    delta: 4
+  - type: world_property_delta
+    property: explored_islands
+    delta: 1
+    maximum: 9
+    label: 已探岛屿
+  - type: world_property_delta
+    property: storm_pressure
+    delta: 1
+    maximum: 100
+    label: 风暴压力
+  success:
+    condition: area.survey_complete
+    result: exploration_completed
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: exploration.completed
+    summary: 你把这座岛的地形、资源和能走的路记进了海图。
+    area_parameter: area_id
+    result: exploration_completed
+- id: gather_resource
+  verb: gather
+  version: 1
+  description: 从可见的资源节点采集两份材料。
+  parameters:
+    resource_tag: string
+    location_id: string
+  preconditions:
+  - actor.can_gather
+  - actor.alive
+  - location.resource_node
+  duration:
+    minutes: 60
+  costs:
+    reserve:
+      resource_parameter: resource_tag
+      resource_amount: 2
+    per_minute:
+      stamina: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: context.resource_tag
+    quantity: 2
+  success:
+    condition: resource.collected
+    result: resource_gathered
+  failure:
+    condition: resource.empty or actor.incapacitated
+    result: gathering_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: chop_timber
+  verb: gather
+  version: 1
+  description: 用石斧伐下五份木料。
+  parameters:
+    resource_tag: string
+    location_id: string
+  preconditions:
+  - actor.can_gather
+  - actor.alive
+  - location.resource_node
+  - actor.inventory.stone_axe >= 1
+  duration:
+    minutes: 90
+  costs:
+    reserve:
+      resource_parameter: resource_tag
+      resource_amount: 5
+    per_minute:
+      stamina: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: context.resource_tag
+    quantity: 5
+  success:
+    condition: resource.collected
+    result: resource_gathered
+  failure:
+    condition: resource.empty or actor.incapacitated
+    result: gathering_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: quarry_stone
+  verb: gather
+  version: 1
+  description: 用石镐敲下五份石块。
+  parameters:
+    resource_tag: string
+    location_id: string
+  preconditions:
+  - actor.can_gather
+  - actor.alive
+  - location.resource_node
+  - actor.inventory.stone_pick >= 1
+  duration:
+    minutes: 90
+  costs:
+    reserve:
+      resource_parameter: resource_tag
+      resource_amount: 5
+    per_minute:
+      stamina: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: context.resource_tag
+    quantity: 5
+  success:
+    condition: resource.collected
+    result: resource_gathered
+  failure:
+    condition: resource.empty or actor.incapacitated
+    result: gathering_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: mine_copper
+  verb: gather
+  version: 1
+  description: 用石镐从铜脉里敲下两份铜矿。
+  parameters:
+    resource_tag: string
+    location_id: string
+  preconditions:
+  - actor.can_gather
+  - actor.alive
+  - location.resource_node
+  - actor.inventory.stone_pick >= 1
+  duration:
+    minutes: 90
+  costs:
+    reserve:
+      resource_parameter: resource_tag
+      resource_amount: 2
+    per_minute:
+      stamina: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: context.resource_tag
+    quantity: 2
+  - type: world_property_delta
+    property: storm_pressure
+    delta: 2
+    maximum: 100
+    label: 风暴压力
+  success:
+    condition: resource.collected
+    result: resource_gathered
+  failure:
+    condition: resource.empty or actor.incapacitated
+    result: gathering_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: mine_coal
+  verb: gather
+  version: 1
+  description: 从煤层里收两份煤。
+  parameters:
+    resource_tag: string
+    location_id: string
+  preconditions:
+  - actor.can_gather
+  - actor.alive
+  - location.resource_node
+  - actor.inventory.stone_pick >= 1
+  duration:
+    minutes: 75
+  costs:
+    reserve:
+      resource_parameter: resource_tag
+      resource_amount: 2
+    per_minute:
+      stamina: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: context.resource_tag
+    quantity: 2
+  success:
+    condition: resource.collected
+    result: resource_gathered
+  failure:
+    condition: resource.empty or actor.incapacitated
+    result: gathering_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: mine_crystal
+  verb: gather
+  version: 1
+  description: 用铜镐从晶脉上取下一块晶石。
+  parameters:
+    resource_tag: string
+    location_id: string
+  preconditions:
+  - actor.can_gather
+  - actor.alive
+  - location.resource_node
+  - actor.inventory.copper_pick >= 1
+  duration:
+    minutes: 120
+  costs:
+    reserve:
+      resource_parameter: resource_tag
+      resource_amount: 1
+    per_minute:
+      stamina: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: context.resource_tag
+    quantity: 1
+  - type: world_property_delta
+    property: storm_pressure
+    delta: 4
+    maximum: 100
+    label: 风暴压力
+  success:
+    condition: resource.collected
+    result: resource_gathered
+  failure:
+    condition: resource.empty or actor.incapacitated
+    result: gathering_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: harvest_amber
+  verb: gather
+  version: 1
+  description: 从云鲸骨缝里取下一块琥珀。
+  parameters:
+    resource_tag: string
+    location_id: string
+  preconditions:
+  - actor.can_gather
+  - actor.alive
+  - location.resource_node
+  - actor.inventory.lantern >= 1
+  duration:
+    minutes: 90
+  costs:
+    reserve:
+      resource_parameter: resource_tag
+      resource_amount: 1
+    per_minute:
+      stamina: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: context.resource_tag
+    quantity: 1
+  - type: world_property_delta
+    property: storm_pressure
+    delta: 2
+    maximum: 100
+    label: 风暴压力
+  success:
+    condition: resource.collected
+    result: resource_gathered
+  failure:
+    condition: resource.empty or actor.incapacitated
+    result: gathering_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: salvage_bone
+  verb: gather
+  version: 1
+  description: 拆下两根还能用的鲸骨。
+  parameters:
+    resource_tag: string
+    location_id: string
+  preconditions:
+  - actor.can_gather
+  - actor.alive
+  - location.resource_node
+  - actor.inventory.copper_pick >= 1
+  duration:
+    minutes: 90
+  costs:
+    reserve:
+      resource_parameter: resource_tag
+      resource_amount: 2
+    per_minute:
+      stamina: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: context.resource_tag
+    quantity: 2
+  - type: world_property_delta
+    property: storm_pressure
+    delta: 1
+    maximum: 100
+    label: 风暴压力
+  success:
+    condition: resource.collected
+    result: resource_gathered
+  failure:
+    condition: resource.empty or actor.incapacitated
+    result: gathering_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: salvage_lens
+  verb: gather
+  version: 1
+  description: 从旧灯塔的备用灯组上拆下一枚透镜。
+  parameters:
+    resource_tag: string
+    location_id: string
+  preconditions:
+  - actor.can_gather
+  - actor.alive
+  - location.resource_node
+  - actor.inventory.lantern >= 1
+  duration:
+    minutes: 75
+  costs:
+    reserve:
+      resource_parameter: resource_tag
+      resource_amount: 1
+    per_minute:
+      stamina: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: context.resource_tag
+    quantity: 1
+  - type: world_property_delta
+    property: storm_pressure
+    delta: 3
+    maximum: 100
+    label: 风暴压力
+  success:
+    condition: resource.collected
+    result: resource_gathered
+  failure:
+    condition: resource.empty or actor.incapacitated
+    result: gathering_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: collect_oil
+  verb: gather
+  version: 1
+  description: 从旧灯塔的油槽里收集一罐灯油。
+  parameters:
+    resource_tag: string
+    location_id: string
+  preconditions:
+  - actor.can_gather
+  - actor.alive
+  - location.resource_node
+  - actor.inventory.lantern >= 1
+  duration:
+    minutes: 75
+  costs:
+    reserve:
+      resource_parameter: resource_tag
+      resource_amount: 1
+    per_minute:
+      stamina: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: context.resource_tag
+    quantity: 1
+  - type: world_property_delta
+    property: storm_pressure
+    delta: 1
+    maximum: 100
+    label: 风暴压力
+  success:
+    condition: resource.collected
+    result: resource_gathered
+  failure:
+    condition: resource.empty or actor.incapacitated
+    result: gathering_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: salvage_relic
+  verb: gather
+  version: 1
+  description: 用晶锯和提灯拆下一件还在发光的遗物。
+  parameters:
+    resource_tag: string
+    location_id: string
+  preconditions:
+  - actor.can_gather
+  - actor.alive
+  - location.resource_node
+  - actor.inventory.crystal_saw >= 1
+  - actor.inventory.lantern >= 1
+  duration:
+    minutes: 150
+  costs:
+    reserve:
+      resource_parameter: resource_tag
+      resource_amount: 1
+    per_minute:
+      stamina: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: context.resource_tag
+    quantity: 1
+  - type: world_property_delta
+    property: storm_pressure
+    delta: 6
+    maximum: 100
+    label: 风暴压力
+  success:
+    condition: resource.collected
+    result: resource_gathered
+  failure:
+    condition: resource.empty or actor.incapacitated
+    result: gathering_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: dynamic_salvage
+  verb: gather
+  version: 1
+  description: 打捞一处由世界长出的新资源点，把材料直接带回船上。
+  parameters:
+    item: string
+    amount: integer
+    location_id: string
+  preconditions:
+  - actor.alive
+  - location.tag.salvage
+  - target.location_id == context.location_id
+  duration:
+    minutes: 60
+  costs:
+    reserve: {}
+    per_minute:
+      stamina: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: context.item
+    quantity: context.amount
+  - type: world_property_delta
+    property: storm_pressure
+    delta: 4
+    maximum: 100
+    label: 风暴压力
+  success:
+    condition: actor.alive
+    result: resource_gathered
+  failure:
+    condition: actor.incapacitated
+    result: gathering_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: take_ration
+  verb: gather
+  version: 1
+  description: 从营地的口粮箱里取两份口粮。
+  parameters:
+    resource_tag: string
+    location_id: string
+  preconditions:
+  - actor.can_gather
+  - actor.alive
+  - location.resource_node
+  duration:
+    minutes: 15
+  costs:
+    reserve:
+      resource_parameter: resource_tag
+      resource_amount: 2
+    per_minute:
+      stamina: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: context.resource_tag
+    quantity: 2
+  success:
+    condition: resource.collected
+    result: resource_gathered
+  failure:
+    condition: resource.empty or actor.incapacitated
+    result: gathering_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: fill_water
+  verb: gather
+  version: 1
+  description: 从营地的蓄水槽里装三份淡水。
+  parameters:
+    resource_tag: string
+    location_id: string
+  preconditions:
+  - actor.can_gather
+  - actor.alive
+  - location.resource_node
+  duration:
+    minutes: 15
+  costs:
+    reserve:
+      resource_parameter: resource_tag
+      resource_amount: 3
+    per_minute:
+      stamina: 0.15
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: context.resource_tag
+    quantity: 3
+  success:
+    condition: resource.collected
+    result: resource_gathered
+  failure:
+    condition: resource.empty or actor.incapacitated
+    result: gathering_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: craft_recipe
+  verb: craft
+  version: 1
+  description: 在营地工作台按配方制作食物、药膏或绳索。
+  parameters:
+    recipe_id: string
+  preconditions:
+  - actor.can_craft
+  - actor.alive
+  - location.tag.camp
+  duration:
+    mode: recipe_duration
+  costs:
+    reserve:
+      recipe_inputs: 1
+    per_minute:
+      stamina: 0.12
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects: []
+  success:
+    condition: actor.alive
+    result: recipe_completed
+  failure:
+    condition: actor.incapacitated
+    result: crafting_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: craft.completed
+    summary: 一份材料在营地工作台上变成了新的成品。
+    result: recipe_completed
+- id: craft_stone_axe
+  verb: craft
+  version: 1
+  description: 制作一件石斧。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - actor.inventory.stone_axe < 1
+  - actor.inventory.wood >= 2
+  - actor.inventory.stone >= 2
+  duration:
+    minutes: 45
+  costs:
+    reserve:
+      wood: 2
+      stone: 2
+    per_minute:
+      stamina: 0.12
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: stone_axe
+    quantity: 1
+  - type: capability.add_xp
+    capability: crafting
+    value: 0.03
+  success:
+    condition: actor.alive
+    result: tool_crafted
+  failure:
+    condition: actor.incapacitated
+    result: crafting_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: craft_stone_pick
+  verb: craft
+  version: 1
+  description: 制作一件石镐。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - actor.inventory.stone_pick < 1
+  - actor.inventory.wood >= 2
+  - actor.inventory.stone >= 2
+  duration:
+    minutes: 50
+  costs:
+    reserve:
+      wood: 2
+      stone: 2
+    per_minute:
+      stamina: 0.12
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: stone_pick
+    quantity: 1
+  - type: capability.add_xp
+    capability: crafting
+    value: 0.03
+  success:
+    condition: actor.alive
+    result: tool_crafted
+  failure:
+    condition: actor.incapacitated
+    result: crafting_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: craft_copper_pick
+  verb: craft
+  version: 1
+  description: 制作一件铜镐。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level >= 1
+  - actor.inventory.copper_pick < 1
+  - actor.inventory.copper_ore >= 2
+  - actor.inventory.wood >= 1
+  duration:
+    minutes: 90
+  costs:
+    reserve:
+      copper_ore: 2
+      wood: 1
+    per_minute:
+      stamina: 0.12
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: copper_pick
+    quantity: 1
+  - type: capability.add_xp
+    capability: crafting
+    value: 0.03
+  success:
+    condition: actor.alive
+    result: tool_crafted
+  failure:
+    condition: actor.incapacitated
+    result: crafting_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: craft_lantern
+  verb: craft
+  version: 1
+  description: 制作一件提灯。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level >= 1
+  - actor.inventory.lantern < 1
+  - actor.inventory.copper_ore >= 1
+  - actor.inventory.glass_sand >= 1
+  - actor.inventory.fiber >= 2
+  duration:
+    minutes: 75
+  costs:
+    reserve:
+      copper_ore: 1
+      glass_sand: 1
+      fiber: 2
+    per_minute:
+      stamina: 0.12
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: lantern
+    quantity: 1
+  - type: capability.add_xp
+    capability: crafting
+    value: 0.03
+  success:
+    condition: actor.alive
+    result: tool_crafted
+  failure:
+    condition: actor.incapacitated
+    result: crafting_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: craft_storm_cloak
+  verb: craft
+  version: 1
+  description: 制作一件风衣。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level >= 1
+  - actor.inventory.storm_cloak < 1
+  - actor.inventory.fiber >= 4
+  - actor.inventory.clay >= 2
+  duration:
+    minutes: 75
+  costs:
+    reserve:
+      fiber: 4
+      clay: 2
+    per_minute:
+      stamina: 0.12
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: storm_cloak
+    quantity: 1
+  - type: capability.add_xp
+    capability: crafting
+    value: 0.03
+  success:
+    condition: actor.alive
+    result: tool_crafted
+  failure:
+    condition: actor.incapacitated
+    result: crafting_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: craft_glider
+  verb: craft
+  version: 1
+  description: 制作一件滑翔翼。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level >= 2
+  - actor.inventory.glider < 1
+  - actor.inventory.fiber >= 4
+  - actor.inventory.bone >= 2
+  - actor.inventory.oil >= 1
+  duration:
+    minutes: 120
+  costs:
+    reserve:
+      fiber: 4
+      bone: 2
+      oil: 1
+    per_minute:
+      stamina: 0.12
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: glider
+    quantity: 1
+  - type: capability.add_xp
+    capability: crafting
+    value: 0.03
+  success:
+    condition: actor.alive
+    result: tool_crafted
+  failure:
+    condition: actor.incapacitated
+    result: crafting_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: craft_crystal_saw
+  verb: craft
+  version: 1
+  description: 制作一件晶锯。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level >= 2
+  - actor.inventory.crystal_saw < 1
+  - actor.inventory.crystal >= 2
+  - actor.inventory.copper_ore >= 2
+  duration:
+    minutes: 100
+  costs:
+    reserve:
+      crystal: 2
+      copper_ore: 2
+    per_minute:
+      stamina: 0.12
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: crystal_saw
+    quantity: 1
+  - type: capability.add_xp
+    capability: crafting
+    value: 0.03
+  success:
+    condition: actor.alive
+    result: tool_crafted
+  failure:
+    condition: actor.incapacitated
+    result: crafting_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: craft_beacon_core
+  verb: craft
+  version: 1
+  description: 把晶石、遗物、琥珀和透镜封成一枚信标核心。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level >= 2
+  - actor.inventory.crystal >= 2
+  - actor.inventory.relic >= 1
+  - actor.inventory.amber >= 1
+  - actor.inventory.lens >= 1
+  duration:
+    minutes: 150
+  costs:
+    reserve:
+      crystal: 2
+      relic: 1
+      amber: 1
+      lens: 1
+    per_minute:
+      stamina: 0.12
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: beacon_core
+    quantity: 1
+  - type: capability.add_xp
+    capability: crafting
+    value: 0.05
+  - type: public_event
+    event: beacon.core_crafted
+  success:
+    condition: actor.alive
+    result: tool_crafted
+  failure:
+    condition: actor.incapacitated
+    result: crafting_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: build_workshop_1
+  verb: repair
+  version: 1
+  description: 在灯岬建造工坊。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level == 0
+  - actor.inventory.wood >= 5
+  - actor.inventory.stone >= 3
+  duration:
+    minutes: 120
+  costs:
+    reserve:
+      wood: 5
+      stone: 3
+    per_minute:
+      stamina: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: workshop_level
+    value: 1
+    label: 工坊
+  - type: entity_state_set
+    entity_id: camp_workshop
+    state: level
+    value: 1
+  - type: entity_state_set
+    entity_id: camp_workshop
+    state: status
+    value: working
+  - type: public_event
+    event: camp.workshop_built
+  - type: world_property_delta
+    property: camp_morale
+    delta: 0.05
+    maximum: 1
+    label: 营地士气
+  success:
+    condition: actor.alive
+    result: workshop_built
+  failure:
+    condition: actor.incapacitated
+    result: build_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: build_workshop_2
+  verb: repair
+  version: 1
+  description: 在灯岬建造工坊。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level == 1
+  - actor.inventory.wood >= 6
+  - actor.inventory.copper_ore >= 4
+  duration:
+    minutes: 180
+  costs:
+    reserve:
+      wood: 6
+      copper_ore: 4
+    per_minute:
+      stamina: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: workshop_level
+    value: 2
+    label: 工坊
+  - type: entity_state_set
+    entity_id: camp_workshop
+    state: level
+    value: 2
+  - type: entity_state_set
+    entity_id: camp_workshop
+    state: status
+    value: working
+  - type: public_event
+    event: camp.workshop_upgraded
+  - type: world_property_delta
+    property: camp_morale
+    delta: 0.05
+    maximum: 1
+    label: 营地士气
+  success:
+    condition: actor.alive
+    result: workshop_upgraded
+  failure:
+    condition: actor.incapacitated
+    result: build_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: build_galley_1
+  verb: repair
+  version: 1
+  description: 在灯岬建造厨房。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.galley_level == 0
+  - actor.inventory.wood >= 4
+  - actor.inventory.stone >= 2
+  duration:
+    minutes: 90
+  costs:
+    reserve:
+      wood: 4
+      stone: 2
+    per_minute:
+      stamina: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: galley_level
+    value: 1
+    label: 厨房
+  - type: entity_state_set
+    entity_id: camp_galley
+    state: level
+    value: 1
+  - type: entity_state_set
+    entity_id: camp_galley
+    state: status
+    value: working
+  - type: public_event
+    event: camp.galley_built
+  - type: world_property_delta
+    property: camp_morale
+    delta: 0.04
+    maximum: 1
+    label: 营地士气
+  success:
+    condition: actor.alive
+    result: galley_built
+  failure:
+    condition: actor.incapacitated
+    result: build_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: build_galley_2
+  verb: repair
+  version: 1
+  description: 在灯岬建造厨房。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.galley_level == 1
+  - actor.inventory.wood >= 4
+  - actor.inventory.clay >= 3
+  duration:
+    minutes: 120
+  costs:
+    reserve:
+      wood: 4
+      clay: 3
+    per_minute:
+      stamina: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: galley_level
+    value: 2
+    label: 厨房
+  - type: entity_state_set
+    entity_id: camp_galley
+    state: level
+    value: 2
+  - type: entity_state_set
+    entity_id: camp_galley
+    state: status
+    value: working
+  - type: public_event
+    event: camp.galley_upgraded
+  - type: world_property_delta
+    property: camp_morale
+    delta: 0.04
+    maximum: 1
+    label: 营地士气
+  success:
+    condition: actor.alive
+    result: galley_upgraded
+  failure:
+    condition: actor.incapacitated
+    result: build_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: build_garden_1
+  verb: repair
+  version: 1
+  description: 在灯岬建造花园。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.garden_level == 0
+  - actor.inventory.wood >= 3
+  - actor.inventory.fiber >= 4
+  duration:
+    minutes: 90
+  costs:
+    reserve:
+      wood: 3
+      fiber: 4
+    per_minute:
+      stamina: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: garden_level
+    value: 1
+    label: 花园
+  - type: entity_state_set
+    entity_id: camp_garden
+    state: level
+    value: 1
+  - type: entity_state_set
+    entity_id: camp_garden
+    state: status
+    value: working
+  - type: public_event
+    event: camp.garden_built
+  - type: world_property_delta
+    property: camp_morale
+    delta: 0.05
+    maximum: 1
+    label: 营地士气
+  success:
+    condition: actor.alive
+    result: garden_built
+  failure:
+    condition: actor.incapacitated
+    result: build_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: build_garden_2
+  verb: repair
+  version: 1
+  description: 在灯岬建造花园。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.garden_level == 1
+  - actor.inventory.fiber >= 6
+  - actor.inventory.herb >= 4
+  duration:
+    minutes: 120
+  costs:
+    reserve:
+      fiber: 6
+      herb: 4
+    per_minute:
+      stamina: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: garden_level
+    value: 2
+    label: 花园
+  - type: entity_state_set
+    entity_id: camp_garden
+    state: level
+    value: 2
+  - type: entity_state_set
+    entity_id: camp_garden
+    state: status
+    value: working
+  - type: public_event
+    event: camp.garden_upgraded
+  - type: world_property_delta
+    property: camp_morale
+    delta: 0.05
+    maximum: 1
+    label: 营地士气
+  success:
+    condition: actor.alive
+    result: garden_upgraded
+  failure:
+    condition: actor.incapacitated
+    result: build_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: build_infirmary_1
+  verb: repair
+  version: 1
+  description: 在灯岬建造药棚。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.infirmary_level == 0
+  - actor.inventory.wood >= 4
+  - actor.inventory.herb >= 4
+  duration:
+    minutes: 90
+  costs:
+    reserve:
+      wood: 4
+      herb: 4
+    per_minute:
+      stamina: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: infirmary_level
+    value: 1
+    label: 药棚
+  - type: entity_state_set
+    entity_id: camp_infirmary
+    state: level
+    value: 1
+  - type: entity_state_set
+    entity_id: camp_infirmary
+    state: status
+    value: working
+  - type: public_event
+    event: camp.infirmary_built
+  - type: world_property_delta
+    property: camp_morale
+    delta: 0.04
+    maximum: 1
+    label: 营地士气
+  success:
+    condition: actor.alive
+    result: infirmary_built
+  failure:
+    condition: actor.incapacitated
+    result: build_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: build_infirmary_2
+  verb: repair
+  version: 1
+  description: 在灯岬建造药棚。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.infirmary_level == 1
+  - actor.inventory.herb >= 6
+  - actor.inventory.amber >= 2
+  - actor.inventory.wood >= 4
+  duration:
+    minutes: 120
+  costs:
+    reserve:
+      herb: 6
+      amber: 2
+      wood: 4
+    per_minute:
+      stamina: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: infirmary_level
+    value: 2
+    label: 药棚
+  - type: entity_state_set
+    entity_id: camp_infirmary
+    state: level
+    value: 2
+  - type: entity_state_set
+    entity_id: camp_infirmary
+    state: status
+    value: working
+  - type: public_event
+    event: camp.infirmary_upgraded
+  - type: world_property_delta
+    property: camp_morale
+    delta: 0.04
+    maximum: 1
+    label: 营地士气
+  success:
+    condition: actor.alive
+    result: infirmary_upgraded
+  failure:
+    condition: actor.incapacitated
+    result: build_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: build_hull_1
+  verb: repair
+  version: 1
+  description: 用木料和铜片给船体加一层骨架。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.hull_level == 0
+  - actor.inventory.wood >= 6
+  - actor.inventory.copper_ore >= 2
+  duration:
+    minutes: 150
+  costs:
+    reserve:
+      wood: 6
+      copper_ore: 2
+    per_minute:
+      stamina: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: hull_level
+    value: 1
+    label: 船体加固
+  - type: entity_state_set
+    entity_id: camp_hull
+    state: hull
+    value: 1
+  - type: entity_state_set
+    entity_id: camp_hull
+    state: status
+    value: working
+  - type: world_property_delta
+    property: hull_integrity
+    delta: 0.15
+    maximum: 1
+    label: 船体
+  - type: public_event
+    event: camp.hull_repaired
+  success:
+    condition: actor.alive
+    result: hull_repaired
+  failure:
+    condition: actor.incapacitated
+    result: build_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: build_hull_2
+  verb: repair
+  version: 1
+  description: 用铜梁和晶石把船体再加固一层。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.hull_level == 1
+  - actor.inventory.copper_ore >= 6
+  - actor.inventory.crystal >= 2
+  duration:
+    minutes: 180
+  costs:
+    reserve:
+      copper_ore: 6
+      crystal: 2
+    per_minute:
+      stamina: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: hull_level
+    value: 2
+    label: 船体加固
+  - type: entity_state_set
+    entity_id: camp_hull
+    state: hull
+    value: 2
+  - type: entity_state_set
+    entity_id: camp_hull
+    state: status
+    value: working
+  - type: world_property_delta
+    property: hull_integrity
+    delta: 0.2
+    maximum: 1
+    label: 船体
+  - type: public_event
+    event: camp.hull_repaired
+  success:
+    condition: actor.alive
+    result: hull_repaired
+  failure:
+    condition: actor.incapacitated
+    result: build_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: build_beacon_frame
+  verb: repair
+  version: 1
+  description: 在灯岬立起信标框架，让高环门有东西可以对齐。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.beacon_frame == 0
+  - actor.inventory.wood >= 4
+  - actor.inventory.copper_ore >= 6
+  - actor.inventory.crystal >= 2
+  duration:
+    minutes: 240
+  costs:
+    reserve:
+      wood: 4
+      copper_ore: 6
+      crystal: 2
+    per_minute:
+      stamina: 0.12
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: beacon_frame
+    value: 1
+    label: 信标框架
+  - type: entity_state_set
+    entity_id: camp_beacon
+    state: frame
+    value: 1
+  - type: entity_state_set
+    entity_id: camp_beacon
+    state: status
+    value: working
+  - type: world_property_delta
+    property: storm_pressure
+    delta: 6
+    maximum: 100
+    label: 风暴压力
+  - type: public_event
+    event: camp.beacon_frame_built
+  success:
+    condition: actor.alive
+    result: beacon_frame_built
+  failure:
+    condition: actor.incapacitated
+    result: build_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: install_beacon_core
+  verb: repair
+  version: 1
+  description: 把一枚信标核心装进框架。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.beacon_frame >= 1
+  - world.beacon_cores < 3
+  - actor.inventory.beacon_core >= 1
+  duration:
+    minutes: 60
+  costs:
+    reserve:
+      beacon_core: 1
+    per_minute:
+      stamina: 0.08
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: beacon_cores
+    delta: 1
+    maximum: 3
+    label: 信标核心
+  - type: world_property_delta
+    property: storm_pressure
+    delta: 2
+    maximum: 100
+    label: 风暴压力
+  - type: public_event
+    event: beacon.core_installed
+  success:
+    condition: actor.alive
+    result: beacon_core_installed
+  failure:
+    condition: actor.incapacitated
+    result: build_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: repair_hull
+  verb: repair
+  version: 1
+  description: 用木料和铜片补上船体的裂缝。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.hull_integrity < 0.95
+  - actor.inventory.wood >= 4
+  - actor.inventory.copper_ore >= 1
+  duration:
+    minutes: 90
+  costs:
+    reserve:
+      wood: 4
+      copper_ore: 1
+    per_minute:
+      stamina: 0.1
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: hull_integrity
+    delta: 0.2
+    maximum: 1
+    label: 船体
+  - type: public_event
+    event: camp.hull_repaired
+  success:
+    condition: actor.alive
+    result: hull_repaired
+  failure:
+    condition: actor.incapacitated
+    result: build_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: jettison_relic
+  verb: trade
+  version: 1
+  description: 把一件遗物推下云海，换回一点风暴的安静。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - actor.inventory.relic >= 1
+  - world.storm_pressure >= 10
+  duration:
+    minutes: 30
+  costs:
+    reserve:
+      relic: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: storm_pressure
+    delta: -20
+    minimum: 0
+    maximum: 100
+    label: 风暴压力
+  - type: public_event
+    event: storm.jettison
+  success:
+    condition: actor.alive
+    result: cargo_jettisoned
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: jettison_amber
+  verb: trade
+  version: 1
+  description: 把一块琥珀推下云海，换回一点风暴的安静。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - actor.inventory.amber >= 1
+  - world.storm_pressure >= 8
+  duration:
+    minutes: 30
+  costs:
+    reserve:
+      amber: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: storm_pressure
+    delta: -12
+    minimum: 0
+    maximum: 100
+    label: 风暴压力
+  - type: public_event
+    event: storm.jettison
+  success:
+    condition: actor.alive
+    result: cargo_jettisoned
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: launch_escape
+  verb: travel
+  version: 1
+  description: 把三个核心对准高环门，带风脊号离开裂天群岛。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.beacon_frame >= 1
+  - world.beacon_cores >= 3
+  - world.hull_integrity > 0.2
+  - world.ending_trigger == 0
+  duration:
+    minutes: 240
+  costs:
+    reserve: {}
+    per_minute:
+      stamina: 0.08
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: ending_trigger
+    value: 1
+    label: 结局
+  - type: world_property_delta
+    property: camp_morale
+    delta: 0.05
+    maximum: 1
+    label: 营地士气
+  - type: public_event
+    event: skyfall.launched
+  success:
+    condition: actor.alive
+    result: launched
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: anchor_islands
+  verb: repair
+  version: 1
+  description: 把信标对准群岛的锚点，让它们重新系在一起。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.beacon_frame >= 1
+  - world.beacon_cores >= 3
+  - world.garden_level >= 2
+  - world.kite_rep >= 0.4
+  - world.ending_trigger == 0
+  duration:
+    minutes: 240
+  costs:
+    reserve: {}
+    per_minute:
+      stamina: 0.08
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: ending_trigger
+    value: 2
+    label: 结局
+  - type: world_property_delta
+    property: camp_morale
+    delta: 0.1
+    maximum: 1
+    label: 营地士气
+  - type: public_event
+    event: skyfall.anchored
+  success:
+    condition: actor.alive
+    result: anchored
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: become_storm
+  verb: communicate
+  version: 1
+  description: 听风歌者唱完最后一段，让风脊号成为风暴的一部分。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.storm_pressure >= 90
+  - world.beacon_cores >= 2
+  - world.choir_rep >= 0.4
+  - world.ending_trigger == 0
+  duration:
+    minutes: 180
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: ending_trigger
+    value: 3
+    label: 结局
+  - type: public_event
+    event: skyfall.stormborn
+  success:
+    condition: actor.alive
+    result: stormborn
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: eat_ration
+  verb: consume
+  version: 1
+  description: 使用一份ration。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.inventory.ration >= 1
+  duration:
+    minutes: 10
+  costs:
+    reserve:
+      ration: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: need_delta
+    need: satiety
+    delta: 35
+  success:
+    condition: actor.alive
+    result: eaten
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: deny
+  kind: atomic
+  executor: effect_pipeline
+- id: drink_water
+  verb: consume
+  version: 1
+  description: 使用一份water。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.inventory.water >= 1
+  duration:
+    minutes: 5
+  costs:
+    reserve:
+      water: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: need_delta
+    need: hydration
+    delta: 40
+  success:
+    condition: actor.alive
+    result: drank
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: deny
+  kind: atomic
+  executor: effect_pipeline
+- id: eat_stew
+  verb: consume
+  version: 1
+  description: 使用一份stew。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.inventory.stew >= 1
+  duration:
+    minutes: 15
+  costs:
+    reserve:
+      stew: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: need_delta
+    need: satiety
+    delta: 55
+  - type: need_delta
+    need: belonging
+    delta: 4
+  success:
+    condition: actor.alive
+    result: eaten
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: deny
+  kind: atomic
+  executor: effect_pipeline
+- id: use_salve
+  verb: consume
+  version: 1
+  description: 使用一份salve。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.inventory.salve >= 1
+  duration:
+    minutes: 10
+  costs:
+    reserve:
+      salve: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: attribute_delta
+    attribute: integrity
+    delta: 30
+    maximum: 100
+  success:
+    condition: actor.alive
+    result: rested
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: deny
+  kind: atomic
+  executor: effect_pipeline
+- id: rest_at_camp
+  verb: rest
+  version: 1
+  description: 在灯岬的炉火边休息，恢复精力和体力。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  duration:
+    minutes: 240
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: attribute_delta
+    attribute: stamina
+    delta: 60
+    maximum: 100
+  - type: attribute_delta
+    attribute: integrity
+    delta: 10
+    maximum: 100
+  - type: need_delta
+    need: purpose
+    delta: 2
+  success:
+    condition: actor.alive
+    result: rested
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: deny
+  kind: atomic
+  executor: effect_pipeline
+- id: rest_rough
+  verb: rest
+  version: 1
+  description: 在野外找个背风的地方睡一会儿；不如营地，但能撑住。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  duration:
+    minutes: 180
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: attribute_delta
+    attribute: stamina
+    delta: 30
+    maximum: 100
+  - type: attribute_delta
+    attribute: integrity
+    delta: 5
+    maximum: 100
+  success:
+    condition: actor.alive
+    result: rested
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: deny
+  kind: atomic
+  executor: effect_pipeline
+- id: sleep
+  verb: rest
+  version: 1
+  description: 在风脊号上睡到下一次天亮。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  duration:
+    minutes: 480
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: attribute_delta
+    attribute: stamina
+    delta: 100
+    maximum: 100
+  - type: attribute_delta
+    attribute: integrity
+    delta: 5
+    maximum: 100
+  - type: public_event
+    event: camp.sleep
+  success:
+    condition: actor.alive
+    result: rested
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: deny
+  kind: atomic
+  executor: effect_pipeline
+- id: work_camp
+  verb: work
+  version: 1
+  description: 在船上找点事做：修绳、擦灯、记海图。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  duration:
+    minutes: 60
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: need_delta
+    need: purpose
+    delta: 2
+  - type: world_property_delta
+    property: camp_morale
+    delta: 0.005
+    maximum: 1
+    label: 营地士气
+  success:
+    condition: actor.alive
+    result: worked
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: stargaze
+  verb: rest
+  version: 1
+  description: 在甲板上看一会儿星，听风从岛链之间穿过去。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - context.day_phase == night
+  duration:
+    minutes: 45
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: need_delta
+    need: belonging
+    delta: 3
+  - type: world_property_delta
+    property: camp_morale
+    delta: 0.005
+    maximum: 1
+    label: 营地士气
+  - type: public_event
+    event: camp.stargazing
+  success:
+    condition: actor.alive
+    result: rested
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: cook_meal
+  verb: craft
+  version: 1
+  description: 用厨房的储备做一锅热饭，让所有人明天有口粮。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.galley_level >= 1
+  duration:
+    minutes: 60
+  costs:
+    reserve: {}
+    per_minute:
+      stamina: 0.05
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_resource_delta
+    resource_id: ration
+    delta: 2
+    maximum: 16
+  - type: world_property_delta
+    property: camp_morale
+    delta: 0.01
+    maximum: 1
+    label: 营地士气
+  - type: public_event
+    event: camp.meal
+  success:
+    condition: actor.alive
+    result: meal_cooked
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: tend_garden
+  verb: work
+  version: 1
+  description: 给花园浇水、补藤架，收一点口粮。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.garden_level >= 1
+  duration:
+    minutes: 60
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_resource_delta
+    resource_id: ration
+    delta: 1
+    maximum: 16
+  - type: world_property_delta
+    property: camp_morale
+    delta: 0.005
+    maximum: 1
+    label: 营地士气
+  - type: public_event
+    event: camp.garden
+  success:
+    condition: actor.alive
+    result: worked
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: tend_infirmary
+  verb: work
+  version: 1
+  description: 整理药棚，给船员留一份能用的药。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.infirmary_level >= 1
+  duration:
+    minutes: 60
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: need_delta
+    need: belonging
+    delta: 2
+  - type: world_property_delta
+    property: camp_morale
+    delta: 0.01
+    maximum: 1
+    label: 营地士气
+  - type: public_event
+    event: camp.infirmary
+  success:
+    condition: actor.alive
+    result: worked
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: patch_hull
+  verb: repair
+  version: 1
+  description: 阿岚式的临时补船：敲敲打打，让船体再撑一段。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level >= 1
+  - world.hull_integrity < 0.9
+  duration:
+    minutes: 120
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: hull_integrity
+    delta: 0.03
+    maximum: 1
+    label: 船体
+  - type: public_event
+    event: camp.hull_patched
+  success:
+    condition: actor.alive
+    result: hull_repaired
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: aid_kite
+  verb: social
+  version: 1
+  description: 把纤维交给风筝人，让他们多系一段桥。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.broken_span
+  - actor.inventory.fiber >= 4
+  duration:
+    minutes: 90
+  costs:
+    reserve:
+      fiber: 4
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: kite_rep
+    delta: 0.15
+    maximum: 1
+    label: 风筝人声望
+  - type: world_property_delta
+    property: camp_morale
+    delta: 0.02
+    maximum: 1
+    label: 营地士气
+  - type: public_event
+    event: faction.kite_aided
+  success:
+    condition: actor.alive
+    result: faction_aided
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: trade_foundry
+  verb: social
+  version: 1
+  description: 用铜换熔炉派一枚透镜；他们喜欢能算清账的人。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.thunderhead
+  - actor.inventory.copper_ore >= 3
+  duration:
+    minutes: 60
+  costs:
+    reserve:
+      copper_ore: 3
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: foundry_rep
+    delta: 0.15
+    maximum: 1
+    label: 熔炉派声望
+  - type: inventory_add
+    item: lens
+    quantity: 1
+  - type: public_event
+    event: faction.foundry_traded
+  success:
+    condition: actor.alive
+    result: faction_traded
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: listen_choir
+  verb: communicate
+  version: 1
+  description: 在旧灯塔下听风歌者唱一段，让风暴暂时安静。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.lighthouse
+  duration:
+    minutes: 60
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_delta
+    property: choir_rep
+    delta: 0.15
+    maximum: 1
+    label: 风歌者声望
+  - type: world_property_delta
+    property: storm_pressure
+    delta: -8
+    minimum: 0
+    maximum: 100
+    label: 风暴压力
+  - type: need_delta
+    need: purpose
+    delta: 4
+  - type: public_event
+    event: faction.choir_listened
+  success:
+    condition: actor.alive
+    result: storm_calmed
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline

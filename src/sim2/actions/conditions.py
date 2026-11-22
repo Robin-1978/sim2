@@ -279,6 +279,7 @@ class ConditionEngine:
             "actor.alive", "actor.incapacitated", "actor.role", "actor.mobile",
             "actor.faction_id", "actor.at_location", "actor.exhausted", "actor.stunned",
             "inventory.available", "inventory.item_available", "actor.inventory_item_available", "resource.here",
+            "target.location_id",
             "route.known", "destination.reachable", "area.unknown", "area.not_fully_mapped",
             "object.available", "research.new_fact_available", "secret.source_available",
             "source.accessible", "target.available", "target.visible", "target.reachable",

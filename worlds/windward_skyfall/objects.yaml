@@ -1,0 +1,91 @@
+objects:
+- id: camp_workshop
+  type: facility
+  name: 风脊号工坊
+  initial_state:
+    location_id: lantern_cape
+    status: dim
+  facility:
+    order: 1
+    properties:
+    - key: workshop_level
+      label: 工坊
+    - key: hull_integrity
+      label: 船体
+    - key: storm_pressure
+      label: 风暴
+- id: camp_galley
+  type: facility
+  name: 风脊号厨房
+  initial_state:
+    location_id: lantern_cape
+    status: dim
+  facility:
+    order: 2
+    properties:
+    - key: galley_level
+      label: 厨房
+    - key: camp_morale
+      label: 士气
+    - key: ration
+      label: 口粮
+- id: camp_garden
+  type: facility
+  name: 风脊号花园
+  initial_state:
+    location_id: lantern_cape
+    status: dim
+  facility:
+    order: 3
+    properties:
+    - key: garden_level
+      label: 花园
+    - key: camp_morale
+      label: 士气
+    - key: water
+      label: 蓄水
+- id: camp_infirmary
+  type: facility
+  name: 风脊号药棚
+  initial_state:
+    location_id: lantern_cape
+    status: dim
+  facility:
+    order: 4
+    properties:
+    - key: infirmary_level
+      label: 药棚
+    - key: camp_morale
+      label: 士气
+- id: camp_hull
+  type: facility
+  name: 风脊号船体
+  initial_state:
+    location_id: lantern_cape
+    status: dim
+  facility:
+    order: 5
+    properties:
+    - key: hull_integrity
+      label: 船体
+    - key: hull_level
+      label: 加固
+    - key: storm_stage
+      label: 风暴阶段
+    - key: storm_pressure
+      label: 压力
+- id: camp_beacon
+  type: facility
+  name: 风脊号信标
+  initial_state:
+    location_id: lantern_cape
+    status: dim
+  facility:
+    order: 6
+    properties:
+    - key: beacon_frame
+      label: 框架
+    - key: beacon_cores
+      label: 核心
+    - key: explored_islands
+      label: 已探岛屿

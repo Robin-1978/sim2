@@ -136,9 +136,11 @@ def _effect_text(action: dict[str, Any], recipe: dict[str, Any] | None = None, p
         elif effect_type == "location_set":
             impacts.append("Arrive at the selected location")
         elif effect_type == "world_property_delta":
-            impacts.append(f"World {_display_item(effect.get('property', 'property'))} changes by {effect.get('delta', effect.get('value', 0))}")
+            prop_label = _display_item(effect.get("label") or effect.get("property", "property"))
+            impacts.append(f"{prop_label} changes by {effect.get('delta', effect.get('value', 0))}")
         elif effect_type == "world_property_set":
-            impacts.append(f"World {_display_item(effect.get('property', 'property'))} is set to {effect.get('value')}")
+            prop_label = _display_item(effect.get("label") or effect.get("property", "property"))
+            impacts.append(f"{prop_label} becomes {effect.get('value')}")
         elif effect_type == "world_resource_delta":
             resource = resolved(effect.get("resource_id") or effect.get("resource") or "resource")
             delta = _safe_number(effect.get("delta", effect.get("value", 0)), default=0.0)

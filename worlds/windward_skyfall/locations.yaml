@@ -1,0 +1,430 @@
+locations:
+- id: lantern_cape
+  name: 灯岬
+  public: true
+  safe: true
+  description: 风脊号泊在最后一块稳定的岩台上。船体漏风，工坊只剩半面墙，但厨房的烟囱还站着。云海在脚下翻涌，像一片不耐烦的海。
+  tags:
+  - public
+  - safe
+  - camp
+  - home
+  - craft
+  - kitchen
+  - infirmary
+  - garden
+  - beacon
+  - resource_node
+  - sky
+  routes:
+  - windworn_woods
+  - saltbreak_flats
+  route_distances:
+    windworn_woods: 1
+    saltbreak_flats: 1
+  map_position:
+    x: 0
+    y: 0
+- id: windworn_woods
+  name: 风蚀林
+  public: true
+  safe: true
+  description: 风把树都吹向同一个方向。木料、纤维和浆果足够撑起第一间工坊；林梢后面，旧灯塔的光一明一灭。
+  tags:
+  - public
+  - safe
+  - resource_node
+  - salvage
+  - woods
+  - exposed
+  - sky
+  routes:
+  - lantern_cape
+  - old_lighthouse
+  - rainshade_cliff
+  route_distances:
+    lantern_cape: 1
+    old_lighthouse: 1
+    rainshade_cliff: 2
+  map_position:
+    x: -1
+    y: 1
+  discoveries:
+  - id: explored:windworn_woods
+    fact: 风蚀林有足够的木料和纤维，林梢后面就是旧灯塔；灯还亮着。
+    unlocks:
+    - travel_lighthouse
+    - explore_lighthouse
+    - collect_oil
+    - listen_choir
+- id: saltbreak_flats
+  name: 碎盐滩
+  public: true
+  safe: false
+  description: 盐壳在脚下碎裂，白得刺眼。石料、陶土和玻璃砂都露在地表；再往里，是铜潮谷的入口。
+  tags:
+  - public
+  - unsafe
+  - resource_node
+  - salvage
+  - flats
+  - exposed
+  - sky
+  routes:
+  - lantern_cape
+  - copper_tide
+  route_distances:
+    lantern_cape: 1
+    copper_tide: 2
+  map_position:
+    x: 1
+    y: 1
+  discoveries:
+  - id: explored:saltbreak_flats
+    fact: 碎盐滩的石料和陶土可以撑起工坊；往东是铜潮谷，但需要一把石镐。
+    unlocks:
+    - travel_copper_tide
+    - explore_copper_tide
+    - quarry_stone
+- id: old_lighthouse
+  name: 旧灯塔
+  public: true
+  safe: false
+  description: 灯塔已经歪了，但灯还亮着。灯油里混着海盐，墙上刻着七个名字；风歌者说，其中一个名字还在听。
+  tags:
+  - public
+  - unsafe
+  - resource_node
+  - salvage
+  - lighthouse
+  - ruins
+  - exposed
+  - sky
+  routes:
+  - windworn_woods
+  route_distances:
+    windworn_woods: 1
+  map_position:
+    x: -2
+    y: 2
+  discoveries:
+  - id: explored:old_lighthouse
+    fact: 旧灯塔的灯油里混着海盐，风歌者守着灯；灯下刻着浮鲸墓场和雷云工坊的坐标。
+    unlocks:
+    - travel_whalefall
+    - travel_thunderhead
+    - explore_whalefall
+    - explore_thunderhead
+    - salvage_lens
+- id: copper_tide
+  name: 铜潮谷
+  public: true
+  safe: false
+  description: 铜矿像退潮后的礁石一样露出地面。煤层的热气从裂缝里冒出来，远处有金属摩擦的声音。
+  tags:
+  - public
+  - unsafe
+  - resource_node
+  - salvage
+  - copper
+  - exposed
+  - sky
+  routes:
+  - saltbreak_flats
+  - whalefall_reach
+  - thunderhead_works
+  route_distances:
+    saltbreak_flats: 2
+    whalefall_reach: 2
+    thunderhead_works: 3
+  map_position:
+    x: 2
+    y: 2
+  discoveries:
+  - id: explored:copper_tide
+    fact: 铜潮谷的矿脉够做一把铜镐；更深的裂缝通向浮鲸墓场和雷云工坊。
+    unlocks:
+    - travel_whalefall
+    - travel_thunderhead
+    - mine_copper
+    - explore_whalefall
+    - explore_thunderhead
+- id: rainshade_cliff
+  name: 雨背崖
+  public: true
+  safe: false
+  description: 崖背永远在下雨。药草和蘑菇长在石缝里，绳子是唯一能让人走到下面的东西。断桥群岛的影子在雨幕后面。
+  tags:
+  - public
+  - unsafe
+  - resource_node
+  - salvage
+  - cliff
+  - exposed
+  - sky
+  routes:
+  - windworn_woods
+  - whalefall_reach
+  - broken_span
+  route_distances:
+    windworn_woods: 2
+    whalefall_reach: 2
+    broken_span: 2
+  map_position:
+    x: -1
+    y: 3
+  discoveries:
+  - id: explored:rainshade_cliff
+    fact: 雨背崖的药草和蘑菇能救回伤员；断桥群岛的风筝人把绳索系在悬崖另一边。
+    unlocks:
+    - travel_broken_span
+    - explore_broken_span
+    - gather_herb
+    - pick_mushroom
+- id: whalefall_reach
+  name: 浮鲸墓场
+  public: false
+  safe: false
+  description: 一头云鲸的骨架挂在岛边，骨头里还亮着琥珀色的光。这里很安静，安静得像有人在你耳边屏住呼吸。
+  tags:
+  - unsafe
+  - resource_node
+  - salvage
+  - whalefall
+  - exposed
+  - sky
+  routes:
+  - copper_tide
+  - rainshade_cliff
+  route_distances:
+    copper_tide: 2
+    rainshade_cliff: 2
+  map_position:
+    x: 1
+    y: 3
+  discoveries:
+  - id: explored:whalefall_reach
+    fact: 云鲸的骨头可以做滑翔翼骨架，琥珀里封着风暴的记忆；雷云工坊就在骨架上方的雷云里。
+    unlocks:
+    - travel_thunderhead
+    - harvest_amber
+    - salvage_bone
+    - explore_thunderhead
+- id: thunderhead_works
+  name: 雷云工坊
+  public: false
+  safe: false
+  description: 一座被雷云咬住的旧工坊。晶石在塔顶生长，遗物在传送带上停了一半。熔炉派把这里当成提款机。
+  tags:
+  - unsafe
+  - resource_node
+  - salvage
+  - thunderhead
+  - faction
+  - exposed
+  - sky
+  routes:
+  - copper_tide
+  - high_ring
+  route_distances:
+    copper_tide: 3
+    high_ring: 2
+  map_position:
+    x: 3
+    y: 3
+  discoveries:
+  - id: explored:thunderhead_works
+    fact: 雷云工坊的晶石和遗物能做出信标核心；高环门在雷云之上等着。
+    unlocks:
+    - travel_high_ring
+    - mine_crystal
+    - salvage_relic
+    - explore_high_ring
+- id: broken_span
+  name: 断桥群岛
+  public: false
+  safe: true
+  description: 十几座小岛被绳索、木板和风筝线系在一起。风筝人在这里生活，也在这里等天空停止坠落。
+  tags:
+  - safe
+  - salvage
+  - broken_span
+  - faction
+  - sky
+  routes:
+  - rainshade_cliff
+  - high_ring
+  route_distances:
+    rainshade_cliff: 2
+    high_ring: 2
+  map_position:
+    x: 0
+    y: 4
+  discoveries:
+  - id: explored:broken_span
+    fact: 风筝人把群岛系在一起；他们愿意帮一个愿意留下的人。
+    unlocks:
+    - aid_kite
+    - travel_high_ring
+- id: high_ring
+  name: 高环门
+  public: true
+  safe: false
+  description: 云海之上，一圈断掉的金属环缓慢旋转。传说穿过它就能离开裂天群岛；也有人说，它只是另一层天空的井口。
+  tags:
+  - unsafe
+  - high_ring
+  - endgame
+  - exposed
+  - sky
+  routes:
+  - thunderhead_works
+  - broken_span
+  - lantern_cape
+  route_distances:
+    thunderhead_works: 2
+    broken_span: 2
+    lantern_cape: 3
+  map_position:
+    x: 1
+    y: 5
+  discoveries:
+  - id: explored:high_ring
+    fact: 高环门不是门，是一圈等待对齐的锚点；信标核心能让它停下来。
+    unlocks:
+    - launch_escape
+    - anchor_islands
+resources:
+- id: wood
+  type: resource
+  name: 风蚀林木料
+  location_id: windworn_woods
+  initial_state:
+    location_id: windworn_woods
+    quantity: 40
+- id: fiber
+  type: resource
+  name: 风蚀林纤维
+  location_id: windworn_woods
+  initial_state:
+    location_id: windworn_woods
+    quantity: 32
+- id: berries
+  type: resource
+  name: 风蚀林浆果
+  location_id: windworn_woods
+  initial_state:
+    location_id: windworn_woods
+    quantity: 22
+- id: stone
+  type: resource
+  name: 碎盐滩石料
+  location_id: saltbreak_flats
+  initial_state:
+    location_id: saltbreak_flats
+    quantity: 36
+- id: clay
+  type: resource
+  name: 碎盐滩陶土
+  location_id: saltbreak_flats
+  initial_state:
+    location_id: saltbreak_flats
+    quantity: 28
+- id: glass_sand
+  type: resource
+  name: 碎盐滩玻璃砂
+  location_id: saltbreak_flats
+  initial_state:
+    location_id: saltbreak_flats
+    quantity: 20
+- id: salt
+  type: resource
+  name: 碎盐滩盐
+  location_id: saltbreak_flats
+  initial_state:
+    location_id: saltbreak_flats
+    quantity: 28
+- id: oil
+  type: resource
+  name: 旧灯塔灯油
+  location_id: old_lighthouse
+  initial_state:
+    location_id: old_lighthouse
+    quantity: 14
+- id: lens
+  type: resource
+  name: 旧灯塔透镜
+  location_id: old_lighthouse
+  initial_state:
+    location_id: old_lighthouse
+    quantity: 4
+- id: copper_ore
+  type: resource
+  name: 铜潮谷铜矿
+  location_id: copper_tide
+  initial_state:
+    location_id: copper_tide
+    quantity: 26
+- id: coal
+  type: resource
+  name: 铜潮谷煤层
+  location_id: copper_tide
+  initial_state:
+    location_id: copper_tide
+    quantity: 34
+- id: herb
+  type: resource
+  name: 雨背崖药草
+  location_id: rainshade_cliff
+  initial_state:
+    location_id: rainshade_cliff
+    quantity: 26
+- id: mushroom
+  type: resource
+  name: 雨背崖蘑菇
+  location_id: rainshade_cliff
+  initial_state:
+    location_id: rainshade_cliff
+    quantity: 20
+- id: bone
+  type: resource
+  name: 浮鲸墓场兽骨
+  location_id: whalefall_reach
+  initial_state:
+    location_id: whalefall_reach
+    quantity: 16
+- id: amber
+  type: resource
+  name: 浮鲸墓场琥珀
+  location_id: whalefall_reach
+  initial_state:
+    location_id: whalefall_reach
+    quantity: 9
+- id: crystal
+  type: resource
+  name: 雷云工坊晶石
+  location_id: thunderhead_works
+  initial_state:
+    location_id: thunderhead_works
+    quantity: 11
+- id: relic
+  type: resource
+  name: 雷云工坊遗物
+  location_id: thunderhead_works
+  initial_state:
+    location_id: thunderhead_works
+    quantity: 5
+- id: ration
+  type: resource
+  name: 灯岬口粮
+  location_id: lantern_cape
+  initial_state:
+    location_id: lantern_cape
+    quantity: 6
+- id: water
+  type: resource
+  name: 灯岬蓄水
+  location_id: lantern_cape
+  initial_state:
+    location_id: lantern_cape
+    quantity: 10

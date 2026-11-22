@@ -157,6 +157,17 @@ one playable economic unit without minting coin. The full loop, prices and
 agent contracts are in
 [the Riverbend design](docs/design/riverbend-market-loop.md).
 
+[`worlds/windward_skyfall`](worlds/windward_skyfall/) is the sky-archipelago
+survival sandbox. The player captains the windship *Windward* above a collapsing
+chain of islands: explore, gather, craft tools, build camp modules, manage five
+crew members and three factions, and decide whether to escape through the High
+Ring, anchor the islands, or become the storm. A `sky` scene theme, explicit
+gated travel, storm pressure, day/night exposure, five endings and a focused
+vertical-slice test ship with the package. The Director grows one new salvage
+Behavior per plan through the `dynamic_salvage` contract; the God contract is
+restricted to one Behavior so generated content stays playable. See
+[the Windward design](docs/design/windward-skyfall.md).
+
 To add a world, provide a package with `manifest.yaml`, setting and world state, locations, objects, factions, agents, actions, behavior trees, rules, evolution schedule, player template, and optional prompts. `manifest.config_version` is recorded in the new SQLite instance. Reusing an instance ID is rejected; initialize a new ID for every world instance.
 
 Use `sim2 world-schema`, `sim2 build-world`, `sim2 validate-world` and

@@ -1,0 +1,207 @@
+entry_location_id: lantern_cape
+controller: manual
+capabilities:
+  gathering: 0.45
+  crafting: 0.4
+  exploration: 0.4
+  medicine: 0.25
+  conversation: 0.45
+  cooking: 0.3
+inventory:
+  wood: 3
+  stone: 2
+  fiber: 2
+  ration: 3
+  water: 3
+initial_bt_ids:
+- travel_windworn
+- travel_saltbreak
+- travel_lantern_cape
+- travel_lighthouse
+- travel_copper_tide
+- travel_rainshade
+- travel_whalefall
+- travel_thunderhead
+- travel_broken_span
+- travel_high_ring
+- explore_windworn
+- explore_saltbreak
+- explore_lighthouse
+- explore_copper_tide
+- explore_rainshade
+- explore_whalefall
+- explore_thunderhead
+- explore_broken_span
+- explore_high_ring
+- gather_wood
+- chop_timber
+- gather_fiber
+- forage_berries
+- gather_stone
+- quarry_stone
+- dig_clay
+- sift_glass
+- harvest_salt
+- collect_oil
+- salvage_lens
+- mine_copper
+- mine_coal
+- gather_herb
+- pick_mushroom
+- salvage_bone
+- harvest_amber
+- mine_crystal
+- salvage_relic
+- take_ration
+- fill_water
+- craft
+- craft_stone_axe
+- craft_stone_pick
+- craft_copper_pick
+- craft_lantern
+- craft_storm_cloak
+- craft_glider
+- craft_crystal_saw
+- craft_beacon_core
+- build_workshop_1
+- build_workshop_2
+- build_galley_1
+- build_galley_2
+- build_garden_1
+- build_garden_2
+- build_infirmary_1
+- build_infirmary_2
+- build_hull_1
+- build_hull_2
+- build_beacon_frame
+- install_beacon_core
+- repair_hull
+- jettison_relic
+- jettison_amber
+- launch_escape
+- anchor_islands
+- become_storm
+- eat_ration
+- drink_water
+- eat_stew
+- use_salve
+- rest_at_camp
+- rest_rough
+- sleep
+- work_camp
+- stargaze
+- cook_meal
+- tend_garden
+- tend_infirmary
+- patch_hull
+- aid_kite
+- trade_foundry
+- listen_choir
+origins:
+- id: mechanic
+  name: 机械师
+  description: 你在风脊号的龙骨上长大，知道每一颗铆钉的位置，也知道它还能撑多久。
+  starting_goal: 把工坊立起来，让风脊号重新像个能飞的船。
+  traits:
+    手巧: 0.85
+    嘴硬: 0.65
+    怕高: 0.35
+  capabilities:
+    gathering: 0.4
+    crafting: 0.65
+    exploration: 0.35
+    medicine: 0.25
+    conversation: 0.4
+    cooking: 0.3
+  inventory:
+    wood: 7
+    stone: 5
+    fiber: 1
+    ration: 2
+    water: 2
+  knowledge_seed:
+  - 风脊号的工坊只剩半面墙；只要有木料和石料，你今天就能把它立起来。
+  opening:
+    event_type: origin.mechanic
+    summary: 你以机械师的身份回到风脊号。工坊只剩半面墙，但龙骨还完整；先去风蚀林把木料带回来。
+- id: cartographer
+  name: 制图师
+  description: 你画过裂天群岛的每一道风口，也藏起过一张不该存在的旧图。
+  starting_goal: 把岛链画到旧灯塔，看看那张旧图到底指向哪里。
+  traits:
+    记路: 0.9
+    谨慎: 0.7
+    藏事: 0.6
+  capabilities:
+    gathering: 0.4
+    crafting: 0.35
+    exploration: 0.7
+    medicine: 0.25
+    conversation: 0.5
+    cooking: 0.3
+  inventory:
+    wood: 3
+    stone: 2
+    fiber: 3
+    rope: 1
+    ration: 2
+    water: 2
+  knowledge_seed:
+  - 旧灯塔在林梢后面，灯还亮着；雨背崖的绳结是风筝人留下的。
+  opening:
+    event_type: origin.cartographer
+    summary: 你以制图师的身份回到风脊号。旧图上的第一条线指向风蚀林；先去确认灯塔还在不在。
+- id: cook
+  name: 厨子
+  description: 你在船上做过十年饭，知道一锅热汤比一张海图更能让人留下来。
+  starting_goal: 先让厨房冒烟，再让风脊号走得远一点。
+  traits:
+    耐得住: 0.85
+    会招呼人: 0.7
+    念旧: 0.65
+  capabilities:
+    gathering: 0.4
+    crafting: 0.35
+    exploration: 0.3
+    medicine: 0.3
+    conversation: 0.5
+    cooking: 0.7
+  inventory:
+    wood: 3
+    stone: 2
+    berries: 4
+    salt: 2
+    ration: 4
+    water: 2
+  knowledge_seed:
+  - 风蚀林的浆果和碎盐滩的盐能做成口粮；厨房冒烟，船员才会留下。
+  opening:
+    event_type: origin.cook
+    summary: 你以厨子的身份回到风脊号。厨房的烟囱还站着；先去风蚀林采浆果，再把第一锅热饭做出来。
+- id: scavenger
+  name: 拾荒者
+  description: 你在坠岛的边缘捡过别人不要的东西，知道哪一块铜、哪一滴油值得冒险。
+  starting_goal: 先攒出一把铜镐，再去浮鲸墓场看看那副鲸骨。
+  traits:
+    眼尖: 0.85
+    胆大: 0.6
+    会算账: 0.7
+  capabilities:
+    gathering: 0.7
+    crafting: 0.4
+    exploration: 0.4
+    medicine: 0.25
+    conversation: 0.4
+    cooking: 0.3
+  inventory:
+    wood: 3
+    stone: 3
+    copper_ore: 1
+    oil: 1
+    ration: 2
+    water: 2
+  knowledge_seed:
+  - 浮鲸墓场的鲸骨里会亮琥珀；雷云工坊的晶石能做信标核心。
+  opening:
+    event_type: origin.scavenger
+    summary: 你以拾荒者的身份回到风脊号。你带回来一小块铜和一滴灯油；先去风蚀林补齐工坊的木料。

@@ -1,0 +1,53 @@
+attributes:
+- id: integrity
+  kind: state
+  label: 体力
+  unit: '%'
+  min: 0
+  max: 100
+  default: 100
+  vital: true
+  cost_mode: decrease
+  prompt: 身体状况；降到 0 就会倒下。
+- id: stamina
+  kind: state
+  label: 精力
+  unit: '%'
+  min: 0
+  max: 100
+  default: 90
+  capacity: true
+  cost_mode: decrease
+  prompt: 出航和采集的短期余量，回船休息会恢复。
+- id: hydration
+  kind: need
+  label: 水分
+  unit: 点
+  min: 0
+  max: 100
+  default: 78
+  prompt: 0 表示严重脱水；淡水会恢复。
+- id: satiety
+  kind: need
+  label: 饱食
+  unit: 点
+  min: 0
+  max: 100
+  default: 72
+  prompt: 0 表示饥饿；口粮和炖菜会恢复。
+- id: belonging
+  kind: need
+  label: 归属
+  unit: 点
+  min: 0
+  max: 100
+  default: 58
+  prompt: 和船员之间的连接感；观星、吃饭和阵营互动会恢复。
+- id: purpose
+  kind: need
+  label: 意义
+  unit: 点
+  min: 0
+  max: 100
+  default: 60
+  prompt: 对“把船开出去”这件事的掌控感；探索和建造会恢复。

@@ -536,7 +536,12 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
     # each known route as an explicit, validated intent instead.
     setting = platform.store.repositories.metadata.get("setting", {}) or {}
     ui = UiText.from_setting(setting)
-    for route in routes:
+    # A world may ship explicit, gated travel behaviors (for example a route
+    # that needs a rope or a knowledge fact).  In that case the generic route
+    # affordance would bypass those gates, so the world asks for it to stay
+    # hidden and Platform keeps the authored travel verbs.
+    explicit_travel = bool((setting.get("ui") or {}).get("explicit_travel"))
+    for route in ([] if explicit_travel else routes):
         if active_task.get("action") or active_task.get("bt"):
             break
         actions.insert(0, {
@@ -586,11 +591,26 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         if not behavior_id or behavior_id == "travel":
             continue
         behavior = bt_defs.get(behavior_id, {})
+        goal_tags = [str(tag) for tag in (behavior.get("goal_tags") or [])]
+        # Keep the construction/crafting/recovery verbs visible even when a
+        # world also has many gated travel and exploration choices.  A blocked
+        # build is actionable information ("bring 5 wood"), while another
+        # locked island is not.
+        if "building" in goal_tags:
+            priority = 0
+        elif "crafting" in goal_tags:
+            priority = 1
+        elif any(tag in {"recovery", "food", "water"} for tag in goal_tags):
+            priority = 2
+        else:
+            priority = 3
         unavailable_actions.append({
             "ref": f"behavior:{behavior_id}",
             "label": behavior.get("agent_label") or behavior.get("summary") or behavior_id,
             "reasons": [str(reason) for reason in (item.get("failed") or [])][:4],
+            "priority": priority,
         })
+    unavailable_actions.sort(key=lambda row: (int(row.get("priority", 1)), str(row.get("label") or "")))
     rules = platform.store.repositories.metadata.get("rules", {}) or {}
     item_labels = {
         str(key): str(value)
@@ -660,7 +680,7 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         "item_uses": _player_item_uses(platform),
         "active_task": active_task,
         "actions": actions[:64],
-        "unavailable_actions": unavailable_actions[:12],
+        "unavailable_actions": unavailable_actions[:24],
         "location": location,
         "world_properties": world_properties,
         "world_property_labels": world_property_labels,

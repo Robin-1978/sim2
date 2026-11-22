@@ -1,0 +1,2106 @@
+behavior_trees:
+- id: travel_windworn
+  agent_label: 前往风蚀林
+  summary: 前往风蚀林
+  description: 沿着林梢的方向飞到风蚀林。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - world.storm_stage < 3 or actor.inventory.storm_cloak >= 1
+  estimated_minutes: 40
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: windworn_woods
+  success_results:
+  - arrived
+  failure_results:
+  - route_unknown
+  - interrupted
+  goal_tags:
+  - travel
+  drive_tags:
+  - autonomy
+- id: travel_saltbreak
+  agent_label: 前往碎盐滩
+  summary: 前往碎盐滩
+  description: 飞向白得刺眼的盐滩。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - world.storm_stage < 3 or actor.inventory.storm_cloak >= 1
+  estimated_minutes: 50
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: saltbreak_flats
+  success_results:
+  - arrived
+  failure_results:
+  - route_unknown
+  - interrupted
+  goal_tags:
+  - travel
+  drive_tags:
+  - autonomy
+- id: travel_lantern_cape
+  agent_label: 返回灯岬
+  summary: 返回灯岬
+  description: 沿着岛链回到风脊号。
+  entry_conditions:
+  - actor.alive
+  estimated_minutes: 45
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: lantern_cape
+  success_results:
+  - arrived
+  failure_results:
+  - route_unknown
+  - interrupted
+  goal_tags:
+  - travel
+  drive_tags:
+  - autonomy
+- id: travel_lighthouse
+  agent_label: 前往旧灯塔
+  summary: 前往旧灯塔
+  description: 跟着林梢后面的灯光走到旧灯塔。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - world.storm_stage < 2 or actor.inventory.storm_cloak >= 1
+  - actor.knowledge.explored:windworn_woods
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: old_lighthouse
+  success_results:
+  - arrived
+  failure_results:
+  - route_unknown
+  - interrupted
+  goal_tags:
+  - travel
+  drive_tags:
+  - autonomy
+- id: travel_copper_tide
+  agent_label: 前往铜潮谷
+  summary: 前往铜潮谷
+  description: 穿过盐滩，进入铜矿露头的山谷。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - world.storm_stage < 2 or actor.inventory.storm_cloak >= 1
+  - actor.knowledge.explored:saltbreak_flats
+  - actor.inventory.stone_pick >= 1
+  estimated_minutes: 100
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: copper_tide
+  success_results:
+  - arrived
+  failure_results:
+  - route_unknown
+  - interrupted
+  goal_tags:
+  - travel
+  drive_tags:
+  - autonomy
+- id: travel_rainshade
+  agent_label: 前往雨背崖
+  summary: 前往雨背崖
+  description: 系好绳索，从林梢下到雨背崖。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - world.storm_stage < 2 or actor.inventory.storm_cloak >= 1
+  - actor.knowledge.explored:windworn_woods
+  - actor.inventory.rope >= 1
+  estimated_minutes: 110
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: rainshade_cliff
+  success_results:
+  - arrived
+  failure_results:
+  - route_unknown
+  - interrupted
+  goal_tags:
+  - travel
+  drive_tags:
+  - autonomy
+- id: travel_whalefall
+  agent_label: 前往浮鲸墓场
+  summary: 前往浮鲸墓场
+  description: 提着灯，沿着鲸骨走进浮鲸墓场。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - world.storm_stage < 2 or actor.inventory.storm_cloak >= 1
+  - actor.knowledge.explored:old_lighthouse
+  - actor.inventory.lantern >= 1
+  - actor.inventory.copper_pick >= 1
+  estimated_minutes: 120
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: whalefall_reach
+  success_results:
+  - arrived
+  failure_results:
+  - route_unknown
+  - interrupted
+  goal_tags:
+  - travel
+  drive_tags:
+  - autonomy
+- id: travel_thunderhead
+  agent_label: 前往雷云工坊
+  summary: 前往雷云工坊
+  description: 借滑翔翼穿过雷云，落到旧工坊的塔顶。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - world.storm_stage < 2 or actor.inventory.storm_cloak >= 1
+  - actor.knowledge.explored:old_lighthouse
+  - actor.inventory.glider >= 1
+  estimated_minutes: 150
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: thunderhead_works
+  success_results:
+  - arrived
+  failure_results:
+  - route_unknown
+  - interrupted
+  goal_tags:
+  - travel
+  drive_tags:
+  - autonomy
+- id: travel_broken_span
+  agent_label: 前往断桥群岛
+  summary: 前往断桥群岛
+  description: 沿着风筝线滑到断桥群岛。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - world.storm_stage < 2 or actor.inventory.storm_cloak >= 1
+  - actor.knowledge.explored:rainshade_cliff
+  - actor.inventory.glider >= 1
+  estimated_minutes: 120
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: broken_span
+  success_results:
+  - arrived
+  failure_results:
+  - route_unknown
+  - interrupted
+  goal_tags:
+  - travel
+  drive_tags:
+  - autonomy
+- id: travel_high_ring
+  agent_label: 前往高环门
+  summary: 前往高环门
+  description: 让信标牵引风脊号，靠近高环门。
+  entry_conditions:
+  - actor.alive
+  - world.beacon_frame >= 1
+  estimated_minutes: 100
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: high_ring
+  success_results:
+  - arrived
+  failure_results:
+  - route_unknown
+  - interrupted
+  goal_tags:
+  - travel
+  drive_tags:
+  - autonomy
+- id: explore_windworn
+  agent_label: 勘察风蚀林
+  summary: 勘察风蚀林
+  description: 把林子的木料、纤维和旧灯塔的方向记下来。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.woods
+  estimated_minutes: 100
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: explore_area
+    parameters:
+      area_id: windworn_woods
+  success_results:
+  - exploration_completed
+  failure_results:
+  - failed
+  - interrupted
+  goal_tags:
+  - exploration
+  - route
+  drive_tags:
+  - purpose
+  - curiosity
+- id: explore_saltbreak
+  agent_label: 勘察碎盐滩
+  summary: 勘察碎盐滩
+  description: 沿着盐壳走到铜潮谷的入口。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.flats
+  estimated_minutes: 110
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: explore_area
+    parameters:
+      area_id: saltbreak_flats
+  success_results:
+  - exploration_completed
+  failure_results:
+  - failed
+  - interrupted
+  goal_tags:
+  - exploration
+  - route
+  drive_tags:
+  - purpose
+  - curiosity
+- id: explore_lighthouse
+  agent_label: 勘察旧灯塔
+  summary: 勘察旧灯塔
+  description: 爬进灯塔，读墙上的名字和油槽里的海盐。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.lighthouse
+  estimated_minutes: 120
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: explore_area
+    parameters:
+      area_id: old_lighthouse
+  success_results:
+  - exploration_completed
+  failure_results:
+  - failed
+  - interrupted
+  goal_tags:
+  - exploration
+  - route
+  drive_tags:
+  - purpose
+  - curiosity
+- id: explore_copper_tide
+  agent_label: 勘察铜潮谷
+  summary: 勘察铜潮谷
+  description: 沿着矿脉找到通往浮鲸墓场和雷云工坊的裂缝。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.copper
+  estimated_minutes: 120
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: explore_area
+    parameters:
+      area_id: copper_tide
+  success_results:
+  - exploration_completed
+  failure_results:
+  - failed
+  - interrupted
+  goal_tags:
+  - exploration
+  - route
+  drive_tags:
+  - purpose
+  - curiosity
+- id: explore_rainshade
+  agent_label: 勘察雨背崖
+  summary: 勘察雨背崖
+  description: 在雨里找到药草、蘑菇和断桥群岛的绳结。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.cliff
+  estimated_minutes: 120
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: explore_area
+    parameters:
+      area_id: rainshade_cliff
+  success_results:
+  - exploration_completed
+  failure_results:
+  - failed
+  - interrupted
+  goal_tags:
+  - exploration
+  - route
+  drive_tags:
+  - purpose
+  - curiosity
+- id: explore_whalefall
+  agent_label: 勘察浮鲸墓场
+  summary: 勘察浮鲸墓场
+  description: 沿着鲸骨读出风暴留下的琥珀记忆。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.whalefall
+  estimated_minutes: 140
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: explore_area
+    parameters:
+      area_id: whalefall_reach
+  success_results:
+  - exploration_completed
+  failure_results:
+  - failed
+  - interrupted
+  goal_tags:
+  - exploration
+  - route
+  drive_tags:
+  - purpose
+  - curiosity
+- id: explore_thunderhead
+  agent_label: 勘察雷云工坊
+  summary: 勘察雷云工坊
+  description: 在雷云里拆开一台还没停机的旧机器。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.thunderhead
+  estimated_minutes: 150
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: explore_area
+    parameters:
+      area_id: thunderhead_works
+  success_results:
+  - exploration_completed
+  failure_results:
+  - failed
+  - interrupted
+  goal_tags:
+  - exploration
+  - route
+  drive_tags:
+  - purpose
+  - curiosity
+- id: explore_broken_span
+  agent_label: 勘察断桥群岛
+  summary: 勘察断桥群岛
+  description: 和风筝人一起走完最后一段绳桥。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.broken_span
+  estimated_minutes: 120
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: explore_area
+    parameters:
+      area_id: broken_span
+  success_results:
+  - exploration_completed
+  failure_results:
+  - failed
+  - interrupted
+  goal_tags:
+  - exploration
+  - route
+  drive_tags:
+  - purpose
+  - curiosity
+- id: explore_high_ring
+  agent_label: 勘察高环门
+  summary: 勘察高环门
+  description: 靠近高环，确认信标需要对齐的三个锚点。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.high_ring
+  estimated_minutes: 150
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: explore_area
+    parameters:
+      area_id: high_ring
+  success_results:
+  - exploration_completed
+  failure_results:
+  - failed
+  - interrupted
+  goal_tags:
+  - exploration
+  - route
+  drive_tags:
+  - purpose
+  - curiosity
+- id: gather_wood
+  agent_label: 收集木材
+  summary: 收集木材
+  description: 徒手收集两份木材。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.woods
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: gather_resource
+    parameters:
+      resource_tag: wood
+      location_id: windworn_woods
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: chop_timber
+  agent_label: 伐木
+  summary: 伐木
+  description: 用石斧伐下五份木料。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.woods
+  - actor.inventory.stone_axe >= 1
+  estimated_minutes: 90
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: chop_timber
+    parameters:
+      resource_tag: wood
+      location_id: windworn_woods
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: gather_fiber
+  agent_label: 收集纤维
+  summary: 收集纤维
+  description: 从树皮和藤蔓上剥下纤维。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.woods
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: gather_resource
+    parameters:
+      resource_tag: fiber
+      location_id: windworn_woods
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: forage_berries
+  agent_label: 采浆果
+  summary: 采浆果
+  description: 沿林缘采两把浆果。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.woods
+  estimated_minutes: 50
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: gather_resource
+    parameters:
+      resource_tag: berries
+      location_id: windworn_woods
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: gather_stone
+  agent_label: 收集石块
+  summary: 收集石块
+  description: 在盐壳下面敲两块石头。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.flats
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: gather_resource
+    parameters:
+      resource_tag: stone
+      location_id: saltbreak_flats
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: quarry_stone
+  agent_label: 采石
+  summary: 采石
+  description: 用石镐敲下五块石料。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.flats
+  - actor.inventory.stone_pick >= 1
+  estimated_minutes: 90
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: quarry_stone
+    parameters:
+      resource_tag: stone
+      location_id: saltbreak_flats
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: dig_clay
+  agent_label: 挖陶土
+  summary: 挖陶土
+  description: 从盐滩下面的湿泥里挖陶土。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.flats
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: gather_resource
+    parameters:
+      resource_tag: clay
+      location_id: saltbreak_flats
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: sift_glass
+  agent_label: 筛玻璃砂
+  summary: 筛玻璃砂
+  description: 在盐壳缝里筛出玻璃砂。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.flats
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: gather_resource
+    parameters:
+      resource_tag: glass_sand
+      location_id: saltbreak_flats
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: harvest_salt
+  agent_label: 收盐
+  summary: 收盐
+  description: 把盐壳敲成能带走的小块。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.flats
+  estimated_minutes: 50
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: gather_resource
+    parameters:
+      resource_tag: salt
+      location_id: saltbreak_flats
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: collect_oil
+  agent_label: 收集灯油
+  summary: 收集灯油
+  description: 从旧灯塔的油槽里取一罐灯油。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.lighthouse
+  - actor.inventory.lantern >= 1
+  estimated_minutes: 75
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: collect_oil
+    parameters:
+      resource_tag: oil
+      location_id: old_lighthouse
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: salvage_lens
+  agent_label: 拆透镜
+  summary: 拆透镜
+  description: 从备用灯组上拆下一枚透镜。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.lighthouse
+  - actor.inventory.lantern >= 1
+  estimated_minutes: 75
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: salvage_lens
+    parameters:
+      resource_tag: lens
+      location_id: old_lighthouse
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: mine_copper
+  agent_label: 采铜
+  summary: 采铜
+  description: 用石镐敲下两块铜矿。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.copper
+  - actor.inventory.stone_pick >= 1
+  estimated_minutes: 90
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: mine_copper
+    parameters:
+      resource_tag: copper_ore
+      location_id: copper_tide
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: mine_coal
+  agent_label: 采煤
+  summary: 采煤
+  description: 从煤层里收两块煤。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.copper
+  - actor.inventory.stone_pick >= 1
+  estimated_minutes: 75
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: mine_coal
+    parameters:
+      resource_tag: coal
+      location_id: copper_tide
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: gather_herb
+  agent_label: 采药草
+  summary: 采药草
+  description: 在崖背的石缝里采药草。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.cliff
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: gather_resource
+    parameters:
+      resource_tag: herb
+      location_id: rainshade_cliff
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: pick_mushroom
+  agent_label: 采蘑菇
+  summary: 采蘑菇
+  description: 在雨背崖的阴面采蘑菇。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.cliff
+  estimated_minutes: 50
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: gather_resource
+    parameters:
+      resource_tag: mushroom
+      location_id: rainshade_cliff
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: salvage_bone
+  agent_label: 拆鲸骨
+  summary: 拆鲸骨
+  description: 拆下两根还能用的鲸骨。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.whalefall
+  - actor.inventory.copper_pick >= 1
+  estimated_minutes: 90
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: salvage_bone
+    parameters:
+      resource_tag: bone
+      location_id: whalefall_reach
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: harvest_amber
+  agent_label: 取琥珀
+  summary: 取琥珀
+  description: 从鲸骨缝里取一块琥珀。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.whalefall
+  - actor.inventory.lantern >= 1
+  estimated_minutes: 90
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: harvest_amber
+    parameters:
+      resource_tag: amber
+      location_id: whalefall_reach
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: mine_crystal
+  agent_label: 采晶石
+  summary: 采晶石
+  description: 用铜镐从晶脉上取一块晶石。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.thunderhead
+  - actor.inventory.copper_pick >= 1
+  estimated_minutes: 120
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: mine_crystal
+    parameters:
+      resource_tag: crystal
+      location_id: thunderhead_works
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: salvage_relic
+  agent_label: 拆遗物
+  summary: 拆遗物
+  description: 用晶锯和提灯拆下一件遗物。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase != night
+  - location.tag.thunderhead
+  - actor.inventory.crystal_saw >= 1
+  - actor.inventory.lantern >= 1
+  estimated_minutes: 150
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: salvage_relic
+    parameters:
+      resource_tag: relic
+      location_id: thunderhead_works
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - gathering
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+- id: take_ration
+  agent_label: 取口粮
+  summary: 取口粮
+  description: 从营地的口粮箱里取两份口粮。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  estimated_minutes: 15
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: take_ration
+    parameters:
+      resource_tag: ration
+      location_id: lantern_cape
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - food
+  - supply
+  drive_tags:
+  - satiety
+  - safety
+- id: fill_water
+  agent_label: 装淡水
+  summary: 装淡水
+  description: 从蓄水槽里装三份淡水。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  estimated_minutes: 15
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: fill_water
+    parameters:
+      resource_tag: water
+      location_id: lantern_cape
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - water
+  - supply
+  drive_tags:
+  - hydration
+  - safety
+- id: craft
+  agent_label: 在营地制作
+  summary: 在营地制作
+  description: 在营地工作台按配方制作食物、药膏或绳索。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  estimated_minutes: 45
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: craft_recipe
+    parameters:
+      recipe_id: context.recipe_id
+  success_results:
+  - recipe_completed
+  failure_results:
+  - crafting_failed
+  - interrupted
+  goal_tags:
+  - crafting
+  - supply
+  drive_tags:
+  - purpose
+  - autonomy
+  agent_parameters:
+    recipe_id:
+      type: string
+      required: true
+      max_length: 120
+      description: 选择一个当前可制作且材料齐全的配方。
+- id: craft_stone_axe
+  agent_label: 制作石斧
+  summary: 制作石斧
+  description: 把木柄和石刃绑在一起。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  estimated_minutes: 45
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: craft_stone_axe
+    parameters: {}
+  success_results:
+  - tool_crafted
+  failure_results:
+  - crafting_failed
+  - interrupted
+  goal_tags:
+  - crafting
+  - tool
+  drive_tags:
+  - purpose
+  - autonomy
+- id: craft_stone_pick
+  agent_label: 制作石镐
+  summary: 制作石镐
+  description: 把尖石绑在木柄上。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  estimated_minutes: 50
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: craft_stone_pick
+    parameters: {}
+  success_results:
+  - tool_crafted
+  failure_results:
+  - crafting_failed
+  - interrupted
+  goal_tags:
+  - crafting
+  - tool
+  drive_tags:
+  - purpose
+  - autonomy
+- id: craft_copper_pick
+  agent_label: 制作铜镐
+  summary: 制作铜镐
+  description: 在工坊里把铜矿敲成镐头。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level >= 1
+  estimated_minutes: 90
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: craft_copper_pick
+    parameters: {}
+  success_results:
+  - tool_crafted
+  failure_results:
+  - crafting_failed
+  - interrupted
+  goal_tags:
+  - crafting
+  - tool
+  drive_tags:
+  - purpose
+  - autonomy
+- id: craft_lantern
+  agent_label: 制作提灯
+  summary: 制作提灯
+  description: 用铜、玻璃砂和纤维做一盏能带进墓场的灯。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level >= 1
+  estimated_minutes: 75
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: craft_lantern
+    parameters: {}
+  success_results:
+  - tool_crafted
+  failure_results:
+  - crafting_failed
+  - interrupted
+  goal_tags:
+  - crafting
+  - tool
+  drive_tags:
+  - purpose
+  - autonomy
+- id: craft_storm_cloak
+  agent_label: 制作风衣
+  summary: 制作风衣
+  description: 把纤维和陶土涂成一件挡风的外套。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level >= 1
+  estimated_minutes: 75
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: craft_storm_cloak
+    parameters: {}
+  success_results:
+  - tool_crafted
+  failure_results:
+  - crafting_failed
+  - interrupted
+  goal_tags:
+  - crafting
+  - tool
+  drive_tags:
+  - purpose
+  - autonomy
+- id: craft_glider
+  agent_label: 制作滑翔翼
+  summary: 制作滑翔翼
+  description: 用鲸骨、纤维和灯油做一对能穿过雷云的翼。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level >= 2
+  estimated_minutes: 120
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: craft_glider
+    parameters: {}
+  success_results:
+  - tool_crafted
+  failure_results:
+  - crafting_failed
+  - interrupted
+  goal_tags:
+  - crafting
+  - tool
+  drive_tags:
+  - purpose
+  - autonomy
+- id: craft_crystal_saw
+  agent_label: 制作晶锯
+  summary: 制作晶锯
+  description: 把晶石磨成能切开遗物的锯齿。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level >= 2
+  estimated_minutes: 100
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: craft_crystal_saw
+    parameters: {}
+  success_results:
+  - tool_crafted
+  failure_results:
+  - crafting_failed
+  - interrupted
+  goal_tags:
+  - crafting
+  - tool
+  drive_tags:
+  - purpose
+  - autonomy
+- id: craft_beacon_core
+  agent_label: 制作信标核心
+  summary: 制作信标核心
+  description: 把晶石、遗物、琥珀和透镜封成一枚信标核心。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level >= 2
+  estimated_minutes: 150
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: craft_beacon_core
+    parameters: {}
+  success_results:
+  - tool_crafted
+  failure_results:
+  - crafting_failed
+  - interrupted
+  goal_tags:
+  - crafting
+  - beacon
+  drive_tags:
+  - purpose
+- id: build_workshop_1
+  agent_label: 搭起工坊
+  summary: 搭起工坊
+  description: 把半面墙补成能用的工坊。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level == 0
+  estimated_minutes: 120
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: build_workshop_1
+    parameters: {}
+  success_results:
+  - workshop_built
+  failure_results:
+  - build_failed
+  - interrupted
+  goal_tags:
+  - building
+  - camp
+  drive_tags:
+  - purpose
+  - autonomy
+- id: build_workshop_2
+  agent_label: 升级工坊
+  summary: 升级工坊
+  description: 加一台车床和一排工具架。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level == 1
+  estimated_minutes: 180
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: build_workshop_2
+    parameters: {}
+  success_results:
+  - workshop_upgraded
+  failure_results:
+  - build_failed
+  - interrupted
+  goal_tags:
+  - building
+  - camp
+  drive_tags:
+  - purpose
+  - autonomy
+- id: build_galley_1
+  agent_label: 搭起厨房
+  summary: 搭起厨房
+  description: 让厨房的烟囱重新冒烟。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.galley_level == 0
+  estimated_minutes: 90
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: build_galley_1
+    parameters: {}
+  success_results:
+  - galley_built
+  failure_results:
+  - build_failed
+  - interrupted
+  goal_tags:
+  - building
+  - camp
+  drive_tags:
+  - purpose
+  - autonomy
+- id: build_galley_2
+  agent_label: 扩建厨房
+  summary: 扩建厨房
+  description: 加一口能炖汤的大锅。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.galley_level == 1
+  estimated_minutes: 120
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: build_galley_2
+    parameters: {}
+  success_results:
+  - galley_upgraded
+  failure_results:
+  - build_failed
+  - interrupted
+  goal_tags:
+  - building
+  - camp
+  drive_tags:
+  - purpose
+  - autonomy
+- id: build_garden_1
+  agent_label: 搭起花园
+  summary: 搭起花园
+  description: 在船尾搭一排能挡风的种植架。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.garden_level == 0
+  estimated_minutes: 90
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: build_garden_1
+    parameters: {}
+  success_results:
+  - garden_built
+  failure_results:
+  - build_failed
+  - interrupted
+  goal_tags:
+  - building
+  - camp
+  drive_tags:
+  - purpose
+  - autonomy
+- id: build_garden_2
+  agent_label: 扩建花园
+  summary: 扩建花园
+  description: 把种植架接上雨水槽和药草圃。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.garden_level == 1
+  estimated_minutes: 120
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: build_garden_2
+    parameters: {}
+  success_results:
+  - garden_upgraded
+  failure_results:
+  - build_failed
+  - interrupted
+  goal_tags:
+  - building
+  - camp
+  drive_tags:
+  - purpose
+  - autonomy
+- id: build_infirmary_1
+  agent_label: 搭起药棚
+  summary: 搭起药棚
+  description: 把药草、灯和一张干净的床搬进船尾。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.infirmary_level == 0
+  estimated_minutes: 90
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: build_infirmary_1
+    parameters: {}
+  success_results:
+  - infirmary_built
+  failure_results:
+  - build_failed
+  - interrupted
+  goal_tags:
+  - building
+  - camp
+  drive_tags:
+  - purpose
+  - autonomy
+- id: build_infirmary_2
+  agent_label: 扩建药棚
+  summary: 扩建药棚
+  description: 把药棚扩成能处理重伤的屋子。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.infirmary_level == 1
+  estimated_minutes: 120
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: build_infirmary_2
+    parameters: {}
+  success_results:
+  - infirmary_upgraded
+  failure_results:
+  - build_failed
+  - interrupted
+  goal_tags:
+  - building
+  - medicine
+  drive_tags:
+  - safety
+  - belonging
+- id: build_hull_1
+  agent_label: 加固船体
+  summary: 加固船体
+  description: 用木料和铜片给船体加一层骨架。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.hull_level == 0
+  estimated_minutes: 150
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: build_hull_1
+    parameters: {}
+  success_results:
+  - hull_repaired
+  failure_results:
+  - build_failed
+  - interrupted
+  goal_tags:
+  - building
+  - hull
+  drive_tags:
+  - safety
+  - purpose
+- id: build_hull_2
+  agent_label: 加固船体 II
+  summary: 加固船体 II
+  description: 用铜梁和晶石把船体再加固一层。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.hull_level == 1
+  estimated_minutes: 180
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: build_hull_2
+    parameters: {}
+  success_results:
+  - hull_repaired
+  failure_results:
+  - build_failed
+  - interrupted
+  goal_tags:
+  - building
+  - hull
+  drive_tags:
+  - safety
+  - purpose
+- id: build_beacon_frame
+  agent_label: 立起信标框架
+  summary: 立起信标框架
+  description: 在灯岬立起信标框架，让高环门有东西可以对齐。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.beacon_frame == 0
+  estimated_minutes: 240
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: build_beacon_frame
+    parameters: {}
+  success_results:
+  - beacon_frame_built
+  failure_results:
+  - build_failed
+  - interrupted
+  goal_tags:
+  - building
+  - beacon
+  drive_tags:
+  - purpose
+  - safety
+- id: install_beacon_core
+  agent_label: 安装信标核心
+  summary: 安装信标核心
+  description: 把一枚信标核心装进框架。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.beacon_frame >= 1
+  - world.beacon_cores < 3
+  - actor.inventory.beacon_core >= 1
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: install_beacon_core
+    parameters: {}
+  success_results:
+  - beacon_core_installed
+  failure_results:
+  - build_failed
+  - interrupted
+  goal_tags:
+  - building
+  - beacon
+  drive_tags:
+  - purpose
+- id: repair_hull
+  agent_label: 修补船体
+  summary: 修补船体
+  description: 用木料和铜片补上船体的裂缝。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.hull_integrity < 0.95
+  estimated_minutes: 90
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: repair_hull
+    parameters: {}
+  success_results:
+  - hull_repaired
+  failure_results:
+  - build_failed
+  - interrupted
+  goal_tags:
+  - building
+  - hull
+  drive_tags:
+  - safety
+  - purpose
+- id: jettison_relic
+  agent_label: 抛弃遗物
+  summary: 抛弃遗物
+  description: 把一件遗物推下云海，换回一点风暴的安静。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - actor.inventory.relic >= 1
+  - world.storm_pressure >= 10
+  estimated_minutes: 30
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: jettison_relic
+    parameters: {}
+  success_results:
+  - cargo_jettisoned
+  failure_results:
+  - failed
+  goal_tags:
+  - storm
+  - risk
+  drive_tags:
+  - safety
+- id: jettison_amber
+  agent_label: 抛弃琥珀
+  summary: 抛弃琥珀
+  description: 把一块琥珀推下云海，换回一点风暴的安静。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - actor.inventory.amber >= 1
+  - world.storm_pressure >= 8
+  estimated_minutes: 30
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: jettison_amber
+    parameters: {}
+  success_results:
+  - cargo_jettisoned
+  failure_results:
+  - failed
+  goal_tags:
+  - storm
+  - risk
+  drive_tags:
+  - safety
+- id: launch_escape
+  agent_label: 离天
+  summary: 离天
+  description: 把三个核心对准高环门，带风脊号离开裂天群岛。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.beacon_frame >= 1
+  - world.beacon_cores >= 3
+  - world.hull_integrity > 0.2
+  - world.ending_trigger == 0
+  estimated_minutes: 240
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: launch_escape
+    parameters: {}
+  success_results:
+  - launched
+  failure_results:
+  - failed
+  goal_tags:
+  - ending
+  - escape
+  drive_tags:
+  - purpose
+  - autonomy
+- id: anchor_islands
+  agent_label: 锚定群岛
+  summary: 锚定群岛
+  description: 把信标对准群岛的锚点，让它们重新系在一起。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.beacon_frame >= 1
+  - world.beacon_cores >= 3
+  - world.garden_level >= 2
+  - world.kite_rep >= 0.4
+  - world.ending_trigger == 0
+  estimated_minutes: 240
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: anchor_islands
+    parameters: {}
+  success_results:
+  - anchored
+  failure_results:
+  - failed
+  goal_tags:
+  - ending
+  - anchor
+  drive_tags:
+  - purpose
+  - belonging
+- id: become_storm
+  agent_label: 成为风暴
+  summary: 成为风暴
+  description: 听风歌者唱完最后一段，让风脊号成为风暴的一部分。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.storm_pressure >= 90
+  - world.beacon_cores >= 2
+  - world.choir_rep >= 0.4
+  - world.ending_trigger == 0
+  estimated_minutes: 180
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: become_storm
+    parameters: {}
+  success_results:
+  - stormborn
+  failure_results:
+  - failed
+  goal_tags:
+  - ending
+  - storm
+  drive_tags:
+  - purpose
+  - autonomy
+- id: eat_ration
+  agent_label: 吃口粮
+  summary: 吃口粮
+  description: 吃一份口粮。
+  entry_conditions:
+  - actor.alive
+  - actor.inventory.ration >= 1
+  estimated_minutes: 10
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: eat_ration
+    parameters: {}
+  success_results:
+  - eaten
+  failure_results:
+  - failed
+  goal_tags:
+  - recovery
+  drive_tags:
+  - safety
+- id: drink_water
+  agent_label: 喝淡水
+  summary: 喝淡水
+  description: 喝一份淡水。
+  entry_conditions:
+  - actor.alive
+  - actor.inventory.water >= 1
+  estimated_minutes: 5
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: drink_water
+    parameters: {}
+  success_results:
+  - drank
+  failure_results:
+  - failed
+  goal_tags:
+  - recovery
+  drive_tags:
+  - safety
+- id: eat_stew
+  agent_label: 吃蘑菇炖菜
+  summary: 吃蘑菇炖菜
+  description: 吃一份热炖菜，恢复饱食和归属。
+  entry_conditions:
+  - actor.alive
+  - actor.inventory.stew >= 1
+  estimated_minutes: 15
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: eat_stew
+    parameters: {}
+  success_results:
+  - eaten
+  failure_results:
+  - failed
+  goal_tags:
+  - recovery
+  drive_tags:
+  - safety
+- id: use_salve
+  agent_label: 用药膏
+  summary: 用药膏
+  description: 用一份药膏处理伤口。
+  entry_conditions:
+  - actor.alive
+  - actor.inventory.salve >= 1
+  estimated_minutes: 10
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: use_salve
+    parameters: {}
+  success_results:
+  - eaten
+  failure_results:
+  - failed
+  goal_tags:
+  - recovery
+  drive_tags:
+  - safety
+- id: rest_at_camp
+  agent_label: 在营地休息
+  summary: 在营地休息
+  description: 在灯岬的炉火边休息，恢复精力和体力。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  estimated_minutes: 240
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: rest_at_camp
+    parameters: {}
+  success_results:
+  - rested
+  failure_results:
+  - interrupted
+  goal_tags:
+  - recovery
+  - camp
+  drive_tags:
+  - safety
+  - autonomy
+- id: rest_rough
+  agent_label: 野外休息
+  summary: 野外休息
+  description: 在野外找个背风的地方睡一会儿。
+  entry_conditions:
+  - actor.alive
+  estimated_minutes: 180
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: rest_rough
+    parameters: {}
+  success_results:
+  - rested
+  failure_results:
+  - interrupted
+  goal_tags:
+  - recovery
+  drive_tags:
+  - safety
+- id: sleep
+  agent_label: 睡一觉（8 小时）
+  summary: 睡一觉（8 小时）
+  description: 在风脊号上睡到下一次天亮。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  estimated_minutes: 480
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: sleep
+    parameters: {}
+  success_results:
+  - rested
+  failure_results:
+  - interrupted
+  goal_tags:
+  - recovery
+  - camp
+  drive_tags:
+  - safety
+- id: work_camp
+  agent_label: 在船上干活
+  summary: 在船上干活
+  description: 修绳、擦灯、记海图；让营地继续像个营地。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: work_camp
+    parameters: {}
+  success_results:
+  - worked
+  failure_results:
+  - interrupted
+  goal_tags:
+  - camp
+  - work
+  drive_tags:
+  - purpose
+- id: stargaze
+  agent_label: 在甲板观星
+  summary: 在甲板观星
+  description: 看一会儿星，听风从岛链之间穿过去。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - context.day_phase == night
+  estimated_minutes: 45
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: stargaze
+    parameters: {}
+  success_results:
+  - rested
+  failure_results:
+  - interrupted
+  goal_tags:
+  - social
+  - camp
+  drive_tags:
+  - belonging
+- id: cook_meal
+  agent_label: 做一锅热饭
+  summary: 做一锅热饭
+  description: 用厨房的储备做一锅热饭，让所有人明天有口粮。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.galley_level >= 1
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: cook_meal
+    parameters: {}
+  success_results:
+  - meal_cooked
+  failure_results:
+  - interrupted
+  goal_tags:
+  - food
+  - camp
+  drive_tags:
+  - satiety
+  - belonging
+- id: tend_garden
+  agent_label: 照料花园
+  summary: 照料花园
+  description: 给花园浇水、补藤架，收一点口粮。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.garden_level >= 1
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: tend_garden
+    parameters: {}
+  success_results:
+  - worked
+  failure_results:
+  - interrupted
+  goal_tags:
+  - food
+  - camp
+  drive_tags:
+  - purpose
+  - belonging
+- id: tend_infirmary
+  agent_label: 整理药棚
+  summary: 整理药棚
+  description: 整理药棚，给船员留一份能用的药。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.infirmary_level >= 1
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: tend_infirmary
+    parameters: {}
+  success_results:
+  - worked
+  failure_results:
+  - interrupted
+  goal_tags:
+  - medicine
+  - camp
+  drive_tags:
+  - belonging
+  - safety
+- id: patch_hull
+  agent_label: 临时补船
+  summary: 临时补船
+  description: 敲敲打打，让船体再撑一段。
+  entry_conditions:
+  - actor.alive
+  - location.tag.camp
+  - world.workshop_level >= 1
+  - world.hull_integrity < 0.9
+  estimated_minutes: 120
+  cooldown_minutes: 1440
+  nodes:
+  - type: action
+    action_id: patch_hull
+    parameters: {}
+  success_results:
+  - hull_repaired
+  failure_results:
+  - interrupted
+  goal_tags:
+  - hull
+  - camp
+  drive_tags:
+  - safety
+  - purpose
+- id: aid_kite
+  agent_label: 帮风筝人系桥
+  summary: 帮风筝人系桥
+  description: 把纤维交给风筝人，让他们多系一段桥。
+  entry_conditions:
+  - actor.alive
+  - location.tag.broken_span
+  - actor.inventory.fiber >= 4
+  estimated_minutes: 90
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: aid_kite
+    parameters: {}
+  success_results:
+  - faction_aided
+  failure_results:
+  - failed
+  goal_tags:
+  - faction
+  - anchor
+  drive_tags:
+  - belonging
+  - purpose
+- id: trade_foundry
+  agent_label: 和熔炉派换透镜
+  summary: 和熔炉派换透镜
+  description: 用铜换熔炉派一枚透镜。
+  entry_conditions:
+  - actor.alive
+  - location.tag.thunderhead
+  - actor.inventory.copper_ore >= 3
+  estimated_minutes: 60
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: trade_foundry
+    parameters: {}
+  success_results:
+  - faction_traded
+  failure_results:
+  - failed
+  goal_tags:
+  - faction
+  - trade
+  drive_tags:
+  - purpose
+  - autonomy
+- id: listen_choir
+  agent_label: 听风歌者唱一段
+  summary: 听风歌者唱一段
+  description: 在旧灯塔下听风歌者唱一段，让风暴暂时安静。
+  entry_conditions:
+  - actor.alive
+  - location.tag.lighthouse
+  estimated_minutes: 60
+  cooldown_minutes: 1440
+  nodes:
+  - type: action
+    action_id: listen_choir
+    parameters: {}
+  success_results:
+  - storm_calmed
+  failure_results:
+  - failed
+  goal_tags:
+  - faction
+  - storm
+  drive_tags:
+  - purpose
+  - belonging

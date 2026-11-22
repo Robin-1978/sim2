@@ -1,0 +1,9 @@
+opening_events:
+- id: skyfall_begin
+  type: skyfall.begin
+  world_minute: 0
+  payload:
+    summary: 裂天群岛正在坠入云海。风脊号泊在灯岬，工坊只剩半面墙，五个船员各有自己的理由留下。你有一艘还能飞的船，和一片随时会消失的天空。
+    players_goal: 先探索风蚀林，带回木料和纤维，把工坊立起来。
+    storm_pressure: 0
+    hull_integrity: 1.0

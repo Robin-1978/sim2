@@ -6,6 +6,7 @@ import { nearbyParticipants, openCharacter } from "./render_panels.js";
 
 export function sceneTheme(location) {
     const tags = new Set(location?.tags || []);
+    if (tags.has("sky")) return "sky";
     if (tags.has("craft")) return "workshop";
     if (tags.has("research")) return "observatory";
     if (tags.has("resource") && tags.has("exploration")) return "marsh";
@@ -77,7 +78,7 @@ export function renderScene() {
     $("scene-eyebrow").textContent = player.location_safe ? "安全地点" : "你在这里";
     const tags = $("scene-tags");
     tags.replaceChildren();
-    const tagNames = { public: "公共", social: "社交", market: "集市", resource: "资源", craft: "工坊", safe: "安全", research: "研究", exploration: "探索", defense: "防线", infrastructure: "基础设施", home: "住屋" };
+    const tagNames = { public: "公共", social: "社交", market: "集市", resource: "资源", craft: "工坊", safe: "安全", research: "研究", exploration: "探索", defense: "防线", infrastructure: "基础设施", home: "住屋", sky: "天空", camp: "营地", woods: "林地", flats: "盐滩", lighthouse: "灯塔", ruins: "遗迹", copper: "矿谷", cliff: "崖地", whalefall: "墓场", faction: "阵营", endgame: "终局" };
     for (const tag of location.tags || []) {
       if (tagNames[tag]) tags.append(el("span", "badge", tagNames[tag]));
     }

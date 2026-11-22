@@ -90,6 +90,7 @@ class WorldTickService(PlatformService):
                         context={
                             **static_context_values,
                             "current_location": self._context.services["execution"].entity_for_context(state.get("location_id")),
+                            "day_phase": world_time_view(self.store).get("day_phase"),
                         },
                         world=world_properties,
                     ):
@@ -138,7 +139,7 @@ class WorldTickService(PlatformService):
                     agent={},
                     target={},
                     world=properties,
-                    context=static_context_values,
+                    context={**static_context_values, "day_phase": world_time_view(self.store).get("day_phase")},
                 ):
                     continue
                 definitions = effect.get("effects")

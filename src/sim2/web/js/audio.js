@@ -11,6 +11,7 @@ export function sceneSoundProfile() {
       observatory: { filter: 760, drone: 44, volume: 0.2 },
       marsh: { filter: 560, drone: 50, volume: 0.26 },
       lantern: { filter: 300, drone: 65, volume: 0.22 },
+      sky: { filter: 880, drone: 72, volume: 0.18 },
     };
     return profiles[theme] || profiles.harbor;
   }

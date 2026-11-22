@@ -1,0 +1,49 @@
+capabilities:
+- id: gathering
+  name: 采集
+  description: 在群岛上找到并带回材料。
+  uses:
+  - gather_resource
+  - chop_timber
+  - mine_copper
+  - mine_crystal
+  - salvage_relic
+  xp_rule: verified_outcome
+- id: crafting
+  name: 制作
+  description: 把材料变成工具、绳索和信标部件。
+  uses:
+  - craft_recipe
+  - craft_stone_axe
+  - craft_copper_pick
+  - craft_glider
+  - craft_beacon_core
+  xp_rule: verified_outcome
+- id: exploration
+  name: 探索
+  description: 读懂岛屿、遗迹和风暴留下的痕迹。
+  uses:
+  - explore_area
+  xp_rule: verified_outcome
+- id: medicine
+  name: 医术
+  description: 用药草、琥珀和耐心把伤员带回来。
+  uses:
+  - craft_recipe
+  - use_salve
+  xp_rule: verified_outcome
+- id: conversation
+  name: 交涉
+  description: 和船员、风筝人、熔炉派、风歌者打交道。
+  uses:
+  - aid_kite
+  - trade_foundry
+  - listen_choir
+  xp_rule: verified_outcome
+- id: cooking
+  name: 烹饪
+  description: 让口粮不只是填饱肚子。
+  uses:
+  - craft_recipe
+  - cook_meal
+  xp_rule: verified_outcome

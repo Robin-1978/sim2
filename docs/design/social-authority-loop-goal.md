@@ -1,7 +1,7 @@
 # Social Authority Loop — Current Goal and Open Issues
 
 Status: **ACTIVE**
-Last updated: 2026-11-22
+Last updated: 2026-11-23
 
 ## 1. User goal (verbatim)
 
@@ -256,3 +256,13 @@ world-pack lint covers every `worlds/*/actions.yaml`.
   - 可见物品名在 Behavior 注册和 Action 执行时规范化到实体 id，支持唯一模糊匹配。
 - 远程证据：`python scripts/verify_night_pawnshop_growth.py --provider remote` 完成 Director 选 `social` → God 创建物品/客人/3 个行为 → 玩家收当（金币 -20、`dyn_case_1=1`）→ 玩家卖出（金币 +40、`dyn_case_1=3`、阵营声望上升）→ Story `propose_story_beat` accepted。探针没有注入案子或注入行为；God/Story 均由真实 remote provider 调用。
 - 聚焦测试：`test_night_pawnshop.py` 6 项、`test_dsl_living_bindings.py` 3 项；`scripts/test_parallel.py --changed` 通过（除已修复的 schema/liveness 两项外）。
+
+### 2026-11-23 风脊号：从“又一个镇子”到天空群岛生存沙盒
+
+- 新增 `worlds/windward_skyfall`：10 个地点、8 名 Agent、19 种资源、6 个配方、59 个 Action、83 个 Behavior、4 个出身、5 个结局。核心循环是探索 → 采集 → 制作 → 建造 → 风暴 → 离天/锚定/成为风暴，不再依赖单一截止日、债务或店铺经济。
+- 新机制：风暴压力由稀有打捞推高，35/65/90 三阶段会损伤船体、关闭远航；昼夜与野外暴露；两级船体加固；工坊/厨房/花园/药棚/信标五条建造线；`sky` 场景美术主题；`explicit_travel` 让带门槛的航线只显示 authored 版本。
+- 平台修复：`nearby_entities` 优先 Agent 和资源，营地不再显示“附近没有人”；设施支持 `dim`/`working` 状态；`worlds/__init__.py` 兼容 `MultiplexedPath`，namespace 世界包可被 CLI 发现；`night_pawnshop` 与新世界补了 `__init__.py` 和 package-data；world tick 条件上下文加入 `day_phase`，夜间暴露规则现在真的会触发（此前 `context.day_phase` 只存在于 Behavior 条件）。
+- 生存平衡：两级船体加固按等级降低风暴即时伤害和持续伤害，且可以满血建造；风衣改为纤维 + 陶土，避免“需要灯油 → 需要旧灯塔 → 风暴锁航 → 需要风衣”的软锁；灯油不再是提灯前置，提灯用纤维做灯芯。
+- 活世界契约：Director 只选 `verb`；God 契约要求 `required_definition_type: behavior`、`assign_to: [player]`、`max_proposals: 1`、`behaviors_using_action: [dynamic_salvage]`。远程 120 分钟运行：1 个 Director plan、1 个 God session、1 个 `dyn_salvage_1` Behavior、0 次拒绝；玩家执行后木材 7→9、风暴压力 0→4。远程 180 分钟运行：玩家自动搭起工坊，Story 激活 `first_workshop` beat。
+- DSL 修复：`target.location_id` 成为已知条件路径；`dynamic_salvage` 直接 `inventory_add` 现有材料，不依赖空资源节点或中文 display name；`deferred` + 地点/冷却检查保证 God 生成的打捞点只在目标岛生效。
+- 聚焦测试：`tests/test_windward_skyfall.py` 8 项通过；`scripts/test_parallel.py --changed` 作为迭代门禁。

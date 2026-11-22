@@ -1,0 +1,150 @@
+cadence:
+  reflection: 1d
+  innovation: 3d
+  god: 7d
+  god_structural: 7d
+stagnation:
+  window: 3d
+  max_interval: 10d
+  growth: structural
+  progress_event_types:
+  - exploration.completed
+  - camp.workshop_built
+  - camp.galley_built
+  - camp.beacon_frame_built
+  - beacon.core_installed
+  - storm.warning
+  - storm.hit
+  - faction.kite_aided
+  - faction.foundry_traded
+  - faction.choir_listened
+  - skyfall.launched
+  - skyfall.anchored
+limits:
+  max_ready_god_tasks: 1
+director:
+  cadence: 2d
+  window: 7d
+  targets:
+  - verb
+  policy: llm
+  max_cell_units: 16
+  kickoff: true
+  context_properties:
+  - day
+  - act
+  - storm_pressure
+  - hull_integrity
+  - explored_islands
+  - beacon_cores
+  - crew_count
+  - kite_rep
+  - foundry_rep
+  - choir_rep
+contracts:
+  god_structural:
+    tools:
+    - query_history
+    - query_world_index
+    - propose_entity
+    - propose_definition
+    - wait
+    required_definition_type: behavior
+    assign_to:
+    - player
+    max_proposals: 1
+    max_tool_calls: 12
+    required_content:
+      behaviors_using_action:
+      - dynamic_salvage
+    purpose: 按 Director 的 plan，在既有群岛里长出一个新的打捞行为：玩家可以在指定外岛打捞一份现有材料。
+    result: 读取 season_plan、world_growth_ledger 和最近的探索/风暴事件。只提交一个 definition_type=behavior，assign_to ["player"]，definition.id 写 dyn_salvage_N，agent_label 写“打捞<地点><材料>”，deferred 设为 true，cooldown_minutes 写 1440，entry_conditions 用 ["actor.alive", "location.tag.salvage"]，nodes 用 [{"type":"action","action_id":"dynamic_salvage","parameters":{"item":"<一个现有材料 id>","amount":2,"location_id":"<现有外岛 id>"}}]。item 只能从 wood、fiber、stone、salt、clay、glass_sand、copper_ore、coal、herb、mushroom、oil、bone、amber、crystal、relic 里选；location_id 只能从 windworn_woods、saltbreak_flats、old_lighthouse、copper_tide、rainshade_cliff、whalefall_reach、thunderhead_works 里选。不要创建新 Action、新岛、新资源、新物品或新 NPC；不要使用 followup_behavior；所有数量变化由 Platform 结算；证据不足时 wait。
+wakes:
+- id: story_after_exploration
+  'on':
+  - exploration.completed
+  for: story
+  count: 1
+  every: 6h
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  external: true
+  purpose: 玩家刚刚探索了一座岛；把新资源、新路线或旧名字变成下一拍，而不是复述“探索完成”。
+- id: story_after_camp
+  'on':
+  - camp.workshop_built
+  - camp.galley_built
+  - camp.beacon_frame_built
+  - beacon.core_installed
+  for: story
+  count: 1
+  every: 6h
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  external: true
+  purpose: 营地或信标向前一步；让船员对“我们真的要离开/留下”给出一个具体反应。
+- id: story_after_storm
+  'on':
+  - storm.warning
+  - storm.hit
+  - storm.critical
+  for: story
+  count: 1
+  every: 6h
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  external: true
+  purpose: 风暴阶段改变；把船体、货物和船员的选择写成下一拍，不要直接宣布结局。
+- id: story_after_faction
+  'on':
+  - faction.kite_aided
+  - faction.foundry_traded
+  - faction.choir_listened
+  for: story
+  count: 1
+  every: 6h
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  external: true
+  purpose: 阵营关系改变；让一个具体的人提出代价，而不是给一个抽象的声望数字。
+- id: god_after_stagnation
+  'on':
+  - world.stagnation
+  for: god
+  count: 1
+  every: 7d
+  tools:
+  - query_history
+  - query_world_index
+  - propose_definition
+  - wait
+  external: true
+  purpose: 玩家没有新的可执行行动时，检查是否需要在既有群岛长出一个新的打捞 Behavior。
+- id: story_after_ending
+  'on':
+  - skyfall.launched
+  - skyfall.anchored
+  - skyfall.stormborn
+  - skyfall.crash
+  for: story
+  count: 1
+  every: 1h
+  tools:
+  - query_history
+  - record_world_progress
+  - propose_story_beat
+  - wait
+  external: true
+  purpose: 本轮已经收束；只写一个余波或下一轮的钩子，不要改写结局条件。

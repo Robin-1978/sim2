@@ -1,0 +1,70 @@
+world_state:
+  properties:
+    day: 1
+    act: 1
+    storm_pressure: 0
+    storm_stage: 0
+    hull_integrity: 1.0
+    hull_level: 0
+    workshop_level: 0
+    galley_level: 0
+    garden_level: 0
+    infirmary_level: 0
+    beacon_frame: 0
+    beacon_cores: 0
+    explored_islands: 0
+    crew_count: 5
+    camp_morale: 0.6
+    ending_trigger: 0
+    kite_rep: 0.1
+    foundry_rep: 0.1
+    choir_rep: 0.1
+    storm_warning_seen: 0
+    storm_hit_seen: 0
+    storm_critical_seen: 0
+    crash_seen: 0
+    ration: 6
+    water: 10
+  initial_facts:
+  - id: windward_afloat
+    subject: windward
+    predicate: status
+    object: afloat
+    source_type: public
+  - id: skyfall
+    subject: sundered_reach
+    predicate: status
+    object: falling
+    source_type: public
+  - id: high_ring_sealed
+    subject: high_ring
+    predicate: status
+    object: sealed
+    source_type: public
+  - id: five_crew
+    subject: windward
+    predicate: crew_count
+    object: '5'
+    source_type: public
+  - id: salvage_rule
+    subject: windward
+    predicate: rule
+    object: rare_salvage_raises_storm
+    source_type: public
+  initial_spawn:
+  - entity_id: alan
+    location_id: lantern_cape
+  - entity_id: yanqiu
+    location_id: lantern_cape
+  - entity_id: laotao
+    location_id: lantern_cape
+  - entity_id: baique
+    location_id: lantern_cape
+  - entity_id: xiaoman
+    location_id: lantern_cape
+  - entity_id: ke
+    location_id: broken_span
+  - entity_id: forge_master
+    location_id: thunderhead_works
+  - entity_id: choir_keeper
+    location_id: old_lighthouse

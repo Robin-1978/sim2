@@ -205,6 +205,18 @@ class AgentViewCompiler(
         # Long-term goal tags are context only.  They must not promote a
         # behavior whose current drive, need, or resource conditions are weak.
         nearby = [item for item in (self.entities_repo.entities_at_location(location_id) if location_id else []) if item.get("id") != agent_id]
+        # People are the scene's stakes.  Keep them inside the compact nearby
+        # window even when a camp also exposes facilities, resources and
+        # objects; the UI projects this list as "附近的人".
+        def _nearby_rank(item: dict[str, Any]) -> tuple[int, str]:
+            entity_type = str(item.get("entity_type") or "")
+            if entity_type == "agent":
+                return (0, str(item.get("id") or ""))
+            if entity_type in {"resource", "material"}:
+                return (1, str(item.get("id") or ""))
+            return (2, str(item.get("id") or ""))
+
+        nearby.sort(key=_nearby_rank)
         known_routes = []
         for route_id in (current_location.get("routes", []) if isinstance(current_location, dict) else []):
             try:

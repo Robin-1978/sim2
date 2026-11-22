@@ -111,7 +111,9 @@ export function renderSceneWorldCover(theme = "harbor") {
     const cacheKey = `${worldId}|${theme}`;
     if (root.dataset.world === cacheKey) return;
     root.dataset.world = cacheKey;
-    const p = worldPalette(worldId);
+    const p = theme === "sky"
+      ? { skyA: "#9fd4ea", skyB: "#2e607c", a: "#7aa77c", b: "#355f58", c: "#f4d9a8", sun: "#ffe08a", hue: 198 }
+      : worldPalette(worldId);
     const seed = hashString(worldId);
     const moonX = 860 + (seed % 140);
     const moonY = 86 + (seed % 38);
@@ -129,7 +131,44 @@ export function renderSceneWorldCover(theme = "harbor") {
       return `<rect x="${x}" y="${y}" width="${width}" height="1.2" rx="0.6" fill="${p.sun}" opacity="${0.05 + (index % 4) * 0.025}"/>`;
     }).join("");
     let scene = "";
-    if (theme === "gatehouse") {
+    if (theme === "sky") {
+      const cloud = (x, y, scale, opacity) => `<g opacity="${opacity}" fill="rgba(255,255,255,0.72)"><ellipse cx="${x}" cy="${y}" rx="${70 * scale}" ry="${16 * scale}"/><ellipse cx="${x - 46 * scale}" cy="${y + 5 * scale}" rx="${42 * scale}" ry="${12 * scale}"/><ellipse cx="${x + 52 * scale}" cy="${y + 6 * scale}" rx="${48 * scale}" ry="${13 * scale}"/></g>`;
+      const island = (x, y, scale, dark) => `
+        <g transform="translate(${x} ${y}) scale(${scale})" opacity=".95">
+          <path d="M-120 0 C-88 -22 -40 -28 0 -22 C42 -32 92 -20 122 0 C86 18 42 24 0 18 C-42 24 -88 18 -120 0Z" fill="${dark ? p.b : p.a}"/>
+          <path d="M-120 0 C-88 -22 -40 -28 0 -22 C42 -32 92 -20 122 0" stroke="rgba(255,255,255,0.35)" stroke-width="2" fill="none"/>
+          <path d="M-86 8 C-52 18 -18 22 18 18 C56 22 82 14 100 6" stroke="rgba(0,0,0,0.18)" stroke-width="3" fill="none"/>
+          <path d="M-62 -6 L-54 -34 L-42 -8Z" fill="${dark ? p.c : p.a}" opacity=".8"/>
+          <path d="M18 -10 L28 -44 L42 -12Z" fill="${dark ? p.c : p.a}" opacity=".75"/>
+        </g>`;
+      scene = `
+        <rect width="1200" height="420" fill="url(#scene-sky)"/>
+        <circle cx="${700 + (seed % 180)}" cy="${72 + (seed % 30)}" r="46" fill="${p.sun}" opacity=".72"/>
+        <circle cx="${700 + (seed % 180)}" cy="${72 + (seed % 30)}" r="108" fill="${p.sun}" opacity=".1"/>
+        ${cloud(160, 74, 1.2, 0.7)}${cloud(980, 116, 0.9, 0.55)}${cloud(520, 54, 0.65, 0.5)}
+        ${island(180, 300, 1.05, true)}
+        ${island(920, 268, 0.85, false)}
+        ${island(1080, 170, 0.42, true)}
+        ${island(360, 140, 0.36, false)}
+        <g class="art-airship" transform="translate(560 150)">
+          <ellipse cx="0" cy="-34" rx="78" ry="34" fill="${p.sun}" opacity=".28"/>
+          <ellipse cx="0" cy="-38" rx="70" ry="30" fill="rgba(255,247,225,0.82)"/>
+          <path d="M-70 -38 C-34 -66 34 -66 70 -38" stroke="rgba(255,255,255,0.5)" stroke-width="2" fill="none"/>
+          <path d="M-44 0 L-32 34 L32 34 L44 0Z" fill="#3d514c"/>
+          <path d="M-24 0 L-18 20 L18 20 L24 0Z" fill="${p.c}" opacity=".65"/>
+          <path d="M-44 -4 L-76 26 M44 -4 L76 26" stroke="#3d514c" stroke-width="2"/>
+          <path d="M-4 -8 L-4 34" stroke="#3d514c" stroke-width="2"/>
+          <path d="M-30 -18 L-30 -4 M30 -18 L30 -4" stroke="#3d514c" stroke-width="2"/>
+          <circle cx="-24" cy="10" r="3" fill="${p.sun}"/><circle cx="24" cy="10" r="3" fill="${p.sun}"/>
+        </g>
+        <g stroke="rgba(255,255,255,0.55)" stroke-width="1.4" fill="none" class="art-birds">
+          <path d="M340 110 Q350 102 360 110 Q370 102 380 110"/>
+          <path d="M430 88 Q438 81 446 88 Q454 81 462 88"/>
+          <path d="M1010 214 Q1020 207 1030 214 Q1040 207 1050 214"/>
+        </g>
+        <path d="M0 420 L0 382 C160 362 300 392 460 380 C620 368 760 396 920 382 C1060 370 1140 390 1200 380 L1200 420Z" fill="rgba(28,54,60,0.18)"/>
+        <ellipse class="art-mist" cx="${300 + (seed % 500)}" cy="360" rx="420" ry="38" fill="url(#scene-mist)"/>`;
+    } else if (theme === "gatehouse") {
       scene = `
         <path d="M0 0 L1200 0 L1200 130 C1020 168 900 96 760 126 C620 156 500 122 380 138 C250 154 120 128 0 150Z" fill="${p.skyB}" opacity=".78"/>
         ${stars}
@@ -342,6 +381,10 @@ export function renderSceneWorldCover(theme = "harbor") {
     root.innerHTML = `
       <svg viewBox="0 0 1200 420" preserveAspectRatio="none" aria-hidden="true">
         <defs>
+          <linearGradient id="scene-sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${p.skyA}"/>
+            <stop offset="100%" stop-color="${p.skyB}"/>
+          </linearGradient>
           <linearGradient id="scene-water" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stop-color="${p.c}" stop-opacity=".42"/>
             <stop offset="100%" stop-color="${p.skyB}" stop-opacity=".94"/>

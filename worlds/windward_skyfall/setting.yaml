@@ -1,0 +1,153 @@
+name: 风脊号
+premise: 裂天群岛正在坠入云海。你有一艘还能飞的捞船、五个各有心事的船员，和一片随时会消失的天空。
+genre: 天空群岛生存沙盒 / 探索建造 / 船员叙事
+locale: zh-CN
+ui:
+  crisis_metrics:
+  - property: hull_integrity
+    label: 船体
+    format: percent
+    max: 1
+    danger_below: 0.35
+    warning_below: 0.65
+    hint: 船体归零会坠入云海
+  - property: storm_pressure
+    label: 风暴压力
+    format: amount
+    max: 100
+    hint: 稀有物资会推高风暴
+  - property: beacon_cores
+    label: 信标核心
+    format: amount
+    max: 3
+    danger_below: 1
+    warning_below: 2
+    hint: 三个核心才能离天
+  - property: camp_morale
+    label: 营地士气
+    format: percent
+    max: 1
+    danger_below: 0.3
+    warning_below: 0.5
+    hint: 士气影响结局
+  tagline: 天空在漏。把还值得救的东西，装进你的船。
+  explicit_travel: true
+  cast_order:
+  - alan
+  - yanqiu
+  - laotao
+  - baique
+  - xiaoman
+  - ke
+  - forge_master
+  - choir_keeper
+  event_kinds:
+    exploration:
+    - exploration.
+    - island.
+    camp:
+    - camp.
+    - beacon.
+    storm:
+    - storm.
+    - skyfall.
+    faction:
+    - faction.
+    crew:
+    - crew.
+    - camp.stargazing
+    story:
+    - story.
+    - act.
+  event_titles:
+    exploration: 群岛与遗迹
+    camp: 营地与信标
+    storm: 风暴与天空
+    faction: 阵营
+    crew: 船员
+    story: 世界剧情
+  pulse_prefixes:
+  - exploration.
+  - camp.
+  - beacon.
+  - storm.
+  - faction.
+  - crew.
+  - story.
+  - act.
+  - skyfall.
+  recap_event_types:
+  - exploration.
+  - camp.
+  - beacon.
+  - storm.
+  - faction.
+  - crew.
+  - story.
+  - act.
+  - skyfall.
+  result_labels:
+    arrived: 已抵达
+    resource_gathered: 采集完成
+    resource_collected: 采集完成
+    gathering_failed: 没有采到
+    exploration_completed: 探索完成
+    workshop_built: 工坊立起来了
+    workshop_upgraded: 工坊升级
+    galley_built: 厨房开火
+    galley_upgraded: 厨房扩建
+    garden_built: 花园种下
+    garden_upgraded: 花园扩建
+    infirmary_built: 药棚搭好
+    faction_aided: 帮了风筝人
+    faction_traded: 和熔炉派交易
+    storm_calmed: 风暴被安抚
+    cargo_jettisoned: 货物已抛弃
+    beacon_frame_built: 信标框架立起
+    beacon_core_installed: 核心已安装
+    hull_patched: 船体临时补好
+    worked: 干完活了
+    tool_crafted: 工具做好
+    recipe_completed: 制作完成
+    crafting_failed: 制作失败
+    infirmary_upgraded: 药棚扩建
+    hull_repaired: 船体修补
+    hull_upgraded: 船体加固
+    meal_cooked: 热饭上桌
+    launched: 风脊号离天
+    anchored: 群岛重新系紧
+    stormborn: 你成为风暴
+    crashed: 风脊号坠落
+    eaten: 吃过东西
+    drank: 喝过水
+    rested: 休息过了
+  reason_labels: {}
+ui_text:
+  travel_choice: 前往 {name}
+  travel_summary: 沿着岛链飞向 {name}。
+  travel_purpose: 换一座岛，找新的材料或人
+  travel_time: 约 {minutes} 分钟
+  travel_impact: 抵达目的地
+  world_label: 裂天群岛
+calendar:
+  minutes_per_day: 1440
+  day_phases:
+  - id: night
+    start_minute: 0
+    end_minute: 300
+  - id: dawn
+    start_minute: 300
+    end_minute: 480
+  - id: day
+    start_minute: 480
+    end_minute: 1080
+  - id: dusk
+    start_minute: 1080
+    end_minute: 1260
+  - id: night
+    start_minute: 1260
+    end_minute: 1440
+world_clock:
+  start_day: 1
+  start_minute: 420
+  season: 裂天季

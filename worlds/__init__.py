@@ -17,10 +17,15 @@ def world_path(world_id: str) -> Path:
     if not _WORLD_ID.fullmatch(name):
         raise ValueError(f"invalid bundled world id: {world_id!r}")
     resource = files(f"{__name__}.{name}")
-    path = Path(str(resource))
-    if not path.is_dir() or not (path / "manifest.yaml").is_file():
+    if not resource.joinpath("manifest.yaml").is_file():
         raise FileNotFoundError(f"bundled world package not found: {name}")
-    return path
+    # Namespace packages may be represented by importlib's MultiplexedPath,
+    # which is not a pathlib.Path.  Prefer its single concrete root so CLI
+    # callers still receive a normal filesystem directory.
+    roots = getattr(resource, "_paths", None)
+    if roots:
+        return Path(roots[0])
+    return Path(resource)
 
 
 __all__ = ["world_path"]

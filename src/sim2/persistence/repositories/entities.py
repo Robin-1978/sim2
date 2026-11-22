@@ -136,6 +136,7 @@ class EntitiesRepository:
                     "entity_type": row["entity_type"],
                     "name": row["name"],
                     "summary": data.get("role", data.get("type", row["entity_type"])),
+                    "role": data.get("role"),
                     "initial_state": state,
                     "amount": data.get("amount"),
                 })

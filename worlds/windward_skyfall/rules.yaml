@@ -1,0 +1,963 @@
+vital_attribute: integrity
+incapacitation:
+  recovery:
+    after_minutes: 720
+    vital_fraction: 0.25
+capacity_attribute: stamina
+location_tag_groups:
+  safe:
+  - safe
+  resource_node:
+  - resource_node
+  - resource
+  health_service:
+  - infirmary
+capability_aliases:
+  gather:
+  - gathering
+  chop:
+  - gathering
+  mine:
+  - gathering
+  salvage:
+  - gathering
+  craft:
+  - crafting
+  build:
+  - crafting
+  repair:
+  - crafting
+  explore:
+  - exploration
+  scout:
+  - exploration
+  medicine:
+  - medicine
+  heal:
+  - medicine
+  social:
+  - conversation
+  communicate:
+  - conversation
+  aid:
+  - conversation
+  trade:
+  - conversation
+  listen:
+  - conversation
+  cook:
+  - cooking
+  move:
+  - exploration
+  travel:
+  - exploration
+  rest:
+  - conversation
+  sleep:
+  - conversation
+  consume:
+  - conversation
+item_labels:
+  wood: 木材
+  fiber: 纤维
+  stone: 石块
+  clay: 陶土
+  glass_sand: 玻璃砂
+  salt: 盐
+  copper_ore: 铜矿
+  coal: 煤
+  herb: 药草
+  mushroom: 蘑菇
+  oil: 灯油
+  bone: 兽骨
+  amber: 琥珀
+  crystal: 晶石
+  relic: 遗物
+  lens: 透镜
+  berries: 浆果
+  ration: 口粮
+  water: 淡水
+  stew: 蘑菇炖菜
+  salve: 药膏
+  stone_axe: 石斧
+  stone_pick: 石镐
+  rope: 绳索
+  copper_pick: 铜镐
+  lantern: 提灯
+  storm_cloak: 风衣
+  glider: 滑翔翼
+  crystal_saw: 晶锯
+  beacon_core: 信标核心
+item_uses:
+  wood:
+  - 建造营地模块
+  - 制作工具和绳索
+  fiber:
+  - 制作绳索、风衣和滑翔翼
+  stone:
+  - 建造工坊和船体
+  - 制作石斧、石镐
+  clay:
+  - 升级厨房和船体
+  glass_sand:
+  - 制作提灯和透镜
+  salt:
+  - 保存食物，做口粮和炖菜
+  copper_ore:
+  - 制作铜镐、提灯、滑翔翼和信标
+  coal:
+  - 熔炼铜和玻璃
+  herb:
+  - 药膏和炖菜
+  - 治疗船员
+  mushroom:
+  - 蘑菇炖菜
+  oil:
+  - 提灯、风衣、滑翔翼
+  bone:
+  - 滑翔翼骨架
+  amber:
+  - 信标核心
+  - 高级药膏
+  crystal:
+  - 晶锯、船体、信标核心
+  relic:
+  - 信标核心
+  - 风暴研究
+  lens:
+  - 信标核心
+  - 熔炉派交易
+  berries:
+  - 直接吃，或做成口粮
+  ration:
+  - 恢复饱食
+  - 出航携带
+  water:
+  - 恢复水分
+  stew:
+  - 恢复饱食和归属
+  salve:
+  - 恢复体力
+  stone_axe:
+  - 提高木材产量
+  stone_pick:
+  - 采石、采铜
+  rope:
+  - 前往雨背崖
+  copper_pick:
+  - 采晶石
+  lantern:
+  - 进入浮鲸墓场
+  storm_cloak:
+  - 风暴中减少伤害
+  glider:
+  - 前往雷云工坊和断桥群岛
+  crystal_saw:
+  - 拆解遗物
+  beacon_core:
+  - 安装到信标框架
+world_property_labels:
+  day:
+    label: 第几天
+    unit: amount
+    max: 30
+    group: 天空
+    group_order: 1
+    order: 1
+    prompt: 云海合拢前的第几天；第 30 天仍未选择会触发保底结局。
+  act:
+    label: 幕次
+    unit: amount
+    max: 3
+    hidden: true
+  storm_pressure:
+    label: 风暴压力
+    unit: amount
+    max: 100
+    group: 风暴
+    group_order: 2
+    order: 1
+    alert: true
+    prompt: 稀有物资和探索会推高压力；35/65/90 是三道风暴阈值。
+  storm_stage:
+    label: 风暴阶段
+    unit: amount
+    max: 3
+    group: 风暴
+    group_order: 2
+    order: 2
+    hidden: true
+  hull_integrity:
+    label: 船体
+    unit: percent
+    max: 1
+    group: 天空
+    group_order: 1
+    order: 2
+    alert: true
+    prompt: 船体归零会坠入云海；木材和铜可以修补。
+  hull_level:
+    label: 船体加固
+    unit: amount
+    max: 2
+    group: 营地
+    group_order: 3
+    order: 0
+    prompt: 两级船体加固降低风暴伤害。
+  workshop_level:
+    label: 工坊
+    unit: amount
+    max: 2
+    group: 营地
+    group_order: 3
+    order: 1
+    prompt: 工坊解锁铜镐、提灯、风衣、滑翔翼和晶锯。
+  galley_level:
+    label: 厨房
+    unit: amount
+    max: 2
+    group: 营地
+    group_order: 3
+    order: 2
+    prompt: 厨房让船员做饭，也让你带走更多口粮。
+  garden_level:
+    label: 花园
+    unit: amount
+    max: 2
+    group: 营地
+    group_order: 3
+    order: 3
+    prompt: 花园每天补口粮；二级花园是锚定结局的条件。
+  infirmary_level:
+    label: 药棚
+    unit: amount
+    max: 2
+    group: 营地
+    group_order: 3
+    order: 4
+    prompt: 药棚让船员治疗，也让你做出药膏。
+  camp_morale:
+    label: 营地士气
+    unit: percent
+    max: 1
+    group: 营地
+    group_order: 3
+    order: 5
+    alert: true
+    prompt: 士气来自热饭、花园、观星和阵营互动；太低会让结局更冷。
+  beacon_frame:
+    label: 信标框架
+    unit: amount
+    max: 1
+    group: 信标
+    group_order: 4
+    order: 1
+    prompt: 框架立起来后，高环门才有东西可以对齐。
+  beacon_cores:
+    label: 信标核心
+    unit: amount
+    max: 3
+    group: 信标
+    group_order: 4
+    order: 2
+    alert: true
+    prompt: 三个核心才能离天；两个核心可以走风暴路线。
+  explored_islands:
+    label: 已探岛屿
+    unit: amount
+    max: 9
+    group: 探索
+    group_order: 5
+    order: 1
+    prompt: 探索会解锁新的资源和航线。
+  crew_count:
+    label: 船员
+    unit: amount
+    max: 8
+    group: 探索
+    group_order: 5
+    order: 2
+    prompt: 船员决定结局里谁和你一起走。
+  ration:
+    label: 营地口粮
+    unit: amount
+    max: 16
+    group: 营地
+    group_order: 3
+    order: 6
+    hidden: false
+  water:
+    label: 营地蓄水
+    unit: amount
+    max: 24
+    group: 营地
+    group_order: 3
+    order: 7
+    hidden: false
+  kite_rep:
+    label: 风筝人声望
+    unit: percent
+    max: 1
+    group: 阵营
+    group_order: 6
+    order: 1
+    prompt: 40% 可以走锚定结局。
+  foundry_rep:
+    label: 熔炉派声望
+    unit: percent
+    max: 1
+    group: 阵营
+    group_order: 6
+    order: 2
+    prompt: 熔炉派愿意用透镜换铜。
+  choir_rep:
+    label: 风歌者声望
+    unit: percent
+    max: 1
+    group: 阵营
+    group_order: 6
+    order: 3
+    prompt: 40% 可以走风暴之子结局。
+  ending_trigger:
+    label: 结局
+    unit: amount
+    max: 5
+    hidden: true
+  storm_warning_seen:
+    label: 风暴预警
+    unit: amount
+    max: 1
+    hidden: true
+  storm_hit_seen:
+    label: 风暴命中
+    unit: amount
+    max: 1
+    hidden: true
+  storm_critical_seen:
+    label: 风暴临界
+    unit: amount
+    max: 1
+    hidden: true
+  crash_seen:
+    label: 坠落
+    unit: amount
+    max: 1
+    hidden: true
+resource_property_projections:
+  ration: ration
+  water: water
+resource_caps: {}
+resource_regeneration:
+- resource_id: wood
+  every_minutes: 480
+  amount: 8
+  cap: 48
+- resource_id: fiber
+  every_minutes: 360
+  amount: 6
+  cap: 40
+- resource_id: berries
+  every_minutes: 360
+  amount: 4
+  cap: 24
+- resource_id: stone
+  every_minutes: 480
+  amount: 5
+  cap: 40
+- resource_id: clay
+  every_minutes: 480
+  amount: 4
+  cap: 32
+- resource_id: glass_sand
+  every_minutes: 720
+  amount: 3
+  cap: 24
+- resource_id: salt
+  every_minutes: 480
+  amount: 4
+  cap: 32
+- resource_id: oil
+  every_minutes: 720
+  amount: 2
+  cap: 16
+- resource_id: lens
+  every_minutes: 1440
+  amount: 1
+  cap: 4
+- resource_id: copper_ore
+  every_minutes: 480
+  amount: 4
+  cap: 32
+- resource_id: coal
+  every_minutes: 360
+  amount: 5
+  cap: 40
+- resource_id: herb
+  every_minutes: 360
+  amount: 3
+  cap: 32
+- resource_id: mushroom
+  every_minutes: 360
+  amount: 3
+  cap: 24
+- resource_id: bone
+  every_minutes: 720
+  amount: 2
+  cap: 20
+- resource_id: amber
+  every_minutes: 720
+  amount: 1
+  cap: 12
+- resource_id: crystal
+  every_minutes: 720
+  amount: 1
+  cap: 12
+- resource_id: relic
+  every_minutes: 1440
+  amount: 1
+  cap: 6
+- resource_id: ration
+  every_minutes: 720
+  amount: 1
+  cap: 16
+- resource_id: water
+  every_minutes: 360
+  amount: 2
+  cap: 24
+resource_safety:
+- resource_id: ration
+  minimum_reserve: 2
+  repeat_every_minutes: 720
+  event_type: resource.safety_low
+- resource_id: water
+  minimum_reserve: 3
+  repeat_every_minutes: 720
+  event_type: resource.safety_low
+needs:
+- id: hydration
+  target: 72
+  minimum: 0
+  gamma: 1.4
+  critical_threshold: 0.4
+  critical_gain: 1.0
+- id: satiety
+  target: 70
+  minimum: 0
+  gamma: 1.4
+  critical_threshold: 0.4
+  critical_gain: 1.0
+- id: belonging
+  target: 68
+  minimum: 0
+  gamma: 1.3
+  critical_threshold: 0.5
+  critical_gain: 1.0
+- id: purpose
+  target: 70
+  minimum: 0
+  gamma: 1.4
+  critical_threshold: 0.5
+  critical_gain: 1.0
+motivation_model:
+  family: hybrid_need_utility_appraisal
+  no_fixed_hierarchy: true
+  dimensions:
+  - sustenance
+  - relatedness
+  - competence
+  - meaning_and_goal_progress
+  - novelty
+capability_progression:
+  gathering:
+    minimum_completed_outcomes: 2
+    max_delta: 0.08
+    max_value: 1.0
+  crafting:
+    minimum_completed_outcomes: 2
+    max_delta: 0.08
+    max_value: 1.0
+  exploration:
+    minimum_completed_outcomes: 2
+    max_delta: 0.08
+    max_value: 1.0
+  medicine:
+    minimum_completed_outcomes: 2
+    max_delta: 0.08
+    max_value: 1.0
+  conversation:
+    minimum_completed_outcomes: 4
+    max_delta: 0.08
+    max_value: 1.0
+  cooking:
+    minimum_completed_outcomes: 2
+    max_delta: 0.08
+    max_value: 1.0
+minute_effects:
+- id: satiety_decay
+  scope: agent
+  every_minutes: 1
+  effect:
+    type: need_delta
+    need: satiety
+    delta: -0.012
+- id: hydration_decay
+  scope: agent
+  every_minutes: 1
+  effect:
+    type: need_delta
+    need: hydration
+    delta: -0.016
+- id: starvation_damage
+  scope: agent
+  every_minutes: 60
+  condition: actor.need.satiety <= 4
+  effect:
+    type: attribute_delta
+    attribute: integrity
+    delta: -2
+- id: dehydration_damage
+  scope: agent
+  every_minutes: 60
+  condition: actor.need.hydration <= 4
+  effect:
+    type: attribute_delta
+    attribute: integrity
+    delta: -2
+- id: stamina_recovery_idle
+  scope: agent
+  every_minutes: 1
+  condition: action.none
+  effect:
+    type: attribute_delta
+    attribute: stamina
+    delta: 0.5
+- id: night_exposure
+  scope: agent
+  every_minutes: 60
+  condition: context.day_phase == night and location.tag.exposed
+  effect:
+    type: attribute_delta
+    attribute: integrity
+    delta: -1
+- id: storm_exposure
+  scope: agent
+  every_minutes: 60
+  condition: world.storm_stage >= 2 and location.tag.exposed and actor.inventory.storm_cloak < 1
+  effect:
+    type: attribute_delta
+    attribute: integrity
+    delta: -2
+- id: day_clock
+  scope: world
+  every_minutes: 1440
+  effects:
+  - type: world_property_delta
+    property: day
+    delta: 1
+    maximum: 30
+  event_type: day.started
+  event_summary: 新的一天从云海下面升起来。
+- id: storm_daily
+  scope: world
+  every_minutes: 1440
+  effects:
+  - type: world_property_delta
+    property: storm_pressure
+    delta: 1
+    maximum: 100
+- id: storm_stage_1
+  scope: world
+  every_minutes: 1
+  condition: world.storm_pressure >= 35 and world.storm_stage < 1 and world.ending_trigger == 0
+  effects:
+  - type: world_property_delta
+    property: storm_stage
+    delta: 1
+    maximum: 3
+  - type: world_property_delta
+    property: storm_warning_seen
+    delta: 1
+    maximum: 1
+  event_type: storm.warning
+  event_summary: 远处的云层开始朝灯岬压过来；风暴季提前了。
+- id: act_two
+  scope: world
+  every_minutes: 1
+  condition: world.workshop_level >= 1 and world.explored_islands >= 2 and world.act < 2 and world.ending_trigger == 0
+  effects:
+  - type: world_property_delta
+    property: act
+    delta: 1
+    maximum: 3
+  event_type: act.two
+  event_summary: 第二幕开始：风脊号不再只是漂着，它开始有方向。
+- id: act_three
+  scope: world
+  every_minutes: 1
+  condition: world.beacon_frame >= 1 and world.act < 3 and world.ending_trigger == 0
+  effects:
+  - type: world_property_delta
+    property: act
+    delta: 1
+    maximum: 3
+  event_type: act.three
+  event_summary: 第三幕开始：信标框架立起来了，高环门不再是传说。
+- id: crash_check
+  scope: world
+  every_minutes: 1
+  condition: world.hull_integrity <= 0 and world.ending_trigger == 0
+  effects:
+  - type: world_property_set
+    property: ending_trigger
+    value: 4
+  - type: world_property_delta
+    property: crash_seen
+    delta: 1
+    maximum: 1
+  event_type: skyfall.crash
+  event_summary: 风脊号撑不住了；云海从船体的裂缝里涌进来。
+- id: long_drift
+  scope: world
+  every_minutes: 1440
+  condition: world.day >= 30 and world.ending_trigger == 0
+  effects:
+  - type: world_property_set
+    property: ending_trigger
+    value: 5
+  event_type: skyfall.long_drift
+  event_summary: 第三十天，云海合拢；天空替你做了决定。
+- id: camp_supply
+  scope: world
+  every_minutes: 720
+  condition: world.galley_level >= 1 or world.garden_level >= 1
+  effects:
+  - type: world_resource_delta
+    resource_id: ration
+    delta: 1
+    maximum: 16
+- id: camp_water
+  scope: world
+  every_minutes: 720
+  effects:
+  - type: world_resource_delta
+    resource_id: water
+    delta: 2
+    maximum: 24
+- id: storm_stage_2_hull0
+  scope: world
+  every_minutes: 1
+  condition: world.storm_pressure >= 65 and world.storm_stage < 2 and world.ending_trigger == 0 and world.hull_level == 0
+  effects:
+  - type: world_property_delta
+    property: storm_stage
+    delta: 1
+    maximum: 3
+  - type: world_property_delta
+    property: hull_integrity
+    delta: -0.12
+    minimum: 0
+    maximum: 1
+  - type: world_property_delta
+    property: storm_hit_seen
+    delta: 1
+    maximum: 1
+  event_type: storm.hit
+  event_summary: 风暴第一次撞上风脊号；船体发出不祥的响声。
+- id: storm_stage_3_hull0
+  scope: world
+  every_minutes: 1
+  condition: world.storm_pressure >= 90 and world.storm_stage < 3 and world.ending_trigger == 0 and world.hull_level == 0
+  effects:
+  - type: world_property_delta
+    property: storm_stage
+    delta: 1
+    maximum: 3
+  - type: world_property_delta
+    property: hull_integrity
+    delta: -0.2
+    minimum: 0
+    maximum: 1
+  - type: world_property_delta
+    property: storm_critical_seen
+    delta: 1
+    maximum: 1
+  event_type: storm.critical
+  event_summary: 天空压到桅杆上了；现在只能回船、补船，或者做最后的决定。
+- id: storm_damage_2_hull0
+  scope: world
+  every_minutes: 360
+  condition: world.storm_stage >= 2 and world.hull_integrity > 0 and world.ending_trigger == 0 and world.hull_level == 0
+  effects:
+  - type: world_property_delta
+    property: hull_integrity
+    delta: -0.03
+    minimum: 0
+    maximum: 1
+- id: storm_damage_3_hull0
+  scope: world
+  every_minutes: 360
+  condition: world.storm_stage >= 3 and world.hull_integrity > 0 and world.ending_trigger == 0 and world.hull_level == 0
+  effects:
+  - type: world_property_delta
+    property: hull_integrity
+    delta: -0.05
+    minimum: 0
+    maximum: 1
+- id: storm_stage_2_hull1
+  scope: world
+  every_minutes: 1
+  condition: world.storm_pressure >= 65 and world.storm_stage < 2 and world.ending_trigger == 0 and world.hull_level == 1
+  effects:
+  - type: world_property_delta
+    property: storm_stage
+    delta: 1
+    maximum: 3
+  - type: world_property_delta
+    property: hull_integrity
+    delta: -0.08
+    minimum: 0
+    maximum: 1
+  - type: world_property_delta
+    property: storm_hit_seen
+    delta: 1
+    maximum: 1
+  event_type: storm.hit
+  event_summary: 风暴第一次撞上风脊号；船体发出不祥的响声。
+- id: storm_stage_3_hull1
+  scope: world
+  every_minutes: 1
+  condition: world.storm_pressure >= 90 and world.storm_stage < 3 and world.ending_trigger == 0 and world.hull_level == 1
+  effects:
+  - type: world_property_delta
+    property: storm_stage
+    delta: 1
+    maximum: 3
+  - type: world_property_delta
+    property: hull_integrity
+    delta: -0.14
+    minimum: 0
+    maximum: 1
+  - type: world_property_delta
+    property: storm_critical_seen
+    delta: 1
+    maximum: 1
+  event_type: storm.critical
+  event_summary: 天空压到桅杆上了；现在只能回船、补船，或者做最后的决定。
+- id: storm_damage_2_hull1
+  scope: world
+  every_minutes: 360
+  condition: world.storm_stage >= 2 and world.hull_integrity > 0 and world.ending_trigger == 0 and world.hull_level == 1
+  effects:
+  - type: world_property_delta
+    property: hull_integrity
+    delta: -0.02
+    minimum: 0
+    maximum: 1
+- id: storm_damage_3_hull1
+  scope: world
+  every_minutes: 360
+  condition: world.storm_stage >= 3 and world.hull_integrity > 0 and world.ending_trigger == 0 and world.hull_level == 1
+  effects:
+  - type: world_property_delta
+    property: hull_integrity
+    delta: -0.035
+    minimum: 0
+    maximum: 1
+- id: storm_stage_2_hull2
+  scope: world
+  every_minutes: 1
+  condition: world.storm_pressure >= 65 and world.storm_stage < 2 and world.ending_trigger == 0 and world.hull_level >= 2
+  effects:
+  - type: world_property_delta
+    property: storm_stage
+    delta: 1
+    maximum: 3
+  - type: world_property_delta
+    property: hull_integrity
+    delta: -0.05
+    minimum: 0
+    maximum: 1
+  - type: world_property_delta
+    property: storm_hit_seen
+    delta: 1
+    maximum: 1
+  event_type: storm.hit
+  event_summary: 风暴第一次撞上风脊号；船体发出不祥的响声。
+- id: storm_stage_3_hull2
+  scope: world
+  every_minutes: 1
+  condition: world.storm_pressure >= 90 and world.storm_stage < 3 and world.ending_trigger == 0 and world.hull_level >= 2
+  effects:
+  - type: world_property_delta
+    property: storm_stage
+    delta: 1
+    maximum: 3
+  - type: world_property_delta
+    property: hull_integrity
+    delta: -0.09
+    minimum: 0
+    maximum: 1
+  - type: world_property_delta
+    property: storm_critical_seen
+    delta: 1
+    maximum: 1
+  event_type: storm.critical
+  event_summary: 天空压到桅杆上了；现在只能回船、补船，或者做最后的决定。
+- id: storm_damage_2_hull2
+  scope: world
+  every_minutes: 360
+  condition: world.storm_stage >= 2 and world.hull_integrity > 0 and world.ending_trigger == 0 and world.hull_level >= 2
+  effects:
+  - type: world_property_delta
+    property: hull_integrity
+    delta: -0.01
+    minimum: 0
+    maximum: 1
+- id: storm_damage_3_hull2
+  scope: world
+  every_minutes: 360
+  condition: world.storm_stage >= 3 and world.hull_integrity > 0 and world.ending_trigger == 0 and world.hull_level >= 2
+  effects:
+  - type: world_property_delta
+    property: hull_integrity
+    delta: -0.02
+    minimum: 0
+    maximum: 1
+action_catalogs: {}
+onboarding_window_minutes: 4320
+onboarding:
+- id: first_landing
+  title: 先去风蚀林
+  body: 风脊号的工坊只剩半面墙。风蚀林有木料和纤维，先去把第一间工坊的材料找回来。
+  action_ref: behavior:travel_windworn
+  complete_when:
+    event_type: exploration.completed
+    match:
+      area_id: windworn_woods
+    count: 1
+- id: first_materials
+  title: 带回 5 木材和 3 石块
+  body: 工坊需要木料和石料。风蚀林有木材，碎盐滩有石块；在夜里之前回船。
+  action_ref: behavior:travel_windworn
+  done_when: actor.inventory.wood >= 5 and actor.inventory.stone >= 3
+- id: build_workshop
+  title: 把工坊立起来
+  body: 有了工坊，铜镐、提灯和风衣才会出现在你的行动列表里。
+  action_ref: behavior:build_workshop_1
+  done_when: world.workshop_level >= 1
+- id: first_tool
+  title: 做一把石镐
+  body: 石镐能让你在铜潮谷敲下铜矿；铜镐又会打开浮鲸墓场和雷云工坊。
+  action_ref: behavior:craft_stone_pick
+  done_when: actor.inventory.stone_pick >= 1
+- id: chart_three
+  title: 把航线画到第三座岛
+  body: 探索三座岛，Director 和 Story 才会开始把你的选择长成新的内容。
+  action_ref: behavior:travel_copper_tide
+  done_when: world.explored_islands >= 3
+progression:
+- id: make_shipshape
+  label: 让风脊号像个家
+  summary: 搭起工坊和厨房：一个让你能做工具，一个让船员有热饭。
+  priority: 0.99
+  audience:
+  - player
+  visible_when: world.act == 1
+  target_behaviors:
+  - build_workshop_1
+  - build_galley_1
+  support_behaviors:
+  - gather_wood
+  - gather_stone
+  - gather_fiber
+  complete_when:
+    event_type: camp.galley_built
+    count: 1
+- id: chart_the_chain
+  label: 把岛链画出来
+  summary: 探索三座不同的岛；每一次探索都会把一座新岛、一种新资源或一条新路放进海图。
+  priority: 0.95
+  audience:
+  - player
+  visible_when: world.explored_islands >= 1
+  target_behaviors:
+  - explore_windworn
+  - explore_saltbreak
+  - explore_lighthouse
+  - explore_copper_tide
+  - explore_rainshade
+  support_behaviors:
+  - travel_windworn
+  - travel_saltbreak
+  - travel_copper_tide
+  - travel_rainshade
+  complete_when:
+    event_type: exploration.completed
+    distinct_by:
+    - area_id
+    count: 3
+- id: raise_beacon
+  label: 把信标立起来
+  summary: 工坊升到二级，做出三个信标核心，装进框架。
+  priority: 0.93
+  audience:
+  - player
+  visible_when: world.act >= 2
+  target_behaviors:
+  - build_beacon_frame
+  - craft_beacon_core
+  - install_beacon_core
+  support_behaviors:
+  - mine_crystal
+  - salvage_relic
+  - harvest_amber
+  complete_when:
+    event_type: beacon.core_installed
+    count: 3
+- id: leave_the_sky
+  label: 离天
+  summary: 三个核心对准高环门，带风脊号离开裂天群岛。
+  priority: 0.99
+  audience:
+  - player
+  visible_when: world.beacon_cores >= 3
+  target_behaviors:
+  - launch_escape
+  support_behaviors:
+  - repair_hull
+  complete_when:
+    event_type: skyfall.launched
+    count: 1
+- id: anchor_the_sky
+  label: 锚定群岛
+  summary: 二级花园和风筝人的信任，让天空重新系在一起。
+  priority: 0.98
+  audience:
+  - player
+  visible_when: world.beacon_cores >= 3 and world.kite_rep >= 0.2
+  target_behaviors:
+  - anchor_islands
+  - aid_kite
+  - build_garden_2
+  support_behaviors:
+  - gather_fiber
+  - travel_broken_span
+  complete_when:
+    event_type: skyfall.anchored
+    count: 1
+- id: become_the_storm
+  label: 成为风暴
+  summary: 风暴压力 90、两个核心、风歌者的信任；把船交给天空。
+  priority: 0.96
+  audience:
+  - player
+  visible_when: world.storm_pressure >= 70 and world.choir_rep >= 0.2
+  target_behaviors:
+  - become_storm
+  - listen_choir
+  support_behaviors:
+  - jettison_relic
+  - jettison_amber
+  complete_when:
+    event_type: skyfall.stormborn
+    count: 1

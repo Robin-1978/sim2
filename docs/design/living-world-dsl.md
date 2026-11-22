@@ -141,6 +141,59 @@ events.publish(event_type, actor_id, minute, payload, wake="configured")
 
 `ultimate_goal` 缺失时会明确拒绝；不会用 `goal` 静默替代，因为目标必须可验证。
 
+### 2.9 契约级内容守卫
+
+只靠 Prompt 让 God“不要创建 Action”并不可靠。`god_structural` 现在可以声明：
+
+```yaml
+required_definition_type: behavior
+assign_to: [player]
+max_proposals: 1
+required_content:
+  behaviors_using_action: [dynamic_salvage]
+```
+
+- `required_definition_type` 让 `propose_definition` 拒绝其他类型；
+- `assign_to` 要求 Behavior 真的交给可玩角色；
+- `max_proposals: 1` 让 God 只能提交一个定义；
+- `required_content.behaviors_using_action` 要求这个定义真的使用指定的可玩 Action。
+
+《风脊号》用这三个字段把 God 从“写一个新 Action + followup Behavior”逼回“只写一个打捞 Behavior”。
+
+### 2.10 `target.location_id` 条件
+
+God 生成的行为经常带一个 `location_id` 参数。只写 `location.tag.salvage` 会让同一个 Behavior 在所有外岛生效；只写 `target.location_id == context.location_id` 则要求参数地点必须等于角色当前地点：
+
+```yaml
+preconditions:
+  - actor.alive
+  - location.tag.salvage
+  - target.location_id == context.location_id
+```
+
+这样 Behavior 可以在所有打捞岛出现，但只在目标岛可执行。`target.location_id` 已加入 ConditionEngine 的已知路径。
+
+### 2.11 参数化打捞：不依赖空资源节点
+
+God 不能创建有库存的资源；它也不应该用 display name 当物品 id。`dynamic_salvage` 的模式是：
+
+```yaml
+parameters: {item: string, amount: integer, location_id: string}
+preconditions: [actor.alive, location.tag.salvage, target.location_id == context.location_id]
+effects:
+  - {type: inventory_add, item: context.item, quantity: context.amount}
+  - {type: world_property_delta, property: storm_pressure, delta: 4, maximum: 100}
+```
+
+Behavior 的 `item` 只能填现有材料 id（wood/fiber/stone/…），不能填新资源 id 或中文显示名。这样 God 长出来的是可玩、可结算、不会污染库存键的打捞点。
+
+### 2.12 世界级 UI 开关与投影
+
+- `setting.ui.explicit_travel: true`：关闭 PlayerView 自动插入的通用旅行按钮，只显示世界自己写的、带知识/工具门槛的 `travel_*` Behavior。
+- `nearby_entities` 现在按 Agent → 资源 → 设施排序，营地不会因为设施太多而把船员挤出“附近的人”。
+- `facility.initial_state.status` 支持 `dim`/`working`，建造 Action 会把设施状态从“暗淡”改成“运转中”。
+- `worlds/__init__.py` 的 `world_path` 兼容 importlib `MultiplexedPath`，namespace 包也能被 CLI 发现；`worlds/night_pawnshop` 和 `worlds/windward_skyfall` 补了 `__init__.py` 与 package-data。
+
 ## 3. 仍然有限的 DSL
 
 这些是下一轮应该补的，不应假装已经解决：
@@ -161,8 +214,9 @@ events.publish(event_type, actor_id, minute, payload, wake="configured")
 
 ```bash
 python -m pytest -q tests/test_night_pawnshop.py tests/test_dsl_living_bindings.py \
-  tests/test_condition_engine.py tests/test_action_binding.py \
-  tests/test_definition_schema.py tests/test_definition_validation.py
+  tests/test_windward_skyfall.py tests/test_condition_engine.py \
+  tests/test_action_binding.py tests/test_definition_schema.py \
+  tests/test_definition_validation.py
 ```
 
 远程活世界探针：
