@@ -5,16 +5,16 @@ from pathlib import Path
 import yaml
 
 from sim2.api.service import ControlService
-from sim2.bootstrap.service import create_instance, describe_config, validate_config
+from sim2.bootstrap.service import create_instance, describe_config, upgrade_instance, validate_config
 from sim2.intents.models import BehaviorIntent
 from worlds import world_path
 
 WORLD = Path(__file__).parents[1] / "worlds" / "windward_skyfall"
 
 
-def _start(platform, ref: str, intent_id: str, parameters: dict | None = None) -> dict:
+def _start(platform, ref: str, intent_id: str, parameters: dict | None = None, actor: str = "hero") -> dict:
     return platform.submit_behavior(BehaviorIntent(
-        actor_id="hero",
+        actor_id=actor,
         behavior_ref=ref,
         target={},
         parameters=dict(parameters or {}),
@@ -24,18 +24,18 @@ def _start(platform, ref: str, intent_id: str, parameters: dict | None = None) -
     ))
 
 
-def _finish(platform) -> dict:
-    agent = platform.store.repositories.entities.get_agent("hero")
+def _finish(platform, actor: str = "hero") -> dict:
+    agent = platform.store.repositories.entities.get_agent(actor)
     minutes = int((agent.get("initial_state") or {}).get("remaining_minutes", 0) or 0)
     for _ in range(max(1, minutes)):
         platform.step()
-    return platform.store.repositories.entities.get_agent("hero")
+    return platform.store.repositories.entities.get_agent(actor)
 
 
-def _do(platform, ref: str, intent_id: str, parameters: dict | None = None) -> dict:
-    started = _start(platform, ref, intent_id, parameters)
+def _do(platform, ref: str, intent_id: str, parameters: dict | None = None, actor: str = "hero") -> dict:
+    started = _start(platform, ref, intent_id, parameters, actor)
     assert started["status"] == "accepted", started
-    _finish(platform)
+    _finish(platform, actor)
     return started
 
 
@@ -286,5 +286,95 @@ def test_night_exposure_hurts_an_unsheltered_player(tmp_path: Path) -> None:
             platform.step()
         integrity = platform.store.repositories.entities.get_agent("hero")["initial_state"]["integrity"]
         assert integrity < 100
+    finally:
+        service.close()
+
+
+def test_crew_can_take_food_and_water_from_the_camp_larder(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "windward-crew-food", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "mechanic", name="林晚")["status"] == "accepted"
+        with platform.store.transaction():
+            alan = platform.store.repositories.entities.get_agent("alan")
+            alan["inventory"] = {}
+            alan["needs"]["satiety"] = 20
+            alan["needs"]["hydration"] = 20
+            platform.store.repositories.entities.put_agent("alan", alan, "阿岚")
+        _do(platform, "behavior:take_ration", "alan-take", actor="alan")
+        _do(platform, "behavior:fill_water", "alan-water", actor="alan")
+        _do(platform, "behavior:eat_ration", "alan-eat", actor="alan")
+        _do(platform, "behavior:drink_water", "alan-drink", actor="alan")
+        alan = platform.store.repositories.entities.get_agent("alan")
+        assert alan["inventory"].get("ration", 0) >= 1
+        assert alan["inventory"].get("water", 0) >= 1
+        assert alan["needs"]["satiety"] > 20
+        assert alan["needs"]["hydration"] > 20
+    finally:
+        service.close()
+
+
+def test_faction_agent_can_forage_at_its_own_island(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "windward-faction-food", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "mechanic", name="林晚")["status"] == "accepted"
+        _do(platform, "behavior:forage_supplies", "ke-forage", actor="ke")
+        _do(platform, "behavior:eat_ration", "ke-eat", actor="ke")
+        _do(platform, "behavior:drink_water", "ke-drink", actor="ke")
+        ke = platform.store.repositories.entities.get_agent("ke")
+        assert ke["inventory"].get("ration", 0) >= 1
+        assert ke["inventory"].get("water", 0) >= 1
+    finally:
+        service.close()
+
+
+def test_night_hides_gathering_and_offers_wait_for_dawn(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "windward-night-ux", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "mechanic", name="林晚")["status"] == "accepted"
+        _set_location(platform, "windworn_woods")
+        with platform.store.transaction():
+            platform.store.repositories.metadata.set("world_minute", 1300)
+        view = service.player_view("hero")
+        refs = {action["ref"] for action in view["actions"]}
+        assert "behavior:wait_for_dawn" in refs
+        assert "behavior:gather_wood" not in refs
+        assert "behavior:chop_timber" not in refs
+        _set_inventory(platform, lantern=1)
+        lit_refs = {action["ref"] for action in service.player_view("hero")["actions"]}
+        assert "behavior:gather_wood" in lit_refs
+    finally:
+        service.close()
+
+
+def test_upgrade_teaches_existing_crew_and_player_the_new_survival_behaviors(tmp_path: Path) -> None:
+    db_path = create_instance(WORLD, "windward-upgrade", tmp_path / "runtime")
+    service = ControlService(db_path)
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "mechanic", name="林晚")["status"] == "accepted"
+        with platform.store.transaction():
+            alan = platform.store.repositories.entities.get_agent("alan")
+            alan["initial_bt_ids"] = [item for item in alan["initial_bt_ids"] if item not in {"take_ration", "fill_water"}]
+            platform.store.repositories.entities.put_agent("alan", alan, "阿岚")
+            player = platform.store.repositories.entities.get_agent("hero")
+            player["initial_bt_ids"] = [item for item in player["initial_bt_ids"] if item != "wait_for_dawn"]
+            platform.store.repositories.entities.put_agent("hero", player, "林晚")
+    finally:
+        service.close()
+
+    result = upgrade_instance(WORLD, db_path)
+    assert result["agents_updated"] >= 1
+    assert result["players_updated"] >= 1
+
+    service = ControlService(db_path)
+    platform = service.platform
+    try:
+        alan = platform.store.repositories.entities.get_agent("alan")
+        player = platform.store.repositories.entities.get_agent("hero")
+        assert {"take_ration", "fill_water"} <= set(alan["initial_bt_ids"])
+        assert "wait_for_dawn" in player["initial_bt_ids"]
     finally:
         service.close()

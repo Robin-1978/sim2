@@ -599,6 +599,43 @@ actions:
   interaction_policy: allow
   kind: atomic
   executor: effect_pipeline
+- id: forage_supplies
+  verb: forage
+  version: 1
+  description: 在岛边找一点能吃的和能喝的；风暴季的补给不会太多。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.salvage
+  duration:
+    minutes: 60
+  costs:
+    reserve: {}
+    per_minute:
+      stamina: 0.12
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: ration
+    quantity: 1
+  - type: inventory_add
+    item: water
+    quantity: 1
+  - type: need_delta
+    need: purpose
+    delta: 1
+  success:
+    condition: actor.alive
+    result: resource_gathered
+  failure:
+    condition: actor.incapacitated
+    result: gathering_failed
+  interrupt_policy: pause
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
 - id: fill_water
   verb: gather
   version: 1
@@ -2053,6 +2090,41 @@ actions:
   failure:
     condition: actor.incapacitated
     result: failed
+  interrupt_policy: pause
+  interaction_policy: deny
+  kind: atomic
+  executor: effect_pipeline
+- id: wait_for_dawn
+  verb: rest
+  version: 1
+  description: 找个背风处等到天亮；夜里不能采集，但可以熬过去。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - context.day_phase == night
+  duration:
+    minutes: 480
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: attribute_delta
+    attribute: stamina
+    delta: 80
+    maximum: 100
+  - type: attribute_delta
+    attribute: integrity
+    delta: 5
+    maximum: 100
+  success:
+    condition: actor.alive
+    result: rested
+  failure:
+    condition: actor.incapacitated
+    result: interrupted
   interrupt_policy: pause
   interaction_policy: deny
   kind: atomic

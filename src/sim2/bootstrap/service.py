@@ -1094,6 +1094,52 @@ def upgrade_instance(config_dir: Path, db_path: Path) -> dict[str, Any]:
                     if isinstance(item, dict) and item.get("id"):
                         store.repositories.entities.put_definition(table, str(item["id"]), item)
                 counts[table] = len(items)
+            # New authored behaviors must reach existing characters too.  A
+            # package upgrade previously upserted the definition tables but
+            # left old agents with their original initial_bt_ids, so fixes
+            # such as "crew can take food and water" never reached a live save.
+            configured_agents = load_yaml(config_dir, "agents.yaml", {}).get("agents", [])
+            agents_updated = 0
+            for item in configured_agents:
+                if not isinstance(item, dict) or not item.get("id"):
+                    continue
+                agent_id = str(item["id"])
+                try:
+                    existing_agent = store.repositories.entities.get_agent(agent_id)
+                except KeyError:
+                    continue
+                current = [str(value) for value in (existing_agent.get("initial_bt_ids") or [])]
+                additions = [str(value) for value in (item.get("initial_bt_ids") or []) if str(value) not in current]
+                if additions:
+                    existing_agent["initial_bt_ids"] = [*current, *additions]
+                    store.repositories.entities.put_agent(
+                        agent_id,
+                        existing_agent,
+                        str(existing_agent.get("name") or agent_id),
+                    )
+                    agents_updated += 1
+            counts["agents_updated"] = agents_updated
+            player_template = load_yaml(config_dir, "player_template.yaml", {})
+            template_behaviors = [
+                str(value) for value in (player_template.get("initial_bt_ids") or [])
+            ]
+            players_updated = 0
+            if template_behaviors:
+                for existing_agent in store.repositories.entities.list_agents():
+                    if str(existing_agent.get("role") or "") != "player" and str(existing_agent.get("controller") or "") != "manual":
+                        continue
+                    current = [str(value) for value in (existing_agent.get("initial_bt_ids") or [])]
+                    additions = [value for value in template_behaviors if value not in current]
+                    if not additions:
+                        continue
+                    existing_agent["initial_bt_ids"] = [*current, *additions]
+                    store.repositories.entities.put_agent(
+                        str(existing_agent["id"]),
+                        existing_agent,
+                        str(existing_agent.get("name") or existing_agent["id"]),
+                    )
+                    players_updated += 1
+            counts["players_updated"] = players_updated
             store.repositories.metadata.set("config_hash", config_hash(config_dir))
             store.repositories.metadata.set("config_version", manifest.get("config_version", "unknown"))
         return {"status": "ok", "db_path": str(db_path), "config_hash": config_hash(config_dir), **counts}

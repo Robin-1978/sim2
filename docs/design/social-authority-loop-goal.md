@@ -1,7 +1,7 @@
 # Social Authority Loop — Current Goal and Open Issues
 
 Status: **ACTIVE**
-Last updated: 2026-11-23
+Last updated: 2026-11-26
 
 ## 1. User goal (verbatim)
 
@@ -259,10 +259,19 @@ world-pack lint covers every `worlds/*/actions.yaml`.
 
 ### 2026-11-23 风脊号：从“又一个镇子”到天空群岛生存沙盒
 
-- 新增 `worlds/windward_skyfall`：10 个地点、8 名 Agent、19 种资源、6 个配方、59 个 Action、83 个 Behavior、4 个出身、5 个结局。核心循环是探索 → 采集 → 制作 → 建造 → 风暴 → 离天/锚定/成为风暴，不再依赖单一截止日、债务或店铺经济。
+- 新增 `worlds/windward_skyfall`：10 个地点、8 名 Agent、19 种资源、6 个配方、61 个 Action、85 个 Behavior、4 个出身、5 个结局。核心循环是探索 → 采集 → 制作 → 建造 → 风暴 → 离天/锚定/成为风暴，不再依赖单一截止日、债务或店铺经济。
 - 新机制：风暴压力由稀有打捞推高，35/65/90 三阶段会损伤船体、关闭远航；昼夜与野外暴露；两级船体加固；工坊/厨房/花园/药棚/信标五条建造线；`sky` 场景美术主题；`explicit_travel` 让带门槛的航线只显示 authored 版本。
 - 平台修复：`nearby_entities` 优先 Agent 和资源，营地不再显示“附近没有人”；设施支持 `dim`/`working` 状态；`worlds/__init__.py` 兼容 `MultiplexedPath`，namespace 世界包可被 CLI 发现；`night_pawnshop` 与新世界补了 `__init__.py` 和 package-data；world tick 条件上下文加入 `day_phase`，夜间暴露规则现在真的会触发（此前 `context.day_phase` 只存在于 Behavior 条件）。
 - 生存平衡：两级船体加固按等级降低风暴即时伤害和持续伤害，且可以满血建造；风衣改为纤维 + 陶土，避免“需要灯油 → 需要旧灯塔 → 风暴锁航 → 需要风衣”的软锁；灯油不再是提灯前置，提灯用纤维做灯芯。
 - 活世界契约：Director 只选 `verb`；God 契约要求 `required_definition_type: behavior`、`assign_to: [player]`、`max_proposals: 1`、`behaviors_using_action: [dynamic_salvage]`。远程 120 分钟运行：1 个 Director plan、1 个 God session、1 个 `dyn_salvage_1` Behavior、0 次拒绝；玩家执行后木材 7→9、风暴压力 0→4。远程 180 分钟运行：玩家自动搭起工坊，Story 激活 `first_workshop` beat。
 - DSL 修复：`target.location_id` 成为已知条件路径；`dynamic_salvage` 直接 `inventory_add` 现有材料，不依赖空资源节点或中文 display name；`deferred` + 地点/冷却检查保证 God 生成的打捞点只在目标岛生效。
 - 聚焦测试：`tests/test_windward_skyfall.py` 8 项通过；`scripts/test_parallel.py --changed` 作为迭代门禁。
+
+### 2026-11-26 风脊号实机修复：夜里采集与船员补给
+
+实机实例 `windward_skyfall_3t4j`（第 4 天 21:55，风蚀林）暴露两个问题：
+
+- **采集消失**：采集/探索 Behavior 的 `context.day_phase != night` 只在 Behavior 入口判定；夜里玩家看到的是“没有采集”，而不是“天黑了”。现在带提灯时允许夜间采集（仍受暴露伤害），并新增 `wait_for_dawn`（等天亮）与 `forage_supplies`（就地补给）。`ActionAvailability` 条件上下文补上 `day_phase`，`stargaze`/`wait_for_dawn` 这类 Action 前置条件不再永远失败。
+- **船员不动/不补给**：船员没有 `take_ration`/`fill_water`，阵营角色也没有食物来源；口粮耗尽后他们只会反复 `rest_at_camp`/`rest_rough`，hydration 降到 17、satiety 降到 38 仍不进食。现在船员拥有取口粮/装淡水行为，阵营角色拥有 `forage_supplies`；`forage_supplies` 也能作为玩家的夜间/野外生存保底。`upgrade_instance` 新增 Agent 与 Player 的 `initial_bt_ids` 合并：旧存档升级后也能获得新行为，而不是只更新定义表。
+- 当前实例已执行升级：`action_def 61`、`bt_def 85`、`agents_updated 8`、`players_updated 1`；玩家在风蚀林夜间拿提灯时已能看到“收集木材/伐木/收集纤维/采浆果/等天亮/就地补给”。复制存档跑 180 分钟后，船员依次 `fill_water → drink_water → take_ration → eat_ration`，阵营角色 `forage_supplies → eat_ration → drink_water`，需求开始恢复。
+- 聚焦测试：`tests/test_windward_skyfall.py` 14 项、liveness + release + upgrade 共 53 项通过。

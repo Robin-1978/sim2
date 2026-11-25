@@ -25,6 +25,8 @@ agents:
     conversation: 0.45
     cooking: 0.3
   initial_bt_ids:
+  - take_ration
+  - fill_water
   - eat_ration
   - drink_water
   - rest_at_camp
@@ -65,6 +67,8 @@ agents:
     conversation: 0.55
     cooking: 0.3
   initial_bt_ids:
+  - take_ration
+  - fill_water
   - eat_ration
   - drink_water
   - rest_at_camp
@@ -104,6 +108,8 @@ agents:
     conversation: 0.5
     exploration: 0.25
   initial_bt_ids:
+  - take_ration
+  - fill_water
   - eat_ration
   - drink_water
   - rest_at_camp
@@ -144,6 +150,8 @@ agents:
     conversation: 0.6
     cooking: 0.4
   initial_bt_ids:
+  - take_ration
+  - fill_water
   - eat_ration
   - drink_water
   - rest_at_camp
@@ -184,6 +192,8 @@ agents:
     medicine: 0.2
     cooking: 0.25
   initial_bt_ids:
+  - take_ration
+  - fill_water
   - eat_ration
   - drink_water
   - rest_at_camp
@@ -224,11 +234,10 @@ agents:
     medicine: 0.3
     cooking: 0.3
   initial_bt_ids:
+  - forage_supplies
   - eat_ration
   - drink_water
   - rest_rough
-  - work_camp
-  - stargaze
   initial_state:
     location_id: broken_span
     status: idle
@@ -266,11 +275,10 @@ agents:
     medicine: 0.25
     cooking: 0.3
   initial_bt_ids:
+  - forage_supplies
   - eat_ration
   - drink_water
   - rest_rough
-  - work_camp
-  - stargaze
   initial_state:
     location_id: thunderhead_works
     status: idle
@@ -308,11 +316,10 @@ agents:
     gathering: 0.3
     cooking: 0.3
   initial_bt_ids:
+  - forage_supplies
   - eat_ration
   - drink_water
   - rest_rough
-  - work_camp
-  - stargaze
   initial_state:
     location_id: old_lighthouse
     status: idle

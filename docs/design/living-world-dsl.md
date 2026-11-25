@@ -193,6 +193,8 @@ Behavior 的 `item` 只能填现有材料 id（wood/fiber/stone/…），不能�
 - `nearby_entities` 现在按 Agent → 资源 → 设施排序，营地不会因为设施太多而把船员挤出“附近的人”。
 - `facility.initial_state.status` 支持 `dim`/`working`，建造 Action 会把设施状态从“暗淡”改成“运转中”。
 - `worlds/__init__.py` 的 `world_path` 兼容 importlib `MultiplexedPath`，namespace 包也能被 CLI 发现；`worlds/night_pawnshop` 和 `worlds/windward_skyfall` 补了 `__init__.py` 与 package-data。
+- `ActionAvailability`、Behavior 条件和 world tick 条件现在都提供 `day_phase`；同一个 `context.day_phase == night` 不会在“行为可进入但 Action 不可执行”之间自相矛盾。
+- `upgrade_instance` 现在把世界包新增的 `initial_bt_ids` 合并到现有 Agent 和玩家：旧存档升级后也能获得新的生存行为（取口粮、装淡水、就地补给、等天亮），同时保留库存、需求、记忆和运行时状态。
 
 ## 3. 仍然有限的 DSL
 

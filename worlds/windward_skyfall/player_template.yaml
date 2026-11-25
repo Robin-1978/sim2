@@ -53,6 +53,7 @@ initial_bt_ids:
 - mine_crystal
 - salvage_relic
 - take_ration
+- forage_supplies
 - fill_water
 - craft
 - craft_stone_axe
@@ -87,6 +88,7 @@ initial_bt_ids:
 - use_salve
 - rest_at_camp
 - rest_rough
+- wait_for_dawn
 - sleep
 - work_camp
 - stargaze

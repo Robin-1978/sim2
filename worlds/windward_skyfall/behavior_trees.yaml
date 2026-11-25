@@ -5,7 +5,7 @@ behavior_trees:
   description: 沿着林梢的方向飞到风蚀林。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - world.storm_stage < 3 or actor.inventory.storm_cloak >= 1
   estimated_minutes: 40
   cooldown_minutes: 0
@@ -29,7 +29,7 @@ behavior_trees:
   description: 飞向白得刺眼的盐滩。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - world.storm_stage < 3 or actor.inventory.storm_cloak >= 1
   estimated_minutes: 50
   cooldown_minutes: 0
@@ -488,7 +488,7 @@ behavior_trees:
   description: 徒手收集两份木材。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.woods
   estimated_minutes: 60
   cooldown_minutes: 0
@@ -515,7 +515,7 @@ behavior_trees:
   description: 用石斧伐下五份木料。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.woods
   - actor.inventory.stone_axe >= 1
   estimated_minutes: 90
@@ -543,7 +543,7 @@ behavior_trees:
   description: 从树皮和藤蔓上剥下纤维。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.woods
   estimated_minutes: 60
   cooldown_minutes: 0
@@ -570,7 +570,7 @@ behavior_trees:
   description: 沿林缘采两把浆果。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.woods
   estimated_minutes: 50
   cooldown_minutes: 0
@@ -597,7 +597,7 @@ behavior_trees:
   description: 在盐壳下面敲两块石头。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.flats
   estimated_minutes: 60
   cooldown_minutes: 0
@@ -624,7 +624,7 @@ behavior_trees:
   description: 用石镐敲下五块石料。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.flats
   - actor.inventory.stone_pick >= 1
   estimated_minutes: 90
@@ -652,7 +652,7 @@ behavior_trees:
   description: 从盐滩下面的湿泥里挖陶土。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.flats
   estimated_minutes: 60
   cooldown_minutes: 0
@@ -679,7 +679,7 @@ behavior_trees:
   description: 在盐壳缝里筛出玻璃砂。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.flats
   estimated_minutes: 60
   cooldown_minutes: 0
@@ -706,7 +706,7 @@ behavior_trees:
   description: 把盐壳敲成能带走的小块。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.flats
   estimated_minutes: 50
   cooldown_minutes: 0
@@ -733,7 +733,7 @@ behavior_trees:
   description: 从旧灯塔的油槽里取一罐灯油。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.lighthouse
   - actor.inventory.lantern >= 1
   estimated_minutes: 75
@@ -761,7 +761,7 @@ behavior_trees:
   description: 从备用灯组上拆下一枚透镜。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.lighthouse
   - actor.inventory.lantern >= 1
   estimated_minutes: 75
@@ -789,7 +789,7 @@ behavior_trees:
   description: 用石镐敲下两块铜矿。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.copper
   - actor.inventory.stone_pick >= 1
   estimated_minutes: 90
@@ -817,7 +817,7 @@ behavior_trees:
   description: 从煤层里收两块煤。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.copper
   - actor.inventory.stone_pick >= 1
   estimated_minutes: 75
@@ -845,7 +845,7 @@ behavior_trees:
   description: 在崖背的石缝里采药草。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.cliff
   estimated_minutes: 60
   cooldown_minutes: 0
@@ -872,7 +872,7 @@ behavior_trees:
   description: 在雨背崖的阴面采蘑菇。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.cliff
   estimated_minutes: 50
   cooldown_minutes: 0
@@ -899,7 +899,7 @@ behavior_trees:
   description: 拆下两根还能用的鲸骨。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.whalefall
   - actor.inventory.copper_pick >= 1
   estimated_minutes: 90
@@ -927,7 +927,7 @@ behavior_trees:
   description: 从鲸骨缝里取一块琥珀。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.whalefall
   - actor.inventory.lantern >= 1
   estimated_minutes: 90
@@ -955,7 +955,7 @@ behavior_trees:
   description: 用铜镐从晶脉上取一块晶石。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.thunderhead
   - actor.inventory.copper_pick >= 1
   estimated_minutes: 120
@@ -983,7 +983,7 @@ behavior_trees:
   description: 用晶锯和提灯拆下一件遗物。
   entry_conditions:
   - actor.alive
-  - context.day_phase != night
+  - context.day_phase != night or actor.inventory.lantern >= 1
   - location.tag.thunderhead
   - actor.inventory.crystal_saw >= 1
   - actor.inventory.lantern >= 1
@@ -1031,6 +1031,32 @@ behavior_trees:
   - supply
   drive_tags:
   - satiety
+  - safety
+- id: forage_supplies
+  agent_label: 就地补给
+  summary: 就地补给
+  description: 在岛边找一点能吃的和能喝的；风暴季的补给不会太多。
+  entry_conditions:
+  - actor.alive
+  - location.tag.salvage
+  estimated_minutes: 60
+  cooldown_minutes: 720
+  nodes:
+  - type: action
+    action_id: forage_supplies
+    parameters: {}
+  success_results:
+  - resource_gathered
+  failure_results:
+  - gathering_failed
+  - interrupted
+  goal_tags:
+  - food
+  - water
+  - survival
+  drive_tags:
+  - satiety
+  - hydration
   - safety
 - id: fill_water
   agent_label: 装淡水
@@ -1761,7 +1787,9 @@ behavior_trees:
   - failed
   goal_tags:
   - recovery
+  - food
   drive_tags:
+  - satiety
   - safety
 - id: drink_water
   agent_label: 喝淡水
@@ -1782,7 +1810,9 @@ behavior_trees:
   - failed
   goal_tags:
   - recovery
+  - water
   drive_tags:
+  - hydration
   - safety
 - id: eat_stew
   agent_label: 吃蘑菇炖菜
@@ -1803,7 +1833,9 @@ behavior_trees:
   - failed
   goal_tags:
   - recovery
+  - food
   drive_tags:
+  - satiety
   - safety
 - id: use_salve
   agent_label: 用药膏
@@ -1869,6 +1901,29 @@ behavior_trees:
   - recovery
   drive_tags:
   - safety
+- id: wait_for_dawn
+  agent_label: 等天亮
+  summary: 等天亮
+  description: 找个背风处等到天亮；夜里不能采集，但可以熬过去。
+  entry_conditions:
+  - actor.alive
+  - context.day_phase == night
+  estimated_minutes: 480
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: wait_for_dawn
+    parameters: {}
+  success_results:
+  - rested
+  failure_results:
+  - interrupted
+  goal_tags:
+  - recovery
+  - night
+  drive_tags:
+  - safety
+  - autonomy
 - id: sleep
   agent_label: 睡一觉（8 小时）
   summary: 睡一觉（8 小时）

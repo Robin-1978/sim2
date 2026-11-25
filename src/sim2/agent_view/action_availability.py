@@ -8,6 +8,7 @@ from ..actions.capacity import check_action_capacity
 from ..actions.institutions import allocation_preflight
 from ..world.navigation import reachable_locations, resource_is_at_location
 from ..world.context import configured_context_values
+from ..world.time import world_time_view
 
 
 class ActionAvailabilityMixin:
@@ -84,6 +85,7 @@ class ActionAvailabilityMixin:
             ),
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
             "area_id": parameters.get("area_id"),
+            "day_phase": world_time_view(self.store).get("day_phase"),
             "source_id": parameters.get("source_id"),
             "item_id": parameters.get("item_id"),
             "object_id": parameters.get("object_id"),
