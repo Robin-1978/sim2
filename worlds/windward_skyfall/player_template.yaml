@@ -16,6 +16,10 @@ inventory:
 initial_bt_ids:
 - rescue_kite_scout
 - salvage_dawn_copper
+- fit_crosswind_beacon
+- fit_copper_tow_rig
+- supply_rainshade_lookout
+- salvage_copper_tide_haul
 - allocate_emergency_stock_defense
 - allocate_emergency_stock_relief
 - travel_windworn

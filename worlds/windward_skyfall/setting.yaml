@@ -10,6 +10,9 @@ ui:
   spotlights:
     dawn_salvage:
       deadline_clock_minute: 480
+    prepare_expedition: {}
+    rainshade_expedition: {}
+    copper_tide_expedition: {}
     emergency_copper_dispatch:
       deadline_property: supply_minutes
     emergency_copper_repayment:
@@ -99,9 +102,14 @@ ui:
   - act.
   - skyfall.
   result_labels:
-    dawn_scout_rescued: 斥候获救。风筝人声望增加 25 个百分点。
-    dawn_copper_salvaged: 铜料上船。船体低于九成时，阿岚会用铜板补船。
+    dawn_scout_rescued: 斥候获救。风筝人愿意教你布置信标，提早去雨背崖。
+    dawn_copper_salvaged: 铜料上船。阿岚留下补船板，余下的铜够装一副打捞架。
     dawn_salvage_closed: 错过了最后一次回收
+    crosswind_beacon_fitted: 侧风信标已装好。从风蚀林可以绕到雨背崖。
+    copper_tow_rig_fitted: 打捞架已装好。从碎盐滩可以走低空通道进铜潮谷。
+    rainshade_lookout_supplied: 守望人收下了口粮。你带回两束药草，也多了愿意帮忙的人。
+    copper_tide_haul_secured: 线圈收上来了。铜和煤进了仓，风暴压力升高 8。
+    expedition_unavailable: 这次行动已经错过时机。
     arrived: 已抵达
     resource_gathered: 采集完成
     resource_collected: 采集完成

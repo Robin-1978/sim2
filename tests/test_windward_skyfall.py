@@ -192,6 +192,93 @@ def test_dawn_window_expires_during_a_late_action(tmp_path: Path) -> None:
         service.close()
 
 
+@pytest.mark.parametrize("dawn_choice", ["rescue", "copper"])
+def test_first_expedition_construction_changes_route_and_commits_a_payoff(tmp_path: Path, dawn_choice: str) -> None:
+    service = ControlService(create_instance(WORLD, f"windward-expedition-{dawn_choice}", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "mechanic", name="林晚")["status"] == "accepted"
+        if dawn_choice == "rescue":
+            opening = "rescue_kite_scout"
+            fitting = "fit_crosswind_beacon"
+            alternate_fitting = "fit_copper_tow_rig"
+            waystop, route = "travel_windworn", "travel_rainshade"
+            objective, destination = "rainshade_expedition", "rainshade_cliff"
+            payoff, item, amount = "supply_rainshade_lookout", "herb", 2
+            material = "wood"
+        else:
+            opening = "salvage_dawn_copper"
+            fitting = "fit_copper_tow_rig"
+            alternate_fitting = "fit_crosswind_beacon"
+            waystop, route = "travel_saltbreak", "travel_copper_tide"
+            objective, destination = "copper_tide_expedition", "copper_tide"
+            payoff, item, amount = "salvage_copper_tide_haul", "copper_ore", 3
+            material = "copper_ore"
+
+        _do(platform, f"behavior:{opening}", "first-rescue-or-salvage")
+        view = service.player_view("hero")
+        preparation = next(goal for goal in view["goals"] if goal["id"] == "prepare_expedition")
+        assert preparation["ready_behavior_refs"] == [f"behavior:{fitting}"]
+        assert f"behavior:{alternate_fitting}" not in {action["ref"] for action in view["actions"]}
+        assert f"behavior:{waystop}" in {action["ref"] for action in view["actions"]}
+        assert _start(platform, f"behavior:{route}", "try-unprepared-route")["status"] != "accepted"
+
+        before = platform.store.repositories.entities.get_agent("hero")["inventory"][material]
+        _do(platform, f"behavior:{fitting}", "install-equipment")
+        fitted = platform.store.repositories.entities.get_agent("hero")["inventory"].get(material, 0)
+        assert fitted == before - 2
+        assert _start(platform, f"behavior:{route}", "try-shortcut-from-camp")["status"] != "accepted"
+        _do(platform, f"behavior:{waystop}", "fly-to-waystop")
+        view = service.player_view("hero")
+        highlighted = next(goal for goal in view["goals"] if goal["id"] == objective)
+        assert f"behavior:{route}" in highlighted["ready_behavior_refs"]
+        assert not view["inventory"].get("rope" if dawn_choice == "rescue" else "stone_pick")
+        _do(platform, f"behavior:{route}", "use-built-route")
+        assert service.player_view("hero")["location"]["id"] == destination
+
+        before_inventory = platform.store.repositories.entities.get_agent("hero")["inventory"]
+        before_properties = _properties(platform)
+        _do(platform, f"behavior:{payoff}", "complete-expedition")
+        after = platform.store.repositories.entities.get_agent("hero")["inventory"]
+        assert after[item] == before_inventory.get(item, 0) + amount
+        assert _start(platform, f"behavior:{payoff}", "repeat-the-haul")["status"] != "accepted"
+        assert objective not in {goal["id"] for goal in service.player_view("hero")["goals"]}
+        assert platform.store.repositories.events.event_type_counts()["skyfall.expedition_completed"] == 1
+        assert any(task["task_type"] == "event_group:story_after_expedition" for task in platform.ready_evolution_tasks())
+
+        properties = _properties(platform)
+        if dawn_choice == "rescue":
+            assert after["ration"] == before_inventory["ration"] - 1
+            assert properties["kite_rep"] == pytest.approx(0.43)
+            assert properties["camp_morale"] == pytest.approx(before_properties["camp_morale"] + 0.04)
+        else:
+            assert after["coal"] == before_inventory.get("coal", 0) + 1
+            assert properties["storm_pressure"] == before_properties["storm_pressure"] + 8
+    finally:
+        service.close()
+
+
+def test_copper_start_can_build_the_crosswind_beacon_after_relief(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "windward-two-routes", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "mechanic", name="林晚")["status"] == "accepted"
+        _do(platform, "behavior:salvage_dawn_copper", "save-the-copper")
+        _do(platform, "behavior:fit_copper_tow_rig", "install-the-rig")
+        assert _start(platform, "behavior:fit_crosswind_beacon", "try-without-trust")["status"] != "accepted"
+        for index, arrival in enumerate((720, 1440)):
+            with platform.store.transaction():
+                platform.store.repositories.metadata.set("world_minute", arrival - 1)
+            platform.step()
+            _do(platform, "behavior:allocate_emergency_stock_relief", f"relief-{index}")
+        _do(platform, "behavior:fit_crosswind_beacon", "fit-after-earning-trust")
+        properties = _properties(platform)
+        assert properties["dawn_salvage"] == 2
+        assert (properties["crosswind_beacon"], properties["copper_tow_rig"]) == (1, 1)
+    finally:
+        service.close()
+
+
 def test_copper_dispatch_shows_the_carryover_obligation(tmp_path: Path) -> None:
     service = ControlService(create_instance(WORLD, "windward-copper-debt", tmp_path / "runtime"))
     platform = service.platform
@@ -468,15 +555,21 @@ def test_upgrade_teaches_existing_crew_and_player_the_new_survival_behaviors(tmp
             alan["initial_bt_ids"] = [item for item in alan["initial_bt_ids"] if item not in {"take_ration", "fill_water"}]
             platform.store.repositories.entities.put_agent("alan", alan, "阿岚")
             player = platform.store.repositories.entities.get_agent("hero")
+            new_expedition_behaviors = {
+                "fit_crosswind_beacon", "fit_copper_tow_rig", "supply_rainshade_lookout", "salvage_copper_tide_haul",
+            }
             player["initial_bt_ids"] = [
                 item for item in player["initial_bt_ids"]
-                if item not in {"wait_for_dawn", "rescue_kite_scout", "salvage_dawn_copper"}
+                if item not in {"wait_for_dawn", "rescue_kite_scout", "salvage_dawn_copper"} | new_expedition_behaviors
             ]
+            player["inventory"]["copper_ore"] = 2
             platform.store.repositories.entities.put_agent("hero", player, "林晚")
             metadata = platform.store.repositories.metadata
             metadata.set("world_minute", 124)
             properties = metadata.get("world_properties")
             for key in ("dawn_salvage", "emergency_stock", "supply_consultation", "supply_relief_due", "supply_minutes", "supply_spare_plates"):
+                properties.pop(key)
+            for key in ("crosswind_beacon", "copper_tow_rig", "rainshade_lookout_supplied", "copper_tide_haul_taken"):
                 properties.pop(key)
             properties["hull_integrity"] = 0.72
             metadata.set("world_properties", properties)
@@ -499,14 +592,20 @@ def test_upgrade_teaches_existing_crew_and_player_the_new_survival_behaviors(tmp
         assert {"take_ration", "fill_water"} <= set(alan["initial_bt_ids"])
         assert "wait_for_dawn" in player["initial_bt_ids"]
         assert {"rescue_kite_scout", "salvage_dawn_copper"} <= set(player["initial_bt_ids"])
+        assert new_expedition_behaviors <= set(player["initial_bt_ids"])
         view = service.player_view("hero")
         assert "dawn_salvage" not in {goal["id"] for goal in view["goals"]}
         assert not {"behavior:rescue_kite_scout", "behavior:salvage_dawn_copper"} & {action["ref"] for action in view["actions"]}
+        assert any(
+            goal["id"] == "prepare_expedition" and "behavior:fit_copper_tow_rig" in goal["ready_behavior_refs"]
+            for goal in view["goals"]
+        )
         assert (alan["controller"], alan["controller_fallback"]) == ("llm", "bt")
         metadata = platform.store.repositories.metadata
         assert metadata.get("world_minute") == 124
         properties = metadata.get("world_properties")
         assert properties["hull_integrity"] == 0.72
+        assert properties["crosswind_beacon"] == properties["copper_tow_rig"] == 0
         assert properties["emergency_stock"] == properties["supply_consultation"] == 0
         stock = platform.store.repositories.entities.get_entity("emergency_copper_cache")
         assert stock["initial_state"]["quantity"] == 0

@@ -1,7 +1,7 @@
 behavior_trees:
 - id: rescue_kite_scout
   agent_label: 拉回斥候
-  summary: 赢得风筝人的信任，为携手保全群岛铺路。
+  summary: 赢得风筝人的信任，可以搭信标提早到雨背崖。铜料会沉入云海。
   description: 拉回风筝人的斥候，赢得风筝人的信任。铜料会坠入云海。
   estimated_minutes: 6
   nodes:
@@ -11,7 +11,7 @@ behavior_trees:
   goal_tags: [decision]
 - id: salvage_dawn_copper
   agent_label: 吊起铜料
-  summary: 得两份铜矿和一块应急铜板。斥候的灯会消失。
+  summary: 得补船板和一副打捞架所需的铜矿。斥候的灯会消失。
   description: 得两份铜矿和一块应急铜板。斥候的灯会消失。
   estimated_minutes: 6
   nodes:
@@ -19,6 +19,42 @@ behavior_trees:
   success_results: [dawn_copper_salvaged]
   failure_results: [dawn_salvage_closed]
   goal_tags: [decision]
+- id: fit_crosswind_beacon
+  agent_label: 装侧风信标
+  description: 花两份木材，借风筝人的引航从风蚀林绕到雨背崖。
+  estimated_minutes: 12
+  nodes:
+  - {type: action, action_id: fit_crosswind_beacon, parameters: {}}
+  success_results: [crosswind_beacon_fitted]
+  failure_results: [expedition_unavailable]
+  goal_tags: [craft]
+- id: fit_copper_tow_rig
+  agent_label: 装铜制打捞架
+  description: 花两份铜矿，打开从碎盐滩进入铜潮谷的低空通道。
+  estimated_minutes: 12
+  nodes:
+  - {type: action, action_id: fit_copper_tow_rig, parameters: {}}
+  success_results: [copper_tow_rig_fitted]
+  failure_results: [expedition_unavailable]
+  goal_tags: [craft]
+- id: supply_rainshade_lookout
+  agent_label: 给守望人送口粮
+  description: 留一份口粮，带回两束药草，并得到风筝人的信任。
+  estimated_minutes: 14
+  nodes:
+  - {type: action, action_id: supply_rainshade_lookout, parameters: {}}
+  success_results: [rainshade_lookout_supplied]
+  failure_results: [expedition_unavailable]
+  goal_tags: [social, decision]
+- id: salvage_copper_tide_haul
+  agent_label: 拖出谷口线圈
+  description: 带回三份铜矿和一份煤，风暴压力升高 8。
+  estimated_minutes: 14
+  nodes:
+  - {type: action, action_id: salvage_copper_tide_haul, parameters: {}}
+  success_results: [copper_tide_haul_secured]
+  failure_results: [expedition_unavailable]
+  goal_tags: [gather]
 - id: travel_windworn
   agent_label: 前往风蚀林
   summary: 前往风蚀林
@@ -122,8 +158,7 @@ behavior_trees:
   - actor.alive
   - context.day_phase != night
   - world.storm_stage < 2 or actor.inventory.storm_cloak >= 1
-  - actor.knowledge.explored:saltbreak_flats
-  - actor.inventory.stone_pick >= 1
+  - (world.copper_tow_rig == 1 and actor.state.location_id == saltbreak_flats) or (actor.knowledge.explored:saltbreak_flats and actor.inventory.stone_pick >= 1)
   estimated_minutes: 100
   cooldown_minutes: 0
   nodes:
@@ -143,13 +178,12 @@ behavior_trees:
 - id: travel_rainshade
   agent_label: 前往雨背崖
   summary: 前往雨背崖
-  description: 系好绳索，从林梢下到雨背崖。
+  description: 沿着林梢外的风飞向雨背崖。
   entry_conditions:
   - actor.alive
   - context.day_phase != night
   - world.storm_stage < 2 or actor.inventory.storm_cloak >= 1
-  - actor.knowledge.explored:windworn_woods
-  - actor.inventory.rope >= 1
+  - (world.crosswind_beacon == 1 and actor.state.location_id == windworn_woods) or (actor.knowledge.explored:windworn_woods and actor.inventory.rope >= 1)
   estimated_minutes: 110
   cooldown_minutes: 0
   nodes:

@@ -330,3 +330,13 @@ God 的任务允许读取证据、提交一个 Behavior 或等待。0.3 把新�
 > Original cinematic digital concept art for a fantasy survival game, 3:2 landscape. First-person view from the weathered wooden deck of an antique salvage airship at dawn. A bronze winch and its crank sit on the right third, two taut ropes leading down from the deck edge into a vast blue-violet ocean of clouds. Far below, a tiny orange distress lantern and a hanging square cargo crate. Petals of rosy sunrise catch the ragged clouds and distant floating islands. Strong foreground perspective, weathered brass, woven ropes and dark timber. Keep the lower left quiet and dark for a title added later. Concentrate the winch around mid-height so it remains visible in a wide crop. Grounded hand-painted game environment with amber accents, restrained contrast and a sense of altitude. No text, lettering, overlays, people in the foreground, symbols, or borders.
 
 </details>
+
+## 15. 可改造的航线（0.5）
+
+首航抉择的后果从装船后的库存延伸到下一次出航。信任和材料决定玩家现在能建什么。建好的设备改变现有航线的通行条件，普通航线继续按原条件开放。
+
+- **侧风信标**需要两份木材和 30% 风筝人声望。救回斥候即可达到门槛。从风蚀林走侧风去雨背崖，交一份口粮能换两束药草和八个百分点的风筝人声望。该援助由世界记录一次。以后也能通过断桥配给等方式取得安装所需的信任。
+- **铜制打捞架**需要两份铜矿。可以用首航吊起的铜，也可以用后来的采集所得。从碎盐滩走低空通道进铜潮谷，可拖起一次谷口线圈，获得三份铜矿和一份煤。风暴压力升高 8，其他航线仍受原有风暴规则约束。
+- 两件设备可在同一存档里建成。开局两天的场景卡显示安装和出航提示，设备的通行效果和未完成的补给或打捞可以继续使用。出航的结算事件可以唤醒 Story。
+
+参考玩法用于确定取舍。Minecraft 的建造可以修改玩家要继续使用的空间。《Outer Wilds》的地点与线索随时间改变。FTL 的船员、船体和遭遇让一次选择影响后续航程。《RimWorld》的角色需求和关系为事件提供后果。《风脊号》把这一轮实现集中在可建设的航线和可结算的出航后果。 [Minecraft 官方介绍](https://www.minecraft.net/en-us/article/what-minecraft) · [Mobius Digital](https://www.mobiusdigitalgames.com/outer-wilds.html) · [Subset Games](https://store.steampowered.com/app/212680/FTL_Faster_Than_Light/) · [Ludeon Studios](https://rimworldgame.com/index.php?lang=en)

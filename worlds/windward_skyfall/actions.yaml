@@ -19,7 +19,7 @@ actions:
   - type: public_event
     event: skyfall.dawn_salvage
     data: {choice: rescue}
-    summary: 你拉回了风筝人的斥候。另一根缆绳松脱，铜料沉入云海。断桥会记住你。
+    summary: 铜料沉入云海。获救的斥候在海图上标出雨背崖的侧风，叫你在船上装一只信标，那里有人等补给。
   failure:
     condition: actor.incapacitated or world.dawn_salvage != 0 or context.day_phase != 'dawn' or world.ending_trigger != 0
     result: dawn_salvage_closed
@@ -49,11 +49,118 @@ actions:
   - type: public_event
     event: skyfall.dawn_salvage
     data: {choice: copper}
-    summary: 铜料落在甲板上，阿岚收起一块铜板备用。再低头时，斥候的求救灯已经消失在云里。
+    summary: 斥候的求救灯消失在云里。阿岚收起备用铜板，指着余下的铜料说，这些够搭一副能在低空拖货的打捞架。
   failure:
     condition: actor.incapacitated or world.dawn_salvage != 0 or context.day_phase != 'dawn' or world.ending_trigger != 0
     result: dawn_salvage_closed
   success: {condition: actor.alive, result: dawn_copper_salvaged}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: fit_crosswind_beacon
+  verb: build
+  version: 1
+  description: 用两份木材安装信标。风筝人的手势能引你从风蚀林绕到雨背崖。
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.kite_rep >= 0.3
+  - world.crosswind_beacon == 0
+  - actor.inventory.wood >= 2
+  - world.ending_trigger == 0
+  duration: {minutes: 12}
+  costs: {reserve: {wood: 2}, per_minute: {}, on_success: {}, on_failure: {}, refund: {}}
+  effects:
+  - {type: world_property_set, property: crosswind_beacon, value: 1}
+  - {type: public_event, event: camp.crosswind_beacon_fitted, summary: 信标亮了。风蚀林上空的侧风有了可以辨认的引航标记。}
+  failure:
+    condition: actor.incapacitated or world.crosswind_beacon != 0 or world.ending_trigger != 0
+    result: expedition_unavailable
+  success: {condition: actor.alive, result: crosswind_beacon_fitted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: fit_copper_tow_rig
+  verb: build
+  version: 1
+  description: 用两份铜矿装一副打捞架，能沿碎盐滩的低空通道拖货进入铜潮谷。
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.copper_tow_rig == 0
+  - actor.inventory.copper_ore >= 2
+  - world.ending_trigger == 0
+  duration: {minutes: 12}
+  costs: {reserve: {copper_ore: 2}, per_minute: {}, on_success: {}, on_failure: {}, refund: {}}
+  effects:
+  - {type: world_property_set, property: copper_tow_rig, value: 1}
+  - {type: public_event, event: camp.copper_tow_rig_fitted, summary: 阿岚把铜制打捞架扣在船舷。碎盐滩下方的低空通道现在能用来拖货。}
+  failure:
+    condition: actor.incapacitated or world.copper_tow_rig != 0 or world.ending_trigger != 0
+    result: expedition_unavailable
+  success: {condition: actor.alive, result: copper_tow_rig_fitted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: supply_rainshade_lookout
+  verb: supply
+  version: 1
+  description: 留下一份口粮，换两束药草。雨背崖的守望人会把这份援助记在风筝人的账上。
+  preconditions:
+  - actor.alive
+  - location.tag.cliff
+  - world.crosswind_beacon == 1
+  - world.rainshade_lookout_supplied == 0
+  - actor.inventory.ration >= 1
+  - world.ending_trigger == 0
+  duration: {minutes: 14}
+  costs: {reserve: {ration: 1}, per_minute: {}, on_success: {}, on_failure: {}, refund: {}}
+  effects:
+  - {type: world_property_set, property: rainshade_lookout_supplied, value: 1}
+  - {type: world_property_delta, property: kite_rep, delta: 0.08, maximum: 1}
+  - {type: world_property_delta, property: camp_morale, delta: 0.04, maximum: 1}
+  - {type: inventory_add, item: herb, quantity: 2}
+  - type: public_event
+    event: skyfall.expedition_completed
+    data: {location_id: rainshade_cliff, expedition: lookout_supply}
+    summary: 雨背崖的守望人收下口粮，递来两束药草。他们答应把风脊号的名字带回断桥。
+  failure:
+    condition: actor.incapacitated or world.rainshade_lookout_supplied != 0 or world.ending_trigger != 0
+    result: expedition_unavailable
+  success: {condition: actor.alive, result: rainshade_lookout_supplied}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: salvage_copper_tide_haul
+  verb: salvage
+  version: 1
+  description: 用打捞架拖起谷口的旧线圈，得三份铜料和一份煤，风暴压力增加 8。
+  preconditions:
+  - actor.alive
+  - location.tag.copper
+  - world.copper_tow_rig == 1
+  - world.copper_tide_haul_taken == 0
+  - world.storm_stage < 2
+  - world.ending_trigger == 0
+  duration: {minutes: 14}
+  costs: {reserve: {}, per_minute: {}, on_success: {}, on_failure: {}, refund: {}}
+  effects:
+  - {type: world_property_set, property: copper_tide_haul_taken, value: 1}
+  - {type: inventory_add, item: copper_ore, quantity: 3}
+  - {type: inventory_add, item: coal, quantity: 1}
+  - {type: world_property_delta, property: storm_pressure, delta: 8, maximum: 100}
+  - type: public_event
+    event: skyfall.expedition_completed
+    data: {location_id: copper_tide, expedition: valley_salvage}
+    summary: 线圈拖出谷口，拆出了铜料和煤。谷底的雷声跟着负重的风脊号向外滚。
+  failure:
+    condition: actor.incapacitated or world.copper_tide_haul_taken != 0 or world.storm_stage >= 2 or world.ending_trigger != 0
+    result: expedition_unavailable
+  success: {condition: actor.alive, result: copper_tide_haul_secured}
   kind: atomic
   executor: effect_pipeline
   interrupt_policy: cancel

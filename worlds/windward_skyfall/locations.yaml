@@ -153,7 +153,7 @@ locations:
   name: 雨背崖
   public: true
   safe: false
-  description: 崖背永远在下雨。药草和蘑菇长在石缝里，绳子是唯一能让人走到下面的东西。断桥群岛的影子在雨幕后面。
+  description: 崖背永远在下雨。药草和蘑菇长在石缝里，旧绳垂向云雾。侧风吹开雨幕时，能看见更低处的栈台和断桥群岛。
   tags:
   - public
   - unsafe

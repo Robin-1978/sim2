@@ -164,6 +164,10 @@ item_uses:
   - 安装到信标框架
 world_property_labels:
   dawn_salvage: {label: 首航回收结果, hidden: true}
+  crosswind_beacon: {label: 侧风信标, hidden: true}
+  copper_tow_rig: {label: 铜制打捞架, hidden: true}
+  rainshade_lookout_supplied: {label: 守望人补给, hidden: true}
+  copper_tide_haul_taken: {label: 谷口线圈已回收, hidden: true}
   supply_consultation: {label: 配给状态, hidden: true}
   supply_relief_due: {label: 配给履约, hidden: true}
   supply_spare_plates: {label: 应急铜板, unit: amount, max: 1, group: 船体}
@@ -970,17 +974,38 @@ progression:
   visible_when: world.day == 1 and context.day_phase == 'dawn' and world.dawn_salvage == 0 and world.ending_trigger == 0
   target_behaviors: [rescue_kite_scout, salvage_dawn_copper]
   complete_when: {event_type: skyfall.dawn_salvage}
+- id: prepare_expedition
+  label: 给下一趟出航装件设备
+  summary: 侧风信标引你飞到雨背崖，铜制打捞架能走铜潮谷的低空通道。两件都可以装，随时也能走平常的航线。
+  priority: 1.6
+  audience: [player]
+  visible_when: world.day <= 2 and world.ending_trigger == 0 and (world.crosswind_beacon == 0 or world.copper_tow_rig == 0)
+  target_behaviors: [fit_crosswind_beacon, fit_copper_tow_rig]
+- id: rainshade_expedition
+  label: 雨背崖的守望人
+  summary: 从风蚀林沿信标标出的侧风绕到雨背崖。带一份口粮去，守望人那里留着药草。
+  priority: 1.7
+  audience: [player]
+  visible_when: world.crosswind_beacon == 1 and world.rainshade_lookout_supplied == 0 and world.day <= 2 and world.ending_trigger == 0
+  target_behaviors: [supply_rainshade_lookout, travel_rainshade, travel_windworn]
+- id: copper_tide_expedition
+  label: 谷口有一卷旧铜线
+  summary: 从碎盐滩借低空通道进入铜潮谷。拖走线圈能补足制作材料，也会招来雷云。
+  priority: 1.7
+  audience: [player]
+  visible_when: world.copper_tow_rig == 1 and world.copper_tide_haul_taken == 0 and world.day <= 2 and world.ending_trigger == 0
+  target_behaviors: [salvage_copper_tide_haul, travel_copper_tide, travel_saltbreak]
 - id: emergency_copper_dispatch
   label: 这批铜，交给谁？
   summary: 阿岚要补船，断桥的人在等支援。这一批只够一边用。
-  priority: 1.5
+  priority: 1.9
   audience: [player]
   visible_when: world.supply_consultation == 1 and world.supply_minutes > 0 and world.supply_relief_due == 0 and world.ending_trigger == 0
   target_behaviors: [allocate_emergency_stock_defense, allocate_emergency_stock_relief]
 - id: emergency_copper_repayment
   label: 断桥来领欠下的铜
   summary: 上一批没送到断桥。这一批要先履约，才能恢复自由分配。
-  priority: 1.5
+  priority: 1.9
   audience: [player]
   visible_when: world.supply_consultation == 1 and world.supply_minutes > 0 and world.supply_relief_due > 0 and world.ending_trigger == 0
   target_behaviors: [allocate_emergency_stock_relief]

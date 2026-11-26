@@ -1,6 +1,10 @@
 world_state:
   properties:
     dawn_salvage: 0
+    crosswind_beacon: 0
+    copper_tow_rig: 0
+    rainshade_lookout_supplied: 0
+    copper_tide_haul_taken: 0
     emergency_stock: 0
     supply_consultation: 0
     supply_minutes: 0

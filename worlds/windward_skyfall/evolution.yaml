@@ -68,6 +68,13 @@ contracts:
     purpose: 按 Director 的 plan，在既有群岛里长出一个新的打捞行为：风筝人斥候阿筝可以在断桥群岛打捞现有材料。
     result: 读取 season_plan、world_growth_ledger 和最近的探索/风暴事件。只提交一个 definition_type=behavior，assign_to ["ke"]，definition.id 写 dyn_salvage_N，agent_label 写“打捞<地点><材料>”，deferred 设为 true，cooldown_minutes 写 1440，entry_conditions 用 ["actor.alive", "location.tag.salvage"]，nodes 用 [{"type":"action","action_id":"dynamic_salvage","parameters":{"item":"<一个现有材料 id>","amount":2,"location_id":"<现有外岛 id>"}}]。item 只能从 wood、fiber、stone、salt、clay、glass_sand、copper_ore、coal、herb、mushroom、oil、bone、amber、crystal、relic 里选；location_id 固定为 broken_span。不要创建新 Action、新岛、新资源、新物品或新 NPC；不要使用 followup_behavior；所有数量变化由 Platform 结算；证据不足时 wait。
 wakes:
+- id: story_after_expedition
+  'on': [skyfall.expedition_completed]
+  for: story
+  every: 6h
+  tools: [query_history, propose_story_beat, wait]
+  external: true
+  purpose: 用此次出航已结算的补给、风筝人声望或风暴压力，指出一个接下来可以验证的航线或船员安排。
 - id: story_after_supply_decision
   'on': [supply.claims_opened, supply.reserved, supply.shared, supply.decision_expired]
   for: story
