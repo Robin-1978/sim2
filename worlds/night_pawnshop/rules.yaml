@@ -8162,7 +8162,7 @@ progression:
   - pact_chapel
   - pact_collector
   support_behaviors:
-  - trade_offer
+  - trade_pawnshop
   complete_when:
     event_type: faction.pact
     count: 1

@@ -158,6 +158,11 @@ class AgentIntentGateway:
         rejection = self._reject_disallowed(role, intent_type, task_type)
         if rejection is not None:
             return rejection
+        contract = (context or {}).get("evolution_trigger") or {}
+        allowed = contract.get("allowed_tools", contract.get("tools"))
+        tool_name = "request_behavior" if intent_type == "select_behavior" else intent_type
+        if isinstance(allowed, list) and intent_type != "wait" and tool_name not in allowed:
+            return {"status": "rejected", "failed_check": "task_tool", "retryable": True, "message": "This task accepts only its configured submission tools."}
         if intent_type == "wait":
             return {"status": "wait", "reason": str(data.get("reason") or data.get("message") or "No suitable behavior now.")}
         handler = self._handlers.get(intent_type)
@@ -491,7 +496,9 @@ class AgentIntentGateway:
         return self.platform.submit_entity_proposal(call.actor_id, proposal)
 
     def _propose_definition(self, call: IntentCall) -> dict[str, Any]:
-        return self.platform.submit_definition_proposal(call.actor_id, self._proposal(call))
+        return self.platform.submit_definition_proposal(
+            call.actor_id, self._proposal(call), contract=(call.context or {}).get("evolution_trigger"),
+        )
 
     def _propose_world_change(self, call: IntentCall) -> dict[str, Any]:
         proposal = self._proposal(call)

@@ -80,7 +80,7 @@ class ResourceLedger:
                     value = inventory[key]
                     agent.setdefault("inventory", {})[key] = int(value) if float(value).is_integer() else value
                 else:
-                    self._change_world_resource(item["entity_id"], -float(item["amount"]), actor_id=agent.get("id"))
+                    self.change_for_behavior(agent, item["entity_id"], -float(item["amount"]))
         return True, "", reservation
 
     def _check_recipe_output_limits(self, recipe: dict[str, Any]) -> str | None:
@@ -120,7 +120,13 @@ class ResourceLedger:
             return None
         return {"entity_id": resource_id, "amount": float(amount)}
 
-    def _change_world_resource(self, entity_id: str, delta: float, *, actor_id: str | None = None) -> None:
+    def change_for_behavior(self, agent: dict[str, Any], entity_id: str, delta: float) -> None:
+        execution_id = (agent.get("initial_state") or {}).get("active_bt_instance")
+        self._change_world_resource(entity_id, delta, actor_id=agent.get("id"), execution_id=execution_id)
+
+    def _change_world_resource(
+        self, entity_id: str, delta: float, *, actor_id: str | None = None, execution_id: str | None = None,
+    ) -> None:
         entity = self.store.repositories.entities.get_entity(entity_id)
         before = self._world_resource(entity_id)
         if isinstance(entity.get("amount"), (int, float)):
@@ -137,7 +143,11 @@ class ResourceLedger:
             self.store.repositories.entities.sync_world_property_from_resource(entity_id, after["amount"])
         self.store.repositories.events.append_event(
             "resource.changed", actor_id, int(self.store.repositories.metadata.get("world_minute", 0)),
-            {"resource_id": entity_id, "delta": float(delta), "before": (before or {}).get("amount"), "after": (after or {}).get("amount"), "source": "reservation_or_release"},
+            {
+                "resource_id": entity_id, "delta": float(delta), "before": (before or {}).get("amount"),
+                "after": (after or {}).get("amount"), "source": "reservation_or_release",
+                **({"execution_id": execution_id} if execution_id else {}),
+            },
         )
 
     def release(self, agent: dict[str, Any], reservations: list[dict[str, Any]]) -> None:

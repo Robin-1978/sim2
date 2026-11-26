@@ -1,4 +1,24 @@
 behavior_trees:
+- id: rescue_kite_scout
+  agent_label: 拉回斥候
+  summary: 赢得风筝人的信任，为携手保全群岛铺路。
+  description: 拉回风筝人的斥候，赢得风筝人的信任。铜料会坠入云海。
+  estimated_minutes: 6
+  nodes:
+  - {type: action, action_id: rescue_kite_scout, parameters: {}}
+  success_results: [dawn_scout_rescued]
+  failure_results: [dawn_salvage_closed]
+  goal_tags: [decision]
+- id: salvage_dawn_copper
+  agent_label: 吊起铜料
+  summary: 得两份铜矿和一块应急铜板。斥候的灯会消失。
+  description: 得两份铜矿和一块应急铜板。斥候的灯会消失。
+  estimated_minutes: 6
+  nodes:
+  - {type: action, action_id: salvage_dawn_copper, parameters: {}}
+  success_results: [dawn_copper_salvaged]
+  failure_results: [dawn_salvage_closed]
+  goal_tags: [decision]
 - id: travel_windworn
   agent_label: 前往风蚀林
   summary: 前往风蚀林
@@ -2157,5 +2177,60 @@ behavior_trees:
   - faction
   - storm
   drive_tags:
+  - purpose
+  - belonging
+- id: allocate_emergency_stock_defense
+  agent_label: 把应急铜料用于保船
+  summary: 把应急铜料用于保船
+  description: 用尽本批铜料加固船体，断桥这一轮得不到支援。
+  entry_conditions:
+  - location.tag.camp
+  - world.supply_consultation == 1
+  - world.supply_minutes > 0
+  - world.emergency_stock >= 3
+  - world.ending_trigger == 0
+  - world.supply_relief_due == 0
+  estimated_minutes: 20
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: allocate_emergency_stock_defense
+    parameters: {}
+  success_results:
+  - supply_reserved
+  failure_results:
+  - supply_window_closed
+  goal_tags:
+  - allocation
+  - governance
+  drive_tags:
+  - safety
+  - purpose
+  - belonging
+- id: allocate_emergency_stock_relief
+  agent_label: 把应急铜料送往断桥
+  summary: 把应急铜料送往断桥
+  description: 用尽本批铜料支援断桥，本轮船体少了一次加固机会。
+  entry_conditions:
+  - location.tag.camp
+  - world.supply_consultation == 1
+  - world.supply_minutes > 0
+  - world.emergency_stock >= 3
+  - world.ending_trigger == 0
+  estimated_minutes: 20
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: allocate_emergency_stock_relief
+    parameters: {}
+  success_results:
+  - supply_shared
+  failure_results:
+  - supply_window_closed
+  goal_tags:
+  - allocation
+  - governance
+  drive_tags:
+  - safety
   - purpose
   - belonging

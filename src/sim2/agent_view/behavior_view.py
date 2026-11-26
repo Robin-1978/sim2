@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import re
+from functools import partial
 from typing import Any
 
 from ..behavior.estimator import BehaviorDurationEstimator
@@ -22,6 +23,7 @@ from ..actions.catalogs import catalog_entries, entry_cost_available, entry_loca
 from ..world.bindings import iter_behavior_actions, resolve_behavior_effect
 from ..world.contested import resource_take_effect
 from ..world.context import configured_context_values
+from ..world.time import day_phase_duration
 from .action_text import action_view, label, predicate_text
 from .decision_frame import DecisionFrame, Guidance, Simulation
 
@@ -41,6 +43,7 @@ class BehaviorViewMixin:
             self._route_distance,
             capability_modifiers=(self.store.repositories.metadata.get("rules", {}) or {}).get("capability_modifiers", {}),
             travel_speed=lambda values: movement_speed(self.store, agent, values),
+            phase_duration=partial(day_phase_duration, self.store),
         )
         fallback_ids = (self.store.repositories.metadata.get("rules", {}) or {}).get("fallback_behavior_ids", [])
         catalog_ids = list(dict.fromkeys(
@@ -376,7 +379,7 @@ class BehaviorViewMixin:
             and parameters.get("location_id") == simulated_state.get("location_id")
         ):
             return True
-        action_minutes = estimator._action_minutes(action, parameters, simulated_state.get("location_id"))
+        action_minutes = estimator._action_minutes(action, parameters, simulated_state.get("location_id"), elapsed_minutes=sim.elapsed_minutes)
         unavailable_reason = self._action_unavailable_reason(simulated_agent, action, parameters, simulated_location, action_minutes)
         if unavailable_reason is not None:
             sim.unavailable = True
@@ -438,6 +441,7 @@ class BehaviorViewMixin:
             except KeyError:
                 simulated_location = {}
         sim.location = simulated_location
+        sim.elapsed_minutes += action_minutes
         return True
 
     def _target_guidance(self, frame: DecisionFrame, bt: dict[str, Any]) -> Guidance:
@@ -775,7 +779,19 @@ class BehaviorViewMixin:
         action_successes, action_failures = sim.successes, sim.failures
         target_text, target_required, target_options = guidance.text, guidance.required, guidance.options
         parameter_options, source_parameter = guidance.parameter_options, guidance.source_parameter
+        estimate_parameters = {"safe_location_id": safe_location_id} if safe_location_id else {}
+        if source_parameter is not None and research_sources:
+            source = research_sources[0]
+            estimate_parameters.update(source_id=source["id"], source_location_id=source.get("location_id"))
+        minutes = estimator.behavior_minutes(bt_id, estimate_parameters, location_id)
+        destination = sim.location.get("id")
+        route = (
+            {"kind": "travel", "destination_id": destination, "duration_minutes": minutes}
+            if len(steps) == 1 and destination and destination != location_id and not bt.get("agent_parameters")
+            else {}
+        )
         return {
+            **route,
             "ref": f"behavior:{bt_id}",
             "registration": "platform_validated",
             "catalog_source": bt.get("kind", "configured"),
@@ -794,7 +810,7 @@ class BehaviorViewMixin:
                 for spec in [raw_spec if isinstance(raw_spec, dict) else {"type": str(raw_spec)}]
             ],
             "steps": steps[:5],
-            "time": f"{estimator.behavior_minutes(bt_id, ({'safe_location_id': safe_location_id} if safe_location_id else {}) | ({'source_id': research_sources[0]['id'], 'source_location_id': research_sources[0].get('location_id')} if source_parameter is not None and research_sources else {}), location_id)} minutes",
+            "time": f"{minutes} minutes",
             "parameter_options": parameter_options,
             "cost": self._merge_cost_lines(costs)[:6] or ["Costs are defined by the selected steps."],
             "impact": list(dict.fromkeys(impacts))[:3] or ["Platform applies configured effects and records events."],

@@ -33,6 +33,7 @@ EFFECT_TYPES = frozenset(
         "relationship_delta", "public_event", "world_property_delta", "world_property_set",
         "entity_state_set", "status_add", "status_remove", "location_set",
         "world_resource_delta", "resource_transfer", "resource_withdrawal", "resource_take", "catalog_action", "capability_xp", "capability.add_xp",
+        "institution_allocation", "threat_delta",
     }
 )
 
@@ -164,8 +165,10 @@ def compile_definition_shape(
             if isinstance(definition.get(field), list) and len(definition[field]) == 1 and isinstance(definition[field][0], dict):
                 definition[field] = definition[field][0]
         duration = definition.get("duration") if isinstance(definition.get("duration"), dict) else {}
-        if not duration or not (_is_number(duration.get("minutes")) or duration.get("mode") in {"route_distance", "recipe_duration"}):
+        if not duration or not (_is_number(duration.get("minutes")) or duration.get("mode") in {"route_distance", "recipe_duration", "until_day_phase"}):
             errors.append("action.duration must declare minutes or a supported mode")
+        if duration.get("mode") == "until_day_phase" and not (isinstance(duration.get("phase"), str) and duration["phase"].strip()):
+            errors.append("action.duration.phase must name a configured calendar phase")
         if _is_number(duration.get("minutes")) and float(duration["minutes"]) <= 0:
             errors.append("action.duration.minutes must be positive")
         for field in ("preconditions", "effects", "progress_effects"):

@@ -2,7 +2,8 @@ agents:
 - id: alan
   name: 阿岚
   role: 机械师
-  controller: bt
+  controller: llm
+  controller_fallback: bt
   ultimate_goal: 让风脊号重新飞起来，同时不承认自己害怕高度。
   traits:
     手巧: 0.9
@@ -24,7 +25,12 @@ agents:
     medicine: 0.3
     conversation: 0.45
     cooking: 0.3
+  bt_priority:
+  - allocate_emergency_stock_defense
+  - allocate_emergency_stock_relief
   initial_bt_ids:
+  - allocate_emergency_stock_defense
+  - allocate_emergency_stock_relief
   - take_ration
   - fill_water
   - eat_ration
@@ -44,7 +50,8 @@ agents:
 - id: yanqiu
   name: 砚秋
   role: 制图师
-  controller: bt
+  controller: llm
+  controller_fallback: bt
   ultimate_goal: 画完裂天群岛的完整海图，也决定那张旧图要不要给别人看。
   traits:
     记路: 0.9

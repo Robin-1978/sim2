@@ -126,6 +126,7 @@ def test_llm_call_statistics_reads_per_role_token_and_latency_usage(tmp_path: Pa
             [
                 ("agent_decision", 1000, 400, 100, 50, 1),
                 ("agent_decision", 2000, 1200, 200, 250, 2),
+                ("agent_decision", 750, None, 90, 90, 1),
                 ("god", 3000, 2000, 80, 500, 1),
             ],
         )
@@ -135,10 +136,11 @@ def test_llm_call_statistics_reads_per_role_token_and_latency_usage(tmp_path: Pa
 
     stats = _llm_call_statistics({"db_path": str(db_path)})
 
-    assert stats["calls"] == 3
+    assert stats["calls"] == 4
     assert stats["by_role"]["agent_decision"]["cache_hit_rate"] == 0.5333
+    assert stats["by_role"]["agent_decision"]["cache_measured_prompt_tokens"] == 3000
     assert stats["by_role"]["agent_decision"]["prompt_tokens"]["p95"] == 2000.0
-    assert stats["iteration_counts"] == {"1": 2, "2": 1}
+    assert stats["iteration_counts"] == {"1": 3, "2": 1}
 
 
 def test_only_same_boundary_success_recovers_provider_error():

@@ -36,7 +36,13 @@ class LlmRepository:
         prompt_tokens = usage.get("prompt_tokens")
         completion_tokens = usage.get("completion_tokens")
         details = usage.get("prompt_tokens_details") if isinstance(usage.get("prompt_tokens_details"), dict) else {}
-        cached_tokens = usage.get("cached_tokens", usage.get("prompt_cache_hit_tokens", details.get("cached_tokens")))
+        cached_tokens = next((value for value in (
+            usage.get("prompt_cache_hit_tokens"), details.get("cached_tokens"), usage.get("cached_tokens"),
+        ) if type(value) is int and value >= 0), None)
+        if type(prompt_tokens) is not int and cached_tokens is not None and type(usage.get("prompt_cache_miss_tokens")) is int:
+            prompt_tokens = cached_tokens + usage["prompt_cache_miss_tokens"]
+        if type(prompt_tokens) is int and cached_tokens is not None and cached_tokens > prompt_tokens:
+            cached_tokens = None
         with self.store._write_lock:
             cur = self.store.connection.execute(
                 "INSERT INTO llm_call(actor_id,role,task_type,iteration,context_hash,response_json,status,world_minute,prompt_tokens,cached_tokens,completion_tokens,static_prefix_hash,static_prefix_chars,dynamic_chars,request_latency_ms,prompt_tokens_est,context_metrics_json) "
@@ -68,8 +74,11 @@ class LlmRepository:
         """Report provider cache evidence and prompt-prefix reuse separately."""
 
         row = self.store.connection.execute(
-            "SELECT COUNT(*) AS calls, SUM(CASE WHEN cached_tokens IS NOT NULL THEN 1 ELSE 0 END) AS measured, "
-            "COALESCE(SUM(prompt_tokens),0) AS prompt_tokens, COALESCE(SUM(cached_tokens),0) AS cached_tokens, "
+            "SELECT COUNT(*) AS calls, COUNT(prompt_tokens) AS usage_calls, "
+            "SUM(CASE WHEN cached_tokens IS NOT NULL AND prompt_tokens IS NOT NULL THEN 1 ELSE 0 END) AS measured, "
+            "COALESCE(SUM(prompt_tokens),0) AS prompt_tokens, "
+            "COALESCE(SUM(CASE WHEN cached_tokens IS NOT NULL THEN prompt_tokens END),0) AS measured_prompt_tokens, "
+            "COALESCE(SUM(CASE WHEN prompt_tokens IS NOT NULL THEN cached_tokens END),0) AS cached_tokens, "
             "COALESCE(SUM(completion_tokens),0) AS completion_tokens, COALESCE(AVG(request_latency_ms),0) AS average_latency_ms, COALESCE(MAX(request_latency_ms),0) AS max_latency_ms FROM llm_call"
         ).fetchone()
         prefixes = self.store.connection.execute(
@@ -82,10 +91,13 @@ class LlmRepository:
         measured = int(row["measured"] or 0)
         prompt_tokens = int(row["prompt_tokens"] or 0)
         cached_tokens = int(row["cached_tokens"] or 0)
+        measured_prompt_tokens = int(row["measured_prompt_tokens"] or 0)
         return {
             "calls": calls,
-            "provider_usage_calls": measured,
-            "provider_cache_hit_rate": round(cached_tokens / prompt_tokens, 4) if prompt_tokens else None,
+            "provider_usage_calls": int(row["usage_calls"] or 0),
+            "provider_cache_measured_calls": measured,
+            "provider_cache_prompt_tokens": measured_prompt_tokens,
+            "provider_cache_hit_rate": round(cached_tokens / measured_prompt_tokens, 4) if measured_prompt_tokens else None,
             "cached_tokens": cached_tokens,
             "prompt_tokens": prompt_tokens,
             "completion_tokens": int(row["completion_tokens"] or 0),

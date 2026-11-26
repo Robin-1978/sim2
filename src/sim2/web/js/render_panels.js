@@ -515,7 +515,9 @@ export function renderTopology(canvas, map, options = {}) {
     const maxY = Math.max(...ys);
     const px = (x) => padX + ((x - minX) / Math.max(1, maxX - minX)) * (width - padX * 2);
     const py = (y) => padY + ((y - minY) / Math.max(1, maxY - minY)) * (height - padY * 2);
-    const routes = new Set((state.view?.routes || []).map((route) => route.id));
+    const routes = new Map((state.view?.actions || [])
+      .filter((action) => action.kind === "travel")
+      .map((action) => [action.destination_id || action.parameters?.location_id, action]));
     const current = state.view?.location?.id;
 
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -541,7 +543,8 @@ export function renderTopology(canvas, map, options = {}) {
     wrap.append(svg);
     for (const item of positions) {
       const node = item.node;
-      const reachable = routes.has(node.id);
+      const travelAction = routes.get(node.id);
+      const reachable = Boolean(travelAction);
       const closed = node.open === false;
       const button = el("button", `map-node${node.id === current ? " current" : ""}${reachable && !closed ? " reachable" : ""}${closed ? " closed" : ""}`);
       button.type = "button";
@@ -564,9 +567,6 @@ export function renderTopology(canvas, map, options = {}) {
       if (reachable && !closed && node.id !== current) {
         // The server words every travel action from the world's ui_text, so the
         // map reuses it instead of composing its own phrases.
-        const travelAction = (state.view?.actions || []).find(
-          (entry) => entry.ref === "behavior:travel" && entry.parameters?.location_id === node.id,
-        );
         button.title = travelAction?.choice || node.name || node.id;
         button.addEventListener("click", () => travelToNode(node));
       }

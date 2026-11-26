@@ -688,10 +688,10 @@ class ActivityRuntimeMixin:
                         target_amount = max(float(cap["min"]), target_amount)
                     if isinstance(cap.get("max"), (int, float)):
                         target_amount = min(float(cap["max"]), target_amount)
-                self.resources._change_world_resource(
+                self.resources.change_for_behavior(
+                    agent,
                     resource_id,
                     target_amount - float(current.get("amount", 0) or 0),
-                    actor_id=agent.get("id"),
                 )
             elif effect_type == "resource_withdrawal":
                 # Two-phase shared-resource withdrawal.  The admission
@@ -720,7 +720,7 @@ class ActivityRuntimeMixin:
                     errors.append("the shared resource has insufficient stock")
                 else:
                     before = float(current.get("amount", 0) or 0)
-                    self.resources._change_world_resource(resource_id, -amount, actor_id=agent.get("id"))
+                    self.resources.change_for_behavior(agent, resource_id, -amount)
                     after = before - amount
                     if output_item:
                         inventory[output_item] = float(inventory.get(output_item, 0) or 0) + amount
@@ -850,7 +850,7 @@ class ActivityRuntimeMixin:
                         if isinstance(maximum, (int, float)) and current + quantity > float(maximum):
                             errors.append("the shared resource is at capacity")
                         else:
-                            self.resources._change_world_resource(resource_id, quantity, actor_id=agent.get("id"))
+                            self.resources.change_for_behavior(agent, resource_id, quantity)
             elif effect_type == "entity_state_set":
                 entity_id = resolved_effect.get("entity_id") or resolved_effect.get("target_entity")
                 state_key = resolved_effect.get("state") or resolved_effect.get("property")
@@ -872,6 +872,10 @@ class ActivityRuntimeMixin:
                             "entity.state_changed", agent["id"], minute,
                             {"entity_id": entity["id"], "state": str(state_key), "before": before_value, "after": entity_state[str(state_key)], "action_id": action.get("id")},
                         )
+                    else:
+                        errors.append(f"entity_state_set target does not exist: {entity_id}")
+                else:
+                    errors.append("entity_state_set requires an entity and state field")
             elif effect_type == "institution_allocation":
                 allocation = self._context.services["social"].apply_institution_allocation(
                     str(resolved_effect.get("institution") or ""),
@@ -902,8 +906,10 @@ class ActivityRuntimeMixin:
                 else:
                     self._context.services["events"].append("institution.allocation_failed", agent["id"], minute, allocation)
                     errors.append(str(allocation.get("message") or allocation.get("failed_check") or "institution allocation failed"))
-            else:
-                self.effects.apply(receiver, resolved_effect, target=effect_target, formula_agent=agent)
+            elif effect_type not in {"capability_xp", "capability.add_xp"}:
+                outcome = self.effects.apply(receiver, resolved_effect, target=effect_target, formula_agent=agent)
+                if outcome.get("error"):
+                    errors.append(str(outcome["error"]))
             if receiver is not agent:
                 self.store.repositories.entities.update_agent(receiver["id"], receiver)
             if effect.get("type") in {"capability_xp", "capability.add_xp"} or effect.get("op") == "capability.add_xp":
@@ -1222,6 +1228,7 @@ class ActivityRuntimeMixin:
         """Persist information produced by configured information channels."""
 
         information = action.get("information", {}) or {}
+        configured_event = information.get("event_type")
         result: dict[str, Any] = {}
         area_id = parameters.get("area_id") or information.get("area_parameter") and parameters.get(information["area_parameter"])
         source_id = parameters.get("source_id") or information.get("source_parameter") and parameters.get(information["source_parameter"])
@@ -1230,6 +1237,9 @@ class ActivityRuntimeMixin:
         message = str(parameters.get("message") or "").strip()
         if area_id:
             area_id = str(area_id)
+            authored_exploration = configured_event == "exploration.completed"
+            if authored_exploration:
+                configured_event = None
             if area_id not in self.store.repositories.memory.explored_areas(agent["id"]):
                 result_id = self.store.repositories.activity.put_exploration_result(agent["id"], area_id, minute, {"source": action.get("id"), "parameters": parameters})
                 area = self.store.repositories.entities.get_entity(area_id) if area_id else {}
@@ -1255,7 +1265,15 @@ class ActivityRuntimeMixin:
                                 unlocked_behavior_limit(self.store.repositories.metadata.get("rules", {}) or {}),
                             )
                             self._context.services["events"].append("behavior.unlocked", agent["id"], minute, {"behavior_id": behavior_id, "discovery_id": discovery_id, "source": "exploration"})
-                event_id = self._context.services["events"].publish("exploration.completed", agent["id"], minute, {"area_id": area_id, "result_id": result_id, "discoveries": [str(item.get("id")) for item in discoveries]}, wake="story_source")
+                payload = {"area_id": area_id, "result_id": result_id, "discoveries": [str(item.get("id")) for item in discoveries]}
+                wake: str | dict[str, Any] = "story_source"
+                if authored_exploration:
+                    payload = {**(information.get("data") or {}), **payload, "action_id": action.get("id"), "parameters": parameters}
+                    if information.get("summary"):
+                        payload["summary"] = str(information["summary"])
+                    if information.get("configured") or information.get("wake"):
+                        wake = information
+                event_id = self._context.services["events"].publish("exploration.completed", agent["id"], minute, payload, wake=wake)
                 result = {"result": "exploration_completed", "event_id": event_id}
         if source_id:
             source_id = str(source_id)
@@ -1324,7 +1342,6 @@ class ActivityRuntimeMixin:
                 self.store.repositories.entities.update_agent(listener["id"], listener)
             event_id = self._context.services["events"].append("dialogue.completed", agent["id"], minute, {"target_id": target_id, "topic": str(topic), "message": message, "dialogue_id": dialogue_id, **testimony})
             result = {"result": "dialogue_recorded", "event_id": event_id}
-        configured_event = information.get("event_type")
         observed: dict[str, Any] = {}
         observed_id = parameters.get("object_id") or parameters.get("entity_id") or parameters.get("item_id") or parameters.get("source_id") or parameters.get("area_id")
         if observed_id:
@@ -1469,17 +1486,19 @@ class ActivityRuntimeMixin:
         behavior_definition = next((item for item in self.store.repositories.entities.get_definitions("bt_def") if item.get("id") == behavior_id), {})
         if status == "completed" and result == "behavior_completed":
             result = str(state.get("last_action_result") or result)
+        outcome_effects = behavior_definition.get("outcome_effects") or []
+        if status == "completed" and outcome_effects:
+            failure, _ = self._complete_action_effects(
+                agent, {"id": f"behavior:{behavior_id}", "effects": outcome_effects}, {}, minute,
+            )
+            if failure:
+                status, result = "failed", failure
+            state = dict(agent.get("initial_state") or {})
         if status != "completed":
             reservations = list(state.get("active_action_reservation") or [])
             for item in (state.get("active_parallel_actions") or {}).values():
                 reservations.extend(item.get("reservation", []) or [])
             self.resources.release(agent, reservations)
-        if status == "completed":
-            # BT-level effects are declarative too.  Running them through the
-            # same Platform effect pipeline ensures governance, patrol and
-            # other composite behaviors can change the world as well as the
-            # actor without introducing world-specific branches here.
-            self._apply_success_effects(agent, {"id": f"behavior:{behavior_id}", "effects": behavior_definition.get("outcome_effects", []) or []}, {}, minute)
         after = self._context.services["execution"].execution_snapshot(agent)
         outcome = {
             "status": status,

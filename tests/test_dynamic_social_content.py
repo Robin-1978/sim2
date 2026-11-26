@@ -398,10 +398,15 @@ def test_da_05_director_demand_and_completion(platform: Platform) -> None:
 
     install_social_content(platform)
     tick_to(platform, 10)
+    assert platform.store.repositories.metadata.get("season_plan")["plan_id"] == plan["plan_id"]
+    assert not platform.store.repositories.metadata.get("last_completed_season_plan")
+    fill_reserve(platform)
+    advance_until(platform, lambda: bool(platform.store.repositories.metadata.get("last_completed_season_plan")))
     completed = platform.store.repositories.metadata.get("last_completed_season_plan")
     assert completed["status"] == "completed"
     assert completed["target_cell"] == "resource"
     assert completed["baseline"] == 0
+    assert completed["outcome_event_id"]
     next_plan = platform.store.repositories.metadata.get("season_plan")
     assert next_plan["baseline"] == 1
     assert next_plan["plan_id"] != completed["plan_id"]

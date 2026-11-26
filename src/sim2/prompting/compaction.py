@@ -288,11 +288,16 @@ def fit_to_limit(
     max_chars: int,
     *,
     max_tokens: int | None = None,
+    required_sections: frozenset[str] = frozenset(),
 ) -> str:
     """Compact a rendered prompt to its character and optional token budget."""
 
     def fits(text: str) -> bool:
-        return len(text) <= max_chars and (max_tokens is None or estimate_tokens(text) <= max_tokens)
+        return (
+            len(text) <= max_chars
+            and (max_tokens is None or estimate_tokens(text) <= max_tokens)
+            and not missing_sections(text, required_sections)
+        )
 
     if fits(rendered):
         return rendered
@@ -301,7 +306,7 @@ def fit_to_limit(
     # latest tool result. Remove only retrievable background sections first;
     # cutting the middle of the behavior catalog can leave an unusable prompt.
     for tag in _background_order(rendered):
-        if tag in _PINNED_SECTIONS:
+        if tag in _PINNED_SECTIONS or tag in required_sections:
             continue
         rendered, removed = _remove_block(rendered, tag)
         if removed:
@@ -309,6 +314,17 @@ def fit_to_limit(
             note = f"\n<context_limit>Omitted {', '.join(omitted)}; use a read tool if needed.</context_limit>"
             if fits(rendered + note):
                 return rendered + note
+    if required_sections:
+        # Under an aggregate request limit, remove whole optional blocks
+        # before attempting the legacy line-based fallbacks.
+        for tag in section_sizes(rendered):
+            if tag in required_sections:
+                continue
+            candidate, removed = _remove_block(rendered, tag)
+            if removed and not missing_sections(candidate, required_sections):
+                rendered = candidate
+                if fits(rendered):
+                    return rendered
     # As a final guard, keep the complete behavior catalog and the final task
     # section while compacting the remaining prose. This is rarely reached
     # because the compiler already caps memories, facts, and candidates.
@@ -344,3 +360,7 @@ def fit_to_limit(
             return candidate
         budget = int(budget * 0.85)
     return rendered[: max(0, max_chars - 100)] + "\n<context_limit>Context was compacted; use a read tool if needed.</context_limit>"
+
+
+def missing_sections(text: str, required: frozenset[str]) -> list[str]:
+    return sorted(tag for tag in required if f"<{tag}>" not in text or f"</{tag}>" not in text)

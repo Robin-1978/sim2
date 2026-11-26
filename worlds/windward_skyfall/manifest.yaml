@@ -1,4 +1,4 @@
-config_version: windward-skyfall-0.1
+config_version: windward-skyfall-0.4
 world_id: windward_skyfall
 order: 5
 name: 风脊号
@@ -6,6 +6,8 @@ time_unit: minute
 start_world_minute: 0
 random_seed: 87231
 files:
+- assets/dawn.webp
+- assets/lantern-cape.webp
 - setting.yaml
 - world_state.yaml
 - locations.yaml

@@ -184,8 +184,9 @@ def activity_lines(context: dict[str, Any]) -> list[str]:
     recent_lines = []
     for item in recent_actions[:2]:
         label = f" ({item['behavior_choice']})" if item.get("behavior_choice") else ""
+        source = f" [event:{item['event_id']}]" if context.get("role") == "agent_reflection" and item.get("event_id") else ""
         recent_lines.append(
-            f"  - {item.get('event_type')}{label}: "
+            f"  - {item.get('event_type')}{label}{source}: "
             f"{item.get('result') or item.get('summary') or 'completed'} "
             f"at world minute {item.get('world_minute', 'unknown')}"
         )
@@ -223,8 +224,9 @@ def reflection_lines(context: dict[str, Any]) -> list[str]:
             outcome = item.get("outcome") or {}
             expected = outcome.get("expected") or {}
             delta = outcome.get("delta") or {}
+            source = f"event:{item['event_id']} " if item.get("event_id") else ""
             lines.append(
-                f"  - {item.get('behavior_choice') or item.get('behavior_name') or 'behavior'}: {outcome.get('status', item.get('event_type', 'unknown'))}; "
+                f"  - {source}{item.get('behavior_choice') or item.get('behavior_name') or 'behavior'}: {outcome.get('status', item.get('event_type', 'unknown'))}; "
                 f"result={outcome.get('result', 'unknown')}; expected={expected.get('summary', 'not stated')}; "
                 f"observed_changes={plain(delta) if delta else 'none'}"
             )

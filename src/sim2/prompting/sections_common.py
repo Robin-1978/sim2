@@ -45,6 +45,17 @@ def interaction_lines(context: dict[str, Any]) -> list[str]:
     """The incoming interaction and the evidence that woke this turn."""
 
     lines: list[str] = []
+    briefs = context.get("decision_briefs") or []
+    if briefs:
+        lines.append("<decision_briefs>")
+        lines.append("  Compare each deadline and cost of delay with the duration of available actions.")
+        for item in briefs:
+            lines.append(
+                f"  - {line(item.get('summary'))} Claimants: {line(item.get('claimants'))}. "
+                f"Time remaining: {item['remaining_minutes']} world minutes. "
+                f"If unresolved: {line(item.get('miss_cost'))}."
+            )
+        lines.append("</decision_briefs>")
     interaction = context.get("interaction") or {}
     if interaction:
         player_message = str(interaction.get("origin") or "") == "player"

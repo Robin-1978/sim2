@@ -1,4 +1,63 @@
 actions:
+- id: rescue_kite_scout
+  verb: rescue
+  version: 1
+  description: 拉回风筝人的斥候，赢得风筝人的信任。另一根缆绳上的铜料会坠入云海。
+  preconditions:
+  - actor.alive
+  - actor.role == 'player'
+  - location.tag.camp
+  - world.day == 1
+  - context.day_phase == 'dawn'
+  - world.dawn_salvage == 0
+  - world.ending_trigger == 0
+  duration: {minutes: 6}
+  costs: {reserve: {}, per_minute: {}, on_success: {}, on_failure: {}, refund: {}}
+  effects:
+  - {type: world_property_set, property: dawn_salvage, value: 1}
+  - {type: world_property_delta, property: kite_rep, delta: 0.25, maximum: 1}
+  - type: public_event
+    event: skyfall.dawn_salvage
+    data: {choice: rescue}
+    summary: 你拉回了风筝人的斥候。另一根缆绳松脱，铜料沉入云海。断桥会记住你。
+  failure:
+    condition: actor.incapacitated or world.dawn_salvage != 0 or context.day_phase != 'dawn' or world.ending_trigger != 0
+    result: dawn_salvage_closed
+  success: {condition: actor.alive, result: dawn_scout_rescued}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: salvage_dawn_copper
+  verb: salvage
+  version: 1
+  description: 获得两份铜矿和一块自动补船的铜板。斥候的求救灯会消失在云里。
+  preconditions:
+  - actor.alive
+  - actor.role == 'player'
+  - location.tag.camp
+  - world.day == 1
+  - context.day_phase == 'dawn'
+  - world.dawn_salvage == 0
+  - world.ending_trigger == 0
+  duration: {minutes: 6}
+  costs: {reserve: {}, per_minute: {}, on_success: {}, on_failure: {}, refund: {}}
+  effects:
+  - {type: world_property_set, property: dawn_salvage, value: 2}
+  - {type: world_property_set, property: supply_spare_plates, value: 1}
+  - {type: inventory_add, item: copper_ore, quantity: 2}
+  - type: public_event
+    event: skyfall.dawn_salvage
+    data: {choice: copper}
+    summary: 铜料落在甲板上，阿岚收起一块铜板备用。再低头时，斥候的求救灯已经消失在云里。
+  failure:
+    condition: actor.incapacitated or world.dawn_salvage != 0 or context.day_phase != 'dawn' or world.ending_trigger != 0
+    result: dawn_salvage_closed
+  success: {condition: actor.alive, result: dawn_copper_salvaged}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
 - id: travel_to
   verb: move
   version: 1
@@ -78,6 +137,7 @@ actions:
   executor: effect_pipeline
   information:
     event_type: exploration.completed
+    configured: true
     summary: 你把这座岛的地形、资源和能走的路记进了海图。
     area_parameter: area_id
     result: exploration_completed
@@ -534,7 +594,7 @@ actions:
   preconditions:
   - actor.alive
   - location.tag.salvage
-  - target.location_id == context.location_id
+  - context.current_location.id == context.destination_id
   duration:
     minutes: 60
   costs:
@@ -557,7 +617,7 @@ actions:
     condition: actor.alive
     result: resource_gathered
   failure:
-    condition: actor.incapacitated
+    condition: actor.incapacitated or context.current_location.id != context.destination_id
     result: gathering_failed
   interrupt_policy: pause
   interaction_policy: allow
@@ -1807,7 +1867,7 @@ actions:
     condition: actor.alive
     result: launched
   failure:
-    condition: actor.incapacitated
+    condition: actor.incapacitated or world.ending_trigger != 0 or world.hull_integrity <= 0.2
     result: failed
   interrupt_policy: pause
   interaction_policy: allow
@@ -1851,7 +1911,7 @@ actions:
     condition: actor.alive
     result: anchored
   failure:
-    condition: actor.incapacitated
+    condition: actor.incapacitated or world.ending_trigger != 0 or world.hull_integrity <= 0
     result: failed
   interrupt_policy: pause
   interaction_policy: allow
@@ -1888,7 +1948,7 @@ actions:
     condition: actor.alive
     result: stormborn
   failure:
-    condition: actor.incapacitated
+    condition: actor.incapacitated or world.ending_trigger != 0 or world.hull_integrity <= 0 or world.storm_pressure < 90
     result: failed
   interrupt_policy: pause
   interaction_policy: allow
@@ -2103,7 +2163,8 @@ actions:
   - actor.alive
   - context.day_phase == night
   duration:
-    minutes: 480
+    mode: until_day_phase
+    phase: dawn
   costs:
     reserve: {}
     per_minute: {}
@@ -2515,3 +2576,118 @@ actions:
   interaction_policy: allow
   kind: atomic
   executor: effect_pipeline
+- id: allocate_emergency_stock_defense
+  verb: allocate
+  version: 1
+  description: 用尽本批铜料加固船体，断桥这一轮得不到支援。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.supply_consultation == 1
+  - world.supply_minutes > 0
+  - world.emergency_stock >= 3
+  - world.ending_trigger == 0
+  - world.supply_relief_due == 0
+  duration:
+    minutes: 20
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_resource_delta
+    resource_id: emergency_copper_cache
+    delta: -3
+    minimum: 0
+  - type: world_property_set
+    property: supply_consultation
+    value: 2
+  - type: world_property_set
+    property: supply_relief_due
+    value: 1
+  - type: world_property_set
+    property: supply_spare_plates
+    value: 1
+  - type: world_property_delta
+    property: kite_rep
+    delta: -0.08
+    minimum: 0
+    maximum: 1
+  - type: public_event
+    event: supply.reserved
+    data: {resource_id: emergency_copper_cache, quantity: 3, use: hull_repair}
+    summary: 用尽本批铜料加固船体，断桥这一轮得不到支援。
+  failure:
+    condition: actor.incapacitated or world.supply_consultation != 1 or world.supply_minutes
+      <= 0 or world.emergency_stock < 3 or world.ending_trigger != 0 or world.supply_relief_due
+      > 0
+    result: supply_window_closed
+  success:
+    condition: actor.alive
+    result: supply_reserved
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: allocate_emergency_stock_relief
+  verb: allocate
+  version: 1
+  description: 用尽本批铜料支援断桥，本轮船体少了一次加固机会。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.camp
+  - world.supply_consultation == 1
+  - world.supply_minutes > 0
+  - world.emergency_stock >= 3
+  - world.ending_trigger == 0
+  duration:
+    minutes: 20
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_resource_delta
+    resource_id: emergency_copper_cache
+    delta: -3
+    minimum: 0
+  - type: world_property_set
+    property: supply_consultation
+    value: 3
+  - type: world_property_set
+    property: supply_relief_due
+    value: 0
+  - type: world_resource_delta
+    resource_id: outpost_copper_cache
+    delta: 3
+  - type: world_property_delta
+    property: kite_rep
+    delta: 0.16
+    minimum: 0
+    maximum: 1
+  - type: world_property_delta
+    property: camp_morale
+    delta: 0.03
+    minimum: 0
+    maximum: 1
+  - type: public_event
+    event: supply.shared
+    data: {resource_id: emergency_copper_cache, quantity: 3, destination: outpost_copper_cache}
+    summary: 用尽本批铜料支援断桥，本轮船体少了一次加固机会。
+  failure:
+    condition: actor.incapacitated or world.supply_consultation != 1 or world.supply_minutes
+      <= 0 or world.emergency_stock < 3 or world.ending_trigger != 0
+    result: supply_window_closed
+  success:
+    condition: actor.alive
+    result: supply_shared
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow

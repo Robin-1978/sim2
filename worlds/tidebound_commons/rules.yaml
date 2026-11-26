@@ -1,4 +1,6 @@
 vital_attribute: integrity
+decision_policy:
+  wake_events: [supply.claims_opened]
 capacity_attribute: stamina
 research_default_required: 2
 incapacitation:
@@ -56,6 +58,9 @@ item_labels:
   reed_rope: 芦苇绳
   gate_brace: 潮门支撑件
 world_property_labels:
+  emergency_stock: {label: 应急淡水, unit: amount, max: 4, group: 储备}
+  relief_water_waiting: {label: 已划拨待入库淡水, unit: amount, group: 储备}
+  supply_minutes: {label: 配给窗口剩余分钟, unit: minutes, max: 250, group: 储备}
   tide_gate_integrity: {label: 潮门完整性, unit: percent, max: 1, group: 防线, group_order: 1, order: 2}
   gate_supports: {label: 临时支撑, unit: percent, max: 1, group: 防线, group_order: 1, order: 3}
   gate_repairs: {label: 已修复次数, unit: amount, max: 3, group: 防线, group_order: 1, order: 4}
@@ -121,6 +126,8 @@ resource_caps:
   driftwood: {max: 60, min: 0}
   commons_tool_rack: {max: 3, min: 0}
 resource_property_projections:
+  emergency_water_cache: emergency_stock
+  relief_water_cache: relief_water_waiting
   fresh_water: fresh_water_reserve
   commons_tool_rack: commons_tool_kits
 world_rules:
@@ -248,6 +255,66 @@ motivation_model:
   - competence
   - meaning_and_goal_progress
 minute_effects:
+- id: store_relieved_water
+  scope: world
+  every_minutes: 1
+  condition: world.relief_water_waiting >= 1 and world.fresh_water_reserve <= 29
+  effects:
+  - {type: world_resource_delta, resource_id: relief_water_cache, delta: -1, minimum: 0}
+  - {type: world_resource_delta, resource_id: fresh_water, delta: 1, maximum: 30}
+- id: supply_window_countdown
+  scope: world
+  every_minutes: 1
+  condition: world.supply_consultation == 1 and world.supply_minutes > 0
+  effect:
+    type: world_property_delta
+    property: supply_minutes
+    delta: -1
+    minimum: 0
+    maximum: 250
+- id: supply_window_expiry
+  scope: world
+  every_minutes: 1
+  condition: world.supply_consultation == 1 and world.supply_minutes <= 0
+  effects:
+  - type: world_property_set
+    property: supply_consultation
+    value: 4
+  - type: world_property_set
+    property: supply_relief_due
+    value: 1
+  - type: world_property_delta
+    property: public_confidence
+    delta: -0.03
+    minimum: 0
+    maximum: 1
+  event_type: supply.decision_expired
+  event_summary: 应急淡水分配逾期。停工和口粮争议降低了公社信心，下批先给居民。
+- id: supply_window_open
+  scope: world
+  every_minutes: 720
+  condition: world.supply_consultation != 1
+  effects:
+  - type: world_resource_delta
+    resource_id: emergency_water_cache
+    delta: 4
+    maximum: 4
+  - type: world_property_set
+    property: supply_consultation
+    value: 1
+  - type: world_property_set
+    property: supply_minutes
+    value: 250
+  event_type: supply.claims_opened
+  event_data:
+    resource_id: emergency_water_cache
+    units: 4
+    claimants: [mara, ivo]
+    audience: [mara]
+    deadline_minutes: 250
+    active_when: world.supply_consultation == 1
+    miss_cost: 公社信心下降，下一批淡水必须先还居民份额。
+  event_summary: 渡船送来四份应急淡水，抢修队和缺水住户都申请这一桶。
 - id: stamina_recovery
   scope: agent
   every_minutes: 1
@@ -849,8 +916,7 @@ progression:
   - craft_rope
   - craft_repair_kit
   - gather_shellfish
-  - deposit_repair_kit
-  - withdraw_repair_kit
+  - stock_repair_kit
   complete_when:
     event_type: storm.held
     count: 1
@@ -872,8 +938,7 @@ progression:
   - craft_rope
   - craft_repair_kit
   - gather_shellfish
-  - deposit_repair_kit
-  - withdraw_repair_kit
+  - stock_repair_kit
   complete_when:
     event_type: tide_gate.repaired
     count: 1
@@ -886,7 +951,7 @@ progression:
   - 玛拉
   - 伊沃
   target_behaviors:
-  - deposit_repair_kit
+  - stock_repair_kit
   support_behaviors:
   - craft_repair_kit
   - gather_driftwood

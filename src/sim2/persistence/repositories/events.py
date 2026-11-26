@@ -107,6 +107,28 @@ class EventsRepository:
         rows = self.store.connection.execute("SELECT event_type,COUNT(*) AS count FROM event_log GROUP BY event_type").fetchall()
         return {str(row["event_type"]): int(row["count"]) for row in rows}
 
+    def behavior_outcome_evidence(self, actor_id: str, execution_id: str) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+        """Find the outcome and resource changes for exactly one execution."""
+
+        rows = self.store.connection.execute(
+            "SELECT event_id,event_type,world_minute,data_json FROM event_log "
+            "WHERE actor_id=? AND event_type IN "
+            "('behavior.completed','behavior.failed','behavior.interrupted','resource.changed') "
+            "AND json_extract(data_json,'$.execution_id')=? ORDER BY event_id",
+            (actor_id, execution_id),
+        )
+        changes: list[dict[str, Any]] = []
+        for row in rows:
+            data = json.loads(row["data_json"])
+            event = {**data, "event_id": row["event_id"], "event_type": row["event_type"], "world_minute": row["world_minute"]}
+            if row["event_type"] == "resource.changed":
+                if isinstance(data.get("before"), (int, float)) and isinstance(data.get("after"), (int, float)):
+                    changes.append(event)
+                continue
+            if row["event_type"] != "behavior.interrupted" or data.get("hard"):
+                return event, changes
+        return None, []
+
     def matching_event_count(
         self,
         *,

@@ -84,6 +84,7 @@ export function wireUi() {
       if (event.key === "Enter") submitEntry($("entry-submit"));
     });
     $("entry-create-toggle").addEventListener("click", openCreatePanel);
+    $("entry-browse-worlds").addEventListener("click", openCreatePanel);
     $("entry-open-editor").addEventListener("click", openEditor);
     $("new-instance-submit").addEventListener("click", (event) => createWorldInstance(event.currentTarget));
     $("entry-worlds-refresh").addEventListener("click", () => loadEntryContext());
@@ -118,11 +119,13 @@ export function wireUi() {
       renderMobileActionBar();
     });
     $("mobile-primary").addEventListener("click", (event) => {
-      const action = $("mobile-action-bar")._action;
+      const bar = $("mobile-action-bar");
       if (state.view?.active_task?.bt || state.view?.active_task?.action) {
         advanceTask("继续：");
-      } else if (action) {
-        beginAction(action, event.currentTarget);
+      } else if (bar._opportunity) {
+        $("opportunity-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+      } else if (bar._action) {
+        beginAction(bar._action, event.currentTarget);
       }
     });
     $("mobile-more").addEventListener("click", () => {

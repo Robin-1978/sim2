@@ -10,16 +10,18 @@ export function renderEntry() {
     const players = Array.isArray(entry.players) ? entry.players : [];
     const hasPlayer = players.length > 0;
     const noWorld = !open;
-    renderEntryCover();
-    $("entry-title").textContent = noWorld ? "开始一个新世界" : (world.title || "世界");
+    const featured = noWorld ? state.worlds.find((item) => item.kind === "world" && item.cover_art) : null;
+    if (featured && !state.selectedWorldPackage) state.selectedWorldPackage = featured.id;
+    renderEntryCover(featured ? { id: featured.id, ui: { cover_art: featured.cover_art } } : world);
+    $("entry-title").textContent = noWorld ? (featured?.name || "开始一个新世界") : (world.title || "世界");
     document.title = noWorld ? "sim2 · 世界大厅" : `${world.title || "世界"} · sim2`;
     $("entry-premise").textContent = noWorld
-      ? "还没有可进入的世界。选择一个模板创建第一个实例，或者创建后从存档列表进入。"
+      ? (featured?.premise || "从世界列表选一个世界，开启新的存档。")
       : (world.premise || "读取世界入口…");
     const taglineText = noWorld ? "" : resolveWorldTemplate(world.ui?.tagline || "", world);
     $("entry-tagline").textContent = taglineText;
     $("entry-tagline").classList.toggle("hidden", !taglineText);
-    $("entry-genre").textContent = noWorld ? "世界大厅" : (world.genre || "世界模拟");
+    $("entry-genre").textContent = noWorld ? (featured ? "世界选集 · 推荐开局" : "世界大厅") : (world.genre || "世界模拟");
     $("entry-season").textContent = world.season || "—";
     $("entry-instance").textContent = noWorld ? "未创建" : (world.instance_id || "当前实例");
     $("hud-world-title").textContent = noWorld ? "世界大厅" : (world.title || "世界");
@@ -29,11 +31,13 @@ export function renderEntry() {
     $("entry-new-character").classList.toggle("hidden", noWorld || hasPlayer);
     $("entry-origin-section").classList.toggle("hidden", noWorld || hasPlayer);
     $("entry-submit").classList.toggle("hidden", noWorld || hasPlayer);
+    $("entry-submit").textContent = world.ui?.entry_action || "进入世界";
     $("entry-return").classList.toggle("hidden", !state.playerId);
-    $("entry-screen").classList.toggle("has-player", hasPlayer);
 
     renderEntryStakes(noWorld);
     renderEntryCast(noWorld);
+    $("entry-world-details").classList.toggle("hidden", $("entry-stakes").classList.contains("hidden")
+      && $("entry-cast").classList.contains("hidden"));
     renderEntryInstances();
     renderContinue(players);
     if (!noWorld) renderOrigins(entry);
@@ -96,7 +100,7 @@ export function renderEntryInstances() {
       const card = el("article", `instance-card${item.active ? " active" : ""}`);
       card.append(el("strong", "", item.world_title || item.world_id || item.instance_id || "世界"));
       const day = Math.floor(Number(item.world_minute || 0) / 1440) + 1;
-      card.append(el("small", "", `${item.instance_id || "实例"} · 第 ${day} 天 · ${item.runtime_status || "未知状态"}`));
+      card.append(el("small", "", `第 ${day} 天 · ${item.instance_id || "存档"}`));
       const players = Array.isArray(state.entry?.players) ? state.entry.players : [];
       const resumePlayer = item.active ? players[0] : null;
       const label = item.active
@@ -153,6 +157,7 @@ export function renderOrigins(entry) {
     const list = $("origin-list");
     list.replaceChildren();
     if (!origins.length) {
+      $("origin-details").classList.add("hidden");
       list.append(el("p", "hint", "该世界没有配置出身；输入角色名即可进入。"));
       return;
     }
@@ -162,19 +167,33 @@ export function renderOrigins(entry) {
     for (const origin of origins) {
       const card = el("button", `origin-card${origin.id === state.selectedOrigin ? " active" : ""}`);
       card.type = "button";
+      card.setAttribute("aria-pressed", String(origin.id === state.selectedOrigin));
       card.append(el("strong", "", origin.name || origin.id));
       if (origin.description) card.append(el("small", "", origin.description));
-      const kit = (origin.starting_items || []).map((item) => `${item.label || item.item}×${item.quantity}`).join(" · ");
-      if (kit) card.append(el("div", "origin-kit", `起始：${kit}`));
       if (origin.goal) card.append(el("div", "origin-goal", `目标：${origin.goal}`));
-      if (origin.first_task) card.append(el("div", "origin-first-task", `第一件事：${origin.first_task}`));
       card.addEventListener("click", () => {
         state.selectedOrigin = origin.id;
-        for (const sibling of list.children) sibling.classList.remove("active");
-        card.classList.add("active");
+        for (const sibling of list.children) {
+          const selected = sibling === card;
+          sibling.classList.toggle("active", selected);
+          sibling.setAttribute("aria-pressed", String(selected));
+        }
+        renderOriginDetails(origin);
       });
       list.append(card);
     }
+    renderOriginDetails(origins.find((item) => item.id === state.selectedOrigin) || origins[0]);
+  }
+
+
+function renderOriginDetails(origin) {
+    const kit = (origin.starting_items || []).map((item) => `${item.label || item.item}×${item.quantity}`).join(" · ");
+    const body = $("origin-details-copy");
+    body.replaceChildren();
+    if (kit) body.append(el("p", "", `随身物品　${kit}`));
+    if (origin.first_task) body.append(el("p", "", origin.first_task));
+    $("origin-details").classList.toggle("hidden", !body.children.length);
+    $("origin-details-title").textContent = `${origin.name || origin.id}的开场与随身物品`;
   }
 
 
@@ -193,8 +212,10 @@ export function renderWorldTemplates() {
     for (const item of worlds) {
       const card = el("button", `world-template-card${item.id === state.selectedWorldPackage ? " active" : ""}`);
       card.type = "button";
-      paintWorldCard(card, item.id || item.name);
-      card.append(el("div", "world-card-cover"));
+      const cover = el("div", "world-card-cover");
+      cover.setAttribute("aria-hidden", "true");
+      card.append(cover);
+      paintWorldCard(card, item.id || item.name, item.cover_art);
       card.append(el("strong", "", item.name || item.id));
       if (item.genre) card.append(el("small", "", item.genre));
       if (item.premise) card.append(el("small", "", item.premise));
@@ -231,11 +252,13 @@ export function selectWorldPackage(item, card = null) {
 
 
 export function openCreatePanel() {
-    $("entry-create-panel").classList.remove("hidden");
+    const panel = $("entry-create-panel");
+    panel.classList.remove("hidden");
     renderWorldTemplates();
     const input = $("new-instance-id");
     if (input && !input.value && state.selectedWorldPackage) {
       input.value = `${state.selectedWorldPackage}_${Date.now().toString(36).slice(-4)}`;
     }
-    $("new-instance-id")?.focus({ preventScroll: true });
+    panel.focus({ preventScroll: true });
+    panel.scrollIntoView({ block: "start" });
   }

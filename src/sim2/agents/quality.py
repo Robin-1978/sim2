@@ -148,7 +148,8 @@ def _protocol_checks(turn: AgentTurn) -> list[dict[str, Any]]:
 
     checks: list[dict[str, Any]] = []
     checks.append(_check("session_finished", turn.result.get("status") in {"accepted", "wait", "skipped"}, f"status={turn.result.get('status')}"))
-    checks.append(_check("bounded_session", 0 <= turn.iterations <= 6, f"iterations={turn.iterations}"))
+    budget = turn.iteration_budget if turn.iteration_budget is not None else 6
+    checks.append(_check("bounded_session", 0 <= turn.iterations <= budget, f"iterations={turn.iterations}/{budget}"))
     rejected = [step for step in turn.transcript if step.get("result", {}).get("status") == "rejected"]
     checks.append(_check("platform_feedback_visible", not rejected or any(step.get("step") in {"tool", "intent"} for step in turn.transcript), f"rejections={len(rejected)}"))
     return checks
@@ -158,6 +159,9 @@ def evaluate_turn(turn: AgentTurn, view: dict[str, Any]) -> dict[str, Any]:
     """Score structural and semantic guardrails without trusting acceptance alone."""
 
     checks = _protocol_checks(turn)
+    if turn.result.get("failed_check") == "context_budget":
+        checks.append(_check("request_fits_context_budget", False, str(turn.result.get("message") or "required context did not fit")))
+        return {"role": turn.role, "iterations": turn.iterations, "checks": checks, "grade": "context_budget", "passed": False}
     if turn.result.get("failed_check") == "llm_response":
         checks.append(_check("provider_response_available", False, str(turn.result.get("message") or "provider returned no usable response")))
         return {

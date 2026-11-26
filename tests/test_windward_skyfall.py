@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 from sim2.api.service import ControlService
+from sim2.api.text import TextWorldSession
+from sim2.agents.engine import AgentEngine
 from sim2.bootstrap.service import create_instance, describe_config, upgrade_instance, validate_config
+from sim2.evolution.config import normalize_evolution_config
 from sim2.intents.models import BehaviorIntent
+from sim2.simulation.runner import SimulationRunner
 from worlds import world_path
 
 WORLD = Path(__file__).parents[1] / "worlds" / "windward_skyfall"
@@ -81,7 +87,8 @@ def test_windward_package_is_complete() -> None:
     contract = evolution["contracts"]["god_structural"]
     assert contract["required_definition_type"] == "behavior"
     assert contract["max_proposals"] == 1
-    assert "dynamic_salvage" in contract["required_content"]["behaviors_using_action"]
+    assert contract["required_content"]["growth_cell"] is True
+    assert contract["behavior_constraints"]["action_id"] == evolution["director"]["behavior_action"] == "dynamic_salvage"
 
 
 def test_first_expedition_builds_the_tool_ladder(tmp_path: Path) -> None:
@@ -115,6 +122,100 @@ def test_first_expedition_builds_the_tool_ladder(tmp_path: Path) -> None:
         service.close()
 
 
+@pytest.mark.parametrize(
+    ("choice", "result", "trust", "copper", "plates", "can_anchor"),
+    [
+        ("rescue_kite_scout", 1, 0.35, 0, 0, True),
+        ("salvage_dawn_copper", 2, 0.10, 2, 1, False),
+    ],
+)
+def test_dawn_choices_change_later_options(
+    tmp_path: Path, choice: str, result: int, trust: float, copper: int, plates: int, can_anchor: bool,
+) -> None:
+    service = ControlService(create_instance(WORLD, "windward-dawn", tmp_path / "runtime"))
+    platform = service.platform
+    rescue = "behavior:rescue_kite_scout"
+    salvage = "behavior:salvage_dawn_copper"
+    try:
+        assert platform.enter_player("hero", "mechanic", name="林晚")["status"] == "accepted"
+        view = service.player_view("hero")
+        assert view["goals"][0]["id"] == "dawn_salvage"
+        assert view["goals"][0]["ready_behavior_refs"] == [rescue, salvage]
+        assert {rescue, salvage} <= {action["ref"] for action in view["actions"]}
+
+        _do(platform, f"behavior:{choice}", "choose-what-to-save")
+        properties = _properties(platform)
+        assert properties["dawn_salvage"] == result
+        assert properties["kite_rep"] == pytest.approx(trust)
+        assert properties["supply_spare_plates"] == plates
+        assert platform.store.repositories.entities.get_agent("hero")["inventory"].get("copper_ore", 0) == copper
+        assert platform.store.repositories.events.event_type_counts()["skyfall.dawn_salvage"] == 1
+        other = salvage if choice == "rescue_kite_scout" else rescue
+        assert _start(platform, other, "try-other-choice")["status"] != "accepted"
+        assert "dawn_salvage" not in {goal["id"] for goal in service.player_view("hero")["goals"]}
+
+        _set_properties(platform, hull_integrity=0.85)
+        platform.step()
+        assert _properties(platform)["hull_integrity"] == pytest.approx(0.85 + 0.12 * plates)
+        assert _properties(platform)["supply_spare_plates"] == 0
+        _set_properties(platform, beacon_frame=1, beacon_cores=3, garden_level=2)
+        with platform.store.transaction():
+            platform.store.repositories.metadata.set("world_minute", 719)
+        platform.step()
+        goals = {goal["id"]: goal for goal in service.player_view("hero")["goals"]}
+        assert goals["emergency_copper_dispatch"]["ready_behavior_refs"] == [
+            "behavior:allocate_emergency_stock_defense", "behavior:allocate_emergency_stock_relief",
+        ]
+        _do(platform, "behavior:allocate_emergency_stock_relief", "honor-the-claim")
+        refs = {action["ref"] for action in service.player_view("hero")["actions"]}
+        assert ("behavior:anchor_islands" in refs) == can_anchor
+    finally:
+        service.close()
+
+
+def test_dawn_window_expires_during_a_late_action(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "windward-dawn-late", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "cook", name="林晚")["status"] == "accepted"
+        with platform.store.transaction():
+            platform.store.repositories.metadata.set("world_minute", 58)
+        _do(platform, "behavior:salvage_dawn_copper", "too-late")
+        view = service.player_view("hero")
+        assert _properties(platform)["dawn_salvage"] == 3
+        assert _properties(platform)["supply_spare_plates"] == 0
+        assert not view["inventory"].get("copper_ore")
+        assert "dawn_salvage" not in {goal["id"] for goal in view["goals"]}
+        assert platform.store.repositories.events.event_type_counts()["skyfall.dawn_salvage"] == 1
+        assert view["recent_outcomes"][0]["result"] == "dawn_salvage_closed"
+    finally:
+        service.close()
+
+
+def test_copper_dispatch_shows_the_carryover_obligation(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "windward-copper-debt", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        assert platform.enter_player("hero", "mechanic", name="林晚")["status"] == "accepted"
+        with platform.store.transaction():
+            platform.store.repositories.metadata.set("world_minute", 719)
+        platform.step()
+        _do(platform, "behavior:allocate_emergency_stock_defense", "keep-first-batch")
+        with platform.store.transaction():
+            platform.store.repositories.metadata.set("world_minute", 1439)
+        platform.step()
+        goals = {goal["id"]: goal for goal in service.player_view("hero")["goals"]}
+        assert "emergency_copper_dispatch" not in goals
+        assert goals["emergency_copper_repayment"]["ready_behavior_refs"] == [
+            "behavior:allocate_emergency_stock_relief",
+        ]
+        _do(platform, "behavior:allocate_emergency_stock_relief", "repay-second-batch")
+        assert _properties(platform)["supply_relief_due"] == 0
+        assert "emergency_copper_repayment" not in {goal["id"] for goal in service.player_view("hero")["goals"]}
+    finally:
+        service.close()
+
+
 def test_exploration_unlocks_the_next_route(tmp_path: Path) -> None:
     service = ControlService(create_instance(WORLD, "windward-explore-unlock", tmp_path / "runtime"))
     platform = service.platform
@@ -127,6 +228,8 @@ def test_exploration_unlocks_the_next_route(tmp_path: Path) -> None:
         assert "behavior:travel_lighthouse" in refs
         facts = [item.get("fact_key") for item in platform.store.repositories.memory.list_knowledge_facts("hero", limit=100)]
         assert any("explored:windworn_woods" in str(fact) for fact in facts)
+        assert platform.store.repositories.events.event_type_counts()["exploration.completed"] == 1
+        assert any(task["task_type"] == "event_group:story_after_exploration" for task in platform.ready_evolution_tasks())
     finally:
         service.close()
 
@@ -249,6 +352,9 @@ def test_a_god_created_salvage_site_adds_a_material_and_pressure(tmp_path: Path)
             },
         })
         assert behavior["status"] == "accepted", behavior
+        _set_location(platform, "windworn_woods")
+        assert "behavior:dyn_salvage_test" not in {a["ref"] for a in service.player_view("hero")["actions"]}
+        assert _start(platform, "behavior:dyn_salvage_test", "wrong-island")["status"] == "rejected"
         _set_location(platform, "rainshade_cliff")
         before = platform.store.repositories.entities.get_agent("hero")["inventory"].get("fiber", 0)
         _do(platform, "behavior:dyn_salvage_test", "salvage-site")
@@ -281,7 +387,7 @@ def test_night_exposure_hurts_an_unsheltered_player(tmp_path: Path) -> None:
         assert platform.enter_player("hero", "mechanic", name="林晚")["status"] == "accepted"
         _set_location(platform, "windworn_woods")
         with platform.store.transaction():
-            platform.store.repositories.metadata.set("world_minute", 1300)
+            platform.store.repositories.metadata.set("world_minute", 1200)
         for _ in range(60):
             platform.step()
         integrity = platform.store.repositories.entities.get_agent("hero")["initial_state"]["integrity"]
@@ -357,11 +463,27 @@ def test_upgrade_teaches_existing_crew_and_player_the_new_survival_behaviors(tmp
         assert platform.enter_player("hero", "mechanic", name="林晚")["status"] == "accepted"
         with platform.store.transaction():
             alan = platform.store.repositories.entities.get_agent("alan")
+            alan["controller"] = "bt"
+            alan.pop("controller_fallback")
             alan["initial_bt_ids"] = [item for item in alan["initial_bt_ids"] if item not in {"take_ration", "fill_water"}]
             platform.store.repositories.entities.put_agent("alan", alan, "阿岚")
             player = platform.store.repositories.entities.get_agent("hero")
-            player["initial_bt_ids"] = [item for item in player["initial_bt_ids"] if item != "wait_for_dawn"]
+            player["initial_bt_ids"] = [
+                item for item in player["initial_bt_ids"]
+                if item not in {"wait_for_dawn", "rescue_kite_scout", "salvage_dawn_copper"}
+            ]
             platform.store.repositories.entities.put_agent("hero", player, "林晚")
+            metadata = platform.store.repositories.metadata
+            metadata.set("world_minute", 124)
+            properties = metadata.get("world_properties")
+            for key in ("dawn_salvage", "emergency_stock", "supply_consultation", "supply_relief_due", "supply_minutes", "supply_spare_plates"):
+                properties.pop(key)
+            properties["hull_integrity"] = 0.72
+            metadata.set("world_properties", properties)
+            platform.store.connection.execute("DELETE FROM entity WHERE id=?", ("emergency_copper_cache",))
+            metadata.set("evolution", normalize_evolution_config({"cadence": {"god": "7d"}}))
+            metadata.set("season_plan", {"plan_id": "old-verb-plan", "target_cell": "verb", "status": "active", "baseline": 12, "expires_minute": 10081})
+            platform.store.repositories.evolution.put_evolution_task("god_local", "god", None, "god_local", 124, 10080, status="ready")
     finally:
         service.close()
 
@@ -376,5 +498,249 @@ def test_upgrade_teaches_existing_crew_and_player_the_new_survival_behaviors(tmp
         player = platform.store.repositories.entities.get_agent("hero")
         assert {"take_ration", "fill_water"} <= set(alan["initial_bt_ids"])
         assert "wait_for_dawn" in player["initial_bt_ids"]
+        assert {"rescue_kite_scout", "salvage_dawn_copper"} <= set(player["initial_bt_ids"])
+        view = service.player_view("hero")
+        assert "dawn_salvage" not in {goal["id"] for goal in view["goals"]}
+        assert not {"behavior:rescue_kite_scout", "behavior:salvage_dawn_copper"} & {action["ref"] for action in view["actions"]}
+        assert (alan["controller"], alan["controller_fallback"]) == ("llm", "bt")
+        metadata = platform.store.repositories.metadata
+        assert metadata.get("world_minute") == 124
+        properties = metadata.get("world_properties")
+        assert properties["hull_integrity"] == 0.72
+        assert properties["emergency_stock"] == properties["supply_consultation"] == 0
+        stock = platform.store.repositories.entities.get_entity("emergency_copper_cache")
+        assert stock["initial_state"]["quantity"] == 0
+        assert metadata.get("evolution")["director"]["behavior_action"] == "dynamic_salvage"
+        assert all(task["task_id"] != "god_local" for task in platform.ready_evolution_tasks())
+        platform.step()
+        assert metadata.get("season_plan")["baseline"] == 0
+        assert metadata.get("season_plan_history")["old-verb-plan"]["status"] == "expired"
+    finally:
+        service.close()
+
+
+def _at_minute(platform, minute: int) -> None:
+    with platform.store.transaction():
+        platform.store.repositories.metadata.set("world_minute", minute)
+
+
+def test_authored_routes_are_shared_by_player_clients_and_platform(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "windward-travel-policy", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        platform.enter_player("hero", "mechanic", name="林晚")
+        view = service.player_view("hero")
+        routes = {route["id"]: route["behavior_ref"] for route in view["routes"]}
+        assert routes["saltbreak_flats"] == "behavior:travel_saltbreak"
+        assert any(action.get("destination_id") == "saltbreak_flats" for action in view["actions"])
+        session = TextWorldSession(platform, player_id="hero")
+        session.execute("go 碎盐滩")
+        assert _finish(platform)["initial_state"]["location_id"] == "saltbreak_flats"
+        assert "copper_tide" not in {route["id"] for route in service.player_view("hero")["routes"]}
+
+        # Old saves can already contain the synthesized generic definition.
+        with platform.store.transaction():
+            platform.store.repositories.entities.put_definition("bt_def", "travel", {"id": "travel"})
+        result = service.player_act({
+            "player_id": "hero", "behavior_ref": "behavior:travel", "parameters": {"location_id": "copper_tide"},
+        })
+        assert result["failed_check"] == "travel_policy"
+        assert platform.store.repositories.entities.get_agent("hero")["initial_state"]["location_id"] == "saltbreak_flats"
+    finally:
+        service.close()
+
+
+def test_storm_eases_reopens_routes_and_wakes_story(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "windward-storm-eases", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        platform.enter_player("hero", "mechanic", name="林晚")
+        _set_location(platform, "windworn_woods")
+        _do(platform, "behavior:explore_windworn", "discover-lighthouse")
+        _at_minute(platform, 325)
+        _set_properties(platform, storm_pressure=65)
+        platform.step()
+        assert _properties(platform)["storm_stage"] == 2
+        assert "old_lighthouse" not in {route["id"] for route in service.player_view("hero")["routes"]}
+        storm_tasks = [task for task in platform.ready_evolution_tasks() if task["task_type"] == "event_group:story_after_storm"]
+        assert len(storm_tasks) == 1
+        assert storm_tasks[0]["source_events"][0]["event_type"] in {"storm.warning", "storm.hit"}
+
+        _do(platform, "behavior:travel_lantern_cape", "return-to-camp")
+        _set_inventory(platform, relic=1)
+        _do(platform, "behavior:jettison_relic", "throw-cargo-overboard")
+        platform.step()
+        assert _properties(platform)["storm_pressure"] == 45
+        assert _properties(platform)["storm_stage"] == 1
+        hull = _properties(platform)["hull_integrity"]
+        _at_minute(platform, 719)
+        platform.step()
+        assert _properties(platform)["hull_integrity"] == hull
+
+        _set_location(platform, "windworn_woods")
+        assert "old_lighthouse" in {route["id"] for route in service.player_view("hero")["routes"]}
+        _set_properties(platform, storm_pressure=65)
+        platform.step()
+        assert _properties(platform)["storm_stage"] == 2
+        assert _properties(platform)["hull_integrity"] == hull
+        assert platform.store.repositories.events.event_type_counts()["storm.hit"] == 1
+    finally:
+        service.close()
+
+
+def test_ending_commits_once_when_deadline_crosses_an_active_launch(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "windward-ending-race", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        platform.enter_player("hero", "mechanic", name="林晚")
+        deadline = 29 * 1440 - 420
+        _at_minute(platform, deadline - 5)
+        _set_properties(platform, day=29, beacon_frame=1, beacon_cores=3, hull_integrity=0.8)
+        assert _start(platform, "behavior:launch_escape", "timed-launch")["status"] == "accepted"
+        for _ in range(5):
+            platform.step()
+        assert service.player_view("hero")["chapter"]["id"] == "long_drift"
+        agent = _finish(platform)
+        assert agent["initial_state"]["last_platform_result"]["status"] == "failed"
+        assert _properties(platform)["ending_trigger"] == 5
+        counts = platform.store.repositories.events.event_type_counts()
+        assert counts["skyfall.long_drift"] == 1
+        assert "skyfall.launched" not in counts
+        assert any(task["task_type"] == "event_group:story_after_ending" for task in platform.ready_evolution_tasks())
+    finally:
+        service.close()
+
+
+def test_start_of_day_and_wait_for_dawn_use_the_same_calendar(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "windward-calendar", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        platform.enter_player("hero", "mechanic", name="林晚")
+        _at_minute(platform, 1019)
+        platform.step()
+        time = service.player_view("hero")["world_time"]
+        assert time["time_of_day"] == "00:00"
+        assert time["day"] == _properties(platform)["day"] == 2
+
+        _at_minute(platform, 1319)
+        action = next(a for a in service.player_view("hero")["actions"] if a["ref"] == "behavior:wait_for_dawn")
+        assert action["time"] == "1 minutes"
+        result = _start(platform, action["ref"], "wait-one-minute")
+        assert result["status"] == "accepted"
+        assert result["remaining_minutes"] == 1
+        _finish(platform)
+        assert service.player_view("hero")["world_time"]["time_of_day"] == "05:00"
+    finally:
+        service.close()
+
+
+class _ScenarioProvider:
+    def __init__(self, responses: list[dict]) -> None:
+        self.responses = iter(responses)
+        self.calls = 0
+
+    def complete_json(self, **_kwargs):
+        self.calls += 1
+        return next(self.responses)
+
+
+def _salvage_proposal(suffix: str, item: str, location: str = "broken_span", amount: int = 2) -> dict:
+    return {
+        "definition_type": "behavior",
+        "name": f"审计打捞 {suffix}",
+        "assign_to": ["ke"],
+        "definition": {
+            "id": f"dyn_salvage_{suffix}",
+            "agent_label": f"打捞内容 {suffix}",
+            "summary": f"回收物资 {suffix}",
+            "description": "从外岛回收可用材料。",
+            "deferred": True,
+            "cooldown_minutes": 1440,
+            "entry_conditions": ["actor.alive", "location.tag.salvage"],
+            "estimated_minutes": 60,
+            "nodes": [{"type": "action", "action_id": "dynamic_salvage", "parameters": {
+                "item": item, "amount": amount, "location_id": location,
+            }}],
+            "success_results": ["resource_gathered"],
+            "failure_results": ["gathering_failed"],
+        },
+    }
+
+
+def test_god_contract_rejects_direct_and_tool_mutations_and_caps_a_native_batch(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "windward-evolution-policy", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        platform.enter_player("hero", "mechanic", name="林晚")
+        platform.step()
+        def tool_call(call_id: str, proposal: dict) -> dict:
+            return {"id": call_id, "type": "function", "function": {
+                "name": "propose_definition", "arguments": json.dumps(proposal, ensure_ascii=False),
+            }}
+        provider = _ScenarioProvider([
+            {"entity_type": "resource", "name": "超出契约", "location": "windworn_woods"},
+            {"tool": "propose_definition", "arguments": _salvage_proposal("oversized", "wood", amount=100)},
+            {"tool_calls": [
+                tool_call("valid", _salvage_proposal("valid", "wood")),
+                tool_call("over_budget", _salvage_proposal("over_budget", "stone")),
+            ]},
+        ])
+        turn = AgentEngine(platform, provider, max_iterations=5).run(role="god", actor_id="god", task_type="god_structural")
+        assert turn.result["status"] == "accepted", turn.result
+        checks = {step.get("result", {}).get("failed_check") for step in turn.transcript}
+        assert {"task_tool", "evolution_contract", "proposal_budget"} <= checks
+        definitions = {row["id"] for row in platform.store.repositories.entities.get_definitions("bt_def")}
+        assert {"dyn_salvage_valid"} == {name for name in definitions if name.startswith("dyn_salvage_")}
+        assert not any(row["name"] == "超出契约" for row in platform.store.repositories.entities.entities_of_type("resource"))
+    finally:
+        service.close()
+
+
+def test_director_reenters_a_second_salvage_plan_through_the_runner(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "windward-growth-cycles", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        provider = _ScenarioProvider([
+            {"tool": "propose_definition", "arguments": _salvage_proposal("first", "wood")},
+            {"tool": "propose_definition", "arguments": _salvage_proposal("duplicate", "wood")},
+            {"intent_type": "propose_definition", **_salvage_proposal("second", "stone")},
+        ])
+        runner = SimulationRunner(platform, {"god": provider})
+        runner.run(61)
+        assert provider.calls == 1
+        assert not any(row.get("role") == "player" for row in platform.store.repositories.entities.list_agents())
+        assert platform.store.repositories.entities.get_agent("ke")["inventory"]["wood"] == 2
+        metadata = platform.store.repositories.metadata
+
+        _at_minute(platform, 2879)
+        runner.run(1)
+        assert provider.calls == 3
+        assert metadata.get("last_completed_season_plan")["baseline"] == 0
+        assert metadata.get("last_completed_season_plan")["outcome_event_id"]
+        assert metadata.get("season_plan")["baseline"] == 1
+        SimulationRunner(platform, {}).run(300)
+        assert platform.store.repositories.entities.get_agent("ke")["inventory"]["stone"] == 2
+        _at_minute(platform, 5759)
+        platform.step()
+        assert metadata.get("last_completed_season_plan")["baseline"] == 1
+        assert metadata.get("season_plan")["baseline"] == 2
+    finally:
+        service.close()
+
+
+def test_featured_crew_use_model_decisions_with_offline_bt_fallback(tmp_path: Path) -> None:
+    service = ControlService(create_instance(WORLD, "windward-featured-crew", tmp_path / "runtime"))
+    platform = service.platform
+    try:
+        provider = _ScenarioProvider([{"intent": "wait", "reason": "No urgent tasks."}] * 2)
+        roles: list[str] = []
+        report = SimulationRunner(platform, {"agent_decision": provider}, turn_observer=lambda _turn, actor: roles.append(actor)).run(1)
+        assert set(roles) == {"alan", "yanqiu"}
+        assert report.bt_decisions == 6
+        _at_minute(platform, 61)
+        offline = SimulationRunner(platform, {}).run(1)
+        assert offline.bt_decisions >= 2
+        for actor in roles:
+            assert platform.store.repositories.entities.get_agent(actor)["initial_state"].get("active_behavior_id")
     finally:
         service.close()

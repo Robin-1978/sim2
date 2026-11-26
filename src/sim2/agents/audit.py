@@ -46,7 +46,7 @@ class AgentAudit:
                 static_prefix_chars=len(static_prefix),
                 dynamic_chars=len(dynamic_text),
                 request_latency_ms=usage.get("request_latency_ms") if isinstance(usage, dict) else None,
-                prompt_tokens_est=(context_metrics or {}).get("estimated_tokens") if isinstance(context_metrics, dict) else None,
+                prompt_tokens_est=(context_metrics or {}).get("request_input_tokens_est"),
                 context_metrics=context_metrics,
             )
         except Exception:

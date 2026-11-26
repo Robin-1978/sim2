@@ -19,6 +19,7 @@ from sim2.agent_view.tool_registry import ROLE_TOOLS
 from sim2.bootstrap.service import create_instance
 from sim2.evolution.config import normalize_evolution_config
 from sim2.platform.runtime import Platform
+from sim2.simulation.runner import SimulationRunner
 from sim2.world.lifecycle import recovery_rule
 
 WORLDS = Path(__file__).parents[1] / "worlds"
@@ -109,5 +110,27 @@ def test_a_stagnation_signal_reaches_god_with_its_evidence(world: Path, tmp_path
         assert turn.result["status"] == "wait"
         assert "<triggering_evidence>" in provider.calls[0]
         assert STAGNATION_SUMMARY in provider.calls[0]
+    finally:
+        platform.close()
+
+
+def test_windward_runner_delivers_the_named_stagnation_task_without_a_plan(tmp_path: Path) -> None:
+    world = WORLDS / "windward_skyfall"
+    platform = Platform(create_instance(world, "standalone-stagnation", tmp_path / "runtime"))
+    try:
+        config = _yaml(world, "evolution.yaml")
+        del config["director"]
+        with platform.store.transaction():
+            platform.store.repositories.metadata.set("evolution", normalize_evolution_config(config))
+            event_id = platform.store.repositories.events.append_event(
+                "world.stagnation", None, 0, {"summary": STAGNATION_SUMMARY},
+            )
+            platform.wakes.configured(event_id, "world.stagnation", None, 0)
+        provider = WaitProvider()
+        report = SimulationRunner(platform, {"god": provider}).run(1)
+        assert report.god_sessions == 1
+        assert STAGNATION_SUMMARY in provider.calls[0]
+        assert "dynamic_salvage" in provider.calls[0]
+        assert not platform.ready_evolution_tasks()
     finally:
         platform.close()

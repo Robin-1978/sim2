@@ -334,7 +334,11 @@ def _season_plan_lines(context: dict[str, Any]) -> list[str]:
     lines.append(f"  target cell: {plan.get('target_cell', 'unspecified')}")
     lines.append(f"  reason: {plan.get('reason', 'configured coverage target')}")
     lines.append(f"  expires at world minute: {plan.get('expires_minute', 'unknown')}")
-    lines.append("  Fill this cell with one reachable, executable growth unit. Do not substitute another research source or relabel an existing verb.")
+    behavior_action = plan.get("behavior_action")
+    if behavior_action:
+        lines.append(f"  Growth unit: one distinct executable behavior binding to {behavior_action}. Baseline: {plan.get('baseline', 0)} bindings.")
+    else:
+        lines.append("  Fill this cell with one reachable, executable growth unit. Do not substitute another research source or relabel an existing verb.")
     lines.append("</season_plan>")
     return lines
 

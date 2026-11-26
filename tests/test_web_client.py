@@ -68,6 +68,12 @@ def test_web_launcher_starts_without_an_instance_and_creates_the_first_world(tmp
         assert catalog["worlds"][0]["id"] == "tidebound_commons"
         assert all(item["kind"] == "world" for item in catalog["worlds"][:4])
         assert any(item["kind"] == "probe" for item in catalog["worlds"])
+        cover = next(item["cover_art"] for item in catalog["worlds"] if item["id"] == "windward_skyfall")
+        with urlopen(base + cover) as response:
+            assert response.headers.get_content_type() == "image/webp"
+            assert "immutable" in response.headers["cache-control"]
+            body = response.read()
+            assert body[:4] == b"RIFF" and body[8:12] == b"WEBP"
         with urlopen(base + "/api/v1/authoring/schema") as response:
             assert json.loads(response.read())["status"] == "ok"
         with urlopen(base + "/api/v1/authoring/catalog") as response:

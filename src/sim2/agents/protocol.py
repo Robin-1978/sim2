@@ -13,6 +13,9 @@ import inspect
 from dataclasses import dataclass
 from typing import Any
 
+from ..llm.budget import DEFAULT_CONTEXT_WINDOW_TOKENS, request_metrics
+from ..llm.config import DEFAULT_MAX_COMPLETION_TOKENS
+
 
 @dataclass(frozen=True)
 class ProviderReply:
@@ -26,7 +29,7 @@ class ProviderProtocol:
     def __init__(self, provider: Any) -> None:
         self.provider = provider
 
-    def complete(
+    def prepare(
         self,
         *,
         role: str,
@@ -34,7 +37,7 @@ class ProviderProtocol:
         context: str,
         messages: list[dict[str, Any]] | None = None,
         allowed_tools: list[str] | set[str] | None = None,
-    ) -> ProviderReply:
+    ) -> dict[str, Any]:
         method = self.provider.complete_json
         kwargs: dict[str, Any] = {"system": system, "context": context}
         try:
@@ -51,7 +54,26 @@ class ProviderProtocol:
             kwargs["role"] = role
         if "messages" in parameters:
             kwargs["messages"] = messages
-        response = method(**kwargs)
+        return kwargs
+
+    def budget(self, request: dict[str, Any]) -> dict[str, int]:
+        measure = getattr(self.provider, "completion_budget", None)
+        if callable(measure):
+            return measure(**{key: request[key] for key in ("system", "context", "tools", "messages") if key in request})
+        return request_metrics(
+            request.get("messages") or [
+                {"role": "system", "content": request["system"]},
+                {"role": "user", "content": request["context"]},
+            ], request.get("tools"),
+            window=int(getattr(self.provider, "context_window_tokens", DEFAULT_CONTEXT_WINDOW_TOKENS)),
+            completion=int(getattr(self.provider, "max_completion_tokens", DEFAULT_MAX_COMPLETION_TOKENS)),
+        )
+
+    def complete(self, **kwargs: Any) -> ProviderReply:
+        return self.complete_prepared(self.prepare(**kwargs))
+
+    def complete_prepared(self, request: dict[str, Any]) -> ProviderReply:
+        response = self.provider.complete_json(**request)
         if not isinstance(response, dict):
             raise ValueError("LLM response must be a JSON object")
         wire = copy.deepcopy(response)

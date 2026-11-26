@@ -71,7 +71,7 @@ export function renderScene() {
     const art = $("scene-art");
     const theme = sceneTheme(location);
     art.dataset.scene = theme;
-    renderSceneWorldCover(theme);
+    renderSceneWorldCover(theme, location.id);
     if (state.soundOn && state.audio) applyAmbientProfile();
     $("scene-title").textContent = location.name || player.location || "未知地点";
     $("scene-description").textContent = location.description || "这里没有更多描述。";

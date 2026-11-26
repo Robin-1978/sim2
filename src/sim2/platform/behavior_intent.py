@@ -9,12 +9,14 @@ An admitted behavior opens its activity in one transaction.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
 from ..behavior.estimator import BehaviorDurationEstimator
 from ..behavior.recovery import failure_block_recovered
 from ..intents.models import BehaviorIntent
 from ..world.navigation import (
+    generic_player_travel_enabled,
     configured_location_tags,
     movement_speed,
     nearest_location_with_tag,
@@ -23,6 +25,7 @@ from ..world.navigation import (
 )
 from ..world.authorization import behavior_authorization_spec
 from ..world.bindings import iter_behavior_effects
+from ..world.time import day_phase_duration
 from .authorization import AuthorizationRejected, withdrawal_effect
 from .contested import ContestedRejected, resource_take_effect
 from .services import PlatformService
@@ -349,8 +352,11 @@ class BehaviorIntentService(PlatformService):
         """Load the registered behaviors; the player's generic travel behavior is created on demand."""
 
         behavior_id = submission.behavior_id
+        is_player_travel = behavior_id == "travel" and str(submission.agent.get("role") or "") == "player"
+        if is_player_travel and not generic_player_travel_enabled(self.store):
+            return {"status": "rejected", "message": "Choose an available authored route.", "failed_check": "travel_policy", "retryable": True}
         available_defs = {x["id"]: x for x in self.store.repositories.entities.get_definitions("bt_def")}
-        if behavior_id not in available_defs and behavior_id == "travel" and str(submission.agent.get("role") or "") == "player":
+        if behavior_id not in available_defs and is_player_travel:
             registered = self._ensure_generic_travel_behavior()
             if registered is not None:
                 available_defs[behavior_id] = registered
@@ -697,6 +703,7 @@ class BehaviorIntentService(PlatformService):
             capabilities=agent.get("capabilities", {}),
             capability_modifiers=(self.store.repositories.metadata.get("rules", {}) or {}).get("capability_modifiers", {}),
             travel_speed=lambda values: movement_speed(self.store, agent, values),
+            phase_duration=partial(day_phase_duration, self.store),
         )
         return estimator.behavior_minutes(submission.behavior_id, {**submission.runtime_parameters, **intent.target}, submission.state.get("location_id"))
 

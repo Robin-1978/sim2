@@ -1,5 +1,7 @@
 world_state:
   properties:
+    debt_checked_1: 0
+    debt_checked_2: 0
     season: 1
     night: 1
     night_actions: 3

@@ -142,6 +142,7 @@ class ProgressViewMixin:
         available: list[dict[str, Any]],
         diagnostics: list[dict[str, Any]],
         bt_defs: dict[str, dict[str, Any]],
+        day_phase: str | None,
     ) -> list[dict[str, Any]]:
         """Project configurable world-stage goals and their current blockers.
 
@@ -156,6 +157,7 @@ class ProgressViewMixin:
         agent_name = str(agent.get("name") or agent.get("id") or "")
         origin_id = str(agent.get("origin_id") or "")
         world_properties = self.store.repositories.metadata.get("world_properties", {}) or {}
+        goal_context = {"day_phase": day_phase}
         available_ids = {
             str(item.get("ref") or "").removeprefix("behavior:")
             for item in available
@@ -223,7 +225,7 @@ class ProgressViewMixin:
                 agent=agent,
                 target={},
                 world=world_properties,
-                context={},
+                context=goal_context,
             ):
                 continue
             target_ids = [str(value) for value in (raw.get("target_behaviors") or [])]

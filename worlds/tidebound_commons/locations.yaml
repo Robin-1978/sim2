@@ -85,3 +85,13 @@ resources:
     order: 4
     properties:
     - {key: commons_tool_kits, label: 库存}
+- id: emergency_water_cache
+  name: 应急淡水桶
+  location_id: commons_quay
+  initial_state: {location_id: commons_quay, quantity: 0}
+  tags: [emergency_stock]
+- id: relief_water_cache
+  name: 居民配给桶
+  location_id: commons_quay
+  initial_state: {location_id: commons_quay, quantity: 0}
+  tags: [relief_stock]

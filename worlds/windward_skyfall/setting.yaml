@@ -1,8 +1,19 @@
 name: 风脊号
-premise: 裂天群岛正在坠入云海。你有一艘还能飞的捞船、五个各有心事的船员，和一片随时会消失的天空。
-genre: 天空群岛生存沙盒 / 探索建造 / 船员叙事
+premise: 裂天群岛正在下沉。带上五名船员，在风暴合拢前找到让群岛留下、或让风脊号离开的办法。
+genre: 群岛求生 · 探索与抉择
 locale: zh-CN
 ui:
+  cover_art: assets/dawn.webp
+  scene_art:
+    lantern_cape: assets/lantern-cape.webp
+  entry_action: 登上风脊号
+  spotlights:
+    dawn_salvage:
+      deadline_clock_minute: 480
+    emergency_copper_dispatch:
+      deadline_property: supply_minutes
+    emergency_copper_repayment:
+      deadline_property: supply_minutes
   crisis_metrics:
   - property: hull_integrity
     label: 船体
@@ -30,8 +41,7 @@ ui:
     danger_below: 0.3
     warning_below: 0.5
     hint: 士气影响结局
-  tagline: 天空在漏。把还值得救的东西，装进你的船。
-  explicit_travel: true
+  tagline: 天快塌了。绞盘只能再拉一次。
   cast_order:
   - alan
   - yanqiu
@@ -46,6 +56,7 @@ ui:
     - exploration.
     - island.
     camp:
+    - supply.
     - camp.
     - beacon.
     storm:
@@ -67,6 +78,7 @@ ui:
     crew: 船员
     story: 世界剧情
   pulse_prefixes:
+  - supply.
   - exploration.
   - camp.
   - beacon.
@@ -87,6 +99,9 @@ ui:
   - act.
   - skyfall.
   result_labels:
+    dawn_scout_rescued: 斥候获救。风筝人声望增加 25 个百分点。
+    dawn_copper_salvaged: 铜料上船。船体低于九成时，阿岚会用铜板补船。
+    dawn_salvage_closed: 错过了最后一次回收
     arrived: 已抵达
     resource_gathered: 采集完成
     resource_collected: 采集完成

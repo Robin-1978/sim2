@@ -1,30 +1,56 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from typing import Any, Callable
+import os
+from threading import RLock
+from typing import Any, BinaryIO
 
-from ..actions.capacity import check_action_capacity
-from ..behavior.estimator import BehaviorDurationEstimator
-from ..behavior.recovery import failure_block_recovered
-from ..intents.models import BehaviorIntent
-from ..world.context import configured_context_values
-from ..world.navigation import (
-    configured_location_tags,
-    nearest_location_with_tag,
-    nearest_resource_node,
-    nearest_safe_location,
-    reachable_locations,
-)
-from ..world.time import world_time_view
-from ..world.rules import RuleCompiler
-from ..world.schema import AttributeSchema
-from ..actions.conditions import ConditionEngine
-from .services import PlatformService
+from ..evolution.config import role_enabled
+from .services import PlatformContext, PlatformService
 
 
 class EvolutionService(PlatformService):
     """World signals and persisted evolution task lifecycle."""
+
+    def __init__(self, context: PlatformContext) -> None:
+        super().__init__(context)
+        self._claim_lock = RLock()
+        self._claim_file: BinaryIO | None = None
+        self._owned_claims: set[str] = set()
+
+    def _take_instance_lock(self) -> bool:
+        """The kernel releases this ownership if its worker exits."""
+
+        if self._claim_file is not None:
+            return True
+        path = self.store.db_path.resolve().with_suffix(".evolution.lock")
+        handle = path.open("a+b")
+        try:
+            if os.name == "nt":
+                import msvcrt
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (BlockingIOError, PermissionError):
+            handle.close()
+            return False
+        except BaseException:
+            handle.close()
+            raise
+        self._claim_file = handle
+        return True
+
+    def _release_unused_lock(self) -> None:
+        if not self._owned_claims and self._claim_file is not None:
+            self._claim_file.close()
+            self._claim_file = None
+
+    def close(self) -> None:
+        with self._claim_lock:
+            self._owned_claims.clear()
+            self._release_unused_lock()
 
     def world_trigger_context(self) -> dict[str, Any]:
         context = dict(self.store.repositories.metadata.get("world_properties", {}) or {})
@@ -116,7 +142,10 @@ class EvolutionService(PlatformService):
         self.store.repositories.metadata.set("evolution_trigger_state", states)
 
     def emit_due_evolution_tasks(self, minute: int) -> None:
+        config = self.store.repositories.metadata.get("evolution", {}) or {}
         for task in self.uow.evolution.due_tasks(minute):
+            if not role_enabled(config, task["role"]):
+                continue
             self.uow.evolution.mark_ready(task["task_id"])
             self._context.services["events"].append(
                 "evolution.task_due",
@@ -128,36 +157,72 @@ class EvolutionService(PlatformService):
     def ready_evolution_tasks(self) -> list[dict[str, Any]]:
         """Return low-frequency Agent tasks without invoking an LLM."""
 
-        return self.uow.evolution.ready_tasks()
+        config = self.store.repositories.metadata.get("evolution", {}) or {}
+        return [task for task in self.uow.evolution.ready_tasks() if role_enabled(config, task["role"])]
 
     def claim_evolution_task(self, task_id: str) -> dict[str, Any] | None:
-        minute = int(self.store.repositories.metadata.get("world_minute", 0))
-        with self.store.transaction():
-            return self.uow.evolution.claim(task_id, minute)
+        with self._claim_lock:
+            if not self._take_instance_lock():
+                return None
+            try:
+                with self.store.transaction():
+                    minute = int(self.store.repositories.metadata.get("world_minute", 0))
+                    row = self.store.connection.execute("SELECT role FROM evolution_task WHERE task_id=?", (task_id,)).fetchone()
+                    config = self.store.repositories.metadata.get("evolution", {}) or {}
+                    claimed = self.uow.evolution.claim(task_id, minute) if row and role_enabled(config, row["role"]) else None
+                if claimed:
+                    self._owned_claims.add(task_id)
+                return claimed
+            finally:
+                self._release_unused_lock()
 
     def recover_claimed_evolution_tasks(self) -> list[str]:
         """Requeue due evolution work left behind by an interrupted process."""
 
-        minute = int(self.store.repositories.metadata.get("world_minute", 0))
-        with self.store.transaction():
-            task_ids = self.uow.evolution.recover_claimed(minute)
-            if task_ids:
-                self._context.services["events"].append(
-                    "evolution.tasks_recovered",
-                    None,
-                    minute,
-                    {"task_ids": task_ids, "reason": "previous process stopped after claim"},
-                )
-            return task_ids
+        with self._claim_lock:
+            if self._owned_claims:
+                return []
+            pending = self.store.connection.execute("SELECT 1 FROM evolution_task WHERE status='claimed' LIMIT 1").fetchone()
+            if not pending or not self._take_instance_lock():
+                return []
+            try:
+                with self.store.transaction():
+                    minute = int(self.store.repositories.metadata.get("world_minute", 0))
+                    task_ids = self.uow.evolution.recover_claimed(minute)
+                    if task_ids:
+                        self._context.services["events"].append(
+                            "evolution.tasks_recovered", None, minute, {"task_ids": task_ids},
+                        )
+                    return task_ids
+            finally:
+                self._release_unused_lock()
+
+    def _may_finish_claim(self, task_id: str) -> bool:
+        row = self.store.connection.execute("SELECT status FROM evolution_task WHERE task_id=?", (task_id,)).fetchone()
+        return row is not None and (row["status"] != "claimed" or task_id in self._owned_claims)
 
     def complete_evolution_task(self, task_id: str) -> None:
-        minute = int(self.store.repositories.metadata.get("world_minute", 0))
-        with self.store.transaction():
-            self.uow.evolution.complete(task_id, minute)
+        with self._claim_lock:
+            with self.store.transaction():
+                if not self._may_finish_claim(task_id):
+                    return
+                minute = int(self.store.repositories.metadata.get("world_minute", 0))
+                self.uow.evolution.complete(task_id, minute)
+            self._owned_claims.discard(task_id)
+            self._release_unused_lock()
 
     def retry_evolution_task(self, task_id: str, retry_minute: int, reason: str) -> None:
         """Return a failed low-frequency task to the scheduler with an audit event."""
 
+        with self._claim_lock:
+            with self.store.transaction():
+                if not self._may_finish_claim(task_id):
+                    return
+                self._retry_claim(task_id, retry_minute, reason)
+            self._owned_claims.discard(task_id)
+            self._release_unused_lock()
+
+    def _retry_claim(self, task_id: str, retry_minute: int, reason: str) -> None:
         minute = int(self.store.repositories.metadata.get("world_minute", 0))
         # A provider circuit breaker stops the runner before another request
         # can be issued, so a retry at the current minute cannot spin.  Keep

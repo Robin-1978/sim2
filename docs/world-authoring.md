@@ -89,6 +89,32 @@ preconditions so WorldBuilder can correct the actual cause instead of guessing.
 The template uses these top-level sections. The machine-readable source is
 `sim2 world-schema`; this table explains the intent.
 
+### Optional world roles
+
+Omit `evolution.yaml` and its manifest entry for a world driven by resident
+decisions, behavior trees and authored rules. To opt in to selected roles, use
+the `roles` map in `evolution.yaml`. Omitted names in this map are off.
+
+```yaml
+roles:
+  story: true
+```
+
+Add the Story wake rules for the events the world should follow. God may run
+through its own wakes or cadence. Director plans structural work for God, so
+enable both `god` and `director` when using it. `roles: {}` switches off all
+three. Existing nonempty evolution configurations without `roles` use their
+previous behavior. The switches govern Agent execution and task creation.
+Authored goals, endings, world rules and NPC control use their own configuration.
+
+### Time-sensitive decisions
+
+For a committed event to prompt a resident to reconsider, put its event type in
+`rules.decision_policy.wake_events` and include the resident IDs in `audience`.
+An event can include `deadline_minutes`, `claimants`, `active_when` and
+`miss_cost`. The resident sees live decisions in the normal AgentView. Only the
+audience receives the brief. It clears when the condition closes or time expires.
+
 Routes are authored as topology plus optional edge data. For example:
 
 ```yaml
@@ -159,6 +185,27 @@ game client's map reuses that action instead of composing its own text.
 `world_label` names the world as the actor of an event nobody caused in the
 observer feeds. Validation rejects unknown keys, empty phrases and placeholders
 a key does not offer.
+
+The web client reads optional presentation settings from `setting.ui`.
+Use `cover_art` for the entry illustration, `scene_art` to map location
+IDs to illustrations, and `entry_action` to name the button for a new
+character.
+Use paths relative to the world package, such as `assets/cover.webp`,
+and list each file in `manifest.files`. Each image can be up to 8 MiB.
+Initialization and upgrade copy the images to the save's SQLite database
+and publish URLs keyed by their content digest. The client generates an
+illustration from the world's palette when a path is absent or fails to load.
+Template export preserves files through the optional `world.artwork` map of
+package-relative paths to Base64 bytes. Compiling the template writes
+the binary files back to the package.
+
+Use `ui.spotlights` to feature one or more `rules.progression` IDs.
+Set `deadline_property` to a world property measured in remaining minutes,
+or set `deadline_clock_minute` to the cutoff minute of the world day.
+The player sees the highest-priority matching goal with executable
+choices. During an active task, task progress takes priority. Set the
+actual admission and completion conditions in the action definitions,
+and encode expiry and any outstanding obligation in world rules.
 
 ### Player entry template
 

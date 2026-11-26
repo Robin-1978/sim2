@@ -110,6 +110,16 @@ def _configured_travel_rules(store: Any) -> dict[str, Any]:
     return dict(travel) if isinstance(travel, dict) else {}
 
 
+def generic_player_travel_enabled(store: Any) -> bool:
+    """Resolve the player travel policy, including older world saves."""
+
+    mode = _configured_travel_rules(store).get("player_route_mode")
+    if mode is not None:
+        return mode == "generic"
+    setting = store.repositories.metadata.get("setting", {}) or {}
+    return not (setting.get("ui") or {}).get("explicit_travel")
+
+
 def movement_speed(store: Any, agent: dict[str, Any] | None = None, parameters: dict[str, Any] | None = None) -> float:
     """Resolve an actor's configured movement speed.
 

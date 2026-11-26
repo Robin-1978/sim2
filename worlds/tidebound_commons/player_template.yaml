@@ -13,6 +13,8 @@ inventory:
   shellfish: 2
   marsh_reed: 1
 initial_bt_ids:
+  - allocate_emergency_stock_defense
+  - allocate_emergency_stock_relief
   - travel
   - inspect_gate
   - repair_gate

@@ -964,3 +964,56 @@ behavior_trees:
   drive_tags:
   - belonging
   - purpose
+- id: allocate_emergency_stock_defense
+  agent_label: 把应急淡水拨给抢修队
+  summary: 把应急淡水拨给抢修队
+  description: 本批淡水全部拨给抢修队。支撑加固完成，居民补给延后。
+  entry_conditions:
+  - location.tag.public
+  - world.supply_consultation == 1
+  - world.supply_minutes > 0
+  - world.emergency_stock >= 4
+  - world.supply_relief_due == 0
+  estimated_minutes: 20
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: allocate_emergency_stock_defense
+    parameters: {}
+  success_results:
+  - supply_reserved
+  failure_results:
+  - supply_window_closed
+  goal_tags:
+  - allocation
+  - governance
+  drive_tags:
+  - safety
+  - purpose
+  - belonging
+- id: allocate_emergency_stock_relief
+  agent_label: 把应急淡水分给居民
+  summary: 把应急淡水分给居民
+  description: 本批淡水全部拨给缺水住户，潮门失去一次加固机会。
+  entry_conditions:
+  - location.tag.public
+  - world.supply_consultation == 1
+  - world.supply_minutes > 0
+  - world.emergency_stock >= 4
+  estimated_minutes: 20
+  cooldown_minutes: 0
+  nodes:
+  - type: action
+    action_id: allocate_emergency_stock_relief
+    parameters: {}
+  success_results:
+  - supply_shared
+  failure_results:
+  - supply_window_closed
+  goal_tags:
+  - allocation
+  - governance
+  drive_tags:
+  - safety
+  - purpose
+  - belonging

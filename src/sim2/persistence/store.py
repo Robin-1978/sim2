@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS instance_meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS world_artwork (
+  digest TEXT PRIMARY KEY,
+  image BLOB NOT NULL
+);
 CREATE TABLE IF NOT EXISTS entity (
   id TEXT PRIMARY KEY,
   entity_type TEXT NOT NULL,
@@ -374,8 +378,10 @@ class WorldStore:
         from .repositories.authorization import AuthorizationRepository
         from .repositories.contested import ContestedRepository
         from .repositories.metadata import MetadataRepository
+        from .repositories.artwork import ArtworkRepository
         self.repositories = SimpleNamespace(
             metadata=MetadataRepository(self),
+            artwork=ArtworkRepository(self),
             entities=EntitiesRepository(self),
             memory=MemoryRepository(self),
             activity=ActivityRepository(self),
@@ -482,9 +488,12 @@ class WorldStore:
 
 
 
-def config_hash(config_dir: Path) -> str:
+def config_hash(config_dir: Path, artwork: dict[str, bytes] | None = None) -> str:
     digest = hashlib.sha256()
     for path in sorted(Path(config_dir).rglob("*.yaml")):
         digest.update(path.relative_to(config_dir).as_posix().encode())
         digest.update(path.read_bytes())
+    for name, data in sorted((artwork or {}).items()):
+        digest.update(name.encode())
+        digest.update(hashlib.sha256(data).digest())
     return digest.hexdigest()

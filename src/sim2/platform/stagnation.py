@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..evolution.config import role_enabled
+
 from ..world.lifecycle import is_inactive
 
 STAGNATION_STATE_KEY = "stagnation_state"
@@ -55,6 +57,8 @@ class StagnationRuntimeMixin:
 
     def _stagnation_config(self) -> dict[str, Any] | None:
         root = self.store.repositories.metadata.get("evolution", {}) or {}
+        if not role_enabled(root, "god"):
+            return None
         config = root.get("evolution", root) if isinstance(root, dict) else {}
         raw = config.get("stagnation") if isinstance(config, dict) else None
         if not isinstance(raw, dict):

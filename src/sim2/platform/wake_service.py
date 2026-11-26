@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ..evolution.wakes import EventWakeScheduler
+from ..evolution.config import role_enabled
 
 
 class WakeService:
@@ -48,6 +49,8 @@ class WakeService:
         role, resolved_actor = self._resolve_consumer(str(consumer), actor_id)
         evolution = self.store.repositories.metadata.get("evolution", {}) or {}
         evolution = evolution.get("evolution", evolution) if isinstance(evolution, dict) else {}
+        if not role_enabled(evolution, role):
+            return None
         consumers = ((evolution.get("event_wake_policy", {}) or {}).get("consumers", {}) or {}) if isinstance(evolution, dict) else {}
         manual_events = {
             str(item)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .compaction import context_metrics, fit_to_limit, strip_world_scaffolding
+from .compaction import context_metrics, fit_to_limit, missing_sections, section_sizes, strip_world_scaffolding
 from .sections_character import (
     activity_lines,
     character_lines,
@@ -64,6 +64,7 @@ def render_context_with_metrics(
     *,
     max_chars: int | None = None,
     max_tokens: int | None = None,
+    protect_required: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     """Render the prompt and return the exact text plus its budget metrics."""
 
@@ -73,7 +74,18 @@ def render_context_with_metrics(
         # old one-size character budget silently evicted their evidence.
         max_chars = 20000 if role in {"god", "story"} else 16000
     rendered = _render_sections(context, task)
-    fitted = fit_to_limit(rendered, role, max_chars, max_tokens=max_tokens)
+    required: set[str] = set()
+    if role == "god" and context.get("world_index"):
+        required.update(("evolution_trigger", "season_plan", "world_growth_ledger", "world_behavior_catalog", "world_action_catalog"))
+    if protect_required:
+        required.update((
+            "protocol", "allowed_intents_and_tools", "world_state", "decision", "interaction_history",
+            "triggering_evidence", "decision_briefs", "evolution_trigger", "season_plan", "platform_correction",
+            "executable_behaviors", "access_authority", "denial_memory", "active_execution",
+            "outcome_review", "incoming_interaction", "interaction", "story_state", "rule_condition_fields",
+        ))
+    visible_required = frozenset(required & set(section_sizes(rendered))) if required else frozenset()
+    fitted = fit_to_limit(rendered, role, max_chars, max_tokens=max_tokens, required_sections=visible_required if protect_required else frozenset())
     metrics = context_metrics(
         rendered,
         fitted,
@@ -81,19 +93,9 @@ def render_context_with_metrics(
         max_chars=max_chars,
         max_tokens=max_tokens,
     )
-    if role == "god" and isinstance(context.get("world_index"), dict) and context.get("world_index"):
-        # These sections carry the current target and the machine fields a
-        # structural proposal needs.  Their loss is not harmless reference
-        # compaction, so make it visible in the audit record.
-        required = {
-            tag for tag in (
-                "evolution_trigger", "season_plan", "world_growth_ledger",
-                "world_behavior_catalog", "world_action_catalog",
-            )
-            if tag in (metrics.get("source_sections") or {})
-        }
-        metrics["required_sections"] = sorted(required)
-        metrics["omitted_required"] = sorted(required & set(metrics.get("omitted") or []))
+    if required:
+        metrics["required_sections"] = sorted(visible_required)
+        metrics["omitted_required"] = missing_sections(fitted, visible_required)
     return fitted, metrics
 
 

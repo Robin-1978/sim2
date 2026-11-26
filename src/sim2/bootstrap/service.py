@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import shutil
 import tempfile
 from pathlib import Path
@@ -12,8 +13,11 @@ from ..evolution.config import normalize_evolution_config
 from ..persistence.store import WorldStore, config_hash
 from ..world.lifecycle import validate_incapacitation_rule
 from ..world.player_template import PlayerTemplateError, parse_player_template
+from ..world.definition_compiler import EFFECT_TYPES
 from ..world.schema import AttributeSchema
+from ..world.time import validate_day_phase_duration
 from ..world.ui_text import validate_ui_text
+from .artwork import artwork_paths, decode_template_artwork, read_package_artwork, resolved_setting_artwork
 from .catalog_validation import validate_action_catalogs
 from .template_validation import validate_world_template
 
@@ -113,14 +117,14 @@ def world_template_schema() -> dict[str, Any]:
                 "items": {
                     "type": "object",
                     "properties": {
-                        "type": {"type": "string"},
+                        "type": {"type": "string", "enum": sorted(EFFECT_TYPES)},
                         "attribute": {"type": "string"},
                         "state": {"type": "string"},
                         "need": {"type": "string"},
                         "property": {"type": "string"},
                         "delta": {"type": "number"},
                         "item": {"type": "string"},
-                        "quantity": {"type": "number"},
+                        "quantity": {"anyOf": [{"type": "number"}, {"type": "string", "pattern": "^context\\."}]},
                         "location_id": {"type": "string"},
                         "entity_id": {"type": "string"},
                         "value": {},
@@ -152,7 +156,7 @@ def world_template_schema() -> dict[str, Any]:
             "agent_label": {"type": "string"},
             "summary": {"type": "string"},
             "entry_conditions": {"type": "array", "items": {"type": "string"}},
-            "estimated_minutes": {"type": "integer", "minimum": 1},
+            "estimated_minutes": {"type": "integer", "minimum": 0},
             "nodes": {
                 "type": "array",
                 "minItems": 1,
@@ -171,7 +175,7 @@ def world_template_schema() -> dict[str, Any]:
                 },
             },
         },
-        "required": ["id", "summary", "nodes"],
+        "required": ["id", "nodes"],
         "additionalProperties": True,
     }
     recipe_item = {
@@ -211,13 +215,14 @@ def world_template_schema() -> dict[str, Any]:
             "beliefs": {"type": "array"},
             "needs": {"type": "object"},
             "capabilities": {"type": "object"},
-            "initial_bt_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+            "initial_bt_ids": {"type": "array", "items": {"type": "string"}},
             "controller": {"type": "string", "enum": ["llm", "bt", "bt_only", "behavior_tree"]},
+            "controller_fallback": {"type": "string", "enum": ["bt"]},
             "bt_priority": {"type": "array", "items": {"type": "string"}},
             "initial_state": {"type": "object"},
             "inventory": {"type": "object"},
         },
-        "required": ["id", "name", "role", "ultimate_goal", "traits", "beliefs", "needs", "capabilities", "initial_bt_ids", "initial_state", "inventory"],
+        "required": ["id", "name", "role", "ultimate_goal", "needs", "initial_bt_ids", "initial_state", "inventory"],
         "additionalProperties": True,
     }
     rules_schema = {
@@ -252,8 +257,12 @@ def world_template_schema() -> dict[str, Any]:
                         "every_minutes": {"type": "integer", "minimum": 1},
                         "condition": {"type": "string"},
                         "effect": {"type": "object"},
+                        "effects": {"type": "array", "minItems": 1, "items": {"type": "object"}},
                     },
-                    "required": ["id", "scope", "every_minutes", "effect"],
+                    "required": ["id", "scope", "every_minutes"],
+                    "if": {"properties": {"scope": {"const": "world"}}},
+                    "then": {"anyOf": [{"required": ["effect"]}, {"required": ["effects"]}]},
+                    "else": {"required": ["effect"]},
                     "additionalProperties": True,
                 },
             },
@@ -308,7 +317,7 @@ def world_template_schema() -> dict[str, Any]:
                 },
             },
         },
-        "required": ["vital_attribute", "capacity_attribute", "needs"],
+        "required": ["vital_attribute"],
         "additionalProperties": True,
     }
     return {
@@ -326,13 +335,14 @@ def world_template_schema() -> dict[str, Any]:
                     "time_unit": {"type": "string", "enum": ["minute"]},
                     "properties": {"type": "object"},
                     "random_seed": {"type": "integer"},
+                    "artwork": {"type": "object", "additionalProperties": {"type": "string", "contentEncoding": "base64"}},
                 },
                 "required": ["id", "title", "premise", "properties"],
                 "additionalProperties": True,
             },
             "attributes": {"type": "array", "items": attribute},
             "locations": {"type": "array", "minItems": 1, "items": location},
-            "resources": {"type": "array", "items": typed_entity},
+            "resources": {"type": "array", "items": {**typed_entity, "required": ["id"]}},
             "objects": {"type": "array", "items": typed_entity},
             "factions": {"type": "array", "items": identified},
             "agents": {"type": "array", "minItems": 1, "items": agent},
@@ -342,7 +352,10 @@ def world_template_schema() -> dict[str, Any]:
             "behavior_trees": {"type": "array", "minItems": 1, "items": behavior},
             "relationships": {"type": "array", "items": {"type": "object"}},
             "rules": rules_schema,
-            "evolution": {"type": "object"},
+            "evolution": {"type": "object", "properties": {"roles": {
+                "type": "object", "additionalProperties": False,
+                "properties": {role: {"type": "boolean"} for role in ("god", "story", "director")},
+            }}},
             "story": {"type": "object"},
             "player_template": {"type": "object"},
             "initial_events": {
@@ -390,12 +403,12 @@ def describe_config(config_dir: Path) -> dict[str, Any]:
     }
 
 
-def world_package_template(config_dir: Path) -> dict[str, Any]:
+def world_package_template(config_dir: Path, *, include_artwork: bool = True) -> dict[str, Any]:
     """Read a reviewed package back into the unified authoring template.
 
     This is the inverse of ``write_world_package_from_template`` for the
-    browser workbench.  It intentionally reads only declarative YAML files and
-    never opens a running SQLite instance.
+    browser workbench. It reads authored YAML and images directly from the
+    package.
     """
 
     config_dir = Path(config_dir).resolve()
@@ -415,10 +428,16 @@ def world_package_template(config_dir: Path) -> dict[str, Any]:
         "start_world_minute": manifest.get("start_world_minute", 0),
         "random_seed": manifest.get("random_seed"),
         "properties": dict(world_state.get("properties", {}) or {}),
+        "setting": {key: value for key, value in setting.items() if key not in {"name", "premise", "genre", "locale", "public_history", "secrets", "calendar", "world_clock", "ui_text", "ui"}},
+        "initial_state": {key: value for key, value in world_state.items() if key != "properties"},
+        "package": {key: value for key, value in manifest.items() if key not in {"config_version", "world_id", "name", "time_unit", "start_world_minute", "random_seed", "files"}},
     }
-    for key in ("public_history", "secrets", "calendar", "world_clock", "ui_text"):
+    for key in ("public_history", "secrets", "calendar", "world_clock", "ui_text", "ui"):
         if key in setting:
             world[key] = setting[key]
+    artwork = read_package_artwork(config_dir, setting.get("ui")) if include_artwork else {}
+    if artwork:
+        world["artwork"] = {name: base64.b64encode(data).decode("ascii") for name, data in artwork.items()}
 
     def collection(filename: str, key: str) -> list[dict[str, Any]]:
         value = load_yaml(config_dir, filename, {}).get(key, [])
@@ -446,7 +465,7 @@ def world_package_template(config_dir: Path) -> dict[str, Any]:
         "recipes": collection("recipes.yaml", "recipes"),
         "relationships": [dict(item) for item in (factions_file.get("relationships", []) or []) if isinstance(item, dict)],
         "rules": load_yaml(config_dir, "rules.yaml", {}) or {},
-        "evolution": load_yaml(config_dir, "evolution.yaml", {}) or {},
+        "evolution": load_yaml(config_dir, "evolution.yaml", {"roles": {}}) or {"roles": {}},
         "story": load_yaml(config_dir, "story.yaml", {}) or {},
         "player_template": load_yaml(config_dir, "player_template.yaml", {}) or {},
         "initial_events": [dict(item) for item in initial_events if isinstance(item, dict)],
@@ -657,6 +676,10 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
     ids_by_key = {key: _ids(values, key, errors) for key, values in data.items()}
 
     rules = load_yaml(config_dir, "rules.yaml", {}) or {}
+    setting = load_yaml(config_dir, "setting.yaml", {}) or {}
+    travel = rules.get("travel") or {}
+    if isinstance(travel, dict) and travel.get("player_route_mode", "generic") not in {"generic", "authored"}:
+        errors.append("rules.travel.player_route_mode must be generic or authored")
     resources = load_yaml(config_dir, "locations.yaml", {}).get("resources", [])
     if not isinstance(resources, list):
         errors.append("locations.yaml.resources must be a list")
@@ -721,6 +744,8 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
     for action in data["actions"]:
         if not isinstance(action.get("id"), str):
             continue
+        if error := validate_day_phase_duration(action, setting):
+            errors.append(error)
         for parameter in (action.get("parameters") or {}).values():
             if isinstance(parameter, dict) and parameter.get("entity_ref") and parameter["entity_ref"] not in known_entities:
                 errors.append(f"action {action.get('id')} references unknown entity {parameter['entity_ref']}")
@@ -738,6 +763,10 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
                     if isinstance(child, str) and child not in behavior_ids:
                         errors.append(f"behavior {behavior.get('id')} references unknown child behavior {child}")
     for agent in data["agents"]:
+        if agent.get("controller_fallback") is not None and (
+            agent.get("controller_fallback") != "bt" or agent.get("controller", "llm") != "llm"
+        ):
+            errors.append(f"agent {agent.get('id')} controller_fallback must be bt on an llm controller")
         for behavior_id in agent.get("initial_bt_ids", []):
             if behavior_id not in behavior_ids:
                 errors.append(f"agent {agent.get('id')} references unknown behavior {behavior_id}")
@@ -770,14 +799,30 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
             errors.append(f"relationship references unknown target {relation.get('to')}")
 
     errors.extend(validate_incapacitation_rule(rules))
-    setting = load_yaml(config_dir, "setting.yaml", {})
     errors.extend(validate_ui_text(setting.get("ui_text") if isinstance(setting, dict) else None))
     try:
         evolution = normalize_evolution_config(load_yaml(config_dir, "evolution.yaml", {}) or {})
     except (TypeError, ValueError) as exc:
         errors.append(f"evolution.yaml: {exc}")
         evolution = {}
+    evolution_root = evolution.get("evolution", evolution)
+    director_action = (evolution_root.get("director") or {}).get("behavior_action")
+    if director_action and director_action not in action_ids:
+        errors.append(f"director.behavior_action references unknown Action {director_action}")
+    for task, contract in (evolution_root.get("contracts") or {}).items():
+        constraints = contract.get("behavior_constraints") or {}
+        if constraints and constraints.get("action_id") not in action_ids:
+            errors.append(f"contract {task}.behavior_constraints references unknown Action {constraints.get('action_id')}")
     _validate_event_wake_references(data, rules, evolution, errors)
+    if not errors:
+        try:
+            for name in artwork_paths(setting.get("ui")):
+                if name not in declared_files:
+                    errors.append(f"package artwork must be declared in manifest.files: {name}")
+            if not errors:
+                errors.extend(validate_world_template(world_package_template(config_dir))["errors"])
+        except ValueError as exc:
+            errors.append(str(exc))
 
     return {"valid": not errors, "errors": errors, "manifest": manifest}
 
@@ -787,6 +832,9 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
     validation = validate_config(config_dir)
     if not validation["valid"]:
         raise ValueError("Invalid world configuration: " + "; ".join(validation["errors"]))
+    setting = load_yaml(config_dir, "setting.yaml", {})
+    artwork = read_package_artwork(config_dir, setting.get("ui"))
+    instance_setting, artwork_blobs = resolved_setting_artwork(setting, artwork)
     runtime_root = Path(runtime_root or (Path.home() / ".sim2"))
     db_path = runtime_root / "instances" / instance_id / "world.sqlite3"
     if db_path.exists():
@@ -799,14 +847,14 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
             store.repositories.metadata.set("world_id", manifest.get("world_id", instance_id))
             store.repositories.metadata.set("instance_id", instance_id)
             store.repositories.metadata.set("config_version", manifest.get("config_version", "unknown"))
-            store.repositories.metadata.set("config_hash", config_hash(config_dir))
+            store.repositories.metadata.set("config_hash", config_hash(config_dir, artwork))
             store.repositories.metadata.set("world_minute", manifest.get("start_world_minute", 0))
             store.repositories.metadata.set("time_unit", manifest.get("time_unit", "minute"))
             store.repositories.metadata.set("runtime_status", "running")
             store.repositories.metadata.set("random_seed", manifest.get("random_seed"))
 
-            setting = load_yaml(config_dir, "setting.yaml", {})
-            store.repositories.metadata.set("setting", setting)
+            store.repositories.metadata.set("setting", instance_setting)
+            store.repositories.artwork.replace(artwork_blobs)
             world_state = load_yaml(config_dir, "world_state.yaml", {}).get("world_state", {})
             store.repositories.metadata.set("world_properties", world_state.get("properties", {}))
             rules = load_yaml(config_dir, "rules.yaml", {})
@@ -817,7 +865,7 @@ def create_instance(config_dir: Path, instance_id: str, runtime_root: Path | Non
             for item in (rules.get("needs", []) or []):
                 if isinstance(item, dict) and item.get("id"):
                     default_needs.setdefault(str(item["id"]), float(item.get("target", 100)))
-            evolution = normalize_evolution_config(load_yaml(config_dir, "evolution.yaml", {}) or {})
+            evolution = normalize_evolution_config(load_yaml(config_dir, "evolution.yaml", {"roles": {}}) or {"roles": {}})
             store.repositories.metadata.set("evolution", evolution)
             story = load_yaml(config_dir, "story.yaml", {})
             store.repositories.metadata.set("story", story)
@@ -963,11 +1011,12 @@ def write_world_package_from_template(
         validation = validate_world_template(template)
         if not validation["valid"]:
             raise ValueError("Invalid world template: " + "; ".join(validation["errors"]))
+    world = dict(template.get("world") or {})
+    artwork = decode_template_artwork(world)
     output_dir = Path(output_dir).resolve()
     if output_dir.exists() and any(output_dir.iterdir()) and not overwrite:
         raise FileExistsError(f"world package directory is not empty: {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
-    world = dict(template.get("world") or {})
     files: list[str] = []
 
     def values(key: str) -> list[dict[str, Any]]:
@@ -995,16 +1044,24 @@ def write_world_package_from_template(
         files.append(name)
 
     setting = {
+        **dict(world.get("setting") or {}),
         "name": world.get("title", world.get("id")),
         "premise": world.get("premise", ""),
         "genre": world.get("genre", ""),
         "locale": world.get("locale", "en"),
     }
-    for optional in ("public_history", "secrets", "calendar", "world_clock", "ui_text"):
+    for optional in ("public_history", "secrets", "calendar", "world_clock", "ui_text", "ui"):
         if world.get(optional) is not None:
             setting[optional] = world[optional]
     write("setting.yaml", setting)
-    write("world_state.yaml", {"world_state": {"properties": dict(world.get("properties") or {})}})
+    for name, data in artwork.items():
+        path = output_dir / name
+        if not path.resolve().is_relative_to(output_dir):
+            raise ValueError(f"artwork {name} must be inside its package")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        files.append(name)
+    write("world_state.yaml", {"world_state": {**dict(world.get("initial_state") or {}), "properties": dict(world.get("properties") or {})}})
     write("locations.yaml", {"locations": collections["locations"], "resources": values("resources")})
     write("objects.yaml", {"objects": collections["objects"]})
     write("factions.yaml", {"factions": collections["factions"], "relationships": values("relationships")})
@@ -1020,7 +1077,7 @@ def write_world_package_from_template(
     rules = template.get("rules", {})
     write("rules.yaml", dict(rules) if isinstance(rules, dict) else {"world_rules": list(rules or [])})
     write("opening_events.yaml", {"opening_events": values("initial_events") or values("opening_events")})
-    write("evolution.yaml", dict(template.get("evolution") or {}))
+    write("evolution.yaml", dict(template.get("evolution") or {"roles": {}}))
     write("story.yaml", dict(template.get("story") or {}))
     write("player_template.yaml", dict(template.get("player_template") or {}))
     prompts = template.get("prompts") if isinstance(template.get("prompts"), dict) else {}
@@ -1032,6 +1089,7 @@ def write_world_package_from_template(
             (output_dir / path).write_text(yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8")
             files.append(path)
     manifest = {
+        **dict(world.get("package") or {}),
         "config_version": str(template.get("template_version", "template-1")),
         "world_id": str(world.get("id")),
         "name": str(world.get("title") or world.get("id")),
@@ -1079,11 +1137,35 @@ def upgrade_instance(config_dir: Path, db_path: Path) -> dict[str, Any]:
         if existing_rules.get("world_rules"):
             next_rules["world_rules"] = existing_rules["world_rules"]
         next_setting = dict(store.repositories.metadata.get("setting", {}) or {})
-        next_setting.update(load_yaml(config_dir, "setting.yaml", {}))
+        authored_setting = load_yaml(config_dir, "setting.yaml", {})
+        artwork = read_package_artwork(config_dir, authored_setting.get("ui"))
+        instance_setting, artwork_blobs = resolved_setting_artwork(authored_setting, artwork)
+        next_setting.update(instance_setting)
+        fingerprint = config_hash(config_dir, artwork)
+        next_evolution = normalize_evolution_config(load_yaml(config_dir, "evolution.yaml", {"roles": {}}) or {"roles": {}})
         counts: dict[str, int] = {}
         with store.transaction():
             store.repositories.metadata.set("setting", next_setting)
+            if "ui" in instance_setting:
+                store.repositories.artwork.replace(artwork_blobs)
             store.repositories.metadata.set("rules", next_rules)
+            properties = dict(store.repositories.metadata.get("world_properties", {}) or {})
+            configured_state = load_yaml(config_dir, "world_state.yaml", {}).get("world_state", {}) or {}
+            for key, value in (configured_state.get("properties") or {}).items():
+                properties.setdefault(key, value)
+            store.repositories.metadata.set("world_properties", properties)
+            for resource in load_yaml(config_dir, "locations.yaml", {}).get("resources", []):
+                try:
+                    store.repositories.entities.get_entity(resource["id"])
+                except KeyError:
+                    store.repositories.entities.put_entity(resource["id"], "resource", resource.get("name", resource["id"]), resource)
+            schedule = {}
+            minute = int(store.repositories.metadata.get("world_minute", 0) or 0)
+            if next_evolution is not None:
+                store.repositories.metadata.set("evolution", next_evolution)
+                schedule = next_evolution.get("evolution", next_evolution).get("schedule", {})
+                for task_type, key in (("god_local", "god_local_minutes"), ("god_structural", "god_structural_minutes")):
+                    store.repositories.evolution.sync_recurring_task(task_type, "god", None, task_type, minute, int(schedule.get(key, 0)))
             for filename, key, table in (
                 ("recipes.yaml", "recipes", "recipe_def"),
                 ("actions.yaml", "actions", "action_def"),
@@ -1110,14 +1192,27 @@ def upgrade_instance(config_dir: Path, db_path: Path) -> dict[str, Any]:
                     continue
                 current = [str(value) for value in (existing_agent.get("initial_bt_ids") or [])]
                 additions = [str(value) for value in (item.get("initial_bt_ids") or []) if str(value) not in current]
-                if additions:
+                controller_config = {
+                    key: item[key] for key in ("controller", "controller_fallback", "bt_priority")
+                    if key in item and item[key] != existing_agent.get(key)
+                }
+                if additions or controller_config:
                     existing_agent["initial_bt_ids"] = [*current, *additions]
+                    existing_agent.update(controller_config)
                     store.repositories.entities.put_agent(
                         agent_id,
                         existing_agent,
                         str(existing_agent.get("name") or agent_id),
                     )
                     agents_updated += 1
+                if next_evolution is not None:
+                    llm_controlled = str(existing_agent.get("controller") or "llm").casefold() == "llm"
+                    for prefix, task_type, key in (
+                        ("reflection", "daily_reflection", "agent_reflection_minutes"),
+                        ("innovation", "weekly_innovation", "agent_innovation_minutes"),
+                    ):
+                        cadence = int(schedule.get(key, 0)) if llm_controlled else 0
+                        store.repositories.evolution.sync_recurring_task(f"{prefix}:{agent_id}", "agent_reflection", agent_id, task_type, minute, cadence)
             counts["agents_updated"] = agents_updated
             player_template = load_yaml(config_dir, "player_template.yaml", {})
             template_behaviors = [
@@ -1140,9 +1235,9 @@ def upgrade_instance(config_dir: Path, db_path: Path) -> dict[str, Any]:
                     )
                     players_updated += 1
             counts["players_updated"] = players_updated
-            store.repositories.metadata.set("config_hash", config_hash(config_dir))
+            store.repositories.metadata.set("config_hash", fingerprint)
             store.repositories.metadata.set("config_version", manifest.get("config_version", "unknown"))
-        return {"status": "ok", "db_path": str(db_path), "config_hash": config_hash(config_dir), **counts}
+        return {"status": "ok", "db_path": str(db_path), "config_hash": fingerprint, **counts}
     finally:
         store.close()
 

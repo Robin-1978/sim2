@@ -1568,3 +1568,19 @@ also covers opening an existing package, guided editing, compile, smoke, export,
 path confinement and the explicit WorldBuilder route. The remaining items in
 this plan are historical cleanup and provider-specific operational checks, not
 an unverified web design claim.
+
+### Windward Skyfall framework review (2026-11-26)
+
+The world package still defines the clock, route gates, pressure thresholds and endings. Platform admits intents and commits their effects in SQLite. Windward 0.2 keeps that ownership and closes three gaps across layers.
+
+- Travel policy now gates Platform admission and client route projection. Calendar durations use one estimator in the view, admission and Action execution. World tick events publish configured wakes in the same transaction, and authored exploration reuses the engine's completion event.
+- Director policy and plan advancement share one persistence path. A plan may count validated behavior bindings to an existing Action. That same count drives structural Agent completion. Typed definition proposals share contract validation across direct intents and tool calls, including a pre-commit limit on batched proposals.
+- The next runtime consolidation is to share condition inputs across view, sequential start, parallel start and completion. The old salvage check compared a destination parameter with a copy of itself during Action startup. Windward now explicitly compares the current location with the destination at start and completion. The existing execution snapshot and transactional result checks provide the boundary for this work.
+- Package and template authoring still have different validation contracts. Windward 0.2 passed package validation. Exporting it via `world_package_template` and passing the result to `validate_world_template` yielded 91 diagnostics, including player-only behavior assignment, valid effect types and multi-effect minute rules. The adapter also omits UI configuration and opening world facts on round-trip. An export → validate → import test with Windward and another world would make this boundary measurable.
+
+Windward 0.3 and Tidebound 2.2 exercise the same world contracts for recurring
+supply claims. Resource effects commit through Platform. Outcome events wake
+Story and alter the next allocation window through saved world state. Director
+closure now records an outcome event tied to newly created content. The LLM
+policy sees that result after the world tick commits. The role and context
+review, with remaining evaluation gates, is in [Agent Quality Audit](agent-quality-audit.md).

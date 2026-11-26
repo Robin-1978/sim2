@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .budget import DEFAULT_CONTEXT_WINDOW_TOKENS
+
 
 DEFAULT_MAX_COMPLETION_TOKENS = 2048
 DEFAULT_MAX_AGENT_ITERATIONS = 4
@@ -31,6 +33,7 @@ class ProviderConfig:
     retry_backoff_seconds: float = 1.0
     adapter: str | None = None
     extra_body: dict[str, Any] | None = None
+    context_window_tokens: int = DEFAULT_CONTEXT_WINDOW_TOKENS
 
 
 @dataclass(frozen=True)
@@ -72,6 +75,9 @@ class LLMConfig:
                         f"Provider {name!r} must not define {limit_key!r}; "
                         f"configure it under roles.<role>.{limit_key}"
                     )
+            context_window = value.get("context_window_tokens", DEFAULT_CONTEXT_WINDOW_TOKENS)
+            if type(context_window) is not int or context_window <= 0:
+                raise ValueError(f"Provider {name!r} context_window_tokens must be a positive integer")
             providers[name] = ProviderConfig(
                 name=name,
                 provider_type=value.get("type", "openai_compatible"),
@@ -85,6 +91,7 @@ class LLMConfig:
                 retry_backoff_seconds=max(0.0, float(value.get("retry_backoff_seconds", 1.0))),
                 adapter=value.get("adapter"),
                 extra_body=dict(value.get("extra_body") or {}),
+                context_window_tokens=context_window,
             )
         if not providers:
             raise ValueError(f"No LLM providers configured in {config_path}")

@@ -84,9 +84,57 @@ export function actionButtonLabel(category, action) {
   }
 
 
+export function activeOpportunity() {
+    const view = state.view;
+    if (view?.active_task?.bt || view?.active_task?.action) return null;
+    const spotlights = uiConfig().spotlights || {};
+    const actions = new Map((view?.actions || []).map((action) => [action.ref, action]));
+    for (const goal of view?.goals || []) {
+      if (!Object.hasOwn(spotlights, goal.id)) continue;
+      const choices = (goal.ready_behavior_refs || []).map((ref) => actions.get(ref)).filter(Boolean);
+      if (choices.length) return { goal, choices, presentation: spotlights[goal.id] || {} };
+    }
+    return null;
+}
+
+
+function renderOpportunity(opportunity) {
+    const panel = $("opportunity-panel");
+    panel.classList.toggle("hidden", !opportunity);
+    const list = $("opportunity-choices");
+    list.replaceChildren();
+    if (!opportunity) return;
+    const { goal, choices, presentation } = opportunity;
+    $("opportunity-title").textContent = goal.label;
+    $("opportunity-brief").textContent = goal.summary;
+    const deadline = $("opportunity-deadline");
+    const minutes = presentation.deadline_property
+      ? state.view.world_properties?.[presentation.deadline_property]
+      : presentation.deadline_clock_minute - state.view.world_time?.minute_of_day;
+    const hasDeadline = Number.isFinite(minutes) && minutes > 0;
+    deadline.classList.toggle("hidden", !hasDeadline);
+    deadline.textContent = hasDeadline ? `剩余 ${Math.ceil(minutes)} 分钟` : "";
+    for (const action of choices) {
+      const button = el("button", "opportunity-choice");
+      button.type = "button";
+      const head = el("span", "opportunity-choice-head");
+      head.append(el("strong", "", action.choice || action.name || "行动"));
+      head.append(el("span", "opportunity-arrow", "→"));
+      head.lastChild.setAttribute("aria-hidden", "true");
+      button.append(head);
+      button.append(el("span", "opportunity-choice-detail", action.summary || action.purpose || ""));
+      button.append(el("small", "", translateTime(action.time || "时间未知")));
+      button.addEventListener("click", () => beginAction(action, button));
+      list.append(button);
+    }
+}
+
+
 export function renderActions() {
     const view = state.view;
     const actions = Array.isArray(view?.actions) ? view.actions : [];
+    const opportunity = activeOpportunity();
+    renderOpportunity(opportunity);
     const filterRoot = $("action-filters");
     const present = new Set(actions.map(actionCategory));
     const filters = ["全部", ...CATEGORY_ORDER.filter((item) => present.has(item))];
@@ -113,7 +161,7 @@ export function renderActions() {
       // with its destination dialog when the view offers one.
       .filter((action) => !(genericTravel && action.kind === "travel"));
     const taskActive = Boolean(view?.active_task?.bt || view?.active_task?.action);
-    const featured = !taskActive && filtered.length ? chooseRecommendedAction(filtered) : null;
+    const featured = !taskActive && !opportunity && filtered.length ? chooseRecommendedAction(filtered) : null;
     const recommended = $("recommended-action");
     recommended.replaceChildren();
     recommended.classList.toggle("hidden", !featured);
@@ -121,11 +169,13 @@ export function renderActions() {
 
     const grid = $("action-grid");
     grid.replaceChildren();
-    const rest = featured ? filtered.filter((action) => action !== featured) : filtered;
+    const rest = filtered.filter((action) => action !== featured && !opportunity?.choices.includes(action));
     if (!actions.length) {
       grid.append(el("div", "inventory-empty", "现在没有平台认可的行动；可以在地图上换一个地点。"));
     } else if (!rest.length && !featured) {
-      grid.append(el("div", "inventory-empty", "这个分类下暂时没有可执行行动。"));
+      grid.append(el("div", "inventory-empty", opportunity && filtered.length
+        ? "这个分类的行动在上方抉择中。"
+        : "这个分类下暂时没有可执行行动。"));
     }
     const limit = state.actionExpanded ? rest.length : Math.min(5, rest.length);
     for (const action of rest.slice(0, limit)) {
@@ -283,7 +333,7 @@ export function renderResultBeat() {
       || outcome.behavior_id
       || "行动完成";
     $("result-detail").textContent = failed
-      ? `行动未完成${result ? ` · ${result}` : ""}`
+      ? `行动未完成${result ? ` · ${resultLabel(result)}` : ""}`
       : (resultLabel(result) || humanizeKey(result || "completed"));
 
     const deltas = $("result-deltas");
@@ -309,7 +359,6 @@ export function renderResultBeat() {
       chips.push(`${attributeLabel(key)} ${diff > 0 ? "+" : "−"}${Math.abs(diff).toFixed(2)}`);
     }
     for (const chip of chips.slice(0, 4)) deltas.append(el("span", "badge", chip));
-    if (!chips.length) deltas.append(el("span", "badge", result || "世界已记录"));
   }
 
 
@@ -318,18 +367,22 @@ export function renderMobileActionBar() {
     if (!bar) return;
     const task = state.view?.active_task || {};
     const taskActive = Boolean(task.bt || task.action);
+    const opportunity = activeOpportunity();
     const actions = Array.isArray(state.view?.actions) ? state.view.actions : [];
-    const action = taskActive ? null : chooseRecommendedAction(actions);
-    if (!taskActive && !action) {
+    const action = taskActive || opportunity ? null : chooseRecommendedAction(actions);
+    bar._action = action;
+    bar._opportunity = Boolean(opportunity);
+    if (!taskActive && !action && !opportunity) {
       bar.classList.add("hidden");
-      bar._action = null;
       return;
     }
     bar.classList.remove("hidden");
-    bar._action = action;
     if (taskActive) {
       $("mobile-primary-label").textContent = `推进：${task.bt || task.action || "当前行动"}`;
       $("mobile-primary-meta").textContent = `还需 ${Number(task.remaining_minutes || 0)} 分钟`;
+    } else if (opportunity) {
+      $("mobile-primary-label").textContent = opportunity.goal.label;
+      $("mobile-primary-meta").textContent = "查看抉择";
     } else {
       $("mobile-primary-label").textContent = action.choice || action.name || "下一步";
       $("mobile-primary-meta").textContent = `${actionCategory(action)} · ${translateTime(action.time || "时间未知")}`;

@@ -5,6 +5,62 @@ whether its choice or proposal follows from that view. Schema validity and an
 `accepted` Platform result are necessary, but neither is sufficient evidence of
 quality.
 
+## Current architecture review
+
+The platform uses a bounded ReAct loop for characters and world roles, typed
+tools, persisted tasks and a single owner for world mutations. Keep that
+boundary and select model calls by the ambiguity of the task. A policy with one
+valid choice can be deterministic. Ambiguous choices can use a model and still
+commit through the same intent and outcome contracts.
+
+| Area | What works today | Remaining gap and acceptance measure |
+| --- | --- | --- |
+| Context | Role-specific AgentView, paged world index, ranked memory, and a preflight budget for the full request. | Compare request estimates with measured usage by provider and model. Calibrate headroom for long tool results and multilingual inputs. |
+| Decision | The Agent receives executable behaviors and current targets. Platform checks revisions, preconditions and costs before applying intents. Background BTs and configured fallback can progress without a provider. | Some costs and tradeoffs are still conveyed as prose. Evaluate whether choices change when deadlines, capacity, scarcity or goal priorities change, and whether committed outcomes follow from those choices. |
+| Reflection | Evidence gates and claim statuses distinguish reported information, promises and confirmed outcomes. A visible `event:<id>` now resolves beyond the recent event window. | Belief updates still lack a mandatory source and a way to supersede outdated beliefs. Compare later decisions with and without the retained lesson. Evaluate memory retrieval and correction separately. |
+| Story | Story receives committed source events and validates follow-up availability when it proposes an actionable beat. | A grounded narrative beat can be informational. Evaluate playable beats by who can act, when the choice expires, which branches resolve and which outcomes change the world. |
+| God | Tools, scope and proposal counts are bounded by a task contract. Ordered stages can resume from persisted evidence. Turn quality uses the actual iteration budget. | Evaluate reachability, reuse, terminal state and duplicate proposals after restart. Score authored content by its use in the world as well as its admission. |
+| Director | Counts identify candidates. A plan completes only after a linked result, and the LLM policy receives the committed outcome boundary before choosing again. | Counts and selected context properties still dominate prioritization. Evaluate whether plans respond to unmet claims, repeated failures and prior outcomes. Compare the LLM policy with deterministic planning over the same seeds. |
+
+Use deterministic replay for authority, conservation, deadlines and causal
+links. For model-driven behavior, run repeated remote trials against matching
+seeds and context variants, and inspect decisions, traces and committed world
+outcomes. Measure success rate, repeatability and token use. The two-world
+supply regression demonstrates a bounded NPC loop. It does not measure model
+preference, long-horizon playability or spontaneous adversarial choices.
+
+### Full request budget and outcome evaluation
+
+The runtime now budgets the complete provider request. It removes old tool
+exchanges in groups, retains the latest exchange with its matching results,
+and puts the active structural stage in the protected decision section. When
+the remaining budget cannot fit the required evidence, the runtime records a
+`context_budget` rejection before calling the provider. The audit records
+request input, native tool schema size, output reserve and omitted history.
+
+For ReAct turns with the same world snapshot and tool schemas, the next
+request extends the prior input prefix and puts current feedback last. If
+the cached form exceeds the budget or the visible world state changes, the
+engine sends the fresh compact form. Cache hit rates use only token counts
+for which the provider returned cache usage. Repeated outcome trials reuse
+one provider session per world. The provider routes the requests and owns
+the cache.
+
+`scripts/verify_agent_outcomes.py` runs Windward and Tidebound in fresh
+instances with and without unmet relief. It reports the visible allocation
+choices, trace grade and outcome separately. The outcome grade requires the
+same execution to complete on time and commit the expected resource changes.
+Each scenario also checks the stock and downstream world conditions. It
+measures how the agent responds to a change in the valid choices. Autonomous
+preference among competing valid choices requires repeated real-provider
+trials. This first scenario suite evaluates allocation decisions.
+
+- [Anthropic on context engineering and selective retrieval](https://www.anthropic.com/research/effective-context-engineering-for-ai-agents)
+- [Anthropic on memory retrieval and consolidation](https://www.anthropic.com/research/components-of-agent-memory)
+- [Anthropic on bounded workflows and agents](https://www.anthropic.com/research/building-effective-agents)
+- [OpenAI on agent evals](https://developers.openai.com/api/docs/guides/agent-evals) and [Anthropic on evaluating agent traces and outcomes](https://www.anthropic.com/research/demystifying-evals-for-ai-agents)
+- [Park et al. on observation, reflection and planning in simulated characters](https://arxiv.org/abs/2304.03442)
+
 ## Context criteria
 
 Each session keeps a stable protocol and tool schema at the front, followed by

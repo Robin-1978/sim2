@@ -6,6 +6,10 @@ from typing import Any
 
 import yaml
 
+from worlds import world_path
+
+from ..bootstrap.artwork import artwork_digest, read_artwork_file
+
 
 def _load_yaml(path: Path) -> dict[str, Any]:
     try:
@@ -13,6 +17,25 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     except (OSError, yaml.YAMLError):
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def _cover_art(root: Path, setting: dict[str, Any]) -> bytes | None:
+    ui = setting.get("ui")
+    if not isinstance(ui, dict) or not ui.get("cover_art"):
+        return None
+    try:
+        return read_artwork_file(root, ui["cover_art"])
+    except ValueError:
+        return None
+
+
+def catalog_artwork(world_id: str, digest: str) -> bytes | None:
+    try:
+        root = world_path(world_id)
+    except (ImportError, OSError, ValueError):
+        return None
+    image = _cover_art(root, _load_yaml(root / "setting.yaml"))
+    return image if image and artwork_digest(image) == digest else None
 
 
 def bundled_world_catalog() -> list[dict[str, Any]]:
@@ -37,6 +60,7 @@ def bundled_world_catalog() -> list[dict[str, Any]]:
         manifest = _load_yaml(manifest_path)
         setting = _load_yaml(path / "setting.yaml")
         world_id = str(manifest.get("world_id") or path.name)
+        artwork = _cover_art(path, setting)
         try:
             order = int(manifest.get("order") or 100)
         except (TypeError, ValueError):
@@ -47,6 +71,7 @@ def bundled_world_catalog() -> list[dict[str, Any]]:
                 "name": str(setting.get("name") or manifest.get("name") or world_id),
                 "premise": str(setting.get("premise") or ""),
                 "genre": str(setting.get("genre") or ""),
+                "cover_art": f"/catalog-art/{path.name}/{artwork_digest(artwork)}.webp" if artwork else "",
                 "locale": str(setting.get("locale") or "en"),
                 "kind": str(manifest.get("kind") or "world"),
                 "order": order,

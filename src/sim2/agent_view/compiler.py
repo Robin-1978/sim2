@@ -163,6 +163,28 @@ class AgentViewCompiler(
     def _attribute_schema(self) -> AttributeSchema:
         return AttributeSchema(self.store.repositories.metadata.get("attributes", []) or [], self.store.repositories.metadata.get("rules", {}) or {})
 
+    def _decision_briefs(self, agent_id: str, rules: dict[str, Any], agent: dict[str, Any]) -> list[dict[str, Any]]:
+        events = (rules.get("decision_policy") or {}).get("wake_events") or []
+        if not events:
+            return []
+        minute = int(self.store.repositories.metadata.get("world_minute", 0))
+        world = self.store.repositories.metadata.get("world_properties", {}) or {}
+        briefs = []
+        for event in self.events_repo.recent_events_by_types(events, limit=20):
+            deadline = event.get("deadline_minutes")
+            if type(deadline) is not int or deadline <= 0 or agent_id not in (event.get("audience") or []):
+                continue
+            remaining = event["world_minute"] + deadline - minute
+            condition = event.get("active_when")
+            if remaining <= 0 or (condition and not self.conditions.evaluate(str(condition), agent=agent, target={}, context={}, world=world)):
+                continue
+            briefs.append({
+                "event_id": event["event_id"], "event_type": event["event_type"], "summary": event.get("summary"),
+                "remaining_minutes": remaining, "claimants": [self._entity_name(value) for value in event.get("claimants", [])],
+                "miss_cost": event.get("miss_cost"),
+            })
+        return sorted(briefs, key=lambda item: item["remaining_minutes"])[:3]
+
     def build_decision_view(
         self,
         agent_id: str,
@@ -288,13 +310,14 @@ class AgentViewCompiler(
             if active_duration > 0
             else 0.0
         )
+        world_time = self._world_time()
         result = {
             "context_version": "1", "role": role,
             "world_revision": int(self.store.repositories.metadata.get("world_revision", 0) or 0),
             "agent_revision": int(agent.get("agent_revision", 0) or 0),
             "prompt_protocol": prompt_protocol,
             "platform_rules": platform_rules,
-            "world_time": self._world_time(),
+            "world_time": world_time,
             "self": {"id": agent_id, "name": agent.get("name", agent_id), "role": agent.get("role", "agent"), "status": state.get("status", "idle"), "location": current_location.get("name", location_id) if isinstance(current_location, dict) else location_id, "known_routes": known_routes, "faction_ids": agent.get("faction_ids", []), "attributes": self._attribute_values(agent, state), "goal": agent.get("ultimate_goal")},
             "identity": {"traits": agent.get("traits", {}), "beliefs": agent.get("beliefs", []), "capabilities": agent.get("capabilities", {})},
             "goal_tags": agent.get("goal_tags", []),
@@ -329,7 +352,10 @@ class AgentViewCompiler(
             "active_institutions": active_institutions,
             "institution_ledgers": institution_ledgers,
             "story_goals": story_goals,
-            "progression_goals": self._progression_goals(agent, available=available, diagnostics=diagnostics, bt_defs=bt_defs),
+            "progression_goals": self._progression_goals(
+                agent, available=available, diagnostics=diagnostics, bt_defs=bt_defs,
+                day_phase=world_time.get("day_phase"),
+            ),
             "behavior_assignments": behavior_assignments,
             "active_story_beats": active_story_beats,
             "active_story_threads": active_story_threads,
@@ -340,6 +366,7 @@ class AgentViewCompiler(
             "witnessed_violations": violation_view["witnessed"],
             "unresolved_violations": violation_view["unresolved"],
             "decision_constraints": decision_constraints if role == "agent_decision" else [],
+            "decision_briefs": self._decision_briefs(agent_id, rules, agent) if role == "agent_decision" else [],
             "last_platform_result": self._with_behavior_choice(
                 self._humanize_record(state.get("last_platform_result")), bt_defs
             ),

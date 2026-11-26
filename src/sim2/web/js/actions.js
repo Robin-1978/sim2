@@ -839,19 +839,12 @@ export async function openMap() {
 
 export function travelToNode(node) {
     const travelAction = (state.view?.actions || []).find(
-      (entry) => entry.ref === "behavior:travel" && entry.parameters?.location_id === node.id,
+      (entry) => entry.kind === "travel" && (entry.destination_id || entry.parameters?.location_id) === node.id,
     );
+    if (!travelAction) return;
     const dialog = $("map-dialog");
     if (dialog.open) dialog.close();
-    // beginAction forwards action.parameters; calling submitAction directly
-    // sent an empty parameter object, dropping the destination.
-    beginAction(travelAction || {
-      ref: "behavior:travel",
-      choice: node.name || node.id,
-      name: node.name || node.id,
-      kind: "travel",
-      parameters: { location_id: node.id },
-    });
+    beginAction(travelAction);
   }
 
 

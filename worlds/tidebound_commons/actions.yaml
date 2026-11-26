@@ -573,3 +573,112 @@ actions:
   interaction_policy: allow
   kind: atomic
   executor: effect_pipeline
+- id: allocate_emergency_stock_defense
+  verb: allocate
+  version: 1
+  description: 本批淡水全部拨给抢修队。支撑加固完成，居民补给延后。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.public
+  - world.supply_consultation == 1
+  - world.supply_minutes > 0
+  - world.emergency_stock >= 4
+  - world.supply_relief_due == 0
+  duration:
+    minutes: 20
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_resource_delta
+    resource_id: emergency_water_cache
+    delta: -4
+    minimum: 0
+  - type: world_property_set
+    property: supply_consultation
+    value: 2
+  - type: world_property_set
+    property: supply_relief_due
+    value: 1
+  - type: world_property_delta
+    property: gate_supports
+    delta: 0.12
+    minimum: 0
+    maximum: 1
+  - type: world_property_delta
+    property: public_confidence
+    delta: -0.06
+    minimum: 0
+    maximum: 1
+  - type: public_event
+    event: supply.reserved
+    data: {resource_id: emergency_water_cache, quantity: 4, use: gate_supports}
+    summary: 本批淡水全部拨给抢修队。支撑加固完成，居民补给延后。
+  failure:
+    condition: actor.incapacitated or world.supply_consultation != 1 or world.supply_minutes
+      <= 0 or world.emergency_stock < 4 or world.supply_relief_due > 0
+    result: supply_window_closed
+  success:
+    condition: actor.alive
+    result: supply_reserved
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: allocate_emergency_stock_relief
+  verb: allocate
+  version: 1
+  description: 本批淡水全部拨给缺水住户，潮门失去一次加固机会。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.public
+  - world.supply_consultation == 1
+  - world.supply_minutes > 0
+  - world.emergency_stock >= 4
+  duration:
+    minutes: 20
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_resource_delta
+    resource_id: emergency_water_cache
+    delta: -4
+    minimum: 0
+  - type: world_property_set
+    property: supply_consultation
+    value: 3
+  - type: world_property_set
+    property: supply_relief_due
+    value: 0
+  - type: world_resource_delta
+    resource_id: relief_water_cache
+    delta: 4
+  - type: world_property_delta
+    property: public_confidence
+    delta: 0.08
+    minimum: 0
+    maximum: 1
+  - type: public_event
+    event: supply.shared
+    data: {resource_id: emergency_water_cache, quantity: 4, destination: relief_water_cache}
+    summary: 本批淡水全部拨给缺水住户，潮门失去一次加固机会。
+  failure:
+    condition: actor.incapacitated or world.supply_consultation != 1 or world.supply_minutes
+      <= 0 or world.emergency_stock < 4
+    result: supply_window_closed
+  success:
+    condition: actor.alive
+    result: supply_shared
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow

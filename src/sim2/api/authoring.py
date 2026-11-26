@@ -110,7 +110,11 @@ class AuthoringService:
         if not path.is_dir():
             return {"status": "rejected", "errors": [f"config directory does not exist: {path}"]}
         validation = validate_config(path)
-        template = world_package_template(path)
+        try:
+            template = world_package_template(path)
+        except ValueError:
+            # Keep the authored references editable when the image is unavailable.
+            template = world_package_template(path, include_artwork=False)
         errors = list(validation["errors"])
         return {
             "status": "passed" if validation["valid"] else "rejected",

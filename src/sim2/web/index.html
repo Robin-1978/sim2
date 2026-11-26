@@ -94,6 +94,14 @@
           </button>
           <div id="scene-objects" class="scene-objects"></div>
         </div>
+        <section id="opportunity-panel" class="opportunity-panel hidden" aria-labelledby="opportunity-title">
+          <div class="opportunity-heading">
+            <h2 id="opportunity-title"></h2>
+            <span id="opportunity-deadline" class="opportunity-deadline"></span>
+          </div>
+          <p id="opportunity-brief"></p>
+          <div id="opportunity-choices" class="opportunity-choices"></div>
+        </section>
         <div class="scene-footer">
           <div class="scene-section">
             <span class="scene-label">附近的人</span>
@@ -106,14 +114,6 @@
         </div>
       </section>
 
-
-      <section id="intention-panel" class="panel intention-panel hidden" aria-live="polite">
-        <div class="panel-title">
-          <div><span class="eyebrow">镇上的打算</span><h2 id="intention-title">他们为什么这么做</h2></div>
-          <span class="hint">来自居民自己的判断</span>
-        </div>
-        <div id="intention-list" class="intention-list"></div>
-      </section>
 
       <section id="task-panel" class="panel task-panel hidden" aria-live="polite">
         <div class="task-copy">
@@ -154,7 +154,7 @@
 
       <section class="panel actions-panel">
         <div class="panel-title actions-heading">
-          <div><span class="eyebrow">平台已校验</span><h2>下一步</h2></div>
+          <h2>可以做什么</h2>
           <div id="action-filters" class="segmented" role="tablist" aria-label="行动筛选"></div>
         </div>
         <div id="recommended-action" class="recommended-action"></div>
@@ -164,6 +164,13 @@
           <summary>条件不足的行动 <span id="locked-count"></span></summary>
           <div id="locked-list" class="locked-list"></div>
         </details>
+      </section>
+
+      <section id="intention-panel" class="panel intention-panel hidden" aria-live="polite">
+        <div class="panel-title">
+          <h2 id="intention-title">他们为什么这么做</h2>
+        </div>
+        <div id="intention-list" class="intention-list"></div>
       </section>
 
       <section id="crisis-strip" class="panel crisis-strip hidden" aria-label="关键世界指标">
@@ -250,7 +257,7 @@
   </main>
 
   <footer class="footer">
-    <span>sim2 · 事实来自 Platform · <span id="js-build">web-game-v26</span></span>
+    <span>sim2 · <span id="js-build">web-game-v27</span></span>
     <span id="last-update">尚未同步</span>
   </footer>
 
@@ -258,56 +265,55 @@
     <div class="entry-bg" aria-hidden="true"><span></span><span></span><span></span></div>
     <div class="entry-shell">
       <section class="entry-main" aria-labelledby="entry-title">
-        <div id="entry-cover" class="entry-cover" aria-hidden="true"></div>
-        <div class="entry-heading">
-          <span class="eyebrow">世界大厅</span>
-          <h1 id="entry-title">世界</h1>
-          <p id="entry-tagline" class="entry-tagline hidden"></p>
-          <p id="entry-premise">正在读取世界…</p>
-          <div class="badge-row">
-            <span id="entry-genre" class="badge">—</span>
-            <span id="entry-season" class="badge accent">—</span>
-            <span id="entry-instance" class="badge">—</span>
+        <header class="entry-hero">
+          <div id="entry-cover" class="entry-cover" aria-hidden="true"></div>
+          <div class="entry-heading">
+            <span id="entry-genre" class="eyebrow">世界大厅</span>
+            <h1 id="entry-title">世界</h1>
+            <p id="entry-tagline" class="entry-tagline hidden"></p>
           </div>
-        </div>
-
-        <div id="entry-stakes" class="entry-stakes hidden" aria-label="世界关键指标"></div>
-
-        <div id="entry-cast" class="entry-cast hidden">
-          <span class="eyebrow">这个世界里的人</span>
-          <div id="entry-cast-list" class="entry-cast-list"></div>
-        </div>
+        </header>
+        <p id="entry-premise" class="entry-premise">正在读取世界…</p>
 
         <div id="entry-no-world" class="entry-callout hidden">
-          <span class="eyebrow">还没有世界</span>
-          <h2>从世界列表选一个模板，马上开始</h2>
-          <p>创建实例后会自动打开。首次创建不需要命令行，也不需要手动填写管理口令；之后的世界管理会通过本页的“管理权限”解锁。</p>
-          <ol class="entry-steps">
-            <li><span>1</span><div><strong>选一个世界</strong><small>世界列表包含内置世界和自建包；每个世界有独立存档。</small></div></li>
-            <li><span>2</span><div><strong>创建实例</strong><small>实例 ID 决定存档目录，创建后会立即打开。</small></div></li>
-            <li><span>3</span><div><strong>进入角色</strong><small>选一个出身，或继续这个实例已有的角色。</small></div></li>
-          </ol>
+          <button id="entry-browse-worlds" class="button primary" type="button">挑选世界</button>
         </div>
 
         <div id="entry-play" class="entry-body">
           <div id="entry-continue" class="continue-card hidden"></div>
 
           <div id="entry-new-character" class="entry-form">
-            <label>角色名<input id="entry-name" placeholder="例如：旅人" autocomplete="off" maxlength="24"></label>
-            <p class="hint">角色 ID 由系统生成。创建后这个实例会绑定一个玩家；再次进入时直接点“继续游戏”。</p>
+            <label>角色名<input id="entry-name" placeholder="你叫什么名字？" autocomplete="off" maxlength="24"></label>
           </div>
 
+          <button id="entry-submit" class="button primary entry-submit" type="button">进入世界</button>
           <div id="entry-origin-section" class="entry-origins">
-            <span class="eyebrow">选择出身（仅新角色）</span>
+            <span class="eyebrow">选择出身</span>
             <div id="origin-list" class="origin-list"></div>
+            <details id="origin-details" class="entry-world-details origin-details hidden">
+              <summary id="origin-details-title"></summary>
+              <div id="origin-details-copy"></div>
+            </details>
           </div>
 
         </div>
 
         <p id="entry-error" class="form-error" role="alert"></p>
 
+        <details id="entry-world-details" class="entry-world-details">
+          <summary>了解这个世界</summary>
+          <div id="entry-stakes" class="entry-stakes hidden" aria-label="世界关键指标"></div>
+          <div id="entry-cast" class="entry-cast hidden">
+            <span class="eyebrow">这个世界里的人</span>
+            <div id="entry-cast-list" class="entry-cast-list"></div>
+          </div>
+        </details>
         <div class="entry-footer">
-          <span id="entry-world-state" class="hint">—</span>
+          <div class="entry-meta">
+            <span id="entry-world-state" class="hint">—</span>
+            <span id="entry-season" class="hint">—</span>
+            <span id="entry-instance" class="hint">—</span>
+          </div>
           <button id="entry-return" class="button ghost hidden" type="button">返回当前游戏</button>
         </div>
       </section>
@@ -315,18 +321,19 @@
       <aside class="entry-side" aria-label="世界与存档">
         <section class="entry-panel">
           <div class="entry-panel-head">
-            <div><span class="eyebrow">存档</span><h2>世界实例</h2></div>
+            <h2>我的存档</h2>
             <button id="entry-worlds-refresh" class="icon-button" type="button" title="刷新世界列表" aria-label="刷新世界列表"></button>
           </div>
           <div id="entry-instance-list" class="entry-instance-list"></div>
-          <button id="entry-create-toggle" class="button ghost wide" type="button">＋ 创建新世界</button>
-          <button id="entry-open-editor" class="button ghost wide" type="button">在世界编辑器中设计</button>
-          <p class="hint entry-editor-hint">编辑器用于自定义世界包、编译检查、smoke 和从模板创建实例；会沿用当前管理会话。</p>
+          <div class="entry-panel-actions">
+            <button id="entry-create-toggle" class="button ghost wide" type="button">创建新世界</button>
+            <button id="entry-open-editor" class="text-button" type="button">世界编辑器</button>
+          </div>
         </section>
 
-        <section id="entry-create-panel" class="entry-panel hidden">
+        <section id="entry-create-panel" class="entry-panel hidden" tabindex="-1">
           <div class="entry-panel-head">
-            <div><span class="eyebrow">新世界</span><h2>选择一个世界模板</h2></div>
+            <h2>选择世界</h2>
           </div>
           <div id="world-template-list" class="world-template-list"></div>
           <label class="world-id-field">实例 ID<input id="new-instance-id" placeholder="例如：my_world_001" autocomplete="off" maxlength="64"></label>
@@ -342,7 +349,6 @@
         </section>
       </aside>
     </div>
-    <button id="entry-submit" class="button primary entry-submit" type="button">进入世界</button>
   </div>
 
   <div id="settings-drawer" class="drawer hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">

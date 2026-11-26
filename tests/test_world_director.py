@@ -8,6 +8,7 @@ import pytest
 
 from sim2.bootstrap.service import create_instance
 from sim2.evolution.config import normalize_evolution_config
+from sim2.intents.models import BehaviorIntent
 from sim2.platform.runtime import Platform
 from sim2.prompting.renderer import render_context
 from sim2.world.growth import build_growth_ledger
@@ -43,7 +44,7 @@ def test_director_selects_a_target_and_queues_a_structural_task(tmp_path: Path) 
         platform.close()
 
 
-def test_director_completes_the_plan_when_the_target_cell_grows(tmp_path: Path) -> None:
+def test_director_keeps_the_plan_open_until_a_new_place_is_used(tmp_path: Path) -> None:
     platform = _town(tmp_path, "director-advance")
     try:
         _director_config(platform, targets=["place"])
@@ -60,13 +61,62 @@ def test_director_completes_the_plan_when_the_target_cell_grows(tmp_path: Path) 
         with platform.store.transaction():
             second = platform._services["director"].tick(2)
         assert second and second["status"] == "active"
-        assert second["plan_id"] != first["plan_id"]
-        assert second["baseline"] == first["baseline"] + 1
-        completed = platform.store.repositories.metadata.get("season_plan")
-        assert completed["status"] == "active"
-        history = platform.store.repositories.metadata.get("season_plan_history", {}) or {}
-        assert history[first["plan_id"]]["status"] == "completed"
-        assert history[second["plan_id"]]["status"] == "active"
+        assert second["plan_id"] == first["plan_id"]
+        assert second["baseline"] == first["baseline"]
+        ledger = build_growth_ledger(platform.store)
+        assert ledger["cells"]["place"]["count"] == first["baseline"] + 1
+        assert any("Director Test Place" in entry for entry in ledger["dead_content"])
+        assert not platform.store.repositories.metadata.get("last_completed_season_plan")
+    finally:
+        platform.close()
+
+
+def test_director_does_not_count_a_stock_reservation_until_the_behavior_completes(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "director-resource-proof")
+    try:
+        _director_config(platform, targets=["resource"], window="6h")
+        platform.step()
+        proposal = platform.submit_entity_proposal("god", {
+            "entity_type": "resource",
+            "name": "Director Test Reeds",
+            "description": "A new batch of reeds on the old road.",
+            "location_id": "old_road",
+            "state": {"quantity": 0},
+        })
+        assert proposal["status"] == "accepted", proposal
+        resource_id = proposal["entity_id"]
+        entities = platform.store.repositories.entities
+        with platform.store.transaction():
+            stock = entities.get_entity(resource_id)
+            stock["initial_state"]["quantity"] = 6
+            entities.put_entity(resource_id, "resource", stock["name"], {"initial_state": stock["initial_state"]})
+            actor = entities.get_agent("luo_shan")
+            actor["initial_state"]["location_id"] = "old_road"
+            entities.update_agent("luo_shan", actor)
+            gathering = next(item for item in entities.get_definitions("bt_def") if item["id"] == "gather_reeds")
+            gathering["nodes"] = [gathering["nodes"][1]]
+            gathering["nodes"][0]["parameters"]["resource_tag"] = resource_id
+            entities.put_definition("bt_def", "gather_reeds", gathering)
+
+        for intent_id in ("cancelled-gathering", "completed-gathering"):
+            submitted = platform.submit_behavior(BehaviorIntent(
+                actor_id="luo_shan", behavior_ref="behavior:gather_reeds", target={}, parameters={},
+                reason="Gather reeds from the new stock.", confidence=1.0, intent_id=intent_id,
+            ))
+            assert submitted["status"] == "accepted", submitted
+            platform.step()
+            assert entities.get_entity(resource_id)["initial_state"]["quantity"] == 4
+            assert not platform.store.repositories.metadata.get("last_completed_season_plan")
+            if intent_id == "cancelled-gathering":
+                platform.interrupt_behavior("luo_shan", "abandon the collection", hard=True)
+                assert entities.get_entity(resource_id)["initial_state"]["quantity"] == 6
+
+        for _ in range(120):
+            platform.step()
+        plan = platform.store.repositories.metadata.get("last_completed_season_plan")
+        event, = platform.store.repositories.events.events_by_ids([plan["outcome_event_id"]])
+        assert event["event_type"] == "behavior.completed"
+        assert event["execution_id"] == "completed-gathering"
     finally:
         platform.close()
 

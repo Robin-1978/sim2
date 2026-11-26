@@ -8,6 +8,7 @@ from typing import Any
 
 from ..intents.models import BehaviorIntent
 from ..platform.runtime import Platform
+from ..world.navigation import generic_player_travel_enabled, route_distance
 from ..world.player_template import PlayerTemplateError, parse_player_template
 from ..world.ui_text import UiText
 from .authoring import AuthoringService
@@ -536,12 +537,23 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
     # each known route as an explicit, validated intent instead.
     setting = platform.store.repositories.metadata.get("setting", {}) or {}
     ui = UiText.from_setting(setting)
-    # A world may ship explicit, gated travel behaviors (for example a route
-    # that needs a rope or a knowledge fact).  In that case the generic route
-    # affordance would bypass those gates, so the world asks for it to stay
-    # hidden and Platform keeps the authored travel verbs.
-    explicit_travel = bool((setting.get("ui") or {}).get("explicit_travel"))
-    for route in ([] if explicit_travel else routes):
+    generic_travel = generic_player_travel_enabled(platform.store)
+    if not generic_travel:
+        routes = []
+        for action in actions if not active_task.get("bt") else []:
+            destination_id = action.get("destination_id")
+            if not destination_id or any(route["id"] == destination_id for route in routes):
+                continue
+            destination = platform.store.repositories.entities.get_entity(destination_id)
+            routes.append({
+                "id": destination_id,
+                "name": str(destination.get("name") or destination_id),
+                "distance": route_distance(platform.store, current_id, destination_id),
+                "minutes": action["duration_minutes"],
+                "safe": bool(destination.get("safe", False)),
+                "behavior_ref": action["ref"],
+            })
+    for route in routes if generic_travel else []:
         if active_task.get("action") or active_task.get("bt"):
             break
         actions.insert(0, {
@@ -740,6 +752,11 @@ class ControlService:
 
     def enter_player(self, player_id: str, origin_id: str, name: str | None = None) -> dict[str, Any]:
         return self.platform.enter_player(player_id, origin_id, name=name)
+
+    def world_artwork(self, digest: str) -> bytes | None:
+        store = self.platform.store
+        with store.read_transaction():
+            return store.repositories.artwork.get(digest)
 
     def world_info(self) -> dict[str, Any]:
         """Return the presentation facts a game client needs before entry."""

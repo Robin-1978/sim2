@@ -12,6 +12,7 @@ import httpx
 
 from .config import DEFAULT_MAX_AGENT_ITERATIONS, DEFAULT_MAX_COMPLETION_TOKENS, DEFAULT_MAX_READ_TOOL_CALLS, LLMConfig, ProviderConfig
 from .adapters import ModelProtocolError, resolve_adapter
+from .budget import ContextBudgetExceeded, request_metrics
 
 
 class LLMProvider(Protocol):
@@ -116,28 +117,7 @@ class OpenAICompatibleProvider:
                 time.sleep(delay)
         raise RuntimeError("LLM request retry loop ended unexpectedly")
 
-    def complete_json(self, *, system: str, context: str, tools: list[dict[str, Any]] | None = None, messages: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-        started = time.perf_counter()
-
-        def with_latency(value: dict[str, Any]) -> dict[str, Any]:
-            usage = dict(value.get("_usage") or {})
-            usage["request_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 1)
-            value["_usage"] = usage
-            return value
-
-        headers = {"content-type": "application/json"}
-        if not self.session_id:
-            self.session_id = str(uuid4())
-        session_header = self.config.session_header or ("x-opencode-session" if "opencode.ai" in self.config.base_url else None)
-        if session_header:
-            headers[session_header] = self.session_id
-        api_key = None
-        if self.config.api_key_env:
-            # The value is read only at request time and is never logged or persisted.
-            api_key = os.environ.get(self.config.api_key_env)
-            if not api_key:
-                raise RuntimeError(f"Required API key environment variable is not set: {self.config.api_key_env}")
-            headers["authorization"] = f"Bearer {api_key}"
+    def _completion_payload(self, *, system: str, context: str, tools: list[dict[str, Any]] | None = None, messages: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         payload = {
             "model": self.config.model,
             "messages": messages or [
@@ -153,12 +133,52 @@ class OpenAICompatibleProvider:
         # An explicitly configured extra_body value wins for providers that
         # require ``max_completion_tokens`` or another naming convention.
         payload["max_tokens"] = int(self.max_completion_tokens)
-        if self.config.extra_body:
-            payload.update(self.config.extra_body)
+        # Extra provider options may tune output limits, but the runtime owns
+        # the messages and tools that were budgeted and authorized for a turn.
+        payload.update({key: value for key, value in (self.config.extra_body or {}).items() if key not in {"messages", "tools", "tool_choice"}})
+        if "max_completion_tokens" in payload:
+            payload.pop("max_tokens", None)
         if tools and self.adapter.native_tools:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
-        payload = self.adapter.prepare_payload(payload)
+        return self.adapter.prepare_payload(payload)
+
+    def _payload_budget(self, payload: dict[str, Any]) -> dict[str, int]:
+        output = payload.get("max_completion_tokens", payload.get("max_tokens"))
+        response_format = payload.get("response_format") or {}
+        return request_metrics(
+            payload["messages"], payload.get("tools"), window=self.config.context_window_tokens,
+            completion=int(output) if output is not None else self.max_completion_tokens,
+            response_schema=response_format.get("json_schema") if isinstance(response_format, dict) else None,
+        )
+
+    def completion_budget(self, **kwargs: Any) -> dict[str, int]:
+        return self._payload_budget(self._completion_payload(**kwargs))
+
+    def complete_json(self, *, system: str, context: str, tools: list[dict[str, Any]] | None = None, messages: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        started = time.perf_counter()
+
+        def with_latency(value: dict[str, Any]) -> dict[str, Any]:
+            usage = dict(value.get("_usage") or {})
+            usage["request_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 1)
+            value["_usage"] = usage
+            return value
+
+        payload = self._completion_payload(system=system, context=context, tools=tools, messages=messages)
+        budget = self._payload_budget(payload)
+        if budget["request_total_tokens_est"] > budget["context_window_tokens"]:
+            raise ContextBudgetExceeded("The model request exceeds the configured context window.")
+        headers = {"content-type": "application/json"}
+        if not self.session_id:
+            self.session_id = str(uuid4())
+        session_header = self.config.session_header or ("x-opencode-session" if "opencode.ai" in self.config.base_url else None)
+        if session_header:
+            headers[session_header] = self.session_id
+        if self.config.api_key_env:
+            api_key = os.environ.get(self.config.api_key_env)
+            if not api_key:
+                raise RuntimeError(f"Required API key environment variable is not set: {self.config.api_key_env}")
+            headers["authorization"] = f"Bearer {api_key}"
         url = f"{self.config.base_url}/chat/completions"
         response = self._post(url, headers=headers, payload=payload)
         # Some local OpenAI-compatible servers accept JSON mode but reject the

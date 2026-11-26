@@ -6,26 +6,65 @@ uses the plan for narrative direction; God receives the same target in its
 context and a ``god_structural`` task.  Neither role is allowed to substitute a
 research source for the requested structural cell.
 
-This service deliberately uses no provider.  A future LLM showrunner can
-replace the target-selection policy while keeping the same persisted plan
-contract.
+The deterministic and model policies share plan advancement and persistence.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from ..world.growth import build_growth_ledger
+from ..evolution.config import role_enabled
+
+from ..world.growth import build_growth_ledger, growth_count, growth_outcome_event
+
 
 class DirectorRuntimeMixin:
     """Select and advance the world's next structural growth target."""
 
     def _counts(self, config: dict[str, Any]) -> dict[str, int]:
-        ledger = build_growth_ledger(self._dependency("store"))
+        store = self._dependency("store")
+        targets = config.get("targets", [])
+        behavior_action = config.get("behavior_action")
+        ledger = build_growth_ledger(store) if not behavior_action or set(targets) != {"verb"} else None
         return {
-            str(cell): int((ledger.get("cells", {}).get(str(cell), {}) or {}).get("count", 0))
-            for cell in config.get("targets", [])
+            target: growth_count(store, target, behavior_action=behavior_action, ledger=ledger)
+            for target in targets
         }
+
+    def _plan_due(self, minute: int, config: dict[str, Any]) -> bool:
+        current = self._dependency("store").repositories.metadata.get("season_plan", {}) or {}
+        metric_changed = (
+            current.get("status") == "active"
+            and current.get("target_cell") == "verb"
+            and current.get("behavior_action") != config.get("behavior_action")
+        )
+        return metric_changed or self._should_kickoff(minute, config) or minute % int(config["cadence_minutes"]) == 0
+
+    def _advance_plan(self, minute: int, config: dict[str, Any], counts: dict[str, int]) -> dict[str, Any] | None:
+        store = self._dependency("store")
+        metadata = store.repositories.metadata
+        with store.transaction():
+            plan = dict(metadata.get("season_plan", {}) or {})
+            if plan.get("status") != "active":
+                return None
+            target = plan.get("target_cell")
+            metric_changed = target == "verb" and plan.get("behavior_action") != config.get("behavior_action")
+            growth = not metric_changed and counts.get(target, 0) > int(plan.get("baseline", 0) or 0)
+            outcome_event = growth_outcome_event(store, plan) if growth else None
+            if outcome_event:
+                plan.update(status="completed", completed_minute=minute, outcome_event_id=outcome_event)
+                metadata.set("last_completed_season_plan", plan)
+            elif metric_changed or int(plan.get("expires_minute", 0) or 0) <= minute:
+                plan.update(status="expired", completed_minute=minute)
+                if metric_changed:
+                    plan["closure_reason"] = "growth metric changed"
+                elif growth:
+                    plan["closure_reason"] = "registered content has no verified use"
+            else:
+                return plan
+            metadata.set("season_plan", plan)
+            self._remember_plan(plan)
+        return None
 
     def _context_reason(self, config: dict[str, Any]) -> str:
         """Compact world context the Director uses for its plan brief."""
@@ -85,7 +124,7 @@ class DirectorRuntimeMixin:
                 "reason": f"all target cells reached max_cell_units={limit}",
             })
 
-    def _write_plan(self, minute: int, target: str, counts: dict[str, int], reason: str | None = None) -> dict[str, Any]:
+    def _write_plan(self, minute: int, target: str, counts: dict[str, int], reason: str | None = None, *, rotate: bool = True) -> dict[str, Any]:
         config = self._config() or {}
         store = self._dependency("store")
         plan = {
@@ -102,15 +141,22 @@ class DirectorRuntimeMixin:
             ),
             "status": "active",
         }
+        if target == "verb" and config.get("behavior_action"):
+            plan["behavior_action"] = config["behavior_action"]
         # The LLM Director calls its provider outside the transaction; the
         # write itself stays atomic with the queued God task.
         with store.transaction():
             metadata = store.repositories.metadata
+            current = metadata.get("season_plan", {}) or {}
+            if current.get("status") == "active":
+                return current
+            plan["event_cursor"] = store.repositories.events.latest_event_id()
             metadata.set("season_plan", plan)
-            metadata.set("director_rotation", int(metadata.get("director_rotation", 0) or 0) + 1)
+            if rotate:
+                metadata.set("director_rotation", int(metadata.get("director_rotation", 0) or 0) + 1)
             self._remember_plan(plan)
             ready = store.repositories.evolution.ready_evolution_tasks()
-            if not any(item.get("task_type") == "god_structural" for item in ready):
+            if plan.get("behavior_action") or not any(item.get("task_type") == "god_structural" for item in ready):
                 store.repositories.evolution.put_evolution_task(
                     f"director:growth:{int(minute)}",
                     "god",
@@ -134,28 +180,13 @@ class DirectorRuntimeMixin:
         config = self._config()
         if config is None or minute <= 0:
             return None
-        kickoff = self._should_kickoff(minute, config)
-        if not kickoff and minute % int(config["cadence_minutes"]):
+        if not self._plan_due(minute, config):
             return None
-        store = self._dependency("store")
-        metadata = store.repositories.metadata
-        plan = dict(metadata.get("season_plan", {}) or {})
+        metadata = self._dependency("store").repositories.metadata
         counts = self._counts(config)
-        if plan.get("status") == "active":
-            target = str(plan.get("target_cell") or "")
-            if target in counts and counts[target] > int(plan.get("baseline", 0) or 0):
-                plan = {**plan, "status": "completed", "completed_minute": int(minute)}
-                with store.transaction():
-                    metadata.set("last_completed_season_plan", plan)
-                    metadata.set("season_plan", plan)
-                    self._remember_plan(plan)
-            elif int(plan.get("expires_minute", 0) or 0) <= minute:
-                plan = {**plan, "status": "expired", "completed_minute": int(minute)}
-                with store.transaction():
-                    metadata.set("season_plan", plan)
-                    self._remember_plan(plan)
-            else:
-                return plan
+        active = self._advance_plan(minute, config, counts)
+        if active is not None:
+            return active
         targets = self._eligible_targets(config, counts)
         if not targets:
             self._mark_saturated(config, minute)
@@ -189,6 +220,8 @@ class DirectorRuntimeMixin:
 
     def _config(self) -> dict[str, Any] | None:
         root = self._dependency("store").repositories.metadata.get("evolution", {}) or {}
+        if not role_enabled(root, "director"):
+            return None
         root = root.get("evolution", root) if isinstance(root, dict) else {}
         config = root.get("director") if isinstance(root, dict) else None
         if not isinstance(config, dict) or int(config.get("cadence_minutes", 0) or 0) <= 0:
@@ -201,69 +234,18 @@ class DirectorRuntimeMixin:
         config = self._config()
         if config is None or minute <= 0:
             return None
-        kickoff = self._should_kickoff(minute, config)
-        if not kickoff and minute % int(config["cadence_minutes"]):
+        if not self._plan_due(minute, config):
             return None
-        store = self._dependency("store")
-        metadata = store.repositories.metadata
-        plan = dict(metadata.get("season_plan", {}) or {})
-        ledger = build_growth_ledger(store)
-        counts = {
-            str(cell): int((ledger.get("cells", {}).get(str(cell), {}) or {}).get("count", 0))
-            for cell in config.get("targets", [])
-        }
-
-        if plan.get("status") == "active":
-            target = str(plan.get("target_cell") or "")
-            if target in counts and counts[target] > int(plan.get("baseline", 0) or 0):
-                plan = {**plan, "status": "completed", "completed_minute": int(minute)}
-                metadata.set("last_completed_season_plan", plan)
-                metadata.set("season_plan", plan)
-                self._remember_plan(plan)
-            elif int(plan.get("expires_minute", 0) or 0) <= minute:
-                plan = {**plan, "status": "expired", "completed_minute": int(minute)}
-                metadata.set("season_plan", plan)
-                self._remember_plan(plan)
-            else:
-                return plan
-
+        counts = self._counts(config)
+        active = self._advance_plan(minute, config, counts)
+        if active is not None:
+            return active
         targets = self._eligible_targets(config, counts)
         if not targets:
             self._mark_saturated(config, minute)
             return None
+        metadata = self._dependency("store").repositories.metadata
         rotation = int(metadata.get("director_rotation", 0) or 0)
-        if len(set(counts.values())) <= 1:
-            target = targets[rotation % len(targets)]
-            rotation += 1
-        else:
-            target = min(targets, key=lambda cell: (counts.get(cell, 0), targets.index(cell)))
-        plan = {
-            "plan_id": f"plan:{int(minute)}:{target}",
-            "target_cell": target,
-            "baseline": int(counts.get(target, 0)),
-            "created_minute": int(minute),
-            "expires_minute": int(minute) + int(config.get("window_minutes", 4320)),
-            "reason": "; ".join(
-                item for item in (
-                    ", ".join(f"{cell}={counts.get(cell, 0)}" for cell in targets),
-                    f"context: {self._context_reason(config)}" if self._context_reason(config) else "",
-                ) if item
-            ),
-            "status": "active",
-        }
-        metadata.set("season_plan", plan)
-        metadata.set("director_rotation", rotation)
-        self._remember_plan(plan)
-        ready = store.repositories.evolution.ready_evolution_tasks()
-        if not any(item.get("task_type") == "god_structural" for item in ready):
-            store.repositories.evolution.put_evolution_task(
-                f"director:growth:{int(minute)}",
-                "god",
-                "god",
-                "god_structural",
-                int(minute),
-                0,
-                status="ready",
-                data={"season_plan": plan},
-            )
-        return plan
+        rotate = len(set(counts.values())) <= 1
+        target = targets[rotation % len(targets)] if rotate else min(targets, key=lambda cell: (counts.get(cell, 0), targets.index(cell)))
+        return self._write_plan(minute, target, counts, rotate=rotate)

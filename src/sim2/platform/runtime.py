@@ -152,6 +152,9 @@ class Platform:
 
         return self._services["director"].plan_with_provider(provider, minute)
 
+    def plan_structure(self, minute: int) -> Any:
+        return self._services["director"].tick(minute)
+
     def submit_experience(self, *args: Any, **kwargs: Any) -> Any:
         return self._services["learning"].submit_experience(*args, **kwargs)
 
@@ -231,4 +234,5 @@ class Platform:
         return BehaviorExecutionService._resolve_parameters(parameters, state)
 
     def close(self) -> None:
+        self._services["evolution"].close()
         self.store.close()

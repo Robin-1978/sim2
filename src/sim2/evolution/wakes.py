@@ -179,7 +179,7 @@ class EventWakeScheduler:
                     task_id,
                     consumer,
                     task_actor,
-                    f"event_group:{group_id}",
+                    str(group.get("task_type") or f"event_group:{group_id}"),
                     int(minute),
                     0,
                     status="ready",

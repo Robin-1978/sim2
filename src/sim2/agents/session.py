@@ -23,6 +23,7 @@ class AgentTurn:
     initial_context: dict[str, Any] = field(default_factory=dict)
     prompt_history: list[str] = field(default_factory=list)
     context_metrics: list[dict[str, Any]] = field(default_factory=list)
+    iteration_budget: int | None = None
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,9 @@ class ReactSession:
     tool_calls_used: int = 0
     read_tool_calls: int = 0
     accepted_proposals: int = 0
+    iteration_budget: int | None = None
+    cache_seed_prompt: str = ""
+    cache_seed_tools: list[dict[str, Any]] | None = None
 
     def register_call(self, tool_name: str, arguments: dict[str, Any], *, is_read_tool: bool) -> int:
         """Count one requested tool call and return how often this exact request was made."""
@@ -95,7 +99,7 @@ class ReactSession:
         return AgentTurn(
             self.role, self.task_type, self.last_response if response is None else response,
             result, iterations, self.transcript, self.initial_context, self.prompt_history,
-            self.context_metrics,
+            self.context_metrics, self.iteration_budget,
         )
 
 
@@ -143,14 +147,21 @@ def model_tool_result(tool_name: str, result: dict[str, Any], *, state_attribute
     return compacted
 
 
-def trim_conversation_messages(messages: list[dict[str, Any]], *, max_tail: int = 6) -> list[dict[str, Any]]:
-    """Keep a bounded valid native-tool conversation tail."""
+def latest_exchange_size(messages: list[dict[str, Any]]) -> int:
+    for index in range(len(messages) - 1, 1, -1):
+        if messages[index].get("role") == "assistant":
+            return len(messages) - index
+    return 0
 
-    if len(messages) <= 2 + max(1, int(max_tail)):
+
+def trim_conversation_messages(messages: list[dict[str, Any]], *, max_tail: int = 6) -> list[dict[str, Any]]:
+    """Remove old exchanges while keeping the latest tool group intact."""
+
+    limit = max(latest_exchange_size(messages), int(max_tail), 0)
+    if len(messages) <= 2 + limit:
         return list(messages)
     prefix = list(messages[:2])
     tail = list(messages[2:])
-    limit = max(1, int(max_tail))
     while len(tail) > limit:
         removed = tail.pop(0)
         if removed.get("role") == "assistant" and removed.get("tool_calls"):

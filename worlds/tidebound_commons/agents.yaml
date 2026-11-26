@@ -2,6 +2,8 @@ agents:
 - id: mara
   name: 玛拉
   role: 潮务官
+  controller: llm
+  controller_fallback: bt
   ultimate_goal: 让公社撑过下一次风暴，同时把每一次修复的真实代价摆在所有人面前。
   traits:
     尽责: 0.92
@@ -20,7 +22,12 @@ agents:
     crafting: 0.72
     conversation: 0.7
     gathering: 0.45
+  bt_priority:
+  - allocate_emergency_stock_defense
+  - allocate_emergency_stock_relief
   initial_bt_ids:
+  - allocate_emergency_stock_defense
+  - allocate_emergency_stock_relief
   - inspect_gate
   - repair_gate
   - brace_gate

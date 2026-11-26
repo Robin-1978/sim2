@@ -28,7 +28,7 @@ ui:
     trade: 交易
     story: 世界剧情
     origin: 出身
-  pulse_prefixes: [storm, story, world.change, civilization, evolution, gate., confidence., season., signal., rain, market., commons.]
+  pulse_prefixes: [supply., storm, story, world.change, civilization, evolution, gate., confidence., season., signal., rain, market., commons.]
   result_labels:
     rationing_decided: 配给已调整
     repair_priority_decided: 抢修已完成

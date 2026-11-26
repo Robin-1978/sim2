@@ -112,7 +112,7 @@ class ContestedService(PlatformService):
         witnesses = self._witnesses(actor_id, location_id, minute)
         violation_id = f"vio_{uuid4().hex[:12]}"
         intent_id = str(state.get("active_bt_instance") or "")
-        self.resources._change_world_resource(resource_id, -amount, actor_id=actor_id)
+        self.resources.change_for_behavior(agent, resource_id, -amount)
         after = before - amount
         violation = {
             "violation_id": violation_id,

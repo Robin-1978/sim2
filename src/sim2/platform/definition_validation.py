@@ -16,6 +16,7 @@ from uuid import uuid4
 
 from ..world.bindings import iter_behavior_effects
 from ..world.definition_compiler import compile_definition_shape, definition_slug
+from ..world.time import validate_day_phase_duration
 from ..world.verbs import generic_parameter_target, infer_action_verb, infer_behavior_verb, normalize_verb, specific_capability_target
 
 DEFINITION_KINDS = frozenset({"attribute", "world_property", "action", "behavior", "recipe", "capability"})
@@ -346,6 +347,9 @@ class DefinitionValidationMixin:
 
     def _check_action_fields(self, definition: dict[str, Any], errors: list[str]) -> None:
         """Behavior-only fields belong in followup_behavior, never in an Action."""
+
+        if error := validate_day_phase_duration(definition, self.store.repositories.metadata.get("setting", {}) or {}):
+            errors.append(error)
 
         for field in (
             "entry_conditions", "success_results", "failure_results",

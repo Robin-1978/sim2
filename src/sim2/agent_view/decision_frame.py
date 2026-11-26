@@ -53,6 +53,7 @@ class Simulation:
     unavailable: bool = False
     unavailable_action: str = ""
     unavailable_reason: str | None = None
+    elapsed_minutes: int = 0
 
 
 class Guidance(NamedTuple):

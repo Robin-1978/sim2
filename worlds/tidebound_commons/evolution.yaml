@@ -37,8 +37,10 @@ director:
   # A failed or invalid model answer falls back to the deterministic least-cell
   # policy inside the world tick.
   policy: llm
+  context_properties: [storm_eta_hours, public_confidence, supply_consultation, supply_relief_due]
 limits:
   max_ready_god_tasks: 4
+  continue_during_cooldown: true
 contracts:
   # A cadence task has no event trigger, so it needs an explicit contract.
   # This is the structural review: add one new playable dimension, not one
@@ -67,6 +69,12 @@ contracts:
     assign_to:
     - 玛拉
 wakes:
+- id: story_after_supply_decision
+  'on': [supply.claims_opened, supply.reserved, supply.shared, supply.decision_expired]
+  for: story
+  tools: [query_history, propose_story_beat, wait]
+  external: true
+  purpose: 根据配给后的实际资源和关系解释谁付出了代价，并留下可执行的后续选择。
 - id: research_synthesis
   'on': [research.progressed, research.completed]
   for: god

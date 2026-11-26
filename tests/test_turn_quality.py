@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import pytest
 
 from sim2.agents.engine import AgentTurn
@@ -76,7 +77,13 @@ def test_session_is_bounded_to_six_iterations(iterations, expected):
     quality = evaluate_turn(make_turn("observer", "noop", iterations=iterations), {})
     check = checks_of(quality)["bounded_session"]
     assert check["passed"] is expected
-    assert check["detail"] == f"iterations={iterations}"
+    assert check["detail"] == f"iterations={iterations}/6"
+
+
+def test_structural_god_turn_is_graded_against_its_runtime_budget():
+    turn = make_turn("god", "wait", status="wait", iterations=12)
+    quality = evaluate_turn(replace(turn, iteration_budget=20), {})
+    assert checks_of(quality)["bounded_session"]["passed"] is True
 
 
 def test_a_rejected_step_needs_visible_platform_feedback():

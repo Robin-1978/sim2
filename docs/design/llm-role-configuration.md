@@ -106,8 +106,18 @@ the same envelope as the God role.
 
 ## 6. Reproduction
 
+Set `providers.<name>.context_window_tokens` to the window available at the
+endpoint, including output. The default is 32,768. The request budget includes
+the system message, the rendered snapshot, conversation messages, native tool
+and response schemas, configured output tokens and estimation headroom. World-level
+`context_limits` still apply to the snapshot. `context_budget` is a retryable
+preflight rejection. The provider receives no request if the required context
+and output reserve exceed the budget. Token estimates use UTF-8 and text
+length. Provider-reported usage gives the measured token count when available.
+
 ```bash
 python -c "from sim2.llm.config import LLMConfig; c=LLMConfig.load(); print(c.provider_name_for('director'), c.role_for('god'))"
 python scripts/verify_dynamic_social_content.py --provider remote --runs 1 --broad
 python scripts/run_full_social_loop.py --provider remote --rounds 2
+python scripts/verify_agent_outcomes.py --provider remote --runs 3
 ```

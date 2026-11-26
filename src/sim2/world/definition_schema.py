@@ -23,7 +23,7 @@ def propose_definition_schema() -> dict[str, Any]:
         },
         "nodes": {
             "type": "array",
-            "description": "Ordered executable nodes. Use an Action node with the exact visible Action name; include Travel before a destination Action.",
+            "description": "Exact visible Action names. Add Travel for other locations.",
             "items": {
                 "type": "object",
                 "properties": {
@@ -54,7 +54,7 @@ def propose_definition_schema() -> dict[str, Any]:
             "type": "object",
             "description": "Action costs. Reserve carried inputs under costs.reserve.",
         },
-        "preconditions": {"type": "array", "items": {"type": "string"}, "description": "Optional machine predicates."},
+        "preconditions": {"type": "array", "items": {"type": "string"}, "description": "Machine predicates."},
         "effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Set fields; bind stock targets via context.<param>."},
         "progress_effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Observable effects while a long Action progresses."},
         "success": {"type": "object", "description": "Action success: {condition?: machine predicate, result: short label}."},
@@ -84,7 +84,7 @@ def propose_definition_schema() -> dict[str, Any]:
                 "properties": definition_properties,
                 "additionalProperties": True,
             },
-            "assign_to": {"type": "array", "items": {"type": "string"}, "description": "For a behavior, visible characters that can execute it now; empty for other types."},
+            "assign_to": {"type": "array", "items": {"type": "string"}, "description": "For behaviors only. Visible actors able to execute now."},
             "followup_behavior": {
                 "type": "object",
                 "description": "Required for a new Action: bind one immediately executable behavior.",

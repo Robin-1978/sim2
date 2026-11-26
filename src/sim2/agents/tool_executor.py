@@ -46,9 +46,14 @@ class AgentToolExecutor:
         self.observed_world_revision = observed_world_revision
         self.observed_agent_revision = observed_agent_revision
         self.evolution_contract = dict(evolution_contract or {})
+        self.behavior_submission: dict[str, Any] | None = None
         self.allowed = set(ROLE_TOOLS.get(role, []))
+        task_tools = self.evolution_contract.get("allowed_tools", self.evolution_contract.get("tools"))
+        if isinstance(task_tools, list):
+            self.allowed.intersection_update(task_tools)
 
     def execute(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        self.behavior_submission = None
         if name not in self.allowed:
             return {"status": "rejected", "tool": name, "message": "This tool is not allowed for this role."}
         if name not in TOOL_DEFINITIONS:
@@ -103,15 +108,6 @@ class AgentToolExecutor:
 
     def _agent(self) -> dict[str, Any]:
         return self.platform.store.repositories.entities.get_agent(self.actor_id)
-
-    def _contract_visible_name(self, value: Any) -> str:
-        canonical = self.platform.targets.canonical_id(str(value))
-        if canonical:
-            try:
-                return str(self.platform.store.repositories.entities.get_agent(str(canonical)).get("name") or canonical)
-            except KeyError:
-                pass
-        return str(value)
 
     def _observe_nearby(self, question: str = "") -> dict[str, Any]:
         return self.platform.perception.observe_nearby(self.actor_id, question)
@@ -325,6 +321,8 @@ class AgentToolExecutor:
             # Keep canonical refs in Platform/audit storage, but return the
             # visible choice to the model so it never has to learn an ID.
             result = dict(result)
+            if result.get("status") == "accepted":
+                self.behavior_submission = {key: result[key] for key in ("behavior_ref", "intent_id", "execution_id") if key in result}
             result["choice"] = (behavior or {}).get("choice") or (behavior or {}).get("name")
             result.pop("behavior_ref", None)
         return result
@@ -451,51 +449,6 @@ class AgentToolExecutor:
         followup_recipe: dict[str, Any] | None = None,
         evidence: str = "",
     ) -> dict[str, Any]:
-        required_type = str(self.evolution_contract.get("required_definition_type") or "").strip()
-        if required_type and str(definition_type).strip().casefold() != required_type.casefold():
-            return {
-                "status": "rejected",
-                "failed_check": "evolution_contract",
-                "retryable": True,
-                "message": f"This evolution task requires a {required_type} definition; choose that definition_type or wait.",
-            }
-        required_assignees = self.evolution_contract.get("assign_to")
-        if isinstance(required_assignees, str):
-            required_assignees = [required_assignees]
-        if required_assignees:
-            supplied_items = list(assign_to or [])
-            if isinstance(followup_behavior, dict):
-                supplied_items.extend(followup_behavior.get("assign_to") or [])
-            supplied = {
-                str(self.platform.targets.canonical_id(str(item)) or item)
-                for item in supplied_items
-            }
-            missing = [
-                self._contract_visible_name(item)
-                for item in required_assignees
-                if str(self.platform.targets.canonical_id(str(item)) or item) not in supplied
-            ]
-            if missing:
-                return {
-                    "status": "rejected",
-                    "failed_check": "evolution_contract",
-                    "retryable": True,
-                    "message": "Assign the behavior to the configured audience so it enters the next NPC catalog.",
-                    "required_assign_to": [self._contract_visible_name(item) for item in required_assignees],
-                }
-        if self.evolution_contract.get("require_story_outcome") and str(definition_type).strip().casefold() == "action":
-            followup_definition = (followup_behavior or {}).get("definition") if isinstance(followup_behavior, dict) else None
-            outcome_events = followup_definition.get("outcome_events") if isinstance(followup_definition, dict) else None
-            if not any(
-                isinstance(event, dict) and "story" in {str(role) for role in (event.get("wake") or [])}
-                for event in (outcome_events or [])
-            ):
-                return {
-                    "status": "rejected",
-                    "failed_check": "evolution_contract",
-                    "retryable": True,
-                    "message": "This evolution task requires the bound behavior to declare one outcome_events entry with wake ['story'] so Story receives the executed result.",
-                }
         return self.platform.submit_definition_proposal(
             self.actor_id,
             {
@@ -507,6 +460,7 @@ class AgentToolExecutor:
                 "followup_recipe": dict(followup_recipe or {}) if followup_recipe else None,
                 "evidence": evidence,
             },
+            contract=self.evolution_contract,
         )
 
     def _propose_entity(

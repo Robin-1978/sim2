@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .bindings import iter_behavior_actions
 from .verbs import infer_behavior_verb, normalize_verb
 
 def _canonical_id(store: Any, value: Any) -> str:
@@ -28,6 +29,90 @@ def _canonical_id(store: Any, value: Any) -> str:
 def _count(store: Any, sql: str) -> int:
     row = store.connection.execute(sql).fetchone()
     return int(row["count"] if row else 0)
+
+
+def growth_count(store: Any, cell: str, *, behavior_action: str | None = None, ledger: dict[str, Any] | None = None) -> int:
+    """Count a plan's configured unit, or the default structural cell unit."""
+
+    if cell == "verb" and behavior_action:
+        definitions = {item["id"]: item for item in store.repositories.entities.get_definitions("bt_def")}
+        actions = {item["id"]: item for item in store.repositories.entities.get_definitions("action_def")}
+        return sum(
+            any(action.get("id") == behavior_action for action, _ in iter_behavior_actions(definition, actions, definitions))
+            for definition in definitions.values()
+            if definition.get("status", "active") == "active"
+        )
+    if ledger is None:
+        ledger = build_growth_ledger(store)
+    return int((ledger.get("cells", {}).get(cell) or {}).get("count", 0))
+
+
+def growth_outcome_event(store: Any, plan: dict[str, Any]) -> int | None:
+    """Find a committed use of content created after this plan opened."""
+
+    cell = plan.get("target_cell")
+    start = int(plan.get("created_minute", 0) or 0)
+    expires = int(plan["expires_minute"])
+    cursor = int(plan.get("event_cursor", 0) or 0)
+    if cell == "verb":
+        action_id = plan.get("behavior_action")
+        row = store.connection.execute(
+            """SELECT used.event_id FROM event_log AS created
+               JOIN event_log AS used ON used.event_type='behavior.completed' AND used.event_id>created.event_id
+                 AND json_extract(used.data_json,'$.behavior_id')=json_extract(created.data_json,'$.definition_id')
+               WHERE created.event_type='definition.registered'
+                 AND created.event_id>? AND created.world_minute>=? AND used.world_minute<=?
+                 AND json_extract(created.data_json,'$.definition_type')='behavior'
+                 AND (? IS NULL OR EXISTS (
+                   SELECT 1 FROM event_log AS action WHERE action.event_type='action.completed'
+                     AND json_extract(action.data_json,'$.execution_id')=json_extract(used.data_json,'$.execution_id')
+                     AND json_extract(action.data_json,'$.action_id')=?
+                 )) ORDER BY used.event_id LIMIT 1""",
+            (cursor, start, expires, action_id, action_id),
+        ).fetchone()
+    elif cell == "place":
+        row = store.connection.execute(
+            """SELECT used.event_id FROM event_log AS created
+               JOIN event_log AS used ON used.event_type='behavior.completed' AND used.event_id>created.event_id
+                 AND json_extract(used.data_json,'$.outcome.delta.location.after')=json_extract(created.data_json,'$.entity_id')
+               WHERE created.event_type='entity.created'
+                 AND created.event_id>? AND created.world_minute>=? AND used.world_minute<=?
+                 AND json_extract(created.data_json,'$.entity_type')='location' AND used.actor_id IS NOT NULL
+               ORDER BY used.event_id LIMIT 1""",
+            (cursor, start, expires),
+        ).fetchone()
+    elif cell == "resource":
+        rules = store.repositories.metadata.get("rules", {}) or {}
+        resource_types = rules.get("resource_entity_types", ["resource", "material"]) or []
+        row = store.connection.execute(
+            """SELECT completed.event_id FROM event_log AS created
+               JOIN event_log AS changed ON changed.event_type='resource.changed' AND changed.event_id>created.event_id
+                 AND json_extract(changed.data_json,'$.resource_id')=json_extract(created.data_json,'$.entity_id')
+               JOIN event_log AS completed ON completed.event_type='behavior.completed' AND completed.event_id>changed.event_id
+                 AND completed.actor_id=changed.actor_id
+                 AND json_extract(completed.data_json,'$.execution_id')=json_extract(changed.data_json,'$.execution_id')
+               WHERE created.event_type='entity.created'
+                 AND created.event_id>? AND created.world_minute>=? AND completed.world_minute<=?
+                 AND json_extract(created.data_json,'$.entity_type') IN (SELECT value FROM json_each(?))
+                 AND json_extract(changed.data_json,'$.before')<>json_extract(changed.data_json,'$.after')
+               ORDER BY completed.event_id LIMIT 1""",
+            (cursor, start, expires, json.dumps(resource_types)),
+        ).fetchone()
+    elif cell in {"rule", "social"}:
+        event_types = ("world.change.rule", "world.change.rule") if cell == "rule" else ("world.change.faction", "world.change.relationship")
+        row = store.connection.execute(
+            """SELECT used.event_id FROM event_log AS created
+               JOIN event_log AS used ON used.event_type='world.proposal.evaluated' AND used.event_id>created.event_id
+                 AND json_extract(used.data_json,'$.proposal_id')=json_extract(created.data_json,'$.proposal_id')
+               WHERE created.event_type IN (?,?)
+                 AND created.event_id>? AND created.world_minute>=? AND used.world_minute<=?
+                 AND json_extract(used.data_json,'$.status')='observed'
+               ORDER BY used.event_id LIMIT 1""",
+            (*event_types, cursor, start, expires),
+        ).fetchone()
+    else:
+        return None
+    return int(row["event_id"]) if row else None
 
 
 def build_growth_ledger(store: Any) -> dict[str, Any]:

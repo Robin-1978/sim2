@@ -1,9 +1,13 @@
 vital_attribute: integrity
+decision_policy:
+  wake_events: [supply.claims_opened]
 incapacitation:
   recovery:
     after_minutes: 720
     vital_fraction: 0.25
 capacity_attribute: stamina
+travel:
+  player_route_mode: authored
 location_tag_groups:
   safe:
   - safe
@@ -159,6 +163,12 @@ item_uses:
   beacon_core:
   - 安装到信标框架
 world_property_labels:
+  dawn_salvage: {label: 首航回收结果, hidden: true}
+  supply_consultation: {label: 配给状态, hidden: true}
+  supply_relief_due: {label: 配给履约, hidden: true}
+  supply_spare_plates: {label: 应急铜板, unit: amount, max: 1, group: 船体}
+  emergency_stock: {label: 应急铜料, unit: amount, max: 3}
+  supply_minutes: {label: 配给窗口剩余分钟, unit: minutes, max: 250}
   day:
     label: 第几天
     unit: amount
@@ -346,6 +356,7 @@ world_property_labels:
     max: 1
     hidden: true
 resource_property_projections:
+  emergency_copper_cache: emergency_stock
   ration: ration
   water: water
 resource_caps: {}
@@ -495,6 +506,76 @@ capability_progression:
     max_delta: 0.08
     max_value: 1.0
 minute_effects:
+- id: dawn_salvage_expired
+  scope: world
+  every_minutes: 1
+  condition: context.calendar_day == 1 and context.minute_of_day == 480 and world.dawn_salvage == 0 and world.ending_trigger == 0
+  effect: {type: world_property_set, property: dawn_salvage, value: 3}
+  event_type: skyfall.dawn_salvage
+  event_data: {choice: expired}
+  event_summary: 上午八点，拉紧的缆绳从绞盘上崩脱。铜料和求救灯都消失在云海里。
+- id: emergency_plates_used
+  scope: world
+  every_minutes: 1
+  condition: world.supply_spare_plates > 0 and world.hull_integrity < 0.9 and world.ending_trigger == 0
+  effects:
+  - {type: world_property_set, property: supply_spare_plates, value: 0}
+  - {type: world_property_delta, property: hull_integrity, delta: 0.12, maximum: 1}
+  event_type: supply.plates_used
+  event_summary: 阿岚用先前留在船上的应急铜板补住了风暴撕开的裂口。
+- id: supply_window_countdown
+  scope: world
+  every_minutes: 1
+  condition: world.supply_consultation == 1 and world.supply_minutes > 0
+  effect:
+    type: world_property_delta
+    property: supply_minutes
+    delta: -1
+    minimum: 0
+    maximum: 250
+- id: supply_window_expiry
+  scope: world
+  every_minutes: 1
+  condition: world.supply_consultation == 1 and world.supply_minutes <= 0
+  effects:
+  - type: world_property_set
+    property: supply_consultation
+    value: 4
+  - type: world_property_set
+    property: supply_relief_due
+    value: 1
+  - type: world_property_delta
+    property: camp_morale
+    delta: -0.03
+    minimum: 0
+    maximum: 1
+  event_type: supply.decision_expired
+  event_summary: 双方在配给窗口内没有达成分配。断桥的人等不到铜料，下一批物资必须先履约。
+- id: supply_window_open
+  scope: world
+  every_minutes: 720
+  condition: world.supply_consultation != 1 and world.ending_trigger == 0
+  effects:
+  - type: world_resource_delta
+    resource_id: emergency_copper_cache
+    delta: 3
+    maximum: 3
+  - type: world_property_set
+    property: supply_consultation
+    value: 1
+  - type: world_property_set
+    property: supply_minutes
+    value: 250
+  event_type: supply.claims_opened
+  event_data:
+    resource_id: emergency_copper_cache
+    units: 3
+    claimants: [alan, ke]
+    audience: [alan]
+    deadline_minutes: 250
+    active_when: world.supply_consultation == 1
+    miss_cost: 营地士气下降，下一批物资必须先偿还断桥配给。
+  event_summary: 航队只交付三份铜料。阿岚要补强船体，断桥信使申请同一批铜料。
 - id: satiety_decay
   scope: agent
   every_minutes: 1
@@ -551,17 +632,18 @@ minute_effects:
     delta: -2
 - id: day_clock
   scope: world
-  every_minutes: 1440
+  every_minutes: 1
+  condition: context.calendar_day != world.day
   effects:
-  - type: world_property_delta
+  - type: world_property_set
     property: day
-    delta: 1
-    maximum: 30
+    value: context.calendar_day
   event_type: day.started
   event_summary: 新的一天从云海下面升起来。
 - id: storm_daily
   scope: world
-  every_minutes: 1440
+  every_minutes: 1
+  condition: context.minute_of_day == 0 and world.ending_trigger == 0
   effects:
   - type: world_property_delta
     property: storm_pressure
@@ -620,7 +702,7 @@ minute_effects:
   event_summary: 风脊号撑不住了；云海从船体的裂缝里涌进来。
 - id: long_drift
   scope: world
-  every_minutes: 1440
+  every_minutes: 1
   condition: world.day >= 30 and world.ending_trigger == 0
   effects:
   - type: world_property_set
@@ -645,15 +727,57 @@ minute_effects:
     resource_id: water
     delta: 2
     maximum: 24
-- id: storm_stage_2_hull0
+- id: storm_stage_2
   scope: world
   every_minutes: 1
-  condition: world.storm_pressure >= 65 and world.storm_stage < 2 and world.ending_trigger == 0 and world.hull_level == 0
-  effects:
-  - type: world_property_delta
+  condition: world.storm_pressure >= 65 and world.storm_stage < 2 and world.ending_trigger == 0
+  effect:
+    type: world_property_set
     property: storm_stage
-    delta: 1
-    maximum: 3
+    value: 2
+- id: storm_stage_3
+  scope: world
+  every_minutes: 1
+  condition: world.storm_pressure >= 90 and world.storm_stage < 3 and world.ending_trigger == 0
+  effect:
+    type: world_property_set
+    property: storm_stage
+    value: 3
+- id: storm_eased_to_0
+  scope: world
+  every_minutes: 1
+  condition: world.storm_pressure < 35 and world.storm_stage > 0 and world.ending_trigger == 0
+  effect:
+    type: world_property_set
+    property: storm_stage
+    value: 0
+  event_type: storm.eased
+  event_summary: 风暴暂时退去，群岛又露出了轮廓。
+- id: storm_eased_to_1
+  scope: world
+  every_minutes: 1
+  condition: world.storm_pressure >= 35 and world.storm_pressure < 65 and world.storm_stage > 1 and world.ending_trigger == 0
+  effect:
+    type: world_property_set
+    property: storm_stage
+    value: 1
+  event_type: storm.eased
+  event_summary: 风暴暂时退去，群岛又露出了轮廓。
+- id: storm_eased_to_2
+  scope: world
+  every_minutes: 1
+  condition: world.storm_pressure >= 65 and world.storm_pressure < 90 and world.storm_stage > 2 and world.ending_trigger == 0
+  effect:
+    type: world_property_set
+    property: storm_stage
+    value: 2
+  event_type: storm.eased
+  event_summary: 风暴暂时退去，群岛又露出了轮廓。
+- id: storm_first_hit_hull0
+  scope: world
+  every_minutes: 1
+  condition: world.storm_stage >= 2 and world.storm_hit_seen == 0 and world.ending_trigger == 0 and world.hull_level == 0
+  effects:
   - type: world_property_delta
     property: hull_integrity
     delta: -0.12
@@ -665,15 +789,11 @@ minute_effects:
     maximum: 1
   event_type: storm.hit
   event_summary: 风暴第一次撞上风脊号；船体发出不祥的响声。
-- id: storm_stage_3_hull0
+- id: storm_first_critical_hull0
   scope: world
   every_minutes: 1
-  condition: world.storm_pressure >= 90 and world.storm_stage < 3 and world.ending_trigger == 0 and world.hull_level == 0
+  condition: world.storm_stage >= 3 and world.storm_critical_seen == 0 and world.ending_trigger == 0 and world.hull_level == 0
   effects:
-  - type: world_property_delta
-    property: storm_stage
-    delta: 1
-    maximum: 3
   - type: world_property_delta
     property: hull_integrity
     delta: -0.2
@@ -705,15 +825,11 @@ minute_effects:
     delta: -0.05
     minimum: 0
     maximum: 1
-- id: storm_stage_2_hull1
+- id: storm_first_hit_hull1
   scope: world
   every_minutes: 1
-  condition: world.storm_pressure >= 65 and world.storm_stage < 2 and world.ending_trigger == 0 and world.hull_level == 1
+  condition: world.storm_stage >= 2 and world.storm_hit_seen == 0 and world.ending_trigger == 0 and world.hull_level == 1
   effects:
-  - type: world_property_delta
-    property: storm_stage
-    delta: 1
-    maximum: 3
   - type: world_property_delta
     property: hull_integrity
     delta: -0.08
@@ -725,15 +841,11 @@ minute_effects:
     maximum: 1
   event_type: storm.hit
   event_summary: 风暴第一次撞上风脊号；船体发出不祥的响声。
-- id: storm_stage_3_hull1
+- id: storm_first_critical_hull1
   scope: world
   every_minutes: 1
-  condition: world.storm_pressure >= 90 and world.storm_stage < 3 and world.ending_trigger == 0 and world.hull_level == 1
+  condition: world.storm_stage >= 3 and world.storm_critical_seen == 0 and world.ending_trigger == 0 and world.hull_level == 1
   effects:
-  - type: world_property_delta
-    property: storm_stage
-    delta: 1
-    maximum: 3
   - type: world_property_delta
     property: hull_integrity
     delta: -0.14
@@ -765,15 +877,11 @@ minute_effects:
     delta: -0.035
     minimum: 0
     maximum: 1
-- id: storm_stage_2_hull2
+- id: storm_first_hit_hull2
   scope: world
   every_minutes: 1
-  condition: world.storm_pressure >= 65 and world.storm_stage < 2 and world.ending_trigger == 0 and world.hull_level >= 2
+  condition: world.storm_stage >= 2 and world.storm_hit_seen == 0 and world.ending_trigger == 0 and world.hull_level >= 2
   effects:
-  - type: world_property_delta
-    property: storm_stage
-    delta: 1
-    maximum: 3
   - type: world_property_delta
     property: hull_integrity
     delta: -0.05
@@ -785,15 +893,11 @@ minute_effects:
     maximum: 1
   event_type: storm.hit
   event_summary: 风暴第一次撞上风脊号；船体发出不祥的响声。
-- id: storm_stage_3_hull2
+- id: storm_first_critical_hull2
   scope: world
   every_minutes: 1
-  condition: world.storm_pressure >= 90 and world.storm_stage < 3 and world.ending_trigger == 0 and world.hull_level >= 2
+  condition: world.storm_stage >= 3 and world.storm_critical_seen == 0 and world.ending_trigger == 0 and world.hull_level >= 2
   effects:
-  - type: world_property_delta
-    property: storm_stage
-    delta: 1
-    maximum: 3
   - type: world_property_delta
     property: hull_integrity
     delta: -0.09
@@ -858,6 +962,28 @@ onboarding:
   action_ref: behavior:travel_copper_tide
   done_when: world.explored_islands >= 3
 progression:
+- id: dawn_salvage
+  label: 云海里的求救灯
+  summary: 风筝人的斥候和一箱铜料挂在两根缆绳上。绞盘快散架了，只够再拉一次。
+  priority: 2
+  audience: [player]
+  visible_when: world.day == 1 and context.day_phase == 'dawn' and world.dawn_salvage == 0 and world.ending_trigger == 0
+  target_behaviors: [rescue_kite_scout, salvage_dawn_copper]
+  complete_when: {event_type: skyfall.dawn_salvage}
+- id: emergency_copper_dispatch
+  label: 这批铜，交给谁？
+  summary: 阿岚要补船，断桥的人在等支援。这一批只够一边用。
+  priority: 1.5
+  audience: [player]
+  visible_when: world.supply_consultation == 1 and world.supply_minutes > 0 and world.supply_relief_due == 0 and world.ending_trigger == 0
+  target_behaviors: [allocate_emergency_stock_defense, allocate_emergency_stock_relief]
+- id: emergency_copper_repayment
+  label: 断桥来领欠下的铜
+  summary: 上一批没送到断桥。这一批要先履约，才能恢复自由分配。
+  priority: 1.5
+  audience: [player]
+  visible_when: world.supply_consultation == 1 and world.supply_minutes > 0 and world.supply_relief_due > 0 and world.ending_trigger == 0
+  target_behaviors: [allocate_emergency_stock_relief]
 - id: make_shipshape
   label: 让风脊号像个家
   summary: 搭起工坊和厨房：一个让你能做工具，一个让船员有热饭。

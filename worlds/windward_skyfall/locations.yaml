@@ -428,3 +428,13 @@ resources:
   initial_state:
     location_id: lantern_cape
     quantity: 10
+- id: emergency_copper_cache
+  name: 应急铜料箱
+  location_id: lantern_cape
+  initial_state: {location_id: lantern_cape, quantity: 0}
+  tags: [emergency_stock]
+- id: outpost_copper_cache
+  name: 断桥配给铜料箱
+  location_id: broken_span
+  initial_state: {location_id: broken_span, quantity: 0}
+  tags: [relief_stock]

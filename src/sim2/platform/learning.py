@@ -87,16 +87,26 @@ class LearningRuntimeMixin:
         reference = str(event_ref or "").strip().casefold()
         if not reference:
             return None
-        rows = self.store.repositories.events.recent_events(limit=500)
-        for event in rows:
-            if str(event.get("actor_id") or "") != str(actor_id) and str(event.get("target_id") or "") != str(actor_id):
-                # Public world events may have no actor; keep them eligible.
-                if event.get("actor_id") not in {None, ""}:
-                    continue
-            event_id = str(event.get("event_id") or "")
+        events = self.store.repositories.events
+        identifier = reference.removeprefix("event:")
+        exact = reference.startswith("event:") or identifier.isdecimal()
+        if exact:
+            if not identifier.isascii() or not identifier.isdecimal() or len(identifier) > 19 or int(identifier) >= 2**63:
+                return None
+            candidates = events.events_by_ids([int(identifier)])
+        else:
+            candidates = events.recent_events(limit=500)
+        for event in candidates:
             event_type = str(event.get("event_type") or "").casefold()
+            if event_type == "world_minute.advanced":
+                continue
+            participant = actor_id in (event.get("actor_id"), event.get("target_id"))
+            audience = event.get("audience") or []
+            public = not event.get("actor_id") and (not audience or actor_id in audience)
+            if not participant and not public:
+                continue
             behavior_id = str(event.get("behavior_id") or "").casefold()
-            if reference in {event_id, f"event:{event_id}"} or reference == event_type or event_type in reference or (behavior_id and behavior_id in reference):
+            if exact or event_type in reference or (behavior_id and behavior_id in reference):
                 return event
         return None
 

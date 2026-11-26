@@ -345,10 +345,11 @@ class TextWorldSession:
             )
         if route is None:
             raise ValueError(f"unknown route: {selector}; type look to list routes")
+        behavior_ref = route.get("behavior_ref")
         return self._submit(
-            "behavior:travel",
+            behavior_ref or "behavior:travel",
             {},
-            {"location_id": route["id"]},
+            {} if behavior_ref else {"location_id": route["id"]},
             f"Travel to {route.get('name') or route['id']} through the text client.",
         )
 

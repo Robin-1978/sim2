@@ -4,9 +4,9 @@ Run with the game server stopped:
 
     python scripts/upgrade_instance.py --world worlds/riverbend_market --instance-id riverbend_market_p6wh
 
-The script preserves entities, agents, inventories, world properties, memories,
-relationships, story state and runtime-authored world rules. It only upserts
-config metadata and the action/behavior/recipe definition tables.
+The script preserves entity state, inventories, world properties, memories,
+relationships, story state and runtime-authored world rules. It updates package
+metadata, definitions, configured NPC controllers and recurring evolution tasks.
 """
 
 from __future__ import annotations

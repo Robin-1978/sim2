@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 from sim2.agents.intent_gateway import AgentIntentGateway
 from sim2.agents.reflection_policy import MEANINGFUL_REFLECTION_EVENTS
 from sim2.agents.tool_executor import AgentToolExecutor
+from sim2.bootstrap.service import create_instance
+from sim2.platform.runtime import Platform
+from sim2.prompting.renderer import render_context
 
 EXPECTED_EVENTS = {
     "behavior.completed",
@@ -74,3 +78,27 @@ def test_an_outcome_or_a_memory_is_enough_for_both_gates():
     assert _tool_result(memories=True)["status"] == "accepted"
     assert _view_has_evidence(recent_outcomes=[{"result": "done"}])
     assert _view_has_evidence(memories=[{"id": 1}])
+
+
+def test_reflection_can_cite_an_old_visible_outcome_by_id(tmp_path: Path) -> None:
+    world = Path(__file__).parents[1] / "worlds" / "starter_village"
+    platform = Platform(create_instance(world, "reflection-event-reference", tmp_path / "runtime"))
+    try:
+        events = platform.store.repositories.events
+        with platform.store.transaction():
+            event_id = events.append_event("behavior.completed", "lu_xingzhou", 0, {"result": "Water tested."})
+            hidden_id = events.append_event("behavior.completed", "fei_lan", 0, {"result": "Private review."})
+            for minute in range(1, 502):
+                events.append_event("world_minute.advanced", None, minute, {"minute": minute})
+
+        assert all(event["event_id"] != event_id for event in events.recent_events(limit=500))
+        view = platform.view.build_decision_view("lu_xingzhou", role="agent_reflection")
+        assert f"event:{event_id}" in render_context(view, "Reflect on an outcome.")
+        summary = "Testing the water confirmed a result worth recalling."
+        hidden = platform.submit_experience("lu_xingzhou", f"event:{hidden_id}", summary, 0.9, "confirmed")
+        assert hidden["failed_check"] == "claim_evidence"
+        visible = platform.submit_experience("lu_xingzhou", f"event:{event_id}", summary, 0.9, "confirmed")
+        assert visible["status"] == "accepted"
+        assert platform.store.repositories.memory.list_memories("lu_xingzhou", limit=1)[0]["source_event_id"] == event_id
+    finally:
+        platform.close()

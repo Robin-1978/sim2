@@ -28,11 +28,40 @@ export function worldPalette(worldId) {
   }
 
 
-export function renderEntryCover() {
+function artPath(value) {
+    return typeof value === "string"
+      && /^\/(world-art|catalog-art\/[a-z][a-z0-9_]*)\/[0-9a-f]{64}\.webp$/.test(value) ? value : "";
+}
+
+
+function paintIllustration(root, source, fallback) {
+    root.classList.toggle("illustrated", Boolean(source));
+    if (!source) return false;
+    const image = document.createElement("img");
+    image.alt = "";
+    image.decoding = "async";
+    image.addEventListener("error", () => {
+      if (image.parentElement !== root) return;
+      image.remove();
+      root.classList.remove("illustrated");
+      fallback?.();
+    }, { once: true });
+    image.src = source;
+    root.replaceChildren(image);
+    return true;
+}
+
+
+export function renderEntryCover(world, useIllustration = true) {
     const cover = $("entry-cover");
     if (!cover) return;
-    cover.dataset.crisis = crisisMood(state.world);
-    const worldId = state.world?.id || state.world?.world_id || state.world?.title || "sim2";
+    cover.dataset.crisis = crisisMood(world);
+    const worldId = world.id || world.world_id || world.title || "sim2";
+    const source = artPath(world.ui?.cover_art);
+    const cacheKey = `${worldId}|${source}`;
+    if (useIllustration && cover.dataset.world === cacheKey) return;
+    cover.dataset.world = cacheKey;
+    if (paintIllustration(cover, useIllustration && source, () => renderEntryCover(world, false))) return;
     const palette = worldPalette(worldId);
     const seed = hashString(worldId);
     const stars = Array.from({ length: 18 }, (_, index) => {
@@ -76,10 +105,11 @@ export function renderEntryCover() {
   }
 
 
-export function paintWorldCard(card, worldId) {
+export function paintWorldCard(card, worldId, source) {
     const palette = worldPalette(worldId);
     card.style.setProperty("--cover-a", palette.a);
     card.style.setProperty("--cover-b", palette.b);
+    paintIllustration(card.querySelector(".world-card-cover"), artPath(source));
   }
 
 
@@ -104,13 +134,15 @@ export function artReeds(seed, baseY, color, count = 22) {
   }
 
 
-export function renderSceneWorldCover(theme = "harbor") {
+export function renderSceneWorldCover(theme = "harbor", locationId = "", useIllustration = true) {
     const root = $("scene-world-cover");
     if (!root) return;
     const worldId = state.world?.world_id || state.world?.title || "sim2";
-    const cacheKey = `${worldId}|${theme}`;
-    if (root.dataset.world === cacheKey) return;
+    const source = artPath(state.view?.ui?.scene_art?.[locationId]);
+    const cacheKey = `${worldId}|${theme}|${source}`;
+    if (useIllustration && root.dataset.world === cacheKey) return;
     root.dataset.world = cacheKey;
+    if (paintIllustration(root, useIllustration && source, () => renderSceneWorldCover(theme, locationId, false))) return;
     const p = theme === "sky"
       ? { skyA: "#9fd4ea", skyB: "#2e607c", a: "#7aa77c", b: "#355f58", c: "#f4d9a8", sun: "#ffe08a", hue: 198 }
       : worldPalette(worldId);

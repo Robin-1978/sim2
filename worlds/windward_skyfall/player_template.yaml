@@ -14,6 +14,10 @@ inventory:
   ration: 3
   water: 3
 initial_bt_ids:
+- rescue_kite_scout
+- salvage_dawn_copper
+- allocate_emergency_stock_defense
+- allocate_emergency_stock_relief
 - travel_windworn
 - travel_saltbreak
 - travel_lantern_cape

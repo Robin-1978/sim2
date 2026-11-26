@@ -6,10 +6,12 @@ from typing import Any
 
 from ..agent_view.validator import validate_agent_view
 from ..intents.models import BehaviorIntent
+from ..evolution.config import role_enabled
+from ..llm.budget import ContextBudgetExceeded
 from ..platform.runtime import Platform
 from ..prompting.renderer import render_context_with_metrics
 from ..world.lifecycle import BUSY_STATUSES, is_inactive
-from ..world.growth import build_growth_ledger
+from ..world.growth import growth_count
 from .runtime_policy import (
     ROLE_INTENTS, ROLE_NAMES, configured_evolution_group, configured_evolution_trigger,
     configured_role_tools, role_policy,
@@ -18,7 +20,7 @@ from ..agent_view.policies import task_text
 from .intent_gateway import AgentIntentGateway
 from .audit import AgentAudit
 from .protocol import ProviderProtocol, normalize_provider_intent, readable_model_response
-from .session import AgentTurn, ReactSession, TaskContext, model_tool_result, trim_conversation_messages
+from .session import AgentTurn, ReactSession, TaskContext, latest_exchange_size, model_tool_result, trim_conversation_messages
 from .tool_guards import read_signature, screen_tool_call
 from .tools import AgentToolExecutor, TOOL_DEFINITIONS, parse_tool_call
 
@@ -58,29 +60,6 @@ class AgentEngine:
         self.protocol = ProviderProtocol(provider)
         self.intent_gateway = AgentIntentGateway(platform)
 
-    def _complete(
-        self,
-        *,
-        role: str,
-        system: str,
-        context: str,
-        messages: list[dict[str, Any]] | None = None,
-        allowed_tools: list[str] | set[str] | None = None,
-    ) -> dict[str, Any]:
-        """Call old test providers and native tool-capable providers alike."""
-
-        reply = self.protocol.complete(
-            role=role,
-            system=system,
-            context=context,
-            messages=messages,
-            allowed_tools=allowed_tools,
-        )
-        self._last_usage = dict(reply.usage)
-        return reply.payload
-
-
-
     def run(
         self,
         *,
@@ -93,6 +72,8 @@ class AgentEngine:
     ) -> AgentTurn:
         if role not in ROLE_NAMES:
             raise ValueError(f"unknown agent role: {role}")
+        if role in {"god", "story"} and not role_enabled(self.platform.store.repositories.metadata.get("evolution", {}) or {}, role):
+            return _closed_turn(role, task_type, "guard", {"status": "skipped", "reason": "role_disabled"})
         skipped = self._skip_unavailable_character(role, actor_id, task_type)
         if skipped is not None:
             return skipped
@@ -107,6 +88,7 @@ class AgentEngine:
             # role's ordinary decision budget is too small for the pack.  An
             # explicit caller limit still wins for tests and bounded probes.
             iteration_limit = max(iteration_limit, 20)
+        session.iteration_budget = iteration_limit
         for iteration in range(1, iteration_limit + 1):
             turn = self._react_step(session, iteration)
             if turn is not None:
@@ -288,10 +270,6 @@ class AgentEngine:
         max_tokens = int(max_tokens_value) if isinstance(max_tokens_value, (int, float)) and not isinstance(max_tokens_value, bool) and max_tokens_value > 0 else None
         return max_chars, max_tokens
 
-    def _render_prompt(self, context: dict[str, Any], task: str, role: str) -> tuple[str, dict[str, Any]]:
-        max_chars, max_tokens = self._context_limits(role)
-        return render_context_with_metrics(context, task, max_chars=max_chars, max_tokens=max_tokens)
-
     def _start_session(self, role: str, actor_id: str, task_type: str, compiled: TaskContext) -> ReactSession:
         context = compiled.context
         task = task_text(role, task_type)
@@ -306,18 +284,10 @@ class AgentEngine:
         )
         initial_context = copy.deepcopy(context)
         system_policy = role_policy(self.platform, role)
-        prompt, metrics = self._render_prompt(context, task, role)
         messages = [
             {"role": "system", "content": system_policy},
-            {"role": "user", "content": prompt},
+            {"role": "user", "content": ""},
         ]
-        stages = compiled.trigger_contract.get("stages") if isinstance(compiled.trigger_contract, dict) else None
-        if isinstance(stages, list) and stages:
-            instruction = str((stages[0] or {}).get("instruction") or "") if isinstance(stages[0], dict) else ""
-            messages.append({
-                "role": "user",
-                "content": f"Structural stage 1/{len(stages)}: {instruction}",
-            })
         session = ReactSession(
             role=role,
             actor_id=actor_id,
@@ -332,7 +302,6 @@ class AgentEngine:
             interaction_tools=compiled.interaction_tools,
             session_tools=compiled.session_tools,
             messages=messages,
-            context_metrics=[metrics],
             max_tool_calls=self.max_tool_calls,
             max_repeated_tool_calls=self.max_repeated_tool_calls,
             # The read budget is role configuration. A bounded world reviewer
@@ -374,13 +343,6 @@ class AgentEngine:
         if stage_index >= len(stages):
             return
         session.stage_index = stage_index
-        if stage_index > 0:
-            stage = stages[stage_index] if isinstance(stages[stage_index], dict) else {}
-            if session.messages:
-                session.messages[-1] = {
-                    "role": "user",
-                    "content": f"Structural stage {stage_index + 1}/{len(stages)}: {stage.get('instruction') or ''}",
-                }
         accepted = [str(item) for item in (progress.get("accepted") or []) if str(item)]
         if accepted:
             session.messages.append({
@@ -421,11 +383,24 @@ class AgentEngine:
     def _react_step(self, session: ReactSession, iteration: int) -> AgentTurn | None:
         """Run one ReAct iteration; return the finished turn, or ``None`` to continue the session."""
 
-        prompt, metrics = self._render_prompt(session.context, session.task, session.role)
+        prompt, metrics, request = self._prepare_request(session)
         session.prompt_history.append(prompt)
         session.context_metrics.append(metrics)
+        self._last_usage = {}
         try:
-            response = self._request_model(session, prompt)
+            if metrics.get("omitted_required") or metrics["request_total_tokens_est"] > metrics["context_window_tokens"]:
+                raise ContextBudgetExceeded("The context budget cannot fit the required evidence and completion reserve.")
+            reply = self.protocol.complete_prepared(request)
+            response = reply.payload
+            self._last_usage = reply.usage
+            if "messages" in request and not metrics["cache_snapshot_reused"]:
+                session.cache_seed_prompt = prompt
+                session.cache_seed_tools = request.get("tools")
+        except ContextBudgetExceeded as exc:
+            result = {"status": "rejected", "failed_check": "context_budget", "retryable": True, "message": str(exc)}
+            session.transcript.append({"step": "guard", "result": result})
+            self.audit.record(session.actor_id, session.role, session.task_type, iteration, prompt, result, "context_budget", context_metrics=metrics)
+            return session.finish(result, iterations=iteration - 1)
         except Exception as exc:
             return self._llm_error_turn(session, iteration, prompt, exc)
         readable_response = self._readable_model_response(response)
@@ -456,24 +431,73 @@ class AgentEngine:
             updated.append({"role": "user", "content": prompt})
         return updated
 
-    def _request_model(self, session: ReactSession, prompt: str) -> dict[str, Any]:
-        """Ask the provider for the next tool request or final Intent."""
+    def _prepare_request(self, session: ReactSession) -> tuple[str, dict[str, Any], dict[str, Any]]:
+        """Fit the actual provider request before calling the model."""
 
-        self._last_usage = {}
         call_tools = session.session_tools
         if session.role in {"agent_decision", "god"} and not str(session.task_type).startswith("instant:") and session.read_tool_calls >= session.read_budget:
             available = session.session_tools if session.session_tools is not None else [str(item.get("name")) for item in (session.context.get("tools") or [])]
             call_tools = [name for name in available if TOOL_DEFINITIONS.get(name, {}).get("kind") != "read"]
-        response = self._complete(
+        task = session.task
+        stages = self._structural_stages(session)
+        if stages and session.stage_index < len(stages):
+            stage = stages[session.stage_index] or {}
+            task += f"\n  Structural stage {session.stage_index + 1}/{len(stages)}: {stage.get('instruction') or ''}"
+        max_chars, max_tokens = self._context_limits(session.role)
+        prompt, metrics = render_context_with_metrics(session.context, task, max_chars=max_chars, max_tokens=max_tokens, protect_required=True)
+        messages = self._messages_for_prompt(session.messages, prompt)
+        request = self.protocol.prepare(
             role=session.role,
             system=session.system_policy,
             context=prompt,
-            messages=self._messages_for_prompt(session.messages, prompt),
+            messages=messages,
             allowed_tools=call_tools,
         )
-        if not isinstance(response, dict):
-            raise ValueError("LLM response must be a JSON object")
-        return response
+        budget = self.protocol.budget(request)
+        # Keep the latest reply and its results intact. A smaller snapshot
+        # may make room, but a successful read must not vanish from the next
+        # request because a summary happened to fit.
+        retained_tail = latest_exchange_size(messages)
+        while "messages" in request and len(messages) > 2 + retained_tail and budget["request_total_tokens_est"] > budget["context_window_tokens"]:
+            messages = trim_conversation_messages(messages, max_tail=len(messages) - 3)
+            request["messages"] = messages
+            budget = self.protocol.budget(request)
+        while not metrics.get("omitted_required") and budget["request_total_tokens_est"] > budget["context_window_tokens"] and max_chars > 128:
+            max_chars = max(128, min(max_chars, len(prompt)) * 3 // 4)
+            prompt, metrics = render_context_with_metrics(session.context, task, max_chars=max_chars, max_tokens=max_tokens, protect_required=True)
+            request["context"] = prompt
+            if "messages" in request:
+                request["messages"] = self._messages_for_prompt(messages, prompt)
+            budget = self.protocol.budget(request)
+        metrics.update(budget)
+        metrics["history_messages_omitted"] = len(session.messages) - len(messages)
+        metrics["cache_snapshot_reused"] = False
+        if "messages" in request and not metrics.get("omitted_required") and budget["request_total_tokens_est"] <= budget["context_window_tokens"]:
+            if cached_messages := self._cacheable_messages(session, request):
+                candidate = {**request, "messages": cached_messages}
+                cached_budget = self.protocol.budget(candidate)
+                if cached_budget["request_total_tokens_est"] <= cached_budget["context_window_tokens"]:
+                    metrics.update(cached_budget)
+                    metrics["cache_snapshot_reused"] = True
+                    request = candidate
+        return prompt, metrics, request
+
+    @staticmethod
+    def _cacheable_messages(session: ReactSession, request: dict[str, Any]) -> list[dict[str, Any]] | None:
+        """Reuse the previous snapshot only when its world evidence and tools still match."""
+
+        if not session.cache_seed_prompt or request.get("tools") != session.cache_seed_tools:
+            return None
+        marker = "<interaction_history>"
+        static, separator, current = request["context"].partition(marker)
+        if not separator or static != session.cache_seed_prompt.partition(marker)[0]:
+            return None
+        system, snapshot, *history = request["messages"]
+        # The complete previous input can now match a provider cache entry.
+        # Current task and feedback remain the final instruction.
+        return [system, {**snapshot, "content": session.cache_seed_prompt}, *history, {
+            "role": "user", "content": "Use the latest task and feedback below.\n" + separator + current,
+        }]
 
     def _llm_error_turn(self, session: ReactSession, iteration: int, prompt: str, exc: Exception) -> AgentTurn:
         """End the session after a provider failure, which the scheduler retries after backoff."""
@@ -525,10 +549,9 @@ class AgentEngine:
         if required.get("growth_cell"):
             plan = session.context.get("season_plan") if isinstance(session.context.get("season_plan"), dict) else {}
             raw_cell = required.get("growth_cell")
-            cell = str(plan.get("target_cell") if raw_cell is True else raw_cell or "").strip()
+            cell = str((plan.get("target_cell") if raw_cell is True else raw_cell) or "").strip()
             if cell:
-                ledger = build_growth_ledger(self.platform.store)
-                count = int(((ledger.get("cells") or {}).get(cell) or {}).get("count", 0) or 0)
+                count = growth_count(self.platform.store, cell, behavior_action=plan.get("behavior_action"))
                 baseline = int(plan.get("baseline", 0) or 0)
                 if count <= baseline:
                     missing.append(f"growth: {cell} count must exceed {baseline}")
@@ -695,11 +718,6 @@ class AgentEngine:
         self._save_structural_progress(session)
         if session.stage_index >= len(stages):
             return "finish"
-        next_stage = stages[session.stage_index] if isinstance(stages[session.stage_index], dict) else {}
-        session.messages.append({
-            "role": "user",
-            "content": f"Structural stage {session.stage_index + 1}/{len(stages)}: {next_stage.get('instruction') or ''}",
-        })
         return "continue"
 
     def _append_structural_progress(self, session: ReactSession, missing: list[str]) -> None:
@@ -708,6 +726,15 @@ class AgentEngine:
             "role": "user",
             "content": "Structural progress: still missing " + ", ".join(missing) + ". Submit the next proposal.",
         })
+
+    @staticmethod
+    def _proposal_limit(session: ReactSession) -> int:
+        contract = session.context.get("evolution_trigger") or {}
+        return int(contract.get("max_proposals") or 0)
+
+    @staticmethod
+    def _proposal_budget_rejection() -> dict[str, Any]:
+        return {"status": "rejected", "failed_check": "proposal_budget", "retryable": True, "message": "The accepted proposal limit for this task has been reached."}
 
     def _run_tool_calls(self, session: ReactSession, iteration: int, response: dict[str, Any], call: tuple[str, dict[str, Any]]) -> AgentTurn | None:
         """Execute the tool call(s) of one model response; finish the turn once an Intent is accepted."""
@@ -744,7 +771,7 @@ class AgentEngine:
             return session.finish(result, iterations=iteration)
         if accepted_result is None:
             return None
-        session.accepted_proposals += max(1, len(intent_results))
+        session.accepted_proposals += sum(result.get("status") == "accepted" for result in intent_results)
         if len(intent_results) > 1:
             accepted_result = {
                 **intent_results[-1],
@@ -764,10 +791,11 @@ class AgentEngine:
                 missing = self._required_content_missing(session)
                 if not missing:
                     return session.finish(accepted_result, iterations=iteration)
+                if (limit := self._proposal_limit(session)) and session.accepted_proposals >= limit:
+                    return session.finish(self._proposal_budget_rejection(), iterations=iteration)
                 self._append_structural_progress(session, missing)
                 return None
-            contract = session.context.get("evolution_trigger")
-            limit = int(contract.get("max_proposals") or 0) if isinstance(contract, dict) else 0
+            limit = self._proposal_limit(session)
             if limit and session.accepted_proposals >= limit:
                 return session.finish(accepted_result, iterations=iteration)
             return None
@@ -817,10 +845,14 @@ class AgentEngine:
         accepted_result: dict[str, Any] | None = None
         intent_results: list[dict[str, Any]] = []
         model_result: dict[str, Any] = {}
+        limit = self._proposal_limit(session)
+        accepted_count = session.accepted_proposals
         for tool_name, arguments, native_call in calls:
             is_read_tool = TOOL_DEFINITIONS.get(tool_name, {}).get("kind") == "read"
             repeats = session.register_call(tool_name, arguments, is_read_tool=is_read_tool)
             tool_result = screen_tool_call(session, tool_name, arguments, is_read_tool=is_read_tool, repeats=repeats)
+            if tool_result is None and limit and accepted_count >= limit and not is_read_tool and tool_name != "wait":
+                tool_result = self._proposal_budget_rejection()
             if tool_result is None:
                 tool_result = session.executor.execute(tool_name, arguments)
             model_result, internal_tool_result = self._record_tool_result(session, tool_name, arguments, native_call, tool_result, is_read_tool)
@@ -832,6 +864,7 @@ class AgentEngine:
                 # a single bounded Agent turn.
                 accepted_result = internal_tool_result
                 intent_results.append(internal_tool_result)
+                accepted_count += model_result.get("status") == "accepted"
                 if not is_read_tool and not batched:
                     break
         return accepted_result, intent_results, model_result
@@ -853,6 +886,8 @@ class AgentEngine:
                 session.context["decision_guidance"] = f"{session.read_tool_calls} focused read(s) completed. Use those results now; choose one listed behavior or wait."
         model_result = model_tool_result(tool_name, tool_result, state_attributes=session.state_attributes)
         internal_tool_result = self._restore_internal_tool_result(tool_name, arguments, tool_result)
+        if tool_name == "request_behavior" and tool_result.get("status") == "accepted" and session.executor.behavior_submission:
+            internal_tool_result = {**internal_tool_result, **session.executor.behavior_submission}
         session.transcript.append({
             "step": "tool",
             "name": tool_name,
@@ -973,10 +1008,11 @@ class AgentEngine:
                     missing = self._required_content_missing(session)
                     if not missing:
                         return session.finish(result, iterations=iteration, response=response)
+                    if (limit := self._proposal_limit(session)) and session.accepted_proposals >= limit:
+                        return session.finish(self._proposal_budget_rejection(), iterations=iteration, response=response)
                     self._append_structural_progress(session, missing)
                     return None
-                contract = session.context.get("evolution_trigger")
-                limit = int(contract.get("max_proposals") or 0) if isinstance(contract, dict) else 0
+                limit = self._proposal_limit(session)
                 if limit and session.accepted_proposals >= limit:
                     return session.finish(result, iterations=iteration, response=response)
                 return None
@@ -1105,6 +1141,7 @@ class AgentEngine:
         context["long_term_memories"] = (context.get("long_term_memories") or [])[:2]
         context["memories"] = (context.get("memories") or [])[:6]
         context["decision_constraints"] = []
+        context["decision_briefs"] = []
         if "trade" not in str(task_type):
             context["open_trade_offers"] = []
         context["interaction_history"] = []

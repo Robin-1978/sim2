@@ -1,7 +1,7 @@
 # 风脊号：天空群岛生存沙盒
 
 Status: **IMPLEMENTED / VERTICAL SLICE PLAYABLE**
-Last updated: 2026-11-23
+Last updated: 2026-11-26
 
 ## 0. 一句话
 
@@ -46,7 +46,7 @@ Last updated: 2026-11-23
 3. **贪心是难度滑块**：稀有物资推高 `storm_pressure`。玩家不是被日历逼着走，而是被自己的收获逼着走。
 4. **船员是赌注**：五个有目标的幸存者会自己行动、争论、救人、隐瞒。玩家带走谁、留下谁，决定结局。
 5. **失败是航线**：船损、失散、弃岛不会读档，会改变后续事件与结局。
-6. **世界继续长**：Director 读玩家状态选 growth cell；God 可以在既有群岛上长出一个新的打捞点；Story 把探索、风暴和船员选择变成下一拍。
+6. **世界继续长**：Director 每两天推进打捞计划。God 可以在既有群岛上生成新的打捞行为，Story 读取已提交的探索、风暴和船员事件。
 
 ## 3. 世界与幻想
 
@@ -87,7 +87,7 @@ Last updated: 2026-11-23
 早晨选航线 → 出航 2–4 个动作 → 傍晚回船 → 建造/制作 → 夜话/风暴 → 睡觉
 ```
 
-- 白天可以出航；夜里在野外会受暴露伤害。没有提灯时，采集/探索/远航会被关闭；带提灯可以在夜里采集，但要承担暴露代价，或者回灯岬睡一觉/在野外等天亮。
+- 白天可以出航；夜里在野外会受暴露伤害。没有提灯时，采集/探索/远航会被关闭；带提灯可以在夜里采集，但要承担暴露代价，也可以回灯岬睡觉，或在野外等到日历规定的下一次黎明。
 - 回船后可以：
   - 建造/升级模块；
   - 制作工具/食物/药；
@@ -135,7 +135,7 @@ Last updated: 2026-11-23
 | 工具 | 材料 | 解锁 |
 | --- | --- | --- |
 | 石斧 `stone_axe` | 木 2 + 石 2 | 木材产量 2 → 5 |
-| 石镐 `stone_pick` | 木 2 + 石 3 | 采铜、采石产量提升 |
+| 石镐 `stone_pick` | 木 2 + 石 2 | 采铜、采石产量提升 |
 | 绳索 `rope` | 纤维 3 | 去雨背崖 |
 | 铜镐 `copper_pick` | 铜 2 + 木 1（工坊 1） | 采晶石、去浮鲸墓场 |
 | 提灯 `lantern` | 铜 1 + 玻璃砂 1 + 纤维 2（工坊 1） | 去浮鲸墓场、旧灯塔深处 |
@@ -167,10 +167,10 @@ Last updated: 2026-11-23
 
 `storm_pressure` 0–100：
 
-- 每次带回稀有物资：铜 +3、琥珀 +5、透镜 +5、晶石 +8、遗物 +12；
-- 每次探索新岛 +2；
-- 每天 +2；
-- 建造信标 +10；
+- 每次采集的压力变化为铜 +2、琥珀 +2、透镜 +3、晶石 +4、遗物 +6。
+- 每次探索新岛增加 1 点。
+- 日历每天 00:00 增加 1 点。
+- 建造信标框架增加 6 点，每次安装核心增加 2 点。
 - 丢弃遗物 -20，丢弃琥珀 -12；
 - 风歌者安抚 -8。
 
@@ -178,14 +178,14 @@ Last updated: 2026-11-23
 
 | 压力 | 阶段 | 发生什么 |
 | --- | --- | --- |
-| 35 | 1 风暴预警 | 远航开始变贵；Story 介入 |
-| 65 | 2 风暴命中 | 船体 -12%；远航关闭；野外暴露 |
-| 90 | 3 风暴临界 | 船体持续受损；只能回船/终局 |
+| 35 | 1 风暴预警 | 记录预警并唤醒 Story |
+| 65 | 2 风暴命中 | 首次命中扣船体，之后持续损伤。风衣解锁远航并抵御风暴暴露 |
+| 90 | 3 风暴临界 | 首次跨入临界再扣船体，持续损伤加重 |
 
 船体归零 → 坠落结局。玩家可以用木材/铜修船，或丢掉贵重品降压力。  
 这比“第 7 天商队到”更好：**玩家自己决定什么时候把世界推向危险**。
 
-两级船体加固会降低各阶段的风暴伤害；风衣让玩家在风暴阶段继续远航，并跳过野外的风暴暴露伤害。风衣用纤维和陶土制作，不依赖灯油，避免“风暴锁死远航”的软锁。
+两级船体加固降低风暴伤害。压力降低后当前阶段回落，持续伤害和航线限制随之解除。首次冲击的历史标记保留，反复跨过阈值只改变当前阶段。风衣由纤维和陶土制作，普通岛屿即可提供材料。
 
 ## 8. 船员
 
@@ -201,7 +201,7 @@ Last updated: 2026-11-23
 
 船员不是任务板。他们会从营地口粮箱取食、从蓄水槽取水、吃饭、喝水、休息、工作、观星；阵营角色会在自己的岛上就地补给。他们的行为会产生事件，Story 从中选出下一拍。玩家可以通过建造模块改变他们的工作，也可以通过结局选择带走谁。
 
-实机调试发现：旧存档里的船员没有 `take_ration`/`fill_water` 行为，口粮耗尽后会一直休息到脱水饥饿；现在 `upgrade_instance` 会把新 authored 行为合并到现有 Agent 和玩家，而不是只更新定义表。
+阿岚和砚秋使用 Agent 决策，未配置决策提供方时回退到 BT。其余角色用确定性 BT 维持岗位与生存。升级已有存档会合并新增行为、更新包声明的 NPC 控制策略和演化配置，并保留当前进度。
 
 ## 9. 阵营与结局
 
@@ -228,7 +228,7 @@ Last updated: 2026-11-23
 - 出身不同：机械师/制图师/厨子/拾荒者，初始工具、知识、船员关系不同。
 - 探索顺序不同：先铜还是先药，决定工具链和风暴压力。
 - 建造顺序不同：工坊/厨房/花园/船体抢同一批材料。
-- 船员行为不同：LLM 决策会根据需求、关系、记忆选择工作/休息/观星。
+- 阿岚和砚秋的 Agent 决策可读取需求、关系和记忆。确定性 BT 维持其余角色的日常活动。
 - 风暴阈值不同：玩家的贪心决定哪一天进入第二阶段。
 - Director/God 会在运行时长出新的打捞点；Story 会把探索和风暴写成下一拍。
 - 结局选择不同：离开、锚定、成为风暴、坠落。
@@ -255,7 +255,7 @@ Last updated: 2026-11-23
 - 风暴压力、船体、两级船体加固、昼夜、夜间暴露、修船、弃货；
 - 工坊/厨房/花园/药棚/船体/信标六条建造线；
 - 新 `sky` 场景美术主题：浮岛、云海、飞艇、鸟群；
-- `explicit_travel`：世界可以关掉通用旅行按钮，只显示有叙事的、带门槛的航线；
+- `rules.travel.player_route_mode: authored` 让地图、文本客户端和 Platform 共用通过门槛的航线。
 - PlayerView 的附近投影优先显示 Agent 和资源，营地不会再出现“附近没有人”；
 - focused test：配置完整性、采集→建造→工具链、探索解锁、风暴阈值、坠落、离天结局、动态打捞点。
 
@@ -268,33 +268,15 @@ Last updated: 2026-11-23
 
 ## 13. 活世界循环（已实现）
 
-### 13.1 Director → God → 玩家
+### 13.1 Director → God → 船员
 
-`evolution.yaml` 的 Director 只选择 `verb` 目标；God 契约被收紧为：
+Director 的目标是为已有的 `dynamic_salvage` Action 增加绑定。每两天检查一次，最多保留八个打捞行为。验收需要新增绑定和该行为的完成事件，完成的计划会保存 `outcome_event_id`。
 
-```yaml
-required_definition_type: behavior
-assign_to: [player]
-max_proposals: 1
-required_content:
-  behaviors_using_action: [dynamic_salvage]
-```
+God 的任务允许读取证据、提交一个 Behavior 或等待。0.3 把新增行为分配给已在断梁桥据点驻扎的阿筝。Platform 校验归属、单一打捞 Action、许可的地点和材料、两份产出与 1440 分钟冷却，也会拒绝重复的地点与材料组合。动作在开始和完成时都校验角色实际所在岛。停滞事件可以唤醒同一个受约束的任务。0.2 存档里的玩家打捞行为仍可使用。
 
-God 只能提交**一个** Behavior，不能创建新 Action、新岛、新资源、新物品或新 NPC。Behavior 使用平台已注册的 `dynamic_salvage` Action：
+探索只记录一条完成事件。探索、风暴、营地和结局通过世界包配置唤醒 Story。
 
-```yaml
-nodes:
-  - type: action
-    action_id: dynamic_salvage
-    parameters:
-      item: wood          # 现有材料 id
-      amount: 2
-      location_id: windworn_woods
-```
-
-`dynamic_salvage` 有 `target.location_id == context.location_id` 检查，所以同一个 Behavior 不会在别的岛生效；`cooldown_minutes: 1440` 防止无限刷。
-
-### 13.2 远程证据
+### 13.2 0.1 版远程记录
 
 120 分钟 `remote` 自动运行：
 
@@ -311,20 +293,40 @@ nodes:
 - Story 激活 `first_workshop` beat；
 - 0 个 `llm_errors`，0 个 `rejected_turns`（该轮）。
 
-### 13.3 为什么这次不会“God 长歪”
+### 13.3 0.2 版验证
 
-旧契约让 God 可以创建 Action + followup Behavior，结果模型在盐滩打捞了浮鲸墓场的鲸骨，还生成了一个中文 display-name 物品。新契约用三件事把它关住：
+- 确定性运行验证了两轮独立打捞计划。第一轮产物通过正常玩家入口执行，第二轮拒绝重复绑定后提交了新地点。
+- 聚焦回归覆盖航线准入、异地打捞、风暴降级与 Story 唤醒、日历和等天亮、结局只结算一次、船员离线回退，以及旧存档的配置升级。
+- 机械师新档从建工坊推进到雷云工坊。中途复制临时存档继续推演，通过正常行动补采铜矿、打捞遗物、修船和安装三个核心，在第 10 天触发「离天」，船体约 53%。这次推演使用确定性世界刻。
 
-1. `required_definition_type: behavior`：禁止新建 Action；
-2. `max_proposals: 1`：只允许一个定义；
-3. `dynamic_salvage` 的 `target.location_id == context.location_id`：地点必须匹配。
+### 13.4 0.3 公共补给
 
-这不是 prompt 祈祷，而是 Platform 的契约与条件检查。
+每 12 小时到货三份应急铜料。营地可在 250 分钟内决定拿铜料制备补船板，或把它运往断桥的配给铜料箱。两项行动竞争整批库存，提交完成时重新检查库存和决定状态。制备的船板会在船体受损时自动投入抢修。若当轮优先补船，下一批会先偿还民生配给。逾期会降低营地士气。阿岚能在常规决策中处理它，玩家在场时也可以先行动。
 
-## 14. 验收
+## 14. 存档升级
 
-- `python -m pytest -q tests/test_windward_skyfall.py` 通过（14 项）。
-- `python scripts/test_parallel.py --changed` 作为迭代门禁。
-- 新世界可以通过 `sim2 init --world windward_skyfall` 创建并从网页打开。
-- 第一小时内至少发生一次：采集 → 制作 → 建造 → 新行动出现。
-- 风暴阈值、坠落、离天结局和动态打捞点有确定性测试。
+用 `scripts/upgrade_instance.py` 将包配置应用到停服存档。升级保留玩家进度和历史事件，补齐储备实体和新增世界属性。已启动的行动按启动时保存的定义继续执行，新行动使用 0.3 版规则。
+
+### 13.5 0.4 首航抉择
+
+灯岬开局为第 1 天 07:00。斥候和铜料挂在两根缆绳上，绞盘只能拉一次。两个行动各耗时六个世界分钟，须在 08:00 前完成。届时缆绳崩断，照常进入探索、建造和生存循环。
+
+- **拉回斥候**会把风筝人声望从 10% 提升到 35%。再支援断桥一次可到 51%，达到锚定群岛的 40% 声望门槛。玩家还需要完成花园和信标。
+- **吊起铜料**会获得两份铜矿和一块备用铜板。船体首次低于 90% 时，阿岚会消耗铜板修复 12 个百分点。
+- **继续经营**时，航队每 720 个世界分钟送来一批铜料。保船会把断桥的请求带到下一批，届时界面会说明欠款并展示支援选项。玩家可以在营地参与，NPC 也可按原配给规则自行结算。
+
+首航与配给使用同一套世界时间和 Platform 结算。世界包通过 `setting.ui.spotlights` 选择要展示的目标。新档从 07:00 开始。升级旧档后，首航抉择只会出现在第 1 天的有效时段。
+
+<details>
+<summary>插画与生成提示词</summary>
+
+插画由内置 ImageGen 生成并压缩为 1360×907 的 WebP。选集和角色入口使用
+[风脊号封面](../../worlds/windward_skyfall/assets/dawn.webp)，登船后显示
+[灯岬甲板](../../worlds/windward_skyfall/assets/lantern-cape.webp)。插画随
+世界包发布，在建档和升级时导入 SQLite。
+
+> Use case: stylized-concept. Create an original cinematic key art illustration for the world selection screen of a Chinese text adventure about navigating a sinking sky archipelago aboard an antique salvage airship. Panoramic 3:2 or wider image with a strong silhouette: on the right, a weathered bronze-and-dark-wood flying salvage cutter seen in three-quarter side view banking into a rift amid towering slate blue clouds, warm amber lanterns, tattered pennants and cables, rigging and stacked round engine housings; a pinprick amber distress lantern flickers far below near fractured floating islands. Keep the left third dark navy, quite simple and unobstructed, open atmospheric mist for real text overlaid by the website, with the ship roughly 70 percent from the left and vertically centered so a short wide crop can still show it. Dramatic blue violet sky, fine etched painterly textures, muted gold glints, and a bright thin breaking dawn behind the distant islands. Hand-painted grounded adventure concept art with readable scale, elegant cinematic lighting and rich atmosphere. No text, letters, frames, watermarks, logos, or user interface.
+
+> Original cinematic digital concept art for a fantasy survival game, 3:2 landscape. First-person view from the weathered wooden deck of an antique salvage airship at dawn. A bronze winch and its crank sit on the right third, two taut ropes leading down from the deck edge into a vast blue-violet ocean of clouds. Far below, a tiny orange distress lantern and a hanging square cargo crate. Petals of rosy sunrise catch the ragged clouds and distant floating islands. Strong foreground perspective, weathered brass, woven ropes and dark timber. Keep the lower left quiet and dark for a title added later. Concentrate the winch around mid-height so it remains visible in a wide crop. Grounded hand-painted game environment with amber accents, restrained contrast and a sense of altitude. No text, lettering, overlays, people in the foreground, symbols, or borders.
+
+</details>

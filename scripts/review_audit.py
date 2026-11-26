@@ -510,8 +510,14 @@ def _llm_call_statistics(data: dict[str, Any]) -> dict[str, Any]:
     iterations: dict[str, int] = {}
     for row in rows:
         role = str(row.get("role") or "unknown")
-        bucket = by_role.setdefault(role, {"calls": 0, "prompt_tokens": [], "cached_tokens": [], "completion_tokens": [], "latency_ms": []})
+        bucket = by_role.setdefault(role, {
+            "calls": 0, "prompt_tokens": [], "cached_tokens": [], "completion_tokens": [], "latency_ms": [],
+            "cache_measured_prompt_tokens": 0, "cache_measured_tokens": 0,
+        })
         bucket["calls"] += 1
+        if row.get("prompt_tokens") is not None and row.get("cached_tokens") is not None:
+            bucket["cache_measured_prompt_tokens"] += row["prompt_tokens"]
+            bucket["cache_measured_tokens"] += row["cached_tokens"]
         for key in ("prompt_tokens", "cached_tokens", "completion_tokens", "latency_ms"):
             source = "request_latency_ms" if key == "latency_ms" else key
             if row.get(source) is not None:
@@ -519,8 +525,8 @@ def _llm_call_statistics(data: dict[str, Any]) -> dict[str, Any]:
         iteration = str(int(row.get("iteration", 0) or 0))
         iterations[iteration] = iterations.get(iteration, 0) + 1
     for bucket in by_role.values():
-        prompt_total = sum(bucket["prompt_tokens"])
-        cached_total = sum(bucket["cached_tokens"])
+        prompt_total = bucket["cache_measured_prompt_tokens"]
+        cached_total = bucket["cache_measured_tokens"]
         for key in ("prompt_tokens", "cached_tokens", "completion_tokens", "latency_ms"):
             bucket[key] = _summary(bucket[key])
         bucket["cache_hit_rate"] = round(cached_total / prompt_total, 4) if prompt_total else None

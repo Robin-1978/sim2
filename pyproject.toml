@@ -38,7 +38,7 @@ sim2 = ["world_builder/*.yaml", "web/*.html", "web/*.css", "web/*.js", "web/js/*
 "worlds.tidebound_commons" = ["*.yaml"]
 "worlds.riverbend_market" = ["*.yaml", "prompts/*.yaml"]
 "worlds.night_pawnshop" = ["*.yaml", "prompts/*.yaml"]
-"worlds.windward_skyfall" = ["*.yaml", "prompts/*.yaml"]
+"worlds.windward_skyfall" = ["*.yaml", "prompts/*.yaml", "assets/*.webp"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

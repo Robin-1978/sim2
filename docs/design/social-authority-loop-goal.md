@@ -275,3 +275,67 @@ world-pack lint covers every `worlds/*/actions.yaml`.
 - **船员不动/不补给**：船员没有 `take_ration`/`fill_water`，阵营角色也没有食物来源；口粮耗尽后他们只会反复 `rest_at_camp`/`rest_rough`，hydration 降到 17、satiety 降到 38 仍不进食。现在船员拥有取口粮/装淡水行为，阵营角色拥有 `forage_supplies`；`forage_supplies` 也能作为玩家的夜间/野外生存保底。`upgrade_instance` 新增 Agent 与 Player 的 `initial_bt_ids` 合并：旧存档升级后也能获得新行为，而不是只更新定义表。
 - 当前实例已执行升级：`action_def 61`、`bt_def 85`、`agents_updated 8`、`players_updated 1`；玩家在风蚀林夜间拿提灯时已能看到“收集木材/伐木/收集纤维/采浆果/等天亮/就地补给”。复制存档跑 180 分钟后，船员依次 `fill_water → drink_water → take_ration → eat_ration`，阵营角色 `forage_supplies → eat_ration → drink_water`，需求开始恢复。
 - 聚焦测试：`tests/test_windward_skyfall.py` 14 项、liveness + release + upgrade 共 53 项通过。
+
+### 2026-11-26 风脊号 0.2 与框架复查
+
+- 航线采用世界配置的 `rules.travel.player_route_mode`。Platform 拒绝旧存档里的通用 Travel，玩家视图、地图和文本入口使用已通过门槛的航线。聚焦回归 `test_authored_routes_are_shared_by_player_clients_and_platform` 通过。
+- 风暴按压力升降，首次撞击保留独立历史标记。世界刻的事件通过配置唤醒 Story，探索只发布一次完成事实。聚焦回归覆盖 65→45 恢复航线、下一周期停止损伤、重返阈值无重复撞击，以及风暴和探索的 Story 任务。
+- 世界规则使用同一日历。午夜同步天数，等天亮使用 Action 估时与执行共同支持的 `until_day_phase`。结局行动在效果提交前再次检验结局与船体条件。聚焦回归覆盖 04:59→05:00 和离天撞上第 30 天截止时只留一条结局。
+- Director 与 God 使用同一打捞行为计数。两轮确定性运行使基线 0→1→2，首轮生成的行为实际被玩家执行。生成契约拒绝直接意图绕过权限、超量、重复绑定及同一批次第二条提案。异地打捞的聚焦回归覆盖投影与 Platform 提交。
+- 阿岚、砚秋接入模型决策，缺少提供方时走 BT。旧存档升级保留进度，更新角色控制和演化配置，退休旧周期任务，旧计数计划在下一次世界刻关闭。聚焦回归覆盖两类决策和升级路径。
+- 本轮验证使用确定性提供方。当前进程缺少 `remote` 凭据，历史远程结果仍保留在上文。框架复查发现包校验与模板校验仍有差异，具体证据记录在 [architecture-convergence-plan.md](architecture-convergence-plan.md)。
+- 机械师新档走完采集、工具、滑翔翼、风暴、修船、信标三核心和离天。中途复制临时存档并调整后续出航路线，始终通过正常行动推进。第 10 天离天，船体约 53%。
+
+### 风脊号 0.3、潮汐公社 2.2 与 Agent 复查
+
+| 状态 | 变化 | 聚焦证据 |
+| --- | --- | --- |
+| 已验证 | 风脊号停滞事件复用 `god_structural` 契约。新打捞分配给阿筝，无需玩家接手。过期计划或已满足产量的重复唤醒不会再请求同一批内容。 | `test_world_liveness_contract.py` 验证停滞证据到达 God，也覆盖无活动计划时 Runner 消费命名任务。`test_director_reenters_a_second_salvage_plan_through_the_runner` 验证两轮打捞真实完成。 |
+| 已验证 | Director 需要关联结果才能关计划，记录 `outcome_event_id`。LLM 策略读取已提交的刻末结果。 | `test_world_director.py` 覆盖无人到达的新地点保持活跃、已撤销的库存预留没有完成证据、采集实际完结后关计划。`test_automatic_director.py` 覆盖规则被角色执行并复核后才调用下一轮 Director。 |
+| 已验证 | 两套世界使用已有的世界规则、库存、行动与事件唤醒实现公共储备争用。 | `test_autonomous_supply_decisions.py` 两套世界各跑 1,690 分钟，共四个分配窗口。每套都先后结算防务和民生，实际扣尽当轮库存，分配唤醒 Story。两名角色提交互斥分配时只结算一次。 |
+| 已验证 | 居民配给保有独立库存。潮汐公社先把淡水放入配给桶，公共水仓有余位时再入库。 | `test_relief_water_waits_when_the_public_reserve_is_full` 验证水仓满时保有四份，水仓腾出一份后正好补一份。 |
+| 已验证 | 两套世界允许后台角色冷却时继续世界刻和 BT，待回复的零分钟对话仍约束时钟。升级补齐新增资源实体和状态。 | `test_autonomous_supply_decisions.py` 使用冷却中的 Story 提供方跑完两轮，另有同分钟对话回归。`test_upgrade_teaches_existing_crew_and_player_the_new_survival_behaviors` 验证旧存档补齐库存并保留船体数值。 |
+| 已验证 | 反思能按编号引用旧的可见结果。质量评分使用 God 会话的实际迭代预算。 | `test_reflection_evidence.py` 覆盖挤出最近窗口的已知事件和其他角色的不可见事件。`test_structural_god_turn_is_graded_against_its_runtime_budget` 覆盖超六步但仍在契约预算内的会话。 |
+| 待远程复验 | 两世界的模型选择、Story 衔接和跨季节因果演化。 | `python scripts/verify_agent_models.py --skip-local --provider remote` 返回 `blocked`，当前进程缺少配置所需的凭据。两轮确定性分配以配置的首选项与下一轮民生约束为据。它们没有测量模型自发策略。 |
+
+上下文、决策、反思、Story、God 和 Director 的评估口径见 [Agent Quality Audit](agent-quality-audit.md)。
+
+最终聚焦回归共 384 项通过，覆盖两个世界包、停滞恢复、Director、现有社会授权与 Agent 上下文。十个世界包通过 `validate_config`，`compileall` 与 `git diff --check` 通过。
+
+### Agent 请求预算与结果评估
+
+| 状态 | 变化 | 聚焦证据 |
+| --- | --- | --- |
+| 已验证 | 按提供方窗口预算整次模型请求，计入系统消息、视图、会话历史、工具和响应 schema、输出预留及估算余量。保留最新的完整工具交换和当前结构阶段。预算不足时产生 `context_budget`，没有 HTTP 请求。 | `test_request_budget.py` 覆盖多轮原生工具消息、并行工具组、快照收缩、关键证据无法容纳和输出预留。`test_dynamic_social_content.py` 复验阶段恢复，并调整旧 Director 测试以真实入库结果验收已注册资源。 |
+| 已验证 | `evaluate_behavior_outcome` 用执行 ID 关联完成事件和实际库存变化，同时校验期限。两套世界的评估分别覆盖首轮可竞争和必须履行民生配给的场景。 | `test_agent_outcome_quality.py` 验证四个确定性模型用例成功，已受理但未结算、无关执行的完成事件、超时和取消均不能通过。 |
+| 待远程复验 | 重复试验的选择率、结果通过率与估算误差。 | `python scripts/verify_agent_outcomes.py --provider remote --runs 3` 返回 `blocked`。当前进程缺少远程凭据。 |
+
+扩大回归 450 项通过，最终预算与结果评估相关集合复跑 228 项通过。`compileall`、示例配置 JSON 校验与 `git diff --check` 通过。
+
+### 交互式 Shell 远程复验与请求缓存
+
+- 交互式 Bash 加载 `~/.bashrc` 后，配置的 `remote` 凭据可用。远程 God 冒烟测试通过，三轮返回有依据的 `wait`，提供方报告命中 7,040 / 23,111 输入 token。
+- 首次配给探针的 12 次提交走了 `request_behavior` 工具。`AgentTurn` 缺少结算所需的执行 ID。已补齐运行时侧的内部结果关联，模型仍只收到可见工具结果。原生工具路径聚焦回归验证能按 ID 找到实际分配结果。
+- 预算允许且已发送的世界快照及工具集合仍有效时，ReAct 继续使用原请求前缀，并在末尾附当前任务和反馈。`test_request_budget.py` 验证前缀相同、新反馈存在、工具批次完整及预算上限。命中率按提供方返回了缓存用量的请求计算。
+- `remote` 只读双轮对照各跑一次。第二轮重新拼接快照时命中 3,840 / 4,264 token，复用请求前缀时命中 3,968 / 4,319。未命中输入从 424 降到 351 token。配给探针 12 次试验共命中 83,968 / 94,149 输入 token，约 89.2%。两组数据均为该探针的提供方实测。
+- 修复执行 ID 后，真实模型配给探针的首个决策仍是 0/12。阿岚 6 次选营地工作，玛拉 6 次选潮门检查。两套世界的配给选项符合试验条件，首个行动未触发当批分配。完整 250 分钟窗口内的真实模型跟进仍未验证。
+- 聚焦运行时回归 324 项通过，缓存统计和结果评估补充回归 20 项通过。`compileall` 与 `git diff --check` 通过。
+
+### P0/P1 执行边界收敛
+
+| 状态 | 修正 | 聚焦证据 |
+| --- | --- | --- |
+| 已验证 | 演化任务的领取和恢复共享实例锁。有效领取存续期间，另一执行者无法重领、重排或结束该任务。退出后可恢复。 | `test_runtime_boundaries.py` 复现双执行者和恢复。原进程重启用例继续通过。 |
+| 已验证 | 行为结束效果走 Action 的事务结算边界。效果失败会回滚本批效果和事件，记录 `behavior.failed`。 | 老存档定义含失效资源的回归保留贸易信心原值，且不会产生部分成功事件。 |
+| 已验证 | 常规 NPC 决策从已提交且面向自己的事件读取争议方、剩余时间与逾期代价。决策结束或过期后简报消失。 | 两套世界的提示回归通过。`remote` 试验在每种条件跑一次，首轮完成 3/4。继续到结算或截止时完成 4/4，风脊号还债分支在第二次决策的第 800 分钟完成。 |
+| 已验证 | 世界包入口通过统一模板验证，效果类型由 Definition Compiler 提供。导出保留世界 UI、初始事实和包元数据。 | 十个世界通过模板校验与导出重读等价检查。风脊号和潮汐公社分别启动原包与导出包，比较初始世界状态和角色行动。 |
+| 已验证 | 新世界可省略演化配置，或在 `evolution.roles` 逐项启用 God、Story、Director。Director 依赖 God。 | 省略配置的风脊号保持居民行动和时钟，旧的关闭角色任务无人领取，Story 可单独启用。 |
+
+扩大聚焦回归 231 项通过。浏览器检查风脊号和雾溪村在 1366×900 和 390×844 的玩家入口和核心面板，风脊号手机首屏的行动排序列入 [Web 客户端调整](web-client.md#跨题材的首屏)。
+
+### 风脊号 0.4 与首屏
+
+- 首航抉择通过行为、分钟规则和公共事件结算。聚焦回归验证救人和吊铜互斥，救人加声望，吊铜消耗备用铜板来修船，迟到不产生奖励。还验证同样支援一次断桥后，两条开局路线对锚定声望门槛的影响。旧档升级保留进度，错过首日清晨的存档不会再显示该开场。
+- 世界配置可把准备就绪的限时目标放到游戏首屏。Chromium 走查 1366×900 与 390×844 两种尺寸，两张首航选择卡分别从页面 Y=473、Y=420 开始。桌面完成救人，手机完成吊铜，结算文字都在当前视野内。另验收了空大厅的选集封面和雾溪村的程序化封面及普通行动。
+- 封面和甲板插画由世界包声明。建档和升级时导入 SQLite，按内容去重，玩家投影提供可缓存的图片 URL。回归验证原包移走后快照仍能返回两张图，替换图片时 URL 和配置摘要变化，回合进度保留。十个世界通过包导出与重读检查，安装包包含两张插画。
+- Web、世界、运行时与架构的聚焦回归共 76 项通过。最终两张插画的存档、包导出与 Web 入口另复验 18 项。此前全量回归发现一项原生工具消息顺序的旧断言和一项 God 工具描述大小超限。修正后相关回归 9 项通过，加载 `~/.bashrc` 的远程 God 探针通过质量检查。

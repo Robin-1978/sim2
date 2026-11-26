@@ -1,13 +1,13 @@
 import { actionForRef, beginAction } from "./actions.js";
 import { $, ENDING_KEY, clamp, el, formatMinute, formatWorldProperty, humanizeKey, state, storageGet, storageSet, translateNarrative, uiConfig } from "./core.js";
-import { humanizeReason, renderMobileActionBar } from "./render_actions.js";
+import { activeOpportunity, humanizeReason, renderMobileActionBar } from "./render_actions.js";
 
 
 export function renderOnboarding() {
     const card = $("onboarding-card");
     if (!card) return;
     const step = state.view?.onboarding || null;
-    if (!step) {
+    if (!step || activeOpportunity()) {
       card.classList.add("hidden");
       return;
     }

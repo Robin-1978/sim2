@@ -197,17 +197,29 @@ class DefinitionRuntimeMixin:
                 }
         return None
 
-    def submit_definition_proposal(self, actor_id: str, proposal: dict[str, Any]) -> dict[str, Any]:
+    def submit_definition_proposal(self, actor_id: str, proposal: dict[str, Any], *, contract: dict[str, Any] | None = None) -> dict[str, Any]:
         """Validate and register a new declarative definition in this instance."""
 
         intent_id = str(uuid4())
         plan = self._plan_definition(actor_id, proposal)
         data = {**proposal, "actor_id": actor_id, "definition": plan.definition}
+        if contract:
+            error = self._definition_contract_error(plan, contract, proposal)
+            if error:
+                return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_definition", data, {
+                    "status": "rejected", "failed_check": "evolution_contract", "retryable": True, **error,
+                })
         if plan.errors:
             return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_definition", data, {"status": "rejected", "message": "Definition proposal failed validation.", "failed_check": "definition_schema", "errors": plan.errors, "retryable": True})
         world_minute = int(self.store.repositories.metadata.get("world_minute", 0))
         try:
             with self.store.transaction():
+                constraints = (contract or {}).get("behavior_constraints")
+                if constraints and self._duplicate_constrained_behavior(plan.definition):
+                    return self._context.services["intent"].reject_intent(intent_id, actor_id, "propose_definition", data, {
+                        "status": "rejected", "failed_check": "evolution_contract", "retryable": True,
+                        "message": "Choose an unused behavior id and a distinct combination of bindings.",
+                    })
                 self.store.repositories.evolution.create_intent(intent_id, actor_id, "propose_definition", data, world_minute)
                 self._register_definition(plan)
                 event_ids = self._publish_definition_events(plan, actor_id, world_minute, str(proposal.get("evidence") or ""))
@@ -246,6 +258,71 @@ class DefinitionRuntimeMixin:
         if plan.definition_type == "attribute":
             self._refresh_attribute_dependencies()
         return result
+
+    def _definition_contract_error(self, plan: DefinitionPlan, contract: dict[str, Any], proposal: dict[str, Any]) -> dict[str, Any] | None:
+        required_type = str(contract.get("required_definition_type") or "").strip().casefold()
+        if required_type and plan.definition_type != required_type:
+            return {"message": f"This evolution task requires a {required_type} definition; choose that definition_type or wait."}
+        required = contract.get("assign_to") or []
+        required = [required] if isinstance(required, str) else required
+        errors: list[str] = []
+        audience = self._resolve_assignees(required, "assign_to", errors)
+        supplied = {agent_id for agent_id, _ in [*plan.assignees, *plan.followup_agents]}
+        expected = {agent_id for agent_id, _ in audience}
+        constraints = contract.get("behavior_constraints")
+        if errors or (expected - supplied) or (constraints and supplied != expected):
+            return {"message": "Assign the behavior to the configured audience.", "required_assign_to": [name for _, name in audience] or required}
+        if contract.get("require_story_outcome") and plan.definition_type == "action":
+            followup = (proposal.get("followup_behavior") or {}).get("definition")
+            if not any(
+                isinstance(event, dict) and "story" in (event.get("wake") or [])
+                for event in ((followup or {}).get("outcome_events") or [])
+            ):
+                return {"message": "This evolution task requires an outcome_events entry with wake ['story'] on its bound behavior."}
+        if constraints:
+            return self._constrained_behavior_error(plan, constraints)
+        return None
+
+    @staticmethod
+    def _constrained_behavior_error(plan: DefinitionPlan, spec: dict[str, Any]) -> dict[str, Any] | None:
+        definition = plan.definition
+        nodes = definition.get("nodes") or []
+        action_id = spec["action_id"]
+        if (
+            len(nodes) != 1 or not isinstance(nodes[0], dict)
+            or nodes[0].get("type") != "action" or nodes[0].get("action_id") != action_id
+            or plan.followup or plan.followup_recipe
+            or any(definition.get(key) for key in ("agent_parameters", "parameter_defaults", "parameter_bindings", "outcome_events", "authorization_operation"))
+        ):
+            return {"message": f"Submit one deferred behavior with a single {action_id} Action and literal parameter bindings."}
+        parameters = nodes[0].get("parameters") or {}
+        choices = spec["parameters"]
+        if set(parameters) != set(choices) or any(
+            not any(type(parameters[key]) is type(value) and parameters[key] == value for value in values)
+            for key, values in choices.items()
+        ):
+            return {"message": "Use only the configured parameter names and literal values.", "parameter_choices": choices}
+        if (
+            definition.get("deferred") is not True
+            or type(definition.get("cooldown_minutes")) is not int
+            or definition["cooldown_minutes"] != spec["cooldown_minutes"]
+            or sorted(definition.get("entry_conditions") or []) != sorted(spec["entry_conditions"])
+        ):
+            return {"message": "Use the configured entry conditions and cooldown, with deferred set to true."}
+        return None
+
+    def _duplicate_constrained_behavior(self, definition: dict[str, Any]) -> bool:
+        node = definition["nodes"][0]
+        return any(
+            row.get("id") == definition.get("id") or (
+                row.get("status", "active") == "active"
+                and len(row.get("nodes") or []) == 1
+                and isinstance(row["nodes"][0], dict)
+                and row["nodes"][0].get("action_id") == node["action_id"]
+                and row["nodes"][0].get("parameters") == node["parameters"]
+            )
+            for row in self.store.repositories.entities.get_definitions("bt_def")
+        )
 
     def _canonicalize_visible_item_references(self, definition_type: str, definition: dict[str, Any]) -> dict[str, Any]:
         """Replace visible item names in LLM-authored behavior references.

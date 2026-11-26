@@ -13,7 +13,11 @@ from typing import Any
 
 from ..actions.conditions import ConditionEngine
 from ..world.lifecycle import validate_incapacitation_rule
+from ..world.definition_compiler import EFFECT_TYPES
+from ..evolution.config import normalize_evolution_config
+from ..world.time import validate_day_phase_duration
 from ..world.ui_text import validate_ui_text
+from .artwork import decode_template_artwork
 from .catalog_validation import validate_action_catalogs
 
 COLLECTION_NAMES = (
@@ -21,16 +25,9 @@ COLLECTION_NAMES = (
     "capabilities", "actions", "recipes", "behavior_trees", "relationships",
     "initial_events",
 )
-ALLOWED_EFFECTS = frozenset({
-    "need_delta", "state_delta", "attribute_delta", "attribute_set",
-    "inventory_add", "inventory_remove", "inventory.consume_item",
-    "relationship_delta", "public_event", "world_property_delta", "world_property_set",
-    "entity_state_set", "status_add", "status_remove", "location_set",
-    "institution_allocation", "catalog_action",
-})
 BEHAVIOR_NODE_TYPES = frozenset({"action", "subtree", "behavior", "sequence", "parallel", "selector", "condition"})
 # State an agent carries without the world declaring it as an attribute.
-STRUCTURAL_AGENT_STATE = frozenset({"location_id", "status", "injuries", "conditions", "active_bt_instance", "active_action", "remaining_minutes"})
+STRUCTURAL_AGENT_STATE = frozenset({"location_id", "status", "injuries", "conditions", "active_bt_instance", "active_action", "remaining_minutes", "action_progress", "current_goal_id", "last_platform_result"})
 
 
 def validate_world_template(template: dict[str, Any]) -> dict[str, Any]:
@@ -72,6 +69,10 @@ class _TemplateChecks:
         self.check_minute_effects()
         self.check_relationships()
         self.check_initial_events()
+        try:
+            normalize_evolution_config(self.template.get("evolution"))
+        except (TypeError, ValueError) as exc:
+            self.errors.append(f"evolution: {exc}")
         return {"valid": not self.errors, "errors": list(dict.fromkeys(self.errors))}
 
     # ------------------------------------------------------------------ shape
@@ -82,6 +83,10 @@ class _TemplateChecks:
             self.errors.append("world.id is required")
         if isinstance(world, dict):
             self.errors.extend(error.replace("ui_text", "world.ui_text", 1) for error in validate_ui_text(world.get("ui_text")))
+            try:
+                decode_template_artwork(world)
+            except ValueError as exc:
+                self.errors.append(str(exc))
         if self.template.get("template_version") is not None and not isinstance(self.template.get("template_version"), str):
             self.errors.append("template_version must be a string")
 
@@ -114,6 +119,7 @@ class _TemplateChecks:
         self.action_ids = ids_of("actions")
         self.behavior_ids = ids_of("behavior_trees")
         self.capability_ids = ids_of("capabilities")
+        self.resources = ids_of("resources") | {str(item.get("name")) for item in self.collections["resources"] if item.get("name")}
         self.state_ids = attribute_ids_of("state")
         self.need_ids = attribute_ids_of("need")
 
@@ -143,7 +149,7 @@ class _TemplateChecks:
         if not isinstance(progression, list):
             errors.append("rules.progression must be a list")
             progression = []
-        known_audience_ids = self.agent_ids | {
+        known_audience_ids = self.agent_ids | {"player"} | {
             str(item.get("name")) for item in self.collections["agents"] if item.get("name")
         }
         progression_ids: set[str] = set()
@@ -182,6 +188,9 @@ class _TemplateChecks:
             if not referenced_behaviors:
                 errors.append(f"{owner} must name at least one target or support behavior")
             contract = stage.get("complete_when")
+            if contract is None and stage.get("visible_when"):
+                self.check_expression(stage["visible_when"], f"{owner} visibility")
+                continue
             if not isinstance(contract, dict):
                 errors.append(f"{owner}.complete_when must be an object")
                 continue
@@ -228,6 +237,12 @@ class _TemplateChecks:
 
     def check_locations(self) -> None:
         errors = self.errors
+        ui = self.world.get("ui") if isinstance(self.world, dict) else None
+        scene_art = ui.get("scene_art") if isinstance(ui, dict) else None
+        if isinstance(scene_art, dict):
+            for location_id in scene_art:
+                if location_id not in self.location_ids:
+                    errors.append(f"world.ui.scene_art references unknown location {location_id}")
         for location in self.collections["locations"]:
             if not isinstance(location.get("routes"), list):
                 errors.append(f"location {location.get('id')} must declare routes as a list")
@@ -246,9 +261,10 @@ class _TemplateChecks:
 
     def check_resources_and_objects(self) -> None:
         errors = self.errors
-        for item in self.collections["resources"] + self.collections["objects"]:
+        for item in self.collections["objects"]:
             if not str(item.get("type") or "").strip():
                 errors.append(f"{item.get('id')} requires a non-empty type")
+        for item in self.collections["resources"] + self.collections["objects"]:
             location_id = item.get("location_id") or (item.get("initial_state") or {}).get("location_id")
             if location_id and str(location_id) not in self.location_ids:
                 errors.append(f"{item.get('id')} references unknown location {location_id}")
@@ -265,7 +281,7 @@ class _TemplateChecks:
     def check_expression(self, expression: Any, owner: str) -> None:
         errors = self.errors
         text = str(expression or "")
-        if text and self.condition_engine.evaluate_known(text, agent={}, target={}, context={}, world={}) is None:
+        if text and self.condition_engine.unknown_paths(text):
             errors.append(f"{owner} uses an unsupported condition path: {text}")
         for path in re.findall(r"actor\.state\.([A-Za-z0-9_]+)", text):
             if path not in self.state_ids:
@@ -284,7 +300,7 @@ class _TemplateChecks:
 
     def check_effect(self, effect: dict[str, Any], owner: str) -> None:
         errors = self.errors
-        effect_type = str(effect.get("type") or "")
+        effect_type = str(effect.get("type") or effect.get("op") or "")
         if effect_type in {"need_delta", "state_delta", "world_property_delta", "relationship_delta"}:
             if not isinstance(effect.get("delta"), (int, float)):
                 errors.append(f"{owner} {effect_type} requires numeric delta")
@@ -294,7 +310,8 @@ class _TemplateChecks:
         elif effect_type == "attribute_set" and "value" not in effect:
             errors.append(f"{owner} attribute_set requires value")
         elif effect_type in {"inventory_add", "inventory_remove", "inventory.consume_item"}:
-            if not str(effect.get("item") or "").strip() or not isinstance(effect.get("quantity", 1), (int, float)):
+            quantity = effect.get("quantity", 1)
+            if not str(effect.get("item") or "").strip() or not (isinstance(quantity, (int, float)) or isinstance(quantity, str) and quantity.startswith("context.")):
                 errors.append(f"{owner} {effect_type} requires item and numeric quantity")
         elif effect_type == "location_set" and not str(effect.get("location_id") or "").strip():
             errors.append(f"{owner} location_set requires location_id")
@@ -320,15 +337,30 @@ class _TemplateChecks:
         """An effect may only touch state, needs and world properties the world declares."""
 
         errors = self.errors
-        effect_type = str(effect.get("type") or "")
+        effect_type = str(effect.get("type") or effect.get("op") or "")
         if effect_type in {"state_delta", "attribute_delta", "attribute_set"}:
             key = str(effect.get("attribute") or effect.get("state") or "")
             if key not in self.state_ids:
                 errors.append(f"{subject} references undeclared state attribute {key}")
-        if effect_type == "need_delta" and str(effect.get("need") or "") not in self.need_ids:
+        if effect_type == "need_delta" and str(effect.get("need") or "") not in (self.need_ids | self.state_ids):
             errors.append(f"{subject} references undeclared need {effect.get('need')}")
-        if effect_type == "world_property_delta" and str(effect.get("property") or "") not in self.world_properties:
+        if effect_type in {"world_property_delta", "world_property_set"} and not str(effect.get("property") or "").startswith("context.") and str(effect.get("property") or "") not in self.world_properties:
             errors.append(f"{subject} references undeclared world property {effect.get('property')}")
+        if effect_type in {"world_resource_delta", "resource_transfer", "resource_withdrawal", "resource_take"}:
+            resource = str(effect.get("resource_id") or effect.get("resource") or "")
+            if not resource.startswith("context.") and resource not in self.resources:
+                errors.append(f"{subject} references unknown world resource {resource or '<missing>'}")
+
+    def check_effect_list(self, effects: Any, owner: str) -> None:
+        if not isinstance(effects, list):
+            self.errors.append(f"{owner} must be a list")
+            return
+        for effect in effects:
+            if not isinstance(effect, dict) or str(effect.get("type") or effect.get("op") or "") not in EFFECT_TYPES:
+                self.errors.append(f"{owner} has unsupported or missing effect type")
+                continue
+            self.check_effect(effect, owner)
+            self.check_effect_targets(effect, owner)
 
     # ------------------------------------------------------------------ actions
 
@@ -339,24 +371,19 @@ class _TemplateChecks:
             if not isinstance(duration, dict):
                 errors.append(f"action {action.get('id')} requires a duration object")
             elif not (
-                isinstance(duration.get("minutes"), (int, float)) and float(duration.get("minutes")) >= 1
-            ) and str(duration.get("mode") or "") not in {"route_distance", "recipe", "recipe_duration"}:
-                errors.append(f"action {action.get('id')} duration needs positive minutes or a supported mode")
+                isinstance(duration.get("minutes"), (int, float)) and float(duration.get("minutes")) >= 0
+            ) and str(duration.get("mode") or "") not in {"route_distance", "recipe", "recipe_duration", "until_day_phase"}:
+                errors.append(f"action {action.get('id')} duration needs non-negative minutes or a supported mode")
+            if error := validate_day_phase_duration(action, self.world or {}):
+                errors.append(error)
             for condition in action.get("preconditions", []) or []:
                 self.check_expression(condition, f"action {action.get('id')} precondition")
             self._check_action_costs(action)
             effects = action.get("effects", [])
-            if not isinstance(effects, list):
-                errors.append(f"action {action.get('id')}.effects must be a list")
-                effects = []
             if not effects and not str(action.get("executor") or "").strip():
                 errors.append(f"action {action.get('id')} requires at least one typed effect")
-            for effect in effects:
-                if not isinstance(effect, dict) or str(effect.get("type") or "") not in ALLOWED_EFFECTS:
-                    errors.append(f"action {action.get('id')} has unsupported or missing effect type")
-                    continue
-                self.check_effect(effect, f"action {action.get('id')} effect")
-                self.check_effect_targets(effect, f"action {action.get('id')} effect")
+            self.check_effect_list(effects, f"action {action.get('id')}.effects")
+            self.check_effect_list(action.get("progress_effects", []), f"action {action.get('id')}.progress_effects")
             if not isinstance(action.get("success"), dict) or not isinstance(action.get("success", {}).get("condition"), str) or not isinstance(action.get("success", {}).get("result"), str):
                 errors.append(f"action {action.get('id')} requires a success condition and result")
             if not isinstance(action.get("failure"), dict) or not isinstance(action.get("failure", {}).get("condition"), str) or not isinstance(action.get("failure", {}).get("result"), str):
@@ -398,6 +425,7 @@ class _TemplateChecks:
     def check_behaviors(self) -> None:
         errors = self.errors
         for behavior in self.collections["behavior_trees"]:
+            self.check_effect_list(behavior.get("outcome_effects", []), f"behavior {behavior.get('id')}.outcome_effects")
             nodes = behavior.get("nodes", [])
             if not isinstance(nodes, list) or not nodes:
                 errors.append(f"behavior {behavior.get('id')} requires at least one node")
@@ -407,8 +435,6 @@ class _TemplateChecks:
                 self._check_behavior_node(behavior, node, f"nodes[{index}]", used_action_ids)
             for condition in behavior.get("entry_conditions", []) or []:
                 self.check_expression(condition, f"behavior {behavior.get('id')} entry condition")
-            if not str(behavior.get("agent_label") or behavior.get("summary") or behavior.get("description") or "").strip():
-                errors.append(f"behavior {behavior.get('id')} requires a human-readable summary or agent_label")
             self._check_outcome_events(behavior, used_action_ids)
 
     def _check_behavior_node(self, behavior: dict[str, Any], node: Any, path: str, used_action_ids: set[str]) -> None:
@@ -472,10 +498,9 @@ class _TemplateChecks:
 
     def check_agents(self) -> None:
         errors = self.errors
-        assigned_behaviors: set[str] = set()
         for agent in self.collections["agents"]:
             state = agent.get("initial_state") if isinstance(agent.get("initial_state"), dict) else {}
-            for field in ("name", "role", "ultimate_goal", "initial_state", "initial_bt_ids", "needs", "capabilities", "inventory"):
+            for field in ("name", "role", "ultimate_goal", "initial_state", "initial_bt_ids", "needs", "inventory"):
                 if field not in agent:
                     errors.append(f"agent {agent.get('id')} is missing {field}")
             if not state.get("location_id"):
@@ -484,39 +509,26 @@ class _TemplateChecks:
                 errors.append(f"agent {agent.get('id')} references unknown location {state['location_id']}")
             if not state.get("status"):
                 errors.append(f"agent {agent.get('id')} requires initial_state.status")
-            for attribute_id in self.state_ids:
-                if attribute_id not in state:
-                    errors.append(f"agent {agent.get('id')} must explicitly initialize state attribute {attribute_id}")
             needs = agent.get("needs") if isinstance(agent.get("needs"), dict) else {}
-            for need_id in self.need_ids:
-                if need_id not in needs:
-                    errors.append(f"agent {agent.get('id')} must explicitly initialize need {need_id}")
             for need_id in needs:
                 if str(need_id) not in self.need_ids:
                     errors.append(f"agent {agent.get('id')} references undeclared need {need_id}")
-            if not agent.get("initial_bt_ids"):
-                errors.append(f"agent {agent.get('id')} requires at least one initial behavior")
             controller = str(agent.get("controller") or "llm").casefold()
             if controller not in {"llm", "bt", "bt_only", "behavior_tree"}:
                 errors.append(f"agent {agent.get('id')} controller must be llm or bt")
+            if agent.get("controller_fallback") is not None and (agent.get("controller_fallback") != "bt" or controller != "llm"):
+                errors.append(f"agent {agent.get('id')} controller_fallback must be bt on an llm controller")
             for priority_id in agent.get("bt_priority", []) or []:
                 if str(priority_id) not in self.behavior_ids:
                     errors.append(f"agent {agent.get('id')} bt_priority references unknown behavior {priority_id}")
             for behavior_id in agent.get("initial_bt_ids", []) or []:
                 if str(behavior_id) not in self.behavior_ids:
                     errors.append(f"agent {agent.get('id')} references unknown behavior {behavior_id}")
-                else:
-                    assigned_behaviors.add(str(behavior_id))
-            for capability_id in (agent.get("capabilities") or {}):
-                if self.capability_ids and str(capability_id) not in self.capability_ids:
-                    errors.append(f"agent {agent.get('id')} references unknown capability {capability_id}")
             for key in state:
                 if key in STRUCTURAL_AGENT_STATE:
                     continue
                 if self.attribute_ids and key not in self.attribute_ids:
                     errors.append(f"agent {agent.get('id')} has undeclared state attribute {key}")
-        for behavior_id in self.behavior_ids - assigned_behaviors:
-            errors.append(f"behavior {behavior_id} is not assigned to any agent")
 
     # ------------------------------------------------------------------ recipes
 
@@ -586,19 +598,16 @@ class _TemplateChecks:
         capacity = str(rules.get("capacity_attribute") or "")
         if vital not in self.state_ids:
             errors.append("rules.vital_attribute must name a declared state attribute")
-        if capacity not in self.state_ids:
+        if capacity and capacity not in self.state_ids:
             errors.append("rules.capacity_attribute must name a declared state attribute")
         errors.extend(validate_incapacitation_rule(rules))
-        raw_need_rules = rules.get("needs")
+        raw_need_rules = rules.get("needs", [])
         if not isinstance(raw_need_rules, list):
             errors.append("rules.needs must be a list of objects with id, target, minimum, gamma, critical_threshold and critical_gain")
             raw_need_rules = []
         need_rules = {str(item.get("id")): item for item in raw_need_rules if isinstance(item, dict) and item.get("id")}
-        for need_id in self.need_ids:
-            if need_id not in need_rules:
-                errors.append(f"rules.needs must define satisfaction target and nonlinear drive settings for {need_id}")
-                continue
-            missing = [field for field in ("target", "minimum", "gamma", "critical_threshold", "critical_gain") if field not in need_rules[need_id]]
+        for need_id, entry in need_rules.items():
+            missing = [field for field in ("target", "minimum", "gamma", "critical_threshold", "critical_gain") if field not in entry]
             if missing:
                 errors.append(f"rules.needs entry {need_id} is missing {', '.join(missing)}")
 
@@ -608,7 +617,7 @@ class _TemplateChecks:
             if not isinstance(minute_effect, dict):
                 errors.append("rules.minute_effects entries must be objects")
                 continue
-            missing = [field for field in ("id", "scope", "every_minutes", "effect") if field not in minute_effect]
+            missing = [field for field in ("id", "scope", "every_minutes") if field not in minute_effect]
             if missing:
                 errors.append(f"minute effect is missing {', '.join(missing)}")
                 continue
@@ -616,13 +625,19 @@ class _TemplateChecks:
                 errors.append(f"minute effect {minute_effect.get('id')} has unsupported scope")
             if not isinstance(minute_effect.get("every_minutes"), int) or int(minute_effect["every_minutes"]) < 1:
                 errors.append(f"minute effect {minute_effect.get('id')} needs positive integer every_minutes")
-            effect = minute_effect.get("effect")
-            if not isinstance(effect, dict) or str(effect.get("type") or "") not in ALLOWED_EFFECTS:
-                errors.append(f"minute effect {minute_effect.get('id')} needs one supported typed effect")
-                continue
             self.check_expression(minute_effect.get("condition"), f"minute effect {minute_effect.get('id')} condition")
-            self.check_effect(effect, f"minute effect {minute_effect.get('id')} effect")
-            self.check_effect_targets(effect, f"minute effect {minute_effect.get('id')}")
+            scope = minute_effect.get("scope")
+            owner = f"minute effect {minute_effect.get('id')}"
+            if scope == "relationship":
+                effect = minute_effect.get("effect") or {}
+                if not isinstance(effect, dict) or not isinstance(effect.get("relation_strength", effect.get("delta")), (int, float)):
+                    errors.append(f"{owner} requires a numeric relationship delta")
+                continue
+            effects = minute_effect.get("effects") if scope == "world" and "effects" in minute_effect else [minute_effect.get("effect")]
+            if not isinstance(effects, list) or not effects:
+                errors.append(f"{owner} needs at least one supported typed effect")
+                continue
+            self.check_effect_list(effects, owner)
 
     # -------------------------------------------------- relationships, history
 

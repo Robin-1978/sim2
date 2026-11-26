@@ -1600,10 +1600,10 @@ def test_agent_view_contract_and_native_react_messages(tmp_path: Path):
         assert turn.result["status"] == "accepted"
         assert len(provider.messages) == 2
         assert any(message.get("role") == "assistant" and message.get("tool_calls") for message in provider.messages[1])
-        assert any(message.get("role") == "tool" and message.get("tool_call_id") == "call-1" for message in provider.messages[1])
-        assert provider.messages[1][-1]["role"] == "tool"
-        assert "<self>" not in provider.messages[1][-1]["content"]
-        assert '"status": "ok"' in provider.messages[1][-1]["content"]
+        reply = next(message for message in provider.messages[1] if message.get("tool_call_id") == "call-1")
+        assert reply["role"] == "tool"
+        assert "<self>" not in reply["content"]
+        assert '"status": "ok"' in reply["content"]
     finally:
         platform.close()
 

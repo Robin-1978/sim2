@@ -288,7 +288,7 @@ class ConditionEngine:
             "location.health_service", "location.safe", "location.reachable", "station.available",
             "patient.available", "patient.in_clinic", "counterparty.available", "resource.available",
             "inputs.available", "recipe.available", "medicine.available", "communication.channel_open",
-            "institution.allocation_possible",
+            "institution.allocation_possible", "action.none", "conflict.available", "threat.reachable", "threat.overwhelming",
         } or path.startswith("location.tag.")
 
     def _value(self, path: str, agent: dict[str, Any], target: dict[str, Any] | None, world: dict[str, Any] | None, context: dict[str, Any] | None) -> Any:
@@ -296,6 +296,8 @@ class ConditionEngine:
         world = world or {}
         context = context or {}
         state = agent.get("initial_state", {})
+        if path == "action.none":
+            return not state.get("active_action")
         if path == "actor.alive":
             if self.vital_attribute:
                 return float(state.get(self.vital_attribute, 0) or 0) > 0

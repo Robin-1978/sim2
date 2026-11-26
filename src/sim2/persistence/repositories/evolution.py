@@ -5,6 +5,7 @@ import json
 import sqlite3
 from typing import Any
 
+from ...evolution.config import role_enabled
 from ..store import json_dumps
 
 
@@ -15,10 +16,31 @@ class EvolutionRepository:
         self.store = store
 
     def put_evolution_task(self, task_id: str, role: str, actor_id: str | None, task_type: str, due_minute: int, cadence_minutes: int, status: str = "scheduled", data: dict[str, Any] | None = None) -> None:
+        if not role_enabled(self.store.repositories.metadata.get("evolution", {}) or {}, role):
+            return
         self.store.connection.execute(
             "INSERT OR REPLACE INTO evolution_task(task_id,role,actor_id,task_type,due_minute,cadence_minutes,status,data_json) VALUES (?,?,?,?,?,?,?,?)",
             (task_id, role, actor_id, task_type, int(due_minute), int(cadence_minutes), status, json_dumps(data or {})),
         )
+
+    def sync_recurring_task(self, task_id: str, role: str, actor_id: str | None, task_type: str, minute: int, cadence: int) -> None:
+        """Keep cadence changes from resetting an existing task's progress."""
+
+        row = self.store.connection.execute("SELECT status FROM evolution_task WHERE task_id=?", (task_id,)).fetchone()
+        if cadence <= 0:
+            self.store.connection.execute(
+                "UPDATE evolution_task SET status='cancelled' WHERE task_id=? AND cadence_minutes>0 AND status IN ('scheduled','ready','claimed')",
+                (task_id,),
+            )
+        elif row is None:
+            self.put_evolution_task(task_id, role, actor_id, task_type, minute + cadence, cadence)
+        elif row["status"] == "cancelled":
+            self.store.connection.execute(
+                "UPDATE evolution_task SET status='scheduled',due_minute=?,cadence_minutes=? WHERE task_id=?",
+                (minute + cadence, cadence, task_id),
+            )
+        else:
+            self.store.connection.execute("UPDATE evolution_task SET cadence_minutes=? WHERE task_id=?", (cadence, task_id))
 
     def due_evolution_tasks(self, world_minute: int) -> list[dict[str, Any]]:
         rows = self.store.connection.execute(

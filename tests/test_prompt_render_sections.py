@@ -297,7 +297,7 @@ def test_agent_turn_records_context_budget_metrics(tmp_path: Path):
         rows = platform.store.connection.execute(
             "SELECT prompt_tokens_est, context_metrics_json FROM llm_call ORDER BY call_id DESC LIMIT 1"
         ).fetchall()
-        assert rows and rows[0]["prompt_tokens_est"] == metrics["estimated_tokens"]
+        assert rows and rows[0]["prompt_tokens_est"] == metrics["request_input_tokens_est"]
         assert rows[0]["context_metrics_json"]
     finally:
         platform.close()

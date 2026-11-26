@@ -9,6 +9,7 @@ from ..behavior.estimator import BehaviorDurationEstimator
 from ..behavior.recovery import failure_block_recovered
 from ..intents.models import BehaviorIntent
 from ..world.context import configured_context_values
+from ..world.bindings import resolve_binding
 from ..world.lifecycle import (
     BUSY_STATUSES,
     INACTIVE_STATUSES,
@@ -40,6 +41,13 @@ class WorldTickService(PlatformService):
         minute_event_state_changed = False
         world_properties = self.store.repositories.metadata.get("world_properties", {}) or {}
         static_context_values = configured_context_values(rules, include_resolvers=False)
+        calendar = world_time_view(self.store, minute)
+        tick_context = {
+            **static_context_values,
+            "day_phase": calendar["day_phase"],
+            "calendar_day": calendar["day"],
+            "minute_of_day": calendar["minute_of_day"],
+        }
         for regeneration in rules.get("resource_regeneration", []) or []:
             every = max(1, int(regeneration.get("every_minutes", 1)))
             if minute % every != 0:
@@ -88,9 +96,8 @@ class WorldTickService(PlatformService):
                         agent=agent,
                         target={},
                         context={
-                            **static_context_values,
+                            **tick_context,
                             "current_location": self._context.services["execution"].entity_for_context(state.get("location_id")),
-                            "day_phase": world_time_view(self.store).get("day_phase"),
                         },
                         world=world_properties,
                     ):
@@ -107,7 +114,7 @@ class WorldTickService(PlatformService):
                             event_state=minute_event_state,
                             rules=rules,
                             world=world_properties,
-                            static_context=static_context_values,
+                            static_context=tick_context,
                         ) or minute_event_state_changed
                     state = dict(agent.get("initial_state") or {})
                     vital_value = float(state.get(vital, 1) or 0) if vital else 1
@@ -139,7 +146,7 @@ class WorldTickService(PlatformService):
                     agent={},
                     target={},
                     world=properties,
-                    context={**static_context_values, "day_phase": world_time_view(self.store).get("day_phase")},
+                    context=tick_context,
                 ):
                     continue
                 definitions = effect.get("effects")
@@ -147,7 +154,7 @@ class WorldTickService(PlatformService):
                     definitions = [effect.get("effect", {}) or {}]
                 changes = [
                     change for definition in definitions if isinstance(definition, dict)
-                    if (change := self._apply_world_effect(definition, minute))
+                    if (change := self._apply_world_effect(definition, minute, tick_context))
                 ]
                 event_type = str(effect.get("event_type") or "").strip()
                 if event_type:
@@ -163,7 +170,7 @@ class WorldTickService(PlatformService):
                     elif changes:
                         payload["effects"] = changes
                     payload["rule_id"] = str(effect.get("id") or "")
-                    self._context.services["events"].append(event_type, None, minute, payload)
+                    self._context.services["events"].publish(event_type, None, minute, payload, wake="configured")
             elif scope == "relationship":
                 definition = effect.get("effect", {}) or {}
                 relation_delta = float(definition.get("relation_strength", definition.get("delta", 0)))
@@ -177,7 +184,7 @@ class WorldTickService(PlatformService):
             # encode and decode the same JSON thousands of times.
             self.store.repositories.metadata.set("minute_effect_event_state", minute_event_state)
 
-    def _apply_world_effect(self, definition: dict[str, Any], minute: int) -> dict[str, Any] | None:
+    def _apply_world_effect(self, definition: dict[str, Any], minute: int, context: dict[str, Any]) -> dict[str, Any] | None:
         """Apply one declarative world-scope effect and return its audit delta."""
 
         effect_type = str(definition.get("type") or definition.get("op") or "")
@@ -201,7 +208,7 @@ class WorldTickService(PlatformService):
             if not key:
                 return None
             before = properties.get(str(key))
-            value = definition.get("value")
+            value = resolve_binding(definition.get("value"), context)
             self.set_world_property(str(key), value)
             return {"type": effect_type, "property": str(key), "before": before, "after": value}
         if effect_type == "world_resource_delta":
@@ -488,7 +495,7 @@ class WorldTickService(PlatformService):
         )
         return {"entity_id": entity["id"], "before": before, "after": value}
 
-    def step(self) -> dict[str, Any]:
+    def step(self, *, defer_director: bool = False) -> dict[str, Any]:
         """Commit exactly one world-minute tick."""
 
         completed: list[str] = []
@@ -527,7 +534,8 @@ class WorldTickService(PlatformService):
             self.proposal_evaluator.evaluate_due(minute)
             self._context.services["evolution"].emit_evolution_triggers(minute, agent_ids=agent_ids)
             self._context.services["stagnation"].emit_stagnation_signal(minute, agents=agents)
-            self._context.services["director"].tick(minute)
+            if not defer_director:
+                self._context.services["director"].tick(minute)
             self._context.services["evolution"].emit_due_evolution_tasks(minute)
         return {
             "status": "advanced",

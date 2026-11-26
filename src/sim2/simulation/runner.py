@@ -7,8 +7,10 @@ import unicodedata
 from typing import Any, Callable
 
 from ..agents.engine import AgentEngine, AgentTurn
+from ..evolution.config import role_enabled
 from ..intents.models import BehaviorIntent
 from ..platform.runtime import Platform
+from ..world.growth import growth_count
 from ..world.lifecycle import BUSY_STATUSES, is_inactive
 from ..world.time import minutes_until_next_day_phase
 
@@ -64,19 +66,20 @@ class SimulationRunner:
 
     def __init__(self, platform: Platform, providers: dict[str, Any], *, wait_cooldown_minutes: int = 30, llm_error_cooldown_minutes: int = 60, max_interaction_rounds: int | None = None, interaction_cooldown_minutes: int | None = None, interaction_thread_window_minutes: int | None = None, turn_observer: Callable[[AgentTurn, str], None] | None = None, resolve_interactions: bool = True):
         self.platform = platform
-        self.providers = providers
         self.resolve_interactions = bool(resolve_interactions)
         interaction_policy = (self.platform.store.repositories.metadata.get("rules", {}) or {}).get("interaction_policy", {}) or {}
         self.wait_cooldown_minutes = max(1, int(wait_cooldown_minutes))
         self.llm_error_cooldown_minutes = max(1, int(llm_error_cooldown_minutes))
         evolution = (self.platform.store.repositories.metadata.get("evolution", {}) or {})
         evolution = evolution.get("evolution", evolution) if isinstance(evolution, dict) else {}
+        self.providers = {role: provider for role, provider in providers.items() if role_enabled(evolution, role)}
         limits = evolution.get("limits") if isinstance(evolution, dict) else {}
         self.max_ready_god_tasks = max(1, int((limits or {}).get("max_ready_god_tasks", 4) or 4))
+        self.continue_during_cooldown = bool((limits or {}).get("continue_during_cooldown"))
         director = evolution.get("director") if isinstance(evolution, dict) else {}
         self.director_policy = str((director or {}).get("policy") or "deterministic")
         self.director_cadence_minutes = max(1, int((director or {}).get("cadence_minutes", 60) or 60))
-        self._last_director_plan_id: str | None = None
+        self._last_director_plan_id = (self.platform.store.repositories.metadata.get("season_plan", {}) or {}).get("plan_id")
         self.max_interaction_rounds = max(1, int(interaction_policy.get("max_rounds", 3) if max_interaction_rounds is None else max_interaction_rounds))
         self.interaction_cooldown_minutes = max(1, int(interaction_policy.get("reply_cooldown_minutes", 120) if interaction_cooldown_minutes is None else interaction_cooldown_minutes))
         self.interaction_thread_window_minutes = max(self.interaction_cooldown_minutes, int(interaction_policy.get("thread_window_minutes", 360) if interaction_thread_window_minutes is None else interaction_thread_window_minutes))
@@ -148,13 +151,15 @@ class SimulationRunner:
         minutes = int(minutes)
         if minutes < 1:
             raise ValueError("minutes must be at least 1")
+        self.platform.recover_claimed_evolution_tasks()
         start = int(self.platform.store.repositories.metadata.get("world_minute", 0))
         report = SimulationReport(start, start + minutes)
-        for _ in range(minutes):
+        director_provider = self.providers.get("director") if self.director_policy == "llm" else None
+        for offset in range(minutes):
             if require_running and self.platform.status().get("status") != "running":
                 report.stop_reason = "runtime_not_running"
                 break
-            cooling_roles = self._cooling_provider_roles()
+            cooling_roles = self._blocking_provider_roles()
             if cooling_roles:
                 report.stop_reason = "provider_cooldown:" + ",".join(cooling_roles)
                 break
@@ -168,7 +173,7 @@ class SimulationRunner:
                     if cooling_roles else "interaction_pending"
                 )
                 break
-            cooling_roles = self._cooling_provider_roles()
+            cooling_roles = self._blocking_provider_roles()
             if cooling_roles:
                 report.stop_reason = "provider_cooldown:" + ",".join(cooling_roles)
                 break
@@ -176,22 +181,24 @@ class SimulationRunner:
                 self._provider_retry_pending = False
                 self._run_due_evolution(report)
                 self._run_idle_decisions(report)
-                cooling_roles = self._cooling_provider_roles()
+                cooling_roles = self._blocking_provider_roles()
                 if cooling_roles:
                     report.stop_reason = "provider_cooldown:" + ",".join(cooling_roles)
                     break
                 self._persist_scheduler_state()
-            # A completed discovery creates a Story task at the current
-            # boundary. Resolve that feedback before the next world minute so
-            # the story cannot lag one tick behind the fact it is meant to
-            # interpret. Rejected or unavailable Story work pauses the world
-            # without advancing time again.
+            # Give Story a chance to react at the same minute as its evidence.
+            # Cooling roles may keep their pending work in opted-in worlds.
             if any(task.get("role") == "story" for task in self.platform.ready_evolution_tasks()):
                 self._run_due_evolution(report)
                 if require_running and self.platform.status().get("status") != "running":
                     break
-            self._plan_next_structure(report)
-            self.platform.step()
+            use_director_provider = director_provider is not None and not self._provider_cooling_down(director_provider)
+            if use_director_provider and offset == 0:
+                # Recover a boundary interrupted after the minute committed.
+                self._plan_next_structure(report, director_provider, start)
+            tick = self.platform.step(defer_director=True) if use_director_provider else self.platform.step()
+            if use_director_provider:
+                self._plan_next_structure(report, director_provider, tick["to_minute"])
             if not self._run_instant_interactions(report):
                 cooling_roles = self._cooling_provider_roles()
                 report.stop_reason = (
@@ -227,6 +234,9 @@ class SimulationRunner:
 
     def _cooling_provider_roles(self) -> list[str]:
         return sorted(role for role, provider in self.providers.items() if self._provider_cooling_down(provider))
+
+    def _blocking_provider_roles(self) -> list[str]:
+        return [] if self.continue_during_cooldown else self._cooling_provider_roles()
 
     def provider_cooldown_seconds(self) -> float:
         """Longest cooldown left on any provider, for callers that wait it out."""
@@ -417,15 +427,16 @@ class SimulationRunner:
             # decision or reflection budget.  Important characters keep the
             # default LLM controller and their full memory/learning loop.
             if controller in {"bt", "behavior_tree", "bt_only"}:
-                if self._run_bt_only_decision(agent, report, minute):
-                    continue
+                self._run_bt_only_decision(agent, report, minute)
                 continue
             if controller in {"manual", "player"}:
                 # Human-controlled characters act only through player intents;
                 # the autonomous runtime must not spend an LLM turn or overrule them.
                 continue
             if provider is None or self._provider_cooling_down(provider):
-                return
+                if agent.get("controller_fallback") == "bt":
+                    self._run_bt_only_decision(agent, report, minute)
+                continue
             agent_id = agent["id"]
             state = agent.get("initial_state", {}) or {}
             # An unconscious or dead character cannot act, so it is not asked for a turn.
@@ -443,6 +454,8 @@ class SimulationRunner:
             report.decisions += 1
             self._record_turn(report, turn.result, agent_id)
             if self._provider_cooling_down(provider):
+                if self.continue_during_cooldown:
+                    continue
                 return
             if turn.result.get("status") == "wait":
                 report.waits += 1
@@ -531,6 +544,11 @@ class SimulationRunner:
                 ]
                 if stationary:
                     selected = stationary[0]
+        if max(urgency.get("hydration", 0), urgency.get("satiety", 0), urgency.get("safety", 0)) < 0.6:
+            for assignment in view.get("behavior_assignments", []):
+                if assigned := ranked.get(str(assignment.get("behavior_id"))):
+                    selected = assigned
+                    break
         parameters = dict(selected.get("parameter_values") or {})
         for key, choices in (selected.get("parameter_options") or {}).items():
             if key in parameters or not isinstance(choices, list) or not choices:
@@ -614,25 +632,16 @@ class SimulationRunner:
                 self._decision_not_before[actor_id] = min(minute, self._decision_not_before.get(actor_id, minute))
                 self._wait_streak.pop(actor_id, None)
 
-    def _plan_next_structure(self, report: SimulationReport) -> None:
-        """Ask the LLM Director for the next target before the tick writes one.
+    def _plan_next_structure(self, report: SimulationReport, provider: Any, minute: int) -> None:
+        """Choose the next target from the committed minute's outcomes."""
 
-        The deterministic Director still runs inside ``step``.  A provider
-        failure or an invalid target therefore falls back to the configured
-        policy instead of stopping the world.
-        """
-
-        if self.director_policy != "llm":
-            return
-        provider = self.providers.get("director")
-        if provider is None or self._provider_cooling_down(provider):
-            return
-        minute = int(self.platform.store.repositories.metadata.get("world_minute", 0)) + 1
         try:
             plan = self.platform.plan_structure_with_provider(provider, minute)
         except Exception:
             report.director_errors += 1
-            return
+            plan = None
+        if plan is None:
+            plan = self.platform.plan_structure(minute)
         if not isinstance(plan, dict):
             return
         plan_id = str(plan.get("plan_id") or "")
@@ -642,8 +651,27 @@ class SimulationRunner:
 
     def _run_due_evolution(self, report: SimulationReport) -> None:
         god_runs = 0
+        evolution = self.platform.store.repositories.metadata.get("evolution", {}) or {}
+        evolution = evolution.get("evolution", evolution)
+        structural = (evolution.get("contracts") or {}).get("god_structural") or {}
         for task in list(self.platform.ready_evolution_tasks()):
             role = task.get("role")
+            task_type = str(task.get("task_type", "evolution"))
+            task_plan = task.get("season_plan") or {}
+            if role == "god" and task_type == "god_structural" and (task_plan or task.get("event_group")):
+                active_plan = self.platform.store.repositories.metadata.get("season_plan", {}) or {}
+                action_id = active_plan.get("behavior_action")
+                if action_id and growth_count(self.platform.store, "verb", behavior_action=action_id) > int(active_plan.get("baseline", 0)):
+                    self.platform.complete_evolution_task(task["task_id"])
+                    continue
+                if task.get("event_group") and structural.get("behavior_constraints") and active_plan.get("status") == "saturated":
+                    self.platform.complete_evolution_task(task["task_id"])
+                    continue
+            if role == "god" and task_plan.get("plan_id"):
+                active_plan = self.platform.store.repositories.metadata.get("season_plan", {}) or {}
+                if active_plan.get("status") != "active" or active_plan.get("plan_id") != task_plan["plan_id"]:
+                    self.platform.complete_evolution_task(task["task_id"])
+                    continue
             if role == "god" and god_runs >= self.max_ready_god_tasks:
                 # Bound one scheduler pass.  The remaining ready tasks stay
                 # queued for the next minute instead of fanning out an
@@ -653,6 +681,9 @@ class SimulationRunner:
             actor_id = task.get("actor_id") or (
                 "god" if role == "god" else "story" if role == "story" else None
             )
+            if role == "agent_decision" and actor_id and self._is_player_controlled(str(actor_id)):
+                self.platform.complete_evolution_task(task["task_id"])
+                continue
             if provider is None or actor_id is None:
                 if role == "story":
                     # Story feedback is asynchronous. A missing provider must
@@ -660,13 +691,18 @@ class SimulationRunner:
                     continue
                 continue
             if self._provider_cooling_down(provider):
+                if self.continue_during_cooldown:
+                    continue
                 return
+            if role == "god" and task_type == "god_structural" and structural.get("behavior_constraints") and "player" in (structural.get("assign_to") or []):
+                players = self.platform.store.repositories.entities.list_agents()
+                if sum(agent.get("role") == "player" for agent in players) != 1:
+                    continue
             claimed = self.platform.claim_evolution_task(task["task_id"])
             if claimed is None:
                 continue
             if role == "god":
                 god_runs += 1
-            task_type = str(task.get("task_type", "evolution"))
             if task.get("trigger_id"):
                 task_type = f"trigger:{task.get('trigger_id')}"
             # WorldStore returns evolution data flattened into the task view.
@@ -678,19 +714,19 @@ class SimulationRunner:
             if source_event_id is None and source_events:
                 source_event_id = source_events[-1].get("event_id")
             engine_kwargs: dict[str, Any] = {}
-            if role == "god":
-                evolution = (self.platform.store.repositories.metadata.get("evolution", {}) or {})
-                evolution = evolution.get("evolution", evolution) if isinstance(evolution, dict) else {}
-                contract = ((evolution.get("contracts") or {}).get("god_structural") if isinstance(evolution, dict) else {}) or {}
-                if isinstance(contract.get("max_tool_calls"), int):
-                    engine_kwargs["max_tool_calls"] = int(contract["max_tool_calls"])
-            turn = AgentEngine(self.platform, provider, **engine_kwargs).run(
-                role=role,
-                actor_id=actor_id,
-                task_type=task_type,
-                source_event_id=int(source_event_id) if source_event_id is not None else None,
-                source_events=source_events,
-            )
+            if role == "god" and task_type == "god_structural" and isinstance(structural.get("max_tool_calls"), int):
+                engine_kwargs["max_tool_calls"] = structural["max_tool_calls"]
+            try:
+                turn = AgentEngine(self.platform, provider, **engine_kwargs).run(
+                    role=role,
+                    actor_id=actor_id,
+                    task_type=task_type,
+                    source_event_id=int(source_event_id) if source_event_id is not None else None,
+                    source_events=source_events,
+                )
+            except Exception:
+                self.platform.retry_evolution_task(task["task_id"], int(task["due_minute"]), "agent session interrupted")
+                raise
             self._observe_turn(turn, actor_id)
             if role == "god":
                 report.god_sessions += 1
@@ -716,6 +752,8 @@ class SimulationRunner:
                     str(turn.result.get("message") or turn.result.get("failed_check") or "evolution session rejected"),
                 )
             if self._provider_cooling_down(provider):
+                if self.continue_during_cooldown:
+                    continue
                 return
 
     def _evolution_retry_delay(self, task: dict[str, Any], result: dict[str, Any]) -> int:

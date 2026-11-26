@@ -94,7 +94,7 @@ def _discover(patterns: list[str]) -> list[Path]:
     if patterns:
         files: list[Path] = []
         for pattern in patterns:
-            path = Path(pattern)
+            path = ROOT / pattern
             if path.is_dir():
                 files.extend(sorted(path.glob("test_*.py")))
             elif path.is_file():

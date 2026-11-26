@@ -13,6 +13,7 @@ from pathlib import Path
 
 from sim2.bootstrap.service import create_instance
 from sim2.evolution.config import normalize_evolution_config
+from sim2.intents.models import BehaviorIntent
 from sim2.platform.runtime import Platform
 from sim2.simulation.runner import SimulationRunner
 
@@ -38,7 +39,7 @@ def _platform(tmp_path: Path, name: str, policy: str = "llm") -> Platform:
     platform = Platform(create_instance(WORLD, name, tmp_path / "runtime"))
     with platform.store.transaction():
         platform.store.repositories.metadata.set("evolution", normalize_evolution_config({
-            "director": {"cadence": "1m", "window": "10m", "targets": ["place", "rule"], "policy": policy},
+            "director": {"cadence": "1m", "window": "3h", "targets": ["place", "rule"], "policy": policy},
         }))
     return platform
 
@@ -149,18 +150,29 @@ def test_llm_director_advances_after_the_cell_grows(tmp_path: Path) -> None:
 
         created = platform.submit_world_change("god", {
             "change_type": "rule",
-            "summary": "A new rule completes the Director's first structural target.",
+            "summary": "The new inspection policy needs a completed cistern review.",
+            "evaluation_window_minutes": 80,
             "rule": {
                 "id": "auto_director_rule",
-                "condition": "event.recent.lantern.lit == true",
+                "condition": "actor.alive",
                 "effect": "policy.auto_director",
-                "behavior_names": ["Inspect Cistern"],
+                "behavior_ids": ["inspect_cistern"],
                 "wake": ["story"],
             },
         })
         assert created["status"] == "accepted", created
 
-        report = SimulationRunner(platform, {"director": provider}).run(2)
+        runner = SimulationRunner(platform, {"director": provider})
+        runner.run(1)
+        assert provider.calls == 1
+        accepted = platform.submit_behavior(BehaviorIntent(
+            actor_id="mei_lan", behavior_ref="behavior:inspect_cistern",
+            target={}, parameters={}, reason="Check the cistern under the new policy.",
+            confidence=1.0, intent_id="director-proof",
+        ))
+        assert accepted["status"] == "accepted", accepted
+        report = runner.run(81)
+        assert platform.store.repositories.metadata.get("last_completed_season_plan")["outcome_event_id"]
         second = platform.store.repositories.metadata.get("season_plan")
         assert report.director_plans == 1
         assert provider.calls == 2

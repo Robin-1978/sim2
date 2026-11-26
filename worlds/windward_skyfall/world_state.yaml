@@ -1,5 +1,11 @@
 world_state:
   properties:
+    dawn_salvage: 0
+    emergency_stock: 0
+    supply_consultation: 0
+    supply_minutes: 0
+    supply_relief_due: 0
+    supply_spare_plates: 0
     day: 1
     act: 1
     storm_pressure: 0

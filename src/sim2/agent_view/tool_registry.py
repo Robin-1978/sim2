@@ -126,13 +126,13 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "query_history": {
-        "purpose": "Search validated world history by event type, participant, keyword or simulation time.",
+        "purpose": "Search world history by event type, actor, keyword or time.",
         "kind": "read",
         "parameters": {
             "type": "object",
             "properties": {
-                "event_type": {"type": "string", "description": "Optional exact event type such as research.completed or institution.allocation_completed."},
-                "actor": {"type": "string", "description": "Optional visible character name; omit for every participant."},
+                "event_type": {"type": "string", "description": "Exact event type, e.g. research.completed."},
+                "actor": {"type": "string", "description": "Visible character name."},
                 "contains": {"type": "string", "description": "Optional word or phrase in the validated event details."},
                 "since_minute": {"type": "integer", "minimum": 0, "description": "Optional inclusive start of world time."},
                 "until_minute": {"type": "integer", "minimum": 0, "description": "Optional inclusive end of world time."},
@@ -246,7 +246,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "parameters": {
             "type": "object",
             "properties": {
-                "event": {"type": "string", "description": "A short visible description of the experience being reviewed."},
+                "event": {"type": "string", "description": "Cite the visible event:<id> from the outcome review when available."},
                 "summary": {"type": "string", "maxLength": 500},
                 "confidence": {"type": "number", "minimum": 0, "maximum": 1},
                 "claim_status": {"type": "string", "enum": ["observed", "confirmed", "reported", "promised", "inferred", "disputed", "false", "failed"], "description": "Evidence provenance. Use reported or promised for unverified testimony, inferred for a conclusion, and disputed or false only with corroborating event evidence."},
@@ -394,7 +394,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "propose_definition": {
-        "purpose": "Submit an attribute, property, capability, Action, behavior or recipe.",
+        "purpose": "Propose a declarative definition.",
         "kind": "intent",
         "parameters": propose_definition_schema(),
     },

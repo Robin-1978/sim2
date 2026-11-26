@@ -51,12 +51,15 @@ def configured_day_phase(setting: dict[str, Any], minute_of_day: int, *, day_min
     return "unknown"
 
 
-def minutes_until_next_day_phase(store: Any, minute: int | None = None) -> int | None:
+def minutes_until_next_day_phase(store: Any, minute: int | None = None, *, phase: str | None = None) -> int | None:
     """Return the next configured phase boundary in world minutes."""
 
     setting = store.repositories.metadata.get("setting", {}) or {}
     calendar = setting.get("calendar", {}) if isinstance(setting, dict) else {}
-    phases = [item for item in (calendar.get("day_phases", []) or []) if isinstance(item, dict) and item.get("id")]
+    phases = [
+        item for item in (calendar.get("day_phases", []) or [])
+        if isinstance(item, dict) and item.get("id") and (phase is None or item["id"] == phase)
+    ]
     if not phases:
         return None
     day_minutes = max(1, int(calendar.get("minutes_per_day", 1440) or 1440))
@@ -67,3 +70,22 @@ def minutes_until_next_day_phase(store: Any, minute: int | None = None) -> int |
     ]
     positive = [value for value in deltas if value > 0]
     return min(positive) if positive else day_minutes
+
+
+def day_phase_duration(store: Any, phase: str, elapsed_minutes: int = 0) -> int | None:
+    minute = int(store.repositories.metadata.get("world_minute", 0)) + elapsed_minutes
+    return minutes_until_next_day_phase(store, minute, phase=phase)
+
+
+def validate_day_phase_duration(action: dict[str, Any], setting: dict[str, Any]) -> str | None:
+    duration = action.get("duration")
+    if not isinstance(duration, dict) or duration.get("mode") != "until_day_phase":
+        return None
+    phase = duration.get("phase")
+    calendar = (setting.get("calendar") or {}) if isinstance(setting, dict) else {}
+    phases = (calendar.get("day_phases") or []) if isinstance(calendar, dict) else []
+    if not isinstance(phase, str) or not phase.strip() or not any(
+        isinstance(item, dict) and item.get("id") == phase for item in phases
+    ):
+        return f"action {action.get('id')} duration refers to an unknown calendar phase {phase!r}"
+    return None

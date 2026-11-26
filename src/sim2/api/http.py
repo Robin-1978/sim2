@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import time
@@ -14,7 +15,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .authoring import AuthoringService
-from .catalog import bundled_world_catalog, merge_catalog
+from .catalog import bundled_world_catalog, catalog_artwork, merge_catalog
 from .errors import NoActiveWorldError
 from .instances import InstanceRegistry
 from .runtime_supervisor import RuntimeSupervisor
@@ -27,6 +28,8 @@ from .web import web_asset
 
 
 _LOGGER = logging.getLogger("sim2.http")
+_WORLD_ART = re.compile(r"/world-art/([0-9a-f]{64})\.webp")
+_CATALOG_ART = re.compile(r"/catalog-art/([a-z][a-z0-9_]*)/([0-9a-f]{64})\.webp")
 
 
 
@@ -87,12 +90,13 @@ class _Handler(BaseHTTPRequestHandler):
         *,
         filename: str | None = None,
         request_id: str = "",
+        cache_control: str = "no-cache",
     ) -> None:
         self._log_request(status, request_id=request_id)
         self.send_response(status)
         self.send_header("content-type", content_type)
         self.send_header("content-length", str(len(body)))
-        self.send_header("cache-control", "no-cache")
+        self.send_header("cache-control", cache_control)
         if request_id:
             self.send_header("x-request-id", request_id)
         if filename:
@@ -100,6 +104,11 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header("content-disposition", f'attachment; filename="{safe}"')
         self.end_headers()
         self.wfile.write(body)
+
+    def _write_artwork(self, artwork: bytes | None) -> None:
+        if artwork is None:
+            return self._write_bytes(404, b"", "text/plain")
+        return self._write_bytes(200, artwork, "image/webp", cache_control="public, max-age=31536000, immutable")
 
     def _read_json(self) -> dict[str, Any]:
         length = int(self.headers.get("content-length", "0"))
@@ -118,6 +127,14 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
         self._request_started = time.monotonic()
         parsed = urlparse(self.path)
+        if match := _WORLD_ART.fullmatch(parsed.path):
+            try:
+                illustration = self.server.service_call("world_artwork", match[1])
+            except NoActiveWorldError:
+                illustration = None
+            return self._write_artwork(illustration)
+        if match := _CATALOG_ART.fullmatch(parsed.path):
+            return self._write_artwork(catalog_artwork(match[1], match[2]))
         asset = web_asset(parsed.path)
         if asset is not None:
             return self._write_bytes(200, *asset)

@@ -109,9 +109,9 @@ def _stagnation(value: Any) -> dict[str, Any]:
 def _director(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("director must be an object")
-    unknown = sorted(str(key) for key in value if key not in {"cadence", "window", "targets", "policy", "max_cell_units", "saturation", "kickoff", "context_properties"})
+    unknown = sorted(str(key) for key in value if key not in {"cadence", "window", "targets", "policy", "max_cell_units", "saturation", "kickoff", "context_properties", "behavior_action"})
     if unknown:
-        raise ValueError("unknown director field(s): " + ", ".join(unknown) + "; use cadence, window, targets, policy, max_cell_units, saturation, kickoff, context_properties")
+        raise ValueError("unknown director field(s): " + ", ".join(unknown))
     cadence = duration_minutes(value.get("cadence", "1d"))
     window = duration_minutes(value.get("window", "3d"))
     if cadence <= 0 or window < cadence:
@@ -144,6 +144,11 @@ def _director(value: Any) -> dict[str, Any]:
     unknown_targets = sorted(set(targets) - allowed)
     if unknown_targets:
         raise ValueError("director.targets has unknown targets: " + ", ".join(unknown_targets))
+    behavior_action = value.get("behavior_action")
+    if behavior_action is not None and (
+        not isinstance(behavior_action, str) or not behavior_action.strip() or "verb" not in targets
+    ):
+        raise ValueError("director.behavior_action requires an Action id and the verb target")
     return {
         "cadence_minutes": cadence,
         "window_minutes": window,
@@ -153,7 +158,30 @@ def _director(value: Any) -> dict[str, Any]:
         "saturation": saturation,
         "kickoff": bool(kickoff),
         "context_properties": list(dict.fromkeys(context_properties)),
+        **({"behavior_action": behavior_action.strip()} if behavior_action else {}),
     }
+
+
+def _validate_behavior_constraints(task_type: str, contract: dict[str, Any]) -> None:
+    spec = contract["behavior_constraints"]
+    label = f"contract {task_type}.behavior_constraints"
+    if (
+        contract.get("required_definition_type") != "behavior"
+        or not isinstance(spec, dict)
+        or set(spec) != {"action_id", "parameters", "entry_conditions", "cooldown_minutes"}
+    ):
+        raise ValueError(f"{label} requires a behavior contract with action_id, parameters, entry_conditions and cooldown_minutes")
+    if not isinstance(spec["action_id"], str) or not spec["action_id"].strip():
+        raise ValueError(f"{label}.action_id must name an Action")
+    if not isinstance(spec["parameters"], dict) or any(
+        not isinstance(values, list) or not values or any(type(value) not in (str, int, float, bool) for value in values)
+        for values in spec["parameters"].values()
+    ):
+        raise ValueError(f"{label}.parameters must map parameter names to non-empty lists of scalar values")
+    if not isinstance(spec["entry_conditions"], list) or any(not isinstance(item, str) or not item.strip() for item in spec["entry_conditions"]):
+        raise ValueError(f"{label}.entry_conditions must be a list of predicates")
+    if type(spec["cooldown_minutes"]) is not int or spec["cooldown_minutes"] < 0:
+        raise ValueError(f"{label}.cooldown_minutes must be a non-negative integer")
 
 
 def _limits(value: Any) -> dict[str, Any]:
@@ -167,6 +195,8 @@ def _limits(value: Any) -> dict[str, Any]:
         if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 64:
             raise ValueError("limits.max_ready_god_tasks must be an integer from 1 to 64")
         compiled["max_ready_god_tasks"] = count
+    if "continue_during_cooldown" in value and not isinstance(value["continue_during_cooldown"], bool):
+        raise ValueError("limits.continue_during_cooldown must be a boolean")
     return compiled
 
 
@@ -218,6 +248,14 @@ def _contract(spec: dict[str, Any], event_types: list[str], minimum: int) -> dic
     return result
 
 
+def role_enabled(config: dict[str, Any], role: str) -> bool:
+    root = config.get("evolution", config)
+    if role not in {"god", "story", "director"} or "roles" not in root:
+        return True
+    roles = root["roles"]
+    return roles.get(role, False) and (role != "director" or roles.get("god", False))
+
+
 def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
     """Compile the one supported ``cadence``/``wakes`` authoring format.
 
@@ -243,10 +281,13 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
             "evolution uses retired fields " + ", ".join(legacy)
             + "; use top-level cadence and wakes instead"
         )
-    known = {"cadence", "wakes", "triggers", "limits", "stagnation", "contracts", "director"}
+    known = {"cadence", "wakes", "triggers", "limits", "stagnation", "contracts", "director", "roles"}
     unknown = sorted(str(key) for key in root if key not in known)
     if unknown:
         raise ValueError("unknown evolution field(s): " + ", ".join(unknown))
+    roles = root.get("roles", {})
+    if not isinstance(roles, dict) or any(role not in {"god", "story", "director"} or type(active) is not bool for role, active in roles.items()):
+        raise ValueError("evolution.roles must map god, story or director to booleans")
     if "stagnation" in root:
         root["stagnation"] = _stagnation(root["stagnation"])
     if "director" in root:
@@ -260,7 +301,7 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
         allowed = {
             "tools", "purpose", "result", "assign_to", "required_definition_type",
             "require_story_outcome", "evidence_sources", "continuation", "growth_kind",
-            "required_content", "stages", "max_proposals", "max_tool_calls",
+            "required_content", "stages", "max_proposals", "max_tool_calls", "behavior_constraints",
         }
         for task_type, contract in contracts.items():
             if not isinstance(contract, dict):
@@ -276,6 +317,8 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
                 raise ValueError(f"contract {task_type}.assign_to must be a list")
             if contract.get("required_content") is not None and not isinstance(contract.get("required_content"), dict):
                 raise ValueError(f"contract {task_type}.required_content must be an object")
+            if contract.get("behavior_constraints") is not None:
+                _validate_behavior_constraints(task_type, contract)
             if contract.get("stages") is not None and not isinstance(contract.get("stages"), list):
                 raise ValueError(f"contract {task_type}.stages must be a list")
             if contract.get("max_proposals") is not None:
@@ -318,7 +361,7 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
         for index, raw_spec in enumerate(wakes):
             if not isinstance(raw_spec, dict):
                 continue
-            known_wake = {"id", "on", "for", "count", "every", "tools", "purpose", "result", "evidence_sources", "external", "definition_type", "assign_to", "manual_only", "distinct_by", "require_story_outcome"}
+            known_wake = {"id", "on", "for", "count", "every", "tools", "purpose", "result", "evidence_sources", "external", "definition_type", "assign_to", "manual_only", "distinct_by", "require_story_outcome", "task"}
             unknown_wake = sorted(str(key) for key in raw_spec if key not in known_wake)
             if unknown_wake:
                 raise ValueError(
@@ -350,7 +393,16 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
                     [str(item) for item in (consumer.get("direct_task_type_prefixes") or [])] + prefixes
                 ))
             distinct_by = _distinct_keys(raw_spec.get("distinct_by"), index)
-            has_contract = any(key in raw_spec for key in contract_fields) or count > 1 or cooldown > 0 or bool(distinct_by)
+            task_type = raw_spec.get("task")
+            contract = _contract(raw_spec, event_types, count)
+            if task_type is not None:
+                if not isinstance(task_type, str) or task_type not in (root.get("contracts") or {}) or prefixes or contract_fields.intersection(raw_spec):
+                    raise ValueError(f"wake {index + 1}.task must reference one configured contract and use exact events")
+                configured = root["contracts"][task_type]
+                contract.update(configured)
+                if "tools" in configured:
+                    contract["allowed_tools"] = list(configured["tools"])
+            has_contract = task_type is not None or any(key in raw_spec for key in contract_fields) or count > 1 or cooldown > 0 or bool(distinct_by)
             manual_only = bool(raw_spec.get("manual_only"))
             if has_contract and exact_events:
                 group = {
@@ -358,8 +410,10 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
                     "event_types": exact_events,
                     "minimum_events": count,
                     "cooldown_minutes": cooldown,
-                    "agent_contract": _contract(raw_spec, event_types, count),
+                    "agent_contract": contract,
                 }
+                if task_type:
+                    group["task_type"] = task_type
                 if distinct_by:
                     group["distinct_by"] = distinct_by
                 groups.append(group)
@@ -386,6 +440,9 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
             consumers[role] = consumer
         policy["consumers"] = consumers
         root["event_wake_policy"] = policy
+    if not role_enabled(root, "god"):
+        schedule.pop("god_local_minutes", None)
+        schedule.pop("god_structural_minutes", None)
     if schedule:
         root["schedule"] = schedule
     else:

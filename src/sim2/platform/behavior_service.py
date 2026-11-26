@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import partial
 import json
 from typing import Any
 
@@ -7,7 +8,7 @@ from ..actions.capacity import check_action_capacity
 from ..behavior.estimator import BehaviorDurationEstimator
 from ..world.context import configured_context_values
 from ..world.navigation import movement_speed, reachable_locations, route_minutes
-from ..world.time import world_time_view
+from ..world.time import day_phase_duration, world_time_view
 from .services import PlatformService
 
 
@@ -268,6 +269,7 @@ class BehaviorExecutionService(PlatformService):
             capabilities=agent.get("capabilities", {}),
             capability_modifiers=(self.store.repositories.metadata.get("rules", {}) or {}).get("capability_modifiers", {}),
             travel_speed=lambda values: movement_speed(self.store, agent, values),
+            phase_duration=partial(day_phase_duration, self.store),
         )
         return estimator._action_minutes(action, parameters, origin_location)
 

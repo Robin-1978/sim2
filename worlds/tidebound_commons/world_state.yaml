@@ -1,9 +1,17 @@
 world_state:
   properties:
+    emergency_stock: 0
+    relief_water_waiting: 0
+    supply_consultation: 0
+    supply_minutes: 0
+    supply_relief_due: 0
     storm_eta_hours: 18
     storm_pressure: 0.42
     storm_cycle: 0
     public_decision_open: 1
+    decision_rationing: 0
+    decision_repair: 0
+    decision_rest: 0
     tide_gate_integrity: 0.28
     gate_supports: 0.15
     gate_repairs: 0
