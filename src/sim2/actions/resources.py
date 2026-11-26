@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 
+from ..world.execution_recipes import execution_recipe
+
 if TYPE_CHECKING:  # pragma: no cover
     from ..persistence.store import WorldStore
 
@@ -20,7 +22,7 @@ class ResourceLedger:
         reserve = (action.get("costs", {}).get("reserve", {}) or {}) if isinstance(action.get("costs"), dict) else {}
         for key, value in reserve.items():
             if key == "recipe_inputs":
-                recipe = next((item for item in self.store.repositories.entities.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
+                recipe = execution_recipe(self.store, action, parameters.get("recipe_id"))
                 if recipe is None:
                     return False, "recipe is unavailable", []
                 limit_error = self._check_recipe_output_limits(recipe)

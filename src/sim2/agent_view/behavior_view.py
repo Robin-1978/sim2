@@ -22,7 +22,7 @@ from ..world.authorization import authorization_for_behavior
 from ..actions.catalogs import catalog_entries, entry_cost_available, entry_location, entry_resource_available
 from ..world.bindings import iter_behavior_actions, resolve_behavior_effect
 from ..world.contested import resource_take_effect
-from ..world.context import configured_context_values
+from ..world.context import calendar_context, configured_context_values
 from ..world.time import day_phase_duration
 from .action_text import action_view, label, predicate_text
 from .decision_frame import DecisionFrame, Guidance, Simulation
@@ -224,7 +224,7 @@ class BehaviorViewMixin:
             "known_fact_keys": known_fact_keys,
             "inventory": agent.get("inventory", {}) or {},
             "recent_event_types": self._recent_event_types(),
-            "day_phase": self._world_time().get("day_phase"),
+            **calendar_context(self.store),
             "target": {"id": validation_target.get("id"), "available": True} if validation_target else {"available": False},
         }
         condition_context.update(behavior_context)

@@ -5,9 +5,9 @@ import json
 from typing import Any
 from uuid import uuid4
 
-from ..world.navigation import reachable_locations, resource_is_at_location
-from ..world.time import world_time_view
-from ..world.context import configured_context_values
+from ..world.context import action_condition_context, calendar_context
+from ..world.definition_compiler import condition_syntax_error
+from ..world.execution_recipes import execution_recipe, pin_execution_recipe
 from ..world.lifecycle import trim_unlocked_behaviors, unlocked_behavior_limit
 from ..actions.institutions import allocation_preflight
 from ..actions.catalogs import resolve_catalog_entry
@@ -22,18 +22,30 @@ class ActivityRuntimeMixin:
     this lifecycle separate makes the coordinator readable and testable.
     """
 
-    def _start_action(self, agent: dict[str, Any], execution_id: str, action_info: dict[str, Any], minute: int) -> tuple[bool, str]:
-        action_defs = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
+    def _action_definition(self, action_info: dict[str, Any]) -> dict[str, Any] | None:
+        if "definition_snapshot" in action_info:
+            return action_info["definition_snapshot"]
+        return next(
+            (item for item in self.store.repositories.entities.get_definitions("action_def") if item.get("id") == action_info.get("action_id")),
+            None,
+        )
+
+    def _behavior_definition(self, bt_data: dict[str, Any], behavior_id: str) -> dict[str, Any]:
+        if "behavior_snapshot" in bt_data:
+            return bt_data["behavior_snapshot"]
+        return next((item for item in self.store.repositories.entities.get_definitions("bt_def") if item.get("id") == behavior_id), {})
+
+    def _start_action(
+        self, agent: dict[str, Any], execution_id: str, action_info: dict[str, Any], bt_data: dict[str, Any], minute: int,
+    ) -> tuple[bool, str]:
         action_id = action_info.get("action_id")
-        action = action_defs.get(action_id)
+        action = self._action_definition(action_info)
         if not action:
             return False, f"action is not registered: {action_id}"
         state = dict(agent.get("initial_state") or {})
         parameters = self._context.services["execution"].resolve_activity_parameters(dict(action_info.get("parameters") or {}), state)
         parameters = self._context.services["execution"].apply_action_parameter_defaults(agent, action, parameters)
-        location_ok, location_reason = self._resource_effect_location(agent, action, parameters, state)
-        if not location_ok:
-            return None, location_reason
+        action = pin_execution_recipe(self.store, action, parameters, bt_data)
         already_at_destination = bool(
             action.get("requires_destination")
             and action.get("completion", {}).get("if_already_at_destination")
@@ -46,94 +58,27 @@ class ActivityRuntimeMixin:
             for key in self.targets.TARGET_KEYS:
                 if parameters.get(key):
                     parameters[key] = resolved_target["id"]
-        current_location = {}
-        location_id = state.get("location_id")
-        if location_id:
-            try:
-                current_location = self.store.repositories.entities.get_entity(location_id)
-            except KeyError:
-                current_location = {}
-        condition_context = {
-            "location_id": location_id,
-            "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
-            "area_id": parameters.get("area_id"),
-            "source_id": parameters.get("source_id"),
-            "item_id": parameters.get("item_id"),
-            "object_id": parameters.get("object_id"),
-            "inventory": agent.get("inventory", {}) or {},
-            "station_tags": [],
-            "current_location": current_location,
-            "current_object": self._context.services["execution"].entity_for_context(parameters.get("object_id")),
-            "source": self._context.services["execution"].entity_for_context(parameters.get("source_id")),
-            "research_discoveries": self.store.repositories.memory.research_discoveries(str(parameters.get("source_id"))) if parameters.get("source_id") else [],
-            "research_stage_status": self.store.repositories.memory.research_stage_status(str(agent["id"]), str(parameters.get("source_id"))) if parameters.get("source_id") else [],
-            "mapped_areas": self.store.repositories.memory.explored_areas(agent["id"]),
-            "researched_sources": self.store.repositories.memory.researched_sources(agent["id"]),
-            "known_fact_keys": [
-                item.get("fact_key")
-                for item in self.store.repositories.memory.list_knowledge_facts(agent["id"], limit=1000)
-                if item.get("fact_key")
-            ],
-            "target": resolved_target or {},
-            "target.visible": (resolved_target or {}).get("visible", False),
-            "target.available": (resolved_target or {}).get("available", False),
-            "known_route_destinations": reachable_locations(self.store, location_id),
-            "recent_event_types": self._context.services["evolution"].recent_event_types(),
-            "day_phase": world_time_view(self.store).get("day_phase"),
-        }
-        bound_resource = (
-            parameters.get("resource_id")
-            or parameters.get("target_resource")
-            or parameters.get("resource")
-            or parameters.get("resource_tag")
-        )
-        if bound_resource:
-            resource_id = str(self.targets.canonical_id(str(bound_resource)) or bound_resource)
-            try:
-                resource = self.store.repositories.entities.get_entity(resource_id)
-            except KeyError:
-                resource = {}
-            resource_state = resource.get("initial_state") if isinstance(resource.get("initial_state"), dict) else {}
-            amount = float(resource_state.get("quantity", resource_state.get("amount", 0)) or 0)
-            condition_context.update({
-                "resource_id": resource_id,
-                "resource.amount": amount,
-                "resource.available": amount > 0,
-                "resource.here": resource_is_at_location(self.store, resource_id, location_id),
-            })
-        condition_context.update(configured_context_values(self.store.repositories.metadata.get("rules", {}) or {}, agent))
-        for key, value in parameters.items():
-            if isinstance(value, (str, int, float)) and not isinstance(value, bool):
-                condition_context.setdefault(str(key), value)
-        condition_context.update(self._institution_action_context(action, parameters))
-        if (
-            action.get("duration", {}).get("mode") == "recipe_duration"
-            or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
-        ):
-            recipe = next((item for item in self.store.repositories.entities.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
-            condition_context["station_tags"] = list((recipe or {}).get("station_tags", []) or [])
+        condition_context = self._action_condition_context(agent, action, parameters, resolved_target, minute)
+        condition_target = {**parameters, **(resolved_target or {})}
+        world = self.store.repositories.metadata.get("world_properties", {}) or {}
         denial = self.rule_compiler.denial(
             action=action,
             agent=agent,
-            target={**parameters, **(resolved_target or {})},
+            target=condition_target,
             context=condition_context,
-            world=self.store.repositories.metadata.get("world_properties", {}) or {},
+            world=world,
         )
         if denial:
             return False, denial["message"]
         for predicate in action.get("preconditions", []) or []:
-            condition_target = {**parameters, **(resolved_target or {})}
-            if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=condition_context, world=self.store.repositories.metadata.get("world_properties", {}) or {}):
+            if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=condition_context, world=world):
                 return False, f"precondition failed: {predicate}"
         location_ok, location_reason = self._resource_effect_location(agent, action, parameters, state)
         if not location_ok:
             return False, location_reason
         duration = self._context.services["execution"].action_duration(agent, action, parameters, state.get("location_id"))
         if already_at_destination:
-            behavior = next(
-                (item for item in self.store.repositories.entities.get_definitions("bt_def") if str(item.get("id")) == str(state.get("active_behavior_id"))),
-                {},
-            )
+            behavior = self._behavior_definition(bt_data, str(state.get("active_behavior_id") or ""))
             if "no_op_travel_minutes" in behavior:
                 duration = max(0, int(behavior.get("no_op_travel_minutes", 1) or 0))
         if already_at_destination:
@@ -205,14 +150,14 @@ class ActivityRuntimeMixin:
                 return False, "the actor is not at the resource location"
         return True, ""
 
-    def _prepare_parallel_action(self, agent: dict[str, Any], action_info: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
-        action_defs = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
-        action = action_defs.get(action_info.get("action_id"))
+    def _prepare_parallel_action(self, agent: dict[str, Any], action_info: dict[str, Any], bt_data: dict[str, Any], minute: int) -> tuple[dict[str, Any] | None, str]:
+        action = self._action_definition(action_info)
         if not action:
             return None, f"action is not registered: {action_info.get('action_id')}"
         state = dict(agent.get("initial_state") or {})
         parameters = self._context.services["execution"].resolve_activity_parameters(dict(action_info.get("parameters") or {}), state)
         parameters = self._context.services["execution"].apply_action_parameter_defaults(agent, action, parameters)
+        action = pin_execution_recipe(self.store, action, parameters, bt_data)
         already_at_destination = bool(
             action.get("requires_destination")
             and action.get("completion", {}).get("if_already_at_destination")
@@ -225,58 +170,23 @@ class ActivityRuntimeMixin:
             for key in self.targets.TARGET_KEYS:
                 if parameters.get(key):
                     parameters[key] = target["id"]
-        current_location = {}
-        if state.get("location_id"):
-            try:
-                current_location = self.store.repositories.entities.get_entity(state["location_id"])
-            except KeyError:
-                pass
-        context = {
-            "location_id": state.get("location_id"),
-            "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
-            "area_id": parameters.get("area_id"),
-            "source_id": parameters.get("source_id"),
-            "item_id": parameters.get("item_id"),
-            "object_id": parameters.get("object_id"),
-            "inventory": agent.get("inventory", {}) or {},
-            "station_tags": [],
-            "current_location": current_location,
-            "current_object": self._context.services["execution"].entity_for_context(parameters.get("object_id")),
-            "source": self._context.services["execution"].entity_for_context(parameters.get("source_id")),
-            "mapped_areas": self.store.repositories.memory.explored_areas(agent["id"]),
-            "researched_sources": self.store.repositories.memory.researched_sources(agent["id"]),
-            "known_fact_keys": [
-                item.get("fact_key")
-                for item in self.store.repositories.memory.list_knowledge_facts(agent["id"], limit=1000)
-                if item.get("fact_key")
-            ],
-            "target": target or {},
-            "target.visible": (target or {}).get("visible", False),
-            "target.available": (target or {}).get("available", False),
-            "known_route_destinations": reachable_locations(self.store, state.get("location_id")),
-            "recent_event_types": self._context.services["evolution"].recent_event_types(),
-            "day_phase": world_time_view(self.store).get("day_phase"),
-        }
-        context.update(configured_context_values(self.store.repositories.metadata.get("rules", {}) or {}, agent))
-        context.update(self._institution_action_context(action, parameters))
-        if (
-            action.get("duration", {}).get("mode") == "recipe_duration"
-            or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
-        ):
-            recipe = next((item for item in self.store.repositories.entities.get_definitions("recipe_def") if item.get("id") == parameters.get("recipe_id")), None)
-            context["station_tags"] = list((recipe or {}).get("station_tags", []) or [])
+        location_ok, location_reason = self._resource_effect_location(agent, action, parameters, state)
+        if not location_ok:
+            return None, location_reason
+        context = self._action_condition_context(agent, action, parameters, target, minute)
         condition_target = {**parameters, **(target or {})}
+        world = self.store.repositories.metadata.get("world_properties", {}) or {}
         denial = self.rule_compiler.denial(
             action=action,
             agent=agent,
             target=condition_target,
             context=context,
-            world=self.store.repositories.metadata.get("world_properties", {}) or {},
+            world=world,
         )
         if denial:
             return None, denial["message"]
         for predicate in action.get("preconditions", []) or []:
-            if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=context, world=self.store.repositories.metadata.get("world_properties", {}) or {}):
+            if not self.conditions.evaluate(str(predicate), agent=agent, target=condition_target, context=context, world=world):
                 return None, f"precondition failed: {predicate}"
         duration = self._context.services["execution"].action_duration(agent, action, parameters, state.get("location_id"))
         if already_at_destination:
@@ -314,8 +224,9 @@ class ActivityRuntimeMixin:
             }
         return {}
 
-    def _progress_parallel_group(self, agent: dict[str, Any], execution_id: str, behavior_id: str, actions: list[dict[str, Any]], index: int, minute: int) -> None:
+    def _progress_parallel_group(self, agent: dict[str, Any], execution_id: str, behavior_id: str, bt_data: dict[str, Any], index: int, minute: int) -> None:
         state = dict(agent.get("initial_state") or {})
+        actions = bt_data["actions"]
         group = actions[index].get("parallel_group")
         group_items: list[tuple[int, dict[str, Any]]] = []
         for item_index in range(index, len(actions)):
@@ -326,7 +237,7 @@ class ActivityRuntimeMixin:
         if not active:
             prepared: list[tuple[int, dict[str, Any], dict[str, Any]]] = []
             for item_index, item in group_items:
-                info, error = self._prepare_parallel_action(agent, item)
+                info, error = self._prepare_parallel_action(agent, item, bt_data, minute)
                 if error:
                     self._finish_behavior(agent, execution_id, behavior_id, "failed", error, minute)
                     return
@@ -357,23 +268,23 @@ class ActivityRuntimeMixin:
             state["active_action"] = "parallel"
             state["active_action_index"] = index
             agent["initial_state"] = state
-        action_defs = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
         completed_count = 0
         for item_index, entry in list(active.items()):
             if int(entry["remaining"]) == 0:
                 completed_count += 1
                 continue
-            action = entry.get("definition_snapshot") or action_defs.get(entry["action_id"])
+            action = self._action_definition(entry)
             if not action:
                 self._finish_behavior(agent, execution_id, behavior_id, "failed", f"action is not registered: {entry['action_id']}", minute)
                 return
+            action = pin_execution_recipe(self.store, action, entry["parameters"], bt_data)
             if not entry.get("no_op"):
                 self._context.services["execution"].apply_action_progress(agent, action)
             entry["remaining"] = max(0, int(entry["remaining"]) - 1)
             elapsed = int(entry["duration"]) - int(entry["remaining"])
             self.store.repositories.activity.update_action_instance(entry["action_instance_id"], status="succeeded" if entry["remaining"] == 0 else "running", elapsed_minutes=elapsed, remaining_minutes=entry["remaining"], data={"parameters": entry["parameters"], "target": entry["target"], "reservation": entry.get("reservation", []), "parallel_group": group, "no_op": bool(entry.get("no_op")), "definition_version": int(entry.get("definition_version", action.get("definition_version", action.get("version", 1))) or 1), "definition_snapshot": entry.get("definition_snapshot") or copy.deepcopy(action)}, updated_minute=minute)
             if entry["remaining"] == 0:
-                failure = self._action_failure_reason(agent, action, entry["parameters"], entry.get("target"))
+                failure = self._action_failure_reason(agent, action, entry["parameters"], entry.get("target"), minute)
                 if failure:
                     self._finish_behavior(agent, execution_id, behavior_id, "failed", failure, minute)
                     return
@@ -406,8 +317,7 @@ class ActivityRuntimeMixin:
             state["remaining_minutes"] = 0
             state["action_progress"] = 1.0
             agent["initial_state"] = state
-            bt_data = json.loads(self.store.connection.execute("SELECT data_json FROM bt_instance WHERE execution_id=?", (execution_id,)).fetchone()["data_json"])
-            self.store.repositories.activity.update_bt_instance(execution_id, status="executing", current_node=index + len(group_items), data=bt_data, updated_minute=minute)
+            self.store.repositories.activity.update_bt_instance(execution_id, status="executing", current_node=index + len(group_items), updated_minute=minute)
             if index + len(group_items) >= len(actions):
                 self._finish_behavior(agent, execution_id, behavior_id, "completed", "behavior_completed", minute)
             else:
@@ -438,22 +348,22 @@ class ActivityRuntimeMixin:
             self._finish_behavior(agent, execution_id, behavior_id, "completed", "behavior_completed", minute)
             return
         if actions[index].get("parallel_group"):
-            self._progress_parallel_group(agent, execution_id, behavior_id, actions, index, minute)
+            self._progress_parallel_group(agent, execution_id, behavior_id, bt_data, index, minute)
             return
         if not state.get("active_action"):
-            started, reason = self._start_action(agent, execution_id, actions[index], minute)
+            started, reason = self._start_action(agent, execution_id, actions[index], bt_data, minute)
             if not started:
                 self._finish_behavior(agent, execution_id, behavior_id, "failed", reason, minute)
                 return
             state = dict(agent.get("initial_state") or {})
         action_id = state.get("active_action")
-        # Prefer the immutable definition snapshot captured by _start_action.
-        # The registry may now contain a newer version proposed by God.
-        action = state.get("active_action_definition") or next((item for item in self.store.repositories.entities.get_definitions("action_def") if item.get("id") == action_id), None)
+        # An already-running step may hold an older snapshot than its legacy plan.
+        action = state.get("active_action_definition") or self._action_definition(actions[index])
         if not action:
             self._finish_behavior(agent, execution_id, behavior_id, "failed", "action_missing", minute)
             return
         state = dict(agent.get("initial_state") or {})
+        action = pin_execution_recipe(self.store, action, state.get("active_action_parameters") or {}, bt_data)
         # An idempotent destination Action still completes at this tick, but
         # its configured movement costs do not apply when already there.
         if not state.get("active_action_noop"):
@@ -471,12 +381,12 @@ class ActivityRuntimeMixin:
         if action_instance_id:
             self.store.repositories.activity.update_action_instance(action_instance_id, status="succeeded" if remaining == 0 else "running", elapsed_minutes=duration - remaining, remaining_minutes=remaining, data={"parameters": state.get("active_action_parameters", {}), "reservation": state.get("active_action_reservation", []), "no_op": bool(state.get("active_action_noop")), "definition_version": int(state.get("active_action_definition_version", action.get("definition_version", action.get("version", 1))) or 1), "definition_snapshot": copy.deepcopy(action)}, updated_minute=minute)
         if remaining > 0:
-            self.store.repositories.activity.update_bt_instance(execution_id, status="executing", current_node=index, data=bt_data, updated_minute=minute)
+            self.store.repositories.activity.update_bt_instance(execution_id, status="executing", current_node=index, updated_minute=minute)
             self.store.repositories.entities.update_agent(agent["id"], agent)
             return
         action_parameters = state.get("active_action_parameters", {})
         completed_noop = bool(state.get("active_action_noop"))
-        failure = self._action_failure_reason(agent, action, action_parameters, self.targets.resolve(agent, action_parameters)[0])
+        failure = self._action_failure_reason(agent, action, action_parameters, self.targets.resolve(agent, action_parameters)[0], minute)
         if failure:
             self._finish_behavior(agent, execution_id, behavior_id, "failed", failure, minute)
             return
@@ -513,7 +423,7 @@ class ActivityRuntimeMixin:
         state["active_action_definition"] = None
         state["action_progress"] = 1.0
         agent["initial_state"] = state
-        self.store.repositories.activity.update_bt_instance(execution_id, status="executing", current_node=index + 1, data=bt_data, updated_minute=minute)
+        self.store.repositories.activity.update_bt_instance(execution_id, status="executing", current_node=index + 1, updated_minute=minute)
         if index + 1 >= len(actions):
             self._finish_behavior(agent, execution_id, behavior_id, "completed", "behavior_completed", minute)
         elif completed_noop:
@@ -549,7 +459,7 @@ class ActivityRuntimeMixin:
                 explicit.add(str(effect["capability"]))
         recipe_id = parameters.get("recipe_id")
         if recipe_id:
-            recipe = next((item for item in self.store.repositories.entities.get_definitions("recipe_def") if item.get("id") == recipe_id), None)
+            recipe = execution_recipe(self.store, action, recipe_id)
             for effect in (recipe or {}).get("effects", []) or []:
                 if isinstance(effect, dict) and str(effect.get("type") or effect.get("op") or "") == "capability.add_xp" and effect.get("capability"):
                     explicit.add(str(effect["capability"]))
@@ -760,7 +670,7 @@ class ActivityRuntimeMixin:
                     entry_location = str(entry.get("location") or "")
                     if entry_location and entry_location != location_id:
                         errors.append(f"catalog entry requires location {entry_location}")
-                    condition_context = self._action_condition_context(agent, parameters, target)
+                    condition_context = self._action_condition_context(agent, action, parameters, target, minute)
                     for predicate in entry.get("requires") or []:
                         if not self.conditions.evaluate(
                             str(predicate),
@@ -923,7 +833,7 @@ class ActivityRuntimeMixin:
         recipe_id = parameters.get("recipe_id")
         if not recipe_id:
             return errors
-        recipe = next((item for item in self.store.repositories.entities.get_definitions("recipe_def") if item.get("id") == recipe_id), None)
+        recipe = execution_recipe(self.store, action, recipe_id)
         if not recipe:
             return errors
         for output in recipe.get("outputs", []) or []:
@@ -958,82 +868,35 @@ class ActivityRuntimeMixin:
                     self._context.services["events"].append("capability.evidence", agent["id"], minute, {"capability": str(capability), "source": f"recipe:{recipe_id}", "configured_delta": float(effect.get("value", 0) or 0), "requires_agent_review": True})
         return errors
 
-    def _action_condition_context(self, agent: dict[str, Any], parameters: dict[str, Any], target: dict[str, Any] | None) -> dict[str, Any]:
-        state = agent.get("initial_state", {}) or {}
-        location = {}
-        location_id = state.get("location_id")
-        if location_id:
-            try:
-                location = self.store.repositories.entities.get_entity(str(location_id))
-            except KeyError:
-                location = {}
-        source = {}
-        source_id = parameters.get("source_id")
-        if source_id:
-            try:
-                source = self.store.repositories.entities.get_entity(str(source_id))
-            except KeyError:
-                source = {}
-        bound_resource = (
-            parameters.get("resource_id")
-            or parameters.get("target_resource")
-            or parameters.get("resource")
-            or parameters.get("resource_tag")
+    def _action_condition_context(
+        self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any],
+        target: dict[str, Any] | None, minute: int,
+    ) -> dict[str, Any]:
+        context = action_condition_context(
+            self.store, agent, parameters, target, canonical_id=self.targets.canonical_id,
+            recent_event_types=self._context.services["evolution"].recent_event_types(), minute=minute,
         )
-        bound_resource_id = str(self.targets.canonical_id(str(bound_resource)) or bound_resource) if bound_resource else ""
-        resource_amount = 0.0
-        if bound_resource_id:
-            try:
-                bound_entity = self.store.repositories.entities.get_entity(bound_resource_id)
-            except KeyError:
-                bound_entity = {}
-            bound_state = bound_entity.get("initial_state") if isinstance(bound_entity.get("initial_state"), dict) else {}
-            resource_amount = float(bound_state.get("quantity", bound_state.get("amount", 0)) or 0)
-        context = {
-            "location_id": location_id,
-            "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
-            "source_id": source_id,
-            "item_id": parameters.get("item_id"),
-            "resource_id": bound_resource_id,
-            "resource.amount": resource_amount,
-            "resource.here": resource_is_at_location(self.store, bound_resource_id, location_id),
-            "resource.available": resource_amount > 0,
-            "current_location": location,
-            "location": location,
-            "source": source,
-            "research_discoveries": self.store.repositories.memory.research_discoveries(str(source_id)) if source_id else [],
-            "research_stage_status": self.store.repositories.memory.research_stage_status(str(agent["id"]), str(source_id)) if source_id else [],
-            "known_fact_keys": [
-                item.get("fact_key")
-                for item in self.store.repositories.memory.list_knowledge_facts(agent["id"], limit=1000)
-                if item.get("fact_key")
-            ],
-            "station": location,
-            "target": target or {},
-            "danger": {"detected": "danger" in (state.get("conditions") or [])},
-            "hostile_contact": "hostile_contact" in (state.get("conditions") or []),
-            "target.refused": "target_refused" in (state.get("conditions") or []),
-            "known_route_destinations": reachable_locations(self.store, location_id),
-        }
-        # Generic living-world Actions bind case slots, item ids and faction
-        # properties as parameters.  Expose every scalar parameter to the same
-        # condition context so predicates can use world[context.case_slot] or
-        # actor.inventory[context.item_id] without a world-specific branch.
-        for key, value in parameters.items():
-            if isinstance(value, (str, int, float)) and not isinstance(value, bool):
-                context.setdefault(str(key), value)
+        context.update(self._institution_action_context(action, parameters))
+        if (
+            action.get("duration", {}).get("mode") == "recipe_duration"
+            or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
+        ):
+            recipe = execution_recipe(self.store, action, parameters.get("recipe_id")) or {}
+            context["station_tags"] = list(recipe.get("station_tags") or [])
         return context
 
-    def _action_failure_reason(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], target: dict[str, Any] | None) -> str | None:
+    def _action_failure_reason(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], target: dict[str, Any] | None, minute: int) -> str | None:
         condition = str((action.get("failure") or {}).get("condition") or "").strip()
         if not condition:
             return None
-        context = self._action_condition_context(agent, parameters, target)
-        if self.conditions.evaluate(condition, agent=agent, target=target or {}, context=context, world=self.store.repositories.metadata.get("world_properties", {}) or {}):
+        if error := condition_syntax_error(condition):
+            return f"invalid failure condition: {error}"
+        context = self._action_condition_context(agent, action, parameters, target, minute)
+        if self.conditions.evaluate(condition, agent=agent, target={**parameters, **(target or {})}, context=context, world=self.store.repositories.metadata.get("world_properties", {}) or {}):
             return str((action.get("failure") or {}).get("result") or condition)
         return None
 
-    def _action_success_reason(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], target: dict[str, Any] | None) -> str | None:
+    def _action_success_reason(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], target: dict[str, Any] | None, minute: int) -> str | None:
         """Return a failure result when a machine-checkable postcondition fails.
 
         Configured result labels remain descriptive contracts.  Only predicates
@@ -1046,13 +909,14 @@ class ActivityRuntimeMixin:
         condition = str(success.get("condition") or "").strip()
         if not condition:
             return None
-        context = self._action_condition_context(agent, parameters, target)
+        context = self._action_condition_context(agent, action, parameters, target, minute)
         verdict = self.conditions.evaluate_known(
             condition,
             agent=agent,
-            target=target or {},
+            target={**parameters, **(target or {})},
             context=context,
             world=self.store.repositories.metadata.get("world_properties", {}) or {},
+            allow_outcome_label=True,
         )
         if verdict is False:
             return str(success.get("failure_result") or f"success condition failed: {condition}")
@@ -1095,7 +959,7 @@ class ActivityRuntimeMixin:
                 agent.clear()
                 agent.update(original_agent)
                 return "; ".join(dict.fromkeys(effect_errors)), None
-            failure = self._action_success_reason(agent, action, parameters, target)
+            failure = self._action_success_reason(agent, action, parameters, target, minute)
             if failure:
                 self.store.connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
                 self.store.connection.execute(f"RELEASE SAVEPOINT {savepoint}")
@@ -1483,7 +1347,7 @@ class ActivityRuntimeMixin:
         bt_row = self.store.connection.execute("SELECT data_json FROM bt_instance WHERE execution_id=?", (execution_id,)).fetchone()
         bt_data = json.loads(bt_row["data_json"]) if bt_row is not None else {}
         before = dict(bt_data.get("before") or {})
-        behavior_definition = next((item for item in self.store.repositories.entities.get_definitions("bt_def") if item.get("id") == behavior_id), {})
+        behavior_definition = self._behavior_definition(bt_data, behavior_id)
         if status == "completed" and result == "behavior_completed":
             result = str(state.get("last_action_result") or result)
         outcome_effects = behavior_definition.get("outcome_effects") or []
@@ -1515,6 +1379,7 @@ class ActivityRuntimeMixin:
                 "location_id": location_id,
                 "current_location": self._context.services["execution"].entity_for_context(location_id),
                 "behavior_id": behavior_id,
+                **calendar_context(self.store, minute),
                 "recent_event_types": self._context.services["evolution"].recent_event_types(),
             }
             world = self._context.services["evolution"].world_trigger_context()

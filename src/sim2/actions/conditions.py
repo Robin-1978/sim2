@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import operator
 import re
 from typing import Any
 
@@ -7,38 +8,21 @@ from ..dsl.expressions import (
     BinaryExpression,
     Expression,
     ExpressionSyntaxError,
+    IndexedReference,
     LiteralExpression,
     ReferenceExpression,
     UnaryExpression,
     parse_expression,
+    reference_paths,
 )
 from ..world.lifecycle import INACTIVE_STATUSES, INCAPACITATED_CONDITION, is_inactive
 
 
 _UNKNOWN = object()
-_DYNAMIC_BRACKET = re.compile(
-    r"\b(world|actor\.inventory|actor\.state|actor\.needs|target\.inventory|target\.state)"
-    r"\[\s*context\.([A-Za-z0-9_]+)\s*\]"
-)
-
-
-def _reference_paths(tree: Expression) -> list[str]:
-    """Collect every configured reference path from one parsed expression."""
-
-    if isinstance(tree, ReferenceExpression):
-        return [str(tree.path)]
-    if isinstance(tree, UnaryExpression):
-        return _reference_paths(tree.operand)
-    if isinstance(tree, BinaryExpression):
-        return [*_reference_paths(tree.left), *_reference_paths(tree.right)]
-    if isinstance(tree, LiteralExpression) and isinstance(tree.value, list):
-        return [
-            path
-            for item in tree.value
-            if isinstance(item, Expression)
-            for path in _reference_paths(item)
-        ]
-    return []
+_COMPARISONS = {
+    "==": operator.eq, "!=": operator.ne, ">=": operator.ge,
+    "<=": operator.le, ">": operator.gt, "<": operator.lt,
+}
 
 
 class ConditionEngine:
@@ -64,33 +48,8 @@ class ConditionEngine:
         }
         self.public_locations_are_safe = bool(config.get("public_locations_are_safe", True))
 
-    @staticmethod
-    def resolve_dynamic_references(expression: str, context: dict[str, Any] | None = None) -> str:
-        """Resolve ``world[context.case_slot]`` style parameterised paths.
-
-        Living-world definitions often need one generic predicate for many
-        generated cases.  The bracket form names the parameter, while the
-        evaluator still sees the flat path the rest of the DSL understands.
-        """
-
-        values = context or {}
-
-        def replace(match: re.Match[str]) -> str:
-            prefix = match.group(1)
-            key = match.group(2)
-            value = values.get(key)
-            if value is None or isinstance(value, (dict, list, tuple, bool)):
-                value = "__unresolved__"
-            text = str(value).strip()
-            if not re.fullmatch(r"[\w.-]+", text, re.UNICODE):
-                text = "__unresolved__"
-            return f"{prefix}.{text}"
-
-        return _DYNAMIC_BRACKET.sub(replace, str(expression or ""))
-
     def evaluate(self, expression: str, *, agent: dict[str, Any], target: dict[str, Any] | None = None, world: dict[str, Any] | None = None, context: dict[str, Any] | None = None) -> bool:
-        expression = self.resolve_dynamic_references(expression, context)
-        expression = self._normalize_expression(expression)
+        expression = str(expression or "").strip()
         if not expression:
             return True
         try:
@@ -100,7 +59,11 @@ class ConditionEngine:
             return False
         return bool(value) if value is not None else False
 
-    def evaluate_known(self, expression: str, *, agent: dict[str, Any], target: dict[str, Any] | None = None, world: dict[str, Any] | None = None, context: dict[str, Any] | None = None) -> bool | None:
+    def evaluate_known(
+        self, expression: str, *, agent: dict[str, Any], target: dict[str, Any] | None = None,
+        world: dict[str, Any] | None = None, context: dict[str, Any] | None = None,
+        allow_outcome_label: bool = False,
+    ) -> bool | None:
         """Evaluate a predicate when it is part of the declarative language.
 
         Action result fields historically contain both machine predicates
@@ -110,18 +73,20 @@ class ConditionEngine:
         tri-state result so a label can remain an outcome contract without
         being mistaken for a failed machine predicate.  ``None`` means the
         expression is not machine-evaluable with the available projection.
+        For an Action outcome, a standalone legacy label can still succeed.
         """
 
-        expression = self.resolve_dynamic_references(expression, context)
-        expression = self._normalize_expression(expression)
+        expression = str(expression or "").strip()
         if not expression:
             return True
         try:
             tree = parse_expression(expression)
             value = self._evaluate_tree(tree, agent, target, world, context, known=True)
         except (ExpressionSyntaxError, TypeError, ValueError):
-            return None
-        return None if value is _UNKNOWN else bool(value)
+            return False
+        if value is _UNKNOWN:
+            return isinstance(tree, ReferenceExpression) if allow_outcome_label else None
+        return bool(value)
 
     def unknown_paths(self, expression: str) -> list[str]:
         """Return reference paths this engine does not recognize.
@@ -131,37 +96,12 @@ class ConditionEngine:
         false at runtime.  Unknown bare identifiers are reported too.
         """
 
-        text = self.resolve_dynamic_references(expression, context=None)
-        text = self._normalize_expression(text)
-        if not text:
+        if not str(expression or "").strip():
             return []
         try:
-            tree = parse_expression(text)
+            return list(dict.fromkeys(path for path in reference_paths(parse_expression(expression)) if not self._known_path(path)))
         except ExpressionSyntaxError:
-            return [text]
-        return list(dict.fromkeys(path for path in _reference_paths(tree) if not self._known_path(path)))
-
-    @staticmethod
-    def normalize_expression(expression: str) -> str:
-        """Normalize the authored bracket notation for callers that inspect paths."""
-
-        return ConditionEngine._normalize_expression(expression)
-
-    @staticmethod
-    def _normalize_expression(expression: str) -> str:
-        """Accept bracket notation for world properties as a readable alias.
-
-        God proposals and authored rules commonly use either
-        ``world.tide_gate_integrity`` or ``world["tide_gate_integrity"]``.
-        Both address the same flat world projection.  Normalizing here keeps
-        the parser and every caller on one machine syntax; the RuleCompiler
-        still owns visible-name aliasing for human labels.
-        """
-
-        text = str(expression or "").strip()
-        text = re.sub(r'world\[\s*"([^"]+)"\s*\]', r"world.\1", text)
-        text = re.sub(r"world\[\s*'([^']+)'\s*\]", r"world.\1", text)
-        return text
+            return [str(expression)]
 
     def _evaluate_tree(
         self,
@@ -174,7 +114,7 @@ class ConditionEngine:
         known: bool = False,
     ) -> Any:
         if isinstance(tree, LiteralExpression):
-            if isinstance(tree.value, list):
+            if isinstance(tree.value, tuple):
                 return [
                     self._evaluate_tree(item, agent, target, world, context, known=known)
                     if isinstance(item, Expression) else item
@@ -185,6 +125,14 @@ class ConditionEngine:
             if known and not self._known_path(tree.path):
                 return _UNKNOWN
             return self._value(tree.path, agent, target, world, context)
+        if isinstance(tree, IndexedReference):
+            key = self._evaluate_tree(tree.key, agent, target, world, context, known=known)
+            if not isinstance(key, (str, int, float)) or isinstance(key, bool):
+                return _UNKNOWN if known else None
+            path = "actor.need" if tree.path == "actor.needs" else tree.path
+            if path == "world" and str(key) in (world or {}):
+                return world[str(key)]
+            return self._value(f"{path}.{key}", agent, target, world, context)
         if isinstance(tree, UnaryExpression):
             value = self._evaluate_tree(tree.operand, agent, target, world, context, known=known)
             if value is _UNKNOWN:
@@ -255,7 +203,7 @@ class ConditionEngine:
                 return float(left) > float(right) + epsilon
             if operator == "<":
                 return float(left) < float(right) - epsilon
-        return {"==": left == right, "!=": left != right, ">=": left >= right, "<=": left <= right, ">": left > right, "<": left < right}[operator]
+        return _COMPARISONS[operator](left, right)
 
     @staticmethod
     def _known_path(path: str) -> bool:

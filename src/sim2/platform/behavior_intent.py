@@ -15,6 +15,7 @@ from typing import Any
 from ..behavior.estimator import BehaviorDurationEstimator
 from ..behavior.recovery import failure_block_recovered
 from ..intents.models import BehaviorIntent
+from ..world.execution_recipes import recipe_snapshots
 from ..world.navigation import (
     generic_player_travel_enabled,
     configured_location_tags,
@@ -1013,6 +1014,7 @@ class BehaviorIntentService(PlatformService):
 
     def _open_bt_instance(self, submission: BehaviorSubmission, expected: dict[str, Any]) -> None:
         intent = submission.intent
+        actions = self._context.services["execution"].compile_behavior_actions(submission.behavior_id)
         self.store.repositories.activity.put_bt_instance(
             intent.intent_id,
             intent.actor_id,
@@ -1022,7 +1024,9 @@ class BehaviorIntentService(PlatformService):
             {
                 "target": intent.target,
                 "parameters": submission.runtime_parameters,
-                "actions": self._context.services["execution"].compile_behavior_actions(submission.behavior_id),
+                "actions": actions,
+                "behavior_snapshot": submission.behavior,
+                "recipe_snapshots": recipe_snapshots(self.store, actions, submission.runtime_parameters),
                 "behavior_version": expected["behavior_version"],
                 "expected": expected,
                 "decision": {"reason": intent.reason, "confidence": intent.confidence},

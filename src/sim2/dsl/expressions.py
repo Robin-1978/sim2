@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any, Iterator
 
 
@@ -30,6 +31,12 @@ class LiteralExpression(Expression):
 @dataclass(frozen=True)
 class ReferenceExpression(Expression):
     path: str
+
+
+@dataclass(frozen=True)
+class IndexedReference(Expression):
+    path: str
+    key: LiteralExpression | ReferenceExpression
 
 
 @dataclass(frozen=True)
@@ -88,6 +95,7 @@ def _tokens(source: str) -> Iterator[_Token]:
 # alone decides, so a world may introduce any root without touching the parser:
 # the evaluator resolves the path and treats an unknown one as unavailable.
 _DOTTED_PATH = re.compile(r"[^\W\d][\w:\-]*(?:\.[\w:\-]+)+", re.UNICODE)
+_INDEXED_PATHS = frozenset({"world", "actor.inventory", "actor.state", "actor.needs", "actor.need", "target.inventory", "target.state"})
 
 
 def _looks_like_reference(value: str) -> bool:
@@ -194,7 +202,7 @@ class _Parser:
                     if self.accept(kind="operator", text="]"):
                         break
                     self.expect(kind="operator", text=",")
-            return LiteralExpression([item.value if isinstance(item, LiteralExpression) else item for item in values])
+            return LiteralExpression(tuple(item.value if isinstance(item, LiteralExpression) else item for item in values))
         token = self.advance()
         if token.kind == "string":
             if token.text.startswith('"'):
@@ -212,6 +220,17 @@ class _Parser:
             return LiteralExpression(number)
         if token.kind != "word":
             raise ExpressionSyntaxError(f"expected value at position {token.position}")
+        if self.accept(kind="operator", text="["):
+            if token.text not in _INDEXED_PATHS:
+                raise ExpressionSyntaxError(f"unsupported indexed path at position {token.position}")
+            key = self.parse_primary(reference=True)
+            if not (
+                isinstance(key, LiteralExpression) and isinstance(key.value, str)
+                or isinstance(key, ReferenceExpression) and key.path.startswith("context.")
+            ):
+                raise ExpressionSyntaxError(f"expected a quoted key or context path at position {token.position}")
+            self.expect(kind="operator", text="]")
+            return IndexedReference(token.text, key)
         if token.text == "true":
             return LiteralExpression(True)
         if token.text == "false":
@@ -224,6 +243,32 @@ class _Parser:
 
 
 def parse_expression(source: str) -> Expression:
-    """Parse one supported condition/formula expression into a safe IR tree."""
+    """Parse one expression into an immutable tree shared by all bindings."""
 
-    return _Parser(str(source or "").strip()).parse()
+    return _parse_expression(str(source or "").strip())
+
+
+@lru_cache(maxsize=4096)
+def _parse_expression(source: str) -> Expression:
+    return _Parser(source).parse()
+
+
+def reference_paths(tree: Expression) -> Iterator[str]:
+    """Yield references to validate, excluding quoted scalar values."""
+
+    if isinstance(tree, ReferenceExpression):
+        yield tree.path
+    elif isinstance(tree, IndexedReference):
+        if isinstance(tree.key, LiteralExpression):
+            yield f"{tree.path}.{tree.key.value}"
+        else:
+            yield tree.key.path
+    elif isinstance(tree, UnaryExpression):
+        yield from reference_paths(tree.operand)
+    elif isinstance(tree, BinaryExpression):
+        yield from reference_paths(tree.left)
+        yield from reference_paths(tree.right)
+    elif isinstance(tree, LiteralExpression) and isinstance(tree.value, tuple):
+        for item in tree.value:
+            if isinstance(item, Expression):
+                yield from reference_paths(item)

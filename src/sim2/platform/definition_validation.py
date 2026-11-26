@@ -15,7 +15,7 @@ from typing import Any
 from uuid import uuid4
 
 from ..world.bindings import iter_behavior_effects
-from ..world.definition_compiler import compile_definition_shape, definition_slug
+from ..world.definition_compiler import compile_definition_shape, condition_syntax_error, definition_slug
 from ..world.time import validate_day_phase_duration
 from ..world.verbs import generic_parameter_target, infer_action_verb, infer_behavior_verb, normalize_verb, specific_capability_target
 
@@ -740,7 +740,11 @@ class BehaviorNodeNormalizer:
             self._normalize_action_node(node_copy, path)
         elif node_type in {"behavior", "subtree"}:
             self._normalize_behavior_reference(node_copy, path)
-        elif node_type not in {"sequence", "selector", "parallel", "condition", "wait"}:
+        elif node_type == "condition":
+            predicate = node_copy.get("expression")
+            if error := condition_syntax_error(predicate):
+                self.errors.append(f"behavior {path}.expression has invalid expression: {error}")
+        elif node_type not in {"sequence", "selector", "parallel", "wait"}:
             self.errors.append(f"unsupported behavior node type: {node_type}")
         self._normalize_children(node_copy, path, depth)
         return node_copy

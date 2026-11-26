@@ -6,9 +6,10 @@ from typing import Any
 
 from ..actions.capacity import check_action_capacity
 from ..behavior.estimator import BehaviorDurationEstimator
-from ..world.context import configured_context_values
+from ..world.context import calendar_context, configured_context_values
 from ..world.navigation import movement_speed, reachable_locations, route_minutes
-from ..world.time import day_phase_duration, world_time_view
+from ..world.execution_recipes import execution_recipe
+from ..world.time import day_phase_duration
 from .services import PlatformService
 
 
@@ -59,7 +60,7 @@ class BehaviorExecutionService(PlatformService):
             "target.available": bool((resolved_target or {}).get("available", False)),
             "known_route_destinations": reachable_locations(self.store, location_id),
             "recent_event_types": self._context.services["evolution"].recent_event_types(),
-            "day_phase": world_time_view(self.store).get("day_phase"),
+            **calendar_context(self.store),
             "conflict": {"available": conflict_available},
         }
         for key, value in parameters.items():
@@ -97,47 +98,47 @@ class BehaviorExecutionService(PlatformService):
         except KeyError:
             return {}
 
-    def compile_behavior_actions(self, behavior_id: str, seen: set[str] | None = None) -> list[dict[str, Any]]:
-        seen = set(seen or set())
-        if behavior_id in seen:
-            return []
-        seen.add(behavior_id)
-        definitions = {item["id"]: item for item in self.store.repositories.entities.get_definitions("bt_def")}
-        behavior = definitions.get(behavior_id)
-        if not behavior:
-            return []
+    def compile_behavior_actions(self, behavior_id: str) -> list[dict[str, Any]]:
+        """Freeze the selected Action sequence and its definitions at admission."""
 
-        def visit(nodes: list[Any], parallel_group: str | None = None) -> list[dict[str, Any]]:
+        definitions = {item["id"]: item for item in self.store.repositories.entities.get_definitions("bt_def")}
+        actions = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
+
+        def visit(nodes: list[Any], owner: str, seen: set[str], parallel_group: str | None = None) -> list[dict[str, Any]]:
             result: list[dict[str, Any]] = []
             for raw in nodes or []:
                 node = raw if isinstance(raw, dict) else {"type": "behavior", "behavior_id": raw}
                 node_type = node.get("type")
                 if node_type == "action" and node.get("action_id"):
-                    action = next((item for item in self.store.repositories.entities.get_definitions("action_def") if item.get("id") == node["action_id"]), {})
-                    result.append({"action_id": node["action_id"], "action_version": int(action.get("definition_version", action.get("version", 1)) or 1), "parameters": dict(node.get("parameters") or {}), "parallel_group": parallel_group})
+                    action = actions.get(node["action_id"], {})
+                    result.append({
+                        "action_id": node["action_id"],
+                        "action_version": int(action.get("definition_version", action.get("version", 1)) or 1),
+                        "definition_snapshot": action,
+                        "parameters": dict(node.get("parameters") or {}),
+                        "parallel_group": parallel_group,
+                    })
                 elif node_type in {"behavior", "subtree"} and node.get("behavior_id"):
-                    nested = self.compile_behavior_actions(str(node["behavior_id"]), seen)
-                    if parallel_group:
-                        for item in nested:
-                            item["parallel_group"] = parallel_group
-                    result.extend(nested)
+                    nested_id = str(node["behavior_id"])
+                    if nested_id not in seen:
+                        nested = definitions.get(nested_id, {})
+                        steps = visit(nested.get("nodes", []), nested_id, seen | {nested_id})
+                        if parallel_group:
+                            for item in steps:
+                                item["parallel_group"] = parallel_group
+                        result.extend(steps)
                 elif node_type in {"sequence", "parallel"}:
-                    group = parallel_group
-                    if node_type == "parallel":
-                        group = f"parallel:{behavior_id}:{len(result)}"
-                    result.extend(visit(node.get("children", []), group))
+                    group = parallel_group if node_type == "sequence" else f"parallel:{owner}:{len(result)}"
+                    result.extend(visit(node.get("children", []), owner, seen, group))
                 elif node_type == "selector":
-                    # Selector branch conditions are evaluated by the fuller
-                    # condition engine in M4.  Until then, choose the first
-                    # configured branch deterministically and record that
-                    # choice in the BT instance.
+                    # Preserve the first configured branch and record it in the instance.
                     children = node.get("children", [])
                     if children:
-                        result.extend(visit([children[0]], parallel_group))
-                # condition/wait nodes do not consume an Action minute.
+                        result.extend(visit(children[:1], owner, seen, parallel_group))
             return result
 
-        return visit(behavior.get("nodes", []))
+        behavior = definitions.get(behavior_id, {})
+        return visit(behavior.get("nodes", []), behavior_id, {behavior_id})
 
     @staticmethod
     def execution_snapshot(agent: dict[str, Any]) -> dict[str, Any]:
@@ -261,10 +262,11 @@ class BehaviorExecutionService(PlatformService):
         return route_minutes(self.store, origin, destination)
 
     def action_duration(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], origin_location: str | None = None) -> int:
+        recipe = execution_recipe(self.store, action, parameters.get("recipe_id"))
         estimator = BehaviorDurationEstimator(
-            {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")},
+            {action["id"]: action} if action.get("id") else {},
             {},
-            {item["id"]: item for item in self.store.repositories.entities.get_definitions("recipe_def")},
+            {recipe["id"]: recipe} if recipe else {},
             self.route_distance,
             capabilities=agent.get("capabilities", {}),
             capability_modifiers=(self.store.repositories.metadata.get("rules", {}) or {}).get("capability_modifiers", {}),

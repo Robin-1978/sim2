@@ -1,85 +1,46 @@
 # DSL、IR 与 AST 边界
 
-## 当前实现状态
+## 世界包和模型提案
 
-sim2 当前不是一套完整的 AST DSL 编译器。配置文件由 YAML 解析为 Python
-字典，`world.definition_compiler` 做结构归一化和校验，随后定义以 JSON
-对象写入 SQLite。行为树运行时直接读取归一化后的节点字典，因此它是
-声明式 IR（以及逻辑上的树结构），不是已经实现的带节点类型和来源位置的
-编译器 AST。
+YAML 是世界包的作者格式，适合阅读、评审和版本管理。世界编辑器可以生成
+同一份配置。模型提案使用 JSON Schema。两条路径验证声明式定义，Platform
+负责绑定实例里的实体、校验行动并提交状态变化。
 
-条件也还不是 AST。`actions.conditions.ConditionEngine` 使用有限的字符串
-解析规则处理 `and`、`or`、`not`、比较和成员关系。效果公式目前只在
-`actions.effects` 中用受限的 Python `ast.parse` 解析算术表达式；这只是
-一个安全白名单求值器，不是整个 DSL 的 AST。
+YAML 中的短谓词保持一行。需要换行时可以用折叠标量。
 
-## 是否现在实现完整 parser
-
-不实现一套新的、覆盖所有 YAML 字段的大语言。YAML 已经承担配置语法，
-再增加一层完整语法会提高世界包和 God 提案的复杂度，不能直接解决运行时
-通用性问题。
-
-需要实现的是一个小而稳定的规范化层：
-
-```text
-YAML / God proposal
-    -> raw mapping
-    -> canonical Definition IR
-       (action / recipe / behavior / rule)
-    -> Expression AST for conditions and formulas
-    -> SQLite definition version
-    -> AgentView / JSON Schema / Platform execution
+```yaml
+preconditions:
+  - >-
+    actor.alive and context.day_phase == 'dawn'
+    and world[context.reserve_key] >= 2
+success:
+  condition: context.calendar_day == 1
+  result: supplies_delivered
 ```
 
-其中 `Definition IR` 仍允许故事包声明新属性、实体和参数，不把任何世界
-名词写进 Python。行为树节点应归一化为带 `kind`、`children`、`action_id`
-和来源路径的节点对象；未知节点在提交时被拒绝，而不是由执行器猜测。
+## 表达式编译与求值
 
-## 第一阶段：表达式 AST（已实现）
+`sim2.dsl.expressions` 把逻辑、比较、成员关系、列表和基本算术解析为不可变 AST。
+检查引用时遍历 AST，因此字符串 `'world.example'` 仍是值。
+`world["public confidence"]` 和 `world[context.reserve_key]` 使用索引节点，
+求值阶段读取当前绑定。缓存以去掉首尾空白的表达式文本为键，最多保留
+4,096 棵树。条件和公式共用语法树，每次求值读取当前角色与世界数据。
 
-`sim2.dsl.expressions` 已为条件和公式提供受限 parser，语法只覆盖配置
-已经使用的能力：
+包校验和 Action 提案使用同一组条件字段和语法检查。成功条件中的独立旧式结果
+标签继续兼容，例如 `resource.collected`。带运算符的成功条件必须得到可判定的
+真值才会提交效果。运行时遇到旧定义中的非法表达式会判定失败。
 
-- 路径：`actor.state.location_id`、`target.available`、`world.foo`；
-- 字面量：字符串、数字、布尔值、空值和列表；
-- 运算：`==`、`!=`、`>`、`>=`、`<`、`<=`、`in`、`not_in`；
-- 逻辑：`not`、`and`、`or` 和括号；
-- 公式：加、减、乘、除和一元正负。
+Action 的预览、单步启动、并行启动和结算共享条件投影。日历提供
+`context.day_phase`、`context.calendar_day` 和 `context.minute_of_day`。
+执行阶段取当前处理的模拟分钟。成功条件在效果应用后检查，判失败时回滚
+同一次 Action 的效果和事件。
 
-解析结果包含节点类型和配置来源路径。求值器只接受运行时投影，禁止
-Python、SQL、Shell、函数调用和任意属性访问。解析后的表达式按定义版本
-缓存，避免每个模拟分钟重复做字符串拆分。
+## 行为实例和版本
 
-条件求值已经使用这棵表达式树，公式也使用同一棵树进行安全算术求值，
-不再调用 Python `ast.parse`。解析失败会被 Platform 作为无效条件或无效
-公式处理；对 Agent 的工具协议和可见文本没有变化。解析结果仍按定义
-版本留在运行时缓存中，后续可继续把缓存下沉到定义编译器。
+接纳行为时，实例保存选中的 Action 序列、Action 定义、配方和行为定义。
+行为的结束效果、事件和事实来自实例保存的定义。升级旧包前，会把仍在
+运行或暂停的旧实例补上当时注册的定义。升级之后新建的行为读取新版定义。
+世界状态和当前规则仍随世界推进。
 
-## 第二阶段：定义 IR 与行为树节点
-
-`compile_definition_shape` 继续作为入口，但输出增加统一的规范化节点：
-
-- 每个定义带 `definition_id`、`version`、`kind` 和来源路径；
-- Action、Recipe、BT、Rule 共用参数、结果、条件和版本元数据；
-- BT 节点使用受限的判别联合：`sequence`、`selector`、`parallel`、
-  `condition`、`action`、`subtree`；
-- Platform 校验器、AgentView 和工具 Schema 都从同一份 IR 派生；
-- SQLite 保存规范化定义和版本，运行中的 Process 绑定创建时的版本。
-
-Agent 永远不接收 AST 或内部路径，只接收由 IR 生成的简短可执行视图。
-God 可以提出新的定义，但必须提交声明式 IR，经同一编译和语义校验后才
-能注册并进入 NPC 的行为目录。
-
-## 验收标准
-
-当前 parser 的确定性测试覆盖：
-
-1. 运算优先级、括号和未知路径的三态结果一致；
-2. 非法 Python、SQL、函数调用和未知节点全部被拒绝；
-3. 同一配置版本解析结果可缓存且结果不依赖世界名称；
-4. God 创建的 Action/BT 能从 IR 生成工具 Schema、AgentView 并进入
-   NPC 可执行目录；
-5. 旧定义版本的运行中 Process 不受新定义覆盖。
-
-因此当前结论是：**表达式 AST 已完成；下一步逐步把行为树和定义归一化
-为统一 IR，暂时不做一套全新的通用编程语言。**
+行为树当前展开为可执行 Action 序列，选择节点延续已有的分支规则。条件节点的
+完整树执行语义仍属于独立的行为树演进工作。

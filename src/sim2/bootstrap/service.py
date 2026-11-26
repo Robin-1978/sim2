@@ -1145,6 +1145,7 @@ def upgrade_instance(config_dir: Path, db_path: Path) -> dict[str, Any]:
         next_evolution = normalize_evolution_config(load_yaml(config_dir, "evolution.yaml", {"roles": {}}) or {"roles": {}})
         counts: dict[str, int] = {}
         with store.transaction():
+            store.repositories.activity.snapshot_active_definitions()
             store.repositories.metadata.set("setting", next_setting)
             if "ui" in instance_setting:
                 store.repositories.artwork.replace(artwork_blobs)

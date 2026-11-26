@@ -8,7 +8,7 @@ from ..actions.capacity import check_action_capacity
 from ..behavior.estimator import BehaviorDurationEstimator
 from ..behavior.recovery import failure_block_recovered
 from ..intents.models import BehaviorIntent
-from ..world.context import configured_context_values
+from ..world.context import calendar_context, configured_context_values
 from ..world.bindings import resolve_binding
 from ..world.lifecycle import (
     BUSY_STATUSES,
@@ -25,7 +25,6 @@ from ..world.navigation import (
     nearest_safe_location,
     reachable_locations,
 )
-from ..world.time import world_time_view
 from ..world.rules import RuleCompiler
 from ..world.schema import AttributeSchema
 from ..actions.conditions import ConditionEngine
@@ -41,13 +40,7 @@ class WorldTickService(PlatformService):
         minute_event_state_changed = False
         world_properties = self.store.repositories.metadata.get("world_properties", {}) or {}
         static_context_values = configured_context_values(rules, include_resolvers=False)
-        calendar = world_time_view(self.store, minute)
-        tick_context = {
-            **static_context_values,
-            "day_phase": calendar["day_phase"],
-            "calendar_day": calendar["day"],
-            "minute_of_day": calendar["minute_of_day"],
-        }
+        tick_context = {**static_context_values, **calendar_context(self.store, minute)}
         for regeneration in rules.get("resource_regeneration", []) or []:
             every = max(1, int(regeneration.get("every_minutes", 1)))
             if minute % every != 0:

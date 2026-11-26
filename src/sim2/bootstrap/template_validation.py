@@ -13,7 +13,8 @@ from typing import Any
 
 from ..actions.conditions import ConditionEngine
 from ..world.lifecycle import validate_incapacitation_rule
-from ..world.definition_compiler import EFFECT_TYPES
+from ..dsl.expressions import parse_expression, reference_paths
+from ..world.definition_compiler import EFFECT_TYPES, action_conditions, condition_syntax_error
 from ..evolution.config import normalize_evolution_config
 from ..world.time import validate_day_phase_duration
 from ..world.ui_text import validate_ui_text
@@ -278,25 +279,31 @@ class _TemplateChecks:
 
     # ------------------------------------------------- expressions and effects
 
-    def check_expression(self, expression: Any, owner: str) -> None:
+    def check_expression(self, expression: Any, owner: str, *, result_contract: bool = False) -> None:
         errors = self.errors
-        text = str(expression or "")
-        if text and self.condition_engine.unknown_paths(text):
-            errors.append(f"{owner} uses an unsupported condition path: {text}")
-        for path in re.findall(r"actor\.state\.([A-Za-z0-9_]+)", text):
-            if path not in self.state_ids:
-                errors.append(f"{owner} references undeclared state attribute {path}")
-        for path in re.findall(r"actor\.need\.([A-Za-z0-9_]+)", text):
-            if path not in self.need_ids:
-                errors.append(f"{owner} references undeclared need {path}")
-        for path in re.findall(r"world\.([A-Za-z0-9_]+)", text):
-            if path not in self.world_properties:
-                errors.append(f"{owner} references undeclared world property {path}")
-        for attribute_id in self.attribute_ids:
-            if re.search(rf"(?<![A-Za-z0-9_]){re.escape(attribute_id)}(?![A-Za-z0-9_])", text) and not any(
-                path in text for path in (f"actor.state.{attribute_id}", f"actor.need.{attribute_id}", f"target.state.{attribute_id}")
+        if expression is None or (isinstance(expression, str) and not expression.strip()):
+            return
+        if error := condition_syntax_error(expression):
+            errors.append(f"{owner} has invalid expression: {error}")
+            return
+        # Legacy result contracts may name domain signals such as resource.collected.
+        if not result_contract:
+            for path in self.condition_engine.unknown_paths(expression):
+                errors.append(f"{owner} uses an unsupported condition path: {path}")
+        for path in dict.fromkeys(reference_paths(parse_expression(expression))):
+            for prefix, declared, kind in (
+                ("actor.state.", self.state_ids | STRUCTURAL_AGENT_STATE, "state attribute"),
+                ("target.state.", self.state_ids | STRUCTURAL_AGENT_STATE, "state attribute"),
+                ("actor.need.", self.need_ids, "need"),
+                ("actor.needs.", self.need_ids, "need"),
+                ("world.", self.world_properties, "world property"),
             ):
-                errors.append(f"{owner} must reference {attribute_id} through actor.state, actor.need or target.state")
+                if path.startswith(prefix):
+                    key = path.removeprefix(prefix)
+                    if key not in declared and key.partition(".")[0] not in declared:
+                        errors.append(f"{owner} references undeclared {kind} {key}")
+            if path in self.attribute_ids:
+                errors.append(f"{owner} must reference {path} through actor.state, actor.need or target.state")
 
     def check_effect(self, effect: dict[str, Any], owner: str) -> None:
         errors = self.errors
@@ -368,6 +375,10 @@ class _TemplateChecks:
         errors = self.errors
         for action in self.collections["actions"]:
             duration = action.get("duration")
+            if "preconditions" in action and not isinstance(action["preconditions"], list):
+                errors.append(f"action {action.get('id')}.preconditions must be a list")
+            if "_recipe_snapshot" in action:
+                errors.append(f"action {action.get('id')} must not declare execution snapshots")
             if not isinstance(duration, dict):
                 errors.append(f"action {action.get('id')} requires a duration object")
             elif not (
@@ -376,8 +387,8 @@ class _TemplateChecks:
                 errors.append(f"action {action.get('id')} duration needs non-negative minutes or a supported mode")
             if error := validate_day_phase_duration(action, self.world or {}):
                 errors.append(error)
-            for condition in action.get("preconditions", []) or []:
-                self.check_expression(condition, f"action {action.get('id')} precondition")
+            for field, condition in action_conditions(action):
+                self.check_expression(condition, f"action {action.get('id')}.{field}", result_contract=field.endswith(".condition"))
             self._check_action_costs(action)
             effects = action.get("effects", [])
             if not effects and not str(action.get("executor") or "").strip():
@@ -459,8 +470,11 @@ class _TemplateChecks:
             else:
                 for index, child in enumerate(children):
                     self._check_behavior_node(behavior, child, f"{path}.children[{index}]", used_action_ids)
-        elif node_type == "condition" and not str(node.get("expression") or ""):
-            errors.append(f"behavior {behavior.get('id')} condition at {path} requires expression")
+        elif node_type == "condition":
+            if not node.get("expression"):
+                errors.append(f"behavior {behavior.get('id')} condition at {path} requires expression")
+            else:
+                self.check_expression(node["expression"], f"behavior {behavior.get('id')} {path}.expression", result_contract=True)
 
     def _check_outcome_events(self, behavior: dict[str, Any], used_action_ids: set[str]) -> None:
         """A behavior outcome must not repeat an event its actions already record."""

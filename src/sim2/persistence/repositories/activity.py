@@ -6,6 +6,7 @@ import sqlite3
 from typing import Any
 
 from ..store import json_dumps
+from ...world.execution_recipes import recipe_snapshots
 
 
 class ActivityRepository:
@@ -29,11 +30,42 @@ class ActivityRepository:
             (execution_id, actor_id, behavior_id, status, int(current_node), json_dumps(data), int(started_minute), int(updated_minute)),
         )
 
-    def update_bt_instance(self, execution_id: str, *, status: str, current_node: int, data: dict[str, Any], updated_minute: int) -> None:
+    def update_bt_instance(self, execution_id: str, *, status: str, current_node: int, updated_minute: int, data: dict[str, Any] | None = None) -> None:
+        if data is None:
+            self.store.connection.execute(
+                "UPDATE bt_instance SET status=?,current_node=?,updated_minute=? WHERE execution_id=?",
+                (status, int(current_node), updated_minute, execution_id),
+            )
+            return
         self.store.connection.execute(
             "UPDATE bt_instance SET status=?,current_node=?,data_json=?,updated_minute=? WHERE execution_id=?",
             (status, int(current_node), json_dumps(data), int(updated_minute), execution_id),
         )
+
+    def snapshot_active_definitions(self) -> None:
+        """Pin definitions for unfinished activities from saves predating snapshots."""
+
+        rows = self.store.connection.execute(
+            "SELECT execution_id,behavior_id,data_json FROM bt_instance WHERE status IN ('executing','paused')"
+        ).fetchall()
+        if not rows:
+            return
+        definitions = self.store.repositories.entities
+        behaviors = {row["id"]: row for row in definitions.get_definitions("bt_def")}
+        actions = {row["id"]: row for row in definitions.get_definitions("action_def")}
+        for row in rows:
+            data = json.loads(row["data_json"])
+            if "behavior_snapshot" not in data:
+                data["behavior_snapshot"] = behaviors.get(row["behavior_id"], {})
+            for action in data.get("actions") or []:
+                if "definition_snapshot" not in action and action.get("action_id") in actions:
+                    action["definition_snapshot"] = actions[action["action_id"]]
+            if "recipe_snapshots" not in data:
+                data["recipe_snapshots"] = recipe_snapshots(self.store, data.get("actions") or [], data.get("parameters") or {})
+            self.store.connection.execute(
+                "UPDATE bt_instance SET data_json=? WHERE execution_id=?",
+                (json_dumps(data), row["execution_id"]),
+            )
 
     def put_action_instance(self, action_instance_id: str, execution_id: str, actor_id: str, action_id: str, status: str, elapsed_minutes: int, remaining_minutes: int, data: dict[str, Any], started_minute: int, updated_minute: int) -> None:
         self.store.connection.execute(

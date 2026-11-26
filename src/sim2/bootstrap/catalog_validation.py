@@ -8,10 +8,11 @@ already selected the entry.
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from ..actions.conditions import ConditionEngine
+from ..dsl.expressions import parse_expression, reference_paths
+from ..world.definition_compiler import condition_syntax_error
 
 
 def _resource_location(resource: dict[str, Any]) -> str:
@@ -28,7 +29,7 @@ def _effect_output_item(effect: dict[str, Any]) -> str:
 
 
 def _check_declared_paths(
-    text: str,
+    paths: list[str],
     *,
     owner: str,
     state_ids: set[str] | None,
@@ -37,22 +38,18 @@ def _check_declared_paths(
     item_labels: set[str],
     errors: list[str],
 ) -> None:
-    if state_ids is not None:
-        for path in re.findall(r"actor\.state\.([A-Za-z0-9_]+)", text):
-            if path not in state_ids:
-                errors.append(f"{owner} references undeclared state attribute {path}")
-    if need_ids is not None:
-        for path in re.findall(r"actor\.need\.([A-Za-z0-9_]+)", text):
-            if path not in need_ids:
-                errors.append(f"{owner} references undeclared need {path}")
-    if world_properties is not None:
-        for path in re.findall(r"world\.([A-Za-z0-9_]+)", text):
-            if path not in world_properties:
-                errors.append(f"{owner} references undeclared world property {path}")
-    if item_labels:
-        for path in re.findall(r"actor\.inventory\.([A-Za-z0-9_]+)", text):
-            if path not in item_labels:
-                errors.append(f"{owner} references undeclared inventory item {path}")
+    for path in paths:
+        for prefix, declared, kind in (
+            ("actor.state.", state_ids, "state attribute"),
+            ("actor.need.", need_ids, "need"),
+            ("actor.needs.", need_ids, "need"),
+            ("world.", world_properties, "world property"),
+            ("actor.inventory.", item_labels or None, "inventory item"),
+        ):
+            if declared is not None and path.startswith(prefix):
+                key = path.removeprefix(prefix)
+                if key not in declared and key.partition(".")[0] not in declared:
+                    errors.append(f"{owner} references undeclared {kind} {key}")
 
 
 def validate_action_catalogs(
@@ -116,13 +113,15 @@ def validate_action_catalogs(
                     if not isinstance(predicate, str) or not predicate.strip():
                         errors.append(f"{entry_owner}.requires[{requirement_index}] must be a non-empty condition")
                         continue
-                    text = condition_engine.normalize_expression(predicate)
-                    for path in condition_engine.unknown_paths(text):
+                    if error := condition_syntax_error(predicate):
+                        errors.append(f"{entry_owner}.requires[{requirement_index}] has invalid expression: {error}")
+                        continue
+                    for path in condition_engine.unknown_paths(predicate):
                         errors.append(
                             f"{entry_owner}.requires[{requirement_index}] uses unsupported condition path: {path}"
                         )
                     _check_declared_paths(
-                        text,
+                        list(dict.fromkeys(reference_paths(parse_expression(predicate)))),
                         owner=f"{entry_owner}.requires[{requirement_index}]",
                         state_ids=state_ids,
                         need_ids=need_ids,

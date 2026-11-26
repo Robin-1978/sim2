@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Any
+from typing import Any, Iterator
+
+from ..dsl.expressions import ExpressionSyntaxError, parse_expression
 
 
 DEFINITION_TYPES: tuple[str, ...] = (
@@ -37,7 +39,7 @@ EFFECT_TYPES = frozenset(
     }
 )
 
-FORBIDDEN_DECLARATIVE_FIELDS = frozenset({"handler", "python", "script", "sql", "executor_code", "code"})
+FORBIDDEN_DECLARATIVE_FIELDS = frozenset({"handler", "python", "script", "sql", "executor_code", "code", "_recipe_snapshot"})
 
 
 def definition_slug(value: Any) -> str:
@@ -91,6 +93,28 @@ def _validate_result_contracts(definition: dict[str, Any], errors: list[str]) ->
         result = definition.get(field)
         if not isinstance(result, dict) or not str(result.get("result") or "").strip():
             errors.append(f"action.{field} must declare an object with result")
+
+
+def action_conditions(definition: dict[str, Any]) -> Iterator[tuple[str, Any]]:
+    preconditions = definition.get("preconditions")
+    if isinstance(preconditions, list):
+        for index, predicate in enumerate(preconditions):
+            yield f"preconditions[{index}]", predicate
+    for field in ("success", "failure"):
+        outcome = definition.get(field)
+        if isinstance(outcome, dict) and "condition" in outcome:
+            yield f"{field}.condition", outcome["condition"]
+
+
+def condition_syntax_error(predicate: Any) -> str | None:
+    if not isinstance(predicate, str):
+        return "condition must be a string"
+    if predicate.strip():
+        try:
+            parse_expression(predicate)
+        except ExpressionSyntaxError as exc:
+            return str(exc)
+    return None
 
 
 def _validate_outcome_events(definition: dict[str, Any], errors: list[str]) -> None:
@@ -176,6 +200,9 @@ def compile_definition_shape(
                 errors.append(f"action.{field} must be a list")
         _validate_effects(definition, errors)
         _validate_result_contracts(definition, errors)
+        for field, predicate in action_conditions(definition):
+            if error := condition_syntax_error(predicate):
+                errors.append(f"action.{field} has invalid expression: {error}")
         return definition, errors
 
     if kind == "behavior":

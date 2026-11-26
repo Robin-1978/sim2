@@ -843,6 +843,14 @@ An Action is executable mechanics. It declares:
 - success and failure outcomes;
 - interruption and interaction policy.
 
+Keep predicates as YAML strings. For a long predicate, use a folded scalar
+so the compiled condition reads as one expression. Action preconditions and
+outcomes are checked during package validation. Conditions can use
+`context.day_phase`, `context.calendar_day` and `context.minute_of_day`.
+Use `result` for a descriptive outcome code. The
+[DSL execution notes](design/dsl-and-ast.md) describe expression caching
+and how upgrades preserve in-flight definitions.
+
 An Action definition must not contain Behavior-only fields. `entry_conditions`,
 `success_results`, `failure_results`, `outcome_events`, `agent_parameters`,
 `agent_label`, `nodes`, `estimated_minutes`, `goal_tags`, `drive_tags`,

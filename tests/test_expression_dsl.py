@@ -43,7 +43,7 @@ def test_dotted_operands_are_references_whatever_their_root() -> None:
     arithmetic = parse_expression("actor.state.fuel - burn.rate > 0")
     assert arithmetic.left.right == ReferenceExpression("burn.rate")
     membership = parse_expression("actor.role in [pilot, navigator]")
-    assert membership.right.value == ["pilot", "navigator"]
+    assert membership.right.value == ("pilot", "navigator")
     assert parse_expression("actor.role == pathfinder").right == LiteralExpression("pathfinder")
     assert parse_expression('actor.role == "relay.keeper"').right == LiteralExpression("relay.keeper")
     assert parse_expression("actor.state.depth > 2.5").right == LiteralExpression(2.5)
@@ -72,6 +72,17 @@ def test_expression_parser_rejects_code_and_unsupported_syntax() -> None:
     for expression in ("__import__('os').system('id')", "actor.state.energy; SQL", "actor.state.energy ** 2"):
         with pytest.raises(ExpressionSyntaxError):
             parse_expression(expression)
+
+
+def test_cached_expression_reuses_one_tree_for_independent_bindings() -> None:
+    expression = "world[context.slot] == null"
+    assert parse_expression(expression) is parse_expression(f" {expression} ")
+    engine = ConditionEngine()
+    world = {"open": None, "closed": 1}
+    assert engine.evaluate(expression, agent={}, world=world, context={"slot": "open"})
+    assert not engine.evaluate(expression, agent={}, world=world, context={"slot": "closed"})
+    assert engine.evaluate("world.placeholder != 'ready'", agent={}, world={"placeholder": 0})
+    assert engine.evaluate_known("actor.alive and (", agent={}) is False
 
 
 def test_effect_formula_uses_the_same_restricted_expression_ir() -> None:

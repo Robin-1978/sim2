@@ -6,9 +6,7 @@ from typing import Any
 
 from ..actions.capacity import check_action_capacity
 from ..actions.institutions import allocation_preflight
-from ..world.navigation import reachable_locations, resource_is_at_location
-from ..world.context import configured_context_values
-from ..world.time import world_time_view
+from ..world.context import action_condition_context
 
 
 class ActionAvailabilityMixin:
@@ -57,55 +55,14 @@ class ActionAvailabilityMixin:
             parameters["resource_tag"] = source.get("id") if source else parameters.get("resource_tag")
         if action.get("requires_destination") and parameters.get("location_id") == (agent.get("initial_state") or {}).get("location_id"):
             return "the actor is already at the destination"
-        bound_resource = (
-            parameters.get("resource_id")
-            or parameters.get("target_resource")
-            or parameters.get("resource")
-            or parameters.get("resource_tag")
+        resolved_target, target_error = self.targets.resolve(agent, parameters)
+        if target_error:
+            return "no permitted target can be resolved"
+        target = {**parameters, **(resolved_target or {})}
+        context = action_condition_context(
+            self.store, agent, parameters, resolved_target, canonical_id=self.targets.canonical_id,
+            recent_event_types=self._recent_event_types(), location=location,
         )
-        bound_resource_id = str(self.targets.canonical_id(str(bound_resource)) or bound_resource) if bound_resource else ""
-        resource_amount = 0.0
-        if bound_resource_id:
-            try:
-                resource_entity = self.entities_repo.get_entity(bound_resource_id)
-            except KeyError:
-                resource_entity = {}
-            resource_state = resource_entity.get("initial_state") if isinstance(resource_entity.get("initial_state"), dict) else {}
-            resource_amount = float(resource_state.get("quantity", resource_state.get("amount", 0)) or 0)
-        context = {
-            "current_location": location,
-            "location_id": (agent.get("initial_state") or {}).get("location_id"),
-            "resource_id": bound_resource_id,
-            "resource.amount": resource_amount,
-            "resource.available": resource_amount > 0,
-            "resource.here": resource_is_at_location(
-                self.store,
-                bound_resource_id,
-                (agent.get("initial_state") or {}).get("location_id"),
-            ),
-            "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
-            "area_id": parameters.get("area_id"),
-            "day_phase": world_time_view(self.store).get("day_phase"),
-            "source_id": parameters.get("source_id"),
-            "item_id": parameters.get("item_id"),
-            "object_id": parameters.get("object_id"),
-            "current_object": {},
-            "inventory": agent.get("inventory", {}) or {},
-            "station_tags": [],
-            "known_route_destinations": reachable_locations(self.store, (agent.get("initial_state") or {}).get("location_id")),
-            "mapped_areas": self.memory_repo.explored_areas(str(agent.get("id", ""))),
-            "researched_sources": self.memory_repo.researched_sources(str(agent.get("id", ""))),
-            "known_fact_keys": [
-                item.get("fact_key")
-                for item in self.memory_repo.list_knowledge_facts(str(agent.get("id", "")), limit=1000)
-                if item.get("fact_key")
-            ],
-            "recent_event_types": self._recent_event_types(),
-        }
-        context.update(configured_context_values(self.store.repositories.metadata.get("rules", {}) or {}, agent))
-        for key, value in parameters.items():
-            if isinstance(value, (str, int, float)) and not isinstance(value, bool):
-                context.setdefault(str(key), value)
         for effect in action.get("effects", []) or []:
             if not isinstance(effect, dict) or str(effect.get("type") or effect.get("op") or "") != "institution_allocation":
                 continue
@@ -138,18 +95,10 @@ class ActionAvailabilityMixin:
                     if check.get("reason") == "minimum_allocation"
                     else f"the institution allocation is not possible ({check.get('reason') or 'unavailable'})"
                 )
-        if parameters.get("object_id"):
-            try:
-                context["current_object"] = self.entities_repo.get_entity(str(parameters["object_id"]))
-            except KeyError:
-                return "the referenced object does not exist"
-        if parameters.get("source_id"):
-            try:
-                context["source"] = self.entities_repo.get_entity(str(parameters["source_id"]))
-            except KeyError:
-                return "the referenced source does not exist"
-            context["research_discoveries"] = self.memory_repo.research_discoveries(str(parameters["source_id"]))
-            context["research_stage_status"] = self.memory_repo.research_stage_status(str(agent.get("id")), str(parameters["source_id"]))
+        if parameters.get("object_id") and not context["current_object"]:
+            return "the referenced object does not exist"
+        if parameters.get("source_id") and not context["source"]:
+            return "the referenced source does not exist"
         if (
             action.get("duration", {}).get("mode") == "recipe_duration"
             or "recipe_inputs" in (action.get("costs", {}).get("reserve", {}) or {})
@@ -179,17 +128,10 @@ class ActionAvailabilityMixin:
             resource_location = str(state.get("location_id") or resource.get("location_id") or "")
             if resource_location and resource_location != actor_location:
                 return "the actor is not at the resource location"
-        resolved_target, target_error = self.targets.resolve(agent, parameters)
-        if target_error:
-            return "no permitted target can be resolved"
-        target = {**parameters, **(resolved_target or {})}
-        context["target"] = resolved_target or {}
-        context["target.visible"] = bool((resolved_target or {}).get("visible", False))
-        context["target.available"] = bool((resolved_target or {}).get("available", False))
         if self.rule_compiler.denial(
             action=action,
             agent=agent,
-            target={**parameters, **(resolved_target or {})},
+            target=target,
             context=context,
             world=self.store.repositories.metadata.get("world_properties", {}) or {},
         ):
