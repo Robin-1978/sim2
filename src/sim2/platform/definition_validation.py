@@ -14,6 +14,7 @@ import re
 from typing import Any
 from uuid import uuid4
 
+from ..behavior.plan import compile_behavior_plan, wait_minutes
 from ..world.bindings import iter_behavior_effects
 from ..world.definition_compiler import compile_definition_shape, condition_syntax_error, definition_slug
 from ..world.time import validate_day_phase_duration
@@ -471,6 +472,14 @@ class DefinitionValidationMixin:
         action_defs = {str(item.get("id")): item for item in self.store.repositories.entities.get_definitions("action_def")}
         if isinstance(extra_action, dict) and extra_action.get("id"):
             action_defs[str(extra_action["id"])] = extra_action
+        plan = []
+        if not errors:
+            behavior_defs = {str(item["id"]): item for item in self.store.repositories.entities.get_definitions("bt_def")}
+            behavior_defs[definition_id] = definition
+            try:
+                plan = compile_behavior_plan(definition_id, behavior_defs, action_defs)
+            except ValueError as error:
+                errors.append(str(error))
         stock_operation = False
         travels_before_stock = False
         for _action, effect in iter_behavior_effects(definition, action_defs):
@@ -514,11 +523,9 @@ class DefinitionValidationMixin:
             )
         if not operation:
             social_parameters = {"based_on_event", "violation_id"}
-            for node in definition["nodes"]:
-                if not isinstance(node, dict) or str(node.get("type") or "") != "action":
-                    continue
-                action = action_defs.get(str(node.get("action_id") or ""))
-                parameters = action.get("parameters") if isinstance(action, dict) and isinstance(action.get("parameters"), dict) else {}
+            for step in plan:
+                action = step.get("definition_snapshot") or {}
+                parameters = action.get("parameters") or {}
                 if social_parameters & set(parameters):
                     errors.append(
                         "behavior requires authorization_operation because its Action declares "
@@ -736,17 +743,33 @@ class BehaviorNodeNormalizer:
             return None
         node_copy = copy.deepcopy(node)
         node_type = str(node_copy.get("type") or "action")
+        node_copy["type"] = node_type
         if node_type == "action":
             self._normalize_action_node(node_copy, path)
         elif node_type in {"behavior", "subtree"}:
             self._normalize_behavior_reference(node_copy, path)
         elif node_type == "condition":
             predicate = node_copy.get("expression")
-            if error := condition_syntax_error(predicate):
+            if not isinstance(predicate, str) or not predicate.strip():
+                self.errors.append(f"behavior {path}.expression is required")
+            elif error := condition_syntax_error(predicate):
                 self.errors.append(f"behavior {path}.expression has invalid expression: {error}")
-        elif node_type not in {"sequence", "selector", "parallel", "wait"}:
+            else:
+                for reference in self.service.conditions.unknown_paths(predicate):
+                    self.errors.append(f"behavior {path}.expression uses an unsupported condition path: {reference}")
+        elif node_type == "wait":
+            try:
+                wait_minutes(node_copy)
+            except ValueError as error:
+                self.errors.append(f"behavior {path}: {error}")
+        elif node_type not in {"sequence", "selector", "parallel"}:
             self.errors.append(f"unsupported behavior node type: {node_type}")
-        self._normalize_children(node_copy, path, depth)
+        if node_type in {"sequence", "selector", "parallel"}:
+            if not node_copy.get("children"):
+                self.errors.append(f"behavior {path} {node_type} requires children")
+            self._normalize_children(node_copy, path, depth)
+        elif "children" in node_copy:
+            self.errors.append(f"behavior {path} {node_type} does not accept children")
         return node_copy
 
     def _normalize_action_node(self, node_copy: dict[str, Any], path: str) -> None:

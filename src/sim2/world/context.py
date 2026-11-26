@@ -19,6 +19,21 @@ def calendar_context(store: Any, minute: int | None = None) -> dict[str, Any]:
     return {"day_phase": clock["day_phase"], "calendar_day": clock["day"], "minute_of_day": clock["minute_of_day"]}
 
 
+def conflict_context(store: Any, actor_id: str, participants: list[dict[str, Any]]) -> dict[str, Any]:
+    rules = store.repositories.metadata.get("rules", {}) or {}
+    conflict_types = {str(item) for item in (rules.get("conflict_relation_types", ["conflict"]) or [])}
+    participant_ids = {str(item.get("id")) for item in participants}
+    for relation in store.repositories.entities.get_related_relationships(actor_id, limit=50):
+        if str(relation.get("person")) not in participant_ids or str(relation.get("relation")) not in conflict_types:
+            continue
+        try:
+            if float(relation.get("relation_strength", relation.get("value", 0)) or 0) < 0:
+                return {"conflict": {"available": True}}
+        except (TypeError, ValueError):
+            continue
+    return {"conflict": {"available": False}}
+
+
 def action_condition_context(
     store: Any, agent: dict[str, Any], parameters: dict[str, Any],
     target: dict[str, Any] | None, *, canonical_id: Callable[[str], str | None],
@@ -83,8 +98,9 @@ def action_condition_context(
         })
     context.update(configured_context_values(store.repositories.metadata.get("rules", {}) or {}, agent))
     context.update(calendar_context(store, minute))
+    context["last_action_result"] = state.get("last_action_result")
     for key, value in parameters.items():
-        if isinstance(value, (str, int, float)) and not isinstance(value, bool):
+        if isinstance(value, (str, int, float)):
             context.setdefault(str(key), value)
     return context
 

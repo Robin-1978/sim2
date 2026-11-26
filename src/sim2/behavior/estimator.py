@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from .plan import wait_minutes
+
 
 class BehaviorDurationEstimator:
     """Calculate BT duration from registered Actions and control flow."""
@@ -30,25 +32,31 @@ class BehaviorDurationEstimator:
     def behavior_minutes(self, behavior_id: str, parameters: dict[str, Any] | None = None, origin: str | None = None) -> int:
         behavior = self.behaviors.get(behavior_id) or {}
         no_op_minutes = max(0, int(behavior.get("no_op_travel_minutes", 1) or 0))
-        return max(1, self._nodes_minutes(behavior.get("nodes", []), dict(parameters or {}), origin, set(), no_op_minutes))
+        return max(1, self._nodes_minutes(behavior.get("nodes", []), dict(parameters or {}), origin, {behavior_id}, no_op_minutes))
 
     def _nodes_minutes(self, nodes: list[dict[str, Any]], parameters: dict[str, Any], origin: str | None, stack: set[str], no_op_minutes: int = 1, elapsed_minutes: int = 0) -> int:
         total = 0
         for node in nodes or []:
+            if isinstance(node, str):
+                node = {"type": "behavior", "behavior_id": node}
             node_type = node.get("type")
             if node_type == "action":
                 action = self.actions.get(str(node.get("action_id")), {})
                 values = self._resolve(dict(node.get("parameters") or {}), parameters)
                 total += self._action_minutes(action, values, origin, no_op_minutes, elapsed_minutes=elapsed_minutes + total)
+            elif node_type == "wait":
+                total += wait_minutes(node)
+            elif node_type in {"behavior", "subtree"}:
+                nested_id = str(node.get("behavior_id"))
+                if nested_id not in stack:
+                    nested = self.behaviors.get(nested_id) or {}
+                    total += self._nodes_minutes(nested.get("nodes", []), parameters, origin, stack | {nested_id}, no_op_minutes, elapsed_minutes + total)
             elif node_type in {"selector", "parallel"}:
                 children = node.get("children", []) or []
-                durations = []
-                for child in children:
-                    if isinstance(child, str) and child not in stack:
-                        durations.append(self._nodes_minutes((self.behaviors.get(child) or {}).get("nodes", []), parameters, origin, stack | {child}, no_op_minutes, elapsed_minutes + total))
-                    elif isinstance(child, dict):
-                        durations.append(self._nodes_minutes([child], parameters, origin, stack, no_op_minutes, elapsed_minutes + total))
-                total += max(durations, default=0)
+                total += max(
+                    (self._nodes_minutes([child], parameters, origin, stack, no_op_minutes, elapsed_minutes + total) for child in children),
+                    default=0,
+                )
             elif node_type in {"sequence", "root"}:
                 total += self._nodes_minutes(node.get("children", []) or [], parameters, origin, stack, no_op_minutes, elapsed_minutes + total)
         return total

@@ -8,6 +8,7 @@ from functools import partial
 from typing import Any
 
 from ..behavior.estimator import BehaviorDurationEstimator
+from ..behavior.plan import compile_behavior_plan
 from ..behavior.recovery import failure_block_recovered
 from ..world.navigation import (
     configured_location_tags,
@@ -22,7 +23,7 @@ from ..world.authorization import authorization_for_behavior
 from ..actions.catalogs import catalog_entries, entry_cost_available, entry_location, entry_resource_available
 from ..world.bindings import iter_behavior_actions, resolve_behavior_effect
 from ..world.contested import resource_take_effect
-from ..world.context import calendar_context, configured_context_values
+from ..world.context import action_condition_context, calendar_context, configured_context_values
 from ..world.time import day_phase_duration
 from .action_text import action_view, label, predicate_text
 from .decision_frame import DecisionFrame, Guidance, Simulation
@@ -343,17 +344,72 @@ class BehaviorViewMixin:
         """Replay every step against a copy of the agent so later steps see earlier effects."""
 
         sim = Simulation(agent=copy.deepcopy(frame.agent), location=dict(frame.current_location))
+        simulated_state = sim.agent.setdefault("initial_state", {})
+        simulated_state.pop("last_action_result", None)
         frame.estimator.capabilities = sim.agent.get("capabilities", {}) or {}
-        for node in self._iter_behavior_actions(bt_id):
-            if not self._simulate_action(frame, sim, node, behavior_context):
+        try:
+            plan = compile_behavior_plan(bt_id, frame.bt_defs, frame.action_defs)
+        except ValueError as error:
+            frame.diagnostics.append({"behavior_id": bt_id, "failed": [str(error)]})
+            return None
+
+        index = 0
+        condition_checked = False
+        while index < len(plan):
+            node = plan[index]
+            kind = node.get("type")
+            if kind == "jump":
+                index = node["to"]
+                continue
+            if kind == "condition" and sim.elapsed_minutes:
+                # A future condition may depend on effects or rules that the
+                # real world will settle after this available prefix.
                 break
+            if kind == "condition":
+                expression = str(node.get("expression") or "").strip()
+                if not self._preview_behavior_condition(frame, sim, behavior_context, expression):
+                    sim.unavailable = True
+                    sim.unavailable_action = "condition"
+                    sim.unavailable_reason = expression
+                else:
+                    condition_checked = True
+            elif kind == "wait":
+                minutes = node["definition_snapshot"]["duration"]["minutes"]
+                sim.steps.append(label("wait"))
+                sim.elapsed_minutes += minutes
+            else:
+                self._simulate_action(frame, sim, node, behavior_context)
+            if sim.unavailable:
+                if "on_failure" not in node:
+                    break
+                sim.unavailable = False
+                simulated_state.pop("last_action_result", None)
+                index = node["on_failure"]
+            else:
+                index += 1
         if sim.unavailable:
             frame.diagnostics.append({"behavior_id": bt_id, "failed": [f"Action {sim.unavailable_action} cannot start: {sim.unavailable_reason}"]})
             return None
         if not sim.steps:
-            frame.diagnostics.append({"behavior_id": bt_id, "failed": ["behavior has no executable Action steps"]})
-            return None
+            if not condition_checked:
+                frame.diagnostics.append({"behavior_id": bt_id, "failed": ["behavior has no executable Action steps"]})
+                return None
+            sim.steps.append("Check condition")
         return sim
+
+    def _preview_behavior_condition(
+        self, frame: DecisionFrame, sim: Simulation, parameters: dict[str, Any], expression: str,
+    ) -> bool:
+        target = frame.validation_target
+        context = action_condition_context(
+            self.store, sim.agent, parameters, target, canonical_id=self.targets.canonical_id,
+            recent_event_types=self._recent_event_types(), location=sim.location,
+        )
+        context.update(self._interaction_context(sim.agent, frame.participants))
+        return bool(expression) and self.conditions.evaluate(
+            expression, agent=sim.agent, target={**parameters, **(target or {})},
+            context=context, world=self.store.repositories.metadata.get("world_properties", {}) or {},
+        )
 
     def _simulate_action(self, frame: DecisionFrame, sim: Simulation, node: dict[str, Any], behavior_context: dict[str, Any]) -> bool:
         """Apply one Action step to the simulation; False when that Action cannot start."""
@@ -378,6 +434,7 @@ class BehaviorViewMixin:
             and action.get("completion", {}).get("if_already_at_destination")
             and parameters.get("location_id") == simulated_state.get("location_id")
         ):
+            simulated_state["last_action_result"] = (action.get("success") or {}).get("result", "completed")
             return True
         action_minutes = estimator._action_minutes(action, parameters, simulated_state.get("location_id"), elapsed_minutes=sim.elapsed_minutes)
         unavailable_reason = self._action_unavailable_reason(simulated_agent, action, parameters, simulated_location, action_minutes)
@@ -909,13 +966,7 @@ class BehaviorViewMixin:
                     if nested_id not in branch_seen:
                         nested = definitions.get(nested_id) or {}
                         yield from visit(nested.get("nodes", []) or [], branch_seen | {nested_id})
-                elif node_type in {"sequence", "parallel", "root"}:
+                elif node_type in {"sequence", "parallel", "root", "selector"}:
                     yield from visit(node.get("children", []) or [], branch_seen)
-                elif node_type == "selector":
-                    # Match Platform's deterministic first-branch behavior
-                    # until conditional selector evaluation is configured.
-                    children = node.get("children", []) or []
-                    if children:
-                        yield from visit([children[0]], branch_seen)
 
         yield from visit(behavior.get("nodes", []) or [], seen)

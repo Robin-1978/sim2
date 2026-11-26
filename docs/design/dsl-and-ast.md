@@ -37,10 +37,41 @@ Action 的预览、单步启动、并行启动和结算共享条件投影。日�
 
 ## 行为实例和版本
 
-接纳行为时，实例保存选中的 Action 序列、Action 定义、配方和行为定义。
+接纳行为时，实例保存完整的执行计划、各分支的 Action 定义、配方和行为定义。
 行为的结束效果、事件和事实来自实例保存的定义。升级旧包前，会把仍在
 运行或暂停的旧实例补上当时注册的定义。升级之后新建的行为读取新版定义。
 世界状态和当前规则仍随世界推进。
 
-行为树当前展开为可执行 Action 序列，选择节点延续已有的分支规则。条件节点的
-完整树执行语义仍属于独立的行为树演进工作。
+## 行为树流程控制
+
+`sequence` 依次执行子节点。`condition` 在到达节点时检查当时的角色、目标和世界
+状态，可以通过 `context.last_action_result` 读取本次行为最近一次成功结算的 Action
+结果。`wait` 用正整数 `minutes` 指定等待时长，暂停与重开存档保留剩余时间。
+
+```yaml
+nodes:
+  - type: selector
+    children:
+      - type: sequence
+        children:
+          - {type: condition, expression: "world.route_open == 1"}
+          - {type: action, action_id: depart}
+      - type: sequence
+        children:
+          - {type: wait, minutes: 3}
+          - {type: condition, expression: "world.route_open == 1"}
+          - {type: action, action_id: depart}
+```
+
+`selector` 按配置顺序尝试子分支。任一子分支成功即结束选择。条件失败或 Action
+无法启动时，可以在当前分钟尝试后备分支。消耗过时间的 Action 结算失败时，后备
+分支从下一分钟开始。失败的 Action 退回未消耗的预留资源，已经结算的其他 Action
+继续保留效果。决策视图会检查当前可以开始的分支，后续条件由实际运行时校验。
+
+`parallel` 同时启动组内 Action 和等待节点，可作为选择器的一个分支。条件和
+选择节点应放在并行组之前或之后；配置校验会报告组内的条件和选择。
+授权操作通过 `entry_conditions` 设置条件。
+
+旧的执行实例沿用其已保存的 Action 序列。雾溪村 0.1.1 的调解条件使用实际的对话
+记录，研究条件接受分次推进与完成的结果。用 `scripts/upgrade_instance.py` 把新版本
+应用到已有村庄存档后，新开启的行为使用这些条件。

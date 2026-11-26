@@ -82,7 +82,7 @@ behavior_trees:
   definition_source: config
   kind: base
 - id: mediate_conflict
-  version: 1
+  version: 2
   scope: personal
   entry_conditions:
   - conflict.available
@@ -91,7 +91,7 @@ behavior_trees:
   agent_parameters:
     topic: {type: string, required: true, max_length: 120, description: The concrete dispute being mediated.}
     message: {type: string, required: true, max_length: 1000, description: The opening mediation statement delivered to the selected participant.}
-  success_results: [conflict_resolved, relationship_repaired]
+  success_results: [dialogue_recorded]
   failure_results: [conflict_escalated, participant_refused]
   outcome_effects:
   - {type: relationship_delta, relation: trust, delta: 0.04}
@@ -114,7 +114,7 @@ behavior_trees:
       topic: context.topic
       message: context.message
   - type: condition
-    expression: conflict.resolved
+    expression: context.last_action_result == 'dialogue_recorded'
   definition_source: config
   kind: base
 - id: inspect_granary
@@ -461,7 +461,7 @@ behavior_trees:
   definition_source: config
   kind: base
 - id: research_source
-  version: 1
+  version: 2
   scope: root_keepers
   description: Research one configured source and advance its next open research stage.
   no_op_travel_minutes: 0
@@ -500,7 +500,7 @@ behavior_trees:
     parameters:
       source_id: context.source_id
   - type: condition
-    expression: research.new_fact_found
+    expression: context.last_action_result in ['research_progressed', 'research_completed']
   definition_source: config
   kind: base
 - id: inspect_object

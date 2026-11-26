@@ -5,7 +5,7 @@ import json
 from typing import Any
 from uuid import uuid4
 
-from ..world.context import action_condition_context, calendar_context
+from ..world.context import action_condition_context, calendar_context, conflict_context
 from ..world.definition_compiler import condition_syntax_error
 from ..world.execution_recipes import execution_recipe, pin_execution_recipe
 from ..world.lifecycle import trim_unlocked_behaviors, unlocked_behavior_limit
@@ -224,7 +224,7 @@ class ActivityRuntimeMixin:
             }
         return {}
 
-    def _progress_parallel_group(self, agent: dict[str, Any], execution_id: str, behavior_id: str, bt_data: dict[str, Any], index: int, minute: int) -> None:
+    def _progress_parallel_group(self, agent: dict[str, Any], execution_id: str, behavior_id: str, bt_data: dict[str, Any], index: int, minute: int) -> bool:
         state = dict(agent.get("initial_state") or {})
         actions = bt_data["actions"]
         group = actions[index].get("parallel_group")
@@ -239,15 +239,14 @@ class ActivityRuntimeMixin:
             for item_index, item in group_items:
                 info, error = self._prepare_parallel_action(agent, item, bt_data, minute)
                 if error:
-                    self._finish_behavior(agent, execution_id, behavior_id, "failed", error, minute)
-                    return
+                    return self._fail_behavior_step(agent, execution_id, behavior_id, actions[index], error, minute)
                 prepared.append((item_index, item, info or {}))
-            for item_index, item, info in prepared:
-                action = info["action"]
-                if not info.get("no_op"):
-                    self._context.services["execution"].reserve_action_costs(agent, action, info["parameters"])
+            error = self._reserve_parallel_group(agent, [info for _, _, info in prepared])
+            if error:
+                return self._fail_behavior_step(agent, execution_id, behavior_id, actions[index], error, minute)
             active = {}
             for item_index, item, info in prepared:
+                action = info["action"]
                 action_id = item["action_id"]
                 action_instance_id = f"{execution_id}:parallel:{item_index}"
                 active[str(item_index)] = {
@@ -275,19 +274,19 @@ class ActivityRuntimeMixin:
                 continue
             action = self._action_definition(entry)
             if not action:
-                self._finish_behavior(agent, execution_id, behavior_id, "failed", f"action is not registered: {entry['action_id']}", minute)
-                return
+                self._fail_behavior_step(agent, execution_id, behavior_id, actions[index], f"action is not registered: {entry['action_id']}", minute)
+                return False
             action = pin_execution_recipe(self.store, action, entry["parameters"], bt_data)
             if not entry.get("no_op"):
                 self._context.services["execution"].apply_action_progress(agent, action)
-            entry["remaining"] = max(0, int(entry["remaining"]) - 1)
-            elapsed = int(entry["duration"]) - int(entry["remaining"])
-            self.store.repositories.activity.update_action_instance(entry["action_instance_id"], status="succeeded" if entry["remaining"] == 0 else "running", elapsed_minutes=elapsed, remaining_minutes=entry["remaining"], data={"parameters": entry["parameters"], "target": entry["target"], "reservation": entry.get("reservation", []), "parallel_group": group, "no_op": bool(entry.get("no_op")), "definition_version": int(entry.get("definition_version", action.get("definition_version", action.get("version", 1))) or 1), "definition_snapshot": entry.get("definition_snapshot") or copy.deepcopy(action)}, updated_minute=minute)
-            if entry["remaining"] == 0:
+            remaining = max(0, int(entry["remaining"]) - 1)
+            elapsed = int(entry["duration"]) - remaining
+            self.store.repositories.activity.update_action_instance(entry["action_instance_id"], status="succeeded" if remaining == 0 else "running", elapsed_minutes=elapsed, remaining_minutes=remaining, data={"parameters": entry["parameters"], "target": entry["target"], "reservation": entry.get("reservation", []), "parallel_group": group, "no_op": bool(entry.get("no_op")), "definition_version": int(entry.get("definition_version", action.get("definition_version", action.get("version", 1))) or 1), "definition_snapshot": entry.get("definition_snapshot") or copy.deepcopy(action)}, updated_minute=minute)
+            if remaining == 0:
                 failure = self._action_failure_reason(agent, action, entry["parameters"], entry.get("target"), minute)
                 if failure:
-                    self._finish_behavior(agent, execution_id, behavior_id, "failed", failure, minute)
-                    return
+                    self._fail_behavior_step(agent, execution_id, behavior_id, actions[index], failure, minute)
+                    return False
                 success_failure, information_result = self._complete_action_effects(
                     agent,
                     action,
@@ -297,34 +296,49 @@ class ActivityRuntimeMixin:
                     reservations=entry.get("reservation") or [],
                 )
                 if success_failure:
-                    self._finish_behavior(agent, execution_id, behavior_id, "failed", success_failure, minute)
-                    return
+                    self._fail_behavior_step(agent, execution_id, behavior_id, actions[index], success_failure, minute)
+                    return False
                 action_result = str((information_result or {}).get("result") or action.get("success", {}).get("result", "completed"))
                 state = dict(agent.get("initial_state") or {})
                 state["last_action_result"] = action_result
                 agent["initial_state"] = state
                 self._context.services["events"].append("action.completed", agent["id"], minute, {"execution_id": execution_id, "action_id": entry["action_id"], "parallel_group": group, "result": action_result})
                 completed_count += 1
+            entry["remaining"] = remaining
         remaining_values = [int(entry["remaining"]) for entry in active.values()]
         state = dict(agent.get("initial_state") or {})
         state["active_parallel_actions"] = active
         state["remaining_minutes"] = max(remaining_values or [0])
         state["action_progress"] = round(min(1 - int(entry["remaining"]) / max(1, int(entry["duration"])) for entry in active.values()), 4) if active else 1.0
         if completed_count == len(active):
-            state["active_parallel_actions"] = {}
-            state["active_action"] = None
-            state["active_action_index"] = index + len(group_items)
-            state["remaining_minutes"] = 0
+            self._clear_active_action(state)
             state["action_progress"] = 1.0
             agent["initial_state"] = state
-            self.store.repositories.activity.update_bt_instance(execution_id, status="executing", current_node=index + len(group_items), updated_minute=minute)
-            if index + len(group_items) >= len(actions):
-                self._finish_behavior(agent, execution_id, behavior_id, "completed", "behavior_completed", minute)
-            else:
-                self.store.repositories.entities.update_agent(agent["id"], agent)
+            self._continue_behavior_after_step(agent, execution_id, behavior_id, actions, index + len(group_items), minute)
         else:
             agent["initial_state"] = state
+            self.store.repositories.activity.update_bt_instance(execution_id, status="executing", current_node=index, updated_minute=minute)
             self.store.repositories.entities.update_agent(agent["id"], agent)
+        return False
+
+    def _reserve_parallel_group(self, agent: dict[str, Any], prepared: list[dict[str, Any]]) -> str:
+        """Reserve all concurrent costs before any Action in the group starts."""
+
+        savepoint = f"parallel_reserve_{uuid4().hex}"
+        self.store.connection.execute(f"SAVEPOINT {savepoint}")
+        staged_agent = copy.deepcopy(agent)
+        for info in prepared:
+            if info["no_op"]:
+                continue
+            allowed, reason, reservation = self.resources.reserve(staged_agent, info["action"], info["parameters"])
+            if not allowed:
+                self.store.connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                self.store.connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+                return reason
+            info["reservation"] = reservation
+        self.store.connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+        agent["inventory"] = staged_agent.get("inventory") or {}
+        return ""
 
     def progress_agent(self, agent: dict[str, Any], minute: int) -> None:
         state = dict(agent.get("initial_state") or {})
@@ -344,24 +358,105 @@ class ActivityRuntimeMixin:
         bt_data = json.loads(bt_rows["data_json"])
         actions = bt_data.get("actions", [])
         index = int(state.get("active_action_index", bt_rows["current_node"] or 0))
-        if index >= len(actions):
-            self._finish_behavior(agent, execution_id, behavior_id, "completed", "behavior_completed", minute)
-            return
-        if actions[index].get("parallel_group"):
-            self._progress_parallel_group(agent, execution_id, behavior_id, bt_data, index, minute)
-            return
-        if not state.get("active_action"):
-            started, reason = self._start_action(agent, execution_id, actions[index], bt_data, minute)
-            if not started:
-                self._finish_behavior(agent, execution_id, behavior_id, "failed", reason, minute)
+        while True:
+            index = self._advance_behavior_controls(agent, execution_id, behavior_id, actions, index, minute)
+            if index is None:
                 return
-            state = dict(agent.get("initial_state") or {})
+            step = actions[index]
+            if step.get("parallel_group"):
+                if not self._progress_parallel_group(agent, execution_id, behavior_id, bt_data, index, minute):
+                    return
+            elif not self._progress_single_action(agent, execution_id, behavior_id, bt_data, index, minute):
+                return
+            index = agent["initial_state"]["active_action_index"]
+
+    def _advance_behavior_controls(
+        self, agent: dict[str, Any], execution_id: str, behavior_id: str,
+        actions: list[dict[str, Any]], index: int, minute: int,
+    ) -> int | None:
+        state = agent["initial_state"]
+        while index < len(actions):
+            state["active_action_index"] = index
+            step = actions[index]
+            if step.get("type") == "jump":
+                index = step["to"]
+            elif step.get("type") == "condition":
+                expression = str(step.get("expression") or "").strip()
+                parameters = state.get("active_parameters") or {}
+                target, _ = self.targets.resolve(agent, parameters)
+                context = self._action_condition_context(agent, {}, parameters, target, minute)
+                context.update(conflict_context(self.store, agent["id"], self.targets.visible_agents(agent)))
+                if expression and self.conditions.evaluate(
+                    expression, agent=agent, target={**parameters, **(target or {})},
+                    context=context, world=self.store.repositories.metadata.get("world_properties", {}) or {},
+                ):
+                    index += 1
+                elif self._fail_behavior_step(agent, execution_id, behavior_id, step, f"condition failed: {expression}", minute):
+                    state = agent["initial_state"]
+                    index = state["active_action_index"]
+                else:
+                    return None
+            else:
+                return index
+        state["active_action_index"] = index
+        self._finish_behavior(agent, execution_id, behavior_id, "completed", "behavior_completed", minute)
+        return None
+
+    def _continue_behavior_after_step(
+        self, agent: dict[str, Any], execution_id: str, behavior_id: str,
+        actions: list[dict[str, Any]], index: int, minute: int,
+    ) -> None:
+        index = self._advance_behavior_controls(agent, execution_id, behavior_id, actions, index, minute)
+        if index is not None:
+            self.store.repositories.activity.update_bt_instance(
+                execution_id, status="executing", current_node=index, updated_minute=minute,
+            )
+            self.store.repositories.entities.update_agent(agent["id"], agent)
+
+    @staticmethod
+    def _clear_active_action(state: dict[str, Any]) -> None:
+        state.update({
+            "active_action": None, "active_action_instance": None, "active_parallel_actions": {},
+            "active_action_duration": 0, "active_action_parameters": {}, "active_action_reservation": [],
+            "active_action_noop": False, "active_action_definition_version": 0, "active_action_definition": None,
+            "remaining_minutes": 0,
+        })
+
+    def _fail_behavior_step(
+        self, agent: dict[str, Any], execution_id: str, behavior_id: str,
+        step: dict[str, Any], reason: str, minute: int,
+    ) -> bool:
+        fallback = step.get("on_failure")
+        if fallback is None:
+            self._finish_behavior(agent, execution_id, behavior_id, "failed", reason, minute)
+            return False
+        self._fail_active_actions(agent, minute)
+        state = agent["initial_state"]
+        self._clear_active_action(state)
+        state.update({"active_action_index": fallback, "action_progress": 0.0, "last_action_result": None})
+        self.store.repositories.activity.update_bt_instance(
+            execution_id, status="executing", current_node=fallback, updated_minute=minute,
+        )
+        self.store.repositories.entities.update_agent(agent["id"], agent)
+        return True
+
+    def _progress_single_action(
+        self, agent: dict[str, Any], execution_id: str, behavior_id: str,
+        bt_data: dict[str, Any], index: int, minute: int,
+    ) -> bool:
+        actions = bt_data["actions"]
+        step = actions[index]
+        state = agent["initial_state"]
+        if not state.get("active_action"):
+            started, reason = self._start_action(agent, execution_id, step, bt_data, minute)
+            if not started:
+                return self._fail_behavior_step(agent, execution_id, behavior_id, step, reason, minute)
+            state = agent["initial_state"]
         action_id = state.get("active_action")
         # An already-running step may hold an older snapshot than its legacy plan.
-        action = state.get("active_action_definition") or self._action_definition(actions[index])
+        action = state.get("active_action_definition") or self._action_definition(step)
         if not action:
-            self._finish_behavior(agent, execution_id, behavior_id, "failed", "action_missing", minute)
-            return
+            return self._fail_behavior_step(agent, execution_id, behavior_id, step, "action_missing", minute)
         state = dict(agent.get("initial_state") or {})
         action = pin_execution_recipe(self.store, action, state.get("active_action_parameters") or {}, bt_data)
         # An idempotent destination Action still completes at this tick, but
@@ -383,13 +478,13 @@ class ActivityRuntimeMixin:
         if remaining > 0:
             self.store.repositories.activity.update_bt_instance(execution_id, status="executing", current_node=index, updated_minute=minute)
             self.store.repositories.entities.update_agent(agent["id"], agent)
-            return
+            return False
         action_parameters = state.get("active_action_parameters", {})
         completed_noop = bool(state.get("active_action_noop"))
         failure = self._action_failure_reason(agent, action, action_parameters, self.targets.resolve(agent, action_parameters)[0], minute)
         if failure:
-            self._finish_behavior(agent, execution_id, behavior_id, "failed", failure, minute)
-            return
+            self._fail_behavior_step(agent, execution_id, behavior_id, step, failure, minute)
+            return False
         resolved_target = self.targets.resolve(agent, action_parameters)[0]
         success_failure, information_result = self._complete_action_effects(
             agent,
@@ -400,8 +495,8 @@ class ActivityRuntimeMixin:
             reservations=state.get("active_action_reservation") or [],
         )
         if success_failure:
-            self._finish_behavior(agent, execution_id, behavior_id, "failed", success_failure, minute)
-            return
+            self._fail_behavior_step(agent, execution_id, behavior_id, step, success_failure, minute)
+            return False
         self._record_declared_capability_evidence(agent, action, action_parameters, minute)
         action_result = str((information_result or {}).get("result") or action.get("success", {}).get("result", "completed"))
         state = dict(agent.get("initial_state") or {})
@@ -411,30 +506,15 @@ class ActivityRuntimeMixin:
         # Effects may update location, health, inventory or needs; retain that
         # projection before clearing the completed action fields.
         state = dict(agent.get("initial_state") or {})
+        self._clear_active_action(state)
         state["active_action_index"] = index + 1
-        state["active_action"] = None
-        state["active_action_instance"] = None
-        state["active_action_duration"] = 0
-        state["active_action_parameters"] = {}
-        state["active_action_reservation"] = []
-        state["active_action_noop"] = False
-        state["active_action_duration"] = 0
-        state["active_action_definition_version"] = 0
-        state["active_action_definition"] = None
         state["action_progress"] = 1.0
         agent["initial_state"] = state
-        self.store.repositories.activity.update_bt_instance(execution_id, status="executing", current_node=index + 1, updated_minute=minute)
-        if index + 1 >= len(actions):
-            self._finish_behavior(agent, execution_id, behavior_id, "completed", "behavior_completed", minute)
-        elif completed_noop:
-            # A travel/action node that is already satisfied completes in the
-            # current tick. Continue the sequence immediately so a
-            # co-located generic research source does not add a phantom idle
-            # minute before the actual work begins.
+        if completed_noop:
             self.store.repositories.entities.update_agent(agent["id"], agent)
-            self.progress_agent(agent, minute)
-        else:
-            self.store.repositories.entities.update_agent(agent["id"], agent)
+            return True
+        self._continue_behavior_after_step(agent, execution_id, behavior_id, actions, index + 1, minute)
+        return False
 
     def _record_declared_capability_evidence(
         self,
@@ -1142,7 +1222,9 @@ class ActivityRuntimeMixin:
         if source_id:
             source_id = str(source_id)
             progress = self._advance_information_progress(agent, action, parameters, minute)
-            if progress is None or progress["completed"]:
+            if progress is not None and not progress["completed"]:
+                result = {"result": "research_progressed", "progress": progress}
+            else:
                 discovery = (progress or {}).get("discovery") if isinstance(progress, dict) else None
                 if discovery is None:
                     candidates = [item for item in self.store.repositories.memory.research_discoveries(source_id) if str(item.get("id") or "") not in {str(row.get("fact_key")) for row in self.store.repositories.memory.list_knowledge_facts(agent["id"], limit=1000)}]
@@ -1167,10 +1249,7 @@ class ActivityRuntimeMixin:
                         )
                         result = {"result": "research_completed", "event_id": event_id, "progress": progress}
                     elif progress is not None:
-                        result = {
-                            "result": "research_completed" if progress["completed"] else "research_progressed",
-                            "progress": progress,
-                        }
+                        result = {"result": "research_completed", "progress": progress}
         object_id = parameters.get("object_id") or information.get("object_parameter") and parameters.get(information["object_parameter"])
         # An information channel is an observation by default. Recovery is a
         # stronger world fact and must be explicitly declared by the Action;
@@ -1342,6 +1421,25 @@ class ActivityRuntimeMixin:
         self._finish_behavior(agent, str(execution_id), str(behavior_id), "failed", reason, minute)
         return True
 
+    def _fail_active_actions(self, agent: dict[str, Any], minute: int) -> None:
+        state = agent.get("initial_state") or {}
+        reservations = list(state.get("active_action_reservation") or [])
+        action_ids = [state["active_action_instance"]] if state.get("active_action_instance") else []
+        for entry in (state.get("active_parallel_actions") or {}).values():
+            if int(entry["remaining"]) > 0:
+                reservations.extend(entry.get("reservation") or [])
+                action_ids.append(entry["action_instance_id"])
+        self.resources.release(agent, reservations)
+        for action_id in action_ids:
+            row = self.store.connection.execute(
+                "SELECT elapsed_minutes,remaining_minutes,data_json FROM action_instance WHERE action_instance_id=?", (action_id,),
+            ).fetchone()
+            if row is not None:
+                self.store.repositories.activity.update_action_instance(
+                    action_id, status="failed", elapsed_minutes=row["elapsed_minutes"],
+                    remaining_minutes=row["remaining_minutes"], data=json.loads(row["data_json"]), updated_minute=minute,
+                )
+
     def _finish_behavior(self, agent: dict[str, Any], execution_id: str, behavior_id: str, status: str, result: str, minute: int) -> None:
         state = dict(agent.get("initial_state") or {})
         bt_row = self.store.connection.execute("SELECT data_json FROM bt_instance WHERE execution_id=?", (execution_id,)).fetchone()
@@ -1359,10 +1457,7 @@ class ActivityRuntimeMixin:
                 status, result = "failed", failure
             state = dict(agent.get("initial_state") or {})
         if status != "completed":
-            reservations = list(state.get("active_action_reservation") or [])
-            for item in (state.get("active_parallel_actions") or {}).values():
-                reservations.extend(item.get("reservation", []) or [])
-            self.resources.release(agent, reservations)
+            self._fail_active_actions(agent, minute)
         after = self._context.services["execution"].execution_snapshot(agent)
         outcome = {
             "status": status,
@@ -1401,23 +1496,6 @@ class ActivityRuntimeMixin:
                 self._context.services["events"].append("world.rule.followed", agent["id"], minute, followup)
         if rule_followups:
             outcome["rule_followups"] = rule_followups
-        action_instance_id = state.get("active_action_instance")
-        if action_instance_id and status != "completed":
-            action_row = self.store.connection.execute("SELECT elapsed_minutes,remaining_minutes,data_json FROM action_instance WHERE action_instance_id=?", (action_instance_id,)).fetchone()
-            if action_row is not None:
-                self.store.repositories.activity.update_action_instance(
-                    action_instance_id,
-                    status="failed",
-                    elapsed_minutes=action_row["elapsed_minutes"],
-                    remaining_minutes=action_row["remaining_minutes"],
-                    data=json.loads(action_row["data_json"]),
-                    updated_minute=minute,
-                )
-        if status != "completed":
-            for entry in (state.get("active_parallel_actions") or {}).values():
-                action_row = self.store.connection.execute("SELECT elapsed_minutes,remaining_minutes,data_json FROM action_instance WHERE action_instance_id=?", (entry.get("action_instance_id"),)).fetchone()
-                if action_row is not None and action_row["remaining_minutes"] > 0:
-                    self.store.repositories.activity.update_action_instance(entry["action_instance_id"], status="failed", elapsed_minutes=action_row["elapsed_minutes"], remaining_minutes=action_row["remaining_minutes"], data=json.loads(action_row["data_json"]), updated_minute=minute)
         if status == "completed":
             for configured in behavior_definition.get("outcome_events", []) or []:
                 if not isinstance(configured, dict):
@@ -1529,10 +1607,7 @@ class ActivityRuntimeMixin:
         state.pop("active_resource_take", None)
         state["active_bt_instance"] = None
         state["active_behavior_id"] = None
-        state["active_action"] = None
-        state["active_action_instance"] = None
-        state["active_parallel_actions"] = {}
-        state["remaining_minutes"] = 0
+        self._clear_active_action(state)
         state["last_platform_result"] = {"status": status, "behavior_ref": f"behavior:{behavior_id}", "result": result, "outcome": outcome}
         state["last_outcome"] = outcome
         agent["initial_state"] = state

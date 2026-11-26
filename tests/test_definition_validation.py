@@ -108,7 +108,7 @@ def test_resource_transfer_must_move_what_the_action_reserved(overrides: dict[st
 
 def test_behavior_node_budget_is_shared_by_the_whole_walk() -> None:
     errors: list[str] = []
-    tree = [{"type": "sequence", "children": [{"type": "wait"}] * 40}]
+    tree = [{"type": "sequence", "children": [{"type": "wait", "minutes": 1}] * 40}]
 
     normalized = BehaviorNodeNormalizer(None, errors, None).normalize_tree(tree)
 
@@ -117,7 +117,7 @@ def test_behavior_node_budget_is_shared_by_the_whole_walk() -> None:
 
 
 def test_behavior_nesting_is_limited_to_eight_levels() -> None:
-    node: dict[str, Any] = {"type": "wait"}
+    node: dict[str, Any] = {"type": "wait", "minutes": 1}
     for _ in range(10):
         node = {"type": "sequence", "children": [node]}
     errors: list[str] = []

@@ -48,6 +48,7 @@ class BehaviorSubmission:
     intent_data: dict[str, Any]
     definitions: dict[str, dict[str, Any]] = field(default_factory=dict)
     behavior: dict[str, Any] = field(default_factory=dict)
+    plan: list[dict[str, Any]] = field(default_factory=list)
     state: dict[str, Any] = field(default_factory=dict)
     runtime_parameters: dict[str, Any] = field(default_factory=dict)
     world_minute: int = 0
@@ -155,6 +156,7 @@ class BehaviorIntentService(PlatformService):
             action = action_defs.get(node.get("action_id"), {})
             allowed.update((action.get("parameters") or {}).keys())
             allowed.update((node.get("parameters") or {}).keys())
+        allowed.update((bt.get("agent_parameters") or {}).keys())
         errors = [f"unknown behavior parameter: {key}" for key in parameters if key not in allowed]
         type_checks = {
             "string": lambda value: isinstance(value, str),
@@ -296,6 +298,10 @@ class BehaviorIntentService(PlatformService):
             rejection = check(submission)
             if rejection is not None:
                 return rejection
+        try:
+            submission.plan = self._context.services["execution"].compile_behavior_actions(submission.behavior_id)
+        except ValueError as error:
+            return {"status": "rejected", "message": str(error), "failed_check": "behavior_plan", "retryable": False}
         submission.remaining_minutes = self._estimate_minutes(submission)
         self._record_revisions(submission)
         return self._check_agent_revision(submission)
@@ -1014,7 +1020,6 @@ class BehaviorIntentService(PlatformService):
 
     def _open_bt_instance(self, submission: BehaviorSubmission, expected: dict[str, Any]) -> None:
         intent = submission.intent
-        actions = self._context.services["execution"].compile_behavior_actions(submission.behavior_id)
         self.store.repositories.activity.put_bt_instance(
             intent.intent_id,
             intent.actor_id,
@@ -1024,9 +1029,9 @@ class BehaviorIntentService(PlatformService):
             {
                 "target": intent.target,
                 "parameters": submission.runtime_parameters,
-                "actions": actions,
+                "actions": submission.plan,
                 "behavior_snapshot": submission.behavior,
-                "recipe_snapshots": recipe_snapshots(self.store, actions, submission.runtime_parameters),
+                "recipe_snapshots": recipe_snapshots(self.store, submission.plan, submission.runtime_parameters),
                 "behavior_version": expected["behavior_version"],
                 "expected": expected,
                 "decision": {"reason": intent.reason, "confidence": intent.confidence},
@@ -1042,8 +1047,11 @@ class BehaviorIntentService(PlatformService):
         state["active_bt_instance"] = intent.intent_id
         state["active_behavior_id"] = submission.behavior_id
         state["active_action"] = None
+        state["active_action_instance"] = None
+        state["active_action_reservation"] = []
         state["remaining_minutes"] = submission.remaining_minutes
         state["active_action_index"] = 0
+        state.pop("last_action_result", None)
         state["active_parameters"] = {**submission.runtime_parameters, **intent.target}
         state["last_platform_result"] = {"status": "accepted", "behavior_ref": intent.behavior_ref}
         submission.agent["initial_state"] = state

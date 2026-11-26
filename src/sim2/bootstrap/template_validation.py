@@ -12,6 +12,7 @@ import re
 from typing import Any
 
 from ..actions.conditions import ConditionEngine
+from ..behavior.plan import compile_behavior_plan, wait_minutes
 from ..world.lifecycle import validate_incapacitation_rule
 from ..dsl.expressions import parse_expression, reference_paths
 from ..world.definition_compiler import EFFECT_TYPES, action_conditions, condition_syntax_error
@@ -26,7 +27,7 @@ COLLECTION_NAMES = (
     "capabilities", "actions", "recipes", "behavior_trees", "relationships",
     "initial_events",
 )
-BEHAVIOR_NODE_TYPES = frozenset({"action", "subtree", "behavior", "sequence", "parallel", "selector", "condition"})
+BEHAVIOR_NODE_TYPES = frozenset({"action", "subtree", "behavior", "sequence", "parallel", "selector", "condition", "wait"})
 # State an agent carries without the world declaring it as an attribute.
 STRUCTURAL_AGENT_STATE = frozenset({"location_id", "status", "injuries", "conditions", "active_bt_instance", "active_action", "remaining_minutes", "action_progress", "current_goal_id", "last_platform_result"})
 
@@ -435,6 +436,7 @@ class _TemplateChecks:
 
     def check_behaviors(self) -> None:
         errors = self.errors
+        definitions = {str(item.get("id")): item for item in self.collections["behavior_trees"]}
         for behavior in self.collections["behavior_trees"]:
             self.check_effect_list(behavior.get("outcome_effects", []), f"behavior {behavior.get('id')}.outcome_effects")
             nodes = behavior.get("nodes", [])
@@ -442,8 +444,14 @@ class _TemplateChecks:
                 errors.append(f"behavior {behavior.get('id')} requires at least one node")
                 continue
             used_action_ids: set[str] = set()
+            previous_errors = len(errors)
             for index, node in enumerate(nodes):
                 self._check_behavior_node(behavior, node, f"nodes[{index}]", used_action_ids)
+            if len(errors) == previous_errors:
+                try:
+                    compile_behavior_plan(str(behavior.get("id")), definitions, {})
+                except ValueError as error:
+                    errors.append(f"behavior {behavior.get('id')}: {error}")
             for condition in behavior.get("entry_conditions", []) or []:
                 self.check_expression(condition, f"behavior {behavior.get('id')} entry condition")
             self._check_outcome_events(behavior, used_action_ids)
@@ -471,10 +479,18 @@ class _TemplateChecks:
                 for index, child in enumerate(children):
                     self._check_behavior_node(behavior, child, f"{path}.children[{index}]", used_action_ids)
         elif node_type == "condition":
-            if not node.get("expression"):
+            expression = node.get("expression")
+            if not isinstance(expression, str) or not expression.strip():
                 errors.append(f"behavior {behavior.get('id')} condition at {path} requires expression")
             else:
-                self.check_expression(node["expression"], f"behavior {behavior.get('id')} {path}.expression", result_contract=True)
+                self.check_expression(expression, f"behavior {behavior.get('id')} {path}.expression")
+        elif node_type == "wait":
+            try:
+                wait_minutes(node)
+            except ValueError as error:
+                errors.append(f"behavior {behavior.get('id')} {path}: {error}")
+        if node_type not in {"sequence", "parallel", "selector"} and "children" in node:
+            errors.append(f"behavior {behavior.get('id')} {path} does not accept children")
 
     def _check_outcome_events(self, behavior: dict[str, Any], used_action_ids: set[str]) -> None:
         """A behavior outcome must not repeat an event its actions already record."""

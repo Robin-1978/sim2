@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..actions.institutions import describe_institution_terms
+from ..world.context import conflict_context
 from .decision_frame import DecisionFrame
 
 
@@ -14,21 +15,7 @@ class CharacterViewMixin:
     def _interaction_context(self, agent: dict[str, Any], participants: list[dict[str, Any]]) -> dict[str, Any]:
         """Expose configured relationship signals without naming story entities."""
 
-        rules = self.store.repositories.metadata.get("rules", {}) or {}
-        conflict_types = {str(item) for item in (rules.get("conflict_relation_types", ["conflict"]) or [])}
-        participant_ids = {str(item.get("id")) for item in participants}
-        available = False
-        for relation in self.entities_repo.get_related_relationships(agent["id"], limit=50):
-            if str(relation.get("person")) not in participant_ids or str(relation.get("relation")) not in conflict_types:
-                continue
-            value = relation.get("relation_strength", relation.get("value", 0))
-            try:
-                available = float(value) < 0
-            except (TypeError, ValueError):
-                available = False
-            if available:
-                break
-        return {"conflict": {"available": available}}
+        return conflict_context(self.store, agent["id"], participants)
 
     def _memory_context(self, frame: DecisionFrame, available: list[dict[str, Any]], drives: list[dict[str, Any]]) -> tuple[str, list[Any], list[Any], list[Any], list[Any]]:
         agent_id, agent = frame.agent_id, frame.agent

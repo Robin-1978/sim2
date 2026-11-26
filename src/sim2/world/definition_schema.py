@@ -31,6 +31,8 @@ def propose_definition_schema() -> dict[str, Any]:
                     "action_id": {"type": "string", "description": "Exact visible Action name."},
                     "behavior_id": {"type": "string", "description": "Exact visible behavior name."},
                     "parameters": {"type": "object", "description": "Action parameter names with exact visible values."},
+                    "expression": {"type": "string", "description": "Predicate for a condition node."},
+                    "minutes": {"type": "integer", "minimum": 1, "description": "Simulation duration for a wait node."},
                     "children": {"type": "array", "items": {"type": "object"}},
                 },
                 "additionalProperties": True,

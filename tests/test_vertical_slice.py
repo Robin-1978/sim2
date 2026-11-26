@@ -2598,7 +2598,7 @@ def test_bootstrap_imports_generic_relationships_and_knowledge(tmp_path: Path):
         assert "unknown" in marks["fact"]
         assert marks["source_type"] == "rumor"
         assert marks["confidence"] == 0.4
-        assert platform.store.repositories.metadata.get("config_version") == "starter-village-0.1.0"
+        assert platform.store.repositories.metadata.get("config_version") == "starter-village-0.1.1"
     finally:
         platform.close()
 
@@ -3670,6 +3670,10 @@ def test_completed_research_records_fact_and_is_not_offered_again(tmp_path: Path
                 "su_wu", "behavior:research_source", {}, {}, "Study the pact source.", 0.9, f"research-novelty-{attempt}"
             ))["status"] == "accepted"
             step_n(platform, 240)
+            outcome, _ = platform.store.repositories.events.behavior_outcome_evidence("su_wu", f"research-novelty-{attempt}")
+            assert outcome["event_type"] == "behavior.completed"
+            expected = "research_progressed" if attempt == 0 else "research_completed"
+            assert platform.store.repositories.entities.get_agent("su_wu")["initial_state"]["last_outcome"]["result"] == expected
         facts = platform.store.repositories.memory.list_knowledge_facts("su_wu", limit=20)
         assert any(item["fact_key"] == "researched:old_pact_tablet:origin" for item in facts)
         assert not any(item["ref"] == "behavior:research_source" for item in platform.decision_view("su_wu")["executable_behaviors"])

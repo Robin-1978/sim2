@@ -6,7 +6,8 @@ from typing import Any
 
 from ..actions.capacity import check_action_capacity
 from ..behavior.estimator import BehaviorDurationEstimator
-from ..world.context import calendar_context, configured_context_values
+from ..behavior.plan import compile_behavior_plan
+from ..world.context import calendar_context, configured_context_values, conflict_context
 from ..world.navigation import movement_speed, reachable_locations, route_minutes
 from ..world.execution_recipes import execution_recipe
 from ..world.time import day_phase_duration
@@ -30,18 +31,6 @@ class BehaviorExecutionService(PlatformService):
         resolved_target, _ = self.targets.resolve(agent, {**parameters, **(target or {})})
         participants = self.targets.visible_agents(agent)
         rules = self.store.repositories.metadata.get("rules", {}) or {}
-        conflict_types = {str(item) for item in (rules.get("conflict_relation_types", ["conflict"]) or [])}
-        participant_ids = {str(item.get("id")) for item in participants}
-        conflict_available = False
-        for relation in self.store.repositories.entities.get_related_relationships(agent["id"], limit=50):
-            if str(relation.get("person")) not in participant_ids or str(relation.get("relation")) not in conflict_types:
-                continue
-            try:
-                conflict_available = float(relation.get("relation_strength", relation.get("value", 0)) or 0) < 0
-            except (TypeError, ValueError):
-                conflict_available = False
-            if conflict_available:
-                break
         result = {
             "location_id": location_id,
             "destination_id": parameters.get("location_id") or parameters.get("destination_id"),
@@ -61,7 +50,7 @@ class BehaviorExecutionService(PlatformService):
             "known_route_destinations": reachable_locations(self.store, location_id),
             "recent_event_types": self._context.services["evolution"].recent_event_types(),
             **calendar_context(self.store),
-            "conflict": {"available": conflict_available},
+            **conflict_context(self.store, agent["id"], participants),
         }
         for key, value in parameters.items():
             if isinstance(value, (str, int, float)) and not isinstance(value, bool):
@@ -85,7 +74,7 @@ class BehaviorExecutionService(PlatformService):
                 "resource.available": amount > 0,
                 "resource.here": bool(resource) and str(resource_state.get("location_id") or resource.get("location_id") or "") == str(location_id or ""),
             })
-        result.update(configured_context_values(self.store.repositories.metadata.get("rules", {}) or {}, agent))
+        result.update(configured_context_values(rules, agent))
         return result
 
     def entity_for_context(self, entity_id: Any) -> dict[str, Any]:
@@ -99,46 +88,11 @@ class BehaviorExecutionService(PlatformService):
             return {}
 
     def compile_behavior_actions(self, behavior_id: str) -> list[dict[str, Any]]:
-        """Freeze the selected Action sequence and its definitions at admission."""
+        """Pin every branch's Action definitions at admission."""
 
         definitions = {item["id"]: item for item in self.store.repositories.entities.get_definitions("bt_def")}
         actions = {item["id"]: item for item in self.store.repositories.entities.get_definitions("action_def")}
-
-        def visit(nodes: list[Any], owner: str, seen: set[str], parallel_group: str | None = None) -> list[dict[str, Any]]:
-            result: list[dict[str, Any]] = []
-            for raw in nodes or []:
-                node = raw if isinstance(raw, dict) else {"type": "behavior", "behavior_id": raw}
-                node_type = node.get("type")
-                if node_type == "action" and node.get("action_id"):
-                    action = actions.get(node["action_id"], {})
-                    result.append({
-                        "action_id": node["action_id"],
-                        "action_version": int(action.get("definition_version", action.get("version", 1)) or 1),
-                        "definition_snapshot": action,
-                        "parameters": dict(node.get("parameters") or {}),
-                        "parallel_group": parallel_group,
-                    })
-                elif node_type in {"behavior", "subtree"} and node.get("behavior_id"):
-                    nested_id = str(node["behavior_id"])
-                    if nested_id not in seen:
-                        nested = definitions.get(nested_id, {})
-                        steps = visit(nested.get("nodes", []), nested_id, seen | {nested_id})
-                        if parallel_group:
-                            for item in steps:
-                                item["parallel_group"] = parallel_group
-                        result.extend(steps)
-                elif node_type in {"sequence", "parallel"}:
-                    group = parallel_group if node_type == "sequence" else f"parallel:{owner}:{len(result)}"
-                    result.extend(visit(node.get("children", []), owner, seen, group))
-                elif node_type == "selector":
-                    # Preserve the first configured branch and record it in the instance.
-                    children = node.get("children", [])
-                    if children:
-                        result.extend(visit(children[:1], owner, seen, parallel_group))
-            return result
-
-        behavior = definitions.get(behavior_id, {})
-        return visit(behavior.get("nodes", []), behavior_id, {behavior_id})
+        return compile_behavior_plan(behavior_id, definitions, actions)
 
     @staticmethod
     def execution_snapshot(agent: dict[str, Any]) -> dict[str, Any]:
@@ -356,7 +310,8 @@ class BehaviorExecutionService(PlatformService):
             if hard:
                 reservations = list(state.get("active_action_reservation") or [])
                 for item in (state.get("active_parallel_actions") or {}).values():
-                    reservations.extend(item.get("reservation", []) or [])
+                    if int(item["remaining"]) > 0:
+                        reservations.extend(item.get("reservation", []) or [])
                 self.resources.release(agent, reservations)
             outcome = {
                 "status": status,
@@ -390,6 +345,7 @@ class BehaviorExecutionService(PlatformService):
                 state["active_behavior_id"] = None
                 state["active_action"] = None
                 state["active_action_instance"] = None
+                state["active_action_reservation"] = []
                 state["active_parallel_actions"] = {}
                 state["remaining_minutes"] = 0
                 state.pop("active_resource_withdrawal", None)
