@@ -11,8 +11,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .growth_evidence import match_growth_evidence
 from .bindings import iter_behavior_actions
 from .verbs import infer_behavior_verb, normalize_verb
+
 
 def _canonical_id(store: Any, value: Any) -> str:
     """Resolve a visible name or id without importing an upper-layer package."""
@@ -54,6 +56,9 @@ def growth_outcome_event(store: Any, plan: dict[str, Any]) -> int | None:
     start = int(plan.get("created_minute", 0) or 0)
     expires = int(plan["expires_minute"])
     cursor = int(plan.get("event_cursor", 0) or 0)
+    spec = plan.get("evidence", "social_activity" if cell == "social" else None)
+    if spec:
+        return match_growth_evidence(store, plan, spec).outcome
     if cell == "verb":
         action_id = plan.get("behavior_action")
         row = store.connection.execute(
@@ -98,17 +103,16 @@ def growth_outcome_event(store: Any, plan: dict[str, Any]) -> int | None:
                ORDER BY completed.event_id LIMIT 1""",
             (cursor, start, expires, json.dumps(resource_types)),
         ).fetchone()
-    elif cell in {"rule", "social"}:
-        event_types = ("world.change.rule", "world.change.rule") if cell == "rule" else ("world.change.faction", "world.change.relationship")
+    elif cell == "rule":
         row = store.connection.execute(
             """SELECT used.event_id FROM event_log AS created
                JOIN event_log AS used ON used.event_type='world.proposal.evaluated' AND used.event_id>created.event_id
                  AND json_extract(used.data_json,'$.proposal_id')=json_extract(created.data_json,'$.proposal_id')
-               WHERE created.event_type IN (?,?)
+               WHERE created.event_type='world.change.rule'
                  AND created.event_id>? AND created.world_minute>=? AND used.world_minute<=?
                  AND json_extract(used.data_json,'$.status')='observed'
                ORDER BY used.event_id LIMIT 1""",
-            (*event_types, cursor, start, expires),
+            (cursor, start, expires),
         ).fetchone()
     else:
         return None

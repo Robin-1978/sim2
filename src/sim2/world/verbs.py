@@ -178,7 +178,9 @@ def specific_capability_target(definition: dict[str, Any]) -> tuple[str, str] | 
     if not effect_types:
         return None
     if verb == "transfer_resource":
-        reserve = ((definition.get("costs") or {}).get("reserve") or {}) if isinstance(definition.get("costs"), dict) else {}
+        costs = definition.get("costs")
+        reserve = costs.get("reserve") if isinstance(costs, dict) else None
+        reserve = reserve if isinstance(reserve, dict) else {}
         for key, value in reserve.items():
             if str(key) in {"resource_parameter", "resource_amount", "item_parameter", "item_quantity_parameter", "recipe_inputs"}:
                 continue

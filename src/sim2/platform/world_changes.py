@@ -96,7 +96,7 @@ class WorldChangesRuntimeMixin:
         if change_type == "route":
             return self._apply_route(proposal)
         if change_type == "relationship":
-            return self._apply_relationship(proposal)
+            return self._apply_relationship(submission)
         if change_type == "faction":
             return self._apply_faction(proposal)
         if self._changes_property(submission):
@@ -139,8 +139,8 @@ class WorldChangesRuntimeMixin:
         self.store.repositories.entities.put_entity(target, "location", target_data.get("name", target), {key: value for key, value in target_data.items() if key not in {"id", "entity_type", "name"}})
         return {"route_added": {"from": source, "to": target, "distance": distance}}
 
-    def _apply_relationship(self, proposal: dict[str, Any]) -> dict[str, Any]:
-        relation = dict(proposal["relationship"])
+    def _apply_relationship(self, submission: WorldChangeSubmission) -> dict[str, Any]:
+        relation = dict(submission.proposal["relationship"])
         source = relation.pop("from", relation.pop("from_id", ""))
         target = relation.pop("to", relation.pop("to_id", ""))
         # God and Story use visible names at the model boundary. Keep
@@ -154,6 +154,11 @@ class WorldChangesRuntimeMixin:
         relation_type = str(relation.pop("type", "related"))
         if not source or not target:
             raise _ChangeRejected({"status": "rejected", "message": "relationship from and to are required.", "failed_check": "relationship", "retryable": True})
+        existing = self.store.connection.execute(
+            "SELECT 1 FROM relationship WHERE from_id=? AND to_id=? AND relation_type=?",
+            (source, target, relation_type),
+        ).fetchone()
+        submission.relationship_created = existing is None
         self.store.repositories.entities.put_relationship(str(source), str(target), relation_type, relation)
         return {"relationship": {"from": str(source), "to": str(target), "type": relation_type, **relation}}
 
@@ -190,6 +195,8 @@ class WorldChangesRuntimeMixin:
             "evaluation_due_minute": evaluation_due_minute,
         }
         expected = self._world_proposal_expectation(change_type, proposal, effect)
+        if change_type == "relationship":
+            event_data["relationship_created"] = submission.relationship_created
         event_data["expected_state"] = expected
         event_id = self._context.services["events"].publish(f"world.change.{change_type}", actor_id, world_minute, event_data, wake="configured")
         self.store.repositories.evolution.put_world_proposal(intent_id, intent_id, actor_id, change_type, "pending_evaluation", world_minute, evaluation_due_minute, {"effects": event_data["expected_effects"], "summary": event_data["summary"], "state": expected}, {"event_id": event_id, "effect": effect})

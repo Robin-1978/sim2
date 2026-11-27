@@ -24,6 +24,7 @@ stagnation:
   - world.change.relationship
   - world.change.faction
 director:
+  evidence: {social: social_activity}
   cadence: 6h
   window: 1d
   kickoff: true

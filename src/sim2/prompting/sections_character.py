@@ -232,6 +232,8 @@ def reflection_lines(context: dict[str, Any]) -> list[str]:
             )
     else:
         lines.append("  - no completed or interrupted behavior needs review")
+    if (context.get("identity") or {}).get("beliefs"):
+        lines.append("  If the evidence changes an existing belief, copy that belief verbatim into previous_statement. Set confidence for the revised belief. Supply statement only to change its wording. Create a separate belief for a genuinely new claim.")
     lines.append("  Keep an experience only when it is new, durable, and useful for a future decision; otherwise return wait. Never treat a topic, report, or promise as a confirmed fact. Set claim_status: observed, confirmed, reported, promised, inferred, disputed, false, or failed. Use disputed or false only when event evidence contradicts the claim. Write one to three concise sentences, under 500 characters.")
     lines.append("</outcome_review>")
     return lines

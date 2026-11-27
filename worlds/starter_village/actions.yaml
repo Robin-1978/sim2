@@ -536,7 +536,8 @@ actions:
     on_failure: {}
     refund: {}
   progress_effects:
-  - type: threat_delta
+  - type: state_delta
+    state: threat_level
     delta: 0.2
   success:
     condition: attack.resolved

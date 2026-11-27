@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from shutil import copytree
 
 import pytest
+import yaml
 
+from sim2.agents.engine import AgentEngine
 from sim2.bootstrap.service import create_instance
 from sim2.evolution.config import normalize_evolution_config
 from sim2.intents.models import BehaviorIntent
@@ -121,6 +124,76 @@ def test_director_does_not_count_a_stock_reservation_until_the_behavior_complete
         platform.close()
 
 
+def test_social_plan_requires_a_character_to_change_the_new_bond(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "director-bond")
+    try:
+        _director_config(platform, targets=["social"])
+        platform.step()
+        meta = platform.store.repositories.metadata
+        plan = meta.get("season_plan")
+        with platform.store.transaction():
+            rules = meta.get("rules")
+            rules["relationship_effects"] = {"dialogue.completed": {"relation": "supply_partner", "delta": 0.25}}
+            meta.set("rules", rules)
+        bond = {"from": "mei_lan", "to": "luo_shan", "type": "supply_partner", "relation_strength": 1.0}
+        change = {"change_type": "relationship", "summary": "Keep the cistern together.",
+                  "relationship": bond, "evaluation_window_minutes": 1}
+        assert platform.submit_world_change("god", change)["status"] == "accepted"
+        platform.step()
+        assert platform.store.repositories.evolution.list_world_proposals()[0]["status"] == "observed"
+        assert meta.get("season_plan")["plan_id"] == plan["plan_id"]
+        # The reverse direction is a different bond. The forward one is already at its maximum.
+        for source, target in [("luo_shan", "mei_lan"), ("mei_lan", "luo_shan")]:
+            assert platform.submit_dialogue(source, target, "Cistern", "Let us check the water.")["status"] == "accepted"
+        platform.step()
+        assert not meta.get("last_completed_season_plan")
+        change["relationship"] = {**bond, "relation_strength": 0.4}
+        assert platform.submit_world_change("god", change)["status"] == "accepted"
+        assert platform.submit_dialogue("mei_lan", "luo_shan", "Cistern", "I checked the water.")["status"] == "accepted"
+        platform.step()
+        closed = meta.get("last_completed_season_plan")
+        assert closed["plan_id"] == plan["plan_id"]
+        event, = platform.store.repositories.events.events_by_ids([closed["outcome_event_id"]])
+        assert (event["event_type"], event["actor_id"], event["target_id"], event["actual_delta"]) == (
+            "relationship.changed", "mei_lan", "luo_shan", 0.25,
+        )
+    finally:
+        platform.close()
+
+
+def test_character_use_of_a_new_faction_closes_its_social_plan(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "director-faction")
+    try:
+        _director_config(platform, targets=["social"], window="3h")
+        platform.step()
+        faction = platform.submit_entity_proposal("god", {
+            "entity_type": "faction", "name": "Cistern keepers", "description": "Residents who keep the cistern open.",
+            "state": {"goals": ["Keep the cistern open"], "norms": ["Record each inspection"], "strategy": "cooperate"},
+        })
+        assert faction["status"] == "accepted", faction
+        entities = platform.store.repositories.entities
+        with platform.store.transaction():
+            inspect = next(item for item in entities.get_definitions("bt_def") if item["id"] == "inspect_cistern")
+            inspect["outcome_effects"] = [{"type": "entity_state_set", "entity_id": "Cistern keepers",
+                                          "state": "last_inspection", "value": "complete"}]
+            entities.put_definition("bt_def", inspect["id"], inspect)
+        accepted = platform.submit_behavior(BehaviorIntent(
+            "mei_lan", "behavior:inspect_cistern", {}, {}, "Inspect for the keepers.", 1.0, "keepers-inspection",
+        ))
+        assert accepted["status"] == "accepted", accepted
+        platform.step()
+        assert not platform.store.repositories.metadata.get("last_completed_season_plan")
+        for _ in range(accepted["remaining_minutes"]):
+            platform.step()
+        closed = platform.store.repositories.metadata.get("last_completed_season_plan")
+        event, = platform.store.repositories.events.events_by_ids([closed["outcome_event_id"]])
+        assert (event["event_type"], event["entity_id"], event["after"]) == (
+            "entity.state_changed", faction["entity_id"], "complete",
+        )
+    finally:
+        platform.close()
+
+
 def test_active_season_plan_is_visible_to_god_and_story(tmp_path: Path) -> None:
     platform = _town(tmp_path, "director-prompt")
     try:
@@ -141,6 +214,76 @@ def test_active_season_plan_is_visible_to_god_and_story(tmp_path: Path) -> None:
             assert "target cell: social" in prompt
         assert "Fill this cell with one reachable, executable growth unit" in god_prompt
         assert "do not claim a structural change" in story_prompt
+    finally:
+        platform.close()
+
+
+@pytest.mark.parametrize("reviewer", [None, "story", "god"])
+def test_world_package_owns_growth_evidence_and_optional_followup(tmp_path, reviewer) -> None:
+    package = tmp_path / "town"
+    copytree(WORLD, package)
+    director = {"targets": ["social"], "cadence": "1m", "window": "2h", "evidence": {"social": [{
+        "registered": [{"event": "entity.created", "key": ["name"], "label": "name",
+                        "when": "event.entity_type == 'faction'"}],
+        "used": [{"event": "audit.signed", "key": ["council"], "when": "event.certified and event.quantity >= 2"}],
+    }]}}
+    config = {"director": director}
+    if reviewer:
+        director["followups"] = {"social": {"after": "3m", "for": reviewer, "task": "cistern_review"}}
+        config["contracts"] = {"cistern_review": {"tools": ["wait"], "result": "Read the signed cistern report."}}
+    (package / "evolution.yaml").write_text(yaml.safe_dump(config))
+    path = package / "behavior_trees.yaml"
+    trees = yaml.safe_load(path.read_text())
+    inspect = next(item for item in trees["behavior_trees"] if item["id"] == "inspect_cistern")
+    inspect.setdefault("outcome_events", []).append({
+        "event_type": "audit.signed", "data": {"council": "Cistern council", "certified": True, "quantity": 2},
+    })
+    path.write_text(yaml.safe_dump(trees, allow_unicode=True))
+    platform = Platform(create_instance(package, "custom-growth", tmp_path / "runtime"))
+    try:
+        platform.step()
+        repo = platform.store.repositories
+        initial = repo.metadata.get("season_plan")
+        new = platform.submit_entity_proposal("god", {
+            "entity_type": "faction", "name": "Cistern council", "description": "Keeps signed water reports.",
+            "state": {"goals": ["keep reports"], "norms": ["sign reports"], "strategy": "cooperate"},
+        })
+        assert new["status"] == "accepted", new
+        with platform.store.transaction():
+            for actor, council, quantity in [(None, "Cistern council", 2), ("mei_lan", "Other", 2), ("mei_lan", "Cistern council", 1)]:
+                repo.events.append_event("audit.signed", actor, 1, {"council": council, "quantity": quantity, "certified": True})
+        platform.step()
+        assert not any(t["task_type"] == "cistern_review" for t in platform.ready_evolution_tasks())
+        for _ in range(4):
+            platform.step()
+        assert not repo.metadata.get("last_completed_season_plan")
+        tasks = [t for t in platform.ready_evolution_tasks() if t["task_type"] == "cistern_review"]
+        if reviewer:
+            task, = tasks
+            assert (task["role"], task["due_minute"], task["source_event_id"]) == (reviewer, 4, new["event_id"])
+            assert task["season_plan"]["use_review_subject"] == "Cistern council"
+            class WaitForUse:
+                def complete_json(self, **kwargs):
+                    return {"tool_call": {"name": "wait", "arguments": {"reason": "Waiting for the cistern report."}}}
+
+            turn = AgentEngine(platform, WaitForUse()).run(role=reviewer, actor_id=reviewer, task_type=task["task_type"],
+                                                           source_event_id=task["source_event_id"])
+            assert turn.result["status"] == "wait"
+            assert "Read the signed cistern report. Registered unit: Cistern council" in turn.prompt_history[0]
+            assert [tool["name"] for tool in turn.initial_context["tools"]] == ["wait"]
+        else:
+            assert not tasks
+        accepted = platform.submit_behavior(BehaviorIntent("mei_lan", "behavior:inspect_cistern", {}, {}, "Sign the report.", 1.0, "visit"))
+        assert accepted["status"] == "accepted", accepted
+        for _ in range(accepted["remaining_minutes"] + 1):
+            platform.step()
+        closed = repo.metadata.get("last_completed_season_plan")
+        assert closed["plan_id"] == initial["plan_id"]
+        event, = repo.events.events_by_ids([closed["outcome_event_id"]])
+        assert (event["event_type"], event["execution_id"]) == ("audit.signed", accepted["execution_id"])
+        if reviewer:
+            platform.run(1, providers={})
+            assert task["task_id"] not in {item["task_id"] for item in platform.ready_evolution_tasks()}
     finally:
         platform.close()
 

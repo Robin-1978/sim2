@@ -97,6 +97,8 @@ class StoryRuntimeMixin:
         """
 
         submission = self._open_submission(actor_id, proposal, source_event_ids)
+        if source_event_ids and submission.source_event is None:
+            return self._reject(submission, "source_event", "The selected source event does not exist.", True)
         for gate in (
             self._choose_beat,
             self._check_beat_state,
@@ -134,7 +136,7 @@ class StoryRuntimeMixin:
         recent = self.store.repositories.events.recent_events(limit=500)
         bound_sources = self.store.repositories.events.events_by_ids([int(item) for item in (source_event_ids or []) if int(item) > 0])
         configured_source_types = {str(item) for item in (story_root.get("emergent_source_event_types") or [])}
-        source_event = bound_sources[-1] if bound_sources else next(
+        source_event = next(reversed(bound_sources), None) if source_event_ids else next(
             (
                 item for item in recent[:30]
                 if bool(item.get("story_source"))
@@ -143,6 +145,7 @@ class StoryRuntimeMixin:
             None,
         )
         observed_events = {str(item.get("event_type", "")) for item in recent}
+        observed_events.update(story_evidence_event_types(source_event))
         fact_rows = self.store.connection.execute("SELECT fact_key FROM knowledge_fact").fetchall()
         observed_facts = {str(row["fact_key"]) for row in fact_rows}
         scoped_beats = eligible_story_beats(

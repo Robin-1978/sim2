@@ -10,7 +10,7 @@ from ..agents.engine import AgentEngine, AgentTurn
 from ..evolution.config import role_enabled
 from ..intents.models import BehaviorIntent
 from ..platform.runtime import Platform
-from ..world.growth import growth_count
+from ..world.growth import growth_count, growth_outcome_event
 from ..world.lifecycle import BUSY_STATUSES, is_inactive
 from ..world.time import minutes_until_next_day_phase
 
@@ -667,9 +667,13 @@ class SimulationRunner:
                 if task.get("event_group") and structural.get("behavior_constraints") and active_plan.get("status") == "saturated":
                     self.platform.complete_evolution_task(task["task_id"])
                     continue
-            if role == "god" and task_plan.get("plan_id"):
+            if (role == "god" or task.get("use_review")) and task_plan.get("plan_id"):
                 active_plan = self.platform.store.repositories.metadata.get("season_plan", {}) or {}
                 if active_plan.get("status") != "active" or active_plan.get("plan_id") != task_plan["plan_id"]:
+                    self.platform.complete_evolution_task(task["task_id"])
+                    continue
+                if task.get("use_review") and (self.platform.status()["world_minute"] >= active_plan["expires_minute"]
+                                              or growth_outcome_event(self.platform.store, active_plan)):
                     self.platform.complete_evolution_task(task["task_id"])
                     continue
             if role == "god" and god_runs >= self.max_ready_god_tasks:

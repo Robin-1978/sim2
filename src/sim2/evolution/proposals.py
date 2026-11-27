@@ -14,19 +14,24 @@ class WorldProposalEvaluator:
         self.targets = targets
 
     def evaluate_due(self, minute: int) -> None:
-        for proposal in self.store.repositories.evolution.list_world_proposals(status="pending_evaluation", limit=100):
-            if int(proposal.get("evaluation_due_minute", 0) or 0) > int(minute):
-                continue
+        due = self.store.repositories.evolution.list_world_proposals(status="pending_evaluation", due_by=minute, limit=100)
+        for proposal in due:
             created = int(proposal.get("created_minute", 0) or 0)
-            rows = self.store.connection.execute(
-                "SELECT event_id,event_type,world_minute,data_json FROM event_log WHERE world_minute>? AND world_minute<=? AND event_type NOT IN ('world_minute.advanced','evolution.task_due') ORDER BY event_id LIMIT 200",
-                (created, int(minute)),
+            end = int(proposal["evaluation_due_minute"])
+            cursor = int(proposal["result"].get("event_id") or 0)
+            window = (created if cursor else created + 1, end, cursor)
+            counts = self.store.connection.execute(
+                """SELECT event_type, COUNT(*) AS total FROM event_log
+                   WHERE world_minute BETWEEN ? AND ? AND event_id>?
+                     AND event_type NOT IN ('world_minute.advanced','evolution.task_due')
+                   GROUP BY event_type ORDER BY event_type""", window,
             ).fetchall()
             expected = proposal.get("expected", {}).get("state", {}) if isinstance(proposal.get("expected"), dict) else {}
             mode = str(expected.get("mode") or "signal_only")
             matched = False
             match_reason = ""
             current_value: Any = None
+            outcome_event_id = None
             if mode == "property_value":
                 properties = self.store.repositories.metadata.get("world_properties", {}) or {}
                 property_name = str(expected.get("property") or "")
@@ -57,30 +62,39 @@ class WorldProposalEvaluator:
                 match_reason = "faction_reached" if matched else "faction_not_at_expected_value"
             elif mode == "followup_event":
                 expected_rule = str(expected.get("rule_id") or "")
-                followup_behaviors = {str(item) for item in (expected.get("followup_behaviors") or [])}
-                for row in rows:
-                    payload = json.loads(row["data_json"] or "{}")
-                    if row["event_type"] != "world.rule.followed":
-                        continue
-                    if expected_rule and str(payload.get("rule") or "") != expected_rule:
-                        continue
-                    if followup_behaviors and not ({str(payload.get("behavior_id") or ""), str(payload.get("action_id") or "")} & followup_behaviors):
-                        continue
-                    matched = True
-                    break
+                rule = proposal["result"].get("effect", {}).get("rule_added", {})
+                legacy_name = rule.get("name") or rule.get("label") or expected_rule
+                # A completed execution carries the rules its dispatcher actually matched.
+                row = self.store.connection.execute(
+                    """SELECT done.event_id FROM event_log AS done
+                       WHERE done.event_type='behavior.completed'
+                         AND done.world_minute BETWEEN ? AND ? AND done.event_id>?
+                         AND EXISTS (
+                           SELECT 1 FROM json_each(done.data_json,'$.outcome.rule_followups') AS followup
+                           WHERE followup.type='object' AND (
+                             json_extract(followup.value,'$.rule_id')=? OR
+                             (json_extract(followup.value,'$.rule_id') IS NULL AND json_extract(followup.value,'$.rule')=?))
+                         )
+                       ORDER BY done.event_id LIMIT 1""", (*window, expected_rule, legacy_name),
+                ).fetchone()
+                matched = row is not None
+                if row:
+                    outcome_event_id = row["event_id"]
                 match_reason = "configured_followup_observed" if matched else "configured_followup_not_observed"
             else:
                 match_reason = "signal_only_no_state_claim"
             observed = {
-                "event_count": len(rows),
-                "event_types": sorted({str(row["event_type"]) for row in rows}),
-                "window": {"from_minute": created, "to_minute": int(minute)},
+                "event_count": sum(row["total"] for row in counts),
+                "event_types": [row["event_type"] for row in counts],
+                "window": {"from_minute": created, "to_minute": end},
                 "match": matched,
                 "match_reason": match_reason,
                 "mode": mode,
             }
             if current_value is not None:
                 observed["current_value"] = current_value
+            if outcome_event_id is not None:
+                observed["outcome_event_id"] = outcome_event_id
             status = "observed" if matched else "no_observed_effect"
             result = {"status": status, "proposal_id": proposal["proposal_id"], "expected": proposal.get("expected", {}), "observed": observed}
             self.store.repositories.evolution.update_world_proposal(proposal["proposal_id"], status, observed, result, int(minute))

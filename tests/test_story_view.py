@@ -140,11 +140,27 @@ def test_an_unknown_source_id_has_no_source_and_no_fallback(platform: Platform) 
 
 
 @pytest.mark.parametrize(("fillers", "found"), [(79, True), (80, False)])
-def test_the_view_only_sees_the_eighty_newest_events(platform: Platform, fillers: int, found: bool) -> None:
+def test_only_automatic_source_selection_is_limited_to_eighty_events(platform: Platform, fillers: int, found: bool) -> None:
     target = _event(platform, "research.completed", "fei_lan", 5)
     for index in range(fillers):
         _event(platform, "misc.note", None, 6 + index)
-    assert bool(_source(platform, target)) is found
+    assert bool(_source(platform)) is found
+    assert _source(platform, target)["event_type"] == "research.completed"
+
+
+def test_delayed_story_task_can_offer_and_commit_its_bound_beat(platform: Platform) -> None:
+    source = _event(platform, "exploration.completed", "fei_lan", 5)
+    _fact(platform, "fei_lan", "explored:greywood_edge:route", source_type="exploration", fact="An open route")
+    with platform.store.transaction():
+        for _ in range(501):
+            platform.store.repositories.events.append_event("misc.note", None, 6, {})
+    view = _view(platform, source)
+    choice = next(item for item in view["story_beats"] if item["ref"] == "story:greywood_route_found")
+    assert view["audience_candidates"][0]["name"] == "费兰"
+    missing = platform.submit_story_beat("story", {"beat": choice["choice"]}, source_event_ids=[999999])
+    assert missing["failed_check"] == "source_event"
+    result = platform.submit_story_beat("story", {"beat": choice["choice"]}, source_event_ids=[source])
+    assert result["status"] == "accepted", result
 
 
 # ---- the memory query ---------------------------------------------------------------------------------------

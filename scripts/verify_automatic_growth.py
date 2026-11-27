@@ -98,11 +98,12 @@ def _state(platform: Platform, baseline: dict[str, Any]) -> dict[str, Any]:
     events = platform.store.repositories.events
     event_rows = platform.store.connection.execute(
         "SELECT event_type,actor_id,data_json FROM event_log "
-        "WHERE event_type IN ('behavior.started','behavior.completed','story.beat.activated','entity.created','definition.registered')"
+        "WHERE event_type='story.beat.activated' OR "
+        "(event_type='behavior.completed' AND actor_id IN (SELECT id FROM agent_state))"
     ).fetchall()
     executed = set()
     for row in event_rows:
-        if str(row["event_type"]) not in {"behavior.started", "behavior.completed"}:
+        if row["event_type"] != "behavior.completed":
             continue
         try:
             data = json.loads(row["data_json"] or "{}")
@@ -229,6 +230,8 @@ def main() -> int:
         flags: list[str] = []
         if director_total < 2:
             flags.append(f"director_calls:{director_total}<2")
+        if len(plan_ids) < 2:
+            flags.append(f"plans_opened:{len(plan_ids)}<2")
         if not completed:
             flags.append("no_completed_season_plan")
         structural = len(final["new_entities"]) + len(final["new_actions"]) + len(final["new_behaviors"])

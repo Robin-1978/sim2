@@ -460,6 +460,7 @@ class AgentIntentGateway:
             str(data.get("statement") or data.get("belief") or ""),
             float(data.get("confidence", 0.0)),
             str(data.get("reason") or ""),
+            previous_statement=str(data.get("previous_statement") or ""),
         )
 
     def _update_goal(self, call: IntentCall) -> dict[str, Any]:

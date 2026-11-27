@@ -2598,7 +2598,7 @@ def test_bootstrap_imports_generic_relationships_and_knowledge(tmp_path: Path):
         assert "unknown" in marks["fact"]
         assert marks["source_type"] == "rumor"
         assert marks["confidence"] == 0.4
-        assert platform.store.repositories.metadata.get("config_version") == "starter-village-0.1.1"
+        assert platform.store.repositories.metadata.get("config_version") == "starter-village-0.1.2"
     finally:
         platform.close()
 

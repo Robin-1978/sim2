@@ -28,14 +28,18 @@ DEFINITION_TYPES: tuple[str, ...] = (
 
 SCALAR_PARAMETER_TYPES = frozenset({"string", "number", "integer", "boolean", "object", "array"})
 
-EFFECT_TYPES = frozenset(
+PROGRESS_EFFECT_TYPES = frozenset({
+    "need_delta", "state_delta", "attribute_delta", "attribute_set", "inventory_add",
+    "inventory_remove", "inventory.consume_item", "status_add", "status_remove", "location_set",
+})
+RECIPE_EFFECT_TYPES = frozenset({"entity_state_set", "capability.add_xp", "capability_xp"})
+
+EFFECT_TYPES = PROGRESS_EFFECT_TYPES | frozenset(
     {
-        "need_delta", "state_delta", "attribute_delta", "attribute_set",
-        "inventory_add", "inventory_remove", "inventory.consume_item",
         "relationship_delta", "public_event", "world_property_delta", "world_property_set",
-        "entity_state_set", "status_add", "status_remove", "location_set",
+        "entity_state_set",
         "world_resource_delta", "resource_transfer", "resource_withdrawal", "resource_take", "catalog_action", "capability_xp", "capability.add_xp",
-        "institution_allocation", "threat_delta",
+        "institution_allocation",
     }
 )
 
@@ -73,9 +77,25 @@ def _validate_parameter_specs(parameters: Any, errors: list[str]) -> None:
             errors.append(f"action.parameters.{parameter_name} must declare a supported type")
 
 
-def _validate_effects(definition: dict[str, Any], errors: list[str]) -> None:
-    for field in ("effects", "progress_effects"):
-        values = definition.get(field, []) or []
+def effect_payload_error(effect: dict[str, Any], field: str = "effects") -> str | None:
+    effect_type = effect.get("type") or effect.get("op")
+    if effect_type == "entity_state_set":
+        entity = effect.get("entity_id") or effect.get("target_entity")
+        state = effect.get("state") or effect.get("property")
+        if not str(entity or "").strip() or not str(state or "").strip() or "value" not in effect:
+            return "entity_state_set requires entity_id, state and value"
+    if effect_type == "public_event" and not str(effect.get("event") or "").strip():
+        return "public_event requires event"
+    if field == "progress_effects" and effect_type not in PROGRESS_EFFECT_TYPES:
+        return f"{effect_type} requires completion; declare it in effects"
+    if field == "recipe.effects" and effect_type not in RECIPE_EFFECT_TYPES:
+        return f"recipe.effects does not support {effect_type}; declare it on the action"
+    return None
+
+
+def _validate_effects(definition: dict[str, Any], errors: list[str], *fields: str) -> None:
+    for field in fields:
+        values = definition.get(field.rsplit(".", 1)[-1], [])
         if not isinstance(values, list):
             errors.append(f"{field} must be a list")
             continue
@@ -86,6 +106,8 @@ def _validate_effects(definition: dict[str, Any], errors: list[str]) -> None:
             effect_type = str(effect.get("type") or effect.get("op") or "")
             if effect_type not in EFFECT_TYPES:
                 errors.append(f"unsupported effect type: {effect_type or '<missing>'}")
+            elif error := effect_payload_error(effect, field):
+                errors.append(f"{field}[{index}] {error}")
 
 
 def _validate_result_contracts(definition: dict[str, Any], errors: list[str]) -> None:
@@ -174,16 +196,19 @@ def compile_definition_shape(
     if kind == "action":
         shorthand_reserve = definition.pop("reserve", None)
         if shorthand_reserve is not None:
-            costs = definition.setdefault("costs", {})
-            if not isinstance(costs, dict):
-                errors.append("action.costs must be an object")
-            else:
-                reserve = costs.setdefault("reserve", {})
-                if not isinstance(reserve, dict):
-                    errors.append("action.costs.reserve must be an object")
-                elif isinstance(shorthand_reserve, dict):
+            if not isinstance(shorthand_reserve, dict):
+                errors.append("action.reserve must be an object")
+            elif isinstance(costs := definition.setdefault("costs", {}), dict):
+                if isinstance(reserve := costs.setdefault("reserve", {}), dict):
                     for key, value in shorthand_reserve.items():
                         reserve.setdefault(str(key), 1 if value is True else value)
+        costs = definition.get("costs", {})
+        if not isinstance(costs, dict):
+            errors.append("action.costs must be an object")
+        else:
+            for section in ("reserve", "per_minute", "on_success", "on_failure", "refund"):
+                if section in costs and not isinstance(costs[section], dict):
+                    errors.append(f"action.costs.{section} must be an object")
         _validate_parameter_specs(definition.get("parameters"), errors)
         for field in ("success", "failure"):
             if isinstance(definition.get(field), list) and len(definition[field]) == 1 and isinstance(definition[field][0], dict):
@@ -198,7 +223,7 @@ def compile_definition_shape(
         for field in ("preconditions", "effects", "progress_effects"):
             if field in definition and not isinstance(definition[field], list):
                 errors.append(f"action.{field} must be a list")
-        _validate_effects(definition, errors)
+        _validate_effects(definition, errors, "effects", "progress_effects")
         _validate_result_contracts(definition, errors)
         for field, predicate in action_conditions(definition):
             if error := condition_syntax_error(predicate):
@@ -206,6 +231,7 @@ def compile_definition_shape(
         return definition, errors
 
     if kind == "behavior":
+        _validate_effects(definition, errors, "outcome_effects")
         _validate_outcome_events(definition, errors)
         if definition.get("nodes") is None and isinstance(definition.get("actions"), list):
             definition["nodes"] = [{"type": "action", "action": item} for item in definition["actions"]]
@@ -217,6 +243,7 @@ def compile_definition_shape(
         return definition, errors
 
     if kind == "recipe":
+        _validate_effects(definition, errors, "recipe.effects")
         duration = definition.get("duration_minutes")
         if not _is_number(duration) or float(duration) <= 0:
             errors.append("recipe.duration_minutes must be positive")

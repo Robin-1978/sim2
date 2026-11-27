@@ -114,10 +114,10 @@ NO_WAIT = {"COOLDOWN_MIN_WAIT_SECONDS": 0.0, "COOLDOWN_MAX_WAIT_SECONDS": 0.0}
 
 def test_runtime_holds_world_time_through_a_cooldown_and_keeps_advancing(opened):
     provider = _Provider()
-    provider.until = time.monotonic() + 1.5
     service, supervisor = opened(provider)
     start_minute = service.status()["world_minute"]
 
+    provider.until = time.monotonic() + 1.5
     supervisor.start(max_world_minutes=2, max_llm_calls=0)
     _wait_until(lambda: "provider_cooldown" in supervisor.status()["last_error"])
     held = supervisor.status()

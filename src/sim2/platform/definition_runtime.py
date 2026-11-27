@@ -402,6 +402,8 @@ class DefinitionRuntimeMixin:
         plan = DefinitionPlan(definition_type, name, definition, errors)
         if actor_id != "god":
             errors.append("only God may register world definitions")
+        if errors:
+            return plan
         assign_to = list(proposal.get("assign_to") or [])
         if definition_type != "behavior" and assign_to:
             errors.append("assign_to is only valid for behavior definitions")

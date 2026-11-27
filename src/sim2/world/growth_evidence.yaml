@@ -1,0 +1,17 @@
+# Platform event vocabulary for worlds using the standard relationship graph and institutions.
+social_activity:
+  - registered:
+      - {event: entity.created, key: [entity_id], label: name, when: "event.entity_type == 'faction'"}
+    used:
+      - {event: entity.state_changed, key: [entity_id], when: 'event.before != event.after'}
+      - {event: relationship.changed, key: [target_id], when: 'event.actual_delta != 0'}
+  - registered:
+      - {event: world.change.relationship, key: [effect.relationship.from, effect.relationship.to, effect.relationship.type], label: summary, when: event.relationship_created}
+      - {event: relationship.changed, key: [actor_id, target_id, relation], label: relation, when: event.relationship_created}
+    used:
+      - {event: relationship.changed, key: [actor_id, target_id, relation], when: 'event.actual_delta != 0'}
+  - registered:
+      - {event: institution.activated, key: [institution.name], label: institution.name}
+    used:
+      - {event: institution.ledger_entry, key: [institution.name], when: "event.status == 'verified' and event.amount > 0"}
+      - {event: institution.allocation_completed, key: [institution_name], when: 'event.consumed > 0'}

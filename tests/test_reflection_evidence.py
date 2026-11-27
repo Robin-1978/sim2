@@ -102,3 +102,38 @@ def test_reflection_can_cite_an_old_visible_outcome_by_id(tmp_path: Path) -> Non
         assert platform.store.repositories.memory.list_memories("lu_xingzhou", limit=1)[0]["source_event_id"] == event_id
     finally:
         platform.close()
+
+
+def test_belief_revision_preserves_identity_across_model_entry_points(tmp_path: Path) -> None:
+    world = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
+    platform = Platform(create_instance(world, "revise-belief", tmp_path))
+    try:
+        actor = "mei_lan"
+        entities = platform.store.repositories.entities
+        tool = AgentToolExecutor(platform, role="agent_reflection", actor_id=actor)
+        statement = "Trust the cistern ledger."
+        assert tool.execute("update_belief", {"statement": statement, "confidence": 0.9})["status"] == "accepted"
+        with platform.store.transaction():
+            agent = entities.get_agent(actor)
+            original = agent["beliefs"][-1]["id"]
+            agent["beliefs"].append({"id": "legacy-copy", "statement": statement.upper(), "confidence": 0.7})
+            entities.update_agent(actor, agent)
+        assert tool.execute("update_belief", {"statement": statement.lower(), "confidence": 0.2})["status"] == "accepted"
+        beliefs = entities.get_agent(actor)["beliefs"]
+        assert [(b["id"], b["confidence"]) for b in beliefs if b["statement"].lower() == statement.lower()] == [(original, 0.2)]
+        assert tool.execute("update_belief", {"previous_statement": statement, "confidence": 0.3})["status"] == "accepted"
+        assert entities.get_agent(actor)["beliefs"][-1]["statement"] == statement.lower()
+        view = platform.view.build_decision_view(actor, role="agent_reflection")
+        prompt = render_context(view, "Reflect on the cistern.")
+        assert statement.lower() in prompt and "previous_statement" in prompt
+        revision = {"intent_type": "update_belief", "previous_statement": statement, "statement": "Check the seal first.", "confidence": 0.6}
+        gateway = AgentIntentGateway(platform)
+        assert gateway.submit("agent_reflection", actor, revision)["belief_id"] == original
+        assert gateway.submit("agent_reflection", actor, revision)["failed_check"] == "previous_statement"
+        beliefs = entities.get_agent(actor)["beliefs"]
+        assert len(beliefs) == 2
+        assert beliefs[-1]["statement"] == revision["statement"]
+        event = platform.store.repositories.events.recent_events(limit=10)
+        assert all(item["belief_id"] == original for item in event if item["event_type"] == "belief.updated")
+    finally:
+        platform.close()

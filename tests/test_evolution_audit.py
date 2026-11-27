@@ -18,6 +18,7 @@ from scripts.audit_dynamic_evolution_loop import (
 )
 from sim2.bootstrap.service import create_instance_from_template
 from sim2.platform.runtime import Platform
+from scripts.verify_automatic_growth import _baseline, _state
 
 ABSORBING = "absorbing_state:three_rounds_without_structural_or_story_progress"
 
@@ -250,6 +251,24 @@ def _probe_platform(tmp_path: Path, *, fallback: bool) -> Platform:
 
 def _minute(platform: Platform) -> int:
     return int(platform.store.repositories.metadata.get("world_minute", 0))
+
+
+def test_growth_probe_only_credits_a_new_behavior_after_completion(tmp_path: Path) -> None:
+    platform = _probe_platform(tmp_path, fallback=False)
+    try:
+        baseline = _baseline(platform)
+        repo = platform.store.repositories
+        behavior = {"id": "new_inspection", "nodes": [{"type": "wait", "minutes": 3}]}
+        with platform.store.transaction():
+            repo.entities.put_definition("bt_def", behavior["id"], behavior)
+            repo.events.append_event("behavior.started", "mira", 1, {"behavior_id": behavior["id"]})
+            repo.events.append_event("behavior.completed", "god", 2, {"behavior_id": behavior["id"]})
+        assert _state(platform, baseline)["new_behaviors_executed"] == []
+        with platform.store.transaction():
+            repo.events.append_event("behavior.completed", "mira", 4, {"behavior_id": behavior["id"]})
+        assert _state(platform, baseline)["new_behaviors_executed"] == ["new_inspection"]
+    finally:
+        platform.close()
 
 
 def test_idle_probe_world_wakes_god_through_the_stagnation_fallback(tmp_path: Path) -> None:

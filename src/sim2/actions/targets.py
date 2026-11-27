@@ -32,6 +32,12 @@ class TargetResolver:
         matches = [str(row["id"]) for row in rows if self._key(row["name"]) == self._key(text)]
         return matches[0] if len(matches) == 1 else None
 
+    def named_entity(self, value: Any) -> dict[str, Any] | None:
+        """Resolve an effect target using its exact stored id or unique visible name."""
+
+        entity_id = self.canonical_id(value)
+        return self.store.repositories.entities.get_entity(entity_id) if entity_id else None
+
     def visible_agents(self, agent: dict[str, Any]) -> list[dict[str, Any]]:
         """Return other Agents at the actor's current location in stable order."""
 

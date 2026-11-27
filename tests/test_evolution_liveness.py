@@ -20,6 +20,7 @@ from sim2.bootstrap.service import create_instance, validate_config
 from sim2.evolution.config import normalize_evolution_config
 from sim2.platform.runtime import Platform
 from sim2.prompting.renderer import render_context
+from sim2.world.growth import growth_outcome_event
 
 WORLD = Path(__file__).parents[1] / "worlds" / "three_lanterns_town"
 BOUNDARY_BEAT = "记录界碑研究结果并决定下一步核验"
@@ -861,6 +862,27 @@ def test_institution_cannot_be_revised_before_it_has_operated(tmp_path: Path) ->
         assert result["status"] == "rejected" and result["failed_check"] == "institution_evidence"
         assert result["observed_operations"] == 0
         assert platform.store.repositories.social.list_institutions(status="active", limit=1)[0]["policy"]["allocation"]["minimum_per_subject"] == 1
+    finally:
+        platform.close()
+
+
+def test_social_growth_credits_the_first_verified_use_of_a_new_institution(tmp_path: Path) -> None:
+    platform = _town(tmp_path, "institution-growth")
+    try:
+        events = platform.store.repositories.events
+        plan = {"target_cell": "social", "created_minute": 0, "expires_minute": 12, "event_cursor": events.latest_event_id()}
+        _active_institution(platform)
+        assert growth_outcome_event(platform.store, plan) is None
+        with platform.store.transaction():
+            events.append_event("institution.allocation_completed", "mei_lan", 8, {"institution": INSTITUTION, "consumed": 0})
+            events.append_event("institution.ledger_entry", "mei_lan", 9, {"institution": {"name": "Other"},
+                                                                         "amount": 1, "status": "verified"})
+        assert growth_outcome_event(platform.store, plan) is None
+        _record_operation(platform, 10)
+        proof = growth_outcome_event(platform.store, plan)
+        outcome, = events.events_by_ids([proof])
+        assert (outcome["event_type"], outcome["institution"]["name"], outcome["amount"]) == ("institution.ledger_entry", INSTITUTION, 1)
+        assert growth_outcome_event(platform.store, {**plan, "expires_minute": 9}) is None
     finally:
         platform.close()
 

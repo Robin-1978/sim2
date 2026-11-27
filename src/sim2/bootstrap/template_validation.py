@@ -15,7 +15,7 @@ from ..actions.conditions import ConditionEngine
 from ..behavior.plan import compile_behavior_plan, wait_minutes
 from ..world.lifecycle import validate_incapacitation_rule
 from ..dsl.expressions import parse_expression, reference_paths
-from ..world.definition_compiler import EFFECT_TYPES, action_conditions, condition_syntax_error
+from ..world.definition_compiler import EFFECT_TYPES, action_conditions, condition_syntax_error, effect_payload_error
 from ..evolution.config import normalize_evolution_config
 from ..world.time import validate_day_phase_duration
 from ..world.ui_text import validate_ui_text
@@ -306,8 +306,10 @@ class _TemplateChecks:
             if path in self.attribute_ids:
                 errors.append(f"{owner} must reference {path} through actor.state, actor.need or target.state")
 
-    def check_effect(self, effect: dict[str, Any], owner: str) -> None:
+    def check_effect(self, effect: dict[str, Any], owner: str, field: str) -> None:
         errors = self.errors
+        if error := effect_payload_error(effect, field):
+            errors.append(f"{owner} {error}")
         effect_type = str(effect.get("type") or effect.get("op") or "")
         if effect_type in {"need_delta", "state_delta", "world_property_delta", "relationship_delta"}:
             if not isinstance(effect.get("delta"), (int, float)):
@@ -323,15 +325,10 @@ class _TemplateChecks:
                 errors.append(f"{owner} {effect_type} requires item and numeric quantity")
         elif effect_type == "location_set" and not str(effect.get("location_id") or "").strip():
             errors.append(f"{owner} location_set requires location_id")
-        elif effect_type == "entity_state_set":
-            if not str(effect.get("entity_id") or "").strip() or not str(effect.get("state") or "").strip() or "value" not in effect:
-                errors.append(f"{owner} entity_state_set requires entity_id, state and value")
         elif effect_type == "institution_allocation":
             required = ("institution", "pool_entity", "item")
             if any(not str(effect.get(key) or "").strip() for key in required):
                 errors.append(f"{owner} institution_allocation requires institution, pool_entity and item")
-        elif effect_type == "public_event" and not str(effect.get("event") or "").strip():
-            errors.append(f"{owner} public_event requires event")
         elif effect_type == "catalog_action" and (not str(effect.get("catalog") or "").strip() or not str(effect.get("entry") or "").strip()):
             errors.append(f"{owner} catalog_action requires catalog and entry")
         elif effect_type in {"status_add", "status_remove"} and not str(effect.get("status") or "").strip():
@@ -359,7 +356,7 @@ class _TemplateChecks:
             if not resource.startswith("context.") and resource not in self.resources:
                 errors.append(f"{subject} references unknown world resource {resource or '<missing>'}")
 
-    def check_effect_list(self, effects: Any, owner: str) -> None:
+    def check_effect_list(self, effects: Any, owner: str, field: str = "effects") -> None:
         if not isinstance(effects, list):
             self.errors.append(f"{owner} must be a list")
             return
@@ -367,7 +364,7 @@ class _TemplateChecks:
             if not isinstance(effect, dict) or str(effect.get("type") or effect.get("op") or "") not in EFFECT_TYPES:
                 self.errors.append(f"{owner} has unsupported or missing effect type")
                 continue
-            self.check_effect(effect, owner)
+            self.check_effect(effect, owner, field)
             self.check_effect_targets(effect, owner)
 
     # ------------------------------------------------------------------ actions
@@ -395,7 +392,7 @@ class _TemplateChecks:
             if not effects and not str(action.get("executor") or "").strip():
                 errors.append(f"action {action.get('id')} requires at least one typed effect")
             self.check_effect_list(effects, f"action {action.get('id')}.effects")
-            self.check_effect_list(action.get("progress_effects", []), f"action {action.get('id')}.progress_effects")
+            self.check_effect_list(action.get("progress_effects", []), f"action {action.get('id')}.progress_effects", "progress_effects")
             if not isinstance(action.get("success"), dict) or not isinstance(action.get("success", {}).get("condition"), str) or not isinstance(action.get("success", {}).get("result"), str):
                 errors.append(f"action {action.get('id')} requires a success condition and result")
             if not isinstance(action.get("failure"), dict) or not isinstance(action.get("failure", {}).get("condition"), str) or not isinstance(action.get("failure", {}).get("result"), str):
@@ -565,6 +562,7 @@ class _TemplateChecks:
     def check_recipes(self) -> None:
         errors = self.errors
         for recipe in self.collections["recipes"]:
+            self.check_effect_list(recipe.get("effects", []), f"recipe {recipe.get('id')}.effects", "recipe.effects")
             if not isinstance(recipe.get("inputs"), list):
                 errors.append(f"recipe {recipe.get('id')} inputs must be a list")
             if not isinstance(recipe.get("outputs"), list) or not recipe.get("outputs"):

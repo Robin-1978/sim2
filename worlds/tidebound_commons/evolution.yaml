@@ -33,6 +33,9 @@ director:
   cadence: 1d
   window: 3d
   targets: [place, verb, social, rule]
+  evidence: {social: social_activity}
+  followups:
+    social: {after: 6h, for: god, task: commons_social_use}
   # Use the separately configured `roles.director` model to choose the target.
   # A failed or invalid model answer falls back to the deterministic least-cell
   # policy inside the world tick.
@@ -42,6 +45,10 @@ limits:
   max_ready_god_tasks: 4
   continue_during_cooldown: true
 contracts:
+  commons_social_use:
+    tools: [query_world_index, inspect_definition, propose_definition, wait]
+    purpose: 让公社居民在潮门、集雨器或公共储备的日常工作中实际使用计划里已经登记的社会单位。
+    result: 为能到场的居民绑定一个可执行行为。关系变化须作用于登记的双方和关系类型，派系状态变化须指向登记的派系，制度贡献须进入该制度的账簿。已有合适行为时等待居民行动。
   # A cadence task has no event trigger, so it needs an explicit contract.
   # This is the structural review: add one new playable dimension, not one
   # more research source.

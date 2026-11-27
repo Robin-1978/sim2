@@ -6,7 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from ..world.context import action_condition_context, calendar_context, conflict_context
-from ..world.definition_compiler import condition_syntax_error
+from ..world.definition_compiler import condition_syntax_error, effect_payload_error
 from ..world.execution_recipes import execution_recipe, pin_execution_recipe
 from ..world.lifecycle import trim_unlocked_behaviors, unlocked_behavior_limit
 from ..actions.institutions import allocation_preflight
@@ -541,7 +541,7 @@ class ActivityRuntimeMixin:
         if recipe_id:
             recipe = execution_recipe(self.store, action, recipe_id)
             for effect in (recipe or {}).get("effects", []) or []:
-                if isinstance(effect, dict) and str(effect.get("type") or effect.get("op") or "") == "capability.add_xp" and effect.get("capability"):
+                if isinstance(effect, dict) and str(effect.get("type") or effect.get("op") or "") in {"capability.add_xp", "capability_xp"} and effect.get("capability"):
                     explicit.add(str(effect["capability"]))
 
         owned = {str(item) for item in (agent.get("capabilities") or {})}
@@ -576,6 +576,8 @@ class ActivityRuntimeMixin:
             return [location_reason]
         effects = list(action.get("effects", []) or [])
         for effect in effects:
+            if error := effect_payload_error(effect):
+                return [*errors, error]
             resolved_effect = {
                 key: parameters.get(value.removeprefix("context."), value) if isinstance(value, str) and value.startswith("context.") else value
                 for key, value in effect.items()
@@ -595,7 +597,7 @@ class ActivityRuntimeMixin:
             if effect_type == "relationship_delta":
                 self.apply_relationship_effect(agent, target or effect_target, effect, minute)
             elif effect_type == "public_event":
-                event_type = str(effect.get("event") or "public.event")
+                event_type = str(effect["event"])
 
                 def _resolve_public_value(value: Any) -> Any:
                     if isinstance(value, str) and value.startswith("context."):
@@ -842,30 +844,8 @@ class ActivityRuntimeMixin:
                         else:
                             self.resources.change_for_behavior(agent, resource_id, quantity)
             elif effect_type == "entity_state_set":
-                entity_id = resolved_effect.get("entity_id") or resolved_effect.get("target_entity")
-                state_key = resolved_effect.get("state") or resolved_effect.get("property")
-                if entity_id and state_key:
-                    try:
-                        entity = self.store.repositories.entities.get_entity(str(entity_id))
-                    except KeyError:
-                        entity = None
-                    if entity is not None:
-                        entity_state = dict(entity.get("initial_state") or {})
-                        before_value = entity_state.get(str(state_key))
-                        entity_state[str(state_key)] = resolved_effect.get("value")
-                        entity["initial_state"] = entity_state
-                        self.store.repositories.entities.put_entity(
-                            entity["id"], entity["entity_type"], entity["name"],
-                            {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}},
-                        )
-                        self._context.services["events"].append(
-                            "entity.state_changed", agent["id"], minute,
-                            {"entity_id": entity["id"], "state": str(state_key), "before": before_value, "after": entity_state[str(state_key)], "action_id": action.get("id")},
-                        )
-                    else:
-                        errors.append(f"entity_state_set target does not exist: {entity_id}")
-                else:
-                    errors.append("entity_state_set requires an entity and state field")
+                if error := self._set_entity_state(resolved_effect, agent["id"], action.get("id"), minute):
+                    errors.append(error)
             elif effect_type == "institution_allocation":
                 allocation = self._context.services["social"].apply_institution_allocation(
                     str(resolved_effect.get("institution") or ""),
@@ -920,33 +900,41 @@ class ActivityRuntimeMixin:
             item = str(output.get("item"))
             agent.setdefault("inventory", {})[item] = agent["inventory"].get(item, 0) + output.get("quantity", 0)
         for effect in recipe.get("effects", []) or []:
+            if error := effect_payload_error(effect, "recipe.effects"):
+                return [*errors, error]
             effect_type = str(effect.get("type") or effect.get("op") or "")
             if effect_type == "entity_state_set":
-                entity_id = effect.get("entity_id") or effect.get("target_entity")
-                state_key = effect.get("state") or effect.get("property")
-                if entity_id and state_key:
-                    try:
-                        entity = self.store.repositories.entities.get_entity(str(entity_id))
-                    except KeyError:
-                        entity = None
-                    if entity is not None:
-                        entity_state = dict(entity.get("initial_state") or {})
-                        before_value = entity_state.get(str(state_key))
-                        entity_state[str(state_key)] = effect.get("value")
-                        entity["initial_state"] = entity_state
-                        self.store.repositories.entities.put_entity(
-                            entity["id"], entity["entity_type"], entity["name"],
-                            {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}},
-                        )
-                        self._context.services["events"].append(
-                            "entity.state_changed", agent["id"], minute,
-                            {"entity_id": entity["id"], "state": str(state_key), "before": before_value, "after": entity_state[str(state_key)], "action_id": f"recipe:{recipe_id}"},
-                        )
-            elif effect_type == "capability.add_xp":
+                if error := self._set_entity_state(effect, agent["id"], f"recipe:{recipe_id}", minute):
+                    errors.append(error)
+            elif effect_type in {"capability.add_xp", "capability_xp"}:
                 capability = effect.get("capability")
                 if capability:
                     self._context.services["events"].append("capability.evidence", agent["id"], minute, {"capability": str(capability), "source": f"recipe:{recipe_id}", "configured_delta": float(effect.get("value", 0) or 0), "requires_agent_review": True})
         return errors
+
+    def _set_entity_state(
+        self, effect: dict[str, Any], actor_id: str, action_id: str | None, minute: int,
+    ) -> str | None:
+        entity_ref = effect.get("entity_id") or effect.get("target_entity")
+        state_key = str(effect.get("state") or effect.get("property") or "")
+        if not state_key:
+            return "entity_state_set requires a state field"
+        entity = self.targets.named_entity(entity_ref)
+        if entity is None:
+            return f"entity_state_set target does not exist or is ambiguous: {entity_ref}"
+        state = dict(entity.get("initial_state") or {})
+        before = state.get(state_key)
+        state[state_key] = effect["value"]
+        entity["initial_state"] = state
+        self.store.repositories.entities.put_entity(
+            entity["id"], entity["entity_type"], entity["name"],
+            {key: value for key, value in entity.items() if key not in {"id", "entity_type", "name"}},
+        )
+        self._context.services["events"].append(
+            "entity.state_changed", actor_id, minute,
+            {"entity_id": entity["id"], "state": state_key, "before": before, "after": state[state_key], "action_id": action_id},
+        )
+        return None
 
     def _action_condition_context(
         self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any],
@@ -1083,13 +1071,18 @@ class ActivityRuntimeMixin:
         data = dict(current or {})
         for key in ("from", "to", "type"):
             data.pop(key, None)
-        data["relation_strength"] = max(-1.0, min(1.0, float(data.get("relation_strength", 0) or 0) + delta))
+        before = float(data.get("relation_strength", 0) or 0)
+        data["relation_strength"] = max(-1.0, min(1.0, before + delta))
         data["last_changed_minute"] = int(minute)
         description = str(effect.get("description") or "").strip()
         if description:
             data["description"] = description
         self.store.repositories.entities.put_relationship(agent["id"], target_id, relation_type, data)
-        self._context.services["events"].append("relationship.changed", agent["id"], minute, {"target_id": target_id, "relation": relation_type, "delta": delta, "relation_strength": data["relation_strength"], **({"description": description} if description else {})})
+        self._context.services["events"].append("relationship.changed", agent["id"], minute, {
+            "target_id": target_id, "relation": relation_type, "delta": delta,
+            "actual_delta": data["relation_strength"] - before, "relationship_created": current is None,
+            "relation_strength": data["relation_strength"], **({"description": description} if description else {}),
+        })
 
     def _advance_information_progress(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], minute: int) -> dict[str, Any] | None:
         definition = action.get("progress") or {}
@@ -1487,6 +1480,8 @@ class ActivityRuntimeMixin:
                 compiled = self.rule_compiler.compile(raw_rule)
                 followup = {
                     "rule": compiled["name"],
+                    "rule_id": raw_rule.get("id") or compiled["name"],
+                    "execution_id": execution_id,
                     "behavior_id": behavior_id,
                     "result": result,
                     "expected_effects": list(raw_rule.get("expected_effects") or []),

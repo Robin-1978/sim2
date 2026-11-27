@@ -1,0 +1,48 @@
+director:
+  cadence: 20m
+  window: 2h
+  targets:
+  - social
+  - rule
+  - verb
+  - resource
+  - place
+  evidence:
+    social: social_activity
+  followups:
+    social:
+      after: 20m
+      for: god
+      task: relay_public_use
+contracts:
+  god_structural:
+    tools:
+    - query_history
+    - query_knowledge_gaps
+    - propose_entity
+    - propose_definition
+    - propose_world_change
+    - wait
+    max_proposals: 3
+    required_content:
+      growth_cell: true
+    purpose: Fill the Director's target structural cell with one concrete, reachable growth unit.
+    result: 'Read the season plan target_cell and submit exactly one new entity, definition or world
+      change that increases that cell and is reachable from Mira''s current state. Do not duplicate
+      existing content. Any new Action that changes a stock must bind the stock as a resource_id
+      parameter and use context.resource_id in its effect; one generic Action serves every stock.
+      A withdrawal or take behavior must also declare parameter_bindings.resource_location_id: resource_location
+      on the followup behavior and travel to context.resource_location_id before the stock action.
+      If the target cell is already supported and no distinct extension exists, wait.'
+  relay_public_use:
+    tools:
+    - query_world_index
+    - inspect_definition
+    - propose_definition
+    - wait
+    purpose: Connect the registered social unit to a reachable shift at the relay.
+    result: Give Mira a short activity for the registered unit named in the plan. For a faction,
+      set entity_id to its exact visible name, state to the field being changed and value to the
+      new value in an entity_state_set effect. Assign the followup_behavior to Mira.
+      For a bond, bind relationship_delta to the same participants and relation. Wait if
+      that route already exists.

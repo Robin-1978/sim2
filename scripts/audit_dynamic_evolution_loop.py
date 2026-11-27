@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import yaml
+
 from sim2.agents.engine import AgentEngine, AgentTurn
 from sim2.bootstrap.service import create_instance_from_template
 from sim2.intents.models import BehaviorIntent
@@ -139,28 +141,8 @@ def _probe_template(*, fallback: bool = True, director: bool = False) -> dict[st
     }
     if director:
         evolution = template["evolution"]
-        evolution["director"] = {
-            "cadence": "20m",
-            "window": "2h",
-            "targets": ["social", "rule", "verb", "resource", "place"],
-        }
-        evolution["contracts"] = {
-            "god_structural": {
-                "tools": ["query_history", "query_knowledge_gaps", "propose_entity", "propose_definition", "propose_world_change", "wait"],
-                "max_proposals": 3,
-                "required_content": {"growth_cell": True},
-                "purpose": "Fill the Director's target structural cell with one concrete, reachable growth unit.",
-                "result": (
-                    "Read the season plan target_cell and submit exactly one new entity, definition or world change "
-                    "that increases that cell and is reachable from Mira's current state. Do not duplicate existing "
-                    "content. Any new Action that changes a stock must bind the stock as a resource_id parameter and "
-                    "use context.resource_id in its effect; one generic Action serves every stock. A withdrawal or "
-                    "take behavior must also declare parameter_bindings.resource_location_id: resource_location on "
-                    "the followup behavior and travel to context.resource_location_id before the stock action. "
-                    "If the target cell is already supported and no distinct extension exists, wait."
-                ),
-            }
-        }
+        overlay = Path(__file__).resolve().parents[1] / "worlds" / "aster_relay" / "director_probe.yaml"
+        evolution.update(yaml.safe_load(overlay.read_text(encoding="utf-8")))
     if fallback:
         evolution = template["evolution"]
         evolution["stagnation"] = {"window": "3h", "max_interval": "1d"}

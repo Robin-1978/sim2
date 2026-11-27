@@ -12,6 +12,7 @@ import yaml
 from sim2.bootstrap.service import create_instance, upgrade_instance, validate_config
 from sim2.intents.models import BehaviorIntent
 from sim2.platform.runtime import Platform
+from sim2.world.definition_compiler import compile_definition_shape
 
 
 WORLD = Path(__file__).parents[1] / "worlds" / "windward_skyfall"
@@ -63,6 +64,73 @@ def test_package_and_definition_proposal_diagnose_malformed_outcome(tmp_path: Pa
         })
         assert report["status"] == "rejected"
         assert f"{field}.condition has invalid expression" in json.dumps(report)
+
+
+@pytest.mark.parametrize(("broken", "correction", "message"), [
+    ({"type": "entity_state_set", "entity_id": "airship", "state": "petition"}, {"value": False},
+     "entity_state_set requires entity_id, state and value"),
+    ({"type": "public_event", "summary": "Petition heard."}, {"event": "petition.heard"},
+     "public_event requires event"),
+])
+def test_package_and_god_reject_incomplete_effects(
+    tmp_path: Path, broken: dict[str, Any], correction: dict[str, Any], message: str,
+) -> None:
+    package = tmp_path / "package"
+    copytree(WORLD, package)
+    db = create_instance(package, "effect-contract", tmp_path)
+    actions = read_rows(package, "actions")
+    action = next(row for row in actions if row["id"] == RESCUE)
+    action["effects"] = [broken]
+    write_rows(package, "actions", actions)
+    assert any(message in error for error in validate_config(package)["errors"])
+    with closing(Platform(db)) as platform:
+        proposal = platform.submit_definition_proposal("god", {
+            "definition_type": "action", "name": "Petition recording", "definition": action,
+        })
+        assert proposal["status"] == "rejected"
+        assert message in json.dumps(proposal)
+
+    for kind, field in [("action", "effects"), ("action", "progress_effects"),
+                        ("behavior", "outcome_effects"), ("recipe", "effects")]:
+        _, errors = compile_definition_shape(kind, "Petition", {field: [broken]})
+        assert any(message in error for error in errors)
+        _, errors = compile_definition_shape(kind, "Petition", {field: [{**broken, **correction}]})
+        assert all(message not in error for error in errors)
+        assert any("requires completion" in error for error in errors) == (field == "progress_effects")
+        assert any("declare it on the action" in error for error in errors) == (
+            kind == "recipe" and broken["type"] == "public_event"
+        )
+    action["effects"] = [{**broken, **correction}]
+    write_rows(package, "actions", actions)
+    assert validate_config(package)["valid"]
+    action["progress_effects"] = action["effects"]
+    write_rows(package, "actions", actions)
+    assert any("requires completion" in error for error in validate_config(package)["errors"])
+
+
+def test_village_progress_changes_the_configured_character_attribute(tmp_path: Path) -> None:
+    with closing(Platform(create_instance(WORLD.parent / "starter_village", "progress-state", tmp_path))) as platform:
+        entities = platform.store.repositories.entities
+        actor = entities.get_agent("he_yan")
+        action = next(row for row in entities.get_definitions("action_def") if row["id"] == "attack")
+        before = actor["initial_state"]["threat_level"]
+        platform._services["execution"].apply_action_progress(actor, action)
+        assert actor["initial_state"]["threat_level"] == pytest.approx(before + 0.2)
+
+
+def test_incomplete_stored_effect_rolls_back_prior_effects(tmp_path: Path) -> None:
+    with closing(Platform(create_instance(WORLD, "legacy-null", tmp_path))) as platform:
+        repository = platform.store.repositories
+        before = repository.metadata.get("world_properties")["kite_rep"]
+        action = flow_action("legacy_petition", "kite_rep")
+        action["effects"].append({"type": "entity_state_set", "entity_id": "airship", "state": "petition"})
+        install_flow(platform, [action_node(action["id"])], [action])
+        submit_flow(platform)
+        platform.step()
+        event, _ = repository.events.behavior_outcome_evidence("hero", "control-flow")
+        assert event["event_type"] == "behavior.failed"
+        assert repository.metadata.get("world_properties")["kite_rep"] == before
+        assert "entity.state_changed" not in repository.events.event_type_counts()
 
 
 @pytest.mark.parametrize("parallel", [False, True])
@@ -345,6 +413,10 @@ def test_failed_condition_keeps_completed_action_and_blocks_behavior_outcome(tmp
     ({"type": "condition", "expression": "conflict.resolved"}, "unsupported condition path"),
     ({"type": "selector", "children": []}, "requires children"),
     ({"type": "parallel", "children": [{"type": "condition", "expression": "actor.alive"}]}, "outside a parallel group"),
+    ({"type": "parallel", "children": [
+        {"type": "sequence", "children": [{"type": "wait", "minutes": 2}, {"type": "action", "action_id": RESCUE}]},
+        {"type": "wait", "minutes": 1},
+    ]}, "sequential steps must be outside a parallel group"),
 ])
 def test_control_nodes_are_validated_in_world_packages(tmp_path: Path, invalid: dict[str, Any], message: str) -> None:
     package = tmp_path / "world"
@@ -357,6 +429,39 @@ def test_control_nodes_are_validated_in_world_packages(tmp_path: Path, invalid: 
     rescue["nodes"].append(invalid)
     write_rows(package, "behavior_trees", behaviors)
     assert any(message in error for error in validate_config(package)["errors"])
+
+
+def test_referenced_parallel_branches_are_checked_at_proposal_and_admission(tmp_path: Path) -> None:
+    with closing(Platform(create_instance(WORLD, "parallel-branch", tmp_path))) as platform:
+        entities = platform.store.repositories.entities
+        wait = {"type": "wait", "minutes": 2}
+        parallel = {"type": "parallel", "children": [{"type": "subtree", "behavior_id": "delayed"}, wait]}
+        with platform.store.transaction():
+            entities.put_definition("bt_def", "delayed", {"id": "delayed", "nodes": [wait, wait]})
+        proposal = {"definition_type": "behavior", "name": "Delayed rescue", "definition": {
+            "deferred": True, "nodes": [parallel],
+        }}
+        result = platform.submit_definition_proposal("god", proposal)
+        assert result["status"] == "rejected" and "outside a parallel group" in str(result)
+        assert platform.enter_player("hero", "mechanic", name="领航员")["status"] == "accepted"
+        rescue = next(item for item in entities.get_definitions("bt_def") if item["id"] == RESCUE)
+        with platform.store.transaction():
+            rescue["nodes"] = [parallel]
+            entities.put_definition("bt_def", RESCUE, rescue)
+        intent = BehaviorIntent("hero", f"behavior:{RESCUE}", {}, {}, "Start rescue.", 1.0, "legacy-parallel")
+        assert platform.submit_behavior(intent)["status"] == "rejected"
+        assert "behavior.started" not in platform.store.repositories.events.event_type_counts()
+        # A reference expanding into concurrent waits still finishes at the longest duration.
+        with platform.store.transaction():
+            entities.put_definition("bt_def", "delayed", {"id": "delayed", "nodes": [
+                {"type": "parallel", "children": [wait, {"type": "wait", "minutes": 3}]},
+            ]})
+        intent = BehaviorIntent("hero", f"behavior:{RESCUE}", {}, {}, "Start rescue.", 1.0, "valid-parallel")
+        result = platform.submit_behavior(intent)
+        assert result["status"] == "accepted" and result["remaining_minutes"] == 3, result
+        for _ in range(3):
+            platform.step()
+        assert platform.store.repositories.events.event_type_counts()["behavior.completed"] == 1
 
 
 def test_mediation_condition_uses_recorded_dialogue(tmp_path: Path) -> None:

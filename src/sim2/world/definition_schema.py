@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .definition_compiler import DEFINITION_TYPES, EFFECT_TYPES, SCALAR_PARAMETER_TYPES
+from .definition_compiler import DEFINITION_TYPES, EFFECT_TYPES, PROGRESS_EFFECT_TYPES, SCALAR_PARAMETER_TYPES
 from .schema_text import concise_schema
 
 
@@ -19,20 +19,20 @@ def propose_definition_schema() -> dict[str, Any]:
     definition_properties: dict[str, Any] = {
         "verb": {
             "type": "string",
-            "description": "Capability family, e.g. transfer_resource or consume; reuse a generic verb.",
+            "description": "Reuse a generic capability family.",
         },
         "nodes": {
             "type": "array",
-            "description": "Exact visible Action names. Add Travel for other locations.",
+            "description": "Add Travel for remote locations.",
             "items": {
                 "type": "object",
                 "properties": {
                     "type": {"type": "string", "enum": ["action", "behavior", "sequence", "selector", "parallel", "condition", "wait"]},
-                    "action_id": {"type": "string", "description": "Exact visible Action name."},
-                    "behavior_id": {"type": "string", "description": "Exact visible behavior name."},
-                    "parameters": {"type": "object", "description": "Action parameter names with exact visible values."},
-                    "expression": {"type": "string", "description": "Predicate for a condition node."},
-                    "minutes": {"type": "integer", "minimum": 1, "description": "Simulation duration for a wait node."},
+                    "action_id": {"type": "string", "description": "Exact Action name."},
+                    "behavior_id": {"type": "string", "description": "Exact behavior name."},
+                    "parameters": {"type": "object", "description": "Bind visible values."},
+                    "expression": {"type": "string", "description": "Condition predicate."},
+                    "minutes": {"type": "integer", "minimum": 1},
                     "children": {"type": "array", "items": {"type": "object"}},
                 },
                 "additionalProperties": True,
@@ -40,7 +40,7 @@ def propose_definition_schema() -> dict[str, Any]:
         },
         "parameters": {
             "type": "object",
-            "description": "Action parameter_name -> configured scalar type name.",
+            "description": "Map parameter names to scalar types.",
             "additionalProperties": {
                 "oneOf": [
                     {"type": "string", "enum": sorted(SCALAR_PARAMETER_TYPES)},
@@ -50,15 +50,15 @@ def propose_definition_schema() -> dict[str, Any]:
         },
         "duration": {
             "type": "object",
-            "description": "Action duration in minutes or a configured mode.",
+            "description": "Minutes or duration mode.",
         },
         "costs": {
             "type": "object",
             "description": "Action costs. Reserve carried inputs under costs.reserve.",
         },
         "preconditions": {"type": "array", "items": {"type": "string"}, "description": "Machine predicates."},
-        "effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Set fields; bind stock targets via context.<param>."},
-        "progress_effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Observable effects while a long Action progresses."},
+        "effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(EFFECT_TYPES)}}, "additionalProperties": True}, "description": "entity_state_set: entity_id,state,value. public_event: event. Bind stock via context.<param>."},
+        "progress_effects": {"type": "array", "items": {"type": "object", "properties": {"type": {"type": "string", "enum": sorted(PROGRESS_EFFECT_TYPES)}}, "additionalProperties": True}, "description": "Actor effects applied each minute."},
         "success": {"type": "object", "description": "Action success: {condition?: machine predicate, result: short label}."},
         "failure": {"type": "object", "description": "Action failure: {condition?: machine predicate, result: short label}."},
         "entry_conditions": {

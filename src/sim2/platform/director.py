@@ -16,6 +16,7 @@ from typing import Any
 from ..evolution.config import role_enabled
 
 from ..world.growth import build_growth_ledger, growth_count, growth_outcome_event
+from ..world.growth_evidence import match_growth_evidence
 
 
 class DirectorRuntimeMixin:
@@ -50,7 +51,12 @@ class DirectorRuntimeMixin:
             target = plan.get("target_cell")
             metric_changed = target == "verb" and plan.get("behavior_action") != config.get("behavior_action")
             growth = not metric_changed and counts.get(target, 0) > int(plan.get("baseline", 0) or 0)
-            outcome_event = growth_outcome_event(store, plan) if growth else None
+            evidence = None
+            if growth and plan.get("evidence"):
+                evidence = match_growth_evidence(store, plan, plan["evidence"])
+                outcome_event = evidence.outcome
+            else:
+                outcome_event = growth_outcome_event(store, plan) if growth else None
             if outcome_event:
                 plan.update(status="completed", completed_minute=minute, outcome_event_id=outcome_event)
                 metadata.set("last_completed_season_plan", plan)
@@ -61,6 +67,16 @@ class DirectorRuntimeMixin:
                 elif growth:
                     plan["closure_reason"] = "registered content has no verified use"
             else:
+                review = plan.get("followup")
+                if (review and evidence and evidence.registration and "use_review_minute" not in plan
+                        and minute >= evidence.registered_minute + review["after_minutes"]):
+                    plan["use_review_minute"] = minute
+                    plan["use_review_subject"] = evidence.subject
+                    metadata.set("season_plan", plan)
+                    store.repositories.evolution.put_evolution_task(
+                        f"director:use:{plan['plan_id']}", review["role"], review["role"], review["task"],
+                        minute, 0, status="ready", data={"season_plan": plan, "source_event_id": evidence.registration, "use_review": True},
+                    )
                 return plan
             metadata.set("season_plan", plan)
             self._remember_plan(plan)
@@ -143,6 +159,10 @@ class DirectorRuntimeMixin:
         }
         if target == "verb" and config.get("behavior_action"):
             plan["behavior_action"] = config["behavior_action"]
+        if target in config.get("evidence", {}):
+            plan["evidence"] = config["evidence"][target]
+        if target in config.get("followups", {}):
+            plan["followup"] = config["followups"][target]
         # The LLM Director calls its provider outside the transaction; the
         # write itself stays atomic with the queued God task.
         with store.transaction():

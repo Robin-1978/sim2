@@ -237,6 +237,47 @@ python scripts/verify_night_pawnshop_growth.py --provider remote
 
 ## 5. 设计原则
 
+### 在 evolution.yaml 中配置成长验收
+
+`director.evidence` 为每个目标指定一组登记事件和使用事件。世界可以直接引用
+`social_activity`，使用平台提供的关系、派系与制度事件，也可以像下面这样定义自己的证据。
+
+```yaml
+director:
+  targets: [social]
+  cadence: 1h
+  window: 2d
+  evidence:
+    social:
+      - registered:
+          - event: entity.created
+            when: "event.entity_type == 'faction'"
+            key: [name]
+            label: name
+        used:
+          - event: audit.signed
+            when: "event.certified and event.quantity >= 2"
+            key: [council]
+  followups:
+    social: {after: 6h, for: god, task: review_council_use}
+contracts:
+  review_council_use:
+    tools: [query_world_index, propose_definition, wait]
+    result: 为登记的议会提供一个居民可以完成的签核行为。已有合适行为时等待。
+```
+
+这个例子要求社会单位数量超过计划基线，且登记之后有角色为同名议会签核。
+`key` 可以列出多个字段，平台按顺序逐项匹配。每个世界应选择能唯一识别单位的
+字段，并从实际行为的 `outcome_events` 产生使用事件。缺失关联字段、无角色的使用
+事件、超期事件均无法完成计划。
+
+`after` 从登记事件的模拟分钟算起。Director 在达到延迟后的首次检查安排一次跟进。
+`for` 可以是 God 或 Story 对应的小写角色名，`task` 引用本世界的 `contracts`。
+省略 `followups` 时照常验收，角色不会因此收到补充任务。潮汐公社启用了社会单位
+跟进，河湾集市仅配置社会使用证据，风脊号沿用自己的残骸打捞行为目标。
+
+### 行为和叙事
+
 1. **DSL 负责确定性，LLM 负责意义**：价格、库存、时间、债务由 Platform 算；名字、动机、秘密、反应由 LLM 写。
 2. **新能力必须能 fail closed**：未知动态引用、缺失实体、错误参数都拒绝，不能静默生成 `context.*` 属性。
 3. **延迟不等于死内容**：`deferred` 行为必须在条件满足时真的出现在玩家视图；测试覆盖这一点。

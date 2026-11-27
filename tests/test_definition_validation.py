@@ -58,6 +58,27 @@ def test_resource_transfer_that_matches_its_reservation_is_valid() -> None:
     assert errors == []
 
 
+@pytest.mark.parametrize("section", ["reserve", "per_minute", "on_success", "on_failure", "refund"])
+def test_invalid_cost_section_returns_a_retryable_rejection(tmp_path: Path, section: str) -> None:
+    platform = Platform(create_instance(WORLD, "cost-shape", tmp_path))
+    try:
+        entities = platform.store.repositories.entities
+        before = entities.get_definitions("action_def")
+        result = platform.submit_definition_proposal("god", {
+            "definition_type": "action", "name": "Withdraw a share", "definition": {
+                "costs": {section: [{"resource_id": "context.resource_id", "amount": 1}]},
+                "duration": {"minutes": 1}, "parameters": {"resource_id": "string"},
+                "effects": [{"type": "resource_withdrawal", "resource_id": "context.resource_id", "amount": 1}],
+                "success": {"result": "withdrawn"}, "failure": {"result": "failed"},
+            },
+        })
+        assert (result["status"], result["failed_check"], result["retryable"]) == ("rejected", "definition_schema", True)
+        assert f"action.costs.{section} must be an object" in result["errors"]
+        assert entities.get_definitions("action_def") == before
+    finally:
+        platform.close()
+
+
 @pytest.mark.parametrize(
     ("overrides", "expected"),
     [

@@ -154,9 +154,10 @@ def test_llm_director_advances_after_the_cell_grows(tmp_path: Path) -> None:
             "evaluation_window_minutes": 80,
             "rule": {
                 "id": "auto_director_rule",
+                "name": "Cistern audit",
                 "condition": "actor.alive",
                 "effect": "policy.auto_director",
-                "behavior_ids": ["inspect_cistern"],
+                "behavior_names": ["Inspect Cistern"],
                 "wake": ["story"],
             },
         })
@@ -165,6 +166,9 @@ def test_llm_director_advances_after_the_cell_grows(tmp_path: Path) -> None:
         runner = SimulationRunner(platform, {"director": provider})
         runner.run(1)
         assert provider.calls == 1
+        with platform.store.transaction():
+            for _ in range(201):
+                platform.store.repositories.events.append_event("test.background", None, 3, {})
         accepted = platform.submit_behavior(BehaviorIntent(
             actor_id="mei_lan", behavior_ref="behavior:inspect_cistern",
             target={}, parameters={}, reason="Check the cistern under the new policy.",
@@ -172,6 +176,14 @@ def test_llm_director_advances_after_the_cell_grows(tmp_path: Path) -> None:
         ))
         assert accepted["status"] == "accepted", accepted
         report = runner.run(81)
+        proposal, = platform.store.repositories.evolution.list_world_proposals()
+        assert proposal["observed"]["event_count"] > 200
+        completed, = platform.store.repositories.events.events_by_ids([proposal["observed"]["outcome_event_id"]])
+        assert completed["event_type"] == "behavior.completed" and completed["execution_id"] == accepted["execution_id"]
+        followed, = completed["outcome"]["rule_followups"]
+        assert (followed["rule"], followed["rule_id"], followed["execution_id"]) == (
+            "Cistern audit", "auto_director_rule", accepted["execution_id"],
+        )
         assert platform.store.repositories.metadata.get("last_completed_season_plan")["outcome_event_id"]
         second = platform.store.repositories.metadata.get("season_plan")
         assert report.director_plans == 1
@@ -180,5 +192,44 @@ def test_llm_director_advances_after_the_cell_grows(tmp_path: Path) -> None:
         assert second["plan_id"] != first["plan_id"]
         assert second["baseline"] == first["baseline"] + 1
         assert second["target_cell"] == "rule"
+    finally:
+        platform.close()
+
+
+def test_rule_evaluator_honors_commit_order_deadline_and_legacy_completion(tmp_path: Path) -> None:
+    platform = _platform(tmp_path, "rule-evaluation-window")
+    try:
+        repo = platform.store.repositories
+        with platform.store.transaction():
+            def complete(minute):
+                return repo.events.append_event("behavior.completed", "mei_lan", minute, {
+                    "behavior_id": "inspect_cistern", "outcome": {"rule_followups": [{"rule": "Cistern audit"}]},
+                })
+
+            complete(0)
+            for number in range(101):
+                repo.evolution.put_world_proposal(f"future-{number}", "intent", "god", "event",
+                                                  "pending_evaluation", 1, 100, {})
+        rule = {"id": "cistern_check", "name": "Cistern audit", "condition": "actor.alive",
+                "effect": "policy.audit", "behavior_names": ["Inspect Cistern"]}
+        new = platform.submit_world_change("god", {"change_type": "rule", "summary": "Use the cistern policy.",
+                                                  "evaluation_window_minutes": 1, "rule": rule})
+        assert new["status"] == "accepted", new
+        with platform.store.transaction():
+            later = complete(2)
+            repo.events.append_event("world.rule.followed", "mei_lan", 1, {"rule": "Cistern audit"})
+            platform.proposal_evaluator.evaluate_due(5)
+        evaluated, = repo.evolution.list_world_proposals(status="no_observed_effect")
+        assert evaluated["proposal_id"] == new["proposal_id"]
+        assert evaluated["observed"]["window"] == {"from_minute": 0, "to_minute": 1}
+
+        with platform.store.transaction():
+            # A legacy completion after the proposal in the same world minute is valid.
+            repo.evolution.put_world_proposal("legacy", "intent", "god", "rule", "pending_evaluation", 0, 1,
+                evaluated["expected"], {"event_id": new["event_id"], "effect": new["effect"]})
+            in_window = complete(0)
+            platform.proposal_evaluator.evaluate_due(5)
+        observed, = repo.evolution.list_world_proposals(status="observed")
+        assert observed["observed"]["outcome_event_id"] == in_window and in_window != later
     finally:
         platform.close()

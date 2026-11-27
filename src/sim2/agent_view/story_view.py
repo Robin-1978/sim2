@@ -66,7 +66,11 @@ class StoryViewMixin:
             validated_source = self._validated_story_source(source_event)
             # The view reports the source event's actor as ``self.id``; with no source event it keeps the requested id.
             actor_id = source_event.get("actor_id")
-        audience_candidates = self._story_audience_candidates(recent_events)
+        audience_events = recent_events
+        if source_event_id and source_event:
+            others = [item for item in recent_events if item["event_id"] != source_event_id]
+            audience_events = [source_event, *others]
+        audience_candidates = self._story_audience_candidates(audience_events)
         observed_events = {str(item.get("event_type", "")) for item in recent_events}
         fact_rows = self.store.connection.execute("SELECT fact_key,data_json FROM knowledge_fact ORDER BY id DESC").fetchall()
         observed_facts = {str(row["fact_key"]) for row in fact_rows}
@@ -113,22 +117,20 @@ class StoryViewMixin:
         # ``behavior.completed`` row.  The wrapper often says only
         # ``research_progressed``; using it as the source hides the completed
         # fact and makes Story search for evidence it already received.
-        source_event = None
         if source_event_id is not None:
-            source_event = next((item for item in recent_events if int(item.get("event_id", -1) or -1) == int(source_event_id)), None)
-        if source_event is None and source_event_id is None:
-            source_event = next(
-                (
-                    item for item in recent_events
-                    if str(item.get("event_type", "")) in {
-                        "exploration.completed", "research.completed", "object.recovered",
-                        "relationship.changed", "negotiation.result_recorded",
-                    }
-                    and item.get("actor_id") not in {"story", "god"}
-                ),
-                None,
-            )
-        if source_event is None and source_event_id is None:
+            return next(iter(self.events_repo.events_by_ids([source_event_id])), None)
+        source_event = next(
+            (
+                item for item in recent_events
+                if str(item.get("event_type", "")) in {
+                    "exploration.completed", "research.completed", "object.recovered",
+                    "relationship.changed", "negotiation.result_recorded",
+                }
+                and item.get("actor_id") not in {"story", "god"}
+            ),
+            None,
+        )
+        if source_event is None:
             source_event = next(
                 (
                     item for item in recent_events

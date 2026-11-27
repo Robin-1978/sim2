@@ -577,7 +577,7 @@ class SocialRuntimeMixin:
                     "institution.allocation_applied", actor_id, minute,
                     {"institution": institution, "subject_id": subject_id, "item": str(item), "amount": quantity, "period": period or "world", "verified_weight": row.get("verified_weight", 0)},
                 )
-        return {"status": "accepted", "institution": institution, "pool_entity": pool["id"], "item": str(item), "period": period or "world", "allocations": allocations, "consumed": consumed, "remaining": available - consumed}
+        return {"status": "accepted", "institution": institution, "institution_name": result["institution"]["name"], "pool_entity": pool["id"], "item": str(item), "period": period or "world", "allocations": allocations, "consumed": consumed, "remaining": available - consumed}
 
     @staticmethod
     def _valid_transfer(bundle: dict[str, Any]) -> bool:

@@ -31,6 +31,7 @@ class WorldChangeSubmission:
     proposal: dict[str, Any]
     origin_role: str | None
     change_type: str = ""
+    relationship_created: bool = False
 
 
 def _coerce_property_value(before_value: Any, value: Any, property_name: str) -> tuple[Any, str | None]:

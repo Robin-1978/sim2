@@ -257,7 +257,8 @@ class ContestedService(PlatformService):
         data = dict(current or {})
         for key in ("from", "to", "type"):
             data.pop(key, None)
-        value = max(-1.0, min(1.0, float(data.get("relation_strength", 0) or 0) + float(delta)))
+        before = float(data.get("relation_strength", 0) or 0)
+        value = max(-1.0, min(1.0, before + float(delta)))
         data["relation_strength"] = value
         data["trust"] = value
         self.store.repositories.entities.put_relationship(from_id, to_id, "trust", data)
@@ -265,7 +266,8 @@ class ContestedService(PlatformService):
             "relationship.changed",
             from_id,
             minute,
-            {"target_id": to_id, "relation": "trust", "delta": float(delta), "relation_strength": value},
+            {"target_id": to_id, "relation": "trust", "delta": float(delta), "actual_delta": value - before,
+             "relationship_created": current is None, "relation_strength": value},
         )
 
     def _entity_name(self, entity_id: str) -> str:

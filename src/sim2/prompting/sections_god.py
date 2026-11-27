@@ -339,6 +339,8 @@ def _season_plan_lines(context: dict[str, Any]) -> list[str]:
         lines.append(f"  Growth unit: one distinct executable behavior binding to {behavior_action}. Baseline: {plan.get('baseline', 0)} bindings.")
     else:
         lines.append("  Fill this cell with one reachable, executable growth unit. Do not substitute another research source or relabel an existing verb.")
+    if plan.get("use_review_minute") is not None:
+        lines.append(f"  Registered unit awaiting verified use: {plan.get('use_review_subject') or 'see triggering evidence'}.")
     lines.append("</season_plan>")
     return lines
 

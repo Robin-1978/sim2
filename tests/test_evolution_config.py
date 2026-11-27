@@ -85,3 +85,19 @@ def test_compact_evolution_is_valid_and_stored_compiled(tmp_path: Path) -> None:
     finally:
         store.close()
 
+
+@pytest.mark.parametrize("change", ["unknown_profile", "wrong_keys", "unknown_field", "missing_contract", "past_deadline"])
+def test_growth_evidence_and_its_review_are_validated_before_boot(change: str) -> None:
+    director = {"targets": ["social"], "window": "3d", "evidence": {"social": "social_activity"}}
+    if change == "unknown_profile":
+        director["evidence"]["social"] = "missing"
+    elif change in {"wrong_keys", "unknown_field"}:
+        uses = {"event": "record.used", "key": ["owner", "name"] if change == "wrong_keys" else ["name"]}
+        if change == "unknown_field":
+            uses["when"] = "world.ready"
+        director["evidence"]["social"] = [{"registered": [{"event": "record.created", "key": ["name"]}], "used": [uses]}]
+    else:
+        director["followups"] = {"social": {"after": "3d" if change == "past_deadline" else "1m",
+                                             "for": "story", "task": "review"}}
+    with pytest.raises(ValueError):
+        normalize_evolution_config({"director": director})

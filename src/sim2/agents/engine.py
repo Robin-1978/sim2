@@ -273,6 +273,13 @@ class AgentEngine:
     def _start_session(self, role: str, actor_id: str, task_type: str, compiled: TaskContext) -> ReactSession:
         context = compiled.context
         task = task_text(role, task_type)
+        plan = context.get("season_plan") or {}
+        if (plan.get("followup") or {}).get("task") == task_type and compiled.trigger_contract:
+            task = (
+                f"{compiled.trigger_contract['result']} "
+                f"Registered unit: {plan.get('use_review_subject') or 'see the triggering event'}. "
+                f"Plan deadline: world minute {plan['expires_minute']}."
+            )
         executor = AgentToolExecutor(
             self.platform,
             role=role,

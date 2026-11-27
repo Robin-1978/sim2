@@ -19,6 +19,7 @@ stagnation:
 limits:
   max_ready_god_tasks: 3
 director:
+  evidence: {social: social_activity}
   cadence: 2d
   window: 7d
   targets:

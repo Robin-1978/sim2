@@ -330,13 +330,14 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
         },
     },
     "update_belief": {
-        "purpose": "Submit a confidence update for a known fact or belief.",
+        "purpose": "Revise an existing belief by quoting it in previous_statement, or add a belief on a new subject.",
         "kind": "intent",
         "parameters": {
             "type": "object",
             "properties": {
                 "belief": {"type": "string", "description": "The belief statement to create or update."},
                 "statement": {"type": "string"},
+                "previous_statement": {"type": "string", "description": "Copy the existing belief verbatim for any revision. With confidence alone, keep its wording."},
                 "confidence": {"type": "number", "minimum": 0, "maximum": 1},
                 "reason": {"type": "string"},
             },

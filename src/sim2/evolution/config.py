@@ -11,6 +11,8 @@ import copy
 import re
 from typing import Any
 
+from ..world.growth_evidence import validate_evidence
+
 
 _DURATION = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([mhdw])\s*$", re.IGNORECASE)
 _UNIT_MINUTES = {"m": 1, "h": 60, "d": 1440, "w": 10080}
@@ -109,7 +111,7 @@ def _stagnation(value: Any) -> dict[str, Any]:
 def _director(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("director must be an object")
-    unknown = sorted(str(key) for key in value if key not in {"cadence", "window", "targets", "policy", "max_cell_units", "saturation", "kickoff", "context_properties", "behavior_action"})
+    unknown = sorted(str(key) for key in value if key not in {"cadence", "window", "targets", "policy", "max_cell_units", "saturation", "kickoff", "context_properties", "behavior_action", "evidence", "followups"})
     if unknown:
         raise ValueError("unknown director field(s): " + ", ".join(unknown))
     cadence = duration_minutes(value.get("cadence", "1d"))
@@ -144,6 +146,24 @@ def _director(value: Any) -> dict[str, Any]:
     unknown_targets = sorted(set(targets) - allowed)
     if unknown_targets:
         raise ValueError("director.targets has unknown targets: " + ", ".join(unknown_targets))
+    evidence = value.get("evidence", {})
+    followups = value.get("followups", {})
+    if not isinstance(evidence, dict) or set(evidence) - set(targets):
+        raise ValueError("director.evidence must be keyed by a selected target cell")
+    for spec in evidence.values():
+        validate_evidence(spec)
+    if not isinstance(followups, dict) or set(followups) - set(evidence):
+        raise ValueError("director.followups must refer to a cell with configured evidence")
+    compiled_followups = {}
+    for cell, review in followups.items():
+        if (not isinstance(review, dict) or set(review) - {"after", "for", "task"}
+                or review.get("for") not in ("god", "story") or not isinstance(review.get("task"), str)
+                or not review["task"].strip()):
+            raise ValueError("director.followups requires a role (god or story) and a task contract")
+        delay = duration_minutes(review.get("after", 0))
+        if delay >= window:
+            raise ValueError("director.followups.after must be shorter than the plan window")
+        compiled_followups[cell] = {"after_minutes": delay, "role": review["for"], "task": review["task"]}
     behavior_action = value.get("behavior_action")
     if behavior_action is not None and (
         not isinstance(behavior_action, str) or not behavior_action.strip() or "verb" not in targets
@@ -158,6 +178,8 @@ def _director(value: Any) -> dict[str, Any]:
         "saturation": saturation,
         "kickoff": bool(kickoff),
         "context_properties": list(dict.fromkeys(context_properties)),
+        **({"evidence": evidence} if evidence else {}),
+        **({"followups": compiled_followups} if followups else {}),
         **({"behavior_action": behavior_action.strip()} if behavior_action else {}),
     }
 
@@ -292,6 +314,10 @@ def normalize_evolution_config(value: dict[str, Any] | None) -> dict[str, Any]:
         root["stagnation"] = _stagnation(root["stagnation"])
     if "director" in root:
         root["director"] = _director(root["director"])
+        for followup in root["director"].get("followups", {}).values():
+            contract = (root.get("contracts") or {}).get(followup["task"]) if isinstance(root.get("contracts"), dict) else None
+            if not isinstance(contract, dict) or not contract.get("tools") or not contract.get("result"):
+                raise ValueError("director followup must name a contract with tools and result")
     if "limits" in root:
         root["limits"] = _limits(root["limits"])
     if "contracts" in root:

@@ -155,7 +155,7 @@ class DefinitionValidationMixin:
         kind = str(definition_type or "").strip().casefold()
         raw = self._normalize_entity_conditions(raw or {})
         definition, errors = compile_definition_shape(kind, name, raw)
-        if kind not in DEFINITION_KINDS:
+        if errors or kind not in DEFINITION_KINDS:
             return definition, errors
         if kind == "attribute":
             self._validate_attribute(name, definition, errors)

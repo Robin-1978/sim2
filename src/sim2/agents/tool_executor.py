@@ -392,8 +392,8 @@ class AgentToolExecutor:
     ) -> dict[str, Any]:
         return self.platform.revise_institution(self.actor_id, institution, policy=policy, ledger=ledger, reason=reason)
 
-    def _update_belief(self, confidence: float, belief: str = "", statement: str = "", reason: str = "") -> dict[str, Any]:
-        return self.platform.submit_belief_update(self.actor_id, "", statement or belief, float(confidence), reason)
+    def _update_belief(self, confidence: float, belief: str = "", statement: str = "", reason: str = "", previous_statement: str = "") -> dict[str, Any]:
+        return self.platform.submit_belief_update(self.actor_id, "", statement or belief, float(confidence), reason, previous_statement=previous_statement)
 
     def _update_goal(self, statement: str, goal: str = "", status: str = "active", priority: float = 1.0) -> dict[str, Any]:
         return self.platform.submit_goal_update(self.actor_id, "ultimate_goal", statement or goal, status, float(priority))

@@ -173,13 +173,20 @@ class EvolutionRepository:
             ),
         )
 
-    def list_world_proposals(self, *, status: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+    def list_world_proposals(self, *, status: str | None = None, limit: int = 20, due_by: int | None = None) -> list[dict[str, Any]]:
         query = "SELECT proposal_id,intent_id,actor_id,change_type,status,created_minute,evaluation_due_minute,expected_json,observed_json,result_json,updated_minute FROM world_proposal"
         args: list[Any] = []
+        filters = []
         if status:
-            query += " WHERE status=?"
+            filters.append("status=?")
             args.append(str(status))
-        query += " ORDER BY created_minute DESC,proposal_id LIMIT ?"
+        if due_by is not None:
+            filters.append("evaluation_due_minute<=?")
+            args.append(due_by)
+        if filters:
+            query += " WHERE " + " AND ".join(filters)
+        order = "evaluation_due_minute,created_minute" if due_by is not None else "created_minute DESC"
+        query += f" ORDER BY {order},proposal_id LIMIT ?"
         args.append(max(1, min(int(limit), 100)))
         rows = self.store.connection.execute(query, tuple(args)).fetchall()
         return [

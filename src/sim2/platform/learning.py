@@ -284,10 +284,13 @@ class LearningRuntimeMixin:
         return result
 
 
-    def submit_belief_update(self, actor_id: str, belief_id: str, statement: str, confidence: float, reason: str) -> dict[str, Any]:
+    def submit_belief_update(self, actor_id: str, belief_id: str, statement: str, confidence: float, reason: str, *, previous_statement: str = "") -> dict[str, Any]:
+        statement = statement.strip()
         data = {"belief_id": belief_id, "statement": statement, "confidence": confidence, "reason": reason}
+        if previous_statement:
+            data["previous_statement"] = previous_statement
         intent_id = str(uuid4())
-        if not statement and not belief_id:
+        if not statement and not belief_id and not previous_statement:
             return self._context.services["intent"].reject_intent(intent_id, actor_id, "update_belief", data, {"status": "rejected", "message": "A belief id or statement is required.", "failed_check": "belief", "retryable": True})
         if not 0 <= confidence <= 1:
             return self._context.services["intent"].reject_intent(intent_id, actor_id, "update_belief", data, {"status": "rejected", "message": "Confidence must be between 0 and 1.", "failed_check": "confidence", "retryable": True})
@@ -295,12 +298,30 @@ class LearningRuntimeMixin:
         with self.store.transaction():
             agent = self.store.repositories.entities.get_agent(actor_id)
             beliefs = list(agent.get("beliefs", []))
-            match = next((belief for belief in beliefs if belief.get("id") == belief_id), None)
+
+            def wording(text: str) -> str:
+                return " ".join(text.split()).casefold()
+
+            if belief_id:
+                match = next((belief for belief in beliefs if belief.get("id") == belief_id), None)
+            else:
+                old_key = wording(previous_statement or statement)
+                match = next((belief for belief in beliefs if wording(belief.get("statement", "")) == old_key), None)
+            if previous_statement and match is None:
+                return self._context.services["intent"].reject_intent(intent_id, actor_id, "update_belief", data, {"status": "rejected", "message": "Choose an existing belief to revise.", "failed_check": "previous_statement", "retryable": True})
             if match is None:
-                match = {"id": belief_id or f"belief_{uuid4().hex[:8]}", "statement": statement}
+                if not statement:
+                    return self._context.services["intent"].reject_intent(intent_id, actor_id, "update_belief", data, {"status": "rejected", "message": "A new belief requires a statement.", "failed_check": "belief", "retryable": True})
+                match = {"statement": statement}
                 beliefs.append(match)
-            elif statement:
+            else:
+                statement = statement or match.get("statement", "")
+                duplicate_keys = {wording(match.get("statement", "")), wording(statement)}
+                beliefs = [belief for belief in beliefs if belief is match or wording(belief.get("statement", "")) not in duplicate_keys]
                 match["statement"] = statement
+            data["statement"] = statement
+            match["id"] = match.get("id") or belief_id or f"belief_{uuid4().hex[:8]}"
+            data["belief_id"] = match["id"]
             match["confidence"] = confidence
             match["updated_world_minute"] = world_minute
             agent["beliefs"] = beliefs

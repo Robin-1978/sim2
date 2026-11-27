@@ -1,28 +1,17 @@
 from __future__ import annotations
 
-import operator
 import re
 from typing import Any
 
+from ..dsl.evaluation import UNKNOWN as _UNKNOWN, evaluate_tree
 from ..dsl.expressions import (
-    BinaryExpression,
     Expression,
     ExpressionSyntaxError,
-    IndexedReference,
-    LiteralExpression,
     ReferenceExpression,
-    UnaryExpression,
     parse_expression,
     reference_paths,
 )
 from ..world.lifecycle import INACTIVE_STATUSES, INCAPACITATED_CONDITION, is_inactive
-
-
-_UNKNOWN = object()
-_COMPARISONS = {
-    "==": operator.eq, "!=": operator.ne, ">=": operator.ge,
-    "<=": operator.le, ">": operator.gt, "<": operator.lt,
-}
 
 
 class ConditionEngine:
@@ -113,97 +102,18 @@ class ConditionEngine:
         *,
         known: bool = False,
     ) -> Any:
-        if isinstance(tree, LiteralExpression):
-            if isinstance(tree.value, tuple):
-                return [
-                    self._evaluate_tree(item, agent, target, world, context, known=known)
-                    if isinstance(item, Expression) else item
-                    for item in tree.value
-                ]
-            return tree.value
-        if isinstance(tree, ReferenceExpression):
-            if known and not self._known_path(tree.path):
+        def resolve(path: str) -> Any:
+            if known and not self._known_path(path):
                 return _UNKNOWN
-            return self._value(tree.path, agent, target, world, context)
-        if isinstance(tree, IndexedReference):
-            key = self._evaluate_tree(tree.key, agent, target, world, context, known=known)
-            if not isinstance(key, (str, int, float)) or isinstance(key, bool):
-                return _UNKNOWN if known else None
-            path = "actor.need" if tree.path == "actor.needs" else tree.path
-            if path == "world" and str(key) in (world or {}):
-                return world[str(key)]
+            return self._value(path, agent, target, world, context)
+
+        def resolve_index(path: str, key: str) -> Any:
+            if path == "world" and key in (world or {}):
+                return world[key]
+            path = "actor.need" if path == "actor.needs" else path
             return self._value(f"{path}.{key}", agent, target, world, context)
-        if isinstance(tree, UnaryExpression):
-            value = self._evaluate_tree(tree.operand, agent, target, world, context, known=known)
-            if value is _UNKNOWN:
-                return _UNKNOWN
-            if tree.operator == "not":
-                return not bool(value)
-            if tree.operator == "+":
-                return +value
-            if tree.operator == "-":
-                return -value
-            return value
-        if not isinstance(tree, BinaryExpression):
-            return _UNKNOWN if known else None
-        if tree.operator == "and":
-            left = self._evaluate_tree(tree.left, agent, target, world, context, known=known)
-            if left is not _UNKNOWN and not bool(left):
-                return False
-            right = self._evaluate_tree(tree.right, agent, target, world, context, known=known)
-            if right is not _UNKNOWN and not bool(right):
-                return False
-            return _UNKNOWN if known and (left is _UNKNOWN or right is _UNKNOWN) else True
-        if tree.operator == "or":
-            left = self._evaluate_tree(tree.left, agent, target, world, context, known=known)
-            if left is not _UNKNOWN and bool(left):
-                return True
-            right = self._evaluate_tree(tree.right, agent, target, world, context, known=known)
-            if right is not _UNKNOWN and bool(right):
-                return True
-            return _UNKNOWN if known and (left is _UNKNOWN or right is _UNKNOWN) else False
-        left = self._evaluate_tree(tree.left, agent, target, world, context, known=known)
-        right = self._evaluate_tree(tree.right, agent, target, world, context, known=known)
-        if left is _UNKNOWN or right is _UNKNOWN:
-            return _UNKNOWN
-        if left is None and tree.operator in {"in", "not_in"}:
-            return tree.operator == "not_in"
-        try:
-            if tree.operator == "in":
-                return left in right
-            if tree.operator == "not_in":
-                return left not in right
-            if tree.operator == "+":
-                return left + right
-            if tree.operator == "-":
-                return left - right
-            if tree.operator == "*":
-                return left * right
-            if tree.operator == "/":
-                return left / right if right != 0 else 0
-            return self._compare(left, tree.operator, right)
-        except (TypeError, KeyError):
-            return False
 
-    @staticmethod
-    def _compare(left: Any, operator: str, right: Any) -> bool:
-        """Compare numeric configuration values without binary-edge errors."""
-
-        if isinstance(left, (int, float)) and not isinstance(left, bool) and isinstance(right, (int, float)) and not isinstance(right, bool):
-            epsilon = 1e-9 * max(1.0, abs(float(left)), abs(float(right)))
-            if operator == "==":
-                return abs(float(left) - float(right)) <= epsilon
-            if operator == "!=":
-                return abs(float(left) - float(right)) > epsilon
-            if operator == ">=":
-                return float(left) + epsilon >= float(right)
-            if operator == "<=":
-                return float(left) - epsilon <= float(right)
-            if operator == ">":
-                return float(left) > float(right) + epsilon
-            if operator == "<":
-                return float(left) < float(right) - epsilon
-        return _COMPARISONS[operator](left, right)
+        return evaluate_tree(tree, resolve, resolve_index, missing=_UNKNOWN if known else None)
 
     @staticmethod
     def _known_path(path: str) -> bool:
