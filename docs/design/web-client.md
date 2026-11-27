@@ -198,8 +198,10 @@ ui:
 ```
 
 客户端按 `property` 读取 `world_properties`，按 `format` 复用百分比/小时/数量
-格式，用 `danger_below` / `warning_below` 切换红/琥珀/青色状态；没有配置时
-整块速览隐藏。这样危机指标仍由世界包声明，网页不硬编码潮门或风暴。
+格式。数值降低时用 `warning_below` 和 `danger_below` 设置严格下限，数值升高时
+用 `warning_at_or_above` 和 `danger_at_or_above` 设置含边界的上限。预警为琥珀色，
+危险为红色。同一指标在封面、场景标签和速览里采用同一等级。只有 `alert: true`
+的属性会出现场景标签中，未触发阈值时显示普通标签。省略指标列表时速览隐藏。
 
 公共设施卡由世界包中的实体声明，客户端按 `order` 排序：
 

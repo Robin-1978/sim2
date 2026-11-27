@@ -388,10 +388,10 @@ export function crisisMetrics(source = state.view) {
     const numeric = Number(value);
     let level = "";
     if (Number.isFinite(numeric)) {
-      const danger = Number(metric.danger_below);
-      const warning = Number(metric.warning_below);
-      if (Number.isFinite(danger) && numeric < danger) level = "danger";
-      else if (Number.isFinite(warning) && numeric < warning) level = "warning";
+      const crosses = (below, atOrAbove) =>
+        (below != null && numeric < below) || (atOrAbove != null && numeric >= atOrAbove);
+      if (crosses(metric.danger_below, metric.danger_at_or_above)) level = "danger";
+      else if (crosses(metric.warning_below, metric.warning_at_or_above)) level = "warning";
     }
     let display = formatWorldProperty(value, meta);
     if (meta.max && !["percent", "hours", "bool"].includes(meta.unit)) display += ` / ${meta.max}`;

@@ -2,7 +2,7 @@ import { activateInstance, advanceTask, beginAction, closeEditor, closeSettings,
 import { unlockFromOwnerLink } from "./api.js";
 import { armSoundOnGesture, renderSoundButton, toggleSound } from "./audio.js";
 import { shareChapter } from "./celebration.js";
-import { $, OPERATOR_KEY, SOUND_KEY, icon, state, storageGet, toast, worldIsOpen } from "./core.js";
+import { $, OPERATOR_KEY, SOUND_KEY, icon, state, storageGet, toast } from "./core.js";
 import { renderActions, renderMobileActionBar, renderResultBeat, renderTask, renderTaskHint } from "./render_actions.js";
 import { renderCharacter, renderClock } from "./render_character.js";
 import { closeLedger, openLedger, renderLedger } from "./render_ledger.js";
@@ -216,7 +216,6 @@ export async function boot() {
     if (!restored) {
       $("entry-screen").classList.remove("hidden");
       $("game").classList.add("hidden");
-      if (!worldIsOpen()) openCreatePanel();
     }
     startStream();
     state.pollTimer = window.setInterval(() => {

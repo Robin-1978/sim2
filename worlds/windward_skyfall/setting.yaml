@@ -29,13 +29,13 @@ ui:
     label: 风暴压力
     format: amount
     max: 100
+    warning_at_or_above: 35
+    danger_at_or_above: 65
     hint: 稀有物资会推高风暴
   - property: beacon_cores
     label: 信标核心
     format: amount
     max: 3
-    danger_below: 1
-    warning_below: 2
     hint: 三个核心才能离天
   - property: camp_morale
     label: 营地士气

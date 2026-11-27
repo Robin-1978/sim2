@@ -84,9 +84,10 @@ export function renderScene() {
     }
     const properties = view.world_properties || {};
     const propertyLabels = view.world_property_labels || {};
+    const levels = new Map(crisisMetrics().map((metric) => [metric.key, metric.level]));
     for (const [key, meta] of Object.entries(propertyLabels)) {
       if (!meta?.alert || properties[key] === undefined) continue;
-      tags.append(el("span", "badge danger", `${meta.label || humanizeKey(key)} ${formatWorldProperty(properties[key], meta)}`));
+      tags.append(el("span", `badge ${levels.get(key) || ""}`.trim(), `${meta.label || humanizeKey(key)} ${formatWorldProperty(properties[key], meta)}`));
     }
 
     const objects = $("scene-objects");
@@ -158,7 +159,7 @@ export function renderScene() {
 export function renderCrisisStrip() {
     const panel = $("crisis-strip");
     if (!panel) return;
-    const metrics = Array.isArray(state.view?.ui?.crisis_metrics) ? state.view.ui.crisis_metrics : [];
+    const metrics = crisisMetrics();
     const root = $("crisis-metrics");
     if (!root) return;
     if (!metrics.length) {
@@ -167,31 +168,11 @@ export function renderCrisisStrip() {
     }
     panel.classList.remove("hidden");
     root.replaceChildren();
-    const properties = state.view?.world_properties || {};
-    const labels = state.view?.world_property_labels || {};
-    for (const metric of metrics) {
-      const key = String(metric?.property || "").trim();
-      if (!key || properties[key] === undefined) continue;
-      const base = labels[key] || {};
-      const meta = {
-        ...base,
-        label: metric.label || base.label || humanizeKey(key),
-        unit: metric.format || base.unit,
-        max: metric.max ?? base.max,
-        true_label: metric.true_label ?? base.true_label,
-        false_label: metric.false_label ?? base.false_label,
-      };
-      const numeric = Number(properties[key]);
-      const danger = Number(metric.danger_below);
-      const warning = Number(metric.warning_below);
-      let level = "good";
-      if (Number.isFinite(danger) && numeric < danger) level = "danger";
-      else if (Number.isFinite(warning) && numeric < warning) level = "warning";
-      const card = el("article", `crisis-metric ${level}`);
-      if (metric.hint) card.title = String(metric.hint);
-      card.append(el("span", "crisis-label", meta.label));
-      let display = formatWorldProperty(properties[key], meta);
-      if (meta.max && !["percent", "hours", "bool"].includes(meta.unit)) display += ` / ${meta.max}`;
+    for (const { meta, value, label, display, level, hint } of metrics) {
+      const numeric = Number(value);
+      const card = el("article", `crisis-metric ${level || "good"}`);
+      if (hint) card.title = hint;
+      card.append(el("span", "crisis-label", label));
       card.append(el("strong", "", display));
       const track = el("div", "crisis-track");
       const fill = el("span");
@@ -199,8 +180,7 @@ export function renderCrisisStrip() {
       fill.style.width = `${clamp((numeric / max) * 100, 0, 100)}%`;
       track.append(fill);
       card.append(track);
-      if (metric.hint) card.append(el("small", "", metric.hint));
+      if (hint) card.append(el("small", "", hint));
       root.append(card);
     }
-    if (!root.children.length) panel.classList.add("hidden");
   }
