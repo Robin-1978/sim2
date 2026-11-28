@@ -22,7 +22,7 @@ from sim2.api import cli
 COMMANDS = (
     "init", "validate-world", "describe-world", "world-schema", "build-world", "decide", "mud", "tui",
     "simulate", "serve", "play", "status", "health", "timeline", "map", "pause", "resume", "step", "metrics",
-    "audit", "snapshot", "restore", "enter-player", "sync-player-template", "inject",
+    "audit", "snapshot", "restore", "enter-player", "sync-player-template", "inject", "artwork",
 )
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
