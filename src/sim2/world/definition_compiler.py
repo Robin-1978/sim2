@@ -41,6 +41,7 @@ EFFECT_TYPES = PROGRESS_EFFECT_TYPES | frozenset(
         "entity_state_set",
         "world_resource_delta", "resource_transfer", "resource_withdrawal", "resource_take", "catalog_action", "capability_xp", "capability.add_xp",
         "institution_allocation",
+        "route_edit", "resident_controller_set",
     }
 )
 
@@ -117,6 +118,17 @@ def effect_payload_error(effect: dict[str, Any], field: str = "effects") -> str 
             return "entity_state_set requires entity_id, state and value"
     if effect_type == "public_event" and not str(effect.get("event") or "").strip():
         return "public_event requires event"
+    if effect_type == "route_edit":
+        mode = effect.get("mode", "link")
+        distance = effect.get("distance")
+        if not all(isinstance(effect.get(key), str) and effect[key].strip() for key in ("from", "to")):
+            return "route_edit requires from and to location references"
+        if mode not in {"link", "unlink"}:
+            return "route_edit mode must be link or unlink"
+        if mode == "link" and not (_is_number(distance) and 0 < distance < float("inf")):
+            return "route_edit link requires a finite positive distance"
+    if effect_type == "resident_controller_set" and effect.get("controller") not in {"bt", "llm"}:
+        return "resident_controller_set controller must be bt or llm"
     if field == "progress_effects" and effect_type not in PROGRESS_EFFECT_TYPES:
         return f"{effect_type} requires completion; declare it in effects"
     if field == "recipe.effects" and effect_type not in RECIPE_EFFECT_TYPES:

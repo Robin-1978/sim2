@@ -1,0 +1,437 @@
+locations:
+- id: high_gate
+  name: 高地枢门
+  description: 井台、工作桌和旧门架围着一块施工空地。
+  safe: true
+  public: true
+  tags:
+  - anchor
+  - craft
+  routes:
+  - high_lodges
+  - north_trestle
+  - low_city
+  - old_yard
+  route_distances: {high_lodges: 3, north_trestle: 10, low_city: 12, old_yard: 18}
+  map_position: {x: 43, y: 18}
+- id: high_lodges
+  name: 高地宿铺
+  description: 宿铺有租床、杂工和夜班后的热饭。
+  safe: true
+  public: true
+  tags:
+  - housing
+  routes:
+  - high_gate
+  route_distances: {high_gate: 3}
+  map_position: {x: 22, y: 17}
+- id: north_trestle
+  name: 北栈桥
+  description: 栈桥对岸是矿口。勘测后可开步道，加固后才适合运重货。
+  safe: true
+  public: true
+  tags:
+  - survey
+  routes:
+  - high_gate
+  route_distances: {high_gate: 10}
+  map_position: {x: 61, y: 13}
+- id: low_city
+  name: 低城议事水庭
+  description: 水务议事员在石阶旁登记配额与居住申请。
+  safe: true
+  public: true
+  tags:
+  - council
+  routes:
+  - high_gate
+  - low_fields
+  - low_market
+  - low_clinic
+  route_distances: {high_gate: 12, low_fields: 4, low_market: 4, low_clinic: 5}
+  map_position: {x: 21, y: 47}
+- id: low_fields
+  name: 河滩农圃
+  description: 水渠供应粮食和燃料枝条，断水会推迟下一批收成。
+  safe: true
+  public: true
+  tags:
+  - farm
+  routes:
+  - low_city
+  route_distances: {low_city: 4}
+  map_position: {x: 8, y: 35}
+- id: low_market
+  name: 低城坊市
+  description: 这里可以买矿、卖矿、租铺，或在坊市外架一座新门。
+  safe: true
+  public: true
+  tags:
+  - anchor
+  - market
+  - housing
+  routes:
+  - low_city
+  route_distances: {low_city: 4}
+  map_position: {x: 15, y: 65}
+- id: low_clinic
+  name: 低城街诊所
+  description: 床位和药材都有限，开放通行关系到谁能及时到这里。
+  safe: true
+  public: true
+  tags:
+  - clinic
+  routes:
+  - low_city
+  route_distances: {low_city: 5}
+  map_position: {x: 31, y: 62}
+- id: old_yard
+  name: 铁轨货场
+  description: 旧路上的矿石在这里过磅。新门可以让货车直达。
+  safe: true
+  public: true
+  tags:
+  - anchor
+  - market
+  routes:
+  - high_gate
+  - old_station
+  - old_dorm
+  - mine_exchange
+  route_distances: {high_gate: 18, old_station: 4, old_dorm: 4, mine_exchange: 28}
+  map_position: {x: 58, y: 55}
+- id: old_station
+  name: 旧站工坊
+  description: 工坊加工矿料、工具和门芯，也接收学徒。
+  safe: true
+  public: true
+  tags:
+  - craft
+  routes:
+  - old_yard
+  route_distances: {old_yard: 4}
+  map_position: {x: 70, y: 65}
+- id: old_dorm
+  name: 旧站宿舍
+  description: 工坊附近的床位为轮班工人节省通勤。
+  safe: true
+  public: true
+  tags:
+  - housing
+  routes:
+  - old_yard
+  route_distances: {old_yard: 4}
+  map_position: {x: 54, y: 78}
+- id: mine_pit
+  name: 灰脊矿口
+  description: 矿石和晶片从这里运到集口挂牌。
+  safe: false
+  public: true
+  tags:
+  - mine
+  routes:
+  - mine_exchange
+  route_distances: {mine_exchange: 6}
+  map_position: {x: 87, y: 25}
+- id: mine_exchange
+  name: 灰脊集口
+  description: 矿户、买家和驮工在此交货，留有两处可施工的门端。
+  safe: true
+  public: true
+  tags:
+  - anchor
+  - market
+  - housing
+  routes:
+  - old_yard
+  - mine_pit
+  route_distances: {old_yard: 28, mine_pit: 6}
+  map_position: {x: 87, y: 48}
+resources:
+- id: high_water
+  name: 高地净水
+  type: resource
+  location_id: high_gate
+  initial_state: {location_id: high_gate, quantity: 32}
+- id: high_food
+  name: 高地饭食
+  type: resource
+  location_id: high_gate
+  initial_state: {location_id: high_gate, quantity: 20}
+- id: high_wages
+  name: 高地薪资金库
+  type: resource
+  location_id: high_gate
+  initial_state: {location_id: high_gate, quantity: 60}
+- id: low_water
+  name: 低城净水
+  type: resource
+  location_id: low_city
+  initial_state: {location_id: low_city, quantity: 32}
+- id: low_food
+  name: 低城饭食
+  type: resource
+  location_id: low_city
+  initial_state: {location_id: low_city, quantity: 20}
+- id: low_wages
+  name: 低城薪资金库
+  type: resource
+  location_id: low_city
+  initial_state: {location_id: low_city, quantity: 60}
+- id: yard_water
+  name: 旧站净水
+  type: resource
+  location_id: old_yard
+  initial_state: {location_id: old_yard, quantity: 32}
+- id: yard_food
+  name: 旧站饭食
+  type: resource
+  location_id: old_yard
+  initial_state: {location_id: old_yard, quantity: 20}
+- id: yard_wages
+  name: 旧站薪资金库
+  type: resource
+  location_id: old_yard
+  initial_state: {location_id: old_yard, quantity: 60}
+- id: mine_water
+  name: 灰脊净水
+  type: resource
+  location_id: mine_exchange
+  initial_state: {location_id: mine_exchange, quantity: 32}
+- id: mine_food
+  name: 灰脊饭食
+  type: resource
+  location_id: mine_exchange
+  initial_state: {location_id: mine_exchange, quantity: 20}
+- id: mine_wages
+  name: 灰脊薪资金库
+  type: resource
+  location_id: mine_exchange
+  initial_state: {location_id: mine_exchange, quantity: 60}
+- id: farm_water
+  name: 农圃灌溉储水
+  type: resource
+  location_id: low_fields
+  initial_state: {location_id: low_fields, quantity: 12}
+- id: clinic_supplies
+  name: 诊所药材
+  type: resource
+  location_id: low_clinic
+  initial_state: {location_id: low_clinic, quantity: 8}
+- id: field_fuel
+  name: 农圃燃料枝条
+  type: resource
+  location_id: low_fields
+  initial_state: {location_id: low_fields, quantity: 12}
+- id: farm_till
+  name: 农圃收入账
+  type: resource
+  location_id: low_fields
+  initial_state: {location_id: low_fields, quantity: 0}
+- id: market_rent
+  name: 坊市租金账
+  type: resource
+  location_id: low_market
+  initial_state: {location_id: low_market, quantity: 0}
+- id: mine_crystal
+  name: 矿户出售的晶片
+  type: resource
+  location_id: mine_exchange
+  initial_state: {location_id: mine_exchange, quantity: 3}
+- id: ore_seam
+  name: 矿口可采矿石
+  type: resource
+  location_id: mine_pit
+  initial_state: {location_id: mine_pit, quantity: 32}
+- id: mine_ore
+  name: 灰脊矿料货架
+  type: resource
+  location_id: mine_exchange
+  initial_state: {location_id: mine_exchange, quantity: 24}
+- id: market_ore
+  name: 低城已收货矿料
+  type: resource
+  location_id: low_market
+  initial_state: {location_id: low_market, quantity: 0}
+- id: yard_ore
+  name: 旧站已收货矿料
+  type: resource
+  location_id: old_yard
+  initial_state: {location_id: old_yard, quantity: 6}
+- id: market_orders
+  name: 低城招工名额
+  type: resource
+  location_id: low_market
+  initial_state: {location_id: low_market, quantity: 0}
+- id: yard_orders
+  name: 旧站工位订单
+  type: resource
+  location_id: old_yard
+  initial_state: {location_id: old_yard, quantity: 0}
+- id: low_beds
+  name: 低城可租铺位和床位
+  type: resource
+  location_id: low_market
+  initial_state: {location_id: low_market, quantity: 8}
+- id: yard_beds
+  name: 旧站可租床位
+  type: resource
+  location_id: old_dorm
+  initial_state: {location_id: old_dorm, quantity: 4}
+- id: high_beds
+  name: 高地可租床位
+  type: resource
+  location_id: high_lodges
+  initial_state: {location_id: high_lodges, quantity: 4}
+- id: mine_beds
+  name: 灰脊可租床位
+  type: resource
+  location_id: mine_exchange
+  initial_state: {location_id: mine_exchange, quantity: 3}
+- id: bridge_work
+  name: 北栈桥施工许可
+  type: resource
+  location_id: north_trestle
+  initial_state: {location_id: north_trestle, quantity: 1}
+- id: relief_warrant
+  name: 公开临时停门议案
+  type: resource
+  location_id: low_city
+  initial_state: {location_id: low_city, quantity: 1}
+- id: substitute_shift
+  name: 待完成的枢门代班
+  type: resource
+  location_id: high_gate
+  initial_state: {location_id: high_gate, quantity: 1}
+- id: worker_mandate
+  name: 枢门班长席位
+  type: resource
+  location_id: high_gate
+  initial_state: {location_id: high_gate, quantity: 1}
+- id: settlement_fund
+  name: 公共维护基金
+  type: resource
+  location_id: low_city
+  initial_state: {location_id: low_city, quantity: 10}
+- id: market_tolls
+  name: 低城实际门费
+  type: resource
+  location_id: mine_exchange
+  initial_state: {location_id: mine_exchange, quantity: 0}
+- id: yard_tolls
+  name: 旧站实际门费
+  type: resource
+  location_id: mine_exchange
+  initial_state: {location_id: mine_exchange, quantity: 0}
+- id: old_foreman_vote
+  name: 旧站推荐签名
+  type: resource
+  location_id: high_gate
+  initial_state: {location_id: high_gate, quantity: 1}
+- id: high_warden_vote
+  name: 高地推荐签名
+  type: resource
+  location_id: high_gate
+  initial_state: {location_id: high_gate, quantity: 1}
+- id: market_permit_slot
+  name: 低城坊市登记许可
+  type: resource
+  location_id: low_market
+  initial_state: {location_id: low_market, quantity: 1}
+- id: market_city_slot
+  name: 低城坊市城市工位
+  type: resource
+  location_id: low_market
+  initial_state: {location_id: low_market, quantity: 1}
+- id: market_mine_slot
+  name: 低城坊市矿区工位
+  type: resource
+  location_id: mine_exchange
+  initial_state: {location_id: mine_exchange, quantity: 1}
+- id: market_link_slot
+  name: 低城坊市配对验收
+  type: resource
+  location_id: mine_exchange
+  initial_state: {location_id: mine_exchange, quantity: 1}
+- id: market_freight
+  name: 低城坊市本班货位
+  type: resource
+  location_id: mine_exchange
+  initial_state: {location_id: mine_exchange, quantity: 0}
+- id: market_maintenance
+  name: 低城坊市门况
+  type: resource
+  location_id: low_market
+  initial_state: {location_id: low_market, quantity: 0}
+- id: yard_permit_slot
+  name: 铁轨货场登记许可
+  type: resource
+  location_id: old_yard
+  initial_state: {location_id: old_yard, quantity: 1}
+- id: yard_city_slot
+  name: 铁轨货场城市工位
+  type: resource
+  location_id: old_yard
+  initial_state: {location_id: old_yard, quantity: 1}
+- id: yard_mine_slot
+  name: 铁轨货场矿区工位
+  type: resource
+  location_id: mine_exchange
+  initial_state: {location_id: mine_exchange, quantity: 1}
+- id: yard_link_slot
+  name: 铁轨货场配对验收
+  type: resource
+  location_id: mine_exchange
+  initial_state: {location_id: mine_exchange, quantity: 1}
+- id: yard_freight
+  name: 铁轨货场本班货位
+  type: resource
+  location_id: mine_exchange
+  initial_state: {location_id: mine_exchange, quantity: 0}
+- id: yard_maintenance
+  name: 铁轨货场门况
+  type: resource
+  location_id: old_yard
+  initial_state: {location_id: old_yard, quantity: 0}
+- id: shop_lease
+  name: 坊市工坊租位
+  type: resource
+  location_id: low_market
+  initial_state:
+    location_id: low_market
+    quantity: 1
+- id: shop_cash
+  name: 工坊周转金
+  type: resource
+  location_id: low_market
+  initial_state:
+    location_id: low_market
+    quantity: 0
+- id: shop_dispatch
+  name: 工坊采购名额
+  type: resource
+  location_id: low_market
+  initial_state:
+    location_id: low_market
+    quantity: 1
+- id: shop_bench
+  name: 工坊工位
+  type: resource
+  location_id: low_market
+  initial_state:
+    location_id: low_market
+    quantity: 1
+- id: paving_stock
+  name: 水庭待用路石
+  type: resource
+  location_id: low_market
+  initial_state:
+    location_id: low_market
+    quantity: 0
+- id: shop_road_slot
+  name: 坊市短路工程
+  type: resource
+  location_id: low_market
+  initial_state:
+    location_id: low_market
+    quantity: 1

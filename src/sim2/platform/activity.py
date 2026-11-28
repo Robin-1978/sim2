@@ -5,14 +5,16 @@ import json
 from typing import Any
 from uuid import uuid4
 
-from ..world.context import action_condition_context, calendar_context, conflict_context
+from ..actions.catalogs import resolve_catalog_entry
+from ..actions.institutions import allocation_preflight
+from ..actions.pacing import SOCIAL_OUTCOME_DELIVERED, generated_action_unavailable
+from ..behavior.controllers import controller_mode
+from ..dsl.expressions import ExpressionSyntaxError, parse_expression, reference_paths
+from ..evolution.memory import update_role_memory_status
+from ..world.context import action_condition_context, calendar_context, configured_context_values, conflict_context
 from ..world.definition_compiler import bind_legacy_inventory_effect, condition_syntax_error, effect_payload_error
 from ..world.execution_recipes import execution_recipe, pin_execution_recipe
 from ..world.lifecycle import trim_unlocked_behaviors, unlocked_behavior_limit
-from ..actions.institutions import allocation_preflight
-from ..actions.catalogs import resolve_catalog_entry
-from ..actions.pacing import SOCIAL_OUTCOME_DELIVERED, generated_action_unavailable
-from ..evolution.memory import update_role_memory_status
 
 
 class ActivityRuntimeMixin:
@@ -380,6 +382,12 @@ class ActivityRuntimeMixin:
         actions: list[dict[str, Any]], index: int, minute: int,
     ) -> int | None:
         state = agent["initial_state"]
+        metadata = self.store.repositories.metadata
+        world = metadata.get("world_properties", {}) or {}
+        simple_context = {
+            **configured_context_values(metadata.get("rules", {}) or {}, agent),
+            **calendar_context(self.store, minute),
+        }
         while index < len(actions):
             state["active_action_index"] = index
             step = actions[index]
@@ -388,14 +396,27 @@ class ActivityRuntimeMixin:
             elif step.get("type") == "condition":
                 expression = str(step.get("expression") or "").strip()
                 parameters = state.get("active_parameters") or {}
-                target, _ = self.targets.resolve(agent, parameters)
-                context = self._action_condition_context(agent, {}, parameters, target, minute)
-                context.update(conflict_context(self.store, agent["id"], self.targets.visible_agents(agent)))
+                try:
+                    refs = reference_paths(parse_expression(expression)) if expression else ()
+                except ExpressionSyntaxError:
+                    refs = ()
+                if all(ref.startswith(("actor.need.", "actor.urgency.", "actor.state.", "actor.inventory.", "world."))
+                       or ref in {"actor.alive", "actor.role"}
+                       or (ref.startswith("context.") and ref.removeprefix("context.") in simple_context)
+                       for ref in refs):
+                    target, context = None, simple_context
+                else:
+                    target, _ = self.targets.resolve(agent, parameters)
+                    context = self._action_condition_context(agent, {}, parameters, target, minute)
+                    context.update(conflict_context(self.store, agent["id"], self.targets.visible_agents(agent)))
                 if expression and self.conditions.evaluate(
                     expression, agent=agent, target={**parameters, **(target or {})},
-                    context=context, world=self.store.repositories.metadata.get("world_properties", {}) or {},
+                    context=context, world=world,
                 ):
                     index += 1
+                elif "on_failure" in step and not state.get("active_action") and not state.get("active_parallel_actions"):
+                    index = step["on_failure"]
+                    state.update({"action_progress": 0.0, "last_action_result": None})
                 elif self._fail_behavior_step(agent, execution_id, behavior_id, step, f"condition failed: {expression}", minute):
                     state = agent["initial_state"]
                     index = state["active_action_index"]
@@ -862,6 +883,12 @@ class ActivityRuntimeMixin:
             elif effect_type == "entity_state_set":
                 if error := self._set_entity_state(resolved_effect, agent["id"], action.get("id"), minute):
                     errors.append(error)
+            elif effect_type == "route_edit":
+                if error := self._context.services["world_changes"].edit_route_from_action(resolved_effect, agent["id"], minute):
+                    errors.append(error)
+            elif effect_type == "resident_controller_set":
+                if error := self._set_resident_controller(agent, resolved_effect["controller"], minute):
+                    errors.append(error)
             elif effect_type == "institution_allocation":
                 allocation = self._context.services["social"].apply_institution_allocation(
                     str(resolved_effect.get("institution") or ""),
@@ -928,6 +955,32 @@ class ActivityRuntimeMixin:
                     self._context.services["events"].append("capability.evidence", agent["id"], minute, {"capability": str(capability), "source": f"recipe:{recipe_id}", "configured_delta": float(effect.get("value", 0) or 0), "requires_agent_review": True})
         return errors
 
+    def _set_resident_controller(self, resident: dict[str, Any], controller: str, minute: int) -> str | None:
+        previous = controller_mode(resident)
+        if previous == "manual" or not resident.get("routine_bt_id"):
+            return "only residents with an assigned routine can change controller"
+        if previous == controller:
+            return "resident already has this controller"
+        metadata = self.store.repositories.metadata
+        policy = (metadata.get("rules", {}) or {}).get("decision_policy") or {}
+        cap = policy.get("max_model_residents")
+        if controller == "llm" and cap is not None:
+            active = sum(controller_mode(item) == "llm" for item in self.store.repositories.entities.list_agents())
+            if active >= cap:
+                return "all resident model slots are in use"
+        resident["controller"] = controller
+        if controller == "llm":
+            resident["controller_fallback"] = "bt"
+        else:
+            resident.pop("controller_fallback", None)
+        evolution = metadata.get("evolution", {}) or {}
+        schedule = evolution.get("evolution", evolution).get("schedule") or {}
+        self.store.repositories.evolution.sync_resident_cadence(resident, minute, schedule)
+        self._context.services["events"].publish(
+            "resident.controller_changed", resident["id"], minute, {"before": previous, "after": controller}, wake="configured",
+        )
+        return None
+
     def _set_entity_state(
         self, effect: dict[str, Any], actor_id: str, action_id: str | None, minute: int,
     ) -> str | None:
@@ -975,8 +1028,12 @@ class ActivityRuntimeMixin:
             return None
         if error := condition_syntax_error(condition):
             return f"invalid failure condition: {error}"
-        context = self._action_condition_context(agent, action, parameters, target, minute)
-        if self.conditions.evaluate(condition, agent=agent, target={**parameters, **(target or {})}, context=context, world=self.store.repositories.metadata.get("world_properties", {}) or {}):
+        if condition in {"actor.alive", "actor.incapacitated"}:
+            failed = self.conditions.evaluate(condition, agent=agent)
+        else:
+            context = self._action_condition_context(agent, action, parameters, target, minute)
+            failed = self.conditions.evaluate(condition, agent=agent, target={**parameters, **(target or {})}, context=context, world=self.store.repositories.metadata.get("world_properties", {}) or {})
+        if failed:
             return str((action.get("failure") or {}).get("result") or condition)
         return None
 
@@ -993,7 +1050,8 @@ class ActivityRuntimeMixin:
         condition = str(success.get("condition") or "").strip()
         if not condition:
             return None
-        context = self._action_condition_context(agent, action, parameters, target, minute)
+        self_only = condition in {"actor.alive", "actor.incapacitated"}
+        context = None if self_only else self._action_condition_context(agent, action, parameters, target, minute)
         verdict = self.conditions.evaluate_known(
             condition,
             agent=agent,

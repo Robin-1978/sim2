@@ -14,6 +14,7 @@ from typing import Any
 
 from ..actions.pacing import generated_action_unavailable
 from ..behavior.estimator import BehaviorDurationEstimator
+from ..behavior.controllers import controller_mode
 from ..behavior.recovery import failure_block_recovered
 from ..intents.models import BehaviorIntent
 from ..world.execution_recipes import recipe_snapshots
@@ -61,6 +62,7 @@ class BehaviorSubmission:
     authorization_operation: str | None = None
     withdrawal: dict[str, Any] | None = None
     take: dict[str, Any] | None = None
+    configured_routine: bool = False
 
 
 class BehaviorIntentService(PlatformService):
@@ -227,7 +229,7 @@ class BehaviorIntentService(PlatformService):
             self.store.repositories.entities.put_definition("bt_def", "travel", behavior)
         return behavior
 
-    def submit_behavior(self, intent: BehaviorIntent) -> dict[str, Any]:
+    def submit_behavior(self, intent: BehaviorIntent, *, configured_routine: bool = False) -> dict[str, Any]:
         previous = self.store.repositories.evolution.get_intent(intent.intent_id)
         if previous is not None:
             return previous["result"] or {"status": previous["status"], "intent_id": intent.intent_id}
@@ -236,6 +238,13 @@ class BehaviorIntentService(PlatformService):
         except KeyError:
             return {"status": "rejected", "message": "The actor does not exist.", "failed_check": "actor", "retryable": False}
         submission = self._open_submission(intent, agent)
+        if configured_routine:
+            controller = controller_mode(agent)
+            submission.configured_routine = (
+                agent.get("routine_bt_id") == submission.behavior_id
+                and (controller == "bt" or (controller == "llm" and agent.get("controller_fallback") == "bt"))
+                and not intent.parameters and not intent.target and intent.observed_agent_revision is None
+            )
         rejection = self._admit(submission)
         if rejection is not None:
             return self.reject_intent(
@@ -491,6 +500,8 @@ class BehaviorIntentService(PlatformService):
 
         intent, runtime_parameters = submission.intent, submission.runtime_parameters
         target_keys = self.view._target_parameter_keys(submission.behavior, submission.definitions)
+        if not target_keys:
+            return None
         visible_participants = self.targets.visible_agents(submission.agent)
         supplied_target = any(runtime_parameters.get(key) for key in target_keys)
         if supplied_target:
@@ -505,7 +516,7 @@ class BehaviorIntentService(PlatformService):
                     "status": "rejected", "message": "Choose one exact visible participant from the current target list.", "failed_check": "target_visibility", "retryable": True,
                     "available_targets": [str(item.get("name", "participant")) for item in visible_participants],
                 }
-        if target_keys and not supplied_target:
+        if not supplied_target:
             visible_name = next((intent.target.get(key) for key in ("name", "entity", "participant", "target") if isinstance(intent.target, dict) and intent.target.get(key)), None)
             if visible_name:
                 canonical = self.targets.canonical_id(visible_name)
@@ -686,6 +697,16 @@ class BehaviorIntentService(PlatformService):
         return None
 
     def _check_catalog(self, submission: BehaviorSubmission) -> dict[str, Any] | None:
+        if submission.configured_routine:
+            nodes = submission.behavior.get("nodes") or []
+            root = nodes[0] if len(nodes) == 1 and isinstance(nodes[0], dict) else {}
+            branches = root.get("children") or []
+            if root.get("type") == "selector" and branches and isinstance(branches[-1], dict) and branches[-1].get("type") == "wait":
+                # A complete selector can fall back to waiting. Project the
+                # catalog only when a rule explicitly governs this behavior.
+                rules = (self.store.repositories.metadata.get("rules", {}) or {}).get("world_rules") or []
+                if not any(self.rule_compiler.behavior_matches(rule, submission.behavior) for rule in rules if isinstance(rule, dict)):
+                    return None
         # A choice made from an old view must be checked against the current
         # executable catalog before it can reserve anything. Explicit target
         # parameters are retained for player/API commands whose destination is
@@ -696,12 +717,18 @@ class BehaviorIntentService(PlatformService):
         # the Action can return its typed failure for audit; all other direct
         # requests still receive the normal catalog check.
         intent, behavior_id = submission.intent, submission.behavior_id
-        allocation_effect = any(
-            any(str(effect.get("type") or effect.get("op") or "") == "institution_allocation" for effect in (next((item for item in self.store.repositories.entities.get_definitions("action_def") if item.get("id") == node.get("action_id")), {}).get("effects", []) or []))
-            for node in self.view._iter_behavior_actions(behavior_id)
-        )
         catalog_check_required = intent.observed_agent_revision is not None or (not intent.target and not intent.parameters)
-        if catalog_check_required and not (intent.observed_agent_revision is None and allocation_effect):
+        if not catalog_check_required:
+            return None
+        allocation_effect = False
+        if intent.observed_agent_revision is None:
+            actions = {action["id"]: action for action in self.store.repositories.entities.get_definitions("action_def")}
+            allocation_effect = any(
+                str(effect.get("type") or effect.get("op") or "") == "institution_allocation"
+                for node in self.view._iter_behavior_actions(behavior_id)
+                for effect in actions.get(node["action_id"], {}).get("effects") or []
+            )
+        if not allocation_effect:
             current_view = self.view.build_decision_view(intent.actor_id, role="agent_decision")
             attemptable = list(current_view.get("executable_behaviors", [])) + [
                 item for item in (current_view.get("blocked_behaviors", []) or [])

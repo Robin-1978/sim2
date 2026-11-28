@@ -1,0 +1,5 @@
+opening_events:
+- id: first_gate
+  type: gatebuild.opening
+  world_minute: 0
+  payload: {summary: 玩家领到一枚门芯。灰脊两处门端还没勘测，各城照旧走驮路。}

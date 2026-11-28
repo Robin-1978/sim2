@@ -1,0 +1,26 @@
+world_id: gate_cities_sandbox
+name: 诸城之门 · 建造经营版
+order: 17
+config_version: gate-cities-build-0.4
+time_unit: minute
+start_world_minute: 0
+random_seed: 5185
+files:
+- setting.yaml
+- world_state.yaml
+- locations.yaml
+- objects.yaml
+- attributes.yaml
+- capabilities.yaml
+- factions.yaml
+- agents.yaml
+- actions.yaml
+- behavior_trees.yaml
+- recipes.yaml
+- rules.yaml
+- player_template.yaml
+- opening_events.yaml
+- evolution.yaml
+- story.yaml
+- prompts/agent.yaml
+- assets/freight-gate.webp

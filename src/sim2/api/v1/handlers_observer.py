@@ -49,6 +49,13 @@ def observer(ctx: RequestContext) -> dict[str, Any]:
 
 
 def timeline(ctx: RequestContext) -> dict[str, Any]:
+    if ctx.query_value("view") == "chronicle":
+        return ctx.server.service_call(
+            "player_chronicle",
+            ctx.query_int("limit", 100, minimum=1, maximum=500),
+            ctx.query_int("after", 0, minimum=0),
+            ctx.query_bool("latest"),
+        )
     return ctx.server.service_call(
         "timeline",
         ctx.query_int("limit", 100, minimum=1, maximum=500),
@@ -94,6 +101,7 @@ def stream(ctx: RequestContext) -> StreamResponse:
         ticks=ctx.query_bool("ticks"),
         role=str(ctx.session.get("role") or "observer"),
         player_id=str(ctx.session.get("player_id") or ""),
+        compact=ctx.query_bool("compact"),
     )
 
 

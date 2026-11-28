@@ -66,6 +66,7 @@ class StreamResponse:
     ticks: bool
     role: str = "observer"
     player_id: str = ""
+    compact: bool = False
 
 
 @dataclass(frozen=True)

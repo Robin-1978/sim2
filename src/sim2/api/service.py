@@ -6,13 +6,15 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from ..behavior.controllers import controller_mode
 from ..intents.models import BehaviorIntent
 from ..platform.runtime import Platform
 from ..world.navigation import generic_player_travel_enabled, route_distance
 from ..world.player_template import PlayerTemplateError, parse_player_template
 from ..world.ui_text import UiText
 from .authoring import AuthoringService
-from .timeline import build_timeline
+from .player_requirements import explain_requirement
+from .timeline import build_timeline, chronicle_event_types
 
 
 def _player_chapter(platform: Platform, player_id: str) -> dict[str, Any] | None:
@@ -341,7 +343,7 @@ def _player_recap(platform: Platform) -> dict[str, Any]:
     """Return the last day's public events as a compact return-session recap."""
 
     current = int(platform.store.repositories.metadata.get("world_minute", 0) or 0)
-    timeline = build_timeline(platform.store, limit=80, latest=True)
+    timeline = build_timeline(platform.store, limit=80, latest=True, event_types=chronicle_event_types(platform.store))
     events = [
         item for item in timeline.get("events", [])
         if current - 1440 <= int(item.get("world_minute", 0) or 0) <= current
@@ -633,9 +635,9 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         if name:
             item_labels[entity_id] = name
     world_property_labels = {
-        str(key): dict(value)
+        str(key): dict(value) if isinstance(value, dict) else {"label": value}
         for key, value in (rules.get("world_property_labels") or {}).items()
-        if str(key) and isinstance(value, dict)
+        if str(key) and isinstance(value, (dict, str))
     }
     location_names = {
         str(key): str((node or {}).get("name") or key)
@@ -668,9 +670,28 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         "tags": [str(item) for item in (location_entity.get("tags") or current.get("tags") or [])],
         "safe": bool(location_entity.get("safe", current.get("safe", False))),
     }
+    last_result = state.get("last_platform_result") or {}
+    last_action_outcome = None
+    if last_result.get("status") in {"completed", "failed", "interrupted"}:
+        message = str(last_result.get("result") or last_result.get("message") or "")
+        if str(setting.get("locale") or "").startswith("zh"):
+            message = explain_requirement(message, nodes, item_labels, rules.get("player_requirement_hints") or {})
+        last_action_outcome = {"status": last_result["status"], "message": message}
     scene = platform.store.repositories.artwork.generated_for(current_id)
     if scene:
         location["artwork"] = f"/world-art/{scene}.webp"
+    goals = decision.get("progression_goals", [])[:8]
+    if str(setting.get("locale") or "").startswith("zh"):
+        hints = rules.get("player_requirement_hints") or {}
+        for goal in goals:
+            goal["missing_requirements"] = list(dict.fromkeys(
+                explain_requirement(str(reason), nodes, item_labels, hints)
+                for reason in (goal.get("missing_requirements") or [])
+            ))
+        for action in unavailable_actions:
+            action["reasons"] = list(dict.fromkeys(
+                explain_requirement(reason, nodes, item_labels, hints) for reason in action["reasons"]
+            ))
     return {
         "status": "ok",
         "revision": int(platform.store.repositories.metadata.get("world_revision", 0) or 0),
@@ -683,7 +704,7 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         "item_labels": item_labels,
         "needs": decision.get("needs", {}),
         "capabilities": capabilities,
-        "goals": decision.get("progression_goals", [])[:8],
+        "goals": goals,
         "chapter": _player_chapter(platform, player_id),
         "onboarding": _onboarding_step(platform, agent),
         "onboarding_checklist": _onboarding_checklist(platform, agent),
@@ -693,6 +714,7 @@ def build_player_view(platform: Platform, player_id: str) -> dict[str, Any]:
         "recipes": _player_recipes(platform, agent),
         "item_uses": _player_item_uses(platform),
         "active_task": active_task,
+        "last_action_outcome": last_action_outcome,
         "actions": actions[:64],
         "unavailable_actions": unavailable_actions[:24],
         "location": location,
@@ -922,9 +944,13 @@ class ControlService:
         except KeyError:
             return {"status": "rejected", "message": "player does not exist", "failed_check": "player_id"}
         steps = max(1, min(int(minutes), 480))
+        evolution = self.platform.store.repositories.metadata.get("evolution", {}) or {}
+        evolution = evolution.get("evolution", evolution)
+        defer_director = ((evolution.get("limits") or {}).get("manual_without_model")
+                          and (evolution.get("director") or {}).get("policy") == "llm")
         result: dict[str, Any] = {}
         for _ in range(steps):
-            result = self.platform.step()
+            result = self.platform.step(defer_director=True) if defer_director else self.platform.step()
             agent = self.platform.store.repositories.entities.get_agent(str(player_id))
             state = agent.get("initial_state", {}) or {}
             if state.get("status") not in {"executing", "paused"} and not state.get("active_action") and not state.get("active_bt_instance"):
@@ -946,6 +972,23 @@ class ControlService:
     def timeline(self, event_limit: int = 100, after_event_id: int = 0, include_ticks: bool = False, latest: bool = False) -> dict[str, Any]:
         with self.platform.store.read_transaction():
             return self.platform.timeline(limit=event_limit, after_event_id=after_event_id, include_ticks=include_ticks, latest=latest)
+
+    def player_chronicle(self, limit: int, after: int, latest: bool, player_ids: tuple[str, ...] = ()) -> dict[str, Any]:
+        store = self.platform.store
+        with store.read_transaction():
+            public_types = chronicle_event_types(store)
+            event_types = public_types
+            if public_types is not None and player_ids:
+                event_types = (*public_types, "artwork.ready", "dialogue.completed", "story.beat.activated", "story.beat.completed", "story.ending",
+                               "trade.offer_created", "trade.countered", "trade.completed", "trade.rejected")
+            timeline = build_timeline(store, limit=limit, after_event_id=after, latest=latest,
+                                      event_types=event_types, player_ids=player_ids)
+            if player_ids:
+                timeline["revision"] = int(store.repositories.metadata.get("world_revision", 0) or 0)
+                timeline["public_types"] = public_types
+                if len(timeline["events"]) < limit:
+                    timeline["next_after_event_id"] = store.repositories.events.latest_event_id()
+            return timeline
 
     @staticmethod
     def _clip(text: Any, size: int = 140) -> str:
@@ -1079,7 +1122,14 @@ class ControlService:
             return {"status": "ok", "event": self._public_event(event, world_label), "related": related}
 
     def dialogue(self, speaker_id: str, listener_id: str, topic: str, message: str) -> dict[str, Any]:
-        return self.platform.submit_dialogue(speaker_id, listener_id, topic, message)
+        result = self.platform.submit_dialogue(speaker_id, listener_id, topic, message)
+        if result.get("status") == "accepted":
+            with self.platform.store.read_transaction():
+                repositories = self.platform.store.repositories
+                exchange = repositories.social.get_dialogue_exchange(result["dialogue_id"])
+                if exchange and controller_mode(repositories.entities.get_agent(exchange["listener_id"])) != "llm":
+                    return {**result, "reply": {"status": "recorded"}}
+        return result
 
     def trade_offer(self, offerer_id: str, recipient_id: str, give: dict[str, Any], want: dict[str, Any]) -> dict[str, Any]:
         return self.platform.create_trade_offer(offerer_id, recipient_id, give, want)

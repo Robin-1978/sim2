@@ -3,7 +3,14 @@ from __future__ import annotations
 from typing import Any
 
 
-def build_timeline(store: Any, *, limit: int = 100, after_event_id: int = 0, include_ticks: bool = False, latest: bool = False) -> dict[str, Any]:
+def chronicle_event_types(store: Any) -> tuple[str, ...] | None:
+    setting = store.repositories.metadata.get("setting", {}) or {}
+    events = (setting.get("ui") or {}).get("chronicle_events")
+    return tuple(dict.fromkeys(event for event in events if isinstance(event, str) and event)) if isinstance(events, list) else None
+
+
+def build_timeline(store: Any, *, limit: int = 100, after_event_id: int = 0, include_ticks: bool = False, latest: bool = False,
+                   event_types: tuple[str, ...] | None = None, player_ids: tuple[str, ...] = ()) -> dict[str, Any]:
     """Return a public, chronological third-person event projection."""
 
     def clip(text: Any, size: int = 140) -> str:
@@ -34,11 +41,14 @@ def build_timeline(store: Any, *, limit: int = 100, after_event_id: int = 0, inc
             return "nothing"
         return ", ".join(f"{key}×{value:g}" if isinstance(value, (int, float)) else str(key) for key, value in bundle.items())
 
-    events = store.repositories.events.timeline_events(after_event_id=after_event_id, limit=limit, include_ticks=include_ticks, latest=latest)
-    behavior_labels = {
-        str(item.get("id")): str(item.get("agent_label") or item.get("summary") or item.get("description") or item.get("id"))
-        for item in store.repositories.entities.get_definitions("bt_def")
-    }
+    events = store.repositories.events.timeline_events(after_event_id=after_event_id, limit=limit, include_ticks=include_ticks,
+                                                       latest=latest, event_types=event_types, player_ids=player_ids)
+    behavior_labels = {}
+    if any(event["event_type"].startswith("behavior.") or event["event_type"] in {"story.beat.completed", "world.rule.followed"} for event in events):
+        behavior_labels = {
+            str(item.get("id")): str(item.get("agent_label") or item.get("summary") or item.get("description") or item.get("id"))
+            for item in store.repositories.entities.get_definitions("bt_def")
+        }
     names: dict[str, str] = {}
     for event in events:
         candidates = [event.get(key) for key in ("actor_id", "target_id", "recipient_id", "offerer_id", "speaker_id", "listener_id", "location_id", "area_id", "object_id", "source_id")]

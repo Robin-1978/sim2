@@ -1,0 +1,78 @@
+name: 诸城之门 · 建造经营版
+locale: zh-CN
+genre: 城邦建造 · 开放社会模拟
+premise: 旧驮路勉强维持四地生计。你有一枚门芯和四份框架件，第一扇门会改变商路、岗位和谁需要谁。
+calendar:
+  minutes_per_day: 1440
+  day_phases:
+  - {id: workday, start_minute: 360, end_minute: 1200}
+  - {id: night, start_minute: 1200, end_minute: 360}
+world_clock: {start_day: 1, start_minute: 480, season: 架门季}
+ui:
+  tagline: 每开一扇门，就有一条旧路会改变。
+  entry_action: 接手高地工坊
+  cover_art: assets/freight-gate.webp
+  scene_art: {high_gate: assets/freight-gate.webp}
+  result_labels:
+    retarget_market_to_yard: 灰脊门端已改接铁轨货场
+    retarget_yard_to_market: 灰脊门端已改接低城坊市
+    open_paving_shop: 你的工坊已经开始经营
+    appoint_shop_crew: 坊市班组接下了供货和生产
+    shop_receive_ore: 两份矿料已入坊市仓
+    shop_fabricate_paving: 卖出两份路石，工坊收到三枚钱
+    shop_pay_dividend: 已领取一枚分红
+    shop_pave_market_road: 坊市到水庭的短路开通
+  chronicle_events:
+  - world.created
+  - gatebuild.opening
+  - gatebuild.permit
+  - gatebuild.terminal_fitted
+  - gatebuild.terminal_reclaimed
+  - gatebuild.terminal_retargeted
+  - gatebuild.opened
+  - gatebuild.bridge_ready
+  - gatebuild.agreement
+  - gatebuild.embargo_notice
+  - gatebuild.resident_moved
+  - gatebuild.appointed
+  - resident.controller_changed
+  - gatebuild.shop_opened
+  - gatebuild.shop_staffed
+  - gatebuild.shop_supply_arrived
+  - gatebuild.shop_batch_sold
+  - gatebuild.shop_dividend
+  - gatebuild.shop_road_opened
+  - story.beat.activated
+  - story.beat.completed
+  - entity.created
+  - world.change.rule
+  player_summary_attributes:
+  - integrity
+  - stamina
+  - hydration
+  - satiety
+  venture:
+    title: 经营你的高地工坊
+    purpose: 接单赚钱，雇人替你生产，再把商路接到下一座城。
+    metrics:
+    - {label: 随身现金, item: coin, suffix: ' 枚'}
+    - {label: 已开门线, property: connected_count, suffix: ' 条'}
+    - {label: 框架件, item: frame, suffix: ' 份', hide_when: shop_open}
+    - {label: 工坊周转金, property: shop_cash, suffix: ' 枚', show_when: shop_open}
+    - {label: 已结订单, property: shop_batches, suffix: ' 批', show_when: shop_open}
+    - {label: 接单入账, property: shop_sales, suffix: ' 枚', show_when: shop_open}
+    - {label: 已付成本, property: shop_spent, suffix: ' 枚', show_when: shop_open}
+  spotlights:
+    fix_market_yard: {}
+    fix_yard_market: {}
+    survey: {}
+    bridge_works: {}
+    choose: {blocker: 每对门端必须接向同一座城。配对还需要一枚门芯。可从施工点拆回未配对的门端。}
+    charter: {}
+    hire: {}
+    raise_shop: {blocker: 开工坊需要两枚钱。先交付一份矿料，或在城里取得一笔工钱。}
+    start_shop: {blocker: 工坊每批要两份矿料和一枚工钱。查看周转金，或待正在配送的原料入仓。}
+    shop_yield: {blocker: 账上须留两枚周转金才能分红。铺路要攒够四份路石。}
+    shop_roadworks: {blocker: 铺路要四份路石。可自加工一批，也可等班组交货。}
+    shop_followup: {}
+ui_text: {travel_choice: '前往{name}', travel_summary: '沿当前道路前往{name}。', travel_time: '约 {minutes} 分钟', world_label: 城邦}

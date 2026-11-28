@@ -6,6 +6,7 @@ from threading import RLock
 from typing import Any, BinaryIO
 
 from ..evolution.config import role_enabled
+from ..world.time import world_time_view
 from .services import PlatformContext, PlatformService
 
 
@@ -166,10 +167,23 @@ class EvolutionService(PlatformService):
                 return None
             try:
                 with self.store.transaction():
-                    minute = int(self.store.repositories.metadata.get("world_minute", 0))
+                    metadata = self.store.repositories.metadata
+                    minute = int(metadata.get("world_minute", 0))
                     row = self.store.connection.execute("SELECT role FROM evolution_task WHERE task_id=?", (task_id,)).fetchone()
-                    config = self.store.repositories.metadata.get("evolution", {}) or {}
-                    claimed = self.uow.evolution.claim(task_id, minute) if row and role_enabled(config, row["role"]) else None
+                    config = metadata.get("evolution", {}) or {}
+                    if not row or not role_enabled(config, row["role"]):
+                        return None
+                    policy = (metadata.get("rules", {}) or {}).get("decision_policy") or {}
+                    cap = policy.get("resident_sessions_per_day") if row["role"] in {"agent_decision", "agent_reflection"} else None
+                    if cap:
+                        day = world_time_view(self.store, minute)["day"]
+                        usage = metadata.get("resident_model_usage", {}) or {}
+                        used = int(usage.get("count", 0)) if usage.get("day") == day else 0
+                        if used >= cap:
+                            return None
+                    claimed = self.uow.evolution.claim(task_id, minute)
+                    if claimed and cap:
+                        metadata.set("resident_model_usage", {"day": day, "count": used + 1})
                 if claimed:
                     self._owned_claims.add(task_id)
                 return claimed

@@ -92,6 +92,8 @@ def story_lines(context: dict[str, Any]) -> list[str]:
         lines.append(f"  event: {source.get('event_type', 'validated event')} at world minute {source.get('world_minute', 'unknown')}")
         lines.append(f"  actor: {line(source.get('actor'))}; recorded location: {line(source.get('location'))}")
         lines.append(f"  result: {line(source.get('result'))}")
+        if source.get("summary"):
+            lines.append(f"  recorded summary: {line(source.get('summary'))}")
         if source.get("fact"):
             lines.append(f"  fact: {line(source.get('fact'))}")
         if source.get("research_source"):
@@ -105,6 +107,10 @@ def story_lines(context: dict[str, Any]) -> list[str]:
         lines.append("  no validated source event; return wait")
     lines.append("</validated_source>")
     lines.append("<story_state>")
+    if current := context.get("story_world_state"):
+        lines.append("  Current recorded state takes precedence over the older triggering event:")
+        for item in current:
+            lines.append(f"  - {line(item['label'])} = {line(str(item['value']))}")
     lines.append("  Choose one configured beat whose evidence is present. If none is listed, propose an emergent beat using only the latest validated event's fact, actor, location, and result; do not add numbers, measurements, causes, or details from an unrelated memory. The beat must carry a concrete next goal or decision and name an exact executable follow-up from the audience when one is shown; do not merely repeat the event summary. Research always uses the existing generic research behavior with a selected source parameter.")
     candidates = context.get("audience_candidates") or []
     lines.append("  <audience_candidates>")

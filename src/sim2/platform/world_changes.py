@@ -141,6 +141,34 @@ class WorldChangesRuntimeMixin:
         self.store.repositories.entities.put_entity(target, "location", target_data.get("name", target), {key: value for key, value in target_data.items() if key not in {"id", "entity_type", "name"}})
         return {"route_added": {"from": source, "to": target, "distance": distance}}
 
+    def edit_route_from_action(self, effect: dict[str, Any], actor_id: str, minute: int) -> str | None:
+        source = self.targets.named_entity(effect["from"])
+        target = self.targets.named_entity(effect["to"])
+        if (not source or not target or source["id"] == target["id"]
+                or any(entity["entity_type"] != "location" for entity in (source, target))):
+            return "route endpoints must be two existing locations"
+        already_linked = target["id"] in source.get("routes", ()) or source["id"] in target.get("routes", ())
+        if effect.get("mode", "link") == "link":
+            if already_linked:
+                return "route already exists"
+            self._apply_route({"route": {"from": source["id"], "to": target["id"], "distance": effect["distance"]}})
+            event = "route.opened"
+        else:
+            if not already_linked:
+                return "route is already closed"
+            for location, neighbor in ((source, target), (target, source)):
+                location["routes"] = [item for item in location.get("routes", ()) if item != neighbor["id"]]
+                location["route_distances"] = {
+                    key: value for key, value in (location.get("route_distances") or {}).items() if key != neighbor["id"]
+                }
+                data = {key: value for key, value in location.items() if key not in {"id", "entity_type", "name"}}
+                self.store.repositories.entities.put_entity(location["id"], "location", location["name"], data)
+            event = "route.closed"
+        self._context.services["events"].publish(
+            event, actor_id, minute, {"from": source["id"], "to": target["id"]}, wake="configured",
+        )
+        return None
+
     def _apply_relationship(self, submission: WorldChangeSubmission) -> dict[str, Any]:
         relation = dict(submission.proposal["relationship"])
         source = relation.pop("from", relation.pop("from_id", ""))

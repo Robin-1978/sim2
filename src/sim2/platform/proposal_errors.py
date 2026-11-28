@@ -7,3 +7,7 @@ class _UnreachableProposal(ValueError):
     def __init__(self, errors: list[str]) -> None:
         super().__init__("; ".join(errors))
         self.errors = errors
+
+
+class _ResidentAdmissionError(ValueError):
+    """The settlement lacks an authorized intake point or real provisions."""

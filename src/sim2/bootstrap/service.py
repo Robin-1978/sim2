@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 
 from ..actions.conditions import ConditionEngine
+from ..behavior.controllers import routine_error
 from ..evolution.config import normalize_evolution_config
 from ..persistence.store import WorldStore, config_hash
 from ..world.action_tools import validate_tool_duration
@@ -220,6 +221,7 @@ def world_template_schema() -> dict[str, Any]:
             "controller": {"type": "string", "enum": ["llm", "bt", "bt_only", "behavior_tree"]},
             "controller_fallback": {"type": "string", "enum": ["bt"]},
             "bt_priority": {"type": "array", "items": {"type": "string"}},
+            "routine_bt_id": {"type": ["string", "null"], "minLength": 1},
             "initial_state": {"type": "object"},
             "inventory": {"type": "object"},
         },
@@ -766,6 +768,8 @@ def validate_config(config_dir: Path) -> dict[str, Any]:
             agent.get("controller_fallback") != "bt" or agent.get("controller", "llm") != "llm"
         ):
             errors.append(f"agent {agent.get('id')} controller_fallback must be bt on an llm controller")
+        if error := routine_error(agent):
+            errors.append(f"agent {agent.get('id')} {error}")
         for behavior_id in agent.get("initial_bt_ids", []):
             if behavior_id not in behavior_ids:
                 errors.append(f"agent {agent.get('id')} references unknown behavior {behavior_id}")
@@ -1210,7 +1214,7 @@ def upgrade_instance(config_dir: Path, db_path: Path) -> dict[str, Any]:
                 current = [str(value) for value in (existing_agent.get("initial_bt_ids") or [])]
                 additions = [str(value) for value in (item.get("initial_bt_ids") or []) if str(value) not in current]
                 controller_config = {
-                    key: item[key] for key in ("controller", "controller_fallback", "bt_priority")
+                    key: item[key] for key in ("controller", "controller_fallback", "bt_priority", "routine_bt_id")
                     if key in item and item[key] != existing_agent.get(key)
                 }
                 if additions or controller_config:

@@ -39,6 +39,8 @@ sim2 = ["world/growth_evidence.yaml", "world_builder/*.yaml", "web/*.html", "web
 "worlds.riverbend_market" = ["*.yaml", "prompts/*.yaml"]
 "worlds.night_pawnshop" = ["*.yaml", "prompts/*.yaml"]
 "worlds.windward_skyfall" = ["*.yaml", "prompts/*.yaml", "assets/*.webp"]
+"worlds.gate_cities" = ["*.yaml", "prompts/*.yaml", "assets/*.webp"]
+"worlds.gate_cities_sandbox" = ["*.yaml", "prompts/*.yaml", "assets/*.webp"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

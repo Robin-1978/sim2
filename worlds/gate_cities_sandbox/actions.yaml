@@ -1,0 +1,2664 @@
+actions:
+- id: travel_to
+  version: 1
+  verb: move
+  description: 沿当前可通行的道路前往指定地点。
+  parameters: {location_id: string}
+  preconditions:
+  - actor.alive
+  - route.known
+  - actor.mobile
+  - destination.reachable
+  duration: {mode: route_distance}
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: location_set, location_id: context.location_id}
+  success: {condition: actor.alive, result: travel_to}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+  requires_destination: true
+  completion: {if_already_at_destination: true}
+- id: survey_exchange
+  version: 1
+  verb: explore
+  description: 勘测灰脊集口、矿户协议与两处门端。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - world.site_surveyed == 0
+  duration: {minutes: 10}
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: site_surveyed, value: 1}
+  - type: public_event
+    event: gatebuild.surveyed
+    summary: 灰脊集口的门端已经过勘测。
+    data: {}
+  success: {condition: actor.alive, result: survey_exchange}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: survey_bridge
+  version: 1
+  verb: explore
+  description: 沿北栈桥检查到矿口的步道。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'north_trestle'
+  - world.bridge_surveyed == 0
+  duration: {minutes: 10}
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: route_edit, from: north_trestle, to: mine_pit, distance: 14}
+  - {type: world_property_set, property: bridge_surveyed, value: 1}
+  - type: public_event
+    event: gatebuild.trail_opened
+    summary: 勘测队开通了北栈桥到矿口的步道。
+    data: {}
+  success: {condition: actor.alive, result: survey_bridge}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: improve_bridge
+  version: 1
+  verb: repair
+  description: 消耗两份框架件加固北栈桥
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'north_trestle'
+  - world.bridge_surveyed == 1
+  - world.bridge_improved == 0
+  duration: {minutes: 30}
+  costs:
+    reserve: {frame: 2, bridge_work: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: route_edit, mode: unlink, from: north_trestle, to: mine_pit}
+  - {type: route_edit, from: north_trestle, to: mine_pit, distance: 8}
+  - {type: world_property_set, property: bridge_improved, value: 1}
+  - type: public_event
+    event: gatebuild.bridge_ready
+    summary: 北栈桥完成加固，步行和重货皆可通行。
+    data: {}
+  success: {condition: actor.alive, result: improve_bridge}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: permit_market
+  version: 1
+  verb: authorize
+  description: 与低城坊市登记用地和公开验收。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - world.site_surveyed == 1
+  - world.market_permit == 0
+  duration: {minutes: 8}
+  costs:
+    reserve: {market_permit_slot: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: market_permit, value: 1}
+  - type: public_event
+    event: gatebuild.permit
+    summary: 端点许可已经登记。
+    data: {endpoint: low_market}
+  success: {condition: actor.alive, result: permit_market}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: fit_market_city
+  version: 1
+  verb: build
+  description: 在低城坊市安装通往灰脊的门端。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - world.market_permit == 1
+  - world.market_city == 0
+  duration: {minutes: 40}
+  costs:
+    reserve: {frame: 2, market_city_slot: 1}
+    per_minute: {stamina: 0.18}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: market_city, value: 1}
+  - type: public_event
+    event: gatebuild.terminal_fitted
+    summary: 门端安装完成。
+    data: {endpoint: low_market, lane: market}
+  success: {condition: actor.alive, result: fit_market_city}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: fit_market_mine
+  version: 1
+  verb: build
+  description: 在灰脊集口安装通往低城坊市的门端。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - world.market_permit == 1
+  - world.market_mine == 0
+  duration: {minutes: 40}
+  costs:
+    reserve: {frame: 2, market_mine_slot: 1}
+    per_minute: {stamina: 0.18}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: market_mine, value: 1}
+  - type: public_event
+    event: gatebuild.terminal_fitted
+    summary: 门端安装完成。
+    data: {endpoint: mine_exchange, lane: market}
+  success: {condition: actor.alive, result: fit_market_mine}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: pair_market
+  version: 1
+  verb: build
+  description: 消耗一枚门芯配对灰脊与低城坊市。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - world.market_city == 1
+  - world.market_mine == 1
+  - world.market_link == 0
+  duration: {minutes: 10}
+  costs:
+    reserve: {gate_core: 1, market_link_slot: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: market_link, value: 1}
+  - {type: world_resource_delta, resource_id: market_freight, delta: 4}
+  - {type: world_resource_delta, resource_id: market_maintenance, delta: 12}
+  - {type: world_property_delta, property: connected_count, delta: 1}
+  - type: public_event
+    event: gatebuild.opened
+    summary: 灰脊与低城坊市的门线已通过验收。
+    data: {lane: market, origin: mine_exchange, destination: low_market}
+  success: {condition: 'actor.alive and world.market_city == 1 and world.market_mine == 1', result: pair_market}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: cross_market_out
+  version: 1
+  verb: move
+  description: 使用门线直接通行，货位由货运动作单独预留。
+  parameters: {destination_id: string}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - world.market_link == 1
+  - world.market_maintenance > 0
+  - world.lockdown == 0
+  - context.destination_id == 'low_market'
+  duration: {minutes: 4}
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: location_set, location_id: context.destination_id}
+  success: {condition: actor.alive, result: cross_market_out}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: cross_market_back
+  version: 1
+  verb: move
+  description: 使用门线直接通行，货位由货运动作单独预留。
+  parameters: {destination_id: string}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - world.market_link == 1
+  - world.market_maintenance > 0
+  - world.lockdown == 0
+  - context.destination_id == 'mine_exchange'
+  duration: {minutes: 4}
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: location_set, location_id: context.destination_id}
+  success: {condition: actor.alive, result: cross_market_back}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: repair_market
+  version: 1
+  verb: repair
+  description: 用一份框架件恢复低城坊市门况。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - world.market_link == 1
+  - world.market_maintenance <= 8
+  duration: {minutes: 12}
+  costs:
+    reserve: {frame: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: market_maintenance, delta: 4}
+  - type: public_event
+    event: gatebuild.maintained
+    summary: 门线完成一次维护。
+    data: {lane: market}
+  success: {condition: actor.alive, result: repair_market}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: load_market
+  version: 1
+  verb: allocate
+  description: 预留一格共享货位并取走一份实物矿料。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - world.market_link == 1
+  - world.market_maintenance > 0
+  - world.lockdown == 0
+  - actor.inventory.ore < 1
+  - world.trade_policy != 2
+  duration: {minutes: 4}
+  costs:
+    reserve: {market_freight: 1, mine_ore: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: ore, quantity: 1}
+  success: {condition: actor.alive, result: load_market}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: load_market_fee
+  version: 1
+  verb: allocate
+  description: 公开竞争期付一枚城币并预约货位。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - world.market_link == 1
+  - world.market_maintenance > 0
+  - world.lockdown == 0
+  - actor.inventory.ore < 1
+  - world.trade_policy == 2
+  duration: {minutes: 4}
+  costs:
+    reserve: {market_freight: 1, mine_ore: 1, coin: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: ore, quantity: 1}
+  - {type: resource_transfer, resource_id: market_tolls, source_item: coin, quantity: 1}
+  success: {condition: actor.alive, result: load_market_fee}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: sell_market
+  version: 1
+  verb: trade
+  description: 将矿料卖给低城坊市的货库，领取一枚钱。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - world.market_ore < 35
+  - actor.inventory.ore >= 1
+  duration: {minutes: 5}
+  costs:
+    reserve: {ore: 1, low_wages: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: resource_transfer, resource_id: market_ore, source_item: ore, quantity: 1}
+  - {type: inventory_add, item: coin, quantity: 1}
+  - {type: world_property_delta, property: market_sales, delta: 1}
+  - type: public_event
+    event: gatebuild.sale
+    summary: 矿料已在低城坊市成交，货与款都已入账。
+    data: {lane: market}
+  success: {condition: actor.alive, result: sell_market}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: permit_yard
+  version: 1
+  verb: authorize
+  description: 与铁轨货场登记用地和公开验收。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_yard'
+  - world.site_surveyed == 1
+  - world.yard_permit == 0
+  duration: {minutes: 8}
+  costs:
+    reserve: {yard_permit_slot: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: yard_permit, value: 1}
+  - type: public_event
+    event: gatebuild.permit
+    summary: 端点许可已经登记。
+    data: {endpoint: old_yard}
+  success: {condition: actor.alive, result: permit_yard}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: fit_yard_city
+  version: 1
+  verb: build
+  description: 在铁轨货场安装通往灰脊的门端。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_yard'
+  - world.yard_permit == 1
+  - world.yard_city == 0
+  duration: {minutes: 40}
+  costs:
+    reserve: {frame: 2, yard_city_slot: 1}
+    per_minute: {stamina: 0.18}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: yard_city, value: 1}
+  - type: public_event
+    event: gatebuild.terminal_fitted
+    summary: 门端安装完成。
+    data: {endpoint: old_yard, lane: yard}
+  success: {condition: actor.alive, result: fit_yard_city}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: fit_yard_mine
+  version: 1
+  verb: build
+  description: 在灰脊集口安装通往铁轨货场的门端。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - world.yard_permit == 1
+  - world.yard_mine == 0
+  duration: {minutes: 40}
+  costs:
+    reserve: {frame: 2, yard_mine_slot: 1}
+    per_minute: {stamina: 0.18}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: yard_mine, value: 1}
+  - type: public_event
+    event: gatebuild.terminal_fitted
+    summary: 门端安装完成。
+    data: {endpoint: mine_exchange, lane: yard}
+  success: {condition: actor.alive, result: fit_yard_mine}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: pair_yard
+  version: 1
+  verb: build
+  description: 消耗一枚门芯配对灰脊与铁轨货场。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - world.yard_city == 1
+  - world.yard_mine == 1
+  - world.yard_link == 0
+  duration: {minutes: 10}
+  costs:
+    reserve: {gate_core: 1, yard_link_slot: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: yard_link, value: 1}
+  - {type: world_resource_delta, resource_id: yard_freight, delta: 4}
+  - {type: world_resource_delta, resource_id: yard_maintenance, delta: 12}
+  - {type: world_property_delta, property: connected_count, delta: 1}
+  - type: public_event
+    event: gatebuild.opened
+    summary: 灰脊与铁轨货场的门线已通过验收。
+    data: {lane: yard, origin: mine_exchange, destination: old_yard}
+  success: {condition: 'actor.alive and world.yard_city == 1 and world.yard_mine == 1', result: pair_yard}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: cross_yard_out
+  version: 1
+  verb: move
+  description: 使用门线直接通行，货位由货运动作单独预留。
+  parameters: {destination_id: string}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - world.yard_link == 1
+  - world.yard_maintenance > 0
+  - world.lockdown == 0
+  - context.destination_id == 'old_yard'
+  duration: {minutes: 4}
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: location_set, location_id: context.destination_id}
+  success: {condition: actor.alive, result: cross_yard_out}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: cross_yard_back
+  version: 1
+  verb: move
+  description: 使用门线直接通行，货位由货运动作单独预留。
+  parameters: {destination_id: string}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_yard'
+  - world.yard_link == 1
+  - world.yard_maintenance > 0
+  - world.lockdown == 0
+  - context.destination_id == 'mine_exchange'
+  duration: {minutes: 4}
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: location_set, location_id: context.destination_id}
+  success: {condition: actor.alive, result: cross_yard_back}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: repair_yard
+  version: 1
+  verb: repair
+  description: 用一份框架件恢复铁轨货场门况。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_yard'
+  - world.yard_link == 1
+  - world.yard_maintenance <= 8
+  duration: {minutes: 12}
+  costs:
+    reserve: {frame: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: yard_maintenance, delta: 4}
+  - type: public_event
+    event: gatebuild.maintained
+    summary: 门线完成一次维护。
+    data: {lane: yard}
+  success: {condition: actor.alive, result: repair_yard}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: load_yard
+  version: 1
+  verb: allocate
+  description: 预留一格共享货位并取走一份实物矿料。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - world.yard_link == 1
+  - world.yard_maintenance > 0
+  - world.lockdown == 0
+  - actor.inventory.ore < 1
+  - world.trade_policy != 2
+  duration: {minutes: 4}
+  costs:
+    reserve: {yard_freight: 1, mine_ore: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: ore, quantity: 1}
+  success: {condition: actor.alive, result: load_yard}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: load_yard_fee
+  version: 1
+  verb: allocate
+  description: 公开竞争期付一枚城币并预约货位。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - world.yard_link == 1
+  - world.yard_maintenance > 0
+  - world.lockdown == 0
+  - actor.inventory.ore < 1
+  - world.trade_policy == 2
+  duration: {minutes: 4}
+  costs:
+    reserve: {yard_freight: 1, mine_ore: 1, coin: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: ore, quantity: 1}
+  - {type: resource_transfer, resource_id: yard_tolls, source_item: coin, quantity: 1}
+  success: {condition: actor.alive, result: load_yard_fee}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: sell_yard
+  version: 1
+  verb: trade
+  description: 将矿料卖给铁轨货场的货库，领取一枚钱。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_yard'
+  - world.yard_ore < 35
+  - actor.inventory.ore >= 1
+  duration: {minutes: 5}
+  costs:
+    reserve: {ore: 1, yard_wages: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: resource_transfer, resource_id: yard_ore, source_item: ore, quantity: 1}
+  - {type: inventory_add, item: coin, quantity: 1}
+  - {type: world_property_delta, property: yard_sales, delta: 1}
+  - type: public_event
+    event: gatebuild.sale
+    summary: 矿料已在铁轨货场成交，货与款都已入账。
+    data: {lane: yard}
+  success: {condition: actor.alive, result: sell_yard}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: load_ground
+  version: 1
+  verb: gather
+  description: 从灰脊挂牌货架取一份矿料，使用普通货路。
+  parameters: {item_id: string}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - actor.inventory.ore < 1
+  - context.item_id == 'ore'
+  duration: {minutes: 5}
+  costs:
+    reserve: {mine_ore: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: context.item_id, quantity: 1}
+  success: {condition: actor.alive, result: load_ground}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: buy_ore
+  version: 1
+  verb: trade
+  description: 在旧站货场用一枚钱买一份矿料。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_yard'
+  duration: {minutes: 4}
+  costs:
+    reserve: {coin: 1, yard_ore: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: ore, quantity: 1}
+  - {type: resource_transfer, resource_id: yard_wages, source_item: coin, quantity: 1}
+  success: {condition: actor.alive, result: buy_ore}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: buy_fuel
+  version: 1
+  verb: trade
+  description: 在农圃购买一份燃料枝条。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_fields'
+  duration: {minutes: 4}
+  costs:
+    reserve: {coin: 1, field_fuel: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: fuel, quantity: 1}
+  - {type: resource_transfer, resource_id: farm_till, source_item: coin, quantity: 1}
+  success: {condition: actor.alive, result: buy_fuel}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: buy_crystal
+  version: 1
+  verb: trade
+  description: 矿户只在灰脊集口出售晶片。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  duration: {minutes: 6}
+  costs:
+    reserve: {coin: 2, mine_crystal: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: crystal, quantity: 1}
+  - {type: resource_transfer, resource_id: mine_wages, source_item: coin, quantity: 2}
+  success: {condition: actor.alive, result: buy_crystal}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: fabricate
+  version: 1
+  verb: craft
+  description: 使用当前位置的工位执行已知配方。
+  parameters: {recipe_id: string}
+  preconditions:
+  - actor.alive
+  - station.available
+  - recipe.available
+  - inputs.available
+  duration: {mode: recipe_duration}
+  costs:
+    reserve: {recipe_inputs: 1}
+    per_minute: {stamina: 0.1}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_delta, property: workshop_orders, delta: 1}
+  - {type: need_delta, need: ambition, delta: 12}
+  - {type: need_delta, need: standing, delta: 6}
+  success: {condition: actor.alive, result: fabricate}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: sign_public_access
+  version: 1
+  verb: authorize
+  description: 三城共担维护与应急通行
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_city'
+  - world.connected_count >= 1 or world.bridge_improved == 1
+  - world.trade_policy != 1
+  duration: {minutes: 8}
+  costs:
+    reserve: {coin: 2}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: trade_policy, value: 1}
+  - type: public_event
+    event: gatebuild.agreement
+    summary: 三城共担维护与应急通行
+    data: {terms: 1}
+  - {type: resource_transfer, resource_id: settlement_fund, source_item: coin, quantity: 2}
+  - {type: world_property_set, property: lockdown, value: 0}
+  - {type: world_property_set, property: embargo_countdown, value: 0}
+  success: {condition: actor.alive, result: sign_public_access}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: sign_open_market
+  version: 1
+  verb: authorize
+  description: 登记公开竞争与平价通行
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_city'
+  - world.connected_count >= 1 or world.bridge_improved == 1
+  - world.trade_policy != 2
+  duration: {minutes: 8}
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: trade_policy, value: 2}
+  - type: public_event
+    event: gatebuild.agreement
+    summary: 登记公开竞争与平价通行
+    data: {terms: 2}
+  - {type: world_property_set, property: lockdown, value: 0}
+  - {type: world_property_set, property: embargo_countdown, value: 0}
+  success: {condition: actor.alive, result: sign_open_market}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: sign_embargo
+  version: 1
+  verb: authorize
+  description: 送达一班后生效的货门限制通知
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_city'
+  - world.connected_count >= 1 or world.bridge_improved == 1
+  - world.trade_policy != 3
+  - world.market_sales >= 1 or world.yard_sales >= 1
+  duration: {minutes: 8}
+  costs:
+    reserve: {relief_warrant: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: trade_policy, value: 3}
+  - type: public_event
+    event: gatebuild.agreement
+    summary: 送达一班后生效的货门限制通知
+    data: {terms: 3}
+  - {type: world_property_set, property: embargo_countdown, value: 60}
+  - type: public_event
+    event: gatebuild.embargo_notice
+    summary: 货门限行将在 60 分钟后生效，仍可协商撤回。
+    data: {}
+  success: {condition: actor.alive, result: sign_embargo}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: sip
+  version: 1
+  verb: consume
+  description: 喝随身净水
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.need.hydration < context.hydration_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {water: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: need_delta, need: hydration, delta: 40}
+  success: {condition: actor.alive, result: sip}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: eat
+  version: 1
+  verb: consume
+  description: 吃随身饭食
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.need.satiety < context.satiety_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {meal: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: need_delta, need: satiety, delta: 55}
+  success: {condition: actor.alive, result: eat}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: rest_short
+  version: 1
+  verb: rest
+  description: 在安全地点短歇。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.safe
+  - actor.state.stamina < context.stamina_recovery
+  duration: {minutes: 12}
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: attribute_delta, attribute: stamina, delta: 18}
+  success: {condition: actor.alive, result: rest_short}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: sleep_home
+  version: 1
+  verb: rest
+  description: 在自己的床位休息。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == actor.state.home_location
+  - actor.state.stamina < context.stamina_recovery
+  duration: {minutes: 90}
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: attribute_delta, attribute: stamina, delta: 55}
+  success: {condition: actor.alive, result: sleep_home}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: visit_clinic
+  version: 1
+  verb: heal
+  description: 在诊所消耗药材并休息。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_clinic'
+  - actor.state.integrity < context.clinic_threshold
+  duration: {minutes: 20}
+  costs:
+    reserve: {clinic_supplies: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: attribute_delta, attribute: integrity, delta: 28}
+  - type: public_event
+    event: gatebuild.treated
+    summary: 诊所实际收治了一名伤者。
+    data: {}
+  success: {condition: actor.alive, result: visit_clinic}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: provision_high_water
+  version: 1
+  verb: allocate
+  description: 在当地补给净水。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_gate'
+  - actor.need.hydration < context.hydration_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {high_water: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: water, quantity: 1}
+  success: {condition: actor.alive, result: provision_high_water}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: buy_high_water
+  version: 1
+  verb: trade
+  description: 购买一份当地净水。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_gate'
+  - actor.need.hydration < context.hydration_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {high_water: 1, coin: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: water, quantity: 1}
+  - {type: resource_transfer, resource_id: high_wages, source_item: coin, quantity: 1}
+  success: {condition: actor.alive, result: buy_high_water}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: provision_high_food
+  version: 1
+  verb: allocate
+  description: 在当地补给饭食。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_gate'
+  - actor.need.satiety < context.satiety_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {high_food: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: meal, quantity: 1}
+  success: {condition: actor.alive, result: provision_high_food}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: buy_high_food
+  version: 1
+  verb: trade
+  description: 购买一份当地饭食。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_gate'
+  - actor.need.satiety < context.satiety_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {high_food: 1, coin: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: meal, quantity: 1}
+  - {type: resource_transfer, resource_id: high_wages, source_item: coin, quantity: 1}
+  success: {condition: actor.alive, result: buy_high_food}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: work_high
+  version: 1
+  verb: work
+  description: 完成本地受雇班次，扣取实际投入并从金库领薪。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_gate'
+  - context.day_phase == 'workday'
+  - actor.state.job_region == 'high'
+  - actor.state.stamina >= context.work_minimum
+  - world.high_water < 69
+  duration: {minutes: 18}
+  costs:
+    reserve: {high_wages: 1}
+    per_minute: {stamina: 0.34}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: coin, quantity: 1}
+  - {type: attribute_delta, attribute: skill, delta: 1}
+  - {type: need_delta, need: standing, delta: 2}
+  - {type: need_delta, need: ambition, delta: 2}
+  - {type: world_resource_delta, resource_id: high_water, delta: 1}
+  success: {condition: actor.alive, result: work_high}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: provision_low_water
+  version: 1
+  verb: allocate
+  description: 在当地补给净水。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_city'
+  - actor.need.hydration < context.hydration_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {low_water: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: water, quantity: 1}
+  success: {condition: actor.alive, result: provision_low_water}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: buy_low_water
+  version: 1
+  verb: trade
+  description: 购买一份当地净水。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_city'
+  - actor.need.hydration < context.hydration_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {low_water: 1, coin: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: water, quantity: 1}
+  - {type: resource_transfer, resource_id: low_wages, source_item: coin, quantity: 1}
+  success: {condition: actor.alive, result: buy_low_water}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: provision_low_food
+  version: 1
+  verb: allocate
+  description: 在当地补给饭食。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_city'
+  - actor.need.satiety < context.satiety_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {low_food: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: meal, quantity: 1}
+  success: {condition: actor.alive, result: provision_low_food}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: buy_low_food
+  version: 1
+  verb: trade
+  description: 购买一份当地饭食。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_city'
+  - actor.need.satiety < context.satiety_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {low_food: 1, coin: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: meal, quantity: 1}
+  - {type: resource_transfer, resource_id: low_wages, source_item: coin, quantity: 1}
+  success: {condition: actor.alive, result: buy_low_food}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: work_low
+  version: 1
+  verb: work
+  description: 完成本地受雇班次，扣取实际投入并从金库领薪。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_fields'
+  - context.day_phase == 'workday'
+  - actor.state.job_region == 'low'
+  - actor.state.stamina >= context.work_minimum
+  - world.farm_water > 0
+  - world.low_food < 47
+  duration: {minutes: 18}
+  costs:
+    reserve: {low_wages: 1, farm_water: 1}
+    per_minute: {stamina: 0.34}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: coin, quantity: 1}
+  - {type: attribute_delta, attribute: skill, delta: 1}
+  - {type: need_delta, need: standing, delta: 2}
+  - {type: need_delta, need: ambition, delta: 2}
+  - {type: world_resource_delta, resource_id: low_food, delta: 1}
+  success: {condition: actor.alive, result: work_low}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: provision_yard_water
+  version: 1
+  verb: allocate
+  description: 在当地补给净水。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_yard'
+  - actor.need.hydration < context.hydration_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {yard_water: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: water, quantity: 1}
+  success: {condition: actor.alive, result: provision_yard_water}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: buy_yard_water
+  version: 1
+  verb: trade
+  description: 购买一份当地净水。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_yard'
+  - actor.need.hydration < context.hydration_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {yard_water: 1, coin: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: water, quantity: 1}
+  - {type: resource_transfer, resource_id: yard_wages, source_item: coin, quantity: 1}
+  success: {condition: actor.alive, result: buy_yard_water}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: provision_yard_food
+  version: 1
+  verb: allocate
+  description: 在当地补给饭食。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_yard'
+  - actor.need.satiety < context.satiety_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {yard_food: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: meal, quantity: 1}
+  success: {condition: actor.alive, result: provision_yard_food}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: buy_yard_food
+  version: 1
+  verb: trade
+  description: 购买一份当地饭食。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_yard'
+  - actor.need.satiety < context.satiety_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {yard_food: 1, coin: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: meal, quantity: 1}
+  - {type: resource_transfer, resource_id: yard_wages, source_item: coin, quantity: 1}
+  success: {condition: actor.alive, result: buy_yard_food}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: work_yard
+  version: 1
+  verb: work
+  description: 完成本地受雇班次，扣取实际投入并从金库领薪。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_station'
+  - context.day_phase == 'workday'
+  - actor.state.job_region == 'yard'
+  - actor.state.stamina >= context.work_minimum
+  - world.yard_ore > 0
+  duration: {minutes: 18}
+  costs:
+    reserve: {yard_wages: 1, yard_ore: 1}
+    per_minute: {stamina: 0.34}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: coin, quantity: 1}
+  - {type: attribute_delta, attribute: skill, delta: 1}
+  - {type: need_delta, need: standing, delta: 2}
+  - {type: need_delta, need: ambition, delta: 2}
+  - {type: world_property_delta, property: workshop_orders, delta: 1}
+  success: {condition: actor.alive, result: work_yard}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: provision_mine_water
+  version: 1
+  verb: allocate
+  description: 在当地补给净水。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - actor.need.hydration < context.hydration_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {mine_water: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: water, quantity: 1}
+  success: {condition: actor.alive, result: provision_mine_water}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: buy_mine_water
+  version: 1
+  verb: trade
+  description: 购买一份当地净水。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - actor.need.hydration < context.hydration_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {mine_water: 1, coin: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: water, quantity: 1}
+  - {type: resource_transfer, resource_id: mine_wages, source_item: coin, quantity: 1}
+  success: {condition: actor.alive, result: buy_mine_water}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: provision_mine_food
+  version: 1
+  verb: allocate
+  description: 在当地补给饭食。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - actor.need.satiety < context.satiety_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {mine_food: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: meal, quantity: 1}
+  success: {condition: actor.alive, result: provision_mine_food}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: buy_mine_food
+  version: 1
+  verb: trade
+  description: 购买一份当地饭食。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - actor.need.satiety < context.satiety_recovery
+  duration: {minutes: 3}
+  costs:
+    reserve: {mine_food: 1, coin: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: meal, quantity: 1}
+  - {type: resource_transfer, resource_id: mine_wages, source_item: coin, quantity: 1}
+  success: {condition: actor.alive, result: buy_mine_food}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: work_mine
+  version: 1
+  verb: work
+  description: 完成本地受雇班次，扣取实际投入并从金库领薪。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_pit'
+  - context.day_phase == 'workday'
+  - actor.state.job_region == 'mine'
+  - actor.state.stamina >= context.work_minimum
+  - world.ore_seam > 0
+  - actor.inventory.ore < 1
+  duration: {minutes: 18}
+  costs:
+    reserve: {mine_wages: 1, ore_seam: 1}
+    per_minute: {stamina: 0.34}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: coin, quantity: 1}
+  - {type: attribute_delta, attribute: skill, delta: 1}
+  - {type: need_delta, need: standing, delta: 2}
+  - {type: need_delta, need: ambition, delta: 2}
+  - {type: inventory_add, item: ore, quantity: 1}
+  success: {condition: actor.alive, result: work_mine}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: stock_mine
+  version: 1
+  verb: work
+  description: 将一份真实矿料入货架。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - world.mine_ore < 45
+  duration: {minutes: 3}
+  costs:
+    reserve: {ore: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: resource_transfer, resource_id: mine_ore, source_item: ore, quantity: 1}
+  success: {condition: actor.alive, result: stock_mine}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: market_shift
+  version: 1
+  verb: work
+  description: 低城搬来的居民在坊市完成一班工作。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.state.job_region == 'market'
+  - world.market_sales > 0
+  - context.day_phase == 'workday'
+  duration: {minutes: 18}
+  costs:
+    reserve: {low_wages: 1}
+    per_minute: {stamina: 0.34}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: coin, quantity: 1}
+  - {type: attribute_delta, attribute: skill, delta: 1}
+  success: {condition: actor.alive, result: market_shift}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: move_market
+  version: 1
+  verb: resettle
+  description: 在低城有工资与空床以后应聘并迁居。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.state.supply_region == 'yard'
+  - actor.state.mobile_worker == 1
+  - world.market_orders >= 1
+  - world.market_link == 1 or world.bridge_improved == 1
+  duration: {minutes: 15}
+  costs:
+    reserve: {coin: 1, market_orders: 1, low_beds: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: resource_transfer, resource_id: market_rent, source_item: coin, quantity: 1}
+  - {type: world_resource_delta, resource_id: yard_beds, delta: 1}
+  - {type: attribute_set, attribute: home_location, value: low_market}
+  - {type: attribute_set, attribute: supply_region, value: low}
+  - {type: attribute_set, attribute: job_region, value: market}
+  - {type: world_property_delta, property: moved_workers, delta: 1}
+  - type: public_event
+    event: gatebuild.resident_moved
+    summary: 旧站工人迁到低城坊市，已经支付租金并占用真实床位。
+    data: {}
+  success: {condition: actor.alive, result: move_market}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: train
+  version: 1
+  verb: learn
+  description: 用一个工位训练手艺。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.craft
+  - actor.state.skill < 8
+  duration: {minutes: 25}
+  costs:
+    reserve: {metal: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: attribute_delta, attribute: skill, delta: 2}
+  - {type: need_delta, need: ambition, delta: 16}
+  - {type: need_delta, need: standing, delta: 8}
+  - type: public_event
+    event: gatebuild.trained
+    summary: 学徒完成了一次可核验的训练。
+    data: {}
+  success: {condition: actor.alive, result: train}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: share_meal
+  version: 1
+  verb: aid
+  description: 交一份饭给高地的应急饭库。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_gate'
+  - world.high_food < 48
+  duration: {minutes: 4}
+  costs:
+    reserve: {meal: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: resource_transfer, resource_id: high_food, source_item: meal, quantity: 1}
+  - {type: need_delta, need: belonging, delta: 12}
+  - type: public_event
+    event: gatebuild.aid
+    summary: 一份实物饭食已交给应急饭库。
+    data: {}
+  success: {condition: actor.alive, result: share_meal}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: substitute
+  version: 1
+  verb: work
+  description: 白砾完成有库存、验收和独立班次记录的一班代工。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_gate'
+  - actor.state.is_candidate == 1
+  - world.merit_count < 3
+  duration: {minutes: 12}
+  costs:
+    reserve: {substitute_shift: 1, high_wages: 1}
+    per_minute: {stamina: 0.15}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: inventory_add, item: coin, quantity: 1}
+  - {type: attribute_delta, attribute: skill, delta: 1}
+  - {type: world_property_delta, property: merit_count, delta: 1}
+  - type: public_event
+    event: gatebuild.shift_proven
+    summary: 枢门代班已经实际验收。
+    data: {}
+  success: {condition: actor.alive, result: substitute}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: endorse_warden
+  version: 1
+  verb: authorize
+  description: 依据三次已验收代班推荐白砾。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_gate'
+  - actor.role == '枢门调度员'
+  - world.merit_count >= 3
+  - world.high_warden_vote >= 1
+  duration: {minutes: 8}
+  costs:
+    reserve: {high_warden_vote: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_delta, property: service_votes, delta: 1}
+  - type: public_event
+    event: gatebuild.endorsed
+    summary: 已有独立推荐签名。
+    data: {signer: warden}
+  success: {condition: actor.alive, result: endorse_warden}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: endorse_foreman
+  version: 1
+  verb: authorize
+  description: 依据三次已验收代班推荐白砾。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_gate'
+  - actor.role == '旧站工头'
+  - world.merit_count >= 3
+  - world.old_foreman_vote >= 1
+  duration: {minutes: 8}
+  costs:
+    reserve: {old_foreman_vote: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_delta, property: service_votes, delta: 1}
+  - type: public_event
+    event: gatebuild.endorsed
+    summary: 已有独立推荐签名。
+    data: {signer: foreman}
+  success: {condition: actor.alive, result: endorse_foreman}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: authorize_appointment
+  version: 1
+  verb: authorize
+  description: 凭实际代班和两个签名邀请白砾担任班长。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_gate'
+  - actor.role == 'player'
+  - world.merit_count >= 3
+  - world.service_votes >= 2
+  - world.appointment == 0
+  duration: {minutes: 5}
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: appointment, value: 1}
+  - type: public_event
+    event: gatebuild.offer_office
+    summary: 白砾收到实际存在的班长邀约。
+    data: {}
+  success: {condition: actor.alive, result: authorize_appointment}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: accept_appointment
+  version: 1
+  verb: authorize
+  description: 本人接受授权且保留原有身份。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_gate'
+  - actor.state.is_candidate == 1
+  - actor.state.office == 0
+  - world.appointment == 1
+  duration: {minutes: 5}
+  costs:
+    reserve: {worker_mandate: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: attribute_set, attribute: office, value: 1}
+  - {type: world_property_set, property: appointment, value: 2}
+  - {type: resident_controller_set, controller: llm}
+  - type: public_event
+    event: gatebuild.appointed
+    summary: 白砾接受班长职位，继续使用原来的履历和住处。
+    data: {}
+  success: {condition: actor.alive, result: accept_appointment}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: demobilize
+  version: 1
+  verb: authorize
+  description: 班长卸任时保留记忆和原工作。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_gate'
+  - actor.state.office == 1
+  - world.appointment == 3
+  duration: {minutes: 5}
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: attribute_set, attribute: office, value: 0}
+  - {type: world_property_set, property: appointment, value: 0}
+  - {type: world_resource_delta, resource_id: worker_mandate, delta: 1}
+  - {type: resident_controller_set, controller: bt}
+  - type: public_event
+    event: gatebuild.resigned
+    summary: 白砾卸任但继续作为居民生活。
+    data: {}
+  success: {condition: actor.alive, result: demobilize}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: close_office
+  version: 1
+  verb: authorize
+  description: 任命人登记已到期的班组委托。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_gate'
+  - actor.role == 'player'
+  - world.appointment == 2
+  duration: {minutes: 5}
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_property_set, property: appointment, value: 3}
+  - type: public_event
+    event: gatebuild.end_office
+    summary: 委托人登记班组卸任流程。
+    data: {}
+  success: {condition: actor.alive, result: close_office}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: captain_dispatch
+  version: 1
+  verb: allocate
+  description: 班长按已生效的共管协议为紧急通行保留一格货位。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'high_gate'
+  - actor.state.office == 1
+  - world.trade_policy == 1
+  - world.public_contract_deliveries < 3
+  - world.market_link == 1
+  - world.market_freight > 0
+  duration: {minutes: 6}
+  costs:
+    reserve: {market_freight: 1}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - {type: world_resource_delta, resource_id: low_water, delta: 0}
+  - {type: world_property_delta, property: public_contract_deliveries, delta: 1}
+  - type: public_event
+    event: gatebuild.dispatch_reserved
+    summary: 班长为公共维护和应急通行实际预留一个名额。
+    data: {}
+  success: {condition: actor.alive, result: captain_dispatch}
+  failure: {condition: actor.incapacitated, result: interrupted}
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: retarget_market_to_yard
+  version: 1
+  verb: build
+  description: 沿用灰脊现有门端，改接铁轨货场。无需追加框架件。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - actor.role == 'player'
+  - world.market_mine == 1
+  - world.yard_mine == 0
+  - world.yard_permit == 1
+  - world.market_link == 0
+  - world.market_link_slot == 1
+  - world.yard_link == 0
+  duration:
+    minutes: 12
+  costs:
+    reserve:
+      yard_mine_slot: 1
+      market_link_slot: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: market_mine
+    value: 0
+  - type: world_resource_delta
+    resource_id: market_mine_slot
+    delta: 1
+  - type: world_property_set
+    property: yard_mine
+    value: 1
+  - type: world_resource_delta
+    resource_id: market_link_slot
+    delta: 1
+  - type: public_event
+    event: gatebuild.terminal_retargeted
+    summary: 灰脊门端已改接铁轨货场。
+    data:
+      old_lane: market
+      lane: yard
+  success:
+    condition: actor.alive and world.market_mine == 0 and world.yard_mine == 1
+    result: retarget_market_to_yard
+  failure:
+    condition: actor.incapacitated
+    result: interrupted
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: retarget_yard_to_market
+  version: 1
+  verb: build
+  description: 沿用灰脊现有门端，改接低城坊市。无需追加框架件。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - actor.role == 'player'
+  - world.yard_mine == 1
+  - world.market_mine == 0
+  - world.market_permit == 1
+  - world.yard_link == 0
+  - world.yard_link_slot == 1
+  - world.market_link == 0
+  duration:
+    minutes: 12
+  costs:
+    reserve:
+      market_mine_slot: 1
+      yard_link_slot: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: yard_mine
+    value: 0
+  - type: world_resource_delta
+    resource_id: yard_mine_slot
+    delta: 1
+  - type: world_property_set
+    property: market_mine
+    value: 1
+  - type: world_resource_delta
+    resource_id: yard_link_slot
+    delta: 1
+  - type: public_event
+    event: gatebuild.terminal_retargeted
+    summary: 灰脊门端已改接低城坊市。
+    data:
+      old_lane: yard
+      lane: market
+  success:
+    condition: actor.alive and world.yard_mine == 0 and world.market_mine == 1
+    result: retarget_yard_to_market
+  failure:
+    condition: actor.incapacitated
+    result: interrupted
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: reclaim_market_city
+  version: 1
+  verb: build
+  description: 拆回两份框架件，留给另一座城或北栈桥。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.role == 'player'
+  - world.market_city == 1
+  - world.market_link == 0
+  - world.market_link_slot == 1
+  duration:
+    minutes: 10
+  costs:
+    reserve:
+      market_link_slot: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: market_city
+    value: 0
+  - type: world_resource_delta
+    resource_id: market_city_slot
+    delta: 1
+  - type: inventory_add
+    item: frame
+    quantity: 2
+  - type: world_resource_delta
+    resource_id: market_link_slot
+    delta: 1
+  - type: public_event
+    event: gatebuild.terminal_reclaimed
+    summary: 低城坊市未配对的门端已拆回两份框架件。
+    data:
+      lane: market
+  success:
+    condition: actor.alive and world.market_city == 0
+    result: reclaim_market_city
+  failure:
+    condition: actor.incapacitated
+    result: interrupted
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: reclaim_yard_city
+  version: 1
+  verb: build
+  description: 拆回两份框架件，留给另一座城或北栈桥。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'old_yard'
+  - actor.role == 'player'
+  - world.yard_city == 1
+  - world.yard_link == 0
+  - world.yard_link_slot == 1
+  duration:
+    minutes: 10
+  costs:
+    reserve:
+      yard_link_slot: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: yard_city
+    value: 0
+  - type: world_resource_delta
+    resource_id: yard_city_slot
+    delta: 1
+  - type: inventory_add
+    item: frame
+    quantity: 2
+  - type: world_resource_delta
+    resource_id: yard_link_slot
+    delta: 1
+  - type: public_event
+    event: gatebuild.terminal_reclaimed
+    summary: 铁轨货场未配对的门端已拆回两份框架件。
+    data:
+      lane: yard
+  success:
+    condition: actor.alive and world.yard_city == 0
+    result: reclaim_yard_city
+  failure:
+    condition: actor.incapacitated
+    result: interrupted
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: reclaim_market_mine
+  version: 1
+  verb: build
+  description: 从灰脊集口拆回两份框架件，可用于另一端或北栈桥。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - actor.role == 'player'
+  - world.market_mine == 1
+  - world.market_link == 0
+  - world.market_link_slot == 1
+  duration:
+    minutes: 10
+  costs:
+    reserve:
+      market_link_slot: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: market_mine
+    value: 0
+  - type: world_resource_delta
+    resource_id: market_mine_slot
+    delta: 1
+  - type: inventory_add
+    item: frame
+    quantity: 2
+  - type: world_resource_delta
+    resource_id: market_link_slot
+    delta: 1
+  - type: public_event
+    event: gatebuild.terminal_reclaimed
+    summary: 灰脊原接低城的门端已拆回两份框架件。
+    data:
+      lane: market
+  success:
+    condition: actor.alive and world.market_mine == 0
+    result: reclaim_market_mine
+  failure:
+    condition: actor.incapacitated
+    result: interrupted
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: reclaim_yard_mine
+  version: 1
+  verb: build
+  description: 从灰脊集口拆回两份框架件，可用于另一端或北栈桥。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - actor.role == 'player'
+  - world.yard_mine == 1
+  - world.yard_link == 0
+  - world.yard_link_slot == 1
+  duration:
+    minutes: 10
+  costs:
+    reserve:
+      yard_link_slot: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: yard_mine
+    value: 0
+  - type: world_resource_delta
+    resource_id: yard_mine_slot
+    delta: 1
+  - type: inventory_add
+    item: frame
+    quantity: 2
+  - type: world_resource_delta
+    resource_id: yard_link_slot
+    delta: 1
+  - type: public_event
+    event: gatebuild.terminal_reclaimed
+    summary: 灰脊原接旧站的门端已拆回两份框架件。
+    data:
+      lane: yard
+  success:
+    condition: actor.alive and world.yard_mine == 0
+    result: reclaim_yard_mine
+  failure:
+    condition: actor.incapacitated
+    result: interrupted
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: open_paving_shop
+  version: 1
+  verb: authorize
+  description: 投入两枚钱作为坊市铺路工坊的周转金。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.role == 'player'
+  - world.shop_open == 0
+  duration:
+    minutes: 6
+  costs:
+    reserve:
+      coin: 2
+      shop_lease: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: resource_transfer
+    resource_id: shop_cash
+    source_item: coin
+    quantity: 2
+  - type: world_property_set
+    property: shop_open
+    value: 1
+  - type: public_event
+    event: gatebuild.shop_opened
+    summary: 铺路工坊开始经营，已收到两枚周转金。
+    data:
+      investment: 2
+  success:
+    condition: actor.alive
+    result: open_paving_shop
+  failure:
+    condition: actor.incapacitated
+    result: interrupted
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: appoint_shop_crew
+  version: 1
+  verb: authorize
+  description: 授权坊市班组代办采购和生产，工钱从工坊账支付。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.role == 'player'
+  - world.shop_open == 1
+  - world.shop_staffed == 0
+  duration:
+    minutes: 5
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: shop_staffed
+    value: 1
+  - type: public_event
+    event: gatebuild.shop_staffed
+    summary: 坊市班组已接下工坊的供货与生产。
+    data: {}
+  success:
+    condition: actor.alive
+    result: appoint_shop_crew
+  failure:
+    condition: actor.incapacitated
+    result: interrupted
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: pause_shop_crew
+  version: 1
+  verb: authorize
+  description: 暂停新一轮委托，在途原料仍可交付。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.role == 'player'
+  - world.shop_open == 1
+  - world.shop_staffed == 1
+  duration:
+    minutes: 4
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: shop_staffed
+    value: 0
+  - type: public_event
+    event: gatebuild.shop_paused
+    summary: 工坊暂停新委托，在途货照常交付。
+    data: {}
+  success:
+    condition: actor.alive
+    result: pause_shop_crew
+  failure:
+    condition: actor.incapacitated
+    result: interrupted
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: shop_purchase_ore
+  version: 1
+  verb: trade
+  description: 从工坊周转金付一枚钱，买两份灰脊矿料。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'mine_exchange'
+  - world.shop_open == 1
+  - world.shop_cash >= 1
+  - world.shop_dispatch >= 1
+  - world.mine_ore >= 2
+  - world.mine_wages < 170
+  - world.market_ore < 2
+  - world.paving_stock <= 4
+  - world.low_wages >= 3
+  - actor.inventory.paving_ore == 0
+  - (actor.role == 'player' or world.shop_staffed == 1)
+  duration:
+    minutes: 4
+  costs:
+    reserve:
+      shop_cash: 1
+      mine_ore: 2
+      shop_dispatch: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_resource_delta
+    resource_id: mine_wages
+    delta: 1
+  - type: inventory_add
+    item: paving_ore
+    quantity: 2
+  - type: world_property_delta
+    property: shop_spent
+    delta: 1
+  success:
+    condition: actor.alive and actor.inventory.paving_ore >= 2
+    result: shop_purchase_ore
+  failure:
+    condition: actor.incapacitated
+    result: interrupted
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: shop_receive_ore
+  version: 1
+  verb: trade
+  description: 把采购到的两份实物矿料交给坊市工坊。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - world.shop_open == 1
+  - actor.inventory.paving_ore >= 2
+  - world.market_ore <= 33
+  duration:
+    minutes: 4
+  costs:
+    reserve:
+      paving_ore: 2
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: resource_transfer
+    resource_id: market_ore
+    source_item: paving_ore
+    quantity: 2
+  - type: world_resource_delta
+    resource_id: shop_dispatch
+    delta: 1
+  - type: public_event
+    event: gatebuild.shop_supply_arrived
+    summary: 灰脊的两份矿料已入坊市仓。
+    data:
+      quantity: 2
+  success:
+    condition: actor.alive
+    result: shop_receive_ore
+  failure:
+    condition: actor.incapacitated
+    result: interrupted
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: shop_fabricate_paving
+  version: 1
+  verb: craft
+  description: 两份矿料加工成两份路石，水庭按三枚钱收购。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - world.shop_open == 1
+  - world.market_ore >= 2
+  - world.shop_cash >= 1
+  - world.low_wages >= 3
+  - world.paving_stock <= 4
+  - world.shop_bench >= 1
+  - (actor.role == 'player' or world.shop_staffed == 1)
+  - world.shop_cash <= 37
+  duration:
+    minutes: 14
+  costs:
+    reserve:
+      market_ore: 2
+      shop_cash: 1
+      low_wages: 3
+      shop_bench: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: coin
+    quantity: 1
+  - type: world_resource_delta
+    resource_id: shop_cash
+    delta: 3
+  - type: world_resource_delta
+    resource_id: paving_stock
+    delta: 2
+  - type: world_resource_delta
+    resource_id: shop_bench
+    delta: 1
+  - type: world_property_delta
+    property: shop_batches
+    delta: 1
+  - type: world_property_delta
+    property: shop_sales
+    delta: 3
+  - type: world_property_delta
+    property: shop_spent
+    delta: 1
+  - type: public_event
+    event: gatebuild.shop_batch_sold
+    summary: 水庭以三枚钱收走两份路石，工人收到一枚工钱。
+    data:
+      revenue: 3
+      wage: 1
+      quantity: 2
+  success:
+    condition: actor.alive and world.paving_stock <= 6 and world.shop_cash <= 40
+    result: shop_fabricate_paving
+  failure:
+    condition: actor.incapacitated
+    result: interrupted
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: shop_pay_dividend
+  version: 1
+  verb: trade
+  description: 领取一枚已实现利润，保留至少两枚周转金。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.role == 'player'
+  - world.shop_open == 1
+  - world.shop_cash >= 3
+  - world.shop_dividends < world.shop_batches
+  duration:
+    minutes: 3
+  costs:
+    reserve:
+      shop_cash: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: coin
+    quantity: 1
+  - type: world_property_delta
+    property: shop_dividends
+    delta: 1
+  - type: public_event
+    event: gatebuild.shop_dividend
+    summary: 工坊业主领到一枚分红，其余款留作周转。
+    data:
+      amount: 1
+  success:
+    condition: actor.alive and world.shop_cash >= 2
+    result: shop_pay_dividend
+  failure:
+    condition: actor.incapacitated
+    result: interrupted
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: shop_pave_market_road
+  version: 1
+  verb: build
+  description: 使用两批路石，缩短坊市到议事水庭的路。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.role == 'player'
+  - world.paving_stock >= 4
+  - world.shop_road == 0
+  duration:
+    minutes: 12
+  costs:
+    reserve:
+      paving_stock: 4
+      shop_road_slot: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: route_edit
+    mode: unlink
+    from: low_market
+    to: low_city
+  - type: route_edit
+    from: low_market
+    to: low_city
+    distance: 2
+  - type: world_property_set
+    property: shop_road
+    value: 1
+  - type: public_event
+    event: gatebuild.shop_road_opened
+    summary: 从坊市到水庭的短路已经铺好，货物和行人都能使用。
+    data: {}
+  success:
+    condition: actor.alive
+    result: shop_pave_market_road
+  failure:
+    condition: actor.incapacitated
+    result: interrupted
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow
+- id: shop_use_paving_stock
+  version: 1
+  verb: build
+  description: 使用两份路石检修低城门线。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.state.location_id == 'low_market'
+  - actor.role == 'player'
+  - world.market_link == 1
+  - world.market_maintenance <= 8
+  - world.paving_stock >= 2
+  duration:
+    minutes: 8
+  costs:
+    reserve:
+      paving_stock: 2
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_resource_delta
+    resource_id: market_maintenance
+    delta: 3
+  - type: public_event
+    event: gatebuild.maintained
+    summary: 坊市把两份路石用于门端检修。
+    data:
+      lane: market
+  success:
+    condition: actor.alive
+    result: shop_use_paving_stock
+  failure:
+    condition: actor.incapacitated
+    result: interrupted
+  kind: atomic
+  executor: effect_pipeline
+  interrupt_policy: cancel
+  interaction_policy: allow

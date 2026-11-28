@@ -32,9 +32,16 @@ class DriveCalculator:
         inhibition = agent.get("inhibition", {}) or {}
         deficits: dict[str, float] = {}
         rows: dict[str, dict[str, Any]] = {}
+        state = agent.get("initial_state") or {}
+        inventory = agent.get("inventory") or {}
         for need_id, definition in self.need_defs.items():
-            current = float(needs.get(need_id, definition.get("target", 100)))
             target = float(definition.get("target", 100))
+            current = needs.get(need_id, target)
+            if attribute := definition.get("state_attribute"):
+                current = state.get(attribute, current)
+            elif item := definition.get("inventory_item"):
+                current = float(inventory.get(item, 0) or 0) * float(definition.get("inventory_scale", 1))
+            current = float(current)
             minimum = float(definition.get("minimum", 0))
             denominator = max(1.0, target - minimum)
             deficit = max(0.0, min(1.0, (target - current) / denominator))

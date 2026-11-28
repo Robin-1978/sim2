@@ -12,6 +12,7 @@ import re
 from typing import Any
 
 from ..actions.conditions import ConditionEngine
+from ..behavior.controllers import routine_error
 from ..behavior.plan import compile_behavior_plan, wait_minutes
 from ..world.action_tools import validate_tool_duration
 from ..world.lifecycle import validate_incapacitation_rule
@@ -298,6 +299,7 @@ class _TemplateChecks:
                 ("target.state.", self.state_ids | STRUCTURAL_AGENT_STATE, "state attribute"),
                 ("actor.need.", self.need_ids, "need"),
                 ("actor.needs.", self.need_ids, "need"),
+                ("actor.urgency.", self.need_ids, "need"),
                 ("world.", self.world_properties, "world property"),
             ):
                 if path.startswith(prefix):
@@ -548,6 +550,8 @@ class _TemplateChecks:
                 errors.append(f"agent {agent.get('id')} controller must be llm or bt")
             if agent.get("controller_fallback") is not None and (agent.get("controller_fallback") != "bt" or controller != "llm"):
                 errors.append(f"agent {agent.get('id')} controller_fallback must be bt on an llm controller")
+            if error := routine_error(agent):
+                errors.append(f"agent {agent.get('id')} {error}")
             for priority_id in agent.get("bt_priority", []) or []:
                 if str(priority_id) not in self.behavior_ids:
                     errors.append(f"agent {agent.get('id')} bt_priority references unknown behavior {priority_id}")
@@ -641,6 +645,63 @@ class _TemplateChecks:
             missing = [field for field in ("target", "minimum", "gamma", "critical_threshold", "critical_gain") if field not in entry]
             if missing:
                 errors.append(f"rules.needs entry {need_id} is missing {', '.join(missing)}")
+            if "state_attribute" in entry and entry["state_attribute"] not in self.state_ids:
+                errors.append(f"rules.needs.{need_id}.state_attribute must name a state attribute")
+            if "inventory_item" in entry and (
+                "state_attribute" in entry or not isinstance(entry["inventory_item"], str) or not entry["inventory_item"]
+                or not isinstance(entry.get("inventory_scale", 1), (int, float)) or entry.get("inventory_scale", 1) <= 0
+            ):
+                errors.append(f"rules.needs.{need_id} inventory source requires an item and a positive scale")
+        policy = rules.get("decision_policy") or {}
+        if not isinstance(policy, dict):
+            errors.append("rules.decision_policy must be an object")
+            policy = {}
+        if "assignment_urgency_limits" in policy:
+            limits = policy["assignment_urgency_limits"]
+            if not isinstance(limits, dict) or any(
+                need_id not in need_rules or isinstance(limit, bool)
+                or not isinstance(limit, (int, float)) or not 0 < limit <= 1
+                for need_id, limit in (limits.items() if isinstance(limits, dict) else ())
+            ):
+                errors.append("decision_policy.assignment_urgency_limits requires authored need ids and limits in (0, 1]")
+        if "minimum_drive_score" in policy:
+            floor = policy["minimum_drive_score"]
+            if isinstance(floor, bool) or not isinstance(floor, (int, float)) or not 0 <= floor <= 1:
+                errors.append("decision_policy.minimum_drive_score must be between 0 and 1")
+        if "resident_model_wakes_only" in policy and not isinstance(policy["resident_model_wakes_only"], bool):
+            errors.append("decision_policy.resident_model_wakes_only must be a boolean")
+        cap = policy.get("max_model_residents")
+        if cap is not None and (isinstance(cap, bool) or not isinstance(cap, int) or cap < 1):
+            errors.append("decision_policy.max_model_residents must be a positive integer")
+        for field in ("resident_sessions_per_day", "resident_session_iterations"):
+            count = policy.get(field)
+            if count is not None and (type(count) is not int or count < 1):
+                errors.append(f"decision_policy.{field} must be a positive integer")
+        arrivals = rules.get("resident_arrivals")
+        if arrivals is not None:
+            if not isinstance(arrivals, dict) or not arrivals:
+                errors.append("rules.resident_arrivals must map location ids to admission terms")
+            else:
+                for location, entry in arrivals.items():
+                    reserve = entry.get("reserve") if isinstance(entry, dict) else None
+                    if (location not in self.location_ids or not isinstance(reserve, dict) or not reserve
+                            or entry.get("routine") not in {row["id"] for row in self.collections["behavior_trees"] if row.get("id")}
+                            or any(stock not in self.resources or type(qty) is not int or qty < 1 for stock, qty in reserve.items())):
+                        errors.append(f"rules.resident_arrivals.{location} needs a known location, a routine and positive stock reserves")
+        travel = rules.get("travel") or {}
+        links = travel.get("map_links") if isinstance(travel, dict) else None
+        if links is not None:
+            if not isinstance(links, list):
+                errors.append("rules.travel.map_links must be a list")
+            else:
+                for index, link in enumerate(links):
+                    field = f"rules.travel.map_links[{index}]"
+                    if (not isinstance(link, dict) or not all(isinstance(link.get(key), str) for key in ("from", "to", "when"))
+                            or not {link["from"], link["to"]} <= self.location_ids or link["from"] == link["to"]
+                            or type(link.get("minutes")) is not int or link["minutes"] < 1):
+                        errors.append(f"{field} must link two locations, with positive minutes and a condition")
+                    else:
+                        self.check_expression(link["when"], field)
 
     def check_minute_effects(self) -> None:
         errors = self.errors

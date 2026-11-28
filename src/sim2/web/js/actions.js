@@ -1,7 +1,7 @@
 import { request, write } from "./api.js";
 import { renderAll } from "./app.js";
 import { $, OPERATOR_KEY, PLAYER_KEY, describeError, el, setOnline, state, storageGet, storageSet, toast, withPending, worldIsOpen } from "./core.js";
-import { openActionDialog, renderMobileActionBar, renderTask } from "./render_actions.js";
+import { openActionDialog, renderActions, renderMobileActionBar, renderTask } from "./render_actions.js";
 import { maybeCelebrateEvents } from "./celebration.js";
 import { openCreatePanel, renderEntry, renderEntryInstances } from "./render_entry.js";
 import { SKIP_EVENTS, bundleText, closeCharacter, closePlayerSheet, nearbyParticipants, parseBundle, personName, renderFeed, renderMap, showMapDialog, updateCharacterSheet } from "./render_panels.js";
@@ -278,29 +278,40 @@ async function handleWaitFailure(error, fallback) {
 export function startStream() {
     if (state.stream || typeof EventSource === "undefined") return;
     let source;
-    let lastViewRefresh = 0;
     try {
-      source = new EventSource(`/api/v1/stream?after=${state.streamCursor || 0}&session_token=${encodeURIComponent(state.playerToken || state.operatorToken || "")}`);
+      source = new EventSource(`/api/v1/stream?compact=1&session_token=${encodeURIComponent(state.playerToken || state.operatorToken || "")}`);
     } catch (error) {
       return;
     }
     state.stream = source;
-    source.addEventListener("ready", (event) => {
-      state.streamConnected = true;
-      state.streamFailures = 0;
-      try { state.streamCursor = Math.max(Number(state.streamCursor || 0), Number(JSON.parse(event.data || "{}").cursor || 0)); } catch (error) { /* ignore */ }
-    });
-    source.addEventListener("player.view.changed", (event) => {
+    let refreshTimer = null;
+    let pendingRevision = 0;
+    const scheduleViewRefresh = () => {
+      if (state.stream !== source || !state.playerId || document.hidden || state.advancing || refreshTimer !== null) return;
+      refreshTimer = window.setTimeout(async () => {
+        const requestedRevision = pendingRevision;
+        try {
+          if (state.stream === source && !document.hidden && !state.advancing) await loadView();
+        } catch (error) { /* polling fallback */ }
+        finally {
+          refreshTimer = null;
+          if (pendingRevision > Math.max(requestedRevision, Number(state.view?.revision || 0))) scheduleViewRefresh();
+        }
+      }, 600);
+    };
+    const requestViewRefresh = (event) => {
       let payload = {};
       try { payload = JSON.parse(event.data || "{}"); } catch (error) { return; }
       const revision = Number(payload.revision || 0);
       if (revision && revision <= Number(state.view?.revision || 0)) return;
-      if (document.hidden) return;
-      const now = Date.now();
-      if (now - lastViewRefresh < (state.advancing ? 1000 : 250)) return;
-      lastViewRefresh = now;
-      loadView().catch(() => {});
+      pendingRevision = Math.max(pendingRevision, revision);
+      scheduleViewRefresh();
+    };
+    source.addEventListener("ready", () => {
+      state.streamConnected = true;
+      state.streamFailures = 0;
     });
+    source.addEventListener("player.view.changed", requestViewRefresh);
     source.addEventListener("task.progress", (event) => {
       let payload = {};
       try { payload = JSON.parse(event.data || "{}"); } catch (error) { return; }
@@ -345,27 +356,27 @@ export function startStream() {
     });
     source.addEventListener("runtime", (event) => {
       try {
-        state.runtime = JSON.parse(event.data || "{}").data || state.runtime;
-        renderRuntimeStatus();
+        const previous = state.runtime;
+        const runtime = JSON.parse(event.data || "{}").data || previous;
+        state.runtime = runtime;
+        if (!previous || !$("settings-drawer").classList.contains("hidden")
+            || ["state", "running", "provider", "llm_configured"].some((key) => runtime?.[key] !== previous[key])) {
+          renderRuntimeStatus();
+        }
       } catch (error) { /* polling fallback */ }
     });
     source.addEventListener("feed.append", (event) => {
       try {
         const payload = JSON.parse(event.data || "{}");
         const events = Array.isArray(payload.data?.events) ? payload.data.events : [];
-        if (typeof mergeFeedEvents === "function") mergeFeedEvents(events);
+        if (!state.advancing && !document.hidden) updateFeed(events, true);
         maybeCelebrateEvents(events);
       } catch (error) { /* polling fallback */ }
     });
     source.addEventListener("trade.changed", () => {
       if (!document.hidden) loadTrades().catch(() => {});
     });
-    source.addEventListener("dialogue.append", () => {
-      if (!document.hidden) loadDialogue().catch(() => {});
-    });
-    source.addEventListener("chapter.changed", () => {
-      if (!document.hidden && !state.advancing) loadView().catch(() => {});
-    });
+    source.addEventListener("chapter.changed", requestViewRefresh);
     source.onerror = () => {
       state.streamConnected = false;
       state.streamFailures = (state.streamFailures || 0) + 1;
@@ -478,6 +489,7 @@ export async function submitAction(action, extra = {}, button = null) {
       } finally {
         state.busy = false;
         renderTask();
+        renderActions();
       }
     });
   }
@@ -535,8 +547,9 @@ export async function advanceTask(prefix = "") {
     try {
       const active = state.view?.active_task || {};
       if (!active.bt && !active.action) return;
-      const remaining = Number(active.remaining_minutes || 0);
-      const started = await startWaitTask(remaining + 1);
+      // The server stops when this execution ends. The timestamp of the next
+      // step is insufficient for multi-step journeys and construction.
+      const started = await startWaitTask(480);
       const task = await awaitWaitTask(started, {
         onProgress: (progress) => {
           state.taskProgress = progress;
@@ -549,9 +562,12 @@ export async function advanceTask(prefix = "") {
       const errors = Number(report.llm_errors || 0);
       const stopReason = String(report.stop_reason || "");
       const stillActive = Boolean(state.view?.active_task?.bt || state.view?.active_task?.action);
+      const outcome = state.view?.last_action_outcome;
       const worldTime = state.view?.world_time?.label ? `${state.view.world_time.day} 日 ${state.view.world_time.time_of_day}` : "";
       if (stillActive) {
         toast("行动还没有结束；可以再点一次“推进到完成”。", "error", 6000);
+      } else if (outcome && outcome.status !== "completed") {
+        toast(`${prefix}行动未完成${outcome.message ? `。 ${outcome.message}` : ""}`, "error", 6500);
       } else if (errors) {
         toast(`行动完成，但同步推进中有 ${errors} 次 NPC 决策失败${stopReason ? `（${stopReason}）` : ""}；这 ${decisions} 次决策里请检查模型配置。`, "error", 8000);
       } else {
@@ -802,28 +818,35 @@ export async function sendTrade(form) {
   }
 
 
+function updateFeed(events, append = false) {
+    const authored = state.view?.ui?.chronicle_events;
+    const all = events.filter((event) => {
+      if (Array.isArray(authored) && !authored.includes(event.event_type)) return false;
+      return !String(event.public?.correlation_id || "").startsWith("bt:");
+    });
+    const merge = (previous, fresh, limit) => Array.from(new Map(
+      [...(append ? previous : []), ...fresh].map((event) => [event.event_id, event]),
+    ).values()).sort((left, right) => right.event_id - left.event_id).slice(0, limit);
+    const feed = merge(state.feedEvents, all.filter((event) => {
+      const type = String(event.event_type || "");
+      if (SKIP_EVENTS.has(type) || type.startsWith("evolution.") || type.startsWith("runtime.")) return false;
+      return type !== "behavior.failed" || (event.actor_id || event.activity?.actor_id) === state.playerId;
+    }), 80);
+    const intentions = merge(state.agentEvents || [], all.filter(
+      (event) => ["behavior", "world.change", "story"].includes(event.activity?.kind),
+    ), 24);
+    const signature = (items) => items.map((event) => event.event_id).join(",");
+    if (signature(feed) === signature(state.feedEvents) && signature(intentions) === signature(state.agentEvents || [])) return;
+    state.feedEvents = feed;
+    state.agentEvents = intentions;
+    renderFeed();
+  }
+
+
 export async function loadFeed(force = false) {
     try {
-      const response = await request("/api/v1/observer/timeline?limit=80&after=0&latest=1");
-      const all = Array.isArray(response.events) ? response.events : [];
-      const events = all.filter((event) => {
-        const type = String(event.event_type || "");
-        if (SKIP_EVENTS.has(type) || type.startsWith("evolution.") || type.startsWith("runtime.")) return false;
-        if (type === "behavior.failed") {
-          const actorId = String(event.actor_id || event.activity?.actor_id || "");
-          if (actorId && actorId !== state.playerId) return false;
-        }
-        return true;
-      });
-      state.feedEvents = events.slice().reverse();
-      state.agentEvents = all
-        .filter((event) => {
-          const activity = event.activity || {};
-          return activity.kind && ["behavior", "world.change", "story"].includes(activity.kind);
-        })
-        .slice(-24)
-        .reverse();
-      renderFeed();
+      const response = await request("/api/v1/observer/timeline?view=chronicle&limit=80&latest=1");
+      updateFeed(Array.isArray(response.events) ? response.events : []);
     } catch (error) {
       if (force) toast("世界动态暂不可用。", "error");
     }
@@ -902,7 +925,7 @@ export function renderRuntimeStatus() {
       if (running) {
         detail.textContent = `自动运行中 · 从第 ${runtime.start_minute ?? "?"} 分钟到第 ${runtime.target_minute ?? "?"} 分钟 · 模型 ${runtime.provider || "默认"}`;
       } else if (runtime.llm_configured === false) {
-        detail.textContent = "未配置模型：世界时间和你的长行动仍会推进，NPC 暂时不会自主决策。配置 ~/.sim2/llm.json 后即可启用完整 Agent。";
+        detail.textContent = "未配置模型。世界时间、玩家行动和行为树居民的日常仍可推进。配置 ~/.sim2/llm.json 后可启用模型角色。";
       } else {
         detail.textContent = `手动世界 · 第 ${runtime.world_minute ?? state.view?.world_time?.minute ?? 0} 分钟${runtime.last_error ? ` · 上次错误：${runtime.last_error}` : ""}`;
       }

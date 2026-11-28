@@ -1,0 +1,123 @@
+agents:
+- id: warden
+  name: 沈芒
+  role: 枢门调度员
+  controller: llm
+  ultimate_goal: 维持连续运输。希望每个班次的优先级都能核对来源和结果。
+  traits:
+    pragmatic: 0.7
+    cooperative: 0.55
+  beliefs: []
+  needs:
+    hydration: 90
+  initial_bt_ids:
+  - check_dispatch_board
+  - activate_emergency_water
+  initial_state:
+    location_id: high_gate
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory: {}
+- id: steward
+  name: 江遥
+  role: 水务议事员
+  controller: llm
+  ultimate_goal: 保证低城水箱不断供。愿意协商节水，记得谁兑现了承诺。
+  traits:
+    pragmatic: 0.7
+    cooperative: 0.55
+  beliefs: []
+  needs:
+    hydration: 90
+  initial_bt_ids:
+  - check_dispatch_board
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory: {}
+  faction_ids:
+  - water_commons
+- id: foreman
+  name: 唐真
+  role: 旧站工头
+  controller: llm
+  ultimate_goal: 拿到零件、修好枢门并保障工坊班次。关心长期运力。
+  traits:
+    pragmatic: 0.7
+    cooperative: 0.55
+  beliefs: []
+  needs:
+    hydration: 90
+  initial_bt_ids:
+  - check_dispatch_board
+  initial_state:
+    location_id: old_station
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory: {}
+  faction_ids:
+  - yard_guild
+- id: porter_jin
+  name: 靳禾
+  role: 货运工
+  controller: bt
+  ultimate_goal: 按生效调度板完成交付，在有余力时回枢门等下一班。
+  traits:
+    pragmatic: 0.7
+    cooperative: 0.55
+  beliefs: []
+  needs:
+    hydration: 90
+  initial_bt_ids:
+  - porter_routine
+  initial_state:
+    location_id: high_gate
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory: {}
+  routine_bt_id: porter_routine
+- id: porter_yu
+  name: 郁舟
+  role: 货运工
+  controller: bt
+  ultimate_goal: 按生效调度板完成交付，在有余力时回枢门等下一班。
+  traits:
+    pragmatic: 0.7
+    cooperative: 0.55
+  beliefs: []
+  needs:
+    hydration: 90
+  initial_bt_ids:
+  - porter_routine
+  initial_state:
+    location_id: high_gate
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory: {}
+  routine_bt_id: porter_routine
+- id: porter_bai
+  name: 白砾
+  role: 货运工
+  controller: bt
+  ultimate_goal: 按生效调度板完成交付，在有余力时回枢门等下一班。
+  traits:
+    pragmatic: 0.7
+    cooperative: 0.55
+  beliefs: []
+  needs:
+    hydration: 90
+  initial_bt_ids:
+  - porter_routine
+  initial_state:
+    location_id: high_gate
+    status: idle
+    integrity: 100
+    stamina: 90
+  inventory: {}
+  routine_bt_id: porter_routine

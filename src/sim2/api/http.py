@@ -195,7 +195,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _write_result(self, result: Any, request_id: str) -> None:
         if isinstance(result, StreamResponse):
-            subscription = self.server.stream.subscribe(result.role, result.player_id, result.after, result.ticks)
+            subscription = self.server.stream.subscribe(result.role, result.player_id, result.after, result.ticks, compact=result.compact)
             return self.server.stream.serve(self, subscription)
         if isinstance(result, RawResponse):
             return self._write_bytes(
@@ -632,6 +632,7 @@ class ControlHTTPServer(ThreadingHTTPServer):
         *,
         provider_name: str | None = None,
         instance_id: str = "",
+        follow_active_task: bool = False,
     ) -> dict[str, Any]:
         """Advance one bounded chunk without holding the server control lock.
 
@@ -657,7 +658,21 @@ class ControlHTTPServer(ThreadingHTTPServer):
                     "failed_check": "runtime_running",
                     "message": "The autonomous world is already advancing; pause or stop it before using manual wait.",
                 }
-        return runtime.advance_manual(minutes, provider_name=provider_name, reason="web-player-wait")
+        return runtime.advance_manual(
+            minutes, provider_name=provider_name, reason="web-player-wait",
+            until_actor_idle=resolved if follow_active_task else None,
+        )
+
+    def manual_wait_chunk_minutes(self) -> int:
+        """Group offline ticks while keeping provider-backed waits responsive."""
+        with self._control_lock:
+            service = self.control
+            if service is None:
+                return 1
+            with service.platform.store.read_transaction():
+                raw = service.platform.store.repositories.metadata.get("evolution", {}) or {}
+                limits = raw.get("evolution", raw).get("limits") or {}
+        return 8 if limits.get("manual_without_model") else 1
 
     def player_wait(self, player_id: str, *, minutes: int = 1, provider_name: str | None = None, authorize_token: str | None = None) -> dict[str, Any]:
         """Synchronous wait kept for internal callers; HTTP uses tasks."""

@@ -38,7 +38,7 @@ class ActionAvailabilityMixin:
     def _action_available(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], location: dict[str, Any], duration_minutes: int | None = None) -> bool:
         return self._action_unavailable_reason(agent, action, parameters, location, duration_minutes) is None
 
-    def _action_unavailable_reason(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], location: dict[str, Any], duration_minutes: int | None = None) -> str | None:
+    def _action_unavailable_reason(self, agent: dict[str, Any], action: dict[str, Any], parameters: dict[str, Any], location: dict[str, Any], duration_minutes: int | None = None, *, reservations: list[dict[str, Any]] | None = None) -> str | None:
         """Return why one Action cannot start for this actor, or ``None`` when it can.
 
         The reason names the failing check in the Action's own terms so a
@@ -150,7 +150,9 @@ class ActionAvailabilityMixin:
         )
         if not capacity_ok:
             return str(capacity_detail or "the actor lacks the capacity for its duration")
-        allowed, reserve_detail, _ = self.resources.reserve(agent, action, parameters, commit=False)
+        allowed, reserve_detail, reserved = self.resources.reserve(agent, action, parameters, commit=False)
+        if allowed and reservations is not None:
+            reservations.extend(reserved)
         return None if allowed else str(reserve_detail or "required resources are unavailable")
 
     @staticmethod

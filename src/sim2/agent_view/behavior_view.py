@@ -10,6 +10,7 @@ from typing import Any
 from ..behavior.estimator import BehaviorDurationEstimator
 from ..behavior.plan import compile_behavior_plan
 from ..behavior.recovery import failure_block_recovered
+from ..actions.effects import EffectPipeline
 from ..world.action_tools import best_time_tool
 from ..world.navigation import (
     configured_location_tags,
@@ -25,6 +26,7 @@ from ..actions.catalogs import catalog_entries, entry_cost_available, entry_loca
 from ..world.bindings import iter_behavior_actions, resolve_behavior_effect
 from ..world.contested import resource_take_effect
 from ..world.context import action_condition_context, calendar_context, configured_context_values
+from ..world.definition_compiler import bind_legacy_inventory_effect
 from ..world.time import day_phase_duration
 from .action_text import action_view, label, predicate_text
 from .decision_frame import DecisionFrame, Guidance, Simulation
@@ -385,7 +387,7 @@ class BehaviorViewMixin:
                 if "on_failure" not in node:
                     break
                 sim.unavailable = False
-                simulated_state.pop("last_action_result", None)
+                sim.agent.get("initial_state", {}).pop("last_action_result", None)
                 index = node["on_failure"]
             else:
                 index += 1
@@ -442,7 +444,10 @@ class BehaviorViewMixin:
             simulated_state["last_action_result"] = (action.get("success") or {}).get("result", "completed")
             return True
         action_minutes = estimator._action_minutes(action, parameters, simulated_state.get("location_id"), elapsed_minutes=sim.elapsed_minutes)
-        unavailable_reason = self._action_unavailable_reason(simulated_agent, action, parameters, simulated_location, action_minutes)
+        reservations: list[dict[str, Any]] = []
+        unavailable_reason = self._action_unavailable_reason(
+            simulated_agent, action, parameters, simulated_location, action_minutes, reservations=reservations,
+        )
         if unavailable_reason is not None:
             sim.unavailable = True
             sim.unavailable_action = str(action.get("id") or "unknown action")
@@ -496,18 +501,41 @@ class BehaviorViewMixin:
             current = float(target_state.get(cost_key, schema.default(str(cost_key), 0)) or 0)
             delta = current + float(rate) * action_minutes if schema.cost_mode(str(cost_key)) == "increase" else current - float(rate) * action_minutes
             target_state[cost_key] = schema.clamp(str(cost_key), delta)
-        # Validate a sequential BT against the state produced by its
-        # earlier configured steps. This keeps a travel-then-service
-        # behavior executable without adding action-specific code.
-        moves_actor = any(
-            str(effect.get("type") or effect.get("op") or "") == "location_set"
-            for effect in (action.get("effects") or [])
-            if isinstance(effect, dict)
-        )
-        if moves_actor and parameters.get("location_id"):
-            simulated_state["location_id"] = str(parameters["location_id"])
+        inventory = simulated_agent.setdefault("inventory", {})
+        for reservation in reservations:
+            if reservation["scope"] == "agent":
+                key = reservation["key"]
+                inventory[key] -= reservation["amount"]
+        # Only replay effects on this copy of the actor. Shared stocks and
+        # other participants are checked again when the Platform executes it.
+        pipeline = EffectPipeline(resolve_location=self.targets.canonical_id)
+        for effect in action.get("effects") or []:
+            if not isinstance(effect, dict):
+                continue
+            effect_type = effect.get("type") or effect.get("op")
+            if effect_type not in {
+                "inventory_add", "inventory_remove", "inventory.consume_item", "location_set",
+            }:
+                continue
+            if effect.get("target") == "target" and validation_target and validation_target.get("id") != simulated_agent.get("id"):
+                continue
+            effect = bind_legacy_inventory_effect(effect, action.get("parameters") or {}, parameters)
+            resolved = {
+                key: parameters.get(value.removeprefix("context."), value)
+                if isinstance(value, str) and value.startswith("context.") else value
+                for key, value in effect.items()
+            }
+            if effect_type != "location_set":
+                item = resolved.get("item")
+                amount = resolved.get("quantity", resolved.get("amount", 1))
+                if not isinstance(item, str) or not item or item.startswith("context.") or not isinstance(amount, (int, float)):
+                    continue
+            pipeline.apply(simulated_agent, resolved, target=parameters)
+        estimator.inventory = simulated_agent.get("inventory") or {}
+        location_id = (simulated_agent.get("initial_state") or {}).get("location_id")
+        if location_id and location_id != simulated_location.get("id"):
             try:
-                simulated_location = self.entities_repo.get_entity(str(parameters["location_id"]))
+                simulated_location = self.entities_repo.get_entity(str(location_id))
             except KeyError:
                 simulated_location = {}
         sim.location = simulated_location

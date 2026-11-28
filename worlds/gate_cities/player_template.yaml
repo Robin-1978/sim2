@@ -1,0 +1,27 @@
+id_prefix: player_
+entry_location_id: high_gate
+initial_bt_ids:
+- travel
+- prioritize_water
+- prioritize_parts
+- ship_water
+- ship_parts
+- finish_water
+- finish_parts
+- handover_dispatch
+- reinforce_dispatch_gate
+- accept_water_compact
+- recover_stamina
+- get_water
+knowledge_seed:
+- public:high_gate
+- public:low_city
+- public:old_station
+origins:
+- id: dispatcher
+  name: 临时调度员
+  description: 由三城临时委托跑通货运。你也能亲自押运首单。
+  starting_goal: 选定首班货运并亲自跑通，再交给居民。
+  opening:
+    goal: 选定首班货运
+    summary: 首班只能先运两份水或两份零件。你的选择会变成实物交付。

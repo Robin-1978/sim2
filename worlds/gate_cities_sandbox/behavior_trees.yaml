@@ -1,0 +1,2404 @@
+behavior_trees:
+- id: travel
+  version: 1
+  agent_label: 步行到相邻地点
+  summary: 步行到相邻地点
+  description: 步行到相邻地点
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: context.location_id}
+  cooldown_minutes: 0
+  goal_tags:
+  - movement
+- id: survey_exchange
+  version: 1
+  agent_label: 前往灰脊勘测门端
+  summary: 确认灰脊集口的施工位置，解锁两座城的建门许可。
+  description: 前往灰脊勘测门端
+  entry_conditions:
+  - actor.alive
+  - world.site_surveyed == 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: mine_exchange}
+  - type: action
+    action_id: survey_exchange
+    parameters: {}
+  cooldown_minutes: 0
+- id: survey_bridge
+  version: 1
+  agent_label: 前往北栈桥勘测步道
+  summary: 先开一条通往矿口的步道，留作施工和限行时的备用路。
+  description: 前往北栈桥勘测步道
+  entry_conditions:
+  - actor.alive
+  - world.bridge_surveyed == 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: north_trestle}
+  - type: action
+    action_id: survey_bridge
+    parameters: {}
+  cooldown_minutes: 0
+- id: improve_bridge
+  version: 1
+  agent_label: 加固北栈桥货路
+  summary: 用两份框架件开通重货路线，保留门芯。
+  description: 加固北栈桥货路
+  entry_conditions:
+  - actor.alive
+  - world.bridge_surveyed == 1
+  - world.bridge_improved == 0
+  - actor.inventory.frame >= 2
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: north_trestle}
+  - type: action
+    action_id: improve_bridge
+    parameters: {}
+  cooldown_minutes: 0
+- id: permit_market
+  version: 1
+  agent_label: 向低城坊市申请建门
+  summary: 把灰脊矿料直接送进坊市，支持低城订单、岗位与迁居。
+  description: 向低城坊市申请建门
+  entry_conditions:
+  - actor.alive
+  - world.site_surveyed == 1
+  - world.market_permit == 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: low_market}
+  - type: action
+    action_id: permit_market
+    parameters: {}
+  cooldown_minutes: 0
+- id: fit_market_city
+  version: 1
+  agent_label: 安装低城坊市门端
+  summary: 安装低城坊市门端
+  description: 安装低城坊市门端
+  entry_conditions:
+  - actor.alive
+  - world.market_permit == 1
+  - world.market_city == 0
+  - actor.inventory.frame >= 2
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: low_market}
+  - type: action
+    action_id: fit_market_city
+    parameters: {}
+  cooldown_minutes: 0
+- id: fit_market_mine
+  version: 1
+  agent_label: 安装灰脊集口门端（去低城坊市）
+  summary: 安装灰脊集口门端（去低城坊市）
+  description: 安装灰脊集口门端（去低城坊市）
+  entry_conditions:
+  - actor.alive
+  - world.market_permit == 1
+  - world.market_mine == 0
+  - actor.inventory.frame >= 2
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: mine_exchange}
+  - type: action
+    action_id: fit_market_mine
+    parameters: {}
+  cooldown_minutes: 0
+- id: pair_market
+  version: 1
+  agent_label: 开启灰脊—低城坊市门线
+  summary: 开启灰脊—低城坊市门线
+  description: 开启灰脊—低城坊市门线
+  entry_conditions:
+  - actor.alive
+  - world.market_city == 1
+  - world.market_mine == 1
+  - world.market_link == 0
+  - actor.inventory.gate_core >= 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: mine_exchange}
+  - type: action
+    action_id: pair_market
+    parameters: {}
+  cooldown_minutes: 0
+- id: cross_market_out
+  version: 1
+  agent_label: 通门直达低城坊市
+  summary: 通门直达低城坊市
+  description: 通门直达低城坊市
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: cross_market_out
+    parameters: {destination_id: low_market}
+  cooldown_minutes: 0
+  goal_tags:
+  - movement
+- id: cross_market_back
+  version: 1
+  agent_label: 通门直达灰脊集口
+  summary: 通门直达灰脊集口
+  description: 通门直达灰脊集口
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: cross_market_back
+    parameters: {destination_id: mine_exchange}
+  cooldown_minutes: 0
+  goal_tags:
+  - movement
+- id: repair_market
+  version: 1
+  agent_label: 维护低城坊市门线
+  summary: 维护低城坊市门线
+  description: 维护低城坊市门线
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: repair_market
+    parameters: {}
+  cooldown_minutes: 0
+- id: sell_market
+  version: 1
+  agent_label: 向低城坊市交付一份矿料
+  summary: 向低城坊市交付一份矿料
+  description: 向低城坊市交付一份矿料
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: sell_market
+    parameters: {}
+  cooldown_minutes: 0
+- id: ship_market
+  version: 1
+  agent_label: 经门向低城坊市运矿
+  summary: 经门向低城坊市运矿
+  description: 经门向低城坊市运矿
+  entry_conditions:
+  - actor.alive
+  - world.market_link == 1
+  - world.market_maintenance > 0
+  - world.market_freight >= 1
+  - world.mine_ore >= 1
+  - world.market_ore < 35
+  - world.low_wages >= 1
+  - world.lockdown == 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: mine_exchange}
+  - type: selector
+    children:
+    - type: action
+      action_id: load_market_fee
+      parameters: {}
+    - type: action
+      action_id: load_market
+      parameters: {}
+  - type: action
+    action_id: cross_market_out
+    parameters: {destination_id: low_market}
+  - type: action
+    action_id: sell_market
+    parameters: {}
+  cooldown_minutes: 0
+- id: permit_yard
+  version: 1
+  agent_label: 向铁轨货场申请建门
+  summary: 把矿料直送旧站货场，为工坊争取订单和原料。
+  description: 向铁轨货场申请建门
+  entry_conditions:
+  - actor.alive
+  - world.site_surveyed == 1
+  - world.yard_permit == 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: old_yard}
+  - type: action
+    action_id: permit_yard
+    parameters: {}
+  cooldown_minutes: 0
+- id: fit_yard_city
+  version: 1
+  agent_label: 安装铁轨货场门端
+  summary: 安装铁轨货场门端
+  description: 安装铁轨货场门端
+  entry_conditions:
+  - actor.alive
+  - world.yard_permit == 1
+  - world.yard_city == 0
+  - actor.inventory.frame >= 2
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: old_yard}
+  - type: action
+    action_id: fit_yard_city
+    parameters: {}
+  cooldown_minutes: 0
+- id: fit_yard_mine
+  version: 1
+  agent_label: 安装灰脊集口门端（去铁轨货场）
+  summary: 安装灰脊集口门端（去铁轨货场）
+  description: 安装灰脊集口门端（去铁轨货场）
+  entry_conditions:
+  - actor.alive
+  - world.yard_permit == 1
+  - world.yard_mine == 0
+  - actor.inventory.frame >= 2
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: mine_exchange}
+  - type: action
+    action_id: fit_yard_mine
+    parameters: {}
+  cooldown_minutes: 0
+- id: pair_yard
+  version: 1
+  agent_label: 开启灰脊—铁轨货场门线
+  summary: 开启灰脊—铁轨货场门线
+  description: 开启灰脊—铁轨货场门线
+  entry_conditions:
+  - actor.alive
+  - world.yard_city == 1
+  - world.yard_mine == 1
+  - world.yard_link == 0
+  - actor.inventory.gate_core >= 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: mine_exchange}
+  - type: action
+    action_id: pair_yard
+    parameters: {}
+  cooldown_minutes: 0
+- id: cross_yard_out
+  version: 1
+  agent_label: 通门直达铁轨货场
+  summary: 通门直达铁轨货场
+  description: 通门直达铁轨货场
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: cross_yard_out
+    parameters: {destination_id: old_yard}
+  cooldown_minutes: 0
+  goal_tags:
+  - movement
+- id: cross_yard_back
+  version: 1
+  agent_label: 通门直达灰脊集口
+  summary: 通门直达灰脊集口
+  description: 通门直达灰脊集口
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: cross_yard_back
+    parameters: {destination_id: mine_exchange}
+  cooldown_minutes: 0
+  goal_tags:
+  - movement
+- id: repair_yard
+  version: 1
+  agent_label: 维护铁轨货场门线
+  summary: 维护铁轨货场门线
+  description: 维护铁轨货场门线
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: repair_yard
+    parameters: {}
+  cooldown_minutes: 0
+- id: sell_yard
+  version: 1
+  agent_label: 向铁轨货场交付一份矿料
+  summary: 向铁轨货场交付一份矿料
+  description: 向铁轨货场交付一份矿料
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: sell_yard
+    parameters: {}
+  cooldown_minutes: 0
+- id: ship_yard
+  version: 1
+  agent_label: 经门向铁轨货场运矿
+  summary: 经门向铁轨货场运矿
+  description: 经门向铁轨货场运矿
+  entry_conditions:
+  - actor.alive
+  - world.yard_link == 1
+  - world.yard_maintenance > 0
+  - world.yard_freight >= 1
+  - world.mine_ore >= 1
+  - world.yard_ore < 35
+  - world.yard_wages >= 1
+  - world.lockdown == 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: mine_exchange}
+  - type: selector
+    children:
+    - type: action
+      action_id: load_yard_fee
+      parameters: {}
+    - type: action
+      action_id: load_yard
+      parameters: {}
+  - type: action
+    action_id: cross_yard_out
+    parameters: {destination_id: old_yard}
+  - type: action
+    action_id: sell_yard
+    parameters: {}
+  cooldown_minutes: 0
+- id: ground_trade
+  version: 1
+  agent_label: 走主干线把矿运到旧站
+  summary: 走主干线把矿运到旧站
+  description: 走主干线把矿运到旧站
+  entry_conditions:
+  - actor.alive
+  - actor.inventory.ore < 1
+  - world.mine_ore > 0
+  - world.yard_ore < 35
+  - world.yard_wages > 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: mine_exchange}
+  - type: action
+    action_id: load_ground
+    parameters: {item_id: ore}
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: old_yard}
+  - type: action
+    action_id: sell_yard
+    parameters: {}
+  cooldown_minutes: 0
+- id: bridge_trade
+  version: 1
+  agent_label: 走北栈桥把矿送往低城
+  summary: 走北栈桥把矿送往低城
+  description: 走北栈桥把矿送往低城
+  entry_conditions:
+  - actor.alive
+  - world.bridge_improved == 1
+  - actor.inventory.ore < 1
+  - world.mine_ore > 0
+  - world.market_ore < 35
+  - world.low_wages > 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: mine_exchange}
+  - type: action
+    action_id: load_ground
+    parameters: {item_id: ore}
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: low_market}
+  - type: action
+    action_id: sell_market
+    parameters: {}
+  cooldown_minutes: 0
+- id: buy_ore
+  version: 1
+  agent_label: 买一份原矿
+  summary: 买一份原矿
+  description: 买一份原矿
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: buy_ore
+    parameters: {}
+  cooldown_minutes: 0
+- id: buy_fuel
+  version: 1
+  agent_label: 购买燃料枝条
+  summary: 购买燃料枝条
+  description: 购买燃料枝条
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: buy_fuel
+    parameters: {}
+  cooldown_minutes: 0
+- id: buy_crystal
+  version: 1
+  agent_label: 购买一枚门芯晶片
+  summary: 购买一枚门芯晶片
+  description: 购买一枚门芯晶片
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: buy_crystal
+    parameters: {}
+  cooldown_minutes: 0
+- id: craft_smelt
+  version: 1
+  agent_label: 冶炼金属
+  summary: 冶炼金属
+  description: 冶炼金属
+  entry_conditions:
+  - actor.alive
+  - location.tag.craft
+  - actor.inventory.ore >= 2
+  - actor.inventory.fuel >= 1
+  nodes:
+  - type: action
+    action_id: fabricate
+    parameters: {recipe_id: smelt}
+  cooldown_minutes: 0
+- id: craft_frame
+  version: 1
+  agent_label: 制作三份框架件
+  summary: 制作三份框架件
+  description: 制作三份框架件
+  entry_conditions:
+  - actor.alive
+  - location.tag.craft
+  - actor.inventory.metal >= 2
+  nodes:
+  - type: action
+    action_id: fabricate
+    parameters: {recipe_id: frame}
+  cooldown_minutes: 0
+- id: craft_core
+  version: 1
+  agent_label: 制作一枚新门芯
+  summary: 制作一枚新门芯
+  description: 制作一枚新门芯
+  entry_conditions:
+  - actor.alive
+  - location.tag.craft
+  - actor.inventory.metal >= 2
+  - actor.inventory.crystal >= 1
+  nodes:
+  - type: action
+    action_id: fabricate
+    parameters: {recipe_id: core}
+  cooldown_minutes: 0
+- id: carry_leftover_market
+  version: 1
+  agent_label: 交付尚在手上的矿料
+  summary: 交付尚在手上的矿料
+  description: 交付尚在手上的矿料
+  entry_conditions:
+  - actor.alive
+  - actor.inventory.ore >= 1
+  - world.market_ore < 35
+  - world.low_wages >= 1
+  - world.market_link == 1 or world.bridge_improved == 1
+  - actor.state.job_region != 'mine' or actor.state.is_porter == 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: low_market}
+  - type: action
+    action_id: sell_market
+    parameters: {}
+  cooldown_minutes: 0
+- id: carry_leftover_yard
+  version: 1
+  agent_label: 交付尚在手上的矿料
+  summary: 交付尚在手上的矿料
+  description: 交付尚在手上的矿料
+  entry_conditions:
+  - actor.alive
+  - actor.inventory.ore >= 1
+  - world.yard_ore < 35
+  - world.yard_wages >= 1
+  - actor.alive
+  - actor.state.job_region != 'mine' or actor.state.is_porter == 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: old_yard}
+  - type: action
+    action_id: sell_yard
+    parameters: {}
+  cooldown_minutes: 0
+- id: sign_public_access
+  version: 1
+  agent_label: 三城共担维护与应急通行
+  summary: 拨两枚钱进入公共维护基金，恢复被限制的门线。
+  description: 三城共担维护与应急通行
+  entry_conditions:
+  - actor.alive
+  - world.connected_count >= 1 or world.bridge_improved == 1
+  - world.trade_policy != 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: low_city}
+  - type: action
+    action_id: sign_public_access
+    parameters: {}
+  cooldown_minutes: 0
+- id: sign_open_market
+  version: 1
+  agent_label: 登记公开竞争与平价通行
+  summary: 经门发货每趟付一枚钱，费用归对应门线的维护账。
+  description: 登记公开竞争与平价通行
+  entry_conditions:
+  - actor.alive
+  - world.connected_count >= 1 or world.bridge_improved == 1
+  - world.trade_policy != 2
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: low_city}
+  - type: action
+    action_id: sign_open_market
+    parameters: {}
+  cooldown_minutes: 0
+- id: sign_embargo
+  version: 1
+  agent_label: 送达一班后生效的货门限制通知
+  summary: 60 分钟后关闭门线，生效前可以改签议约撤回。
+  description: 送达一班后生效的货门限制通知
+  entry_conditions:
+  - actor.alive
+  - world.connected_count >= 1 or world.bridge_improved == 1
+  - world.trade_policy != 3
+  - world.market_sales >= 1 or world.yard_sales >= 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: low_city}
+  - type: action
+    action_id: sign_embargo
+    parameters: {}
+  cooldown_minutes: 0
+- id: sip
+  version: 1
+  agent_label: 喝随身净水
+  summary: 喝随身净水
+  description: 喝随身净水
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: sip
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - hydration
+- id: eat
+  version: 1
+  agent_label: 吃随身饭食
+  summary: 吃随身饭食
+  description: 吃随身饭食
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: eat
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - satiety
+- id: rest_short
+  version: 1
+  agent_label: 短歇恢复精力
+  summary: 短歇恢复精力
+  description: 短歇恢复精力
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: rest_short
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - rest
+- id: sleep_home
+  version: 1
+  agent_label: 回住所休息
+  summary: 回住所休息
+  description: 回住所休息
+  entry_conditions:
+  - actor.alive
+  - actor.state.stamina < context.stamina_recovery
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: context.home_location}
+  - type: action
+    action_id: sleep_home
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - rest
+- id: visit_clinic
+  version: 1
+  agent_label: 去低城诊所治疗
+  summary: 去低城诊所治疗
+  description: 去低城诊所治疗
+  entry_conditions:
+  - actor.alive
+  - actor.state.integrity < context.clinic_threshold
+  - world.clinic_supplies >= 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: low_clinic}
+  - type: action
+    action_id: visit_clinic
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - health
+- id: buy_high_water
+  version: 1
+  agent_label: 购买高地净水
+  summary: 购买高地净水
+  description: 购买高地净水
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: buy_high_water
+    parameters: {}
+  cooldown_minutes: 0
+- id: buy_needed_high_water
+  version: 1
+  agent_label: 用工资购买净水
+  summary: 用工资购买净水
+  description: 用工资购买净水
+  entry_conditions:
+  - actor.alive
+  - actor.state.supply_region == 'high'
+  - actor.need.hydration < context.hydration_recovery
+  - actor.inventory.water < 1
+  - world.high_water > 0
+  - actor.inventory.coin >= 1
+  - world.high_wages < 170
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: high_gate}
+  - type: action
+    action_id: buy_high_water
+    parameters: {}
+  - type: action
+    action_id: sip
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - hydration
+- id: provision_high_water
+  version: 1
+  agent_label: 取用高地净水
+  summary: 取用高地净水
+  description: 取用高地净水
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: provision_high_water
+    parameters: {}
+  cooldown_minutes: 0
+- id: seek_high_water
+  version: 1
+  agent_label: 去高地补充净水
+  summary: 去高地补充净水
+  description: 去高地补充净水
+  entry_conditions:
+  - actor.alive
+  - actor.state.supply_region == 'high'
+  - actor.need.hydration < context.hydration_recovery
+  - actor.inventory.water < 1
+  - world.high_water > 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: high_gate}
+  - type: action
+    action_id: provision_high_water
+    parameters: {}
+  - type: action
+    action_id: sip
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - hydration
+- id: buy_high_food
+  version: 1
+  agent_label: 购买高地饭食
+  summary: 购买高地饭食
+  description: 购买高地饭食
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: buy_high_food
+    parameters: {}
+  cooldown_minutes: 0
+- id: buy_needed_high_food
+  version: 1
+  agent_label: 用工资购买饭食
+  summary: 用工资购买饭食
+  description: 用工资购买饭食
+  entry_conditions:
+  - actor.alive
+  - actor.state.supply_region == 'high'
+  - actor.need.satiety < context.satiety_recovery
+  - actor.inventory.meal < 1
+  - world.high_food > 0
+  - actor.inventory.coin >= 1
+  - world.high_wages < 170
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: high_gate}
+  - type: action
+    action_id: buy_high_food
+    parameters: {}
+  - type: action
+    action_id: eat
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - satiety
+- id: provision_high_food
+  version: 1
+  agent_label: 取用高地饭食
+  summary: 取用高地饭食
+  description: 取用高地饭食
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: provision_high_food
+    parameters: {}
+  cooldown_minutes: 0
+- id: seek_high_food
+  version: 1
+  agent_label: 去高地补充饭食
+  summary: 去高地补充饭食
+  description: 去高地补充饭食
+  entry_conditions:
+  - actor.alive
+  - actor.state.supply_region == 'high'
+  - actor.need.satiety < context.satiety_recovery
+  - actor.inventory.meal < 1
+  - world.high_food > 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: high_gate}
+  - type: action
+    action_id: provision_high_food
+    parameters: {}
+  - type: action
+    action_id: eat
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - satiety
+- id: work_high
+  version: 1
+  agent_label: 高地日常班次
+  summary: 高地日常班次
+  description: 高地日常班次
+  entry_conditions:
+  - actor.alive
+  - actor.state.job_region == 'high'
+  - world.high_wages >= 1
+  - context.day_phase == 'workday'
+  - actor.state.stamina >= context.work_minimum
+  - world.high_water < 69
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: high_gate}
+  - type: action
+    action_id: work_high
+    parameters: {}
+  - {type: wait, minutes: 35}
+  cooldown_minutes: 0
+  drive_tags:
+  - livelihood
+  - ambition
+- id: buy_low_water
+  version: 1
+  agent_label: 购买低城净水
+  summary: 购买低城净水
+  description: 购买低城净水
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: buy_low_water
+    parameters: {}
+  cooldown_minutes: 0
+- id: buy_needed_low_water
+  version: 1
+  agent_label: 用工资购买净水
+  summary: 用工资购买净水
+  description: 用工资购买净水
+  entry_conditions:
+  - actor.alive
+  - actor.state.supply_region == 'low'
+  - actor.need.hydration < context.hydration_recovery
+  - actor.inventory.water < 1
+  - world.low_water > 0
+  - actor.inventory.coin >= 1
+  - world.low_wages < 170
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: low_city}
+  - type: action
+    action_id: buy_low_water
+    parameters: {}
+  - type: action
+    action_id: sip
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - hydration
+- id: provision_low_water
+  version: 1
+  agent_label: 取用低城净水
+  summary: 取用低城净水
+  description: 取用低城净水
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: provision_low_water
+    parameters: {}
+  cooldown_minutes: 0
+- id: seek_low_water
+  version: 1
+  agent_label: 去低城补充净水
+  summary: 去低城补充净水
+  description: 去低城补充净水
+  entry_conditions:
+  - actor.alive
+  - actor.state.supply_region == 'low'
+  - actor.need.hydration < context.hydration_recovery
+  - actor.inventory.water < 1
+  - world.low_water > 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: low_city}
+  - type: action
+    action_id: provision_low_water
+    parameters: {}
+  - type: action
+    action_id: sip
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - hydration
+- id: buy_low_food
+  version: 1
+  agent_label: 购买低城饭食
+  summary: 购买低城饭食
+  description: 购买低城饭食
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: buy_low_food
+    parameters: {}
+  cooldown_minutes: 0
+- id: buy_needed_low_food
+  version: 1
+  agent_label: 用工资购买饭食
+  summary: 用工资购买饭食
+  description: 用工资购买饭食
+  entry_conditions:
+  - actor.alive
+  - actor.state.supply_region == 'low'
+  - actor.need.satiety < context.satiety_recovery
+  - actor.inventory.meal < 1
+  - world.low_food > 0
+  - actor.inventory.coin >= 1
+  - world.low_wages < 170
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: low_city}
+  - type: action
+    action_id: buy_low_food
+    parameters: {}
+  - type: action
+    action_id: eat
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - satiety
+- id: provision_low_food
+  version: 1
+  agent_label: 取用低城饭食
+  summary: 取用低城饭食
+  description: 取用低城饭食
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: provision_low_food
+    parameters: {}
+  cooldown_minutes: 0
+- id: seek_low_food
+  version: 1
+  agent_label: 去低城补充饭食
+  summary: 去低城补充饭食
+  description: 去低城补充饭食
+  entry_conditions:
+  - actor.alive
+  - actor.state.supply_region == 'low'
+  - actor.need.satiety < context.satiety_recovery
+  - actor.inventory.meal < 1
+  - world.low_food > 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: low_city}
+  - type: action
+    action_id: provision_low_food
+    parameters: {}
+  - type: action
+    action_id: eat
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - satiety
+- id: work_low
+  version: 1
+  agent_label: 低城日常班次
+  summary: 低城日常班次
+  description: 低城日常班次
+  entry_conditions:
+  - actor.alive
+  - actor.state.job_region == 'low'
+  - world.low_wages >= 1
+  - context.day_phase == 'workday'
+  - actor.state.stamina >= context.work_minimum
+  - world.farm_water > 0
+  - world.low_food < 47
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: low_fields}
+  - type: action
+    action_id: work_low
+    parameters: {}
+  - {type: wait, minutes: 35}
+  cooldown_minutes: 0
+  drive_tags:
+  - livelihood
+  - ambition
+- id: buy_yard_water
+  version: 1
+  agent_label: 购买旧站净水
+  summary: 购买旧站净水
+  description: 购买旧站净水
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: buy_yard_water
+    parameters: {}
+  cooldown_minutes: 0
+- id: buy_needed_yard_water
+  version: 1
+  agent_label: 用工资购买净水
+  summary: 用工资购买净水
+  description: 用工资购买净水
+  entry_conditions:
+  - actor.alive
+  - actor.state.supply_region == 'yard'
+  - actor.need.hydration < context.hydration_recovery
+  - actor.inventory.water < 1
+  - world.yard_water > 0
+  - actor.inventory.coin >= 1
+  - world.yard_wages < 170
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: old_yard}
+  - type: action
+    action_id: buy_yard_water
+    parameters: {}
+  - type: action
+    action_id: sip
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - hydration
+- id: provision_yard_water
+  version: 1
+  agent_label: 取用旧站净水
+  summary: 取用旧站净水
+  description: 取用旧站净水
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: provision_yard_water
+    parameters: {}
+  cooldown_minutes: 0
+- id: seek_yard_water
+  version: 1
+  agent_label: 去旧站补充净水
+  summary: 去旧站补充净水
+  description: 去旧站补充净水
+  entry_conditions:
+  - actor.alive
+  - actor.state.supply_region == 'yard'
+  - actor.need.hydration < context.hydration_recovery
+  - actor.inventory.water < 1
+  - world.yard_water > 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: old_yard}
+  - type: action
+    action_id: provision_yard_water
+    parameters: {}
+  - type: action
+    action_id: sip
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - hydration
+- id: buy_yard_food
+  version: 1
+  agent_label: 购买旧站饭食
+  summary: 购买旧站饭食
+  description: 购买旧站饭食
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: buy_yard_food
+    parameters: {}
+  cooldown_minutes: 0
+- id: buy_needed_yard_food
+  version: 1
+  agent_label: 用工资购买饭食
+  summary: 用工资购买饭食
+  description: 用工资购买饭食
+  entry_conditions:
+  - actor.alive
+  - actor.state.supply_region == 'yard'
+  - actor.need.satiety < context.satiety_recovery
+  - actor.inventory.meal < 1
+  - world.yard_food > 0
+  - actor.inventory.coin >= 1
+  - world.yard_wages < 170
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: old_yard}
+  - type: action
+    action_id: buy_yard_food
+    parameters: {}
+  - type: action
+    action_id: eat
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - satiety
+- id: provision_yard_food
+  version: 1
+  agent_label: 取用旧站饭食
+  summary: 取用旧站饭食
+  description: 取用旧站饭食
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: provision_yard_food
+    parameters: {}
+  cooldown_minutes: 0
+- id: seek_yard_food
+  version: 1
+  agent_label: 去旧站补充饭食
+  summary: 去旧站补充饭食
+  description: 去旧站补充饭食
+  entry_conditions:
+  - actor.alive
+  - actor.state.supply_region == 'yard'
+  - actor.need.satiety < context.satiety_recovery
+  - actor.inventory.meal < 1
+  - world.yard_food > 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: old_yard}
+  - type: action
+    action_id: provision_yard_food
+    parameters: {}
+  - type: action
+    action_id: eat
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - satiety
+- id: work_yard
+  version: 1
+  agent_label: 旧站日常班次
+  summary: 旧站日常班次
+  description: 旧站日常班次
+  entry_conditions:
+  - actor.alive
+  - actor.state.job_region == 'yard'
+  - world.yard_wages >= 1
+  - context.day_phase == 'workday'
+  - actor.state.stamina >= context.work_minimum
+  - world.yard_ore > 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: old_station}
+  - type: action
+    action_id: work_yard
+    parameters: {}
+  - {type: wait, minutes: 35}
+  cooldown_minutes: 0
+  drive_tags:
+  - livelihood
+  - ambition
+- id: buy_mine_water
+  version: 1
+  agent_label: 购买灰脊净水
+  summary: 购买灰脊净水
+  description: 购买灰脊净水
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: buy_mine_water
+    parameters: {}
+  cooldown_minutes: 0
+- id: buy_needed_mine_water
+  version: 1
+  agent_label: 用工资购买净水
+  summary: 用工资购买净水
+  description: 用工资购买净水
+  entry_conditions:
+  - actor.alive
+  - actor.state.supply_region == 'mine'
+  - actor.need.hydration < context.hydration_recovery
+  - actor.inventory.water < 1
+  - world.mine_water > 0
+  - actor.inventory.coin >= 1
+  - world.mine_wages < 170
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: mine_exchange}
+  - type: action
+    action_id: buy_mine_water
+    parameters: {}
+  - type: action
+    action_id: sip
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - hydration
+- id: provision_mine_water
+  version: 1
+  agent_label: 取用灰脊净水
+  summary: 取用灰脊净水
+  description: 取用灰脊净水
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: provision_mine_water
+    parameters: {}
+  cooldown_minutes: 0
+- id: seek_mine_water
+  version: 1
+  agent_label: 去灰脊补充净水
+  summary: 去灰脊补充净水
+  description: 去灰脊补充净水
+  entry_conditions:
+  - actor.alive
+  - actor.state.supply_region == 'mine'
+  - actor.need.hydration < context.hydration_recovery
+  - actor.inventory.water < 1
+  - world.mine_water > 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: mine_exchange}
+  - type: action
+    action_id: provision_mine_water
+    parameters: {}
+  - type: action
+    action_id: sip
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - hydration
+- id: buy_mine_food
+  version: 1
+  agent_label: 购买灰脊饭食
+  summary: 购买灰脊饭食
+  description: 购买灰脊饭食
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: buy_mine_food
+    parameters: {}
+  cooldown_minutes: 0
+- id: buy_needed_mine_food
+  version: 1
+  agent_label: 用工资购买饭食
+  summary: 用工资购买饭食
+  description: 用工资购买饭食
+  entry_conditions:
+  - actor.alive
+  - actor.state.supply_region == 'mine'
+  - actor.need.satiety < context.satiety_recovery
+  - actor.inventory.meal < 1
+  - world.mine_food > 0
+  - actor.inventory.coin >= 1
+  - world.mine_wages < 170
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: mine_exchange}
+  - type: action
+    action_id: buy_mine_food
+    parameters: {}
+  - type: action
+    action_id: eat
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - satiety
+- id: provision_mine_food
+  version: 1
+  agent_label: 取用灰脊饭食
+  summary: 取用灰脊饭食
+  description: 取用灰脊饭食
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: provision_mine_food
+    parameters: {}
+  cooldown_minutes: 0
+- id: seek_mine_food
+  version: 1
+  agent_label: 去灰脊补充饭食
+  summary: 去灰脊补充饭食
+  description: 去灰脊补充饭食
+  entry_conditions:
+  - actor.alive
+  - actor.state.supply_region == 'mine'
+  - actor.need.satiety < context.satiety_recovery
+  - actor.inventory.meal < 1
+  - world.mine_food > 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: mine_exchange}
+  - type: action
+    action_id: provision_mine_food
+    parameters: {}
+  - type: action
+    action_id: eat
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - satiety
+- id: work_mine
+  version: 1
+  agent_label: 灰脊日常班次
+  summary: 灰脊日常班次
+  description: 灰脊日常班次
+  entry_conditions:
+  - actor.alive
+  - actor.state.job_region == 'mine'
+  - world.mine_wages >= 1
+  - context.day_phase == 'workday'
+  - actor.state.stamina >= context.work_minimum
+  - world.ore_seam > 0
+  - actor.inventory.ore < 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: mine_pit}
+  - type: action
+    action_id: work_mine
+    parameters: {}
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: mine_exchange}
+  - type: action
+    action_id: stock_mine
+    parameters: {}
+  - {type: wait, minutes: 35}
+  cooldown_minutes: 0
+  drive_tags:
+  - livelihood
+  - ambition
+- id: stock_mine
+  version: 1
+  agent_label: 给灰脊货架补上矿料
+  summary: 给灰脊货架补上矿料
+  description: 给灰脊货架补上矿料
+  entry_conditions:
+  - actor.alive
+  - actor.state.job_region == 'mine'
+  - actor.inventory.ore >= 1
+  - world.mine_ore < 45
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: mine_exchange}
+  - type: action
+    action_id: stock_mine
+    parameters: {}
+  cooldown_minutes: 0
+- id: market_shift
+  version: 1
+  agent_label: 在坊市工作
+  summary: 在坊市工作
+  description: 在坊市工作
+  entry_conditions:
+  - actor.alive
+  - actor.state.job_region == 'market'
+  - world.low_wages >= 1
+  - context.day_phase == 'workday'
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: low_market}
+  - type: action
+    action_id: market_shift
+    parameters: {}
+  - {type: wait, minutes: 35}
+  cooldown_minutes: 0
+- id: move_market
+  version: 1
+  agent_label: 接受坊市工作并搬入低城
+  summary: 接受坊市工作并搬入低城
+  description: 接受坊市工作并搬入低城
+  entry_conditions:
+  - actor.alive
+  - actor.state.supply_region == 'yard'
+  - actor.state.mobile_worker == 1
+  - actor.inventory.coin >= 1
+  - world.low_beds >= 1
+  - world.market_orders >= 1
+  - world.market_link == 1 or world.bridge_improved == 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: low_market}
+  - type: action
+    action_id: move_market
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - safety
+  - livelihood
+- id: train
+  version: 1
+  agent_label: 跟工匠练习制件
+  summary: 跟工匠练习制件
+  description: 跟工匠练习制件
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: train
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - ambition
+  - standing
+- id: share_meal
+  version: 1
+  agent_label: 为应急饭库留一份饭
+  summary: 为应急饭库留一份饭
+  description: 为应急饭库留一份饭
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: share_meal
+    parameters: {}
+  cooldown_minutes: 0
+  drive_tags:
+  - belonging
+- id: substitute
+  version: 1
+  agent_label: 跑完枢门代班
+  summary: 跑完枢门代班
+  description: 跑完枢门代班
+  entry_conditions:
+  - actor.alive
+  - actor.state.is_candidate == 1
+  - world.merit_count < 3
+  - world.substitute_shift >= 1
+  - world.high_wages >= 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: high_gate}
+  - type: action
+    action_id: substitute
+    parameters: {}
+  cooldown_minutes: 0
+- id: endorse_warden
+  version: 1
+  agent_label: 在枢门提交班长推荐
+  summary: 在枢门提交班长推荐
+  description: 在枢门提交班长推荐
+  entry_conditions:
+  - actor.alive
+  - actor.role == '枢门调度员'
+  - world.merit_count >= 3
+  - world.high_warden_vote >= 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: high_gate}
+  - type: action
+    action_id: endorse_warden
+    parameters: {}
+  cooldown_minutes: 0
+- id: endorse_foreman
+  version: 1
+  agent_label: 在枢门提交班长推荐
+  summary: 在枢门提交班长推荐
+  description: 在枢门提交班长推荐
+  entry_conditions:
+  - actor.alive
+  - actor.role == '旧站工头'
+  - world.merit_count >= 3
+  - world.old_foreman_vote >= 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: high_gate}
+  - type: action
+    action_id: endorse_foreman
+    parameters: {}
+  cooldown_minutes: 0
+- id: authorize_appointment
+  version: 1
+  agent_label: 前往枢门邀请白砾担任班长
+  summary: 前往枢门邀请白砾担任班长
+  description: 前往枢门邀请白砾担任班长
+  entry_conditions:
+  - actor.alive
+  - world.merit_count >= 3
+  - world.service_votes >= 2
+  - world.appointment == 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: high_gate}
+  - type: action
+    action_id: authorize_appointment
+    parameters: {}
+  cooldown_minutes: 0
+- id: accept_appointment
+  version: 1
+  agent_label: 接受枢门班长岗位
+  summary: 接受枢门班长岗位
+  description: 接受枢门班长岗位
+  entry_conditions:
+  - actor.alive
+  - actor.state.is_candidate == 1
+  - actor.state.office == 0
+  - world.appointment == 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: high_gate}
+  - type: action
+    action_id: accept_appointment
+    parameters: {}
+  cooldown_minutes: 0
+- id: demobilize
+  version: 1
+  agent_label: 交还班长岗位
+  summary: 交还班长岗位
+  description: 交还班长岗位
+  entry_conditions:
+  - actor.alive
+  - actor.state.office == 1
+  - world.appointment == 3
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: high_gate}
+  - type: action
+    action_id: demobilize
+    parameters: {}
+  cooldown_minutes: 0
+- id: close_office
+  version: 1
+  agent_label: 办理班长卸任
+  summary: 办理班长卸任
+  description: 办理班长卸任
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: close_office
+    parameters: {}
+  cooldown_minutes: 0
+- id: captain_dispatch
+  version: 1
+  agent_label: 留出公共通行名额
+  summary: 留出公共通行名额
+  description: 留出公共通行名额
+  entry_conditions:
+  - actor.alive
+  - actor.state.office == 1
+  - world.trade_policy == 1
+  - world.public_contract_deliveries < 3
+  - world.market_link == 1
+  - world.market_freight > 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters: {location_id: high_gate}
+  - type: action
+    action_id: captain_dispatch
+    parameters: {}
+  cooldown_minutes: 0
+- id: urgent_recovery
+  version: 1
+  agent_label: 先离开危险或补充生存物资
+  summary: 先离开危险或补充生存物资
+  description: 先离开危险或补充生存物资
+  entry_conditions:
+  - actor.alive
+  - actor.need.hydration <= context.hard_survival or actor.need.satiety <= context.hard_survival or actor.state.integrity
+    < context.clinic_threshold
+  nodes:
+  - type: selector
+    children:
+    - {type: behavior, behavior_id: visit_clinic}
+    - {type: behavior, behavior_id: sip}
+    - {type: behavior, behavior_id: eat}
+    - {type: behavior, behavior_id: seek_high_water}
+    - {type: behavior, behavior_id: seek_low_water}
+    - {type: behavior, behavior_id: seek_yard_water}
+    - {type: behavior, behavior_id: seek_mine_water}
+    - {type: behavior, behavior_id: seek_high_food}
+    - {type: behavior, behavior_id: seek_low_food}
+    - {type: behavior, behavior_id: seek_yard_food}
+    - {type: behavior, behavior_id: seek_mine_food}
+    - {type: wait, minutes: 8}
+  cooldown_minutes: 0
+- id: routine_resident
+  version: 1
+  agent_label: 居民的生活与工作常驻树
+  summary: 居民的生活与工作常驻树
+  description: 居民的生活与工作常驻树
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: selector
+    children:
+    - {type: behavior, behavior_id: urgent_recovery}
+    - {type: behavior, behavior_id: visit_clinic}
+    - {type: behavior, behavior_id: sip}
+    - {type: behavior, behavior_id: eat}
+    - {type: behavior, behavior_id: buy_needed_high_water}
+    - {type: behavior, behavior_id: buy_needed_low_water}
+    - {type: behavior, behavior_id: buy_needed_yard_water}
+    - {type: behavior, behavior_id: buy_needed_mine_water}
+    - {type: behavior, behavior_id: buy_needed_high_food}
+    - {type: behavior, behavior_id: buy_needed_low_food}
+    - {type: behavior, behavior_id: buy_needed_yard_food}
+    - {type: behavior, behavior_id: buy_needed_mine_food}
+    - {type: behavior, behavior_id: seek_high_water}
+    - {type: behavior, behavior_id: seek_low_water}
+    - {type: behavior, behavior_id: seek_yard_water}
+    - {type: behavior, behavior_id: seek_mine_water}
+    - {type: behavior, behavior_id: seek_high_food}
+    - {type: behavior, behavior_id: seek_low_food}
+    - {type: behavior, behavior_id: seek_yard_food}
+    - {type: behavior, behavior_id: seek_mine_food}
+    - {type: behavior, behavior_id: rest_short}
+    - {type: behavior, behavior_id: move_market}
+    - {type: behavior, behavior_id: market_shift}
+    - {type: behavior, behavior_id: stock_mine}
+    - {type: behavior, behavior_id: work_high}
+    - {type: behavior, behavior_id: work_low}
+    - {type: behavior, behavior_id: work_yard}
+    - {type: behavior, behavior_id: work_mine}
+    - type: sequence
+      children:
+      - {type: condition, expression: context.day_phase == 'night' and actor.state.location_id != actor.state.home_location}
+      - type: action
+        action_id: travel_to
+        parameters: {location_id: context.home_location}
+    - {type: behavior, behavior_id: sleep_home}
+    - {type: wait, minutes: 25}
+  cooldown_minutes: 0
+- id: routine_porter
+  version: 1
+  agent_label: 居民的生活与工作常驻树
+  summary: 居民的生活与工作常驻树
+  description: 居民的生活与工作常驻树
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: selector
+    children:
+    - {type: behavior, behavior_id: urgent_recovery}
+    - {type: behavior, behavior_id: visit_clinic}
+    - {type: behavior, behavior_id: sip}
+    - {type: behavior, behavior_id: eat}
+    - {type: behavior, behavior_id: buy_needed_high_water}
+    - {type: behavior, behavior_id: buy_needed_low_water}
+    - {type: behavior, behavior_id: buy_needed_yard_water}
+    - {type: behavior, behavior_id: buy_needed_mine_water}
+    - {type: behavior, behavior_id: buy_needed_high_food}
+    - {type: behavior, behavior_id: buy_needed_low_food}
+    - {type: behavior, behavior_id: buy_needed_yard_food}
+    - {type: behavior, behavior_id: buy_needed_mine_food}
+    - {type: behavior, behavior_id: seek_high_water}
+    - {type: behavior, behavior_id: seek_low_water}
+    - {type: behavior, behavior_id: seek_yard_water}
+    - {type: behavior, behavior_id: seek_mine_water}
+    - {type: behavior, behavior_id: seek_high_food}
+    - {type: behavior, behavior_id: seek_low_food}
+    - {type: behavior, behavior_id: seek_yard_food}
+    - {type: behavior, behavior_id: seek_mine_food}
+    - {type: behavior, behavior_id: rest_short}
+    - {type: behavior, behavior_id: carry_leftover_market}
+    - {type: behavior, behavior_id: carry_leftover_yard}
+    - {type: behavior, behavior_id: ship_market}
+    - {type: behavior, behavior_id: ship_yard}
+    - {type: behavior, behavior_id: bridge_trade}
+    - {type: behavior, behavior_id: ground_trade}
+    - type: sequence
+      children:
+      - {type: condition, expression: context.day_phase == 'night' and actor.state.location_id != actor.state.home_location}
+      - type: action
+        action_id: travel_to
+        parameters: {location_id: context.home_location}
+    - {type: behavior, behavior_id: sleep_home}
+    - {type: wait, minutes: 25}
+  cooldown_minutes: 0
+- id: routine_candidate
+  version: 1
+  agent_label: 居民的生活与工作常驻树
+  summary: 居民的生活与工作常驻树
+  description: 居民的生活与工作常驻树
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: selector
+    children:
+    - {type: behavior, behavior_id: urgent_recovery}
+    - {type: behavior, behavior_id: visit_clinic}
+    - {type: behavior, behavior_id: sip}
+    - {type: behavior, behavior_id: eat}
+    - {type: behavior, behavior_id: buy_needed_high_water}
+    - {type: behavior, behavior_id: buy_needed_low_water}
+    - {type: behavior, behavior_id: buy_needed_yard_water}
+    - {type: behavior, behavior_id: buy_needed_mine_water}
+    - {type: behavior, behavior_id: buy_needed_high_food}
+    - {type: behavior, behavior_id: buy_needed_low_food}
+    - {type: behavior, behavior_id: buy_needed_yard_food}
+    - {type: behavior, behavior_id: buy_needed_mine_food}
+    - {type: behavior, behavior_id: seek_high_water}
+    - {type: behavior, behavior_id: seek_low_water}
+    - {type: behavior, behavior_id: seek_yard_water}
+    - {type: behavior, behavior_id: seek_mine_water}
+    - {type: behavior, behavior_id: seek_high_food}
+    - {type: behavior, behavior_id: seek_low_food}
+    - {type: behavior, behavior_id: seek_yard_food}
+    - {type: behavior, behavior_id: seek_mine_food}
+    - {type: behavior, behavior_id: rest_short}
+    - {type: behavior, behavior_id: demobilize}
+    - {type: behavior, behavior_id: accept_appointment}
+    - {type: behavior, behavior_id: captain_dispatch}
+    - {type: behavior, behavior_id: substitute}
+    - {type: behavior, behavior_id: work_high}
+    - type: sequence
+      children:
+      - {type: condition, expression: context.day_phase == 'night' and actor.state.location_id != actor.state.home_location}
+      - type: action
+        action_id: travel_to
+        parameters: {location_id: context.home_location}
+    - {type: behavior, behavior_id: sleep_home}
+    - {type: wait, minutes: 25}
+  cooldown_minutes: 0
+- id: routine_warden
+  version: 1
+  agent_label: 居民的生活与工作常驻树
+  summary: 居民的生活与工作常驻树
+  description: 居民的生活与工作常驻树
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: selector
+    children:
+    - {type: behavior, behavior_id: urgent_recovery}
+    - {type: behavior, behavior_id: visit_clinic}
+    - {type: behavior, behavior_id: sip}
+    - {type: behavior, behavior_id: eat}
+    - {type: behavior, behavior_id: buy_needed_high_water}
+    - {type: behavior, behavior_id: buy_needed_low_water}
+    - {type: behavior, behavior_id: buy_needed_yard_water}
+    - {type: behavior, behavior_id: buy_needed_mine_water}
+    - {type: behavior, behavior_id: buy_needed_high_food}
+    - {type: behavior, behavior_id: buy_needed_low_food}
+    - {type: behavior, behavior_id: buy_needed_yard_food}
+    - {type: behavior, behavior_id: buy_needed_mine_food}
+    - {type: behavior, behavior_id: seek_high_water}
+    - {type: behavior, behavior_id: seek_low_water}
+    - {type: behavior, behavior_id: seek_yard_water}
+    - {type: behavior, behavior_id: seek_mine_water}
+    - {type: behavior, behavior_id: seek_high_food}
+    - {type: behavior, behavior_id: seek_low_food}
+    - {type: behavior, behavior_id: seek_yard_food}
+    - {type: behavior, behavior_id: seek_mine_food}
+    - {type: behavior, behavior_id: rest_short}
+    - {type: behavior, behavior_id: endorse_warden}
+    - type: sequence
+      children:
+      - {type: condition, expression: context.day_phase == 'night' and actor.state.location_id != actor.state.home_location}
+      - type: action
+        action_id: travel_to
+        parameters: {location_id: context.home_location}
+    - {type: behavior, behavior_id: sleep_home}
+    - {type: wait, minutes: 25}
+  cooldown_minutes: 0
+- id: routine_foreman
+  version: 1
+  agent_label: 居民的生活与工作常驻树
+  summary: 居民的生活与工作常驻树
+  description: 居民的生活与工作常驻树
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: selector
+    children:
+    - {type: behavior, behavior_id: urgent_recovery}
+    - {type: behavior, behavior_id: visit_clinic}
+    - {type: behavior, behavior_id: sip}
+    - {type: behavior, behavior_id: eat}
+    - {type: behavior, behavior_id: buy_needed_high_water}
+    - {type: behavior, behavior_id: buy_needed_low_water}
+    - {type: behavior, behavior_id: buy_needed_yard_water}
+    - {type: behavior, behavior_id: buy_needed_mine_water}
+    - {type: behavior, behavior_id: buy_needed_high_food}
+    - {type: behavior, behavior_id: buy_needed_low_food}
+    - {type: behavior, behavior_id: buy_needed_yard_food}
+    - {type: behavior, behavior_id: buy_needed_mine_food}
+    - {type: behavior, behavior_id: seek_high_water}
+    - {type: behavior, behavior_id: seek_low_water}
+    - {type: behavior, behavior_id: seek_yard_water}
+    - {type: behavior, behavior_id: seek_mine_water}
+    - {type: behavior, behavior_id: seek_high_food}
+    - {type: behavior, behavior_id: seek_low_food}
+    - {type: behavior, behavior_id: seek_yard_food}
+    - {type: behavior, behavior_id: seek_mine_food}
+    - {type: behavior, behavior_id: rest_short}
+    - {type: behavior, behavior_id: endorse_foreman}
+    - type: sequence
+      children:
+      - {type: condition, expression: context.day_phase == 'night' and actor.state.location_id != actor.state.home_location}
+      - type: action
+        action_id: travel_to
+        parameters: {location_id: context.home_location}
+    - {type: behavior, behavior_id: sleep_home}
+    - {type: wait, minutes: 25}
+  cooldown_minutes: 0
+- id: routine_steward
+  version: 1
+  agent_label: 居民的生活与工作常驻树
+  summary: 居民的生活与工作常驻树
+  description: 居民的生活与工作常驻树
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: selector
+    children:
+    - {type: behavior, behavior_id: urgent_recovery}
+    - {type: behavior, behavior_id: visit_clinic}
+    - {type: behavior, behavior_id: sip}
+    - {type: behavior, behavior_id: eat}
+    - {type: behavior, behavior_id: buy_needed_high_water}
+    - {type: behavior, behavior_id: buy_needed_low_water}
+    - {type: behavior, behavior_id: buy_needed_yard_water}
+    - {type: behavior, behavior_id: buy_needed_mine_water}
+    - {type: behavior, behavior_id: buy_needed_high_food}
+    - {type: behavior, behavior_id: buy_needed_low_food}
+    - {type: behavior, behavior_id: buy_needed_yard_food}
+    - {type: behavior, behavior_id: buy_needed_mine_food}
+    - {type: behavior, behavior_id: seek_high_water}
+    - {type: behavior, behavior_id: seek_low_water}
+    - {type: behavior, behavior_id: seek_yard_water}
+    - {type: behavior, behavior_id: seek_mine_water}
+    - {type: behavior, behavior_id: seek_high_food}
+    - {type: behavior, behavior_id: seek_low_food}
+    - {type: behavior, behavior_id: seek_yard_food}
+    - {type: behavior, behavior_id: seek_mine_food}
+    - {type: behavior, behavior_id: rest_short}
+    - type: sequence
+      children:
+      - {type: condition, expression: context.day_phase == 'night' and actor.state.location_id != actor.state.home_location}
+      - type: action
+        action_id: travel_to
+        parameters: {location_id: context.home_location}
+    - {type: behavior, behavior_id: sleep_home}
+    - {type: wait, minutes: 25}
+  cooldown_minutes: 0
+- id: routine_representative
+  version: 1
+  agent_label: 居民的生活与工作常驻树
+  summary: 居民的生活与工作常驻树
+  description: 居民的生活与工作常驻树
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: selector
+    children:
+    - {type: behavior, behavior_id: urgent_recovery}
+    - {type: behavior, behavior_id: visit_clinic}
+    - {type: behavior, behavior_id: sip}
+    - {type: behavior, behavior_id: eat}
+    - {type: behavior, behavior_id: buy_needed_high_water}
+    - {type: behavior, behavior_id: buy_needed_low_water}
+    - {type: behavior, behavior_id: buy_needed_yard_water}
+    - {type: behavior, behavior_id: buy_needed_mine_water}
+    - {type: behavior, behavior_id: buy_needed_high_food}
+    - {type: behavior, behavior_id: buy_needed_low_food}
+    - {type: behavior, behavior_id: buy_needed_yard_food}
+    - {type: behavior, behavior_id: buy_needed_mine_food}
+    - {type: behavior, behavior_id: seek_high_water}
+    - {type: behavior, behavior_id: seek_low_water}
+    - {type: behavior, behavior_id: seek_yard_water}
+    - {type: behavior, behavior_id: seek_mine_water}
+    - {type: behavior, behavior_id: seek_high_food}
+    - {type: behavior, behavior_id: seek_low_food}
+    - {type: behavior, behavior_id: seek_yard_food}
+    - {type: behavior, behavior_id: seek_mine_food}
+    - {type: behavior, behavior_id: rest_short}
+    - type: sequence
+      children:
+      - {type: condition, expression: context.day_phase == 'night' and actor.state.location_id != actor.state.home_location}
+      - type: action
+        action_id: travel_to
+        parameters: {location_id: context.home_location}
+    - {type: behavior, behavior_id: sleep_home}
+    - {type: wait, minutes: 25}
+  cooldown_minutes: 0
+- id: retarget_market_to_yard
+  version: 1
+  agent_label: 把灰脊门端改接铁轨货场
+  summary: 沿用灰脊现有门端，改接铁轨货场。无需追加框架件。
+  description: 沿用灰脊现有门端，改接铁轨货场。无需追加框架件。
+  entry_conditions:
+  - actor.alive
+  - world.market_mine == 1
+  - world.yard_mine == 0
+  - world.yard_permit == 1
+  - world.market_link == 0
+  - world.market_link_slot == 1
+  - world.yard_link == 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: mine_exchange
+  - type: action
+    action_id: retarget_market_to_yard
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - infrastructure
+- id: retarget_yard_to_market
+  version: 1
+  agent_label: 把灰脊门端改接低城坊市
+  summary: 沿用灰脊现有门端，改接低城坊市。无需追加框架件。
+  description: 沿用灰脊现有门端，改接低城坊市。无需追加框架件。
+  entry_conditions:
+  - actor.alive
+  - world.yard_mine == 1
+  - world.market_mine == 0
+  - world.market_permit == 1
+  - world.yard_link == 0
+  - world.yard_link_slot == 1
+  - world.market_link == 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: mine_exchange
+  - type: action
+    action_id: retarget_yard_to_market
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - infrastructure
+- id: reclaim_market_city
+  version: 1
+  agent_label: 拆回低城坊市门端
+  summary: 拆回两份框架件，留给另一座城或北栈桥。
+  description: 拆回两份框架件，留给另一座城或北栈桥。
+  entry_conditions:
+  - actor.alive
+  - world.market_city == 1
+  - world.market_link == 0
+  - world.market_link_slot == 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: low_market
+  - type: action
+    action_id: reclaim_market_city
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - infrastructure
+- id: reclaim_yard_city
+  version: 1
+  agent_label: 拆回铁轨货场门端
+  summary: 拆回两份框架件，留给另一座城或北栈桥。
+  description: 拆回两份框架件，留给另一座城或北栈桥。
+  entry_conditions:
+  - actor.alive
+  - world.yard_city == 1
+  - world.yard_link == 0
+  - world.yard_link_slot == 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: old_yard
+  - type: action
+    action_id: reclaim_yard_city
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - infrastructure
+- id: reclaim_market_mine
+  version: 1
+  agent_label: 拆回灰脊门端（原接低城）
+  summary: 从灰脊集口拆回两份框架件，可用于另一端或北栈桥。
+  description: 从灰脊集口拆回两份框架件，可用于另一端或北栈桥。
+  entry_conditions:
+  - actor.alive
+  - world.market_mine == 1
+  - world.market_link == 0
+  - world.market_link_slot == 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: mine_exchange
+  - type: action
+    action_id: reclaim_market_mine
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - infrastructure
+- id: reclaim_yard_mine
+  version: 1
+  agent_label: 拆回灰脊门端（原接旧站）
+  summary: 从灰脊集口拆回两份框架件，可用于另一端或北栈桥。
+  description: 从灰脊集口拆回两份框架件，可用于另一端或北栈桥。
+  entry_conditions:
+  - actor.alive
+  - world.yard_mine == 1
+  - world.yard_link == 0
+  - world.yard_link_slot == 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: mine_exchange
+  - type: action
+    action_id: reclaim_yard_mine
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - infrastructure
+- id: open_paving_shop
+  version: 1
+  agent_label: 投入两枚钱开工坊
+  summary: 接水庭的路石订单。每批货款三枚，先扣采购和工钱。
+  description: 接水庭的路石订单。每批货款三枚，先扣采购和工钱。
+  entry_conditions:
+  - actor.alive
+  - world.shop_open == 0
+  - actor.inventory.coin >= 2
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: low_market
+  - type: action
+    action_id: open_paving_shop
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - trade
+  - decision
+- id: appoint_shop_crew
+  version: 1
+  agent_label: 委托坊市班组
+  summary: 班组之后按需求采购、加工并结账，你可以继续建门或等一班查看账本。
+  description: 班组之后按需求采购、加工并结账，你可以继续建门或等一班查看账本。
+  entry_conditions:
+  - actor.alive
+  - world.shop_open == 1
+  - world.shop_staffed == 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: low_market
+  - type: action
+    action_id: appoint_shop_crew
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - decision
+- id: pause_shop_crew
+  version: 1
+  agent_label: 暂停新委托
+  summary: 保留工坊和周转金，在途货照常入仓。
+  description: 保留工坊和周转金，在途货照常入仓。
+  entry_conditions:
+  - actor.alive
+  - world.shop_open == 1
+  - world.shop_staffed == 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: low_market
+  - type: action
+    action_id: pause_shop_crew
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - decision
+- id: shop_supply
+  version: 1
+  agent_label: 亲自采购两份矿料
+  summary: 从工坊账付一枚钱，把两份料从灰脊送入坊市。门线可用时会走快路。
+  description: 从工坊账付一枚钱，把两份料从灰脊送入坊市。门线可用时会走快路。
+  entry_conditions:
+  - actor.alive
+  - world.shop_open == 1
+  - world.shop_cash >= 1
+  - world.shop_dispatch >= 1
+  - world.mine_ore >= 2
+  - world.mine_wages < 170
+  - world.market_ore < 2
+  - world.paving_stock <= 4
+  - world.low_wages >= 3
+  - actor.inventory.paving_ore == 0
+  nodes: &id001
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: mine_exchange
+  - type: action
+    action_id: shop_purchase_ore
+    parameters: {}
+  - &id002
+    type: selector
+    children:
+    - type: action
+      action_id: cross_market_out
+      parameters:
+        destination_id: low_market
+    - type: action
+      action_id: travel_to
+      parameters:
+        location_id: low_market
+  - type: action
+    action_id: shop_receive_ore
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - trade
+- id: shop_supply_crew
+  version: 1
+  agent_label: 替坊市工坊采购
+  summary: 按已出资订单买矿并送入坊市。
+  description: 按已出资订单买矿并送入坊市。
+  entry_conditions:
+  - actor.alive
+  - world.shop_open == 1
+  - world.shop_cash >= 1
+  - world.shop_dispatch >= 1
+  - world.mine_ore >= 2
+  - world.mine_wages < 170
+  - world.market_ore < 2
+  - world.paving_stock <= 4
+  - world.low_wages >= 3
+  - actor.inventory.paving_ore == 0
+  - world.shop_staffed == 1
+  - (actor.state.job_region == 'low' or actor.state.job_region == 'market')
+  nodes: *id001
+  cooldown_minutes: 0
+  goal_tags: []
+- id: shop_receive
+  version: 1
+  agent_label: 带着已购矿料回仓
+  summary: 把已付钱的货送入坊市，释放下一趟货位。
+  description: 把已付钱的货送入坊市，释放下一趟货位。
+  entry_conditions:
+  - actor.alive
+  - world.shop_open == 1
+  - actor.inventory.paving_ore >= 2
+  - world.market_ore <= 33
+  nodes:
+  - *id002
+  - type: action
+    action_id: shop_receive_ore
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - trade
+- id: shop_receive_crew
+  version: 1
+  agent_label: 继续交付在途矿料
+  summary: 把已付钱的货送入坊市，释放下一趟货位。
+  description: 把已付钱的货送入坊市，释放下一趟货位。
+  entry_conditions:
+  - actor.alive
+  - world.shop_open == 1
+  - actor.inventory.paving_ore >= 2
+  - world.market_ore <= 33
+  - (actor.state.job_region == 'low' or actor.state.job_region == 'market')
+  nodes:
+  - *id002
+  - type: action
+    action_id: shop_receive_ore
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - trade
+- id: shop_process
+  version: 1
+  agent_label: 加工并卖出一批路石
+  summary: 消耗两份矿料。水庭付三枚钱，你领一枚工钱。
+  description: 消耗两份矿料。水庭付三枚钱，你领一枚工钱。
+  entry_conditions:
+  - actor.alive
+  - world.shop_open == 1
+  - world.market_ore >= 2
+  - world.shop_cash >= 1
+  - world.low_wages >= 3
+  - world.paving_stock <= 4
+  - world.shop_bench >= 1
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: low_market
+  - type: action
+    action_id: shop_fabricate_paving
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - craft
+- id: shop_process_crew
+  version: 1
+  agent_label: 替工坊加工路石
+  summary: 使用当前订单和账面材料完成一批。
+  description: 使用当前订单和账面材料完成一批。
+  entry_conditions:
+  - actor.alive
+  - world.shop_open == 1
+  - world.market_ore >= 2
+  - world.shop_cash >= 1
+  - world.low_wages >= 3
+  - world.paving_stock <= 4
+  - world.shop_bench >= 1
+  - world.shop_staffed == 1
+  - (actor.state.job_region == 'low' or actor.state.job_region == 'market')
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: low_market
+  - type: action
+    action_id: shop_fabricate_paving
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags: []
+- id: shop_pay_dividend
+  version: 1
+  agent_label: 领取一枚分红
+  summary: 从工坊账领取一枚已赚到的钱，仍留两枚以上周转。
+  description: 从工坊账领取一枚已赚到的钱，仍留两枚以上周转。
+  entry_conditions:
+  - actor.alive
+  - world.shop_open == 1
+  - world.shop_cash >= 3
+  - world.shop_dividends < world.shop_batches
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: low_market
+  - type: action
+    action_id: shop_pay_dividend
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - trade
+- id: shop_pave_market_road
+  version: 1
+  agent_label: 用两批路石铺坊市短路
+  summary: 把账上的订单变成一条真正缩短的公共道路，居民也能走。
+  description: 把账上的订单变成一条真正缩短的公共道路，居民也能走。
+  entry_conditions:
+  - actor.alive
+  - world.paving_stock >= 4
+  - world.shop_road == 0
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: low_market
+  - type: action
+    action_id: shop_pave_market_road
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - infrastructure
+- id: shop_use_paving_stock
+  version: 1
+  agent_label: 用路石维护低城门端
+  summary: 腾出成品储位，恢复三点门况。
+  description: 腾出成品储位，恢复三点门况。
+  entry_conditions:
+  - actor.alive
+  - world.market_link == 1
+  - world.market_maintenance <= 8
+  - world.paving_stock >= 2
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: low_market
+  - type: action
+    action_id: shop_use_paving_stock
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - infrastructure
+- id: wait_for_shop
+  version: 1
+  agent_label: 让世界运转一班
+  summary: 推进六十分钟，查看班组是否送货、加工或完成结款。
+  description: 推进六十分钟，查看班组是否送货、加工或完成结款。
+  entry_conditions:
+  - actor.alive
+  - world.shop_open == 1
+  - world.shop_staffed == 1
+  nodes:
+  - type: wait
+    minutes: 60
+  cooldown_minutes: 0
+  goal_tags:
+  - trade
+- id: routine_shop_carrier
+  version: 1
+  agent_label: 照料自己并工作
+  summary: 根据工坊账面和在途货决定是否上工。
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: selector
+    children:
+    - type: behavior
+      behavior_id: urgent_recovery
+    - type: behavior
+      behavior_id: visit_clinic
+    - type: behavior
+      behavior_id: sip
+    - type: behavior
+      behavior_id: eat
+    - type: behavior
+      behavior_id: rest_short
+    - type: behavior
+      behavior_id: shop_receive_crew
+    - type: behavior
+      behavior_id: shop_supply_crew
+    - type: behavior
+      behavior_id: routine_resident
+    - type: wait
+      minutes: 25
+  cooldown_minutes: 0
+- id: routine_shop_mason
+  version: 1
+  agent_label: 照料自己并工作
+  summary: 根据工坊账面和在途货决定是否上工。
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: selector
+    children:
+    - type: behavior
+      behavior_id: urgent_recovery
+    - type: behavior
+      behavior_id: visit_clinic
+    - type: behavior
+      behavior_id: sip
+    - type: behavior
+      behavior_id: eat
+    - type: behavior
+      behavior_id: rest_short
+    - type: behavior
+      behavior_id: shop_process_crew
+    - type: behavior
+      behavior_id: routine_resident
+    - type: wait
+      minutes: 25
+  cooldown_minutes: 0

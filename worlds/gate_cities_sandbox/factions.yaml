@@ -1,0 +1,5 @@
+factions:
+- {id: high_commons, name: 高地议事组织, description: 高地雇主、居民和货物维护者。}
+- {id: low_commons, name: 低城议事组织, description: 低城雇主、居民和货物维护者。}
+- {id: yard_commons, name: 旧站议事组织, description: 旧站雇主、居民和货物维护者。}
+- {id: mine_commons, name: 灰脊议事组织, description: 灰脊雇主、居民和货物维护者。}

@@ -237,8 +237,9 @@ def _limits(value: Any) -> dict[str, Any]:
         if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 64:
             raise ValueError("limits.max_ready_god_tasks must be an integer from 1 to 64")
         compiled["max_ready_god_tasks"] = count
-    if "continue_during_cooldown" in value and not isinstance(value["continue_during_cooldown"], bool):
-        raise ValueError("limits.continue_during_cooldown must be a boolean")
+    for flag in ("continue_during_cooldown", "manual_without_model"):
+        if flag in value and not isinstance(value[flag], bool):
+            raise ValueError(f"limits.{flag} must be a boolean")
     if "generated_action_pacing" in value:
         pacing = value["generated_action_pacing"]
         if not isinstance(pacing, dict) or pacing.keys() - {"resident_cooldown", "social_milestone_once"}:

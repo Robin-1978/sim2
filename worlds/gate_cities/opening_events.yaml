@@ -1,0 +1,6 @@
+opening_events:
+- id: gate_first_shift
+  type: gate.first_shift
+  world_minute: 0
+  payload:
+    summary: 三城枢门重新接通。首班仅一批运力。低城水箱为空，旧站须拿到两份零件才能加固枢门。

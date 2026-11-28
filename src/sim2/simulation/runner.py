@@ -7,6 +7,7 @@ import unicodedata
 from typing import Any, Callable
 
 from ..agents.engine import AgentEngine, AgentTurn
+from ..behavior.controllers import controller_mode
 from ..evolution.config import role_enabled
 from ..intents.models import BehaviorIntent
 from ..platform.runtime import Platform
@@ -76,6 +77,7 @@ class SimulationRunner:
         limits = evolution.get("limits") if isinstance(evolution, dict) else {}
         self.max_ready_god_tasks = max(1, int((limits or {}).get("max_ready_god_tasks", 4) or 4))
         self.continue_during_cooldown = bool((limits or {}).get("continue_during_cooldown"))
+        self.manual_without_model = bool((limits or {}).get("manual_without_model"))
         director = evolution.get("director") if isinstance(evolution, dict) else {}
         self.director_policy = str((director or {}).get("policy") or "deterministic")
         self.director_cadence_minutes = max(1, int((director or {}).get("cadence_minutes", 60) or 60))
@@ -147,7 +149,7 @@ class SimulationRunner:
         if self.turn_observer is not None:
             self.turn_observer(turn, actor_id)
 
-    def run(self, minutes: int, *, require_running: bool = True) -> SimulationReport:
+    def run(self, minutes: int, *, require_running: bool = True, until_actor_idle: str | None = None) -> SimulationReport:
         minutes = int(minutes)
         if minutes < 1:
             raise ValueError("minutes must be at least 1")
@@ -196,7 +198,8 @@ class SimulationRunner:
             if use_director_provider and offset == 0:
                 # Recover a boundary interrupted after the minute committed.
                 self._plan_next_structure(report, director_provider, start)
-            tick = self.platform.step(defer_director=True) if use_director_provider else self.platform.step()
+            defer_director = use_director_provider or (self.manual_without_model and self.director_policy == "llm")
+            tick = self.platform.step(defer_director=True) if defer_director else self.platform.step()
             if use_director_provider:
                 self._plan_next_structure(report, director_provider, tick["to_minute"])
             if not self._run_instant_interactions(report):
@@ -208,6 +211,10 @@ class SimulationRunner:
                 break
             self._run_due_evolution(report)
             self._run_idle_decisions(report)
+            if until_actor_idle:
+                state = self.platform.store.repositories.entities.get_agent(until_actor_idle).get("initial_state") or {}
+                if not (state.get("active_bt_instance") or state.get("active_action")):
+                    break
         report.end_minute = int(self.platform.store.repositories.metadata.get("world_minute", 0))
         report.event_types = self.platform.store.repositories.events.event_type_counts()
         report.selected_behaviors = self.platform.store.repositories.events.behavior_start_counts()
@@ -261,9 +268,21 @@ class SimulationRunner:
             self._interaction_events_seen.update(int(event.get("event_id", 0)) for event in pending)
             self._persist_scheduler_state()
             return True
+        model_pending = []
+        for event in pending:
+            actor = str(event.get("actor_id") or "")
+            recipient = str(event.get("target_id") or event.get("recipient_id") or "")
+            if actor and recipient and actor != recipient and self._uses_model_controller(recipient):
+                model_pending.append(event)
+            else:
+                self._interaction_events_seen.add(int(event.get("event_id", 0)))
+        if len(model_pending) != len(pending):
+            self._persist_scheduler_state()
+        if not model_pending:
+            return True
         if provider is None or self._provider_cooling_down(provider):
             return False
-        for event in pending:
+        for event in model_pending:
             if self._provider_cooling_down(provider):
                 return False
             event_id = int(event.get("event_id", 0))
@@ -274,10 +293,6 @@ class SimulationRunner:
             minute = int(self.platform.store.repositories.metadata.get("world_minute", 0))
             actor_id = str(event.get("actor_id") or "")
             recipient_id = str(event.get("target_id") or event.get("recipient_id") or "")
-            if not actor_id or not recipient_id or actor_id == recipient_id:
-                self._interaction_events_seen.add(event_id)
-                self._persist_scheduler_state()
-                continue
             if not self.platform.store.repositories.events.claim_interaction(event_id, minute):
                 # A concurrent runner (dialogue reply thread or manual
                 # advancement) already owns this interaction.  Never answer
@@ -286,9 +301,7 @@ class SimulationRunner:
                 continue
             self._interaction_events_seen.add(event_id)
             self._persist_scheduler_state()
-            if self._is_player_controlled(recipient_id):
-                # A human-controlled character answers through player intents.
-                # Record the incoming message, but never speak for the player.
+            if not self._uses_model_controller(recipient_id):
                 continue
             pair = tuple(sorted((actor_id, recipient_id)))
             dialogue = None
@@ -398,17 +411,12 @@ class SimulationRunner:
                 return True
         return False
 
-    def _is_player_controlled(self, agent_id: str) -> bool:
-        """Return True when a human player owns this character's decisions."""
-
+    def _uses_model_controller(self, agent_id: str) -> bool:
         try:
             agent = self.platform.store.repositories.entities.get_agent(str(agent_id))
-        except (KeyError, TypeError):
+        except KeyError:
             return False
-        state = agent.get("initial_state") if isinstance(agent.get("initial_state"), dict) else {}
-        role = str(agent.get("role") or state.get("role") or "").casefold()
-        controller = str(agent.get("controller") or state.get("controller") or "").casefold()
-        return role == "player" or controller in {"manual", "player"}
+        return controller_mode(agent) == "llm"
 
     def _visible_name(self, actor_id: str) -> str:
         try:
@@ -418,20 +426,25 @@ class SimulationRunner:
 
     def _run_idle_decisions(self, report: SimulationReport) -> None:
         provider = self.providers.get("agent_decision")
+        policy = (self.platform.store.repositories.metadata.get("rules", {}) or {}).get("decision_policy") or {}
         minute = int(self.platform.store.repositories.metadata.get("world_minute", 0))
         self._refresh_decision_wakes(minute)
         for agent in self.platform.store.repositories.entities.list_agents():
-            controller = str(agent.get("controller") or "llm").casefold()
+            controller = controller_mode(agent)
             # Background population is still executed through the same
             # validated BT/Action runtime, but it does not consume an LLM
             # decision or reflection budget.  Important characters keep the
             # default LLM controller and their full memory/learning loop.
-            if controller in {"bt", "behavior_tree", "bt_only"}:
+            if controller == "bt":
                 self._run_bt_only_decision(agent, report, minute)
                 continue
-            if controller in {"manual", "player"}:
+            if controller == "manual":
                 # Human-controlled characters act only through player intents;
                 # the autonomous runtime must not spend an LLM turn or overrule them.
+                continue
+            if policy.get("resident_model_wakes_only"):
+                if agent.get("controller_fallback") == "bt":
+                    self._run_bt_only_decision(agent, report, minute)
                 continue
             if provider is None or self._provider_cooling_down(provider):
                 if agent.get("controller_fallback") == "bt":
@@ -482,17 +495,19 @@ class SimulationRunner:
     def _run_bt_only_decision(self, agent: dict[str, Any], report: SimulationReport, minute: int) -> bool:
         """Run one configured full-BT choice for a non-LLM background actor.
 
-        The controller only chooses among the current executable catalog.  It
-        never bypasses AgentIntentGateway, so resource reservations, travel,
-        outcomes, memories and world events remain identical to an important
-        NPC's selected behavior.  ``bt_priority`` is optional declarative
-        ordering; without it the platform's visible catalog order is used.
+        A bound routine selects its branches during execution. Older NPCs
+        without a bound routine choose from the executable catalog. Both
+        submit intents and use the Platform's admission and Action checks.
         """
         agent_id = str(agent.get("id") or "")
         state = agent.get("initial_state", {}) or {}
         if not agent_id or state.get("status") in BUSY_STATUSES or is_inactive(state):
             return True
         if minute < int(self._decision_not_before.get(agent_id, 0) or 0):
+            return True
+        if routine := agent.get("routine_bt_id"):
+            self._submit_bt_choice(agent_id, f"behavior:{routine}", {}, report, minute,
+                                   "Run the configured resident routine.", configured_routine=True)
             return True
         view = self.platform.decision_view(agent_id)
         options = [item for item in (view.get("executable_behaviors") or []) if item.get("ref")]
@@ -529,7 +544,9 @@ class SimulationRunner:
         # selection remains declarative, but they will eat/drink before doing
         # another optional trip when a survival action is executable.
         selected = max(scored, key=lambda value: value[:3])[3]
-        if not any(score > 0.02 for score, *_ in scored):
+        policy = (self.platform.store.repositories.metadata.get("rules", {}) or {}).get("decision_policy") or {}
+        minimum_drive_score = policy.get("minimum_drive_score", 0.02)
+        if not any(score > minimum_drive_score for score, *_ in scored):
             configured = next((ranked[item] for item in priority if item in ranked), None)
             if configured is not None:
                 selected = configured
@@ -544,7 +561,8 @@ class SimulationRunner:
                 ]
                 if stationary:
                     selected = stationary[0]
-        if max(urgency.get("hydration", 0), urgency.get("satiety", 0), urgency.get("safety", 0)) < 0.6:
+        assignment_limits = policy.get("assignment_urgency_limits", {"hydration": 0.6, "satiety": 0.6, "safety": 0.6})
+        if all(urgency.get(need_id, 0) < limit for need_id, limit in assignment_limits.items()):
             for assignment in view.get("behavior_assignments", []):
                 if assigned := ranked.get(str(assignment.get("behavior_id"))):
                     selected = assigned
@@ -557,15 +575,21 @@ class SimulationRunner:
             value = first.get("value") or first.get("name")
             if value:
                 parameters[str(key)] = str(value)
+        self._submit_bt_choice(agent_id, str(selected["ref"]), parameters, report, minute,
+                               "Configured background controller selected the highest-priority executable behavior.")
+        return True
+
+    def _submit_bt_choice(self, agent_id: str, ref: str, parameters: dict[str, Any],
+                          report: SimulationReport, minute: int, reason: str, *, configured_routine: bool = False) -> None:
         result = self.platform.submit_behavior(BehaviorIntent(
             actor_id=agent_id,
-            behavior_ref=str(selected["ref"]),
+            behavior_ref=ref,
             target={},
             parameters=parameters,
-            reason="Configured background controller selected the highest-priority executable behavior.",
+            reason=reason,
             confidence=1.0,
-            intent_id=f"bt:{agent_id}:{minute}:{selected['ref']}",
-        ))
+            intent_id=f"bt:{agent_id}:{minute}:{ref}",
+        ), configured_routine=configured_routine)
         report.bt_decisions += 1
         self._record_turn(report, result, agent_id)
         if result.get("status") == "accepted":
@@ -573,7 +597,6 @@ class SimulationRunner:
         else:
             self._decision_not_before[agent_id] = minute + max(1, self.wait_cooldown_minutes)
         self._persist_scheduler_state()
-        return True
 
     def _wait_delay(self, streak: int) -> int:
         policy = (self.platform.store.repositories.metadata.get("rules", {}) or {}).get("decision_policy", {}) or {}
@@ -596,6 +619,8 @@ class SimulationRunner:
 
         policy = (self.platform.store.repositories.metadata.get("rules", {}) or {}).get("decision_policy", {}) or {}
         wake_events = {str(value) for value in (policy.get("wake_events") or []) if str(value)}
+        if not wake_events:
+            return
         rows = self.platform.store.connection.execute(
             "SELECT event_id,event_type,actor_id,data_json FROM event_log WHERE event_id>? ORDER BY event_id LIMIT 2000",
             (int(self._decision_event_cursor),),
@@ -654,6 +679,8 @@ class SimulationRunner:
         evolution = self.platform.store.repositories.metadata.get("evolution", {}) or {}
         evolution = evolution.get("evolution", evolution)
         structural = (evolution.get("contracts") or {}).get("god_structural") or {}
+        metadata = self.platform.store.repositories.metadata
+        decision_policy = (metadata.get("rules", {}) or {}).get("decision_policy") or {}
         for task in list(self.platform.ready_evolution_tasks()):
             role = task.get("role")
             task_type = str(task.get("task_type", "evolution"))
@@ -685,7 +712,7 @@ class SimulationRunner:
             actor_id = task.get("actor_id") or (
                 "god" if role == "god" else "story" if role == "story" else None
             )
-            if role == "agent_decision" and actor_id and self._is_player_controlled(str(actor_id)):
+            if role in {"agent_decision", "agent_reflection"} and actor_id and not self._uses_model_controller(str(actor_id)):
                 self.platform.complete_evolution_task(task["task_id"])
                 continue
             if provider is None or actor_id is None:
@@ -698,6 +725,12 @@ class SimulationRunner:
                 if self.continue_during_cooldown:
                     continue
                 return
+            resident_task = role in {"agent_decision", "agent_reflection"}
+            if role == "agent_decision" and decision_policy.get("resident_model_wakes_only"):
+                resident = self.platform.store.repositories.entities.get_agent(str(actor_id))
+                state = resident.get("initial_state") or {}
+                if state.get("status") in BUSY_STATUSES or is_inactive(state):
+                    continue
             if role == "god" and task_type == "god_structural" and structural.get("behavior_constraints") and "player" in (structural.get("assign_to") or []):
                 players = self.platform.store.repositories.entities.list_agents()
                 if sum(agent.get("role") == "player" for agent in players) != 1:
@@ -718,6 +751,8 @@ class SimulationRunner:
             if source_event_id is None and source_events:
                 source_event_id = source_events[-1].get("event_id")
             engine_kwargs: dict[str, Any] = {}
+            if resident_task and (iterations := decision_policy.get("resident_session_iterations")):
+                engine_kwargs["max_iterations"] = iterations
             if role == "god" and task_type == "god_structural" and isinstance(structural.get("max_tool_calls"), int):
                 engine_kwargs["max_tool_calls"] = structural["max_tool_calls"]
             try:

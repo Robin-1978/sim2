@@ -1,7 +1,7 @@
 """Resumable manual-advance tasks.
 
 A player wait is no longer a synchronous request.  The handler returns 202 with
-a task id; this runner advances the world one minute per chunk, releasing the
+a task id; this runner advances the world in bounded chunks, releasing the
 server control lock between chunks, and publishes progress on the stream.
 """
 
@@ -136,6 +136,7 @@ class ManualTaskRunner:
             return
         record.state = "running"
         self._publish("task.progress", record)
+        chunk_minutes = self.server.manual_wait_chunk_minutes()
         while record.completed_minutes < record.requested_minutes:
             if record.cancel.is_set():
                 record.state = "cancelled"
@@ -144,9 +145,10 @@ class ManualTaskRunner:
             try:
                 result = self.server.advance_player_chunk(
                     record.player_id,
-                    1,
+                    min(chunk_minutes, record.requested_minutes - record.completed_minutes),
                     provider_name=record.provider,
                     instance_id=record.instance_id,
+                    follow_active_task=record.follow_active_task,
                 )
             except Exception as exc:  # pragma: no cover - unexpected service failure
                 record.state = "failed"
@@ -160,14 +162,15 @@ class ManualTaskRunner:
                 self._finish(record, "failed")
                 return
             report = result.get("report") if isinstance(result.get("report"), dict) else {}
-            record.completed_minutes += 1
+            end_minute = int(report.get("end_minute", result.get("world_minute", record.world_minute)))
+            record.completed_minutes += max(0, end_minute - record.world_minute)
             record.decisions += int(report.get("decisions", 0) or 0)
             record.llm_errors += int(report.get("llm_errors", 0) or 0)
             record.stop_reason = str(report.get("stop_reason") or record.stop_reason or "")
-            record.world_minute = int(result.get("world_minute", report.get("end_minute", record.world_minute)) or record.world_minute)
+            record.world_minute = end_minute
             self._publish("task.progress", record)
             state = self.server.player_state(record.player_id)
-            if record.follow_active_task and not state.get("active"):
+            if record.stop_reason or (record.follow_active_task and not state.get("active")):
                 break
             # A manual minute is a real Platform tick; yield between chunks so
             # read requests and the SSE hub are not starved by a tight loop.

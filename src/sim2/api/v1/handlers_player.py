@@ -77,7 +77,7 @@ def player_dialogue(ctx: RequestContext) -> dict[str, Any]:
         str(ctx.body.get("topic") or "general"),
         str(ctx.body.get("message") or ""),
     )
-    if result.get("status") == "accepted":
+    if result.get("status") == "accepted" and "reply" not in result:
         ctx.server.queue_dialogue_reply(
             player_id,
             provider_name=ctx.body.get("provider"),

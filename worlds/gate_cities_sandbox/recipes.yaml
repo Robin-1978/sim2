@@ -1,0 +1,30 @@
+recipes:
+- id: smelt
+  name: 冶炼金属
+  station_tags:
+  - craft
+  inputs:
+  - {item: ore, quantity: 2}
+  - {item: fuel, quantity: 1}
+  outputs:
+  - {item: metal, quantity: 1}
+  duration_minutes: 16
+- id: frame
+  name: 制作三份框架件
+  station_tags:
+  - craft
+  inputs:
+  - {item: metal, quantity: 2}
+  outputs:
+  - {item: frame, quantity: 3}
+  duration_minutes: 20
+- id: core
+  name: 制作一枚新门芯
+  station_tags:
+  - craft
+  inputs:
+  - {item: metal, quantity: 2}
+  - {item: crystal, quantity: 1}
+  outputs:
+  - {item: gate_core, quantity: 1}
+  duration_minutes: 35

@@ -21,7 +21,8 @@ export function renderTask() {
     const provider = selectedProvider();
     const manualHint = state.runtime?.running ? "" : " · 手动模式：点“推进到完成”走完剩余时间";
     const advancingHint = state.advancing ? ` · 同步推进世界${provider ? `（${provider}）` : ""}` : manualHint;
-    $("task-detail").textContent = `${task.action || "推进中"} · 还需 ${remaining} 分钟${advancingHint}`;
+    const estimate = live && remaining === 0 ? "正在结算余下步骤" : `预计还需 ${remaining} 分钟`;
+    $("task-detail").textContent = `${task.action || "推进中"} · ${estimate}${advancingHint}`;
     const ratio = Number(task.progress);
     const baseProgress = Number.isFinite(ratio) && ratio > 0
       ? ratio
@@ -88,13 +89,41 @@ export function activeOpportunity() {
     const view = state.view;
     if (view?.active_task?.bt || view?.active_task?.action) return null;
     const spotlights = uiConfig().spotlights || {};
+    const venture = uiConfig().venture;
     const actions = new Map((view?.actions || []).map((action) => [action.ref, action]));
+    let blocked = null;
     for (const goal of view?.goals || []) {
       if (!Object.hasOwn(spotlights, goal.id)) continue;
-      const choices = (goal.ready_behavior_refs || []).map((ref) => actions.get(ref)).filter(Boolean);
-      if (choices.length) return { goal, choices, presentation: spotlights[goal.id] || {} };
+      const presentation = spotlights[goal.id] || {};
+      const refs = [...(goal.ready_behavior_refs || []), ...(venture ? goal.support_behavior_refs || [] : [])];
+      const choices = [...new Set(refs)].map((ref) => actions.get(ref)).filter(Boolean);
+      if (choices.length) return { goal, choices: venture ? choices.slice(0, 3) : choices, presentation };
+      if (venture && presentation.blocker && !blocked) blocked = { goal, choices, presentation };
     }
-    return null;
+    return blocked;
+}
+
+
+export function renderVenture() {
+    const venture = uiConfig().venture;
+    const root = $("venture-brief");
+    root.classList.toggle("hidden", !venture);
+    $("opportunity-panel").closest(".scene-panel").classList.toggle("scene-with-venture", Boolean(venture));
+    if (!venture) return;
+    $("venture-title").textContent = venture.title;
+    $("venture-purpose").textContent = venture.purpose;
+    const properties = state.view?.world_properties || {};
+    const inventory = state.view?.inventory || {};
+    const metrics = $("venture-metrics");
+    metrics.replaceChildren();
+    for (const spec of venture.metrics || []) {
+      if (spec.show_when && !properties[spec.show_when]) continue;
+      if (spec.hide_when && properties[spec.hide_when]) continue;
+      const value = spec.item ? inventory[spec.item] : properties[spec.property];
+      const metric = el("div", "venture-metric");
+      metric.append(el("dt", "", spec.label), el("dd", "", `${value ?? 0}${spec.suffix || ""}`));
+      metrics.append(metric);
+    }
 }
 
 
@@ -102,11 +131,17 @@ function renderOpportunity(opportunity) {
     const panel = $("opportunity-panel");
     panel.classList.toggle("hidden", !opportunity);
     const list = $("opportunity-choices");
+    const blocker = $("opportunity-blocker");
     list.replaceChildren();
+    blocker.classList.add("hidden");
     if (!opportunity) return;
     const { goal, choices, presentation } = opportunity;
     $("opportunity-title").textContent = goal.label;
     $("opportunity-brief").textContent = goal.summary;
+    if (!choices.length && presentation.blocker) {
+      blocker.textContent = presentation.blocker;
+      blocker.classList.remove("hidden");
+    }
     const deadline = $("opportunity-deadline");
     const minutes = presentation.deadline_property
       ? state.view.world_properties?.[presentation.deadline_property]
@@ -117,6 +152,7 @@ function renderOpportunity(opportunity) {
     for (const action of choices) {
       const button = el("button", "opportunity-choice");
       button.type = "button";
+      button.disabled = state.busy;
       const head = el("span", "opportunity-choice-head");
       head.append(el("strong", "", action.choice || action.name || "行动"));
       head.append(el("span", "opportunity-arrow", "→"));
@@ -287,6 +323,7 @@ export function recommendedActionCard(action) {
     card.append(copy);
     const button = el("button", "button primary recommended-action-button", actionButtonLabel(category, action));
     button.type = "button";
+    button.disabled = state.busy;
     button.addEventListener("click", () => beginAction(action, button));
     card.append(button);
     return card;
@@ -311,6 +348,7 @@ export function actionRow(action) {
     side.append(el("span", "action-time", translateTime(action.time || "时间未知")));
     const button = el("button", "button ghost", actionButtonLabel(category, action));
     button.type = "button";
+    button.disabled = state.busy;
     button.addEventListener("click", () => beginAction(action, button));
     side.append(button);
     row.append(side);
@@ -339,15 +377,19 @@ export function renderResultBeat() {
       || expectedSummary
       || outcome.behavior_id
       || "行动完成";
+    const failureDetail = failed && result ? resultLabel(result) || humanizeReason(result) : "";
     $("result-detail").textContent = failed
-      ? `行动未完成${result ? ` · ${resultLabel(result)}` : ""}`
+      ? `行动未完成${failureDetail ? ` · ${failureDetail}` : ""}`
       : (resultLabel(result) || humanizeKey(result || "completed"));
 
     const deltas = $("result-deltas");
     deltas.replaceChildren();
     const delta = outcome.outcome?.delta || {};
     const chips = [];
-    if (delta.location?.after) chips.push(`抵达 ${delta.location.after}`);
+    if (delta.location?.after) {
+      const destination = (state.view?.map?.nodes || []).find((node) => node.id === delta.location.after);
+      if (destination) chips.push(`抵达 ${destination.name}`);
+    }
     for (const [key, change] of Object.entries(delta.inventory || {})) {
       const before = Number(change?.before || 0);
       const after = Number(change?.after || 0);
@@ -406,13 +448,24 @@ export function attributeLabel(id) {
 
 export function humanizeReason(reason) {
     let text = String(reason || "").trim().replace(/^Configured condition:\s*/i, "").replace(/\.\s*$/, "");
+    const original = text;
+    text = text.replace(/^Action .+? cannot start:\s*/i, "").replace(/^(?:precondition (?:not met|failed)|condition failed):\s*/i, "");
+    const locations = state.view?.map?.nodes || [];
+    const locationCheck = text.match(/^actor(?:\.state\.| state )(?:location_id|location id) == ['"]([^'"]+)['"]$/i);
+    if (locationCheck) {
+      const target = locationCheck[1];
+      const place = locations.find((node) => node.id === target.replace(/\s+/g, "_") || node.name === target);
+      return place ? `前往${place.name}` : "前往这项行动所在的地点";
+    }
     const configuredReasons = uiConfig().reason_labels || {};
     for (const [pattern, label] of Object.entries(configuredReasons)) {
       if (pattern && text.includes(pattern)) return text.replace(pattern, String(label));
     }
-    let match = text.match(/^(?:Location tag|location\.tag\.)\s*([A-Za-z0-9_-]+)\.?$/i);
+    let match = text.match(/^location[. ]tag[. ]([A-Za-z0-9_ -]+)$/i);
     if (match) {
-      const tag = match[1].toLowerCase();
+      const tag = match[1].toLowerCase().trim().replace(/\s+/g, "_");
+      const names = locations.filter((node) => node.open !== false && node.tags?.includes(tag)).map((node) => node.name);
+      if (names.length) return `前往${names.slice(0, 3).join("或")}`;
       const labels = {
         resource: "资源点",
         shop: "店铺",
@@ -479,7 +532,7 @@ export function humanizeReason(reason) {
     for (const [pattern, replacement] of words) {
       if (pattern.test(text)) return text.replace(pattern, replacement);
     }
-    return text;
+    return text === original || /[\u4e00-\u9fff]/.test(text) ? text : "查看行动所需的地点、材料和权限";
   }
 
 

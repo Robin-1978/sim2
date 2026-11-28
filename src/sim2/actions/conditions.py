@@ -12,6 +12,7 @@ from ..dsl.expressions import (
     reference_paths,
 )
 from ..world.lifecycle import INACTIVE_STATUSES, INCAPACITATED_CONDITION, is_inactive
+from ..world.drives import DriveCalculator
 
 
 class ConditionEngine:
@@ -24,6 +25,7 @@ class ConditionEngine:
 
     def __init__(self, config: dict[str, Any] | None = None):
         config = config or {}
+        self.drives = DriveCalculator(config)
         self.vital_attribute = str(config.get("vital_attribute")) if config.get("vital_attribute") else None
         self.capacity_attribute = str(config.get("capacity_attribute")) if config.get("capacity_attribute") else None
         self.capability_aliases = {
@@ -128,7 +130,7 @@ class ConditionEngine:
         except ValueError:
             pass
         if path.startswith((
-            "actor.need.", "actor.state.", "actor.inventory.",
+            "actor.need.", "actor.urgency.", "actor.state.", "actor.inventory.",
             "actor.permission.", "actor.knowledge.", "actor.can_", "actor.is_", "world.",
             "context.", "event.recent.", "target.inventory.", "target.state.",
         )):
@@ -167,6 +169,9 @@ class ConditionEngine:
             return agent.get("role")
         if path.startswith("actor.need."):
             return (agent.get("needs", {}) or {}).get(path.removeprefix("actor.need."), state.get(path.removeprefix("actor.need.")))
+        if path.startswith("actor.urgency."):
+            drive_id = path.removeprefix("actor.urgency.")
+            return next((drive["urgency"] for drive in self.drives.calculate(agent) if drive["id"] == drive_id), None)
         if path.startswith("actor.state."):
             return state.get(path.removeprefix("actor.state."))
         if path.startswith("actor.inventory."):

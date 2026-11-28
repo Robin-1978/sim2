@@ -222,11 +222,15 @@ behavior or trade. The web client sends a fresh key per user action, retries
 network failures once with the same key, and disables the clicked button while the
 request is in flight.
 
-The game client opens one SSE connection to `GET /api/v1/stream`. Events carry
-`cursor`, `event_id`, `revision`, `type` and `data`; the browser reconnects with
+The game client opens one SSE connection to `GET /api/v1/stream?compact=1` after
+entering the world. Events carry `cursor`, `event_id`, `revision`, `type` and
+`data`. The browser reconnects with
 `Last-Event-ID` and the hub replays the missing window. `player.view.changed`
-triggers a read-model refresh only when `revision` advances, so an idle page does
-no polling. `task.progress` and `task.completed` drive the manual-advance UI, and
+triggers a coalesced read-model refresh only when `revision` advances.
+Worlds with `ui.chronicle_events` send those public events and updates to the
+player's own active behavior. They sample other world changes at most once
+per 15-second polling interval while the clock moves. Observer timelines keep
+the simulation events. `task.progress` and `task.completed` drive the manual-advance UI, and
 `runtime`, `feed.append`, `trade.changed`, `dialogue.append` and `chapter.changed`
 update their panels directly. Three consecutive stream errors fall back to the
 15-second polling loop. The stream is read-only and never triggers a model call.

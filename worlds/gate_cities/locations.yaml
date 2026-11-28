@@ -1,0 +1,87 @@
+locations:
+- id: high_gate
+  name: 高地枢门
+  description: 跨城门的铜轮重新转了起来。白线左边放净水罐，右边堆着维修零件。行人可以走侧桥，货车按调度板发车。
+  tags:
+  - gate_dock
+  - home
+  - safe
+  public: true
+  safe: true
+  routes:
+  - low_city
+  - old_station
+  route_distances:
+    low_city: 3
+    old_station: 4
+  map_position:
+    x: 50
+    y: 22
+- id: low_city
+  name: 低城水庭
+  description: 水桶沿阶梯排到公共水箱旁。水务议事员在出水口清点每一份交付，领水的人把名字写在石阶旁的簿子上。
+  tags:
+  - water_court
+  - social
+  - safe
+  public: true
+  safe: true
+  routes:
+  - high_gate
+  route_distances:
+    high_gate: 3
+  map_position:
+    x: 24
+    y: 69
+- id: old_station
+  name: 旧站工坊
+  description: 铁轨伸进工坊，吊架悬在枢门拆下来的铆件上方。工头在货架旁核对备件和当天的维修顺序。
+  tags:
+  - workshop
+  - craft
+  - safe
+  public: true
+  safe: true
+  routes:
+  - high_gate
+  route_distances:
+    high_gate: 4
+  map_position:
+    x: 76
+    y: 69
+resources:
+- id: gate_slots
+  name: 本班货运名额
+  type: resource
+  location_id: high_gate
+  initial_state:
+    location_id: high_gate
+    quantity: 1
+- id: pump_stock
+  name: 高地净水待运箱
+  type: resource
+  location_id: high_gate
+  initial_state:
+    location_id: high_gate
+    quantity: 6
+- id: gate_parts
+  name: 高地零件待运箱
+  type: resource
+  location_id: high_gate
+  initial_state:
+    location_id: high_gate
+    quantity: 4
+- id: low_water
+  name: 低城储水
+  type: resource
+  location_id: low_city
+  initial_state:
+    location_id: low_city
+    quantity: 0
+- id: yard_parts
+  name: 旧站维修零件
+  type: resource
+  location_id: old_station
+  initial_state:
+    location_id: old_station
+    quantity: 0

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import deque
 from typing import Any
 
+from ..actions.conditions import ConditionEngine
 from ..world.navigation import location_is_open, route_edge_distance, route_minutes
 
 
@@ -79,6 +80,7 @@ def build_map_view(store: Any, *, viewer_id: str | None = None, observer: bool =
                 "minutes": route_minutes(store, pair[0], pair[1]),
             })
 
+    edges.extend(_configured_map_links(store, visible_ids))
     return {
         "status": "ok",
         "world_id": store.repositories.metadata.get("world_id"),
@@ -87,6 +89,25 @@ def build_map_view(store: Any, *, viewer_id: str | None = None, observer: bool =
         "edges": sorted(edges, key=lambda item: (item["from"], item["to"])),
         "viewer": "observer" if observer else viewer_id,
     }
+
+
+def _configured_map_links(store: Any, visible_ids: set[str]) -> list[dict[str, Any]]:
+    """Project special links whose travel is executed by authored Actions."""
+    metadata = store.repositories.metadata
+    rules = metadata.get("rules", {}) or {}
+    links = (rules.get("travel") or {}).get("map_links") or []
+    if not links:
+        return []
+    conditions = ConditionEngine(rules)
+    world = metadata.get("world_properties", {}) or {}
+    return [
+        {
+            "from": link["from"], "to": link["to"], "kind": link.get("kind", "special"),
+            "minutes": link["minutes"],
+        }
+        for link in links
+        if {link["from"], link["to"]} <= visible_ids and conditions.evaluate(link["when"], agent={}, world=world)
+    ]
 
 
 def _player_can_see_location(store: Any, viewer_id: str, location: dict[str, Any]) -> bool:

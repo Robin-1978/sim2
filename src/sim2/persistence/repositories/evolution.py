@@ -5,6 +5,7 @@ import json
 import sqlite3
 from typing import Any
 
+from ...behavior.controllers import controller_mode
 from ...evolution.config import role_enabled
 from ..store import json_dumps
 
@@ -43,7 +44,7 @@ class EvolutionRepository:
             self.store.connection.execute("UPDATE evolution_task SET cadence_minutes=? WHERE task_id=?", (cadence, task_id))
 
     def sync_resident_cadence(self, agent: dict[str, Any], minute: int, schedule: dict[str, Any]) -> None:
-        llm_resident = agent.get("role") != "player" and str(agent.get("controller") or "llm").casefold() == "llm"
+        llm_resident = controller_mode(agent) == "llm"
         agent_id = str(agent["id"])
         for prefix, task_type, key in (
             ("reflection", "daily_reflection", "agent_reflection_minutes"),

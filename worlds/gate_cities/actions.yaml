@@ -1,0 +1,490 @@
+actions:
+- id: travel_to
+  version: 1
+  description: 沿着已有步行通路前往一个城区。
+  parameters:
+    location_id: string
+  preconditions:
+  - route.known
+  - actor.mobile
+  - destination.reachable
+  duration:
+    minutes: 3
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: location_set
+    location_id: context.location_id
+  success:
+    condition: actor.alive
+    result: arrived
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  verb: move
+  requires_destination: true
+  completion:
+    if_already_at_destination: true
+- id: favor_water
+  verb: allocate
+  version: 1
+  description: 修改调度板，货运优先供给水量不足的低城。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.role == 'player'
+  - location.tag.gate_dock
+  - world.dispatch_priority != 1
+  duration:
+    minutes: 1
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: dispatch_priority
+    value: 1
+  success:
+    condition: actor.alive
+    result: water_priority
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: gate.priority_set
+    summary: 调度板优先向低城送水。
+    result: water_priority
+- id: favor_parts
+  verb: allocate
+  version: 1
+  description: 修改调度板，货运优先补足旧站的维修零件。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.role == 'player'
+  - location.tag.gate_dock
+  - world.dispatch_priority != 2
+  duration:
+    minutes: 1
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: dispatch_priority
+    value: 2
+  success:
+    condition: actor.alive
+    result: parts_priority
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: gate.priority_set
+    summary: 调度板优先向旧站送维修零件。
+    result: parts_priority
+- id: activate_emergency_water
+  verb: allocate
+  version: 1
+  description: 低城只剩两份水或更少时，调度员可以启动临时优先送水。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.role == '枢门调度员'
+  - location.tag.gate_dock
+  - world.gate_managed >= 1
+  - world.completed_deliveries >= 3
+  - world.dispatch_priority == 2
+  - world.low_water <= 2
+  duration:
+    minutes: 2
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: dispatch_priority
+    value: 1
+  success:
+    condition: actor.alive
+    result: water_priority
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: gate.priority_set
+    summary: 低城储水触及应急线，枢门调度员下令优先送水。
+    result: water_priority
+- id: load_gate_freight
+  verb: allocate
+  version: 1
+  description: 消耗一个货运名额，从待运仓领取两份货。
+  parameters:
+    stock_id: string
+    item_id: string
+  preconditions:
+  - actor.alive
+  - location.tag.gate_dock
+  - world.dispatch_priority > 0
+  - actor.inventory.water_crate < 1 and actor.inventory.repair_crate < 1
+  - (context.stock_id == 'pump_stock' and context.item_id == 'water_crate') or (context.stock_id == 'gate_parts'
+    and context.item_id == 'repair_crate')
+  duration:
+    minutes: 2
+  costs:
+    reserve:
+      resource_parameter: stock_id
+      resource_amount: 2
+      gate_slots: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: inventory_add
+    item: context.item_id
+    quantity: 2
+  success:
+    condition: actor.alive
+    result: freight_loaded
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+- id: unload_water
+  version: 1
+  description: 将两份水箱存入低城的公共储水。
+  parameters:
+    resource_id: string
+    item_id: string
+    quantity: number
+  preconditions:
+  - actor.alive
+  - location.tag.water_court
+  - context.resource_id == 'low_water' and context.item_id == 'water_crate' and context.quantity == 2
+  - world.low_water <= 6
+  duration:
+    minutes: 2
+  costs:
+    reserve:
+      item_parameter: item_id
+      item_quantity_parameter: quantity
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: resource_transfer
+    resource_id: context.resource_id
+    quantity_parameter: quantity
+    source_item_parameter: item_id
+  - type: world_property_delta
+    property: completed_deliveries
+    delta: 1
+  - type: world_property_delta
+    property: water_deliveries
+    delta: 1
+  success:
+    condition: actor.alive
+    result: water_delivered
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: gate.water_delivered
+    summary: 两份净水已经实际交入低城公共水箱。
+    result: water_delivered
+  verb: transfer_resource
+- id: unload_parts
+  version: 1
+  description: 将两份零件交到旧站维修架。
+  parameters:
+    resource_id: string
+    item_id: string
+    quantity: number
+  preconditions:
+  - actor.alive
+  - location.tag.workshop
+  - context.resource_id == 'yard_parts' and context.item_id == 'repair_crate' and context.quantity == 2
+  - world.yard_parts <= 6
+  duration:
+    minutes: 2
+  costs:
+    reserve:
+      item_parameter: item_id
+      item_quantity_parameter: quantity
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: resource_transfer
+    resource_id: context.resource_id
+    quantity_parameter: quantity
+    source_item_parameter: item_id
+  - type: world_property_delta
+    property: completed_deliveries
+    delta: 1
+  - type: world_property_delta
+    property: parts_deliveries
+    delta: 1
+  success:
+    condition: actor.alive
+    result: parts_delivered
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: gate.parts_delivered
+    summary: 两份维修零件已经实际交至旧站工坊。
+    result: parts_delivered
+  verb: transfer_resource
+- id: handover_gate
+  verb: authorize
+  version: 1
+  description: 把现有调度规则交给枢门的三名货运工。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.role == 'player'
+  - location.tag.gate_dock
+  - world.completed_deliveries >= 1
+  - world.gate_managed == 0
+  duration:
+    minutes: 2
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: gate_managed
+    value: 1
+  success:
+    condition: actor.alive
+    result: crew_dispatched
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: gate.handover
+    summary: 玩家把已跑通的货运线路交给枢门班组。
+    result: crew_dispatched
+    wake:
+    - story
+- id: reinforce_gate
+  verb: repair
+  version: 1
+  description: 用旧站收到的两份零件加固枢门。下一班起运力增加。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.role == 'player'
+  - location.tag.workshop
+  - world.gate_reinforced == 0
+  - world.yard_parts >= 2
+  duration:
+    minutes: 6
+  costs:
+    reserve:
+      yard_parts: 2
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: gate_reinforced
+    value: 1
+  success:
+    condition: actor.alive
+    result: gate_reinforced
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: gate.reinforced
+    summary: 旧站消耗两份维修零件完成加固，后续班次可运两批货。
+    result: gate_reinforced
+    wake:
+    - story
+- id: sign_water_compact
+  verb: allocate
+  version: 1
+  description: 留出一份水作公共应急储备，低城居民开始按节水公约供水。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - actor.role == 'player'
+  - location.tag.water_court
+  - world.water_compact == 0
+  - world.low_water >= 2
+  duration:
+    minutes: 5
+  costs:
+    reserve:
+      low_water: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: world_property_set
+    property: water_compact
+    value: 1
+  success:
+    condition: actor.alive
+    result: water_compact
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  information:
+    event_type: gate.water_compact
+    summary: 低城用一份水建立应急储备，节水公约开始执行。
+    result: water_compact
+    wake:
+    - story
+- id: rest
+  version: 1
+  description: 在安全地点休整，恢复精力。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.safe
+  - actor.state.stamina < 60
+  duration:
+    minutes: 6
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: attribute_delta
+    attribute: stamina
+    delta: 45
+    maximum: 100
+  success:
+    condition: actor.alive
+    result: rested
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  verb: rest
+- id: drink
+  version: 1
+  description: 在枢门后勤水站喝水。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  - location.tag.gate_dock
+  - actor.need.hydration < context.hydration_recovery
+  duration:
+    minutes: 2
+  costs:
+    reserve:
+      pump_stock: 1
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects:
+  - type: need_delta
+    need: hydration
+    delta: 35
+  success:
+    condition: actor.alive
+    result: drank
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline
+  verb: consume
+- id: read_board
+  verb: inspect
+  version: 1
+  description: 核对当地的货运和出入库记录。
+  parameters: {}
+  preconditions:
+  - actor.alive
+  duration:
+    minutes: 5
+  costs:
+    reserve: {}
+    per_minute: {}
+    on_success: {}
+    on_failure: {}
+    refund: {}
+  effects: []
+  success:
+    condition: actor.alive
+    result: board_read
+  failure:
+    condition: actor.incapacitated
+    result: failed
+  interrupt_policy: cancel
+  interaction_policy: allow
+  kind: atomic
+  executor: effect_pipeline

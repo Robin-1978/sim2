@@ -547,9 +547,9 @@ export function renderTopology(canvas, map, options = {}) {
       line.setAttribute("y1", py(from.y));
       line.setAttribute("x2", px(to.x));
       line.setAttribute("y2", py(to.y));
-      line.setAttribute("stroke", "rgba(139,204,192,.22)");
+      line.setAttribute("stroke", edge.kind === "gate" ? "rgba(231,191,118,.9)" : "rgba(139,204,192,.22)");
       line.setAttribute("stroke-width", compact ? "1.4" : "1");
-      line.setAttribute("stroke-dasharray", compact ? "5 6" : "4 5");
+      if (edge.kind !== "gate") line.setAttribute("stroke-dasharray", compact ? "5 6" : "4 5");
       svg.append(line);
     }
     const wrap = el("div", compact ? "map-stage mini-map-stage" : "map-stage");

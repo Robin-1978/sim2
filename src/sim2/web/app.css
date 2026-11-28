@@ -1985,6 +1985,36 @@ body:has(.game-grid:not([data-screen="scene"])) .mobile-action-bar { display: no
 .opportunity-choice-head { font-family: var(--serif); }
 .opportunity-arrow, .opportunity-choice small { color: #74411b; }
 .opportunity-choice-detail { color: #4e493e; }
+.venture-brief {
+  display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 20px;
+  padding: 14px 18px; background: #182422; border-left: 3px solid #c09b5f;
+}
+.venture-brief h2 { color: #f7e5bc; font: 600 clamp(19px, 2.2vw, 28px)/1.25 var(--serif); }
+.venture-brief p { margin: 4px 0 0; color: #d0ccbd; font-size: 13px; }
+.venture-metrics { display: flex; flex-wrap: wrap; gap: 6px 17px; margin: 0; }
+.venture-metric { display: flex; gap: 5px; align-items: baseline; white-space: nowrap; }
+.venture-metric dt { color: #c5c8b9; font-size: 12px; }
+.venture-metric dd { margin: 0; color: #f1d499; font-weight: 600; font-size: 13px; }
+.center-stage:has(.venture-brief:not(.hidden)) > .player-summary { order: -3; }
+.center-stage:has(.venture-brief:not(.hidden)) > .venture-brief { order: -2; }
+.center-stage:has(.venture-brief:not(.hidden)) > .task-panel { order: -1; }
+.center-stage:has(.venture-brief:not(.hidden)) > #recap-card { position: static; order: 1; }
+.scene-with-venture:has(> .opportunity-panel:not(.hidden)) > .scene-art {
+  grid-column: 1; min-height: clamp(275px, 39svh, 520px);
+}
+.scene-with-venture .scene-art:has(+ .opportunity-panel:not(.hidden)) .scene-copy { max-width: 100%; }
+.scene-with-venture > .opportunity-panel { align-self: stretch; margin: 0; box-shadow: none; }
+.opportunity-panel .opportunity-blocker { padding: 8px; background: #fff8e7; border-left: 2px solid #93633e; }
+
+@media (max-width: 860px) {
+  .venture-brief { gap: 7px; padding: 9px 12px; }
+  .venture-brief p { font-size: 12px; }
+  .venture-metrics { gap: 3px 11px; }
+  .scene-panel.scene-with-venture > .opportunity-panel { grid-column: 1; grid-row: 2; }
+  .scene-with-venture:has(> .opportunity-panel:not(.hidden)) > .scene-art {
+    grid-row: 3; min-height: clamp(150px, 22svh, 240px);
+  }
+}
 .scene-art:has(+ .opportunity-panel:not(.hidden)) .scene-objects { left: 22px; right: auto; top: 14px; align-items: flex-start; }
 .scene-footer { background: #111c20; }
 .game-grid .panel-title h2 { font-family: var(--serif); font-size: 19px; color: var(--paper); }

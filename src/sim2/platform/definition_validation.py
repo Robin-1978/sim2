@@ -351,6 +351,9 @@ class DefinitionValidationMixin:
 
         if error := validate_day_phase_duration(definition, self.store.repositories.metadata.get("setting", {}) or {}):
             errors.append(error)
+        if any((effect.get("type") or effect.get("op")) in {"route_edit", "resident_controller_set"}
+               for effect in definition.get("effects", ()) if isinstance(effect, dict)):
+            errors.append("route and resident controller changes require an authored action with authorization conditions")
 
         for field in (
             "entry_conditions", "success_results", "failure_results",

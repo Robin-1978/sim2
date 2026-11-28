@@ -1,0 +1,284 @@
+behavior_trees:
+- id: travel
+  version: 1
+  agent_label: 徒步前往相邻城区
+  summary: 徒步前往相邻城区
+  description: 徒步前往相邻城区
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: context.location_id
+  cooldown_minutes: 0
+  goal_tags:
+  - travel
+- id: prioritize_water
+  version: 1
+  agent_label: 优先送水
+  summary: 优先送水
+  description: 把一个货运名额留给两份净水。低城能立即执行节水公约。
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: favor_water
+    parameters: {}
+  cooldown_minutes: 0
+- id: prioritize_parts
+  version: 1
+  agent_label: 优先送零件
+  summary: 优先送零件
+  description: 把一个货运名额留给两份维修零件。旧站能立即加固枢门。
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: favor_parts
+    parameters: {}
+  cooldown_minutes: 0
+- id: activate_emergency_water
+  version: 1
+  agent_label: 启动应急送水
+  summary: 启动应急送水
+  description: 启动应急送水
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: activate_emergency_water
+    parameters: {}
+  cooldown_minutes: 30
+  goal_tags:
+  - management
+- id: ship_water
+  version: 1
+  agent_label: 装两份净水
+  summary: 装两份净水
+  description: 在枢门用一个货运名额装好两份净水，随后可以押运到低城。
+  entry_conditions:
+  - actor.alive
+  - location.tag.gate_dock
+  - world.dispatch_priority == 1 or world.completed_deliveries > 0
+  - world.low_water <= 6
+  - actor.inventory.water_crate < 1 and actor.inventory.repair_crate < 1
+  nodes:
+  - type: action
+    action_id: load_gate_freight
+    parameters:
+      stock_id: pump_stock
+      item_id: water_crate
+  cooldown_minutes: 0
+  goal_tags:
+  - supply
+- id: ship_parts
+  version: 1
+  agent_label: 装两份维修零件
+  summary: 装两份维修零件
+  description: 在枢门用一个货运名额装好两份零件，随后可以押运到旧站。
+  entry_conditions:
+  - actor.alive
+  - location.tag.gate_dock
+  - world.dispatch_priority == 2 or world.completed_deliveries > 0
+  - world.yard_parts <= 6
+  - actor.inventory.water_crate < 1 and actor.inventory.repair_crate < 1
+  nodes:
+  - type: action
+    action_id: load_gate_freight
+    parameters:
+      stock_id: gate_parts
+      item_id: repair_crate
+  cooldown_minutes: 0
+  goal_tags:
+  - supply
+- id: finish_water
+  version: 1
+  agent_label: 把净水送到低城
+  summary: 把净水送到低城
+  description: 把净水送到低城
+  entry_conditions:
+  - actor.alive
+  - actor.inventory.water_crate >= 2
+  - world.low_water <= 6
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: low_city
+  - type: action
+    action_id: unload_water
+    parameters:
+      resource_id: low_water
+      item_id: water_crate
+      quantity: 2
+  cooldown_minutes: 0
+  goal_tags:
+  - supply
+- id: finish_parts
+  version: 1
+  agent_label: 把维修零件送到旧站
+  summary: 把维修零件送到旧站
+  description: 把维修零件送到旧站
+  entry_conditions:
+  - actor.alive
+  - actor.inventory.repair_crate >= 2
+  - world.yard_parts <= 6
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: old_station
+  - type: action
+    action_id: unload_parts
+    parameters:
+      resource_id: yard_parts
+      item_id: repair_crate
+      quantity: 2
+  cooldown_minutes: 0
+  goal_tags:
+  - supply
+- id: handover_dispatch
+  version: 1
+  agent_label: 把货运交给班组
+  summary: 把货运交给班组
+  description: 把货运交给班组
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: handover_gate
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - management
+- id: reinforce_dispatch_gate
+  version: 1
+  agent_label: 加固枢门，增加后续运力
+  summary: 加固枢门，增加后续运力
+  description: 加固枢门，增加后续运力
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: reinforce_gate
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - infrastructure
+- id: accept_water_compact
+  version: 1
+  agent_label: 通过低城节水公约
+  summary: 通过低城节水公约
+  description: 通过低城节水公约
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: sign_water_compact
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - community
+- id: recover_stamina
+  version: 1
+  agent_label: 找地方休整
+  summary: 找地方休整
+  description: 找地方休整
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: rest
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - recovery
+- id: get_water
+  version: 1
+  agent_label: 去枢门后勤水站补水
+  summary: 去枢门后勤水站补水
+  description: 去枢门后勤水站补水
+  entry_conditions:
+  - actor.alive
+  - actor.need.hydration < context.hydration_recovery
+  nodes:
+  - type: action
+    action_id: travel_to
+    parameters:
+      location_id: high_gate
+  - type: action
+    action_id: drink
+    parameters: {}
+  cooldown_minutes: 0
+  goal_tags:
+  - recovery
+- id: check_dispatch_board
+  version: 1
+  agent_label: 核对货运记录
+  summary: 核对货运记录
+  description: 核对货运记录
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: action
+    action_id: read_board
+    parameters: {}
+  cooldown_minutes: 60
+- id: porter_routine
+  version: 1
+  agent_label: 货运工多目标班次
+  summary: 货运工多目标班次
+  description: 货运工多目标班次
+  entry_conditions:
+  - actor.alive
+  nodes:
+  - type: selector
+    children:
+    - type: behavior
+      behavior_id: recover_stamina
+    - type: behavior
+      behavior_id: get_water
+    - type: behavior
+      behavior_id: finish_water
+    - type: behavior
+      behavior_id: finish_parts
+    - type: sequence
+      children:
+      - type: condition
+        expression: world.gate_managed >= 1 and world.gate_slots >= 1 and world.dispatch_priority == 1 and world.low_water
+          < 4 and world.pump_stock >= 2
+      - type: behavior
+        behavior_id: ship_water
+    - type: sequence
+      children:
+      - type: condition
+        expression: world.gate_managed >= 1 and world.gate_slots >= 1 and world.dispatch_priority == 2 and world.yard_parts
+          < 4 and world.gate_parts >= 2
+      - type: behavior
+        behavior_id: ship_parts
+    - type: sequence
+      children:
+      - type: condition
+        expression: world.gate_managed >= 1 and world.gate_slots >= 1 and world.pump_stock >= 2 and world.low_water
+          < 4
+      - type: behavior
+        behavior_id: ship_water
+    - type: sequence
+      children:
+      - type: condition
+        expression: world.gate_managed >= 1 and world.gate_slots >= 1 and world.gate_parts >= 2 and world.yard_parts
+          < 4
+      - type: behavior
+        behavior_id: ship_parts
+    - type: sequence
+      children:
+      - type: condition
+        expression: actor.state.location_id != 'high_gate'
+      - type: action
+        action_id: travel_to
+        parameters:
+          location_id: high_gate
+    - type: wait
+      minutes: 3
+  cooldown_minutes: 0

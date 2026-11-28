@@ -1,0 +1,52 @@
+emergent_source_event_types:
+- gatebuild.surveyed
+- gatebuild.trail_opened
+- gatebuild.bridge_ready
+- gatebuild.permit
+- gatebuild.terminal_fitted
+- gatebuild.opened
+- gatebuild.maintained
+- gatebuild.sale
+- gatebuild.agreement
+- gatebuild.embargo_notice
+- gatebuild.treated
+- gatebuild.resident_moved
+- gatebuild.trained
+- gatebuild.aid
+- gatebuild.shift_proven
+- gatebuild.endorsed
+- gatebuild.offer_office
+- gatebuild.appointed
+- gatebuild.resigned
+- gatebuild.end_office
+- gatebuild.dispatch_reserved
+- gatebuild.shop_batch_sold
+- gatebuild.shop_road_opened
+- entity.created
+- world.change.rule
+- definition.registered
+- story.beat.completed
+context_events:
+- gatebuild.opened
+- gatebuild.sale
+- gatebuild.agreement
+- gatebuild.resident_moved
+- gatebuild.appointed
+- gatebuild.bridge_ready
+- gatebuild.shop_batch_sold
+- gatebuild.shop_road_opened
+- world.change.rule
+- entity.created
+context_properties:
+  connected_count: 已建成门线
+  market_sales: 坊市实际成交
+  yard_sales: 货场实际成交
+  moved_workers: 迁居低城的工人
+  trade_policy: 当前通行议约（1 共担维护，2 公开竞争，3 已发限行通知）
+  embargo_countdown: 距货门限制生效的分钟数
+  lockdown: 货门限制是否已经生效（1 已生效）
+  appointment: 枢门班长获任
+  shop_cash: 工坊周转金
+  shop_batches: 已实际结算的路石批次
+  shop_dividends: 工坊已付分红
+beats: []

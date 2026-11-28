@@ -1,0 +1,92 @@
+roles:
+  director: true
+  god: true
+  story: true
+cadence:
+  reflection: 2h
+  innovation: 1d
+stagnation:
+  window: 3h
+  max_interval: 12h
+director:
+  policy: llm
+  cadence: 90m
+  window: 3h
+  targets:
+  - rule
+  - social
+  - place
+  - verb
+  narrative_direction: true
+  context_properties: [gate_slots, low_water, yard_parts, dispatch_priority, water_compact, gate_reinforced]
+  evidence:
+    rule:
+    - registered: [{event: world.change.rule, key: [expected_state.rule_id], label: summary}]
+      used: [{event: world.rule.followed, key: [rule_id]}, {event: behavior.denied, key: [rule_id]}]
+  followups:
+    rule: {after: 30m, for: god, task: gate_rule_use}
+  context_events:
+  - gate.first_shift
+  - gate.priority_set
+  - gate.water_delivered
+  - gate.parts_delivered
+  - gate.handover
+  - gate.water_compact
+  - gate.reinforced
+  context_residents: 2
+limits:
+  continue_during_cooldown: true
+  manual_without_model: true
+  max_ready_god_tasks: 1
+  generated_action_pacing:
+    resident_cooldown: 60m
+    social_milestone_once: true
+contracts:
+  god_structural:
+    tools:
+    - query_history
+    - query_world_index
+    - inspect_definition
+    - propose_entity
+    - propose_definition
+    - propose_world_change
+    - propose_institution
+    - wait
+    max_proposals: 2
+    required_content:
+      growth_cell: true
+    purpose: 根据本档的实际交货、库存和约定，补齐 Director 选定的可用结构。
+    result: 围绕已经存在的城区和班组提出一项可采用的变更。新增地点需要与现有路线连接，新增行为须能解释谁会执行、需要什么真实物资。按实物记账，公开通行权需要有关各方的授权。
+  gate_rule_use:
+    require_resident_assignee: true
+    tools: [query_history, query_world_index, inspect_definition, propose_definition, wait]
+    max_proposals: 2
+    purpose: 查明新规则和本地人的实际行动是否已经相遇。规则计划结清需要一次有据可查的实际使用。
+    result: 若规则尚不可采用，给能到场的人一个触发该规则的行为。优先复用已有动作、货物和地点；涉及资源转移时使用现有库存。审计、开会或宣誓要消耗不同证据，或设置至少 60 分钟的行为冷却。只有行动结算才算采用。
+wakes:
+- id: new_trade_option
+  'on': world.stagnation
+  for: god
+  tools: [query_history, query_world_index, propose_definition, propose_entity, wait]
+  purpose: Check why actual routes, stocks, and work have stopped giving residents meaningful choices.
+  result: Offer one distinct, reachable option someone can use, or wait if the recent evidence has no such gap.
+- id: freight_story
+  'on':
+  - gate.handover
+  - gate.water_compact
+  - gate.reinforced
+  - world.change.rule
+  - world.change.relationship
+  - entity.created
+  - definition.registered
+  - institution.activated
+  - story.beat.completed
+  for: story
+  external: true
+  count: 1
+  every: 45m
+  purpose: 从已经生效的公约、加固、交班或新增规则继续，依据当前库存给一个尚未解决的取舍。查到既有结果时，沿着结果继续。
+  tools:
+  - query_history
+  - propose_story_beat
+  - wait

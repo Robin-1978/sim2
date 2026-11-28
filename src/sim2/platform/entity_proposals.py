@@ -11,9 +11,11 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
+from ..actions.resources import ResourceLedger
 from ..evolution.memory import remember_role
+from ..world.navigation import location_is_open
 from .entity_proposal_validation import EntitySubmission, entity_failed_check
-from .proposal_errors import _UnreachableProposal
+from .proposal_errors import _ResidentAdmissionError, _UnreachableProposal
 
 LOCATION_STRUCTURE_FIELDS = ("routes", "route_distances", "tags", "public", "safe", "discoveries", "map_position", "region_id")
 
@@ -112,6 +114,7 @@ class EntityProposalRuntimeMixin:
             with self.store.transaction():
                 self.store.repositories.evolution.create_intent(intent_id, actor_id, "propose_entity", submission.data, world_minute)
                 if plan.agent_state is not None:
+                    self._admit_resident(plan.agent_state)
                     self._write_agent(entity_id, proposal, plan.agent_state, world_minute)
                 else:
                     self._write_structure(submission, plan, world_minute)
@@ -140,7 +143,31 @@ class EntityProposalRuntimeMixin:
         except _UnreachableProposal as exc:
             # The transaction has rolled back: nothing of the proposal exists.
             return self._reject_entity(submission, "The proposed research source would be unreachable for its assignees; nothing was created.", "entity_unreachable", exc.errors)
+        except _ResidentAdmissionError as exc:
+            return self._reject_entity(submission, str(exc), "resident_admission", [str(exc)])
         return result
+
+    def _admit_resident(self, resident: dict[str, Any]) -> None:
+        rules = self.store.repositories.metadata.get("rules", {}) or {}
+        admission = rules.get("resident_arrivals")
+        if admission is None:
+            return
+        state = resident["initial_state"]
+        point = str(state.get("location_id") or "")
+        selected = admission.get(point)
+        location = self.targets.named_entity(point)
+        if not selected or not location_is_open(location):
+            raise _ResidentAdmissionError("Choose an open configured resident arrival site.")
+        resident["inventory"] = {}
+        permitted, reason, _ = ResourceLedger(self.store).reserve(
+            resident, {"costs": {"reserve": selected["reserve"]}}, {},
+        )
+        if not permitted:
+            raise _ResidentAdmissionError(reason)
+        state.update(selected.get("state") or {})
+        resident.update(controller="bt", routine_bt_id=selected["routine"], inventory=dict(selected.get("inventory") or {}))
+        resident.pop("controller_fallback", None)
+        resident["initial_bt_ids"] = list(dict.fromkeys([selected["routine"], *resident["initial_bt_ids"]]))
 
     def _write_agent(self, entity_id: str, proposal: dict[str, Any], agent_state: dict[str, Any], world_minute: int) -> None:
         self.store.repositories.entities.put_agent(entity_id, agent_state, str(proposal["name"]))

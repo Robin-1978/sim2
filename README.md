@@ -168,6 +168,27 @@ God proposes playable changes to places, social ties, behaviors or rules. Story 
 chapters from committed events and reachable follow-ups. Each save persists its own history. See
 [the Windward design](docs/design/windward-skyfall.md).
 
+[`worlds/gate_cities`](worlds/gate_cities/) is a Chinese city logistics
+sandbox. Choose who gets the first freight slot, spend the delivered cargo on
+a public project, then hand the route to a behavior-tree crew. Key residents
+and world-level Agents use the configured text provider for decisions and
+evolution. Manual play works offline. See [the Gate of Cities design](docs/design/gate-cities.md).
+
+Choose **诸城之门 · 建造经营版** to play the construction sandbox
+([`gate_cities_sandbox`](worlds/gate_cities_sandbox/)). Survey a site, build a
+pair of terminals and sponsor a charter or a rival route. Commerce, housing,
+jobs and public appointments react to the routes residents can actually use.
+Start a paving workshop with a small cash stake and commission residents to
+fill paid orders. Reinvest the output in a road residents can use. It opens
+as a separate save from the freight prototype.
+
+In automatic mode, Director selects a gap from the outcome of the current
+save. God proposes world changes, key residents decide whether to use them,
+and Story follows the results that Platform commits. Routine residents use
+behavior trees. The player chronicle shows public milestones while the full
+timeline is available to observers. The world package defines the rules and
+can be edited and run locally. See [the economy design](docs/design/gate-cities.md#经济审查与下一阶段设计).
+
 To add a world, provide a package with `manifest.yaml`, setting and world state, locations, objects, factions, agents, actions, behavior trees, rules, evolution schedule, player template, and optional prompts. `manifest.config_version` is recorded in the new SQLite instance. Reusing an instance ID is rejected; initialize a new ID for every world instance.
 
 Use `sim2 world-schema`, `sim2 build-world`, `sim2 validate-world` and

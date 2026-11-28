@@ -1,0 +1,36 @@
+emergent_source_event_types:
+- gate.water_delivered
+- gate.parts_delivered
+- gate.handover
+- gate.water_compact
+- gate.reinforced
+- world.change.rule
+- world.change.relationship
+- entity.created
+- definition.registered
+- institution.activated
+- story.beat.completed
+context_events:
+- gate.first_shift
+- gate.priority_set
+- gate.water_delivered
+- gate.parts_delivered
+- gate.handover
+- gate.water_compact
+- gate.reinforced
+- world.change.rule
+- world.change.relationship
+- entity.created
+- definition.registered
+- institution.activated
+- story.beat.completed
+context_properties:
+  dispatch_priority: 当前调度（0 未定，1 先送水，2 先送零件）
+  completed_deliveries: 已完成货运趟数
+  gate_managed: 班组接管（1 已接管）
+  low_water: 低城现有净水份数
+  yard_parts: 旧站现有维修零件份数
+  gate_slots: 本班剩余名额
+  water_compact: 低城节水公约（1 已生效）
+  gate_reinforced: 枢门加固（1 已完工）
+beats: []

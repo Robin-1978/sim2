@@ -1,0 +1,731 @@
+vital_attribute: integrity
+capacity_attribute: stamina
+incapacitation:
+  recovery: {after_minutes: 180, vital_fraction: 0.35}
+travel:
+  minutes_per_distance: 1
+  map_links:
+  - {from: mine_exchange, to: low_market, minutes: 4, when: world.market_link == 1 and world.market_maintenance
+      > 0 and world.lockdown == 0, kind: gate}
+  - {from: mine_exchange, to: old_yard, minutes: 4, when: world.yard_link == 1 and world.yard_maintenance > 0 and
+      world.lockdown == 0, kind: gate}
+resource_entity_types:
+- resource
+resource_caps:
+  high_water: {min: 0, max: 70}
+  high_food: {min: 0, max: 48}
+  high_wages: {min: 0, max: 170}
+  low_water: {min: 0, max: 70}
+  low_food: {min: 0, max: 48}
+  low_wages: {min: 0, max: 170}
+  yard_water: {min: 0, max: 70}
+  yard_food: {min: 0, max: 48}
+  yard_wages: {min: 0, max: 170}
+  mine_water: {min: 0, max: 70}
+  mine_food: {min: 0, max: 48}
+  mine_wages: {min: 0, max: 170}
+  farm_water: {min: 0, max: 24}
+  clinic_supplies: {min: 0, max: 16}
+  field_fuel: {min: 0, max: 24}
+  farm_till: {min: 0, max: 120}
+  market_rent: {min: 0, max: 120}
+  mine_crystal: {min: 0, max: 8}
+  ore_seam: {min: 0, max: 48}
+  mine_ore: {min: 0, max: 45}
+  market_ore: {min: 0, max: 35}
+  yard_ore: {min: 0, max: 35}
+  market_orders: {min: 0, max: 10}
+  yard_orders: {min: 0, max: 10}
+  low_beds: {min: 0, max: 12}
+  yard_beds: {min: 0, max: 12}
+  high_beds: {min: 0, max: 12}
+  mine_beds: {min: 0, max: 8}
+  bridge_work: {min: 0, max: 1}
+  relief_warrant: {min: 0, max: 1}
+  substitute_shift: {min: 0, max: 1}
+  worker_mandate: {min: 0, max: 1}
+  settlement_fund: {min: 0, max: 40}
+  market_tolls: {min: 0, max: 1500}
+  yard_tolls: {min: 0, max: 1500}
+  old_foreman_vote: {min: 0, max: 1}
+  high_warden_vote: {min: 0, max: 1}
+  market_permit_slot: {min: 0, max: 1}
+  market_city_slot: {min: 0, max: 1}
+  market_mine_slot: {min: 0, max: 1}
+  market_link_slot: {min: 0, max: 1}
+  market_freight: {min: 0, max: 4}
+  market_maintenance: {min: 0, max: 12}
+  yard_permit_slot: {min: 0, max: 1}
+  yard_city_slot: {min: 0, max: 1}
+  yard_mine_slot: {min: 0, max: 1}
+  yard_link_slot: {min: 0, max: 1}
+  yard_freight: {min: 0, max: 4}
+  yard_maintenance: {min: 0, max: 12}
+  shop_lease: {min: 0, max: 1}
+  shop_cash: {min: 0, max: 40}
+  shop_dispatch: {min: 0, max: 1}
+  shop_bench: {min: 0, max: 1}
+  paving_stock: {min: 0, max: 6}
+  shop_road_slot: {min: 0, max: 1}
+resource_property_projections:
+  high_water: high_water
+  high_food: high_food
+  high_wages: high_wages
+  low_water: low_water
+  low_food: low_food
+  low_wages: low_wages
+  yard_water: yard_water
+  yard_food: yard_food
+  yard_wages: yard_wages
+  mine_water: mine_water
+  mine_food: mine_food
+  mine_wages: mine_wages
+  farm_water: farm_water
+  clinic_supplies: clinic_supplies
+  field_fuel: field_fuel
+  farm_till: farm_till
+  market_rent: market_rent
+  mine_crystal: mine_crystal
+  ore_seam: ore_seam
+  mine_ore: mine_ore
+  market_ore: market_ore
+  yard_ore: yard_ore
+  market_orders: market_orders
+  yard_orders: yard_orders
+  low_beds: low_beds
+  yard_beds: yard_beds
+  high_beds: high_beds
+  mine_beds: mine_beds
+  bridge_work: bridge_work
+  relief_warrant: relief_warrant
+  substitute_shift: substitute_shift
+  worker_mandate: worker_mandate
+  settlement_fund: settlement_fund
+  market_tolls: market_tolls
+  yard_tolls: yard_tolls
+  old_foreman_vote: old_foreman_vote
+  high_warden_vote: high_warden_vote
+  market_permit_slot: market_permit_slot
+  market_city_slot: market_city_slot
+  market_mine_slot: market_mine_slot
+  market_link_slot: market_link_slot
+  market_freight: market_freight
+  market_maintenance: market_maintenance
+  yard_permit_slot: yard_permit_slot
+  yard_city_slot: yard_city_slot
+  yard_mine_slot: yard_mine_slot
+  yard_link_slot: yard_link_slot
+  yard_freight: yard_freight
+  yard_maintenance: yard_maintenance
+  shop_lease: shop_lease
+  shop_cash: shop_cash
+  shop_dispatch: shop_dispatch
+  shop_bench: shop_bench
+  paving_stock: paving_stock
+  shop_road_slot: shop_road_slot
+world_property_labels:
+  shop_cash: 工坊周转金
+  shop_sales: 工坊累计货款
+  shop_spent: 工坊支付货款与工钱
+  shop_dividends: 已领取分红
+  shop_batches: 已结算批数
+  paving_stock: 水庭待用路石
+  shop_road: 坊市短路已铺好
+  site_surveyed: 灰脊集口已勘测
+  bridge_surveyed: 北栈桥已勘测
+  bridge_improved: 北栈桥已加固
+  connected_count: 已建成门线
+  trade_policy: 城际通行议约
+  service_votes: 班组推荐
+  merit_count: 白砾有效代班
+  appointment: 枢门班长获任
+  moved_workers: 迁居低城的工人
+  old_openings: 旧站接到的门订单
+  market_sales: 坊市实际成交
+  yard_sales: 货场实际成交
+  public_contract_deliveries: 公共合约实际履行
+  lockdown: 货门限制期
+  embargo_countdown: 限行前剩余分钟
+  workshop_orders: 完成工坊订单
+  high_water: 高地净水
+  high_food: 高地饭食
+  high_wages: 高地薪资金库
+  low_water: 低城净水
+  low_food: 低城饭食
+  low_wages: 低城薪资金库
+  yard_water: 旧站净水
+  yard_food: 旧站饭食
+  yard_wages: 旧站薪资金库
+  mine_water: 灰脊净水
+  mine_food: 灰脊饭食
+  mine_wages: 灰脊薪资金库
+  farm_water: 农圃灌溉储水
+  clinic_supplies: 诊所药材
+  field_fuel: 农圃燃料枝条
+  farm_till: 农圃收入账
+  market_rent: 坊市租金账
+  mine_crystal: 矿户出售的晶片
+  ore_seam: 矿口可采矿石
+  mine_ore: 灰脊矿料货架
+  market_ore: 低城已收货矿料
+  yard_ore: 旧站已收货矿料
+  market_orders: 低城招工名额
+  yard_orders: 旧站工位订单
+  low_beds: 低城可租铺位和床位
+  yard_beds: 旧站可租床位
+  high_beds: 高地可租床位
+  mine_beds: 灰脊可租床位
+  bridge_work: 北栈桥施工许可
+  relief_warrant: 公开临时停门议案
+  substitute_shift: 待完成的枢门代班
+  worker_mandate: 枢门班长席位
+  settlement_fund: 公共维护基金
+  market_tolls: 低城实际门费
+  yard_tolls: 旧站实际门费
+  old_foreman_vote: 旧站推荐签名
+  high_warden_vote: 高地推荐签名
+  market_permit: 低城坊市建造许可
+  market_city: 低城坊市城市端已安装
+  market_mine: 低城坊市灰脊端已安装
+  market_link: 低城坊市门线已通
+  market_permit_slot: 低城坊市登记许可
+  market_city_slot: 低城坊市城市工位
+  market_mine_slot: 低城坊市矿区工位
+  market_link_slot: 低城坊市配对验收
+  market_freight: 低城坊市本班货位
+  market_maintenance: 低城坊市门况
+  yard_permit: 铁轨货场建造许可
+  yard_city: 铁轨货场城市端已安装
+  yard_mine: 铁轨货场灰脊端已安装
+  yard_link: 铁轨货场门线已通
+  yard_permit_slot: 铁轨货场登记许可
+  yard_city_slot: 铁轨货场城市工位
+  yard_mine_slot: 铁轨货场矿区工位
+  yard_link_slot: 铁轨货场配对验收
+  yard_freight: 铁轨货场本班货位
+  yard_maintenance: 铁轨货场门况
+item_labels:
+  gate_core: 门芯
+  paving_ore: 工坊已买矿料
+  frame: 框架件
+  coin: 城币
+  ore: 原矿
+  fuel: 燃料
+  metal: 金属锭
+  crystal: 晶片
+  water: 净水
+  meal: 饭食
+context_values:
+  hydration_recovery: 55
+  satiety_recovery: 48
+  hard_survival: 20
+  deprivation_limit: 10
+  stamina_recovery: 46
+  work_minimum: 50
+  clinic_threshold: 60
+needs:
+- id: hydration
+  target: 90
+  minimum: 0
+  gamma: 1.15
+  critical_threshold: 0.65
+  critical_gain: 1.0
+  weight: 1.0
+- id: satiety
+  target: 90
+  minimum: 0
+  gamma: 1.15
+  critical_threshold: 0.65
+  critical_gain: 1.0
+  weight: 1.0
+- id: health
+  target: 90
+  minimum: 0
+  gamma: 1.15
+  critical_threshold: 0.65
+  critical_gain: 1.0
+  weight: 1.0
+  state_attribute: integrity
+- id: rest
+  target: 90
+  minimum: 0
+  gamma: 1.15
+  critical_threshold: 0.8
+  critical_gain: 1.0
+  weight: 0.5
+  state_attribute: stamina
+- id: safety
+  target: 90
+  minimum: 0
+  gamma: 1.15
+  critical_threshold: 0.65
+  critical_gain: 1.0
+  weight: 1.0
+- id: livelihood
+  target: 90
+  minimum: 0
+  gamma: 1.15
+  critical_threshold: 0.8
+  critical_gain: 1.0
+  weight: 0.5
+  inventory_item: coin
+  inventory_scale: 25
+- id: belonging
+  target: 90
+  minimum: 0
+  gamma: 1.15
+  critical_threshold: 0.8
+  critical_gain: 1.0
+  weight: 0.5
+- id: standing
+  target: 90
+  minimum: 0
+  gamma: 1.15
+  critical_threshold: 0.8
+  critical_gain: 1.0
+  weight: 0.5
+- id: ambition
+  target: 90
+  minimum: 0
+  gamma: 1.15
+  critical_threshold: 0.8
+  critical_gain: 1.0
+  weight: 0.5
+need_gates:
+- {to: ambition, threshold: 0.77, multiplier: 0.25, from: hydration}
+- {to: ambition, threshold: 0.77, multiplier: 0.25, from: satiety}
+minute_effects:
+- id: high_spring
+  scope: world
+  every_minutes: 60
+  effects:
+  - {type: world_resource_delta, resource_id: high_water, delta: 4}
+  condition: world.high_water <= 66
+- id: city_well
+  scope: world
+  every_minutes: 90
+  effects:
+  - {type: world_resource_delta, resource_id: low_water, delta: 4}
+  condition: world.low_water <= 66
+- id: ration_harvest
+  scope: world
+  every_minutes: 60
+  effects:
+  - {type: world_resource_delta, resource_id: farm_water, delta: -1}
+  - {type: world_resource_delta, resource_id: low_food, delta: 3}
+  condition: world.farm_water >= 1 and world.low_food <= 45
+- id: field_canal
+  scope: world
+  every_minutes: 60
+  effects:
+  - {type: world_resource_delta, resource_id: low_water, delta: -1}
+  - {type: world_resource_delta, resource_id: farm_water, delta: 1}
+  condition: world.low_water >= 13 and world.farm_water < 24
+- id: rents_pay_workers
+  scope: world
+  every_minutes: 60
+  effects:
+  - {type: world_resource_delta, resource_id: market_rent, delta: -1}
+  - {type: world_resource_delta, resource_id: low_wages, delta: 1}
+  condition: world.market_rent >= 1 and world.low_wages < 170
+- id: fuel_sales_pay_workers
+  scope: world
+  every_minutes: 60
+  effects:
+  - {type: world_resource_delta, resource_id: farm_till, delta: -1}
+  - {type: world_resource_delta, resource_id: low_wages, delta: 1}
+  condition: world.farm_till >= 1 and world.low_wages < 170
+- id: grow_mine_seam
+  scope: world
+  every_minutes: 90
+  effects:
+  - {type: world_resource_delta, resource_id: ore_seam, delta: 4}
+  condition: world.ore_seam <= 44
+- id: prune_fuel
+  scope: world
+  every_minutes: 120
+  effects:
+  - {type: world_resource_delta, resource_id: field_fuel, delta: 2}
+  condition: world.field_fuel <= 22 and world.farm_water >= 2
+- id: separate_crystals
+  scope: world
+  every_minutes: 240
+  effects:
+  - {type: world_resource_delta, resource_id: ore_seam, delta: -2}
+  - {type: world_resource_delta, resource_id: mine_crystal, delta: 1}
+  condition: world.mine_crystal < 8 and world.ore_seam >= 2
+- id: medical_delivery
+  scope: world
+  every_minutes: 240
+  effects:
+  - {type: world_resource_delta, resource_id: low_water, delta: -1}
+  - {type: world_resource_delta, resource_id: clinic_supplies, delta: 1}
+  condition: world.clinic_supplies < 15 and world.low_water >= 15
+- id: reset_shift
+  scope: world
+  every_minutes: 40
+  effects:
+  - {type: world_resource_delta, resource_id: substitute_shift, delta: 1}
+  condition: world.substitute_shift < 1
+- id: cart_low_food_to_high_food
+  scope: world
+  every_minutes: 120
+  effects:
+  - {type: world_resource_delta, resource_id: low_food, delta: -2}
+  - {type: world_resource_delta, resource_id: high_food, delta: 2}
+  condition: world.low_food >= 5 and world.high_food <= 25
+- id: cart_high_water_to_yard_water
+  scope: world
+  every_minutes: 90
+  effects:
+  - {type: world_resource_delta, resource_id: high_water, delta: -2}
+  - {type: world_resource_delta, resource_id: yard_water, delta: 2}
+  condition: world.high_water >= 5 and world.yard_water <= 25
+- id: cart_high_water_to_mine_water
+  scope: world
+  every_minutes: 120
+  effects:
+  - {type: world_resource_delta, resource_id: high_water, delta: -2}
+  - {type: world_resource_delta, resource_id: mine_water, delta: 2}
+  condition: world.high_water >= 5 and world.mine_water <= 25
+- id: cart_low_food_to_yard_food
+  scope: world
+  every_minutes: 90
+  effects:
+  - {type: world_resource_delta, resource_id: low_food, delta: -2}
+  - {type: world_resource_delta, resource_id: yard_food, delta: 2}
+  condition: world.low_food >= 5 and world.yard_food <= 25
+- id: cart_low_food_to_mine_food
+  scope: world
+  every_minutes: 120
+  effects:
+  - {type: world_resource_delta, resource_id: low_food, delta: -2}
+  - {type: world_resource_delta, resource_id: mine_food, delta: 2}
+  condition: world.low_food >= 5 and world.mine_food <= 25
+- id: thirst
+  scope: agent
+  every_minutes: 1
+  effect: {type: need_delta, need: hydration, delta: -0.05}
+- id: hunger
+  scope: agent
+  every_minutes: 1
+  effect: {type: need_delta, need: satiety, delta: -0.035}
+- id: deprivation
+  scope: agent
+  every_minutes: 10
+  effect: {type: attribute_delta, attribute: integrity, delta: -3}
+  condition: actor.need.hydration <= context.deprivation_limit or actor.need.satiety <= context.deprivation_limit
+- id: safe_rest
+  scope: agent
+  every_minutes: 15
+  effect: {type: attribute_delta, attribute: stamina, delta: 3}
+  condition: location.safe
+- id: danger_wears_safety
+  scope: agent
+  every_minutes: 30
+  effect: {type: need_delta, need: safety, delta: -4}
+  condition: location.safe == false
+- id: safe_recovery
+  scope: agent
+  every_minutes: 60
+  effect: {type: need_delta, need: safety, delta: 3}
+  condition: location.safe
+- id: unseen_neighbors
+  scope: agent
+  every_minutes: 120
+  effect: {type: need_delta, need: belonging, delta: -3}
+- id: standing_age
+  scope: agent
+  every_minutes: 240
+  effect: {type: need_delta, need: standing, delta: -3}
+- id: aspiration
+  scope: agent
+  every_minutes: 120
+  effect: {type: need_delta, need: ambition, delta: -4}
+- id: refill_market_slots
+  scope: world
+  every_minutes: 60
+  effects:
+  - {type: world_resource_delta, resource_id: market_freight, delta: 4}
+  condition: world.market_link == 1 and world.market_maintenance > 0 and world.market_freight < 4
+- id: wear_market_gate
+  scope: world
+  every_minutes: 240
+  effects:
+  - {type: world_resource_delta, resource_id: market_maintenance, delta: -1}
+  condition: world.market_link == 1 and world.market_maintenance > 0
+- id: fare_funds_maintenance_market
+  scope: world
+  every_minutes: 180
+  effects:
+  - {type: world_resource_delta, resource_id: market_tolls, delta: -1}
+  - {type: world_resource_delta, resource_id: high_wages, delta: 1}
+  - {type: world_resource_delta, resource_id: market_maintenance, delta: 1}
+  condition: world.trade_policy == 2 and world.market_tolls >= 1 and world.high_wages < 170 and world.market_maintenance
+    < 12
+- id: trade_makes_jobs_market
+  scope: world
+  every_minutes: 30
+  effects:
+  - {type: world_resource_delta, resource_id: market_orders, delta: 1}
+  condition: world.market_sales >= 2 and world.market_sales > world.market_orders + world.moved_workers and world.market_orders
+    < 10
+- id: refill_yard_slots
+  scope: world
+  every_minutes: 60
+  effects:
+  - {type: world_resource_delta, resource_id: yard_freight, delta: 4}
+  condition: world.yard_link == 1 and world.yard_maintenance > 0 and world.yard_freight < 4
+- id: wear_yard_gate
+  scope: world
+  every_minutes: 240
+  effects:
+  - {type: world_resource_delta, resource_id: yard_maintenance, delta: -1}
+  condition: world.yard_link == 1 and world.yard_maintenance > 0
+- id: fare_funds_maintenance_yard
+  scope: world
+  every_minutes: 180
+  effects:
+  - {type: world_resource_delta, resource_id: yard_tolls, delta: -1}
+  - {type: world_resource_delta, resource_id: high_wages, delta: 1}
+  - {type: world_resource_delta, resource_id: yard_maintenance, delta: 1}
+  condition: world.trade_policy == 2 and world.yard_tolls >= 1 and world.high_wages < 170 and world.yard_maintenance
+    < 12
+- id: yard_orders_from_delivery
+  scope: world
+  every_minutes: 120
+  effects:
+  - {type: world_resource_delta, resource_id: yard_orders, delta: 1}
+  - {type: world_property_delta, property: old_openings, delta: 1}
+  condition: world.yard_link == 1 and world.yard_sales >= 1 and world.yard_orders < 6
+- id: sanction_wait
+  scope: world
+  every_minutes: 1
+  effects:
+  - {type: world_property_delta, property: embargo_countdown, delta: -1}
+  condition: world.trade_policy == 3 and world.embargo_countdown > 0
+- id: sanction_activation
+  scope: world
+  every_minutes: 1
+  effects:
+  - {type: world_property_set, property: lockdown, value: 1}
+  condition: world.trade_policy == 3 and world.lockdown == 0 and world.embargo_countdown == 0
+- id: public_maintain_market
+  scope: world
+  every_minutes: 120
+  effects:
+  - {type: world_resource_delta, resource_id: settlement_fund, delta: -1}
+  - {type: world_resource_delta, resource_id: high_wages, delta: 1}
+  - {type: world_resource_delta, resource_id: market_maintenance, delta: 1}
+  - {type: world_property_delta, property: public_contract_deliveries, delta: 1}
+  condition: world.trade_policy == 1 and world.settlement_fund > 0 and world.market_link == 1 and world.market_maintenance
+    < 11
+- id: public_maintain_yard
+  scope: world
+  every_minutes: 120
+  effects:
+  - {type: world_resource_delta, resource_id: settlement_fund, delta: -1}
+  - {type: world_resource_delta, resource_id: high_wages, delta: 1}
+  - {type: world_resource_delta, resource_id: yard_maintenance, delta: 1}
+  - {type: world_property_delta, property: public_contract_deliveries, delta: 1}
+  condition: world.trade_policy == 1 and world.settlement_fund > 0 and world.yard_link == 1 and world.yard_maintenance
+    < 11
+decision_policy:
+  minimum_drive_score: 0.035
+  assignment_urgency_limits: {hydration: 0.72, satiety: 0.72, safety: 0.68}
+  resident_model_wakes_only: true
+  max_model_residents: 8
+  resident_sessions_per_day: 32
+  resident_session_iterations: 3
+  wait_backoff_minutes:
+  - 20
+  - 45
+  - 90
+  empty_catalog_retry_minutes: 35
+progression:
+- id: fix_market_yard
+  priority: 1.1
+  label: 你装的两个门端没有配成一对
+  summary: 灰脊端接低城，另一端装在旧站。可把灰脊端直接改接旧站，或者拆回城里端点，拿回两份框架件。
+  visible_when: world.market_mine == 1 and world.market_city == 0 and world.yard_city == 1 and world.yard_mine == 0 and
+    world.market_link == 0 and world.yard_link == 0
+  target_behaviors:
+  - retarget_market_to_yard
+  - reclaim_yard_city
+- id: fix_yard_market
+  priority: 1.1
+  label: 你装的两个门端没有配成一对
+  summary: 灰脊端接旧站，另一端装在低城。可把灰脊端直接改接低城，或者拆回城里端点，拿回两份框架件。
+  visible_when: world.yard_mine == 1 and world.yard_city == 0 and world.market_city == 1 and world.market_mine == 0 and
+    world.yard_link == 0 and world.market_link == 0
+  target_behaviors:
+  - retarget_yard_to_market
+  - reclaim_market_city
+- id: raise_shop
+  priority: 0.83
+  label: 接下水庭的第一笔订单
+  summary: 投入两枚钱开铺路工坊。卖一批路石收三枚，矿料和工钱各一枚。
+  visible_when: world.site_surveyed == 1 and world.shop_open == 0 and (world.connected_count >= 1 or world.bridge_improved
+    == 1 or actor.inventory.frame < 2)
+  target_behaviors:
+  - open_paving_shop
+- id: start_shop
+  priority: 1.0
+  label: 交付工坊的第一批路石
+  summary: 你可以亲自做第一批，也可以委托居民。有人在处理时，等一班或继续建门都能推进订单。
+  visible_when: world.shop_open == 1 and world.shop_batches == 0
+  target_behaviors:
+  - shop_receive
+  - shop_process
+  - shop_supply
+  - appoint_shop_crew
+  support_behaviors:
+  - wait_for_shop
+- id: shop_yield
+  priority: 0.97
+  label: 工坊开始赚钱了
+  summary: 取走一枚已结算的利润，或者让两批路石变成一条真正缩短的公共道路。
+  visible_when: world.shop_open == 1 and world.shop_batches >= 1 and world.shop_dividends == 0
+  target_behaviors:
+  - shop_pay_dividend
+  - shop_pave_market_road
+  - shop_process
+  - shop_supply
+  - appoint_shop_crew
+  support_behaviors:
+  - wait_for_shop
+- id: shop_roadworks
+  priority: 0.96
+  label: 让两批路石铺出一条新路
+  summary: 第一笔分红已经到手。再备一批路石，可把坊市去水庭的路缩短到两分钟。
+  visible_when: world.shop_dividends >= 1 and world.shop_road == 0
+  target_behaviors: [shop_pave_market_road, shop_process, shop_supply, appoint_shop_crew]
+  support_behaviors: [wait_for_shop]
+- id: shop_followup
+  priority: 0.67
+  label: 下一班生产与城市维护
+  summary: 用货款继续周转，用路石维护门线。你也可以暂停班组，把时间留给下一条路线。
+  visible_when: world.shop_road == 1 and world.shop_dividends >= 1
+  target_behaviors:
+  - shop_use_paving_stock
+  - shop_pay_dividend
+  - shop_process
+  - shop_supply
+  - appoint_shop_crew
+  - pause_shop_crew
+  support_behaviors:
+  - wait_for_shop
+- id: survey
+  priority: 0.6
+  label: 先看看城外能接到哪里
+  summary: 到灰脊集口勘测门端，或勘测北栈桥，给未来保留备用路。
+  visible_when: world.site_surveyed == 0
+  target_behaviors:
+  - survey_exchange
+  - survey_bridge
+  support_behaviors:
+  - open_paving_shop
+- id: bridge_works
+  priority: 0.7
+  label: 让北栈桥能走重货
+  summary: 加固只需两份框架件。竣工后可以把矿料走陆路运进低城，或回头继续建门。
+  visible_when: world.bridge_surveyed == 1 and world.bridge_improved == 0
+  target_behaviors:
+  - improve_bridge
+- id: choose
+  priority: 0.9
+  label: 接通第一条门线
+  summary: 选低城坊市或铁轨货场，用同一线路的两个门端和一枚门芯开门。
+  visible_when: world.site_surveyed == 1 and world.connected_count == 0
+  target_behaviors:
+  - pair_market
+  - pair_yard
+  - permit_market
+  - permit_yard
+  - fit_market_city
+  - fit_yard_city
+  - fit_market_mine
+  - fit_yard_mine
+  - improve_bridge
+  - reclaim_market_city
+  - reclaim_yard_city
+  support_behaviors:
+  - open_paving_shop
+- id: charter
+  priority: 0.8
+  label: 新门归谁维护
+  summary: 回低城议事水庭，决定公开竞争、共同维护或通知限行。
+  visible_when: (world.connected_count > 0 or world.bridge_improved == 1) and world.trade_policy == 0
+  target_behaviors:
+  - sign_public_access
+  - sign_open_market
+- id: hire
+  priority: 0.3
+  label: 班组要选自己的班长
+  summary: 白砾验收三个代班，拿到两份签名后，可以到枢门邀请她接任。
+  visible_when: world.merit_count >= 1 and world.appointment == 0
+  target_behaviors:
+  - authorize_appointment
+resident_arrivals:
+  high_gate:
+    reserve: {high_beds: 1, high_water: 1, high_food: 1}
+    state:
+      home_location: high_lodges
+      job_region: high
+      supply_region: high
+      mobile_worker: 0
+      office: 0
+      is_candidate: 0
+      is_porter: 0
+    routine: routine_resident
+    inventory: {water: 1, meal: 1}
+  low_city:
+    reserve: {low_beds: 1, low_water: 1, low_food: 1}
+    state:
+      home_location: low_market
+      job_region: low
+      supply_region: low
+      mobile_worker: 0
+      office: 0
+      is_candidate: 0
+      is_porter: 0
+    routine: routine_resident
+    inventory: {water: 1, meal: 1}
+  old_yard:
+    reserve: {yard_beds: 1, yard_water: 1, yard_food: 1}
+    state:
+      home_location: old_dorm
+      job_region: yard
+      supply_region: yard
+      mobile_worker: 1
+      office: 0
+      is_candidate: 0
+      is_porter: 0
+    routine: routine_resident
+    inventory: {water: 1, meal: 1}
+  mine_exchange:
+    reserve: {mine_beds: 1, mine_water: 1, mine_food: 1}
+    state:
+      home_location: mine_exchange
+      job_region: mine
+      supply_region: mine
+      mobile_worker: 0
+      office: 0
+      is_candidate: 0
+      is_porter: 0
+    routine: routine_resident
+    inventory: {water: 1, meal: 1}
+player_requirement_hints:
+  world.site_surveyed == 1: 先到灰脊集口勘测门端
+  world.merit_count >= 3: 等白砾完成三个已验收的代班
+  world.service_votes >= 2: 等枢门与旧站各提交一份推荐
+  world.connected_count >= 1: 先完成一条门线
+  world.bridge_surveyed == 1: 先勘测北栈桥步道
+  world.market_permit == 1: 先到低城坊市登记建造许可
+  world.market_city == 1: 先安装低城坊市门端
+  world.market_mine == 1: 先安装灰脊集口门端
+  world.market_link == 1: 先启用通往低城坊市的门线
+  world.yard_permit == 1: 先到铁轨货场登记建造许可
+  world.yard_city == 1: 先安装铁轨货场门端
+  world.yard_mine == 1: 先安装灰脊集口门端
+  world.yard_link == 1: 先启用通往铁轨货场的门线

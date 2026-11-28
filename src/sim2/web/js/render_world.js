@@ -52,15 +52,18 @@ export function renderRecap() {
     const recap = state.view?.recap || {};
     const events = Array.isArray(recap.events) ? recap.events : [];
     const latest = Number(recap.latest_event_id || 0);
-    const key = `sim2.game.recap.${state.playerId || "anonymous"}`;
+    const playerId = state.playerId || "anonymous";
+    const key = `sim2.game.recap.${playerId}`;
     const seen = Number(storageGet(key, 0) || 0);
+    if (events.length && latest > seen) storageSet(key, latest);
+    if (state.recapPlayerId === playerId) return;
+    state.recapPlayerId = playerId;
     if (!events.length || !latest || latest <= seen) {
       card.classList.add("hidden");
       return;
     }
     if (!seen) {
       // The first visit is onboarding, not a return session.
-      storageSet(key, latest);
       card.classList.add("hidden");
       return;
     }

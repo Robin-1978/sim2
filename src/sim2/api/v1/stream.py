@@ -27,10 +27,11 @@ _PLAYER_TYPES = {
 
 
 class Subscription:
-    def __init__(self, role: str, player_id: str, ticks: bool):
+    def __init__(self, role: str, player_id: str, ticks: bool, *, compact: bool = False):
         self.role = role
         self.player_id = player_id
         self.ticks = ticks
+        self.compact = compact and role == "player"
         self.queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=1000)
         self.closed = False
 
@@ -51,6 +52,11 @@ class Subscription:
 
     def accepts(self, envelope: dict[str, Any]) -> bool:
         kind = str(envelope.get("type") or "")
+        audience = envelope.get("audience")
+        if kind == "timeline" and self.compact:
+            return False
+        if (audience == "compact" and not self.compact) or (audience == "standard" and self.compact):
+            return False
         if self.role == "operator":
             return True
         data = envelope.get("data") if isinstance(envelope.get("data"), dict) else {}
@@ -77,6 +83,7 @@ class StreamHub:
         self._history: deque[dict[str, Any]] = deque(maxlen=1200)
         self._seq = 0
         self._after_event = 0
+        self._after_chronicle = 0
         self._primed = False
         self._last_runtime = ""
         self._last_dialogue = 0
@@ -99,6 +106,7 @@ class StreamHub:
         event_id: int = 0,
         revision: int = 0,
         world_minute: int = 0,
+        audience: str = "",
     ) -> dict[str, Any]:
         with self._lock:
             self._seq += 1
@@ -110,15 +118,17 @@ class StreamHub:
                 "world_minute": int(world_minute or 0),
                 "data": dict(data or {}),
             }
+            if audience:
+                envelope["audience"] = audience
             self._history.append(envelope)
             targets = [sub for sub in self._subs if sub.accepts(envelope)]
         for sub in targets:
             sub.put(envelope)
         return envelope
 
-    def subscribe(self, role: str, player_id: str, after: int, ticks: bool = False) -> Subscription:
+    def subscribe(self, role: str, player_id: str, after: int, ticks: bool = False, *, compact: bool = False) -> Subscription:
         role = role if role in {"operator", "player"} else "observer"
-        sub = Subscription(role, player_id, ticks)
+        sub = Subscription(role, player_id, ticks, compact=compact)
         with self._lock:
             self._subs.add(sub)
             latest = self._seq
@@ -182,11 +192,27 @@ class StreamHub:
                 continue
 
     def _poll_once(self) -> None:
+        with self._lock:
+            if not self._subs:
+                return
+            standard = any(not sub.compact for sub in self._subs)
+            players = tuple(sorted({sub.player_id for sub in self._subs if sub.compact and sub.player_id}))
         if not self.server.has_world:
             self._runtime_changed()
             return
         if not self._primed:
             self._prime()
+        if standard:
+            self._poll_standard()
+        if players:
+            self._poll_chronicle(players)
+        if not standard:
+            self._after_event = self._after_chronicle
+        if not players:
+            self._after_chronicle = self._after_event
+        self._runtime_changed()
+
+    def _poll_standard(self) -> None:
         timeline = self.server.service_call("timeline", 200, self._after_event, False, False)
         events = timeline.get("events", []) if isinstance(timeline, dict) else []
         if events:
@@ -207,9 +233,9 @@ class StreamHub:
             if any(kind.startswith("behavior.") for kind in kinds):
                 self._publish_decisions()
             if any(kind.startswith("trade.") for kind in kinds):
-                self.publish("trade.changed", {}, event_id=max_event, revision=revision, world_minute=minute)
+                self.publish("trade.changed", {}, event_id=max_event, revision=revision, world_minute=minute, audience="standard")
             if kinds & {"story.beat.activated", "story.ending"}:
-                self.publish("chapter.changed", {}, event_id=max_event, revision=revision, world_minute=minute)
+                self.publish("chapter.changed", {}, event_id=max_event, revision=revision, world_minute=minute, audience="standard")
             # Any committed event can change a player's scene, needs or goals.
             self.publish(
                 "player.view.changed",
@@ -217,6 +243,7 @@ class StreamHub:
                 event_id=max_event,
                 revision=revision,
                 world_minute=minute,
+                audience="standard",
             )
             self.publish(
                 "feed.append",
@@ -224,13 +251,42 @@ class StreamHub:
                 event_id=max_event,
                 revision=revision,
                 world_minute=minute,
+                audience="standard",
             )
-        self._runtime_changed()
+
+    def _poll_chronicle(self, players: tuple[str, ...]) -> None:
+        timeline = self.server.service_call("player_chronicle", 80, self._after_chronicle, False, players)
+        events = timeline["events"]
+        self._after_chronicle = max(self._after_chronicle, timeline["next_after_event_id"])
+        if not events:
+            return
+        public_types = timeline["public_types"]
+        public = [item for item in events if public_types is None or item["event_type"] in public_types]
+        envelope = {
+            "revision": timeline["revision"], "world_minute": timeline["world_minute"],
+            "event_id": events[-1]["event_id"], "audience": "compact",
+        }
+        kinds = {item["event_type"] for item in events}
+        if "dialogue.completed" in kinds:
+            self._publish_dialogue()
+        if any(kind.startswith("trade.") for kind in kinds):
+            self.publish("trade.changed", {}, **envelope)
+        if kinds & {"story.beat.activated", "story.beat.completed", "story.ending"}:
+            self.publish("chapter.changed", {}, **envelope)
+        if public:
+            self.publish("feed.append", {"events": public}, **envelope)
+        if public or kinds & {"artwork.ready", "story.beat.activated", "story.beat.completed", "story.ending"}:
+            self.publish("player.view.changed", {"reason": "world.changed"}, **envelope)
+        else:
+            changed_actors = {item.get("actor_id") for item in events if item["event_type"].startswith("behavior.")}
+            for player_id in changed_actors.intersection(players):
+                self.publish("player.view.changed", {"reason": "player.activity", "player_id": player_id}, **envelope)
 
     def _prime(self) -> None:
         latest = self.server.service_call("timeline", 1, 0, False, True)
         events = latest.get("events", []) if isinstance(latest, dict) else []
         self._after_event = max([int(item.get("event_id", 0) or 0) for item in events] + [0])
+        self._after_chronicle = self._after_event
         self._primed = True
 
     def _runtime_changed(self) -> None:

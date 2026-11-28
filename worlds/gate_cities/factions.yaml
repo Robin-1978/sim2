@@ -1,0 +1,7 @@
+factions:
+- id: water_commons
+  name: 低城公议所
+  description: 代表居民维持公共供水。
+- id: yard_guild
+  name: 旧站工坊会
+  description: 以扩大货运和支付工钱维持工坊。

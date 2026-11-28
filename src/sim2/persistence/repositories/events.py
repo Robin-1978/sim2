@@ -91,13 +91,29 @@ class EventsRepository:
             for row in rows
         ]
 
-    def timeline_events(self, *, after_event_id: int = 0, limit: int = 100, include_ticks: bool = False, latest: bool = False) -> list[dict[str, Any]]:
+    def timeline_events(self, *, after_event_id: int = 0, limit: int = 100, include_ticks: bool = False, latest: bool = False,
+                        event_types: tuple[str, ...] | None = None, player_ids: tuple[str, ...] = ()) -> list[dict[str, Any]]:
         event_filter = "" if include_ticks else " AND event_type <> 'world_minute.advanced'"
+        parameters: list[Any] = [max(0, int(after_event_id))]
+        if event_types is not None:
+            scopes = []
+            if event_types:
+                scopes.append(f"event_type IN ({','.join('?' for _ in event_types)})")
+                parameters.extend(event_types)
+            if player_ids:
+                scopes.append(
+                    f"(actor_id IN ({','.join('?' for _ in player_ids)}) AND "
+                    "event_type IN ('behavior.started','behavior.completed','behavior.failed','behavior.interrupted'))"
+                )
+                parameters.extend(player_ids)
+            if not scopes:
+                return []
+            event_filter += " AND (" + " OR ".join(scopes) + ")"
         order = "DESC" if latest else "ASC"
         rows = self.store.connection.execute(
             "SELECT event_id,event_type,actor_id,world_minute,data_json FROM event_log "
             f"WHERE event_id>?{event_filter} ORDER BY event_id {order} LIMIT ?",
-            (max(0, int(after_event_id)), max(1, min(int(limit), 500))),
+            (*parameters, max(1, min(int(limit), 500))),
         ).fetchall()
         if latest:
             rows = list(reversed(rows))

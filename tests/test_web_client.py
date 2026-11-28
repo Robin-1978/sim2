@@ -546,6 +546,18 @@ def test_web_dialogue_accepts_names_and_reports_missing_participant(tmp_path: Pa
         )
         assert by_names["status"] == "accepted", by_names
         assert by_names["reply"]["status"] == "pending"
+        store = server.control.platform.store
+        with store.transaction():
+            resident = store.repositories.entities.get_agent("mara")
+            resident["controller"] = "bt"
+            store.repositories.entities.update_agent("mara", resident)
+        delivered = _json_request(
+            base + "/api/v1/player/player_one/dialogue",
+            {"listener_id": "玛拉", "topic": "general", "message": "please note the new route"},
+            headers=player_headers,
+        )
+        assert delivered["status"] == "accepted", delivered
+        assert delivered["reply"]["status"] == "recorded"
         missing = _json_request(
             base + "/api/v1/player/player_one/dialogue",
             {"listener_id": "nobody_xyz", "topic": "general", "message": "hi"},
@@ -1085,6 +1097,48 @@ def test_player_stream_accepts_dialogue_events():
     assert sub.accepts({"type": "dialogue", "data": {}})
     assert sub.accepts({"type": "dialogue.append", "data": {"player_id": "player_one"}})
     assert not sub.accepts({"type": "dialogue.append", "data": {"player_id": "other_player"}})
+
+
+def test_gate_chronicle_filters_a_routine_burst_before_projection(tmp_path: Path, monkeypatch):
+    from sim2.api.v1.stream import StreamHub
+
+    monkeypatch.setattr(StreamHub, "POLL_SECONDS", 3600)
+    config = Path(__file__).parents[1] / "worlds" / "gate_cities_sandbox"
+    db = create_instance(config, "chronicle-burst", tmp_path)
+    with ControlHTTPServer(("127.0.0.1", 0), db, runtime_root=tmp_path) as server:
+        hub = server.stream
+        compact = hub.subscribe("player", "hero", 0, compact=True)
+        assert compact.queue.get_nowait()["type"] == "ready"
+        store = server.control.platform.store
+        with store.transaction():
+            for index in range(240):
+                store.repositories.events.append_event("behavior.completed", "porter_bai", 0, {
+                    "behavior_id": "routine_resident", "correlation_id": f"bt:porter_bai:{index}",
+                })
+        hub._poll_once()
+        assert [item["type"] for item in list(compact.queue.queue)] == ["runtime"]
+        assert compact.queue.get_nowait()["type"] == "runtime"
+        assert hub._after_chronicle == store.repositories.events.latest_event_id()
+
+        observer = hub.subscribe("observer", "", 0)
+        assert observer.queue.get_nowait()["type"] == "ready"
+        with store.transaction():
+            routine = store.repositories.events.append_event("behavior.completed", "porter_bai", 0, {"behavior_id": "routine_resident"})
+            public = store.repositories.events.append_event("gatebuild.opened", "hero", 0, {"summary": "坊市门线开通"})
+        hub._poll_once()
+        observer_event = next(item for item in list(observer.queue.queue) if item["type"] == "timeline")
+        assert [item["event_id"] for item in observer_event["data"]["events"]] == [routine, public]
+        assert compact.queue.get_nowait()["data"]["events"][0]["event_id"] == public
+        assert compact.queue.get_nowait()["type"] == "player.view.changed"
+        assert compact.queue.empty()
+        assert public in [item["event_id"] for item in server.control.player_chronicle(10, 0, True)["events"]]
+
+        with store.transaction():
+            store.repositories.events.append_event("behavior.completed", "hero", 0, {"behavior_id": "survey_bridge"})
+        hub._poll_once()
+        actor_update = compact.queue.get_nowait()
+        assert actor_update["type"] == "player.view.changed" and actor_update["data"]["player_id"] == "hero"
+        assert compact.queue.empty()
 
 
 def test_player_entry_generates_an_id_when_only_a_character_name_is_supplied(tmp_path: Path):

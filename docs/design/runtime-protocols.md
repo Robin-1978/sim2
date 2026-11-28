@@ -251,10 +251,12 @@ A world may mark an agent definition with `controller: bt` (or `bt_only`). Such
 an actor is a persistent background character: the scheduler selects one
 currently executable behavior from its configured BT catalog, then submits the
 same `BehaviorIntent` gateway used by an LLM. It receives no LLM decision or
-reflection call. `bt_priority` is only a tie breaker; a configured urgent need
-such as food or water wins before optional work. This keeps crowd actors cheap
-without creating a second execution engine. Important NPCs keep the default
-`controller: llm`, memory, reflection and social decisions.
+reflection call, including in response to incoming interactions. A configured
+`routine_bt_id` is submitted directly to the gateway at idle boundaries, with
+goals and fallback branches defined by the tree. In catalog mode `bt_priority`
+breaks ties; urgent needs such as food or water win before optional work.
+Important NPCs use the default `controller: llm` for reflection and social
+decisions, and can use a configured routine as their offline BT fallback.
 
 A BT controller is not an ambient shortcut. Travel, reservations, costs,
 interruptions, Action effects, outcomes and event wakes all pass through the

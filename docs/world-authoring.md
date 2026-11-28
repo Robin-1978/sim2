@@ -240,12 +240,26 @@ an image is ready. Packaged scene art has priority over generated art. The
 worker needs only the save, Story configuration and the image endpoint.
 
 Use `ui.spotlights` to feature one or more `rules.progression` IDs.
+Set `priority` on the corresponding `rules.progression` entries to order
+competing goals. Goals with matching priorities are ordered by label.
 Set `deadline_property` to a world property measured in remaining minutes,
 or set `deadline_clock_minute` to the cutoff minute of the world day.
 The player sees the highest-priority matching goal with executable
 choices. During an active task, task progress takes priority. Set the
 actual admission and completion conditions in the action definitions,
 and encode expiry and any outstanding obligation in world rules.
+
+Set `ui.chronicle_events` to the exact public event types that belong in the
+player's chronicle and return recap. Routine work remains in the observer timeline.
+The compact player stream also delivers dialogue, trades, chapters, artwork and
+updates from the player's own behavior. Omitting the list keeps the legacy feed.
+
+Worlds focused on a player-run project can set `ui.venture.title`, `purpose`,
+and `metrics` to give the first screen a named project and its live balances.
+Each metric reads `item` from the player inventory or `property` from the
+world state and can declare a `suffix`. Use world-property keys in `show_when`
+and `hide_when` to switch metrics as the project progresses. Venture spotlights
+also include ready support behaviors and can provide a `blocker` explanation.
 
 ### Player entry template
 
@@ -395,6 +409,18 @@ Action, so the contract enforces the executor without asking an Action to carry
 an invalid top-level assignment.
 
 ### Director and season plan
+
+Set `evolution.limits.manual_without_model: true` to run foreground player
+waits and action advances without loading a model. The same Platform clock,
+rules, and resident routines still advance. The LLM Director leaves its next
+plan open for a provider-backed run. Explicit dialogue and the background
+runner can use the configured providers.
+
+Story can use `story.context_events` to select public event types for its
+recent history. `story.context_properties` maps a bounded set of world
+property keys to visible labels. It shows the current values alongside the
+task's original evidence so a delayed Story turn can continue after a choice
+has already been made.
 
 `evolution.director` turns the growth ledger into one bounded intent:
 
@@ -1064,6 +1090,51 @@ actor still has persistent needs, inventory, travel, reservations, Action
 results and event history. Keep `controller` omitted (the default `llm`) for
 named characters whose memories, reflection and social choices matter. This is
 a content choice, not a Platform world branch.
+
+For a resident with a recurring routine, set `routine_bt_id` to a behavior
+listed in `initial_bt_ids`. The runner submits that tree when the actor is idle.
+It can branch between taking shelter, meeting basic needs, a work sequence and
+a timed wait. The next cycle reads the new state after the last cycle has
+settled. In a referenced subtree, `entry_conditions` are evaluated when that
+subtree is reached. Reuse Action checks and reservations for each step.
+
+The same routine can serve as an `llm` resident's offline fallback with
+`controller_fallback: bt`. Setting `routine_bt_id: null` in an upgrade restores
+catalog selection. A message to a BT resident is recorded without scheduling
+a model reply. Scripts can still drive authored social Actions in that BT.
+
+`rules.decision_policy.assignment_urgency_limits` maps need IDs to the
+maximum urgency at which an assignment can override catalog selection.
+Roots can read the same calculated drive through `actor.urgency.<need>`.
+Use `rules.context_values` for survival thresholds that an Action and a root
+branch must share. A need may read a configured `state_attribute` or derive
+its current value from an `inventory_item` multiplied by `inventory_scale`.
+Existing need definitions continue to read the character's stored need.
+
+`resident_model_wakes_only` keeps a configured LLM resident's BT fallback
+running between explicit decisions. `resident_sessions_per_day` limits
+scheduled decisions and reflections per configured calendar day.
+`resident_session_iterations` limits the requests within each scheduled turn.
+The authored `resident_controller_set` effect changes the executing
+resident's controller at Action completion and retains the resident's state.
+A configured `max_model_residents` caps these promotions.
+
+When `rules.resident_arrivals` is configured, each allowed intake site
+specifies real stock reserves, a routine, and optional home state and
+starting inventory. Arrival reserves those stocks in the same transaction
+as the new resident. New residents start with BT and can later take an
+authorized promotion Action.
+
+An authored `route_edit` completion effect can add or remove both sides of
+a physical route atomically. `rules.travel.map_links` can also project a
+conditional special connection onto the player map. Such a projection is
+display-only. Its reserved travel is performed by authored Actions, so a
+general walk cannot accidentally bypass a fee or reserved cargo slot.
+
+`rules.player_requirement_hints` maps exact package DSL conditions to
+player-facing wording. The Chinese player projection resolves known place
+names and resource labels even without a configured hint. Agent and audit
+diagnostics retain the original checks.
 
 For expansion, God may create a location entity after verified research and then
 submit a `route` world change with `from`, `to` and a positive `distance`. The

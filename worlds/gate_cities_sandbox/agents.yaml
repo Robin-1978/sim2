@@ -1,0 +1,1587 @@
+agents:
+- id: warden
+  name: 沈芒
+  role: 枢门调度员
+  controller: llm
+  ultimate_goal: 保障两条可走通的线路，愿意让真实付出维护费的一方共同议事。
+  initial_bt_ids:
+  - routine_warden
+  - visit_clinic
+  - rest_short
+  - train
+  - endorse_warden
+  routine_bt_id: routine_warden
+  traits: {pragmatic: 0.4, cooperative: 0.35}
+  needs: {hydration: 58.0, satiety: 53.0}
+  initial_state:
+    location_id: high_gate
+    status: idle
+    integrity: 100
+    stamina: 74
+    home_location: high_lodges
+    supply_region: high
+    job_region: high
+    mobile_worker: 0
+    office: 0
+    skill: 0
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 1, meal: 0, water: 0}
+  faction_ids:
+  - high_commons
+  controller_fallback: bt
+- id: porter_bai
+  name: 白砾
+  role: 枢门搬运工
+  controller: bt
+  ultimate_goal: 想用实际完成的代班争取稳定床位，也愿意让同伴接到公平班次。
+  initial_bt_ids:
+  - routine_candidate
+  - captain_dispatch
+  - share_meal
+  - train
+  routine_bt_id: routine_candidate
+  traits: {pragmatic: 0.5, cooperative: 0.5}
+  needs: {hydration: 69.0, satiety: 66.0}
+  initial_state:
+    location_id: high_gate
+    status: idle
+    integrity: 100
+    stamina: 81
+    home_location: high_lodges
+    supply_region: high
+    job_region: high
+    mobile_worker: 0
+    office: 0
+    skill: 1
+    is_candidate: 1
+    is_porter: 0
+  inventory: {coin: 2, meal: 0, water: 0}
+  faction_ids:
+  - high_commons
+- id: high_resident_02
+  name: 宋桥
+  role: 筑门学徒
+  controller: bt
+  ultimate_goal: 靠工钱攒下住处并学会装调一对门端。
+  initial_bt_ids:
+  - routine_porter
+  routine_bt_id: routine_porter
+  traits: {pragmatic: 0.6, cooperative: 0.65}
+  needs: {hydration: 80.0, satiety: 79.0}
+  initial_state:
+    location_id: high_gate
+    status: idle
+    integrity: 100
+    stamina: 88
+    home_location: high_lodges
+    supply_region: high
+    job_region: high
+    mobile_worker: 0
+    office: 0
+    skill: 2
+    is_candidate: 0
+    is_porter: 1
+  inventory: {coin: 3, meal: 0, water: 0}
+  faction_ids:
+  - high_commons
+- id: high_resident_03
+  name: 冯禾
+  role: 筑门学徒
+  controller: bt
+  ultimate_goal: 靠工钱攒下住处并学会装调一对门端。
+  initial_bt_ids:
+  - routine_porter
+  routine_bt_id: routine_porter
+  traits: {pragmatic: 0.7, cooperative: 0.8}
+  needs: {hydration: 91.0, satiety: 92.0}
+  initial_state:
+    location_id: high_gate
+    status: idle
+    integrity: 100
+    stamina: 95
+    home_location: high_lodges
+    supply_region: high
+    job_region: high
+    mobile_worker: 0
+    office: 0
+    skill: 3
+    is_candidate: 0
+    is_porter: 1
+  inventory: {coin: 4, meal: 0, water: 0}
+  faction_ids:
+  - high_commons
+- id: high_resident_04
+  name: 徐弦
+  role: 筑门学徒
+  controller: bt
+  ultimate_goal: 靠工钱攒下住处并学会装调一对门端。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.8, cooperative: 0.35}
+  needs: {hydration: 63.0, satiety: 62.0}
+  initial_state:
+    location_id: high_gate
+    status: idle
+    integrity: 100
+    stamina: 79
+    home_location: high_lodges
+    supply_region: high
+    job_region: high
+    mobile_worker: 0
+    office: 0
+    skill: 0
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 1, meal: 0, water: 0}
+  faction_ids:
+  - high_commons
+- id: high_resident_05
+  name: 叶生
+  role: 筑门学徒
+  controller: bt
+  ultimate_goal: 靠工钱攒下住处并学会装调一对门端。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.4, cooperative: 0.5}
+  needs: {hydration: 74.0, satiety: 75.0}
+  initial_state:
+    location_id: high_gate
+    status: idle
+    integrity: 100
+    stamina: 86
+    home_location: high_lodges
+    supply_region: high
+    job_region: high
+    mobile_worker: 0
+    office: 0
+    skill: 1
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 2, meal: 0, water: 0}
+  faction_ids:
+  - high_commons
+- id: high_resident_06
+  name: 罗原
+  role: 筑门学徒
+  controller: bt
+  ultimate_goal: 靠工钱攒下住处并学会装调一对门端。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.5, cooperative: 0.65}
+  needs: {hydration: 85.0, satiety: 88.0}
+  initial_state:
+    location_id: high_gate
+    status: idle
+    integrity: 100
+    stamina: 93
+    home_location: high_lodges
+    supply_region: high
+    job_region: high
+    mobile_worker: 0
+    office: 0
+    skill: 2
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 3, meal: 0, water: 0}
+  faction_ids:
+  - high_commons
+- id: high_resident_07
+  name: 柴汀
+  role: 筑门学徒
+  controller: bt
+  ultimate_goal: 靠工钱攒下住处并学会装调一对门端。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.6, cooperative: 0.8}
+  needs: {hydration: 96.0, satiety: 58.0}
+  initial_state:
+    location_id: high_gate
+    status: idle
+    integrity: 100
+    stamina: 77
+    home_location: high_lodges
+    supply_region: high
+    job_region: high
+    mobile_worker: 0
+    office: 0
+    skill: 3
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 4, meal: 0, water: 0}
+  faction_ids:
+  - high_commons
+- id: high_resident_08
+  name: 陶齐
+  role: 筑门学徒
+  controller: bt
+  ultimate_goal: 靠工钱攒下住处并学会装调一对门端。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.7, cooperative: 0.35}
+  needs: {hydration: 68.0, satiety: 71.0}
+  initial_state:
+    location_id: high_gate
+    status: idle
+    integrity: 100
+    stamina: 84
+    home_location: high_lodges
+    supply_region: high
+    job_region: high
+    mobile_worker: 0
+    office: 0
+    skill: 0
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 1, meal: 0, water: 0}
+  faction_ids:
+  - high_commons
+- id: high_resident_09
+  name: 陈槐
+  role: 筑门学徒
+  controller: bt
+  ultimate_goal: 靠工钱攒下住处并学会装调一对门端。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.8, cooperative: 0.5}
+  needs: {hydration: 79.0, satiety: 84.0}
+  initial_state:
+    location_id: high_gate
+    status: idle
+    integrity: 100
+    stamina: 91
+    home_location: high_lodges
+    supply_region: high
+    job_region: high
+    mobile_worker: 0
+    office: 0
+    skill: 1
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 2, meal: 0, water: 0}
+  faction_ids:
+  - high_commons
+- id: high_resident_10
+  name: 齐辛
+  role: 筑门学徒
+  controller: bt
+  ultimate_goal: 靠工钱攒下住处并学会装调一对门端。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.4, cooperative: 0.65}
+  needs: {hydration: 90.0, satiety: 54.0}
+  initial_state:
+    location_id: high_gate
+    status: idle
+    integrity: 100
+    stamina: 75
+    home_location: high_lodges
+    supply_region: high
+    job_region: high
+    mobile_worker: 0
+    office: 0
+    skill: 2
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 3, meal: 0, water: 0}
+  faction_ids:
+  - high_commons
+- id: high_resident_11
+  name: 柯明
+  role: 筑门学徒
+  controller: bt
+  ultimate_goal: 靠工钱攒下住处并学会装调一对门端。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.5, cooperative: 0.8}
+  needs: {hydration: 62.0, satiety: 67.0}
+  initial_state:
+    location_id: high_gate
+    status: idle
+    integrity: 100
+    stamina: 82
+    home_location: high_lodges
+    supply_region: high
+    job_region: high
+    mobile_worker: 0
+    office: 0
+    skill: 3
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 4, meal: 0, water: 0}
+  faction_ids:
+  - high_commons
+- id: steward
+  name: 江遥
+  role: 低城议事员
+  controller: llm
+  ultimate_goal: 保障低价食水和诊所通行，同时尊重兑现维护承诺的人。
+  initial_bt_ids:
+  - routine_steward
+  - visit_clinic
+  - rest_short
+  - train
+  - sign_public_access
+  - sign_open_market
+  - share_meal
+  routine_bt_id: routine_steward
+  traits: {pragmatic: 0.4, cooperative: 0.35}
+  needs: {hydration: 58.0, satiety: 53.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 74
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 0
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 1, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+  controller_fallback: bt
+- id: low_resident_01
+  name: 陆弦
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.5, cooperative: 0.5}
+  needs: {hydration: 69.0, satiety: 66.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 81
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 1
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 2, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_02
+  name: 阮生
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_shop_carrier
+  - routine_resident
+  routine_bt_id: routine_shop_carrier
+  traits: {pragmatic: 0.6, cooperative: 0.65}
+  needs: {hydration: 80.0, satiety: 79.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 88
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 2
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 3, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_03
+  name: 苗原
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_shop_mason
+  - routine_resident
+  routine_bt_id: routine_shop_mason
+  traits: {pragmatic: 0.7, cooperative: 0.8}
+  needs: {hydration: 91.0, satiety: 92.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 95
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 3
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 4, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_04
+  name: 何汀
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.8, cooperative: 0.35}
+  needs: {hydration: 63.0, satiety: 62.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 79
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 0
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 1, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_05
+  name: 施齐
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.4, cooperative: 0.5}
+  needs: {hydration: 74.0, satiety: 75.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 86
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 1
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 2, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_06
+  name: 梁槐
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.5, cooperative: 0.65}
+  needs: {hydration: 85.0, satiety: 88.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 93
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 2
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 3, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_07
+  name: 李辛
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.6, cooperative: 0.8}
+  needs: {hydration: 96.0, satiety: 58.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 77
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 3
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 4, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_08
+  name: 宋明
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.7, cooperative: 0.35}
+  needs: {hydration: 68.0, satiety: 71.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 84
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 0
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 1, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_09
+  name: 冯洛
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.8, cooperative: 0.5}
+  needs: {hydration: 79.0, satiety: 84.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 91
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 1
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 2, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_10
+  name: 徐晓
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.4, cooperative: 0.65}
+  needs: {hydration: 90.0, satiety: 54.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 75
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 2
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 3, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_11
+  name: 叶青
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.5, cooperative: 0.8}
+  needs: {hydration: 62.0, satiety: 67.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 82
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 3
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 4, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_12
+  name: 罗向
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.6, cooperative: 0.35}
+  needs: {hydration: 73.0, satiety: 80.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 89
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 0
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 1, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_13
+  name: 柴川
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.7, cooperative: 0.5}
+  needs: {hydration: 84.0, satiety: 93.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 96
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 1
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 2, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_14
+  name: 陶可
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.8, cooperative: 0.65}
+  needs: {hydration: 95.0, satiety: 63.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 80
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 2
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 3, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_15
+  name: 陈灵
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.4, cooperative: 0.8}
+  needs: {hydration: 67.0, satiety: 76.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 87
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 3
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 4, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_16
+  name: 齐晨
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.5, cooperative: 0.35}
+  needs: {hydration: 78.0, satiety: 89.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 94
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 0
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 1, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_17
+  name: 柯陌
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.6, cooperative: 0.5}
+  needs: {hydration: 89.0, satiety: 59.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 78
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 1
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 2, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_18
+  name: 杨晚
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.7, cooperative: 0.65}
+  needs: {hydration: 61.0, satiety: 72.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 85
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 2
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 3, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_19
+  name: 姚潇
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.8, cooperative: 0.8}
+  needs: {hydration: 72.0, satiety: 85.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 92
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 3
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 4, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_20
+  name: 唐岑
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.4, cooperative: 0.35}
+  needs: {hydration: 83.0, satiety: 55.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 76
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 0
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 1, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: low_resident_21
+  name: 卢舟
+  role: 农圃劳工
+  controller: bt
+  ultimate_goal: 让家附近有负担得起的饭食并照顾同住的工人。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.5, cooperative: 0.5}
+  needs: {hydration: 94.0, satiety: 68.0}
+  initial_state:
+    location_id: low_city
+    status: idle
+    integrity: 100
+    stamina: 83
+    home_location: low_market
+    supply_region: low
+    job_region: low
+    mobile_worker: 0
+    office: 0
+    skill: 1
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 2, meal: 0, water: 0}
+  faction_ids:
+  - low_commons
+- id: foreman
+  name: 唐真
+  role: 旧站工头
+  controller: llm
+  ultimate_goal: 维持旧站岗位和门芯工艺。工坊接单不足时可以谈维护、改报价或教出学徒。
+  initial_bt_ids:
+  - routine_foreman
+  - visit_clinic
+  - rest_short
+  - train
+  - endorse_foreman
+  routine_bt_id: routine_foreman
+  traits: {pragmatic: 0.4, cooperative: 0.35}
+  needs: {hydration: 58.0, satiety: 53.0}
+  initial_state:
+    location_id: old_yard
+    status: idle
+    integrity: 100
+    stamina: 74
+    home_location: old_dorm
+    supply_region: yard
+    job_region: yard
+    mobile_worker: 0
+    office: 0
+    skill: 0
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 1, meal: 0, water: 0}
+  faction_ids:
+  - yard_commons
+  controller_fallback: bt
+- id: yard_resident_01
+  name: 杨汀
+  role: 工坊工人
+  controller: bt
+  ultimate_goal: 在稳定工资和学得一门手艺之间找合适的工位。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.5, cooperative: 0.5}
+  needs: {hydration: 69.0, satiety: 66.0}
+  initial_state:
+    location_id: old_yard
+    status: idle
+    integrity: 100
+    stamina: 81
+    home_location: old_dorm
+    supply_region: yard
+    job_region: yard
+    mobile_worker: 1
+    office: 0
+    skill: 1
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 2, meal: 0, water: 0}
+  faction_ids:
+  - yard_commons
+- id: yard_resident_02
+  name: 姚齐
+  role: 工坊工人
+  controller: bt
+  ultimate_goal: 在稳定工资和学得一门手艺之间找合适的工位。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.6, cooperative: 0.65}
+  needs: {hydration: 80.0, satiety: 79.0}
+  initial_state:
+    location_id: old_yard
+    status: idle
+    integrity: 100
+    stamina: 88
+    home_location: old_dorm
+    supply_region: yard
+    job_region: yard
+    mobile_worker: 1
+    office: 0
+    skill: 2
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 3, meal: 0, water: 0}
+  faction_ids:
+  - yard_commons
+- id: yard_resident_03
+  name: 唐槐
+  role: 工坊工人
+  controller: bt
+  ultimate_goal: 在稳定工资和学得一门手艺之间找合适的工位。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.7, cooperative: 0.8}
+  needs: {hydration: 91.0, satiety: 92.0}
+  initial_state:
+    location_id: old_yard
+    status: idle
+    integrity: 100
+    stamina: 95
+    home_location: old_dorm
+    supply_region: yard
+    job_region: yard
+    mobile_worker: 1
+    office: 0
+    skill: 3
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 4, meal: 0, water: 0}
+  faction_ids:
+  - yard_commons
+- id: yard_resident_04
+  name: 卢辛
+  role: 工坊工人
+  controller: bt
+  ultimate_goal: 在稳定工资和学得一门手艺之间找合适的工位。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.8, cooperative: 0.35}
+  needs: {hydration: 63.0, satiety: 62.0}
+  initial_state:
+    location_id: old_yard
+    status: idle
+    integrity: 100
+    stamina: 79
+    home_location: old_dorm
+    supply_region: yard
+    job_region: yard
+    mobile_worker: 1
+    office: 0
+    skill: 0
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 1, meal: 0, water: 0}
+  faction_ids:
+  - yard_commons
+- id: yard_resident_05
+  name: 顾明
+  role: 工坊工人
+  controller: bt
+  ultimate_goal: 在稳定工资和学得一门手艺之间找合适的工位。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.4, cooperative: 0.5}
+  needs: {hydration: 74.0, satiety: 75.0}
+  initial_state:
+    location_id: old_yard
+    status: idle
+    integrity: 100
+    stamina: 86
+    home_location: old_dorm
+    supply_region: yard
+    job_region: yard
+    mobile_worker: 1
+    office: 0
+    skill: 1
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 2, meal: 0, water: 0}
+  faction_ids:
+  - yard_commons
+- id: yard_resident_06
+  name: 郑洛
+  role: 工坊工人
+  controller: bt
+  ultimate_goal: 在稳定工资和学得一门手艺之间找合适的工位。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.5, cooperative: 0.65}
+  needs: {hydration: 85.0, satiety: 88.0}
+  initial_state:
+    location_id: old_yard
+    status: idle
+    integrity: 100
+    stamina: 93
+    home_location: old_dorm
+    supply_region: yard
+    job_region: yard
+    mobile_worker: 0
+    office: 0
+    skill: 2
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 3, meal: 0, water: 0}
+  faction_ids:
+  - yard_commons
+- id: yard_resident_07
+  name: 陆晓
+  role: 工坊工人
+  controller: bt
+  ultimate_goal: 在稳定工资和学得一门手艺之间找合适的工位。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.6, cooperative: 0.8}
+  needs: {hydration: 96.0, satiety: 58.0}
+  initial_state:
+    location_id: old_yard
+    status: idle
+    integrity: 100
+    stamina: 77
+    home_location: old_dorm
+    supply_region: yard
+    job_region: yard
+    mobile_worker: 0
+    office: 0
+    skill: 3
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 4, meal: 0, water: 0}
+  faction_ids:
+  - yard_commons
+- id: yard_resident_08
+  name: 阮青
+  role: 工坊工人
+  controller: bt
+  ultimate_goal: 在稳定工资和学得一门手艺之间找合适的工位。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.7, cooperative: 0.35}
+  needs: {hydration: 68.0, satiety: 71.0}
+  initial_state:
+    location_id: old_yard
+    status: idle
+    integrity: 100
+    stamina: 84
+    home_location: old_dorm
+    supply_region: yard
+    job_region: yard
+    mobile_worker: 0
+    office: 0
+    skill: 0
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 1, meal: 0, water: 0}
+  faction_ids:
+  - yard_commons
+- id: yard_resident_09
+  name: 苗向
+  role: 工坊工人
+  controller: bt
+  ultimate_goal: 在稳定工资和学得一门手艺之间找合适的工位。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.8, cooperative: 0.5}
+  needs: {hydration: 79.0, satiety: 84.0}
+  initial_state:
+    location_id: old_yard
+    status: idle
+    integrity: 100
+    stamina: 91
+    home_location: old_dorm
+    supply_region: yard
+    job_region: yard
+    mobile_worker: 0
+    office: 0
+    skill: 1
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 2, meal: 0, water: 0}
+  faction_ids:
+  - yard_commons
+- id: yard_resident_10
+  name: 何川
+  role: 工坊工人
+  controller: bt
+  ultimate_goal: 在稳定工资和学得一门手艺之间找合适的工位。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.4, cooperative: 0.65}
+  needs: {hydration: 90.0, satiety: 54.0}
+  initial_state:
+    location_id: old_yard
+    status: idle
+    integrity: 100
+    stamina: 75
+    home_location: old_dorm
+    supply_region: yard
+    job_region: yard
+    mobile_worker: 0
+    office: 0
+    skill: 2
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 3, meal: 0, water: 0}
+  faction_ids:
+  - yard_commons
+- id: yard_resident_11
+  name: 施可
+  role: 工坊工人
+  controller: bt
+  ultimate_goal: 在稳定工资和学得一门手艺之间找合适的工位。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.5, cooperative: 0.8}
+  needs: {hydration: 62.0, satiety: 67.0}
+  initial_state:
+    location_id: old_yard
+    status: idle
+    integrity: 100
+    stamina: 82
+    home_location: old_dorm
+    supply_region: yard
+    job_region: yard
+    mobile_worker: 0
+    office: 0
+    skill: 3
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 4, meal: 0, water: 0}
+  faction_ids:
+  - yard_commons
+- id: yard_resident_12
+  name: 梁灵
+  role: 工坊工人
+  controller: bt
+  ultimate_goal: 在稳定工资和学得一门手艺之间找合适的工位。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.6, cooperative: 0.35}
+  needs: {hydration: 73.0, satiety: 80.0}
+  initial_state:
+    location_id: old_yard
+    status: idle
+    integrity: 100
+    stamina: 89
+    home_location: old_dorm
+    supply_region: yard
+    job_region: yard
+    mobile_worker: 0
+    office: 0
+    skill: 0
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 1, meal: 0, water: 0}
+  faction_ids:
+  - yard_commons
+- id: yard_resident_13
+  name: 李晨
+  role: 工坊工人
+  controller: bt
+  ultimate_goal: 在稳定工资和学得一门手艺之间找合适的工位。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.7, cooperative: 0.5}
+  needs: {hydration: 84.0, satiety: 93.0}
+  initial_state:
+    location_id: old_yard
+    status: idle
+    integrity: 100
+    stamina: 96
+    home_location: old_dorm
+    supply_region: yard
+    job_region: yard
+    mobile_worker: 0
+    office: 0
+    skill: 1
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 2, meal: 0, water: 0}
+  faction_ids:
+  - yard_commons
+- id: yard_resident_14
+  name: 宋陌
+  role: 工坊工人
+  controller: bt
+  ultimate_goal: 在稳定工资和学得一门手艺之间找合适的工位。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.8, cooperative: 0.65}
+  needs: {hydration: 95.0, satiety: 63.0}
+  initial_state:
+    location_id: old_yard
+    status: idle
+    integrity: 100
+    stamina: 80
+    home_location: old_dorm
+    supply_region: yard
+    job_region: yard
+    mobile_worker: 0
+    office: 0
+    skill: 2
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 3, meal: 0, water: 0}
+  faction_ids:
+  - yard_commons
+- id: yard_resident_15
+  name: 冯晚
+  role: 工坊工人
+  controller: bt
+  ultimate_goal: 在稳定工资和学得一门手艺之间找合适的工位。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.4, cooperative: 0.8}
+  needs: {hydration: 67.0, satiety: 76.0}
+  initial_state:
+    location_id: old_yard
+    status: idle
+    integrity: 100
+    stamina: 87
+    home_location: old_dorm
+    supply_region: yard
+    job_region: yard
+    mobile_worker: 0
+    office: 0
+    skill: 3
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 4, meal: 0, water: 0}
+  faction_ids:
+  - yard_commons
+- id: representative
+  name: 苏缄
+  role: 灰脊矿户代表
+  controller: llm
+  ultimate_goal: 替矿户争取稳定买家和安全道路。坚持核对实际已成交的买家与承诺。
+  initial_bt_ids:
+  - routine_representative
+  - visit_clinic
+  - rest_short
+  - train
+  routine_bt_id: routine_representative
+  traits: {pragmatic: 0.4, cooperative: 0.35}
+  needs: {hydration: 58.0, satiety: 53.0}
+  initial_state:
+    location_id: mine_exchange
+    status: idle
+    integrity: 100
+    stamina: 74
+    home_location: mine_exchange
+    supply_region: mine
+    job_region: mine
+    mobile_worker: 0
+    office: 0
+    skill: 0
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 1, meal: 0, water: 0}
+  faction_ids:
+  - mine_commons
+  controller_fallback: bt
+- id: mine_resident_01
+  name: 罗辛
+  role: 矿户
+  controller: bt
+  ultimate_goal: 得到安全班次和能付工钱的销路。
+  initial_bt_ids:
+  - routine_porter
+  routine_bt_id: routine_porter
+  traits: {pragmatic: 0.5, cooperative: 0.5}
+  needs: {hydration: 69.0, satiety: 66.0}
+  initial_state:
+    location_id: mine_exchange
+    status: idle
+    integrity: 100
+    stamina: 81
+    home_location: mine_exchange
+    supply_region: mine
+    job_region: mine
+    mobile_worker: 0
+    office: 0
+    skill: 1
+    is_candidate: 0
+    is_porter: 1
+  inventory: {coin: 2, meal: 0, water: 0}
+  faction_ids:
+  - mine_commons
+- id: mine_resident_02
+  name: 柴明
+  role: 矿户
+  controller: bt
+  ultimate_goal: 得到安全班次和能付工钱的销路。
+  initial_bt_ids:
+  - routine_porter
+  routine_bt_id: routine_porter
+  traits: {pragmatic: 0.6, cooperative: 0.65}
+  needs: {hydration: 80.0, satiety: 79.0}
+  initial_state:
+    location_id: mine_exchange
+    status: idle
+    integrity: 100
+    stamina: 88
+    home_location: mine_exchange
+    supply_region: mine
+    job_region: mine
+    mobile_worker: 0
+    office: 0
+    skill: 2
+    is_candidate: 0
+    is_porter: 1
+  inventory: {coin: 3, meal: 0, water: 0}
+  faction_ids:
+  - mine_commons
+- id: mine_resident_03
+  name: 陶洛
+  role: 矿户
+  controller: bt
+  ultimate_goal: 得到安全班次和能付工钱的销路。
+  initial_bt_ids:
+  - routine_porter
+  routine_bt_id: routine_porter
+  traits: {pragmatic: 0.7, cooperative: 0.8}
+  needs: {hydration: 91.0, satiety: 92.0}
+  initial_state:
+    location_id: mine_exchange
+    status: idle
+    integrity: 100
+    stamina: 95
+    home_location: mine_exchange
+    supply_region: mine
+    job_region: mine
+    mobile_worker: 0
+    office: 0
+    skill: 3
+    is_candidate: 0
+    is_porter: 1
+  inventory: {coin: 4, meal: 0, water: 0}
+  faction_ids:
+  - mine_commons
+- id: mine_resident_04
+  name: 陈晓
+  role: 矿户
+  controller: bt
+  ultimate_goal: 得到安全班次和能付工钱的销路。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.8, cooperative: 0.35}
+  needs: {hydration: 63.0, satiety: 62.0}
+  initial_state:
+    location_id: mine_exchange
+    status: idle
+    integrity: 100
+    stamina: 79
+    home_location: mine_exchange
+    supply_region: mine
+    job_region: mine
+    mobile_worker: 0
+    office: 0
+    skill: 0
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 1, meal: 0, water: 0}
+  faction_ids:
+  - mine_commons
+- id: mine_resident_05
+  name: 齐青
+  role: 矿户
+  controller: bt
+  ultimate_goal: 得到安全班次和能付工钱的销路。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.4, cooperative: 0.5}
+  needs: {hydration: 74.0, satiety: 75.0}
+  initial_state:
+    location_id: mine_exchange
+    status: idle
+    integrity: 100
+    stamina: 86
+    home_location: mine_exchange
+    supply_region: mine
+    job_region: mine
+    mobile_worker: 0
+    office: 0
+    skill: 1
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 2, meal: 0, water: 0}
+  faction_ids:
+  - mine_commons
+- id: mine_resident_06
+  name: 柯向
+  role: 矿户
+  controller: bt
+  ultimate_goal: 得到安全班次和能付工钱的销路。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.5, cooperative: 0.65}
+  needs: {hydration: 85.0, satiety: 88.0}
+  initial_state:
+    location_id: mine_exchange
+    status: idle
+    integrity: 100
+    stamina: 93
+    home_location: mine_exchange
+    supply_region: mine
+    job_region: mine
+    mobile_worker: 0
+    office: 0
+    skill: 2
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 3, meal: 0, water: 0}
+  faction_ids:
+  - mine_commons
+- id: mine_resident_07
+  name: 杨川
+  role: 矿户
+  controller: bt
+  ultimate_goal: 得到安全班次和能付工钱的销路。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.6, cooperative: 0.8}
+  needs: {hydration: 96.0, satiety: 58.0}
+  initial_state:
+    location_id: mine_exchange
+    status: idle
+    integrity: 100
+    stamina: 77
+    home_location: mine_exchange
+    supply_region: mine
+    job_region: mine
+    mobile_worker: 0
+    office: 0
+    skill: 3
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 4, meal: 0, water: 0}
+  faction_ids:
+  - mine_commons
+- id: mine_resident_08
+  name: 姚可
+  role: 矿户
+  controller: bt
+  ultimate_goal: 得到安全班次和能付工钱的销路。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.7, cooperative: 0.35}
+  needs: {hydration: 68.0, satiety: 71.0}
+  initial_state:
+    location_id: mine_exchange
+    status: idle
+    integrity: 100
+    stamina: 84
+    home_location: mine_exchange
+    supply_region: mine
+    job_region: mine
+    mobile_worker: 0
+    office: 0
+    skill: 0
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 1, meal: 0, water: 0}
+  faction_ids:
+  - mine_commons
+- id: mine_resident_09
+  name: 唐灵
+  role: 矿户
+  controller: bt
+  ultimate_goal: 得到安全班次和能付工钱的销路。
+  initial_bt_ids:
+  - routine_resident
+  routine_bt_id: routine_resident
+  traits: {pragmatic: 0.8, cooperative: 0.5}
+  needs: {hydration: 79.0, satiety: 84.0}
+  initial_state:
+    location_id: mine_exchange
+    status: idle
+    integrity: 100
+    stamina: 91
+    home_location: mine_exchange
+    supply_region: mine
+    job_region: mine
+    mobile_worker: 0
+    office: 0
+    skill: 1
+    is_candidate: 0
+    is_porter: 0
+  inventory: {coin: 2, meal: 0, water: 0}
+  faction_ids:
+  - mine_commons

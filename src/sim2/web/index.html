@@ -80,6 +80,10 @@
         <dl id="summary-stats" class="summary-stats"></dl>
         <button id="scene-player-bag" type="button" class="summary-bag" aria-haspopup="dialog" aria-controls="player-drawer">行囊</button>
       </section>
+      <section id="venture-brief" class="panel venture-brief hidden" aria-labelledby="venture-title">
+        <div><h2 id="venture-title"></h2><p id="venture-purpose"></p></div>
+        <dl id="venture-metrics" class="venture-metrics"></dl>
+      </section>
       <section id="recap-card" class="panel recap-card hidden" aria-live="polite">
         <div class="panel-title"><div><span class="eyebrow">回来啦</span><h2 id="recap-title">最近发生</h2></div><button id="recap-dismiss" class="text-button" type="button">收起</button></div>
         <div id="recap-list" class="recap-list"></div>
@@ -116,6 +120,7 @@
           </div>
           <p id="opportunity-brief"></p>
           <div id="opportunity-choices" class="opportunity-choices"></div>
+          <p id="opportunity-blocker" class="opportunity-blocker hidden"></p>
         </section>
         <div class="scene-footer">
           <div class="scene-section">

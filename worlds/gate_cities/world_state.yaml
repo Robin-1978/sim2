@@ -1,0 +1,14 @@
+world_state:
+  properties:
+    dispatch_priority: 0
+    gate_managed: 0
+    gate_reinforced: 0
+    water_compact: 0
+    completed_deliveries: 0
+    water_deliveries: 0
+    parts_deliveries: 0
+    gate_slots: 1
+    pump_stock: 6
+    gate_parts: 4
+    low_water: 0
+    yard_parts: 0

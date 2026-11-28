@@ -52,9 +52,12 @@ def compile_behavior_plan(
             nested_id = str(node.get("behavior_id"))
             if nested_id in ancestors:
                 raise ValueError(f"cyclic behavior reference: {nested_id}")
-            children = (behaviors.get(nested_id) or {}).get("nodes", []) or []
+            nested = behaviors.get(nested_id) or {}
+            children = nested.get("nodes") or []
             if group is not None and len(children) > 1:
                 raise ValueError(f"sequential behavior {nested_id} must be outside a parallel group")
+            for expression in nested.get("entry_conditions") or []:
+                visit({"type": "condition", "expression": expression}, ancestors | {nested_id}, group)
             for child in children:
                 visit(child, ancestors | {nested_id}, group)
         elif kind in {"sequence", "parallel", "root"}:

@@ -1,0 +1,161 @@
+vital_attribute: integrity
+capacity_attribute: stamina
+incapacitation:
+  recovery:
+    after_minutes: 180
+    vital_fraction: 0.25
+resource_entity_types:
+- resource
+resource_property_projections:
+  gate_slots: gate_slots
+  pump_stock: pump_stock
+  gate_parts: gate_parts
+  low_water: low_water
+  yard_parts: yard_parts
+resource_caps:
+  gate_slots:
+    min: 0
+    max: 2
+  pump_stock:
+    min: 0
+    max: 10
+  gate_parts:
+    min: 0
+    max: 8
+  low_water:
+    min: 0
+    max: 8
+  yard_parts:
+    min: 0
+    max: 8
+world_property_labels:
+  gate_slots: 本班剩余运力
+  pump_stock: 枢门待运水
+  gate_parts: 枢门待运零件
+  low_water: 低城储水
+  yard_parts: 旧站零件
+  completed_deliveries: 完成货运
+item_labels:
+  water_crate: 净水箱
+  repair_crate: 维修件
+context_values:
+  hydration_recovery: 55
+needs:
+- id: hydration
+  target: 90
+  minimum: 0
+  gamma: 1.15
+  critical_threshold: 0.35
+  critical_gain: 1.0
+minute_effects:
+- id: hydration_tick
+  scope: agent
+  every_minutes: 1
+  effect:
+    type: need_delta
+    need: hydration
+    delta: -0.05
+- id: open_regular_slot
+  scope: world
+  every_minutes: 30
+  condition: world.gate_reinforced == 0 and world.gate_slots < 1
+  effects:
+  - type: world_resource_delta
+    resource_id: gate_slots
+    delta: 1
+    minimum: 0
+    maximum: 1
+- id: open_reinforced_slots
+  scope: world
+  every_minutes: 30
+  condition: world.gate_reinforced >= 1 and world.gate_slots < 2
+  effects:
+  - type: world_resource_delta
+    resource_id: gate_slots
+    delta: 2
+    minimum: 0
+    maximum: 2
+- id: pump_output
+  scope: world
+  every_minutes: 35
+  condition: world.pump_stock < 10
+  effects:
+  - type: world_resource_delta
+    resource_id: pump_stock
+    delta: 3
+    minimum: 0
+    maximum: 10
+- id: parts_output
+  scope: world
+  every_minutes: 50
+  condition: world.gate_parts < 8
+  effects:
+  - type: world_resource_delta
+    resource_id: gate_parts
+    delta: 2
+    minimum: 0
+    maximum: 8
+- id: consume_city_water
+  scope: world
+  every_minutes: 30
+  condition: world.low_water >= 1 and world.water_compact == 0
+  effects:
+  - type: world_resource_delta
+    resource_id: low_water
+    delta: -1
+    minimum: 0
+- id: consume_after_compact
+  scope: world
+  every_minutes: 60
+  condition: world.low_water >= 1 and world.water_compact >= 1
+  effects:
+  - type: world_resource_delta
+    resource_id: low_water
+    delta: -1
+    minimum: 0
+- id: workshop_consumption
+  scope: world
+  every_minutes: 90
+  condition: world.yard_parts >= 1 and world.gate_reinforced >= 1
+  effects:
+  - type: world_resource_delta
+    resource_id: yard_parts
+    delta: -1
+    minimum: 0
+decision_policy:
+  assignment_urgency_limits: {hydration: 0.6}
+  wait_backoff_minutes:
+  - 15
+  - 30
+  - 60
+  empty_catalog_retry_minutes: 30
+progression:
+- id: choose_first_dispatch
+  label: 首班运什么
+  summary: 门只有一个货运名额。两份水与两份零件只能先运其一。
+  visible_when: world.dispatch_priority == 0
+  target_behaviors:
+  - prioritize_water
+  - prioritize_parts
+- id: prove_first_delivery
+  label: 跑通首趟货运
+  summary: 收到货的一侧将出现新的行动。以实际交付为准。
+  visible_when: world.dispatch_priority > 0 and world.completed_deliveries == 0
+  target_behaviors:
+  - ship_water
+  - ship_parts
+  - finish_water
+  - finish_parts
+- id: use_first_delivery
+  label: 这趟货能做什么
+  summary: 低城可以用水建立节水公约，旧站可以用维修件换来更多运力。
+  visible_when: world.completed_deliveries >= 1
+  target_behaviors:
+  - accept_water_compact
+  - reinforce_dispatch_gate
+- id: handover_schedule
+  label: 让居民自己跑
+  summary: 回到枢门，把跑通的线路交给货运班组。
+  visible_when: world.completed_deliveries >= 1 and world.gate_managed == 0
+  target_behaviors:
+  - handover_dispatch

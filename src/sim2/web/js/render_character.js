@@ -46,7 +46,7 @@ export function renderCharacter() {
     $("summary-name").textContent = name;
     $("summary-avatar").textContent = Array.from(name)[0];
     $("summary-origin").textContent = `${role} · ${location}`;
-    $("summary-goal").textContent = player.goal || "";
+    $("summary-goal").textContent = uiConfig().venture ? "" : player.goal || "";
     const preferred = uiConfig().player_summary_attributes;
     const stats = Array.isArray(preferred)
       ? preferred.map(id => attributes.find(attr => attr.id === id)).filter(Boolean)

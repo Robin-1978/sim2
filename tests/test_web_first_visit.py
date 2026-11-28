@@ -4,6 +4,7 @@ from contextlib import closing, contextmanager
 from pathlib import Path
 from shutil import which
 from threading import Thread
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -36,6 +37,130 @@ def server_url(tmp_path: Path, database: Path | None = None):
         finally:
             server.shutdown()
             thread.join()
+
+
+def test_first_freight_enables_each_next_choice_after_the_previous_update(tmp_path, browser):
+    database = create_instance(WORLDS / "gate_cities", "web-first-freight", tmp_path)
+    with server_url(tmp_path, database) as url:
+        page = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True)
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+            pw.expect(page.locator("#entry-title")).to_have_text("诸城之门", timeout=20000)
+            page.locator("#entry-name").fill("林晚")
+            page.locator("#entry-submit").click()
+            choices = page.locator("#opportunity-choices")
+            pw.expect(choices.get_by_role("button", name="优先送零件")).to_be_visible(timeout=20000)
+            pw.expect(page.locator("#scene-countdown")).to_contain_text("1 个货运名额")
+
+            pending_trades = []
+            trade_route = "**/trades?**"
+            hold_trades = True
+
+            def hold_trade_response(route):
+                if hold_trades:
+                    pending_trades.append(route)
+                else:
+                    route.continue_()
+
+            page.route(trade_route, hold_trade_response)
+            with page.expect_request(trade_route):
+                choices.get_by_role("button", name="优先送水").click()
+            load_water = choices.get_by_role("button", name="装两份净水")
+            pw.expect(load_water).to_be_disabled()
+            hold_trades = False
+            for route in pending_trades:
+                route.continue_()
+            page.unroute(trade_route)
+
+            load_water.click()
+            choices.get_by_role("button", name="把净水送到低城").click()
+            pw.expect(page.locator("#scene-title")).to_have_text("低城水庭", timeout=15000)
+            choices.get_by_role("button", name="通过低城节水公约").click()
+            pw.expect(page.get_by_text("通过低城节水公约：行动完成", exact=False)).to_be_visible(timeout=15000)
+        finally:
+            page.close()
+
+
+def test_gate_construction_stays_visible_when_the_crew_can_appoint_a_foreman(tmp_path, browser):
+    database = create_instance(WORLDS / "gate_cities_sandbox", "web-gate-priority", tmp_path)
+    with closing(ControlService(database)) as service:
+        store = service.platform.store
+        with store.transaction():
+            properties = store.repositories.metadata.get("world_properties")
+            properties.update(site_surveyed=1, market_permit=1, market_city=1, market_mine=1,
+                              merit_count=3, service_votes=2)
+            store.repositories.metadata.set("world_properties", properties)
+    with server_url(tmp_path, database) as url:
+        page = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True)
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+            page.locator("#entry-name").fill("林晚")
+            page.locator("#entry-submit").click()
+            choices = page.locator("#opportunity-choices")
+            pair = choices.get_by_role("button", name="开启灰脊—低城坊市门线")
+            pw.expect(pair).to_be_visible(timeout=20000)
+            pw.expect(page.locator("#venture-title")).to_have_text("经营你的高地工坊")
+            assert pair.bounding_box()["y"] < 620
+            goals = page.evaluate("async () => (await import('/js/core.js')).state.view.goals")
+            assert any("behavior:authorize_appointment" in goal["ready_behavior_refs"] for goal in goals)
+        finally:
+            page.close()
+
+
+def test_gate_can_open_a_workshop_before_building_its_first_gate(tmp_path, browser):
+    database = create_instance(WORLDS / "gate_cities_sandbox", "shop-first", tmp_path)
+    with server_url(tmp_path, database) as url:
+        page = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True)
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+            page.locator("#entry-name").fill("林晚")
+            page.locator("#entry-submit").click()
+            choices = page.locator("#opportunity-choices")
+            choices.get_by_role("button", name="投入两枚钱开工坊").click(timeout=20000)
+            pw.expect(page.locator("#opportunity-title")).to_have_text("交付工坊的第一批路石", timeout=60000)
+            pw.expect(choices.get_by_role("button", name="委托坊市班组")).to_be_visible()
+            pw.expect(page.locator("#venture-metrics")).to_contain_text("工坊周转金2 枚")
+            pw.expect(page.locator("#recap-card")).to_be_hidden()
+            view = page.evaluate("async () => (await import('/js/core.js')).state.view")
+            assert view["world_properties"]["connected_count"] == 0
+            assert view["inventory"]["gate_core"] == 1
+        finally:
+            page.close()
+
+
+def test_gate_mobile_updates_for_public_changes_without_rendering_resident_routines(tmp_path, browser):
+    database = create_instance(WORLDS / "gate_cities_sandbox", "mobile-chronicle", tmp_path)
+    with server_url(tmp_path, database) as url:
+        page = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True)
+        view_requests = []
+        def is_view_request(request):
+            return urlsplit(request.url).path.endswith("/view")
+
+        page.on("request", lambda request: view_requests.append(request.url) if is_view_request(request) else None)
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+            page.locator("#entry-name").fill("林晚")
+            page.locator("#entry-submit").click()
+            pw.expect(page.locator("#summary-name")).to_have_text("林晚")
+            page.wait_for_function("async () => (await import('/js/core.js')).state.streamConnected")
+            before = len(view_requests)
+            with closing(ControlService(database)) as service:
+                store = service.platform.store
+                with store.transaction():
+                    for _ in range(60):
+                        store.repositories.events.append_event("behavior.completed", "porter_bai", 0, {
+                            "summary": "北门试送货", "behavior_id": "routine_resident", "correlation_id": "bt:porter_bai:0",
+                        })
+                page.wait_for_timeout(1400)
+                assert len(view_requests) == before
+                with page.expect_request(is_view_request):
+                    with store.transaction():
+                        store.repositories.events.append_event("gatebuild.agreement", "warden", 0, {"summary": "北门同意联合维护"})
+                feed = page.locator("#world-feed")
+                pw.expect(feed.get_by_text("北门同意联合维护", exact=False)).to_have_count(1)
+                pw.expect(feed.get_by_text("北门试送货", exact=False)).to_have_count(0)
+        finally:
+            page.close()
 
 
 def test_copper_pick_bonus_appears_on_the_mining_card(tmp_path, browser):

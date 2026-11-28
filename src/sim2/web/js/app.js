@@ -3,7 +3,7 @@ import { unlockFromOwnerLink } from "./api.js";
 import { armSoundOnGesture, renderSoundButton, toggleSound } from "./audio.js";
 import { shareChapter } from "./celebration.js";
 import { $, OPERATOR_KEY, SOUND_KEY, icon, state, storageGet, toast } from "./core.js";
-import { renderActions, renderMobileActionBar, renderResultBeat, renderTask, renderTaskHint } from "./render_actions.js";
+import { renderActions, renderMobileActionBar, renderResultBeat, renderTask, renderTaskHint, renderVenture } from "./render_actions.js";
 import { renderCharacter, renderClock } from "./render_character.js";
 import { closeLedger, openLedger, renderLedger } from "./render_ledger.js";
 import { openCreatePanel } from "./render_entry.js";
@@ -16,6 +16,7 @@ export function renderAll() {
     if (!state.view) return;
     renderClock();
     renderCharacter();
+    renderVenture();
     renderScene();
     renderNpcIntentions();
     renderCrisisStrip();
@@ -219,9 +220,15 @@ export async function boot() {
       $("entry-screen").classList.remove("hidden");
       $("game").classList.add("hidden");
     }
-    startStream();
+    if (restored) startStream();
     state.pollTimer = window.setInterval(() => {
-      if (!state.playerId || document.hidden || state.advancing || state.streamConnected) return;
+      if (!state.playerId || document.hidden || state.advancing) return;
+      if (state.streamConnected) {
+        if (Array.isArray(state.view?.ui?.chronicle_events) && Number(state.runtime?.world_minute) > Number(state.view?.server_minute)) {
+          loadView().catch(() => {});
+        }
+        return;
+      }
       loadView().catch(() => {});
       loadRuntime();
       loadFeed();

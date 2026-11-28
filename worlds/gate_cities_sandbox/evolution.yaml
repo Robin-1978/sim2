@@ -1,0 +1,92 @@
+roles: {director: true, god: true, story: true}
+cadence: {reflection: 2d, innovation: 7d}
+director:
+  policy: llm
+  cadence: 90m
+  window: 6h
+  targets:
+  - place
+  - social
+  - rule
+  - verb
+  narrative_direction: true
+  context_properties:
+  - connected_count
+  - market_sales
+  - yard_sales
+  - moved_workers
+  - appointment
+  - trade_policy
+  - shop_cash
+  - shop_batches
+  - paving_stock
+  context_events:
+  - gatebuild.opened
+  - gatebuild.sale
+  - gatebuild.resident_moved
+  - gatebuild.appointed
+  - gatebuild.agreement
+  - gatebuild.bridge_ready
+  - gatebuild.embargo_notice
+  - gatebuild.shop_batch_sold
+  - gatebuild.shop_road_opened
+  context_residents: 2
+limits:
+  manual_without_model: true
+  continue_during_cooldown: true
+  max_ready_god_tasks: 1
+  generated_action_pacing: {resident_cooldown: 90m, social_milestone_once: true}
+contracts:
+  god_structural:
+    tools:
+    - query_history
+    - query_world_index
+    - inspect_definition
+    - propose_definition
+    - propose_entity
+    - propose_institution
+    - propose_world_change
+    - wait
+    max_proposals: 2
+    required_content: {growth_cell: true}
+    purpose: 围绕已结算的建门、交易、住房和岗位改变，发展这一档自己的可玩选项。
+    result: 新地点要接到可达路线，标明谁会使用、现有物资和所做动作。拟创居民可从枢门、水庭、铁轨货场或灰脊集口安置，平台从真实库存划拨床位食水并指定 BT。已有地点、货物与协议优先复用。
+wakes:
+- id: changed_city
+  'on':
+  - gatebuild.opened
+  - gatebuild.resident_moved
+  - gatebuild.appointed
+  - gatebuild.agreement
+  - gatebuild.bridge_ready
+  - gatebuild.shop_batch_sold
+  - gatebuild.shop_road_opened
+  - world.change.rule
+  - entity.created
+  - definition.registered
+  - story.beat.completed
+  for: story
+  every: 90m
+  external: true
+  tools:
+  - query_history
+  - propose_story_beat
+  - wait
+  purpose: 沿已经发生的变化，给玩家一个可执行、尚未决定的城际安排。
+triggers:
+- id: review_open_gate
+  when: world.connected_count >= 1
+  invoke:
+  - 沈芒
+  - 江遥
+  - 唐真
+  - 苏缄
+- id: review_closed_gate
+  when: world.lockdown == 1
+  invoke:
+  - 沈芒
+  - 江遥
+- id: new_foreman
+  when: world.appointment == 2
+  invoke:
+  - 白砾

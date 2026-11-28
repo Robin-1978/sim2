@@ -19,10 +19,14 @@ _TICK_EVENT_TYPES = ("world_minute.advanced",)
 class WorldViewMixin:
     """Methods of ``AgentViewCompiler`` for this concern; they use the attributes its constructor creates."""
 
-    def _recent_history_view(self, limit: int = 16) -> list[dict[str, Any]]:
+    def _recent_history_view(self, limit: int = 16, *, event_types: list[str] | None = None) -> list[dict[str, Any]]:
         """Return a compact, visible-name projection of recent world facts."""
 
-        events = self.events_repo.recent_events(limit=max(1, min(int(limit), 32)), exclude_types=_TICK_EVENT_TYPES)
+        limit = max(1, min(int(limit), 32))
+        if event_types:
+            events = self.events_repo.recent_events_by_types(event_types, limit=limit)
+        else:
+            events = self.events_repo.recent_events(limit=limit, exclude_types=_TICK_EVENT_TYPES)
         bt_labels = {
             str(item.get("id")): str(item.get("agent_label") or item.get("summary") or item.get("id"))
             for item in self._definitions("bt_def")

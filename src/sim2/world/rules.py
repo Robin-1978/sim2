@@ -225,7 +225,8 @@ class RuleCompiler:
             if identifier:
                 expression = expression.replace(f'world["{visible}"]', f"world.{identifier}").replace(f"world['{visible}']", f"world.{identifier}")
         for visible, identifier in sorted(self.aliases.items(), key=lambda pair: len(pair[0]), reverse=True):
-            expression = re.sub(rf"(?<![A-Za-z0-9_]){re.escape(visible)}(?![A-Za-z0-9_])", identifier, expression)
+            if visible in expression:
+                expression = re.sub(rf"(?<![A-Za-z0-9_]){re.escape(visible)}(?![A-Za-z0-9_])", identifier, expression)
         return expression
 
     def _known_behavior(self, value: Any) -> bool:

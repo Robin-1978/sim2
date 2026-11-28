@@ -1,0 +1,39 @@
+name: 诸城之门
+locale: zh-CN
+genre: 城市经营 · 开放叙事
+premise: 三座城区重新接通。首班货运只有一个名额。低城等净水，旧站等修门零件。
+calendar:
+  minutes_per_day: 1440
+  day_phases:
+  - id: workday
+    start_minute: 360
+    end_minute: 1200
+  - id: night
+    start_minute: 1200
+    end_minute: 360
+world_clock:
+  start_day: 1
+  start_minute: 480
+  season: 复门季
+ui:
+  tagline: 门打开以后，城里的人会走自己的路。
+  cover_art: assets/freight-gate.webp
+  scene_art:
+    high_gate: assets/freight-gate.webp
+  countdown:
+    property: gate_slots
+    label: 本班余量
+    suffix: ' 个货运名额'
+  entry_action: 接管首班货运
+  spotlights:
+    choose_first_dispatch: {}
+    prove_first_delivery: {}
+    use_first_delivery: {}
+    handover_schedule: {}
+ui_text:
+  travel_choice: 前往 {name}
+  travel_summary: 沿步行通路前往 {name}。
+  travel_purpose: 去另一个城区查看库存或和居民谈判
+  travel_time: 约 {minutes} 分钟
+  travel_impact: 抵达目标城区
+  world_label: 三城

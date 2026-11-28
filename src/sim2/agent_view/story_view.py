@@ -77,6 +77,9 @@ class StoryViewMixin:
         choices = self._story_beat_choices(story_root, story_state, source_event, observed_events, observed_facts)
         prompt_protocol, platform_rules = self._prompt_sections(role)
         known_facts = self._story_known_facts(fact_rows)
+        context_events = story_root.get("context_events")
+        context_events = [kind for kind in context_events if isinstance(kind, str) and kind][:24] if isinstance(context_events, list) else []
+        world = self.store.repositories.metadata.get("world_properties", {}) or {}
         return {
             "context_version": "1", "role": role,
             "prompt_protocol": prompt_protocol, "platform_rules": platform_rules,
@@ -89,7 +92,9 @@ class StoryViewMixin:
             "nearby_entities": [], "known_facts": [{"fact": fact, "source_type": "world_knowledge", "confidence": 1.0} for fact in known_facts],
             "audience_candidates": audience_candidates,
             "recent_actions": recent_events[:8], "recent_story_events": [item for item in recent_events if str(item.get("event_type", "")).startswith("story.")][:8],
-            "recent_history": self._recent_history_view(16),
+            "recent_history": self._recent_history_view(16, event_types=context_events),
+            "story_world_state": self._story_world_state(story_root.get("context_properties"), world),
+            "active_story_threads": self._active_story_threads(),
             "season_plan": self.store.repositories.metadata.get("season_plan", {}) or {},
             "knowledge_gaps": self._knowledge_gap_view(status="active", limit=8),
             "research_sources": self._research_source_view(limit=12),
@@ -104,11 +109,20 @@ class StoryViewMixin:
             "active_world_rules": self.rule_compiler.model_view(
                 self._world_rule_labels(),
                 context={"recent_event_types": self._recent_event_types()},
-                world=self.store.repositories.metadata.get("world_properties", {}) or {},
+                world=world,
             ),
             "last_platform_result": recent_events[0] if recent_events else None,
             "tools": self._role_tools(role),
         }
+
+    def _story_world_state(self, properties: Any, world: dict[str, Any]) -> list[dict[str, Any]]:
+        if not isinstance(properties, dict):
+            return []
+        return [
+            {"label": title, "value": world[key]}
+            for key, title in list(properties.items())[:12]
+            if key in world and isinstance(title, str) and isinstance(world[key], (int, float, str, bool))
+        ]
 
     def _story_source_event(self, recent_events: list[dict[str, Any]], source_event_id: int | None) -> dict[str, Any] | None:
         """Find the event the Story session is about: the one named by ``source_event_id`` or the latest validated one."""
@@ -176,6 +190,8 @@ class StoryViewMixin:
             "fact": self._humanize_fact(source_event.get("fact") or (outcome.get("expected") or {}).get("summary") or ""),
             "world_minute": source_event.get("world_minute"),
         }
+        if source_event.get("summary"):
+            validated_source["summary"] = self._visible_text(str(source_event["summary"]))
         source_id = source_event.get("source_id")
         if source_id:
             try:

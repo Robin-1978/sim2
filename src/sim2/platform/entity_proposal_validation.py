@@ -15,6 +15,7 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..behavior.controllers import routine_error
 from ..world.schema import AttributeSchema
 
 
@@ -181,6 +182,13 @@ class EntityProposalValidationMixin:
                 initial_bt_ids.append(behavior_id)
         if not initial_bt_ids:
             errors.append("agent.state.initial_bt_ids must include at least one existing behavior")
+        routine = state.get("routine_bt_id")
+        if isinstance(routine, str) and routine.strip():
+            resolved_routine, _ = self._context.services["definitions"].resolve_registered_definition("bt_def", routine)
+            if resolved_routine:
+                state["routine_bt_id"] = resolved_routine
+        if error := routine_error({**state, "initial_bt_ids": initial_bt_ids}):
+            errors.append(f"agent.state.{error}")
 
         faction_ids: list[str] = []
         for value in state.get("faction_ids") or state.get("factions") or []:
